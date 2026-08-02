@@ -759,12 +759,12 @@ function dimDescription(dim: string): string {
       />
 
       <!-- 无账号：引导前往设置页导入数据 -->
-      <section v-if="!hasAccounts" class="eval-section rounded-2xl border border-dashed border-slate-300 bg-white/70 px-5 py-10 text-center dark:border-slate-600 dark:bg-slate-900/60">
-        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+      <section v-if="!hasAccounts" class="dark-explicit eval-section rounded-2xl border border-dashed border-slate-300 bg-white/70 px-5 py-10 text-center dark:border-slate-600 dark:bg-slate-900/60">
+        <div class="dark-explicit mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
           <AppIcon name="Database" size="lg" variant="cyan" />
         </div>
-        <h3 class="mt-4 text-base font-semibold text-slate-700 dark:text-slate-200">{{ t('creatorQuality.page.noAccountTitle') }}</h3>
-        <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t('creatorQuality.page.noAccountDescription') }}</p>
+        <h3 class="dark-explicit mt-4 text-base font-semibold text-slate-700 dark:text-slate-200">{{ t('creatorQuality.page.noAccountTitle') }}</h3>
+        <p class="dark-explicit mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t('creatorQuality.page.noAccountDescription') }}</p>
         <button type="button" class="mt-5 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md" @click="openSettings">
           <AppIcon name="Settings" size="sm" variant="white" />
           {{ t('creatorQuality.page.manageAccounts') }}
@@ -800,10 +800,10 @@ function dimDescription(dim: string): string {
         </div>
 
 
-        <div v-if="notesSnapshotMismatch || listSnapshotMismatch" class="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs leading-5 text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
+        <div v-if="notesSnapshotMismatch || listSnapshotMismatch" class="dark-explicit mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs leading-5 text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
           <AppIcon name="AlertTriangle" size="sm" variant="peach" />
           <span class="flex-1">{{ t('evaluation.snapshotMismatch') }}</span>
-          <button type="button" class="min-h-9 rounded-md border border-amber-300 px-2 font-semibold hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="sourceTab === 'historical' ? loadNotes(selectedAccountId, true) : loadList(true, selectedAccountId)">{{ t('evaluation.error.retry') }}</button>
+          <button type="button" class="dark-explicit min-h-9 rounded-md border border-amber-300 px-2 font-semibold hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="sourceTab === 'historical' ? loadNotes(selectedAccountId, true) : loadList(true, selectedAccountId)">{{ t('evaluation.error.retry') }}</button>
         </div>
 
         <section v-if="sourceTab === 'workflow'" class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
@@ -900,7 +900,7 @@ function dimDescription(dim: string): string {
              here showed the same badge twice. -->
         <template v-if="detailThreadId" #meta>
           <span class="font-mono">{{ detailThreadId.slice(-8) }}</span>
-          <button type="button" class="copy-thread min-h-9 px-2 text-xs rounded-md border border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" @click="copyThreadId">
+          <button type="button" class="dark-explicit copy-thread min-h-9 px-2 text-xs rounded-md border border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" @click="copyThreadId">
             <AppIcon name="Copy" size="sm" variant="muted" />
             {{ t('evaluation.action.copyId') }}
           </button>
@@ -1033,10 +1033,10 @@ function dimDescription(dim: string): string {
         @keydown.esc="closeNoteDrawer"
       >
         <div class="absolute inset-0 bg-black/40" @click="closeNoteDrawer" />
-        <div class="relative h-full w-full max-w-md space-y-4 overflow-y-auto bg-white p-4 shadow-xl md:max-w-3xl md:p-6 dark:bg-slate-900">
+        <div class="dark-explicit relative h-full w-full max-w-md space-y-4 overflow-y-auto bg-white p-4 shadow-xl md:max-w-3xl md:p-6 dark:bg-slate-900">
           <div class="flex items-start justify-between gap-3">
-            <h2 class="truncate text-base font-semibold text-slate-800 md:text-lg dark:text-slate-100">{{ drawerNoteTitle || t('creatorNoteQuality.untitled') }}</h2>
-            <button type="button" class="min-h-11 min-w-[44px] shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" :aria-label="t('common.close')" @click="closeNoteDrawer">
+            <h2 class="dark-explicit truncate text-base font-semibold text-slate-800 md:text-lg dark:text-slate-100">{{ drawerNoteTitle || t('creatorNoteQuality.untitled') }}</h2>
+            <button type="button" class="dark-explicit min-h-11 min-w-[44px] shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" :aria-label="t('common.close')" @click="closeNoteDrawer">
               <AppIcon name="X" size="sm" variant="muted" />
             </button>
           </div>
@@ -1068,7 +1068,7 @@ function dimDescription(dim: string): string {
   text-transform: uppercase;
   color: #7c3aed;
 }
-:global(.dark) .section-eyebrow { color: #c4b5fd; }
+html.dark .section-eyebrow { color: #c4b5fd; }
 .section-title {
   margin-top: 0.25rem;
   font-size: 1.125rem;
@@ -1077,8 +1077,8 @@ function dimDescription(dim: string): string {
   color: #1e293b;
 }
 .section-description { margin-top: 0.35rem; font-size: 0.75rem; line-height: 1.5; color: #64748b; }
-:global(.dark) .section-description { color: #94a3b8; }
-:global(.dark) .section-title { color: #f1f5f9; }
+html.dark .section-description { color: #94a3b8; }
+html.dark .section-title { color: #f1f5f9; }
 
 /* ── 单篇时间流：来源徽章与笔记指标 ── */
 .source-badge {
@@ -1090,19 +1090,19 @@ function dimDescription(dim: string): string {
   letter-spacing: 0.02em;
 }
 .source-workflow { background: #ccfbf1; color: #0f766e; }
-:global(.dark) .source-workflow { background: rgba(20,184,166,0.16); color: #5eead4; }
+html.dark .source-workflow { background: rgba(20,184,166,0.16); color: #5eead4; }
 .source-imported { background: #ede9fe; color: #6d28d9; }
-:global(.dark) .source-imported { background: rgba(139,92,246,0.18); color: #c4b5fd; }
+html.dark .source-imported { background: rgba(139,92,246,0.18); color: #c4b5fd; }
 .source-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; border-bottom: 1px solid #e2e8f0; }
 .source-tab { display: inline-flex; align-items: center; gap: 0.45rem; border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 0.5rem 0.75rem; color: #64748b; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
 .source-tab--active { border-color: #7c3aed; color: #6d28d9; }
 .source-tab-count { color: #94a3b8; font-size: 0.68rem; font-weight: 600; }
-:global(.dark) .source-tabs { border-color: #334155; }
-:global(.dark) .source-tab { color: #94a3b8; }
-:global(.dark) .source-tab--active { color: #c4b5fd; border-color: #a78bfa; }
+html.dark .source-tabs { border-color: #334155; }
+html.dark .source-tab { color: #94a3b8; }
+html.dark .source-tab--active { color: #c4b5fd; border-color: #a78bfa; }
 .item-right-note { flex-direction: row; align-items: center; gap: 0.5rem; }
 .note-metric { font-size: 0.75rem; color: #64748b; white-space: nowrap; font-variant-numeric: tabular-nums; }
-:global(.dark) .note-metric { color: #94a3b8; }
+html.dark .note-metric { color: #94a3b8; }
 .score-kind { font-size: 0.62rem; color: #94a3b8; white-space: nowrap; }
 .data-as-of { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 0.7rem; color: #94a3b8; font-size: 0.7rem; }
 .notes-hint {
@@ -1126,8 +1126,8 @@ function dimDescription(dim: string): string {
 .filter-chip { padding: 0.25rem 0.875rem; border-radius: 9999px; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.15s; }
 .filter-chip:hover { background: #f8fafc; }
 .filter-chip--active { background: #0d9488; border-color: #0d9488; color: #fff; }
-:global(.dark) .filter-chip { background: #1e293b; border-color: #334155; color: #cbd5e1; }
-:global(.dark) .filter-chip--active { background: #0d9488; border-color: #0d9488; color: #fff; }
+html.dark .filter-chip { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+html.dark .filter-chip--active { background: #0d9488; border-color: #0d9488; color: #fff; }
 .thread-input {
   flex: 1; min-width: 240px; padding: 0.625rem 0.875rem;
   border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.875rem;

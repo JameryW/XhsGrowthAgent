@@ -292,13 +292,13 @@ watch(confirmCloseTabId, async (id) => {
           role="dialog"
           aria-modal="true"
           aria-labelledby="tab-close-confirm-title"
-          class="bg-white rounded-xl p-5 shadow-2xl max-w-sm w-full border border-slate-200 dark:bg-slate-900 dark:border-slate-700"
+          class="bg-white rounded-xl p-5 shadow-2xl max-w-sm w-full border border-slate-200 dark-explicit dark:bg-slate-900 dark:border-slate-700"
           @keydown.escape="cancelClose"
         >
           <h3 id="tab-close-confirm-title" class="text-slate-800 font-medium mb-2">{{ t('workflow.closeTabConfirm') }}</h3>
           <p class="text-slate-500 text-sm mb-4">{{ t('workflow.closeTabHint') }}</p>
           <div class="flex gap-3 justify-end">
-            <button type="button" class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" @click="cancelClose">
+            <button type="button" class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark-explicit dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" @click="cancelClose">
               {{ t('common.cancel') }}
             </button>
             <button type="button" class="px-3 py-1.5 text-sm rounded-lg bg-rose-500 text-white hover:bg-rose-600" @click="confirmClose">
@@ -388,20 +388,9 @@ watch(confirmCloseTabId, async (id) => {
   @apply outline-none ring-2 ring-teal-400;
 }
 
-:global(html.dark) .tab-item {
-  background: rgba(30, 41, 59, 0.75);
-  color: #94a3b8;
-}
-:global(html.dark) .tab-item:hover {
-  background: rgba(51, 65, 85, 0.85);
-  color: #e2e8f0;
-}
-:global(html.dark) .tab-item.active {
-  background: rgba(15, 23, 42, 0.95);
-  color: #f1f5f9;
-}
-:global(html.dark) .overflow-item:hover {
-  background: rgba(30, 41, 59, 0.9);
-  color: #e2e8f0;
-}
+/* Dark styles for this tab bar are owned by the main.css remap rules
+ * `html.dark .workflow-tab-bar .tab-item[.active/:hover]` and
+ * `.overflow-item[:hover/.active]` (!important). The former scoped
+ * `:global(html.dark) …` duplicates here compiled to bare `html.dark`
+ * and could never win over the !important layer, so they were removed. */
 </style>

@@ -491,12 +491,9 @@ watch(
     inset -1px 0 rgba(255, 255, 255, 0.52);
 }
 
-:global(html.dark) .app-sidebar {
-  box-shadow:
-    1px 0 2px rgba(2, 6, 23, 0.35),
-    8px 0 24px rgba(2, 6, 23, 0.28),
-    inset -1px 0 rgba(148, 163, 184, 0.1);
-}
+/* Dark sidebar shadow is owned by main.css `html.dark .liquid-glass-nav`
+ * (!important); a scoped override here could never win, so the dead
+ * `:global(html.dark) .app-sidebar` duplicate was removed. */
 
 .app-nav-scroll {
   scrollbar-gutter: stable;
@@ -531,7 +528,7 @@ html.dark .app-nav-section {
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
-:global(html.dark) .app-nav-item[aria-current='page'] {
+html.dark .app-nav-item[aria-current='page'] {
   box-shadow:
     0 5px 14px rgba(2, 6, 23, 0.35),
     inset 0 1px 0 rgba(148, 163, 184, 0.12);
