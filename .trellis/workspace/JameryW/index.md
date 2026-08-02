@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 81
+- **Total Sessions**: 82
 - **Last Active**: 2026-08-02
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1583 | Active |
+| `journal-0.md` | ~1616 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 82 | 2026-08-02 | 前端 P2 架构级优化：暗色收缩、z-index token、样式去重 | `78ea2632` | `main` |
 | 81 | 2026-08-02 | 前端多页面布局交互视觉整体优化（P0+P1） | `247be2dc` | `main` |
 | 80 | 2026-07-29 | Chrome 后台空白页安全清理 | `6ae62471` | `main` |
 | 79 | 2026-07-29 | Chrome profile 内存健康观测与告警 | `3ba5ccfe` | `main` |

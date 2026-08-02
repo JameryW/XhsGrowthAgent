@@ -1581,3 +1581,36 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 82: 前端 P2 架构级优化：暗色收缩、z-index token、样式去重
+
+**Date**: 2026-08-02
+**Task**: 前端 P2 架构级优化：暗色收缩、z-index token、样式去重
+**Branch**: `main`
+
+### Summary
+
+P2 五件事：死代码删除（StepIndicator/ProgressPhase）、cards.css 单一来源、lang 同步、theme 三态循环、z-index 全量语义 token 化（新增 dropdown/chrome/max）、暗色重映射 :not(.dark-explicit) 豁免机制 + shell 五组件迁移。发现 :global(html.dark) 编译丢类名陷阱（16 处存量待修）。693 测试通过，5 个 commit
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `78ea2632` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
