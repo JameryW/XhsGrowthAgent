@@ -56,7 +56,7 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
     <div class="flex flex-col gap-4 sm:flex-row sm:gap-6">
       <!-- Sidebar -->
       <aside class="w-full shrink-0 sm:w-56">
-        <nav class="flex gap-1 overflow-x-auto scrollbar-thin rounded-xl border border-slate-200/50 bg-white/90 p-2 backdrop-blur-sm dark:bg-slate-900/90 dark:border-slate-700/55 sm:sticky sm:top-4 sm:block sm:space-y-1">
+        <nav class="dark-explicit flex gap-1 overflow-x-auto scrollbar-thin rounded-xl border border-slate-200/50 bg-white/90 p-2 backdrop-blur-sm dark:bg-slate-900/90 dark:border-slate-700/55 sm:sticky sm:top-4 sm:block sm:space-y-1">
           <button
             v-for="tab in TABS"
             :key="tab.id"
@@ -64,14 +64,14 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
             :aria-current="activeTab === tab.id ? 'page' : undefined"
             class="min-h-11 min-w-[142px] flex-1 text-left px-3 py-2.5 rounded-lg transition-all flex items-start gap-2.5 group sm:w-full sm:min-w-0 sm:flex-none"
             :class="activeTab === tab.id
-              ? 'bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200/60 shadow-sm dark:from-rose-950/50 dark:to-pink-950/40 dark:border-rose-500/30'
+              ? 'dark-explicit bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200/60 shadow-sm dark:from-rose-950/50 dark:to-pink-950/40 dark:border-rose-500/30'
               : 'border border-transparent hover:bg-slate-50/80 dark:hover:bg-slate-800/60'"
           >
             <div
               class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors"
               :class="activeTab === tab.id
                 ? 'bg-gradient-to-br from-rose-400 to-pink-400'
-                : 'bg-slate-100 group-hover:bg-slate-200 dark:bg-slate-800 dark:group-hover:bg-slate-700'"
+                : 'dark-explicit bg-slate-100 group-hover:bg-slate-200 dark:bg-slate-800 dark:group-hover:bg-slate-700'"
             >
               <AppIcon :name="tab.icon" size="xs" :variant="activeTab === tab.id ? 'white' : 'pink'" />
             </div>

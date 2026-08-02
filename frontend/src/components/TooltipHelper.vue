@@ -149,7 +149,7 @@ defineExpose({
     <Transition name="tooltip">
       <div
         v-if="isVisible"
-        class="fixed z-dropdown px-3 py-2 rounded-lg bg-white shadow-lg border border-slate-200/50 text-sm text-slate-700 max-w-xs dark:bg-slate-900 dark:border-slate-600/60 dark:text-slate-200 dark:shadow-slate-950/40"
+        class="dark-explicit fixed z-dropdown px-3 py-2 rounded-lg bg-white shadow-lg border border-slate-200/50 text-sm text-slate-700 max-w-xs dark:bg-slate-900 dark:border-slate-600/60 dark:text-slate-200 dark:shadow-slate-950/40"
         :style="{
           top: `${tooltipPos.top}px`,
           left: `${tooltipPos.left}px`,

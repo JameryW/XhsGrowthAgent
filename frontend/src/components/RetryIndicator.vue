@@ -73,30 +73,30 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="bg-amber-50/80 border border-amber-200/50 rounded-xl p-4 dark:bg-amber-950/40 dark:border-amber-500/30"
+    class="bg-amber-50/80 border border-amber-200/50 rounded-xl p-4 dark:bg-amber-950/40 dark:border-amber-500/30 dark-explicit"
     role="status"
     aria-live="polite"
     :aria-label="t('retryIndicator.retryStatus')"
   >
     <div class="flex items-center gap-3 mb-3">
       <!-- Retry icon with animation -->
-      <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center dark:bg-amber-900/50">
+      <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center dark:bg-amber-900/50 dark-explicit">
         <AppIcon name="RefreshCw" size="sm" variant="peach" animate />
       </div>
 
       <!-- Retry count text -->
-      <span class="text-amber-700 font-medium dark:text-amber-200">
+      <span class="text-amber-700 font-medium dark:text-amber-200 dark-explicit">
         {{ retryText }}
       </span>
 
       <!-- Countdown timer -->
-      <span class="text-amber-600 text-sm dark:text-amber-300">
+      <span class="text-amber-600 text-sm dark:text-amber-300 dark-explicit">
         {{ t('retryIndicator.retryIn', { time: formattedTime }) }}
       </span>
     </div>
 
     <!-- Progress bar -->
-    <div class="h-2 bg-amber-100 rounded-full overflow-hidden dark:bg-amber-900/40">
+    <div class="h-2 bg-amber-100 rounded-full overflow-hidden dark:bg-amber-900/40 dark-explicit">
       <div
         class="h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full transition-all duration-1000 ease-linear"
         :style="{ width: `${progressPercent}%` }"
@@ -105,7 +105,7 @@ onUnmounted(() => {
 
     <!-- Cancel button -->
     <button
-      class="mt-3 text-sm text-amber-600 hover:text-amber-700 transition-colors underline dark:text-amber-300 dark:hover:text-amber-200"
+      class="mt-3 text-sm text-amber-600 hover:text-amber-700 transition-colors underline dark:text-amber-300 dark:hover:text-amber-200 dark-explicit"
       @click="emit('cancel')"
     >
       {{ t('retryIndicator.cancelRetry') }}

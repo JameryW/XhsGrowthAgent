@@ -336,7 +336,7 @@ onUnmounted(() => {
             </div>
             <button
               type="button"
-              class="min-h-11 min-w-11 p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              class="dark-explicit min-h-11 min-w-11 p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
               :aria-label="t('common.cancel')"
               @click="handleClose"
             >
@@ -354,7 +354,7 @@ onUnmounted(() => {
 
             <!-- QR image -->
             <template v-else-if="showQrImage">
-              <div class="p-3 bg-white rounded-xl shadow-sm border border-slate-100 dark:bg-slate-900 dark:border-slate-700">
+              <div class="dark-explicit p-3 bg-white rounded-xl shadow-sm border border-slate-100 dark:bg-slate-900 dark:border-slate-700">
                 <img v-if="qrImgSrc" :src="qrImgSrc" alt="QR Code" class="w-60 h-60" />
                 <div v-else class="w-60 h-60 flex items-center justify-center text-slate-300">
                   <AppIcon name="Scan" size="xl" variant="pink" />
@@ -391,9 +391,9 @@ onUnmounted(() => {
           <!-- Numeric verification code forwarding -->
           <div
             v-if="showVerificationCodeInput"
-            class="mb-3 p-3 rounded-lg border"
+            class="dark-explicit mb-3 p-3 rounded-lg border"
             :class="verificationRequired
-              ? 'bg-cyan-50/80 border-cyan-100'
+              ? 'bg-cyan-50/80 border-cyan-100 dark:bg-teal-700/50 dark:border-teal-400/40'
               : 'bg-slate-50/80 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'"
           >
             <label class="block text-xs font-medium text-slate-500 mb-2">
@@ -409,7 +409,7 @@ onUnmounted(() => {
                 autocomplete="one-time-code"
                 maxlength="8"
                 :placeholder="t('settings.xhsAccounts.verificationCodePlaceholder')"
-                class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                class="dark-explicit flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                 @keydown.enter.prevent="submitVerificationCode"
               />
               <NeonButton

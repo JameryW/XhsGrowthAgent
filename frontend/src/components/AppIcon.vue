@@ -139,7 +139,7 @@ const colorClasses = {
   purple: 'text-neon-purple',
   peach: 'text-neon-peach',
   white: 'text-white',
-  muted: 'text-slate-400 dark:text-slate-500',
+  muted: 'text-slate-400 dark:text-slate-500 dark-explicit',
 }
 
 const iconSize = computed(() => sizeMap[props.size])

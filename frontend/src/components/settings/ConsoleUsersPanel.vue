@@ -109,7 +109,7 @@ function formatDate(iso: string | null): string {
     </div>
 
     <!-- Create user -->
-    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 dark:bg-slate-900/90 dark:border-slate-700/55">
+    <div class="dark-explicit rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 dark:bg-slate-900/90 dark:border-slate-700/55">
       <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
         {{ t('settings.consoleUsers.addUser') }}
       </h3>
@@ -118,13 +118,13 @@ function formatDate(iso: string | null): string {
           v-model="newUsername"
           type="text"
           :placeholder="t('settings.consoleUsers.usernamePlaceholder')"
-          class="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+          class="dark-explicit flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
         />
         <input
           v-model="newPassword"
           type="password"
           :placeholder="t('settings.consoleUsers.passwordPlaceholder')"
-          class="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+          class="dark-explicit flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
         />
         <NeonButton variant="pink" size="sm" :loading="isCreating" type="submit">
           <AppIcon name="Plus" size="xs" variant="white" />
@@ -134,7 +134,7 @@ function formatDate(iso: string | null): string {
     </div>
 
     <!-- User list -->
-    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm dark:bg-slate-900/90 dark:border-slate-700/55">
+    <div class="dark-explicit rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="px-4 py-3 border-b border-slate-100">
         <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           {{ t('settings.consoleUsers.allUsers') }} ({{ store.users.length }})
@@ -170,14 +170,14 @@ function formatDate(iso: string | null): string {
             v-model="newPasswordValue"
             type="password"
             :placeholder="t('settings.consoleUsers.newPasswordPlaceholder')"
-            class="w-44 max-w-full px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none dark:border-rose-500/40 dark:bg-slate-900 dark:text-slate-200"
+            class="dark-explicit w-44 max-w-full px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none dark:border-rose-500/40 dark:bg-slate-900 dark:text-slate-200"
             @keydown.escape="cancelChangePassword"
           />
           <NeonButton variant="cyan" size="sm" :loading="isChangingPwd" @click="submitChangePassword">
             <AppIcon name="Check" size="xs" variant="white" />
           </NeonButton>
           <button type="button" @click="cancelChangePassword"
-            class="min-h-11 min-w-11 p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            class="dark-explicit min-h-11 min-w-11 p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
           >
             <AppIcon name="X" size="xs" variant="pink" />
           </button>

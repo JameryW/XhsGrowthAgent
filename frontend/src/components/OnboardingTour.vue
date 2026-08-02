@@ -182,7 +182,7 @@ const isLastStep = computed(() => props.currentStep === 3)
 
         <!-- Tooltip card -->
         <div
-          class="absolute w-80 bg-white rounded-2xl shadow-xl border border-slate-200/50 p-5 transition-all duration-300 pointer-events-auto dark:bg-slate-900 dark:border-slate-600/60 dark:shadow-slate-950/50"
+          class="dark-explicit absolute w-80 bg-white rounded-2xl shadow-xl border border-slate-200/50 p-5 transition-all duration-300 pointer-events-auto dark:bg-slate-900 dark:border-slate-600/60 dark:shadow-slate-950/50"
           :style="{
             top: `${tooltipPosition.top}px`,
             left: `${tooltipPosition.left}px`,
@@ -216,7 +216,7 @@ const isLastStep = computed(() => props.currentStep === 3)
             </div>
           </div>
 
-          <p v-if="targetElementMissing" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/45 dark:text-amber-200" role="status">
+          <p v-if="targetElementMissing" class="dark-explicit mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/45 dark:text-amber-200" role="status">
             {{ t('onboarding.targetUnavailable') }}
           </p>
 
@@ -228,7 +228,7 @@ const isLastStep = computed(() => props.currentStep === 3)
           <!-- Action buttons -->
           <div class="flex items-center justify-between">
             <button
-              class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors text-sm font-medium dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800"
+              class="dark-explicit px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors text-sm font-medium dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800"
               @click="handleSkip"
               :aria-label="t('onboarding.skip')"
             >

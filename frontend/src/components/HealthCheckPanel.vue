@@ -170,10 +170,10 @@ const statusBg = (status: string) => {
     case 'ok': return 'bg-emerald-50 border-emerald-100'
     case 'warning': return 'bg-amber-50 border-amber-100'
     case 'degraded': return 'bg-amber-50 border-amber-100'
-    case 'disabled': return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
+    case 'disabled': return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50 dark-explicit'
     case 'missing': return 'bg-rose-50 border-rose-100'
     case 'error': return 'bg-rose-50 border-rose-100'
-    default: return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
+    default: return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50 dark-explicit'
   }
 }
 
@@ -200,7 +200,7 @@ const issueCount = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm overflow-hidden dark:bg-slate-900/90 dark:border-slate-700/55">
+  <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm overflow-hidden dark:bg-slate-900/90 dark:border-slate-700/55 dark-explicit">
     <!-- Header - always visible -->
     <button
       class="w-full flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors dark:hover:bg-slate-800/50"
@@ -228,7 +228,7 @@ const issueCount = computed(() => {
         <button
           v-if="!isLoading"
           @click.stop="fetchHealth"
-          class="p-1 rounded hover:bg-slate-100 transition-colors dark:hover:bg-slate-800"
+          class="p-1 rounded hover:bg-slate-100 transition-colors dark:hover:bg-slate-800 dark-explicit"
           :aria-label="t('health.refresh')"
         >
           <AppIcon name="RefreshCw" size="sm" variant="cyan" />
@@ -244,7 +244,7 @@ const issueCount = computed(() => {
     <!-- Expanded details -->
     <div v-if="isExpanded" class="border-t border-slate-100">
       <div v-if="isLoading" class="p-4 space-y-3">
-        <div v-for="i in 4" :key="i" class="h-8 rounded bg-slate-100 animate-pulse dark:bg-slate-800" />
+        <div v-for="i in 4" :key="i" class="h-8 rounded bg-slate-100 animate-pulse dark:bg-slate-800 dark-explicit" />
       </div>
 
       <div v-else-if="error" class="p-4">
@@ -297,7 +297,7 @@ const issueCount = computed(() => {
             <div class="flex items-center gap-2">
               <AppIcon name="Zap" size="sm" variant="cyan" />
               <span class="text-sm font-medium text-slate-700">Ripple CAS</span>
-              <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium dark:bg-slate-800 dark:text-slate-400">{{ t('health.optional') }}</span>
+              <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium dark:bg-slate-800 dark:text-slate-400 dark-explicit">{{ t('health.optional') }}</span>
             </div>
             <div class="flex items-center gap-2">
               <span :class="[statusColor(health.checks.ripple_cas.status), 'w-2 h-2 rounded-full']" />
@@ -473,10 +473,10 @@ const issueCount = computed(() => {
           <!-- Per-account policy editor -->
           <div
             v-if="showPolicy && health.active_account?.id"
-            class="mt-3 rounded-lg border border-slate-200/70 bg-slate-50/80 p-3 space-y-2 dark:bg-slate-800/50 dark:border-slate-700"
+            class="mt-3 rounded-lg border border-slate-200/70 bg-slate-50/80 p-3 space-y-2 dark:bg-slate-800/50 dark:border-slate-700 dark-explicit"
             @click.stop
           >
-            <div class="text-xs font-medium text-slate-600 dark:text-slate-300">
+            <div class="text-xs font-medium text-slate-600 dark:text-slate-300 dark-explicit">
               {{ t('health.policyFor') }} {{ health.active_account.name || health.active_account.id }}
             </div>
             <div class="grid grid-cols-2 gap-2 text-xs">
@@ -486,7 +486,7 @@ const issueCount = computed(() => {
                   v-model.number="policyForm.browser_action_seconds"
                   type="number"
                   min="0"
-                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600 dark-explicit"
                 >
               </label>
               <label class="flex flex-col gap-0.5">
@@ -495,7 +495,7 @@ const issueCount = computed(() => {
                   v-model.number="policyForm.publish_seconds"
                   type="number"
                   min="0"
-                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600 dark-explicit"
                 >
               </label>
               <label class="flex flex-col gap-0.5">
@@ -504,7 +504,7 @@ const issueCount = computed(() => {
                   v-model.number="policyForm.engagement_seconds"
                   type="number"
                   min="0"
-                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600 dark-explicit"
                 >
               </label>
               <label class="flex flex-col gap-0.5">
@@ -513,7 +513,7 @@ const issueCount = computed(() => {
                   v-model.number="policyForm.sync_auth_minutes"
                   type="number"
                   min="0"
-                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600 dark-explicit"
                 >
               </label>
               <label class="flex flex-col gap-0.5 col-span-2">
@@ -522,7 +522,7 @@ const issueCount = computed(() => {
                 </span>
                 <select
                   v-model.number="policyForm.min_risk_pressure"
-                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600 dark-explicit"
                 >
                   <option :value="0">{{ t('health.pressureNormal') }} (0)</option>
                   <option :value="1">{{ t('health.pressureSafe') }} (1)</option>

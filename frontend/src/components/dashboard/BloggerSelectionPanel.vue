@@ -77,7 +77,7 @@ async function handleSkip() {
       {{ error }}
     </div>
 
-    <div v-if="candidates.length === 0" class="p-3 rounded-lg bg-slate-50 text-slate-400 text-sm text-center dark:bg-slate-800/70 dark:text-slate-400">
+    <div v-if="candidates.length === 0" class="p-3 rounded-lg bg-slate-50 text-slate-400 text-sm text-center dark-explicit dark:bg-slate-800/70 dark:text-slate-400">
       {{ t('blogger.noCandidates') }}
     </div>
 
@@ -85,11 +85,11 @@ async function handleSkip() {
       <div
         v-for="candidate in candidates"
         :key="candidate.user_id"
-        class="p-3 rounded-lg bg-white border border-slate-200 hover:border-violet-300 hover:shadow-sm transition-all dark:bg-slate-900/85 dark:border-slate-700/55 dark:hover:border-violet-400/40"
+        class="p-3 rounded-lg bg-white border border-slate-200 hover:border-violet-300 hover:shadow-sm transition-all dark-explicit dark:bg-slate-900/85 dark:border-slate-700/55 dark:hover:border-violet-400/40"
       >
         <div class="flex items-start gap-3">
           <!-- Avatar -->
-          <div class="w-10 h-10 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden dark:bg-slate-800">
+          <div class="w-10 h-10 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden dark-explicit dark:bg-slate-800">
             <img
               v-if="candidate.avatar_url"
               :src="candidate.avatar_url"

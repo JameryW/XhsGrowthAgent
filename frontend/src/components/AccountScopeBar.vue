@@ -49,17 +49,17 @@ const { prefersReduced } = useReducedMotion()
 
 const activeClasses = {
   violet:
-    'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-200 focus-visible:ring-violet-400/60',
+    'dark-explicit border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-200 focus-visible:ring-violet-400/60',
   amber:
-    'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-100 focus-visible:ring-amber-400/60',
+    'dark-explicit border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-100 focus-visible:ring-amber-400/60',
 } as const
 
 const idleClasses =
-  'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 focus-visible:ring-slate-400/50'
+  'dark-explicit border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 focus-visible:ring-slate-400/50'
 
 const totalActiveClasses = {
   violet: 'bg-violet-200/80 text-violet-800 dark:bg-violet-800/60 dark:text-violet-100',
-  amber: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-100',
+  amber: 'dark-explicit bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-100',
 } as const
 
 function chipTitle(chip: AccountScopeChip): string {
@@ -158,7 +158,7 @@ watch(
           </span>
           <span
             v-if="acc.isWorkspace"
-            class="rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 dark:bg-teal-950/50 dark:text-teal-300"
+            class="dark-explicit rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 dark:bg-teal-950/50 dark:text-teal-300"
           >
             {{ workspaceBadgeLabel }}
           </span>

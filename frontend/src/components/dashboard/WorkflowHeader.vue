@@ -131,13 +131,13 @@ onUnmounted(() => {
        by the state hero directly above — this header used to repeat them
        (status badge, stage label, circular + mini progress bars). -->
   <div
-    class="rounded-xl p-3 md:px-4 md:py-3 relative overflow-hidden bg-white/90 backdrop-blur-sm border border-slate-200/50 shadow-sm dark:bg-slate-900/80 dark:border-slate-700/50"
+    class="rounded-xl p-3 md:px-4 md:py-3 relative overflow-hidden bg-white/90 backdrop-blur-sm border border-slate-200/50 shadow-sm dark-explicit dark:bg-slate-900/80 dark:border-slate-700/50"
     role="region"
     :aria-label="t('dashboard.header.status')"
   >
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium dark:bg-teal-950/40 dark:text-teal-300">{{ t('dashboard.header.workflow') }}</span>
-      <span v-if="workflowStore.workflowState?.label" class="text-sm font-medium text-slate-700 truncate dark:text-slate-200">{{ workflowStore.workflowState.label }}</span>
+      <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium dark-explicit dark:bg-teal-950/40 dark:text-teal-300">{{ t('dashboard.header.workflow') }}</span>
+      <span v-if="workflowStore.workflowState?.label" class="text-sm font-medium text-slate-700 truncate dark-explicit dark:text-slate-200">{{ workflowStore.workflowState.label }}</span>
       <span v-else class="text-xs text-slate-400 truncate">{{ workflowStore.currentThreadId || '—' }}</span>
       <span v-if="workflowStore.workflowState?.label && workflowStore.currentThreadId" class="text-[10px] text-slate-400 font-mono truncate">{{ workflowStore.currentThreadId.slice(-8) }}</span>
       <!-- Agent elapsed ticks every second — deliberately NOT an aria-live

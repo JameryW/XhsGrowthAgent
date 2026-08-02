@@ -444,8 +444,8 @@ const tableColumns = computed(() => [
     cellClass: (row: Record<string, unknown>) => {
       const rate = Number(row.engagement_rate)
       if (!Number.isFinite(rate)) return 'font-semibold'
-      if (rate >= 5) return 'font-semibold text-emerald-600 dark:text-emerald-400'
-      if (rate >= 1) return 'font-semibold text-amber-600 dark:text-amber-400'
+      if (rate >= 5) return 'dark-explicit font-semibold text-emerald-600 dark:text-emerald-400'
+      if (rate >= 1) return 'dark-explicit font-semibold text-amber-600 dark:text-amber-400'
       return 'font-semibold text-slate-400'
     },
   },
@@ -687,7 +687,7 @@ const insightBg = (type: string) => {
     case 'trend': return 'bg-teal-50 border-teal-100'
     case 'opportunity': return 'bg-violet-50 border-violet-100'
     case 'warning': return 'bg-amber-50 border-amber-100'
-    default: return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
+    default: return 'dark-explicit bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
   }
 }
 
@@ -853,7 +853,7 @@ function startWithTopic(topic: string, niche?: string) {
     <!-- AN-12: busy overlay while switching period — keeps the old data visible. -->
     <div
       v-if="isRefreshing"
-      class="absolute inset-0 z-overlay flex items-center justify-center rounded-2xl bg-white/50 backdrop-blur-[1px] dark:bg-slate-900/50"
+      class="dark-explicit absolute inset-0 z-overlay flex items-center justify-center rounded-2xl bg-white/50 backdrop-blur-[1px] dark:bg-slate-900/50"
       role="status"
       aria-live="polite"
     >
@@ -863,7 +863,7 @@ function startWithTopic(topic: string, niche?: string) {
          notice so the failure isn't silent. -->
     <div
       v-if="hasStaleError"
-      class="flex items-center gap-3 rounded-xl border border-amber-200/70 bg-amber-50/90 px-3 py-2 text-xs md:text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
+      class="dark-explicit flex items-center gap-3 rounded-xl border border-amber-200/70 bg-amber-50/90 px-3 py-2 text-xs md:text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
       role="alert"
     >
       <AppIcon name="AlertTriangle" size="sm" variant="peach" aria-hidden="true" />
@@ -909,10 +909,10 @@ function startWithTopic(topic: string, niche?: string) {
           :class="insightBg(insight.type)"
         >
           <div class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 mt-0.5" :class="{
-            'bg-teal-100 dark:bg-teal-950/50': insight.type === 'trend',
-            'bg-violet-100 dark:bg-violet-950/50': insight.type === 'opportunity',
-            'bg-amber-100 dark:bg-amber-950/50': insight.type === 'warning',
-            'bg-slate-100 dark:bg-slate-800': insight.type === 'info',
+            'dark-explicit bg-teal-100 dark:bg-teal-950/50': insight.type === 'trend',
+            'dark-explicit bg-violet-100 dark:bg-violet-950/50': insight.type === 'opportunity',
+            'dark-explicit bg-amber-100 dark:bg-amber-950/50': insight.type === 'warning',
+            'dark-explicit bg-slate-100 dark:bg-slate-800': insight.type === 'info',
           }">
             <AppIcon :name="insightIcon(insight.type)" size="sm" :variant="insightVariant(insight.type) as any" />
           </div>
@@ -952,15 +952,15 @@ function startWithTopic(topic: string, niche?: string) {
             :height="220"
           />
           <template #fallback>
-            <div class="rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
-              <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
+            <div class="dark-explicit rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
+              <div class="dark-explicit h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
             </div>
           </template>
         </Suspense>
         <!-- The trend is computed from the ≤20 loaded posts while the
              engagement chart uses server period totals — note the differing
              scopes so the two are not read as the same measure. -->
-        <p class="mt-1.5 px-1 text-[11px] leading-4 text-slate-400 dark:text-slate-500">{{ t('analytics.trendScopeNote') }}</p>
+        <p class="dark-explicit mt-1.5 px-1 text-[11px] leading-4 text-slate-400 dark:text-slate-400">{{ t('analytics.trendScopeNote') }}</p>
       </div>
       <Suspense>
         <EngagementChart
@@ -970,8 +970,8 @@ function startWithTopic(topic: string, niche?: string) {
           :height="220"
         />
         <template #fallback>
-          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
-            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
+          <div class="dark-explicit rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
+            <div class="dark-explicit h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
           </div>
         </template>
       </Suspense>
@@ -993,7 +993,7 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
         <button
           type="button"
-          class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          class="dark-explicit inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
           :disabled="isExportingCsv"
           @click="exportPostsCsv"
         >
@@ -1002,16 +1002,16 @@ function startWithTopic(topic: string, niche?: string) {
         </button>
       </div>
 
-      <div v-if="historicalError" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
+      <div v-if="historicalError" class="dark-explicit mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
         <AppIcon name="AlertTriangle" size="sm" variant="peach" />
         <span class="flex-1">{{ historicalError }}</span>
-      <button type="button" class="min-h-9 rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
+      <button type="button" class="dark-explicit min-h-9 rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
       </div>
       <div v-if="showHistoricalDataAsOf" class="mb-2 text-[11px] text-slate-400" role="status">{{ t('analytics.history.dataAsOf', { time: formatDate(historicalDataAsOf) }) }}</div>
-      <div v-if="historicalSnapshotMismatch" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
+      <div v-if="historicalSnapshotMismatch" class="dark-explicit mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
         <AppIcon name="AlertTriangle" size="sm" variant="peach" />
         <span class="flex-1">{{ t('analytics.history.snapshotMismatch') }}</span>
-        <button type="button" class="min-h-9 rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
+        <button type="button" class="dark-explicit min-h-9 rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
       </div>
 
       <DataTable
@@ -1029,19 +1029,19 @@ function startWithTopic(topic: string, niche?: string) {
         <span>{{ t('analytics.bestPostLegend') }}</span>
       </div>
       <div v-if="tableUsesCanonicalHistory && historicalNotes.length > 10" class="mt-3 flex flex-wrap items-center justify-center gap-2">
-        <button type="button" class="min-h-11 px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" @click="showAllHistorical = !showAllHistorical">
+        <button type="button" class="dark-explicit min-h-11 px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" @click="showAllHistorical = !showAllHistorical">
           <!-- Counts live in the section subtitle above; the button stays an
                action label only. -->
           {{ showAllHistorical ? t('analytics.showLess') : t('analytics.history.showAll') }}
         </button>
-        <button v-if="historicalHasMore" type="button" class="min-h-11 px-4 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-medium text-violet-700 hover:bg-violet-100 transition dark:border-violet-500/40 dark:bg-violet-950/30 dark:text-violet-200" :disabled="historicalLoading" @click="loadMoreHistorical">
+        <button v-if="historicalHasMore" type="button" class="dark-explicit min-h-11 px-4 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-medium text-violet-700 hover:bg-violet-100 transition dark:border-violet-500/40 dark:bg-violet-950/30 dark:text-violet-200" :disabled="historicalLoading" @click="loadMoreHistorical">
           {{ historicalLoading ? t('analytics.refreshing') : t('analytics.history.loadMore') }}
         </button>
       </div>
       <div v-else-if="!tableUsesCanonicalHistory && analyticsStore.posts.length > 10" class="mt-3 flex justify-center">
         <button
           type="button"
-          class="min-h-11 px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+          class="dark-explicit min-h-11 px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
           @click="showAllPosts = !showAllPosts"
         >
           {{ showAllPosts ? t('analytics.showLess') : t('analytics.showAll', { count: analyticsStore.posts.length }) }}
@@ -1083,7 +1083,7 @@ function startWithTopic(topic: string, niche?: string) {
           <span>{{ t('analytics.cost.budgetUsed') }}</span>
           <span>{{ budgetUsedPercent }}%</span>
         </div>
-        <div class="h-2 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
+        <div class="dark-explicit h-2 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
           <div
             class="h-full rounded-full transition-all duration-500"
             :class="budgetUsedPercent > 90 ? 'bg-rose-500' : budgetUsedPercent > 70 ? 'bg-amber-500' : 'bg-emerald-500'"
@@ -1105,7 +1105,7 @@ function startWithTopic(topic: string, niche?: string) {
               <span class="text-xs md:text-sm text-slate-700 font-medium truncate">{{ item.model }}</span>
               <span class="text-xs md:text-sm text-slate-600 tabular-nums">${{ item.cost.toFixed(2) }}</span>
             </div>
-            <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
+            <div class="dark-explicit h-1.5 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
               <div
                 class="h-full rounded-full bg-gradient-to-r from-rose-400 to-rose-500 transition-all duration-500 group-hover:from-rose-500 group-hover:to-rose-600"
                 :style="{ width: `${item.percent}%` }"
@@ -1146,41 +1146,41 @@ function startWithTopic(topic: string, niche?: string) {
       @keydown.esc="closePostDetail"
     >
       <div class="absolute inset-0 bg-black/40" @click="closePostDetail" />
-      <div class="relative w-full max-w-md h-full overflow-y-auto bg-white dark:bg-slate-900 shadow-xl p-4 md:p-6 space-y-4">
+      <div class="dark-explicit relative w-full max-w-md h-full overflow-y-auto bg-white dark:bg-slate-900 shadow-xl p-4 md:p-6 space-y-4">
         <div class="flex items-start justify-between gap-3">
-          <h2 class="text-base md:text-lg font-semibold text-slate-800 dark:text-slate-100 truncate">{{ selectedPost.title || t('analytics.detail.untitled') }}</h2>
-          <button type="button" class="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 min-h-11 min-w-[44px]" :aria-label="t('common.close')" @click="closePostDetail">
+          <h2 class="dark-explicit text-base md:text-lg font-semibold text-slate-800 dark:text-slate-100 truncate">{{ selectedPost.title || t('analytics.detail.untitled') }}</h2>
+          <button type="button" class="dark-explicit shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 min-h-11 min-w-[44px]" :aria-label="t('common.close')" @click="closePostDetail">
             <AppIcon name="X" size="sm" variant="muted" />
           </button>
         </div>
         <dl v-if="showDetailMetrics" class="grid grid-cols-2 gap-3 text-sm">
-          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+          <div class="dark-explicit rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.views') }}</dt>
-            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.views_display }}</dd>
+            <dd class="dark-explicit font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.views_display }}</dd>
           </div>
-          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+          <div class="dark-explicit rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.likes') }}</dt>
-            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.likes }}</dd>
+            <dd class="dark-explicit font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.likes }}</dd>
           </div>
-          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+          <div class="dark-explicit rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.comments') }}</dt>
-            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.comments }}</dd>
+            <dd class="dark-explicit font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.comments }}</dd>
           </div>
-          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+          <div class="dark-explicit rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.collects') }}</dt>
-            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.collects }}</dd>
+            <dd class="dark-explicit font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.collects }}</dd>
           </div>
-          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+          <div class="dark-explicit rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.shares') }}</dt>
-            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.shares }}</dd>
+            <dd class="dark-explicit font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.shares }}</dd>
           </div>
-          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+          <div class="dark-explicit rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.engagementRate') }}</dt>
-            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.engagement_rate_display }}</dd>
+            <dd class="dark-explicit font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.engagement_rate_display }}</dd>
           </div>
-          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+          <div class="dark-explicit rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.publishedAt') }}</dt>
-            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.published_at_display }}</dd>
+            <dd class="dark-explicit font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.published_at_display }}</dd>
           </div>
         </dl>
         <CreatorNoteQualityPanel
@@ -1191,7 +1191,7 @@ function startWithTopic(topic: string, niche?: string) {
         />
         <div
           v-else-if="selectedPost?.source === 'workflow'"
-          class="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-400"
+          class="dark-explicit rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-400"
           role="status"
         >
           {{ t('analytics.detail.noLinkedNote') }}

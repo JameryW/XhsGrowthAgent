@@ -15,7 +15,7 @@ const statusStyles = computed(() => ({
     animate: false,
     text: t('connection.connected'),
     borderClass: "border-neon-cyan/20",
-    bgClass: "bg-white dark:bg-slate-900",
+    bgClass: "dark-explicit bg-white dark:bg-slate-900",
     textClass: "text-neon-cyan",
   },
   connecting: {
@@ -24,7 +24,7 @@ const statusStyles = computed(() => ({
     animate: true,
     text: t('connection.connecting'),
     borderClass: "border-neon-peach/20",
-    bgClass: "bg-white dark:bg-slate-900",
+    bgClass: "dark-explicit bg-white dark:bg-slate-900",
     textClass: "text-neon-peach",
   },
   reconnecting: {
@@ -33,7 +33,7 @@ const statusStyles = computed(() => ({
     animate: true,
     text: t('connection.reconnecting'),
     borderClass: "border-neon-peach/20",
-    bgClass: "bg-white dark:bg-slate-900",
+    bgClass: "dark-explicit bg-white dark:bg-slate-900",
     textClass: "text-neon-peach",
   },
   disconnected: {
@@ -42,7 +42,7 @@ const statusStyles = computed(() => ({
     animate: false,
     text: t('connection.disconnected'),
     borderClass: "border-neon-pink/20",
-    bgClass: "bg-white dark:bg-slate-900",
+    bgClass: "dark-explicit bg-white dark:bg-slate-900",
     textClass: "text-neon-pink",
   },
 }))

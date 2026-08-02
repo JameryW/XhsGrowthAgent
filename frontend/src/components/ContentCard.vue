@@ -81,7 +81,7 @@ const styles = {
 </script>
 
 <template>
-  <div :class="['content-card-surface rounded-xl p-5 relative overflow-hidden bg-white/90 backdrop-blur-sm border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 dark:bg-slate-900/80 dark:border-slate-700/50', styles[props.variant].border]" role="region" :aria-label="`${title} ${t('common.moduleOutput')}`">
+  <div :class="['content-card-surface dark-explicit rounded-xl p-5 relative overflow-hidden bg-white/90 backdrop-blur-sm border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 dark:bg-slate-900/80 dark:border-slate-700/50', styles[props.variant].border]" role="region" :aria-label="`${title} ${t('common.moduleOutput')}`">
     <!-- Header -->
     <div class="flex items-center gap-3 mb-4">
       <div :class="['w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-sm', styles[props.variant].iconBg]" aria-hidden="true">
@@ -98,7 +98,7 @@ const styles = {
     </div>
 
     <!-- Content -->
-    <div v-if="hasContent" :class="['bg-slate-50 rounded-lg p-4 border-l-2 dark:bg-slate-800/70', styles[props.variant].accent]" role="status" aria-live="polite">
+    <div v-if="hasContent" :class="['bg-slate-50 dark-explicit rounded-lg p-4 border-l-2 dark:bg-slate-800/70', styles[props.variant].accent]" role="status" aria-live="polite">
       <div class="text-xs text-slate-600 space-y-2">
         <template v-for="(value, key) in props.content" :key="key">
           <!-- Simple values (string, number, boolean) -->
@@ -113,7 +113,7 @@ const styles = {
             <span :class="styles[props.variant].text" aria-hidden="true">▸</span>
             <span class="text-slate-400 shrink-0">{{ formatKey(String(key)) }}:</span>
             <div class="flex flex-wrap gap-1">
-              <span v-for="(item, i) in value" :key="i" :class="['px-1.5 py-0.5 rounded bg-white border text-[11px] dark:bg-slate-900/80', styles[props.variant].border, styles[props.variant].textLight]">{{ item }}</span>
+              <span v-for="(item, i) in value" :key="i" :class="['px-1.5 py-0.5 dark-explicit rounded bg-white border text-[11px] dark:bg-slate-900/80', styles[props.variant].border, styles[props.variant].textLight]">{{ item }}</span>
             </div>
           </div>
 
@@ -125,7 +125,7 @@ const styles = {
               <span class="text-slate-300 text-[11px]">({{ value.length }})</span>
             </div>
             <div class="ml-4 space-y-1">
-              <div v-for="(item, i) in value.slice(0, 5)" :key="i" class="bg-white rounded-md px-3 py-2 border border-slate-100 dark:bg-slate-900/80 dark:border-slate-700/50">
+              <div v-for="(item, i) in value.slice(0, 5)" :key="i" class="dark-explicit bg-white rounded-md px-3 py-2 border border-slate-100 dark:bg-slate-900/80 dark:border-slate-700/50">
                 <div class="flex flex-wrap gap-x-3 gap-y-0.5">
                   <span v-for="(v, k) in item" :key="k" class="text-[11px]">
                     <span class="text-slate-400">{{ formatKey(String(k)) }}:</span>
@@ -155,7 +155,7 @@ const styles = {
     </div>
 
     <!-- Loading state -->
-    <div v-else class="bg-slate-50 rounded-lg p-4 border-l-2 border-slate-200 dark:bg-slate-800/70 dark:border-slate-600" role="status" aria-live="polite" :aria-label="t('common.loadingState')">
+    <div v-else class="dark-explicit bg-slate-50 rounded-lg p-4 border-l-2 border-slate-200 dark:bg-slate-800/70 dark:border-slate-600" role="status" aria-live="polite" :aria-label="t('common.loadingState')">
       <div class="h-4 w-full rounded bg-slate-200 animate-pulse" />
     </div>
   </div>

@@ -358,13 +358,13 @@ function onQrConfirmed() {
     </div>
 
     <!-- Account list + creation -->
-    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-700/55">
+    <div class="dark-explicit rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">{{ t('settings.accounts') }}</h3>
           <button
             type="button"
-            class="min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            class="dark-explicit min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
             :title="t('settings.xhsAccounts.refreshLoginStatus')"
             @click="refreshAllLoginStatuses"
           >
@@ -387,7 +387,7 @@ function onQrConfirmed() {
             v-model="newAccountName"
             type="text"
             :placeholder="t('settings.accountNamePlaceholder')"
-            class="px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none w-40 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+            class="dark-explicit px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none w-40 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
           />
           <NeonButton variant="pink" size="sm" :loading="isCreating" type="submit">
             <AppIcon name="Plus" size="xs" variant="white" />
@@ -401,9 +401,9 @@ function onQrConfirmed() {
       </div>
 
       <div v-for="account in store.accounts" :key="account.id"
-        class="rounded-lg border p-3 flex items-center gap-3 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60"
+        class="dark-explicit rounded-lg border p-3 flex items-center gap-3 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60"
         :class="editingAccountId === account.id
-          ? 'border-rose-200 bg-rose-50/50 shadow-sm'
+          ? 'border-rose-200 bg-rose-50/50 shadow-sm dark:border-rose-400/40 dark:bg-rose-900/50'
           : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50'"
         role="button"
         tabindex="0"

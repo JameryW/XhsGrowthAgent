@@ -31,28 +31,28 @@ const isPresentational = computed(() => Boolean(props.variant))
 // Class maps mirror ErrorCard.vue so presentational render matches the existing
 // error surfaces across the app.
 const ERROR_BG_CLASSES: Record<ErrorType, string> = {
-  api: 'bg-rose-50/80 border-rose-200/50 dark:bg-rose-950/40 dark:border-rose-500/30',
-  timeout: 'bg-amber-50/80 border-amber-200/50 dark:bg-amber-950/40 dark:border-amber-500/30',
-  unknown: 'bg-violet-50/80 border-violet-200/50 dark:bg-violet-950/40 dark:border-violet-500/30',
-  retry_success: 'bg-green-50/80 border-green-200/50 dark:bg-emerald-950/40 dark:border-emerald-500/30',
+  api: 'bg-rose-50/80 border-rose-200/50 dark:bg-rose-950/40 dark:border-rose-500/30 dark-explicit',
+  timeout: 'bg-amber-50/80 border-amber-200/50 dark:bg-amber-950/40 dark:border-amber-500/30 dark-explicit',
+  unknown: 'bg-violet-50/80 border-violet-200/50 dark:bg-violet-950/40 dark:border-violet-500/30 dark-explicit',
+  retry_success: 'bg-green-50/80 border-green-200/50 dark:bg-emerald-950/40 dark:border-emerald-500/30 dark-explicit',
 }
 const ERROR_ICON_BG_CLASSES: Record<ErrorType, string> = {
-  api: 'bg-rose-100 dark:bg-rose-900/50',
-  timeout: 'bg-amber-100 dark:bg-amber-900/50',
-  unknown: 'bg-violet-100 dark:bg-violet-900/50',
-  retry_success: 'bg-green-100 dark:bg-emerald-900/50',
+  api: 'bg-rose-100 dark:bg-rose-900/50 dark-explicit',
+  timeout: 'bg-amber-100 dark:bg-amber-900/50 dark-explicit',
+  unknown: 'bg-violet-100 dark:bg-violet-900/50 dark-explicit',
+  retry_success: 'bg-green-100 dark:bg-emerald-900/50 dark-explicit',
 }
 const ERROR_TITLE_CLASSES: Record<ErrorType, string> = {
-  api: 'text-rose-700 dark:text-rose-300',
-  timeout: 'text-amber-700 dark:text-amber-300',
-  unknown: 'text-violet-700 dark:text-violet-300',
-  retry_success: 'text-green-700 dark:text-emerald-300',
+  api: 'text-rose-700 dark:text-rose-300 dark-explicit',
+  timeout: 'text-amber-700 dark:text-amber-300 dark-explicit',
+  unknown: 'text-violet-700 dark:text-violet-300 dark-explicit',
+  retry_success: 'text-green-700 dark:text-emerald-300 dark-explicit',
 }
 const ERROR_MESSAGE_CLASSES: Record<ErrorType, string> = {
-  api: 'text-rose-600 dark:text-rose-300',
-  timeout: 'text-amber-600 dark:text-amber-300',
-  unknown: 'text-violet-600 dark:text-violet-300',
-  retry_success: 'text-green-600 dark:text-emerald-300',
+  api: 'text-rose-600 dark:text-rose-300 dark-explicit',
+  timeout: 'text-amber-600 dark:text-amber-300 dark-explicit',
+  unknown: 'text-violet-600 dark:text-violet-300 dark-explicit',
+  retry_success: 'text-green-600 dark:text-emerald-300 dark-explicit',
 }
 const ERROR_ICON_NAME: Record<ErrorType, string> = {
   api: 'AlertCircle',
@@ -159,7 +159,7 @@ const shouldRender = computed(() => (isPresentational.value ? true : hasError.va
         <p v-if="!isPresentational" class="text-red-500/70 text-xs mb-3">{{ t('errorState.currentPhase', { phase: currentPhase }) }}</p>
 
         <!-- Recovery suggestions (legacy mode only) -->
-        <div v-if="!isPresentational" class="mt-3 p-3 rounded-lg bg-white/80 border border-red-100 dark:bg-slate-900/85 dark:border-slate-700/50">
+        <div v-if="!isPresentational" class="mt-3 p-3 rounded-lg bg-white/80 border border-red-100 dark:bg-slate-900/85 dark:border-slate-700/50 dark-explicit">
           <p class="text-xs text-red-600 font-medium mb-2">{{ t('errorState.suggestions') }}</p>
           <ul class="space-y-1">
             <li v-for="suggestion in recoverySuggestions" :key="suggestion" class="flex items-center gap-2 text-xs text-red-500">

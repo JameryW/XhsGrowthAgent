@@ -63,9 +63,9 @@ function statusLabel(status: MetricStatus): string {
 }
 
 function statusClasses(status: MetricStatus): string {
-  if (status === 'passing') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200'
-  if (status === 'overBudget') return 'bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200'
-  return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+  if (status === 'passing') return 'dark-explicit bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200'
+  if (status === 'overBudget') return 'dark-explicit bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200'
+  return 'dark-explicit bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
 }
 
 function eventLabel(eventName: string): string {
@@ -120,38 +120,38 @@ onUnmounted(() => abortController?.abort())
   <div class="space-y-6">
     <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
       <div>
-        <h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100">{{ t('settings.publicTelemetry.title') }}</h2>
-        <p class="mt-1 text-xs leading-5 text-slate-400 dark:text-slate-500">{{ t('settings.publicTelemetry.subtitle') }}</p>
+        <h2 class="dark-explicit text-lg font-semibold text-slate-800 dark:text-slate-100">{{ t('settings.publicTelemetry.title') }}</h2>
+        <p class="dark-explicit mt-1 text-xs leading-5 text-slate-400 dark:text-slate-500">{{ t('settings.publicTelemetry.subtitle') }}</p>
       </div>
       <div class="flex items-center gap-2">
         <label class="sr-only" for="public-telemetry-days">{{ t('settings.publicTelemetry.period') }}</label>
-        <select id="public-telemetry-days" v-model.number="days" class="min-h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+        <select id="public-telemetry-days" v-model.number="days" class="dark-explicit min-h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
           <option :value="1">{{ t('settings.publicTelemetry.days', { count: 1 }) }}</option>
           <option :value="7">{{ t('settings.publicTelemetry.days', { count: 7 }) }}</option>
           <option :value="14">{{ t('settings.publicTelemetry.days', { count: 14 }) }}</option>
           <option :value="30">{{ t('settings.publicTelemetry.days', { count: 30 }) }}</option>
         </select>
-        <button type="button" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" :aria-label="t('settings.publicTelemetry.refresh')" :title="t('settings.publicTelemetry.refresh')" :disabled="loading" @click="load">
+        <button type="button" class="dark-explicit inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" :aria-label="t('settings.publicTelemetry.refresh')" :title="t('settings.publicTelemetry.refresh')" :disabled="loading" @click="load">
           <AppIcon name="RefreshCw" size="xs" variant="muted" :class="loading ? 'animate-spin' : ''" aria-hidden="true" />
         </button>
       </div>
     </div>
 
     <div v-if="loading" class="grid gap-3 sm:grid-cols-3" aria-busy="true">
-      <div v-for="index in 3" :key="index" class="h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+      <div v-for="index in 3" :key="index" class="dark-explicit h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
     </div>
-    <div v-else-if="loadError" class="rounded-xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-400/20 dark:bg-rose-400/10" role="alert">
+    <div v-else-if="loadError" class="dark-explicit rounded-xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-400/20 dark:bg-rose-400/10" role="alert">
       <p class="text-sm font-medium text-rose-800 dark:text-rose-100">{{ t('settings.publicTelemetry.loadFailed') }}</p>
       <button type="button" class="mt-4 min-h-11 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900" @click="load">{{ t('common.retry') }}</button>
     </div>
     <template v-else>
       <div class="grid gap-3 sm:grid-cols-3">
-        <div class="rounded-xl border border-slate-200/70 bg-white/90 p-4 dark:border-slate-700/60 dark:bg-slate-900/80">
-          <p class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ t('settings.publicTelemetry.totalEvents') }}</p>
-          <p class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-50">{{ formatNumber(totalEvents) }}</p>
+        <div class="dark-explicit rounded-xl border border-slate-200/70 bg-white/90 p-4 dark:border-slate-700/60 dark:bg-slate-900/80">
+          <p class="dark-explicit text-xs font-medium text-slate-500 dark:text-slate-400">{{ t('settings.publicTelemetry.totalEvents') }}</p>
+          <p class="dark-explicit mt-2 text-2xl font-bold text-slate-900 dark:text-slate-50">{{ formatNumber(totalEvents) }}</p>
           <p class="mt-1 text-xs text-slate-400">{{ t('settings.publicTelemetry.measured', { count: formatNumber(measuredEvents) }) }}</p>
         </div>
-        <div data-testid="first-result-budget-card" class="rounded-xl border border-teal-200/70 bg-teal-50/70 p-4 dark:border-teal-400/20 dark:bg-teal-400/10">
+        <div data-testid="first-result-budget-card" class="dark-explicit rounded-xl border border-teal-200/70 bg-teal-50/70 p-4 dark:border-teal-400/20 dark:bg-teal-400/10">
           <div class="flex items-start justify-between gap-2">
             <p class="text-xs font-medium text-teal-800 dark:text-teal-200">{{ t('settings.publicTelemetry.firstResultP75') }}</p>
             <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="statusClasses(firstResultStatus)" role="status">{{ statusLabel(firstResultStatus) }}</span>
@@ -159,7 +159,7 @@ onUnmounted(() => abortController?.abort())
           <p class="mt-2 text-2xl font-bold text-teal-900 dark:text-teal-50">{{ formatDuration(firstResultP75) }}</p>
           <p class="mt-1 text-xs text-teal-700/70 dark:text-teal-200/70">{{ t('settings.publicTelemetry.budget', { value: formatDuration(FIRST_RESULT_BUDGET_MS) }) }}</p>
         </div>
-        <div data-testid="cached-select-budget-card" class="rounded-xl border border-violet-200/70 bg-violet-50/70 p-4 dark:border-violet-400/20 dark:bg-violet-400/10">
+        <div data-testid="cached-select-budget-card" class="dark-explicit rounded-xl border border-violet-200/70 bg-violet-50/70 p-4 dark:border-violet-400/20 dark:bg-violet-400/10">
           <div class="flex items-start justify-between gap-2">
             <p class="text-xs font-medium text-violet-800 dark:text-violet-200">{{ t('settings.publicTelemetry.cachedSelectP75') }}</p>
             <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="statusClasses(cachedSelectStatus)" role="status">{{ statusLabel(cachedSelectStatus) }}</span>
@@ -169,14 +169,14 @@ onUnmounted(() => abortController?.abort())
         </div>
       </div>
 
-      <div class="overflow-hidden rounded-xl border border-slate-200/70 bg-white/90 dark:border-slate-700/60 dark:bg-slate-900/80">
-        <div class="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{{ t('settings.publicTelemetry.breakdown') }}</h3>
+      <div class="dark-explicit overflow-hidden rounded-xl border border-slate-200/70 bg-white/90 dark:border-slate-700/60 dark:bg-slate-900/80">
+        <div class="dark-explicit border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <h3 class="dark-explicit text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{{ t('settings.publicTelemetry.breakdown') }}</h3>
         </div>
         <div v-if="!visibleRows.length" class="px-4 py-10 text-center text-sm text-slate-400">{{ t('settings.publicTelemetry.empty') }}</div>
         <div v-else class="overflow-x-auto">
           <table class="min-w-full text-left text-sm">
-            <thead class="bg-slate-50/80 text-xs text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
+            <thead class="dark-explicit bg-slate-50/80 text-xs text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
               <tr>
                 <th class="px-4 py-3 font-medium">{{ t('settings.publicTelemetry.event') }}</th>
                 <th class="px-4 py-3 font-medium">{{ t('settings.publicTelemetry.dimensions') }}</th>
@@ -186,17 +186,17 @@ onUnmounted(() => abortController?.abort())
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-              <tr v-for="row in visibleRows" :key="row.event_name + '-' + dimensions(row)" class="text-slate-700 dark:text-slate-200">
+              <tr v-for="row in visibleRows" :key="row.event_name + '-' + dimensions(row)" class="dark-explicit text-slate-700 dark:text-slate-200">
                 <td class="whitespace-nowrap px-4 py-3 font-medium">{{ eventLabel(row.event_name) }}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{{ dimensions(row) }}</td>
+                <td class="dark-explicit whitespace-nowrap px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{{ dimensions(row) }}</td>
                 <td class="whitespace-nowrap px-4 py-3 text-right">{{ formatNumber(row.event_count) }}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">{{ formatDuration(row.p50_duration_ms) }}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">{{ formatDuration(row.p75_duration_ms) }}</td>
+                <td class="dark-explicit whitespace-nowrap px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">{{ formatDuration(row.p50_duration_ms) }}</td>
+                <td class="dark-explicit whitespace-nowrap px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">{{ formatDuration(row.p75_duration_ms) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p v-if="rows.length > visibleRows.length" class="border-t border-slate-100 px-4 py-3 text-xs text-slate-400 dark:border-slate-800">{{ t('settings.publicTelemetry.moreRows', { count: rows.length - visibleRows.length }) }}</p>
+        <p v-if="rows.length > visibleRows.length" class="dark-explicit border-t border-slate-100 px-4 py-3 text-xs text-slate-400 dark:border-slate-800">{{ t('settings.publicTelemetry.moreRows', { count: rows.length - visibleRows.length }) }}</p>
       </div>
     </template>
   </div>

@@ -89,10 +89,10 @@ function ariaSortFor(key: string): 'ascending' | 'descending' | 'none' {
 </script>
 
 <template>
-  <div class="rounded-xl overflow-x-auto relative bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55" role="table" :aria-label="t('dataTable.title')">
+  <div class="dark-explicit rounded-xl overflow-x-auto relative bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55" role="table" :aria-label="t('dataTable.title')">
     <!-- Header -->
     <div
-      class="grid gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 bg-slate-50 border-b border-slate-100 text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium min-w-[500px] dark:bg-slate-800/80 dark:border-slate-700/50 dark:text-slate-400"
+      class="dark-explicit grid gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 bg-slate-50 border-b border-slate-100 text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium min-w-[500px] dark:bg-slate-800/80 dark:border-slate-700/50 dark:text-slate-400"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="rowgroup"
     >
@@ -120,7 +120,7 @@ function ariaSortFor(key: string): 'ascending' | 'descending' | 'none' {
 
     <!-- Empty state -->
     <div v-if="!hasData" class="p-10 text-center flex flex-col items-center gap-3" role="status" aria-live="polite" :aria-label="t('dataTable.noData')">
-      <div class="w-14 h-14 rounded-xl bg-slate-50 flex items-center justify-center dark:bg-slate-800" aria-hidden="true">
+      <div class="dark-explicit w-14 h-14 rounded-xl bg-slate-50 flex items-center justify-center dark:bg-slate-800" aria-hidden="true">
         <AppIcon name="Inbox" size="xl" variant="cyan" />
       </div>
       <div class="text-sm text-slate-600 font-medium">{{ t('dataTable.noData') }}</div>

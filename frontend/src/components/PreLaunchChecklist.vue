@@ -132,8 +132,8 @@ const statusBg = (status: string) => {
     case 'ok': return 'bg-emerald-50 border-emerald-100'
     case 'warning': return 'bg-amber-50 border-amber-100'
     case 'error': return 'bg-rose-50 border-rose-100'
-    case 'disabled': return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
-    default: return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
+    case 'disabled': return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50 dark-explicit'
+    default: return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50 dark-explicit'
   }
 }
 
@@ -176,7 +176,7 @@ defineExpose({ readiness })
 
     <!-- Loading state -->
     <div v-if="isLoading" class="p-4 space-y-3">
-      <div v-for="i in 4" :key="i" class="h-12 rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
+      <div v-for="i in 4" :key="i" class="h-12 rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800 dark-explicit" />
     </div>
 
     <!-- Error state -->
@@ -199,7 +199,7 @@ defineExpose({ readiness })
       <div
         v-for="(item, idx) in checklistItems"
         :key="item.id"
-        class="border-slate-100 px-3 py-2 md:px-4 md:py-2.5 hover:bg-slate-50/50 transition-colors dark:border-slate-700/50 dark:hover:bg-slate-800/70"
+        class="border-slate-100 px-3 py-2 md:px-4 md:py-2.5 hover:bg-slate-50/50 transition-colors dark:border-slate-700/50 dark:hover:bg-slate-800/70 dark-explicit"
         :class="{
           'border-b': idx < checklistItems.length - 1,
           'sm:border-b-0': idx >= checklistItems.length - 2,
@@ -228,7 +228,7 @@ defineExpose({ readiness })
               </span>
               <span
                 v-else
-                class="px-1 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 shrink-0 dark:bg-slate-800 dark:text-slate-400"
+                class="px-1 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 shrink-0 dark:bg-slate-800 dark:text-slate-400 dark-explicit"
               >
                 {{ t('checklist.optional') }}
               </span>

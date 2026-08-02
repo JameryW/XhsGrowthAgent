@@ -67,16 +67,16 @@ async function copyFeedbackTemplate() {
       </template>
     </PageHeader>
 
-    <div class="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200/60 bg-white/80 px-3 shadow-sm backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-900/70" role="group" aria-labelledby="help-title">
+    <div class="dark-explicit flex gap-2 overflow-x-auto rounded-2xl border border-slate-200/60 bg-white/80 px-3 shadow-sm backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-900/70" role="group" aria-labelledby="help-title">
         <button
           class="min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium transition-colors"
-          :class="activeSection === 'faq' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-300' : 'border-transparent text-slate-400 hover:text-slate-600'"
+          :class="activeSection === 'faq' ? 'border-cyan-500 dark-explicit text-cyan-700 dark:text-cyan-300' : 'border-transparent dark-explicit text-slate-400 hover:text-slate-600'"
           :aria-pressed="activeSection === 'faq'"
           @click="selectSection('faq')"
         >{{ t('help.faq') }}</button>
         <button
           class="min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium transition-colors"
-          :class="activeSection === 'feedback' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-300' : 'border-transparent text-slate-400 hover:text-slate-600'"
+          :class="activeSection === 'feedback' ? 'border-cyan-500 dark-explicit text-cyan-700 dark:text-cyan-300' : 'border-transparent dark-explicit text-slate-400 hover:text-slate-600'"
           :aria-pressed="activeSection === 'feedback'"
           @click="selectSection('feedback')"
         >{{ t('help.feedback') }}</button>
@@ -87,12 +87,12 @@ async function copyFeedbackTemplate() {
         <!-- Kept for the section landmark only; the active tab already says
              "常见问题" visibly. -->
         <h2 id="faq-title" class="sr-only">{{ t('help.faqTitle') }}</h2>
-        <button class="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm text-violet-600 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/40" @click="openShortcuts">
+        <button class="dark-explicit inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm text-violet-600 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/40" @click="openShortcuts">
           <AppIcon name="Keyboard" size="sm" variant="purple" aria-hidden="true" />
           {{ t('help.openShortcuts') }}
         </button>
       </div>
-      <details v-for="item in faqItems" :key="item.question" class="group rounded-xl border border-slate-200/60 bg-white/90 p-4 shadow-sm dark:border-slate-700/60 dark:bg-slate-900/75">
+      <details v-for="item in faqItems" :key="item.question" class="dark-explicit group rounded-xl border border-slate-200/60 bg-white/90 p-4 shadow-sm dark:border-slate-700/60 dark:bg-slate-900/75">
         <summary class="cursor-pointer list-none pr-6 text-sm font-medium text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50">
           <span class="flex items-center justify-between gap-3">
             {{ t(item.question) }}
@@ -103,13 +103,13 @@ async function copyFeedbackTemplate() {
       </details>
     </section>
 
-    <section v-else class="rounded-2xl border border-slate-200/60 bg-white/90 p-5 shadow-sm md:p-7 dark:border-slate-700/60 dark:bg-slate-900/75" aria-labelledby="feedback-title">
+    <section v-else class="dark-explicit rounded-2xl border border-slate-200/60 bg-white/90 p-5 shadow-sm md:p-7 dark:border-slate-700/60 dark:bg-slate-900/75" aria-labelledby="feedback-title">
       <h2 id="feedback-title" class="text-base font-semibold text-slate-700">{{ t('help.feedbackTitle') }}</h2>
       <p class="mt-1 text-sm text-slate-500">{{ t('help.feedbackDesc') }}</p>
       <textarea
         v-model="feedback"
         rows="6"
-        class="mt-4 w-full resize-y rounded-xl border-2 border-slate-100 bg-slate-50/60 p-3 text-sm text-slate-700 outline-none transition focus:border-cyan-400/50 focus:bg-white dark:border-slate-600/50 dark:bg-slate-800/70 dark:focus:border-cyan-400/40 dark:focus:bg-slate-900"
+        class="dark-explicit mt-4 w-full resize-y rounded-xl border-2 border-slate-100 bg-slate-50/60 p-3 text-sm text-slate-700 outline-none transition focus:border-cyan-400/50 focus:bg-white dark:border-slate-600/50 dark:bg-slate-800/70 dark:focus:border-cyan-400/40 dark:focus:bg-slate-900"
         :placeholder="t('help.feedbackPlaceholder')"
         :aria-label="t('help.feedbackLabel')"
       />

@@ -43,17 +43,17 @@ const bestVersion = computed(() => {
 
 const gapSeverityClass = (severity: string): string => {
   switch (severity) {
-    case 'high': return 'text-rose-500 border-rose-300 dark:text-rose-300 dark:border-rose-500/30 dark:bg-rose-950/40'
-    case 'medium': return 'text-amber-500 border-amber-300 dark:text-amber-300 dark:border-amber-500/30 dark:bg-amber-950/40'
-    case 'low': return 'text-slate-400 border-slate-200 dark:text-slate-400 dark:border-slate-600/50 dark:bg-slate-800/50'
-    default: return 'text-slate-400 border-slate-200 dark:text-slate-400 dark:border-slate-600/50 dark:bg-slate-800/50'
+    case 'high': return 'dark-explicit text-rose-500 border-rose-300 dark:text-rose-300 dark:border-rose-500/30 dark:bg-rose-950/40'
+    case 'medium': return 'dark-explicit text-amber-500 border-amber-300 dark:text-amber-300 dark:border-amber-500/30 dark:bg-amber-950/40'
+    case 'low': return 'dark-explicit text-slate-400 border-slate-200 dark:text-slate-400 dark:border-slate-600/50 dark:bg-slate-800/50'
+    default: return 'dark-explicit text-slate-400 border-slate-200 dark:text-slate-400 dark:border-slate-600/50 dark:bg-slate-800/50'
   }
 }
 
 const suggestionPriorityClass = (priority: number): string => {
-  if (priority >= 8) return 'bg-rose-50 border-rose-300 dark:bg-rose-950/40 dark:border-rose-500/30'
-  if (priority >= 5) return 'bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-500/30'
-  return 'bg-slate-50 border-slate-200 dark:bg-slate-800/70 dark:border-slate-600/50'
+  if (priority >= 8) return 'dark-explicit bg-rose-50 border-rose-300 dark:bg-rose-950/40 dark:border-rose-500/30'
+  if (priority >= 5) return 'dark-explicit bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-500/30'
+  return 'dark-explicit bg-slate-50 border-slate-200 dark:bg-slate-800/70 dark:border-slate-600/50'
 }
 
 // Actions
@@ -75,13 +75,13 @@ function handleConfirm() {
 
 function getVersionTypeColor(type: string): string {
   switch (type) {
-    case 'A': return 'border-teal-200 bg-teal-50 text-teal-600 dark:border-teal-500/30 dark:bg-teal-950/40 dark:text-teal-300'
-    case 'B': return 'border-cyan-200 bg-cyan-50 text-cyan-600 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300'
-    case 'C': return 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/30 dark:bg-rose-950/40 dark:text-rose-300'
-    case 'style_a': return 'border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300'
-    case 'style_b': return 'border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300'
-    case 'style_c': return 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-300'
-    default: return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-600/50 dark:bg-slate-800/70 dark:text-slate-300'
+    case 'A': return 'dark-explicit border-teal-200 bg-teal-50 text-teal-600 dark:border-teal-500/30 dark:bg-teal-950/40 dark:text-teal-300'
+    case 'B': return 'dark-explicit border-cyan-200 bg-cyan-50 text-cyan-600 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300'
+    case 'C': return 'dark-explicit border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/30 dark:bg-rose-950/40 dark:text-rose-300'
+    case 'style_a': return 'dark-explicit border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300'
+    case 'style_b': return 'dark-explicit border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300'
+    case 'style_c': return 'dark-explicit border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-300'
+    default: return 'dark-explicit border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-600/50 dark:bg-slate-800/70 dark:text-slate-300'
   }
 }
 
@@ -95,11 +95,11 @@ function getCardClass(version: ContentVersion): string[] {
   ]
 
   if (isSelected) {
-    classes.push('border-teal-400 bg-teal-50/80 scale-[1.02] dark:border-teal-500/60 dark:bg-teal-950/40', 'shadow-lg shadow-teal-500/20', 'ring-2 ring-teal-400/30')
+    classes.push('dark-explicit border-teal-400 bg-teal-50/80 scale-[1.02] dark:border-teal-500/60 dark:bg-teal-950/40', 'shadow-lg shadow-teal-500/20', 'ring-2 ring-teal-400/30')
   } else if (isBest) {
-    classes.push('border-amber-300 bg-amber-50/50 hover:border-amber-400 hover:bg-amber-50/80 dark:border-amber-500/40 dark:bg-amber-950/30 dark:hover:border-amber-500/60 dark:hover:bg-amber-950/50', 'hover:scale-[1.01]', 'ring-1 ring-amber-300/20')
+    classes.push('dark-explicit border-amber-300 bg-amber-50/50 hover:border-amber-400 hover:bg-amber-50/80 dark:border-amber-500/40 dark:bg-amber-950/30 dark:hover:border-amber-500/60 dark:hover:bg-amber-950/50', 'hover:scale-[1.01]', 'ring-1 ring-amber-300/20')
   } else {
-    classes.push('border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50', 'hover:scale-[1.01]')
+    classes.push('dark-explicit border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50', 'hover:scale-[1.01]')
   }
 
   return classes
@@ -109,7 +109,7 @@ function getCardClass(version: ContentVersion): string[] {
 <template>
   <div class="space-y-6">
     <!-- Optimization Analysis Summary -->
-    <div v-if="props.analysis" class="rounded-xl p-5 bg-white/90 backdrop-blur-sm border border-violet-200/50 dark:bg-slate-900/90 dark:border-violet-500/25">
+    <div v-if="props.analysis" class="dark-explicit rounded-xl p-5 bg-white/90 backdrop-blur-sm border border-violet-200/50 dark:bg-slate-900/90 dark:border-violet-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
           <AppIcon name="Scan" size="md" variant="white" :aria-label="t('versionCompare.analysisReport')" />
@@ -160,7 +160,7 @@ function getCardClass(version: ContentVersion): string[] {
       </div>
 
       <!-- Viral Patterns -->
-      <div v-if="props.analysis.viral_patterns.length > 0" class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/60">
+      <div v-if="props.analysis.viral_patterns.length > 0" class="dark-explicit mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/60">
         <h4 class="text-xs text-slate-500 font-medium mb-2">{{ t('versionCompare.viralPatterns') }}</h4>
         <div class="flex flex-wrap gap-2">
           <span
@@ -175,7 +175,7 @@ function getCardClass(version: ContentVersion): string[] {
     </div>
 
     <!-- Version Comparison -->
-    <div class="rounded-xl p-5 bg-white/90 backdrop-blur-sm border border-teal-200/50 dark:bg-slate-900/90 dark:border-teal-500/25">
+    <div class="dark-explicit rounded-xl p-5 bg-white/90 backdrop-blur-sm border border-teal-200/50 dark:bg-slate-900/90 dark:border-teal-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
           <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('versionCompare.versionComparison')" />
@@ -185,7 +185,7 @@ function getCardClass(version: ContentVersion): string[] {
           <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('versionCompare.chooseVersion') }}</div>
         </div>
         <!-- Best recommendation badge -->
-        <div v-if="bestVersion" class="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 text-xs font-medium flex items-center gap-1.5 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300">
+        <div v-if="bestVersion" class="dark-explicit px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 text-xs font-medium flex items-center gap-1.5 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300">
           <AppIcon name="Star" size="sm" variant="peach" aria-hidden="true" />
           {{ t('versionCompare.bestRecommendation') }}: {{ bestVersion.version_type }}
         </div>
@@ -256,14 +256,14 @@ function getCardClass(version: ContentVersion): string[] {
             <span
               v-for="tag in version.hashtags.slice(0, 4)"
               :key="tag"
-              class="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-xs dark:bg-slate-800 dark:text-slate-400"
+              class="dark-explicit px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-xs dark:bg-slate-800 dark:text-slate-400"
             >
               #{{ tag }}
             </span>
           </div>
 
           <!-- Changes Summary -->
-          <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60">
+          <div class="dark-explicit mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60">
             <p class="text-xs text-slate-400">{{ version.changes_summary }}</p>
           </div>
 
@@ -276,10 +276,10 @@ function getCardClass(version: ContentVersion): string[] {
 
       <!-- Selection Indicator -->
       <Transition name="fade">
-        <div v-if="selectedVersion" class="mt-4 p-3 rounded-lg bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:border-teal-500/30">
+        <div v-if="selectedVersion" class="dark-explicit mt-4 p-3 rounded-lg bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:border-teal-500/30">
           <div class="flex items-center gap-2">
             <AppIcon name="CheckCircle" size="sm" variant="cyan" />
-            <span class="text-xs text-teal-600 font-medium dark:text-teal-300">
+            <span class="dark-explicit text-xs text-teal-600 font-medium dark:text-teal-300">
               {{ t('versionCompare.selected', { type: selectedVersion.version_type, title: selectedVersion.title }) }}
             </span>
           </div>
@@ -287,7 +287,7 @@ function getCardClass(version: ContentVersion): string[] {
       </Transition>
 
       <!-- Actions -->
-      <div class="flex gap-3 mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60">
+      <div class="dark-explicit flex gap-3 mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60">
         <NeonButton
           variant="cyan"
           :disabled="!selectedVersionId || props.isLoading"

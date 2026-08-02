@@ -677,16 +677,16 @@ const DECISION_KEYS: Record<string, string> = {
 }
 
 function decisionClass(d: string | null | undefined): string {
-  if (d === 'approved') return 'bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-300'
-  if (d === 'needs_revision') return 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-  return 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
+  if (d === 'approved') return 'dark-explicit bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-300'
+  if (d === 'needs_revision') return 'dark-explicit bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+  return 'dark-explicit bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
 }
 
 function scoreClass(s: number | null | undefined, thresholds: ScoreThresholds = SCORE_THRESHOLDS): string {
   const tier = scoreTier(s, thresholds)
-  if (tier === 'pass') return 'text-green-600 dark:text-green-400'
-  if (tier === 'warn') return 'text-amber-600 dark:text-amber-400'
-  if (tier === 'fail') return 'text-red-600 dark:text-red-400'
+  if (tier === 'pass') return 'dark-explicit text-green-600 dark:text-green-400'
+  if (tier === 'warn') return 'dark-explicit text-amber-600 dark:text-amber-400'
+  if (tier === 'fail') return 'dark-explicit text-red-600 dark:text-red-400'
   return 'text-slate-400'
 }
 
@@ -1048,7 +1048,7 @@ const handleCancelConfirm = () => {
   >
     <template #meta>
       <span>{{ t('review.scopedTo', { name: reviewAccountName }) }}</span>
-      <span v-if="workflows.length" class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+      <span v-if="workflows.length" class="dark-explicit text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
       <span v-if="workflows.length">{{ t('review.pendingCount', { count: workflows.length }) }}</span>
     </template>
     <template #actions>
@@ -1132,10 +1132,10 @@ const handleCancelConfirm = () => {
       </p>
       <div
         v-if="reviewSiblingHints.length"
-        class="mx-auto mb-5 max-w-sm rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-left dark:border-amber-500/25 dark:bg-amber-950/30"
+        class="dark-explicit mx-auto mb-5 max-w-sm rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-left dark:border-amber-500/25 dark:bg-amber-950/30"
         data-testid="review-empty-siblings"
       >
-        <p class="mb-2 text-xs font-semibold text-amber-800 dark:text-amber-100">
+        <p class="dark-explicit mb-2 text-xs font-semibold text-amber-800 dark:text-amber-100">
           {{ t('review.emptyOtherAccounts') }}
         </p>
         <div class="flex flex-col gap-2">
@@ -1154,10 +1154,10 @@ const handleCancelConfirm = () => {
       </div>
       <div
         v-if="historySiblingHints.length"
-        class="mx-auto mb-5 max-w-sm rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-500/25 dark:bg-violet-950/30"
+        class="dark-explicit mx-auto mb-5 max-w-sm rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-500/25 dark:bg-violet-950/30"
         data-testid="review-empty-history-siblings"
       >
-        <p class="mb-2 text-xs font-semibold text-violet-700 dark:text-violet-200">
+        <p class="dark-explicit mb-2 text-xs font-semibold text-violet-700 dark:text-violet-200">
           {{ t('review.emptyHistoryOtherAccounts') }}
         </p>
         <div class="flex flex-col gap-2">
@@ -1243,8 +1243,8 @@ const handleCancelConfirm = () => {
             :detail="workflowDetails.get(wf.thread_id)"
           />
           <div v-else-if="loadingDetailIds.has(wf.thread_id)" class="px-4 py-3 space-y-2">
-            <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
-            <div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+            <div class="dark-explicit h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+            <div class="dark-explicit h-3 w-1/2 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
           </div>
           <div v-else-if="failedDetailIds.has(wf.thread_id)" class="flex items-center justify-between gap-2 px-4 py-2 md:px-5">
             <span class="text-xs text-slate-400">{{ t('review.detailLoadFailed') }}</span>
@@ -1262,9 +1262,9 @@ const handleCancelConfirm = () => {
         <div v-else :id="`review-panel-${wf.thread_id}`" class="border-t border-white/5">
           <!-- Review content loading -->
           <div v-if="reviewStore.isQueueItemLoading(wf.thread_id) && !reviewStore.pendingReviews.has(wf.thread_id)" class="px-4 py-4 space-y-2">
-            <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
-            <div class="h-3 w-full rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
-            <div class="h-3 w-2/3 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+            <div class="dark-explicit h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+            <div class="dark-explicit h-3 w-full rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+            <div class="dark-explicit h-3 w-2/3 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
           </div>
 
           <!-- Review content loaded -->
@@ -1289,7 +1289,7 @@ const handleCancelConfirm = () => {
                         :value="getET(wf.thread_id)"
                         @input="setET(wf.thread_id, ($event.target as HTMLInputElement).value)"
                         :placeholder="t('review.editCopy.titlePlaceholder')"
-                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-rose-500 font-bold text-sm focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-rose-300"
+                        class="dark-explicit w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-rose-500 font-bold text-sm focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-rose-300"
                       />
                     </div>
                     <!-- Body textarea -->
@@ -1300,7 +1300,7 @@ const handleCancelConfirm = () => {
                         @input="setEB(wf.thread_id, ($event.target as HTMLTextAreaElement).value)"
                         :placeholder="t('review.editCopy.bodyPlaceholder')"
                         rows="6"
-                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-xs leading-relaxed resize-y focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                        class="dark-explicit w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-xs leading-relaxed resize-y focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                       />
                     </div>
                     <!-- Tags input -->
@@ -1310,7 +1310,7 @@ const handleCancelConfirm = () => {
                         :value="getETG(wf.thread_id)"
                         @input="setETG(wf.thread_id, ($event.target as HTMLInputElement).value)"
                         :placeholder="t('review.editCopy.tagsPlaceholder')"
-                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 text-xs focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
+                        class="dark-explicit w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 text-xs focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
                       />
                       <p class="text-[9px] text-slate-400 mt-0.5">{{ t('review.editCopy.tagsHint') }}</p>
                     </div>
@@ -1352,7 +1352,7 @@ const handleCancelConfirm = () => {
                     </div>
                     <span class="text-xs font-semibold text-slate-800">{{ t('review.visualPlan') }}</span>
                   </div>
-                  <div class="rounded-md p-2.5 md:p-3 bg-white/60 border-l-2 border-teal-400 dark:bg-slate-900/70">
+                  <div class="dark-explicit rounded-md p-2.5 md:p-3 bg-white/60 border-l-2 border-teal-400 dark:bg-slate-900/70">
                     <div v-if="reviewStore.getQueueVisualPlan(wf.thread_id)?.layout_style" class="text-teal-500 font-bold text-sm mb-1">
                       {{ reviewStore.getQueueVisualPlan(wf.thread_id)!.layout_style }}
                     </div>
@@ -1382,7 +1382,7 @@ const handleCancelConfirm = () => {
                   <!-- Preview grid -->
                   <div v-if="getUploadedImages(wf.thread_id).length > 0" class="grid grid-cols-3 gap-2 mb-2">
                     <div v-for="(url, idx) in getUploadedImages(wf.thread_id)" :key="idx"
-                      class="relative aspect-square rounded-md overflow-hidden border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80"
+                      class="dark-explicit relative aspect-square rounded-md overflow-hidden border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80"
                     >
                       <img :src="url" class="w-full h-full object-cover" alt="" />
                       <button @click="removeImage(wf.thread_id, idx)"
@@ -1435,7 +1435,7 @@ const handleCancelConfirm = () => {
                     <!-- Overview + radar -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <!-- Overall score + decision -->
-                      <div class="rounded-md p-3 bg-white/60 border-l-2 border-rose-400 flex flex-col gap-2 dark:bg-slate-900/70">
+                      <div class="dark-explicit rounded-md p-3 bg-white/60 border-l-2 border-rose-400 flex flex-col gap-2 dark:bg-slate-900/70">
                         <div class="flex items-baseline gap-1.5">
                           <span class="text-[10px] text-slate-500">{{ t('review.evaluation.overall') }}</span>
                           <span class="text-2xl font-extrabold leading-none" :class="scoreClass(getEvaluation(wf.thread_id)!.overall_score, getEvaluationThresholds(wf.thread_id))">
@@ -1453,7 +1453,7 @@ const handleCancelConfirm = () => {
                         </p>
                       </div>
                       <!-- Radar chart -->
-                      <div class="rounded-md p-2 bg-white/40 dark:bg-slate-900/55">
+                      <div class="dark-explicit rounded-md p-2 bg-white/40 dark:bg-slate-900/55">
                         <EvaluationRadar :dimensions="getEvaluation(wf.thread_id)!.dimensions || []" :height="220" />
                       </div>
                     </div>
@@ -1468,7 +1468,7 @@ const handleCancelConfirm = () => {
                     </div>
 
                     <!-- Dimension details -->
-                    <div class="rounded-md p-2.5 bg-white/40 dark:bg-slate-900/55">
+                    <div class="dark-explicit rounded-md p-2.5 bg-white/40 dark:bg-slate-900/55">
                       <div class="text-[10px] font-semibold text-slate-700 mb-1.5">{{ t('review.evaluation.dimensionsTitle') }}</div>
                       <div v-for="d in getEvaluation(wf.thread_id)!.dimensions || []" :key="d.dimension" class="py-1.5 border-b border-slate-100 last:border-0">
                         <div class="flex items-center justify-between gap-2">
@@ -1518,7 +1518,7 @@ const handleCancelConfirm = () => {
                   :value="getMC(wf.thread_id)"
                   @input="setMC(wf.thread_id, ($event.target as HTMLTextAreaElement).value)"
                   :aria-label="t('review.feedbackAriaLabel')"
-                  class="w-full bg-white rounded-md p-2.5 border border-slate-200 text-slate-700 text-xs resize-none focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 placeholder:text-slate-400 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500"
+                  class="dark-explicit w-full bg-white rounded-md p-2.5 border border-slate-200 text-slate-700 text-xs resize-none focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 placeholder:text-slate-400 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500"
                   rows="2"
                   :placeholder="t('review.feedbackPlaceholder')"
                 />
@@ -1541,44 +1541,44 @@ const handleCancelConfirm = () => {
                       :value="getMRR(wf.thread_id)"
                       @input="setMRR(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.revisionReason')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                      class="dark-explicit px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMRJR(wf.thread_id)"
                       @input="setMRJR(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.rejectReason')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                      class="dark-explicit px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMTI(wf.thread_id)"
                       @input="setMTI(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.titleIssue')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                      class="dark-explicit px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMBI(wf.thread_id)"
                       @input="setMBI(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.bodyIssue')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                      class="dark-explicit px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMTGI(wf.thread_id)"
                       @input="setMTGI(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.tagsIssue')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                      class="dark-explicit px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMVI(wf.thread_id)"
                       @input="setMVI(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.visualIssue')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                      class="dark-explicit px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                   </div>
                 </div>
               </div>
 
               <!-- Action buttons (offset above the fixed mobile tab bar) -->
-              <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-sticky -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
+              <div class="dark-explicit sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-sticky -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
                 <NeonButton
                   variant="cyan"
                   size="sm"
@@ -1680,7 +1680,7 @@ const handleCancelConfirm = () => {
               </div>
               <select
                 v-model="publishAccountId"
-                class="w-full px-2 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                class="dark-explicit w-full px-2 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
               >
                 <option v-for="acc in accountsStore.accounts" :key="acc.id" :value="acc.id">
                   {{ acc.name }}{{ acc.is_active ? ` · ${t('review.publishConfirm.activeSuffix')}` : '' }}
@@ -1699,7 +1699,7 @@ const handleCancelConfirm = () => {
                   type="button"
                   @click="publishMode = 'dry'"
                   :aria-pressed="publishMode === 'dry'"
-                  :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'dry' ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300 dark:bg-teal-950/40 dark:ring-teal-500/40' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-slate-600']"
+                  :class="['p-3 rounded-lg dark-explicit border text-left transition-all duration-200', publishMode === 'dry' ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300 dark:bg-teal-950/40 dark:ring-teal-500/40' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-slate-600']"
                 >
                   <div class="flex items-center gap-1.5 mb-1">
                     <AppIcon name="FlaskConical" size="sm" variant="cyan" />
@@ -1712,7 +1712,7 @@ const handleCancelConfirm = () => {
                   type="button"
                   @click="publishMode = 'live'"
                   :aria-pressed="publishMode === 'live'"
-                  :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'live' ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300 dark:bg-rose-950/40 dark:ring-rose-500/40' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-slate-600']"
+                  :class="['p-3 rounded-lg dark-explicit border text-left transition-all duration-200', publishMode === 'live' ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300 dark:bg-rose-950/40 dark:ring-rose-500/40' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-slate-600']"
                 >
                   <div class="flex items-center gap-1.5 mb-1">
                     <AppIcon name="Send" size="sm" variant="pink" />

@@ -847,7 +847,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
     >
       <template #meta>
         <span>{{ t('history.scopedTo', { name: viewAccountName }) }}</span>
-        <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+        <span class="dark-explicit text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
         <span>{{ t('history.records', { count: total }) }}</span>
       </template>
       <template #actions>
@@ -933,7 +933,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
     <!-- Loading skeleton (first paint or soft switch from empty) -->
     <div v-if="showListSkeleton" class="space-y-3" data-testid="history-skeleton">
-      <div v-for="i in 5" :key="i" class="h-20 rounded-xl bg-slate-100 animate-pulse dark:bg-slate-800" />
+      <div v-for="i in 5" :key="i" class="dark-explicit h-20 rounded-xl bg-slate-100 animate-pulse dark:bg-slate-800" />
     </div>
 
     <!-- Error -->
@@ -947,7 +947,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
     <!-- Empty State -->
     <div v-else-if="isEmpty" class="rounded-xl md:rounded-2xl p-6 md:p-10 liquid-glass text-center" data-testid="history-empty">
-      <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3 md:mb-4 dark:bg-slate-800">
+      <div class="dark-explicit w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3 md:mb-4 dark:bg-slate-800">
         <AppIcon name="Inbox" size="lg" variant="cyan" class="md:hidden" />
         <AppIcon name="Inbox" size="xl" variant="cyan" class="hidden md:block" />
       </div>
@@ -958,10 +958,10 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
       <div
         v-if="siblingHints.length"
-        class="mx-auto mb-5 max-w-md rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-500/25 dark:bg-violet-950/30"
+        class="dark-explicit mx-auto mb-5 max-w-md rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-500/25 dark:bg-violet-950/30"
         data-testid="history-empty-siblings"
       >
-        <p class="mb-2 text-xs font-semibold text-violet-700 dark:text-violet-200">
+        <p class="dark-explicit mb-2 text-xs font-semibold text-violet-700 dark:text-violet-200">
           {{ t('history.emptyOtherAccounts') }}
         </p>
         <div class="flex flex-col gap-2">
@@ -985,10 +985,10 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
       <div
         v-if="reviewSiblingHints.length"
-        class="mx-auto mb-5 max-w-md rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-left dark:border-amber-500/25 dark:bg-amber-950/30"
+        class="dark-explicit mx-auto mb-5 max-w-md rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-left dark:border-amber-500/25 dark:bg-amber-950/30"
         data-testid="history-empty-review-siblings"
       >
-        <p class="mb-2 text-xs font-semibold text-amber-800 dark:text-amber-200">
+        <p class="dark-explicit mb-2 text-xs font-semibold text-amber-800 dark:text-amber-200">
           {{ t('history.emptyReviewOtherAccounts') }}
         </p>
         <div class="flex flex-col gap-2">
@@ -1063,10 +1063,10 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
               <div class="flex items-center gap-1.5 md:gap-2 flex-wrap min-w-0">
                 <span :id="`history-workflow-${wf.thread_id}`" class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.label || wf.thread_id.slice(-8) }}</span>
                 <span class="text-[10px] md:text-xs font-mono text-slate-400 hidden sm:inline truncate">{{ wf.thread_id }}</span>
-                <span v-if="wf.dry_run" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 dark:bg-teal-950/45 dark:text-teal-300 dark:border-teal-500/30">
+                <span v-if="wf.dry_run" class="dark-explicit text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 dark:bg-teal-950/45 dark:text-teal-300 dark:border-teal-500/30">
                   {{ t('history.dryRun') }}
                 </span>
-                <span v-else class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-950/45 dark:text-rose-300 dark:border-rose-500/30">
+                <span v-else class="dark-explicit text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-950/45 dark:text-rose-300 dark:border-rose-500/30">
                   {{ t('history.live') }}
                 </span>
                 <span v-if="wf.workflow_mode" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded border"
@@ -1074,7 +1074,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
                   {{ modeLabel(wf.workflow_mode) }}
                 </span>
                 <span
-                  class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded border"
+                  class="dark-explicit text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded border"
                   :class="wf.showcase_visibility === 'public'
                     ? 'bg-teal-50 text-teal-600 border-teal-100 dark:bg-teal-950/45 dark:text-teal-300 dark:border-teal-500/30'
                     : wf.showcase_visibility === 'unlisted'
@@ -1095,7 +1095,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
           <div class="flex items-center gap-2 md:gap-3 flex-shrink-0 flex-wrap">
             <div class="w-16 md:w-20 hidden sm:block">
-              <div class="h-1 md:h-1.5 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
+              <div class="dark-explicit h-1 md:h-1.5 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
                 <div
                   class="h-full rounded-full bg-gradient-to-r from-rose-400 to-teal-400 transition-all"
                   :style="{ width: `${wf.progress_percent}%` }"
@@ -1224,20 +1224,20 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
       @click.self="closeShowcaseSettings"
     >
       <section
-        class="w-full max-w-lg rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 md:p-6"
+        class="dark-explicit w-full max-w-lg rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 md:p-6"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="`showcase-settings-${showcaseTarget.thread_id}`"
       >
         <div class="flex items-start justify-between gap-4">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.16em] text-teal-600 dark:text-teal-300">{{ t('history.showcaseManage') }}</p>
-            <h2 :id="`showcase-settings-${showcaseTarget.thread_id}`" class="mt-1 text-lg font-semibold text-slate-800 dark:text-slate-100">{{ t('history.showcaseTitle') }}</h2>
-            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ showcaseTarget.label || showcaseTarget.thread_id }}</p>
+            <p class="dark-explicit text-xs font-semibold uppercase tracking-[0.16em] text-teal-600 dark:text-teal-300">{{ t('history.showcaseManage') }}</p>
+            <h2 :id="`showcase-settings-${showcaseTarget.thread_id}`" class="dark-explicit mt-1 text-lg font-semibold text-slate-800 dark:text-slate-100">{{ t('history.showcaseTitle') }}</h2>
+            <p class="dark-explicit mt-1 text-xs text-slate-500 dark:text-slate-400">{{ showcaseTarget.label || showcaseTarget.thread_id }}</p>
           </div>
           <button
             type="button"
-            class="min-h-11 min-w-11 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            class="dark-explicit min-h-11 min-w-11 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             :aria-label="t('common.close')"
             :disabled="isUpdatingShowcase"
             @click="closeShowcaseSettings"
@@ -1248,10 +1248,10 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
         <div class="mt-5 space-y-4">
           <label class="block">
-            <span class="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{{ t('history.showcaseVisibility') }}</span>
+            <span class="dark-explicit mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{{ t('history.showcaseVisibility') }}</span>
             <select
               v-model="showcaseVisibility"
-              class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              class="dark-explicit min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
               :disabled="isUpdatingShowcase"
             >
               <option value="public">{{ t('history.showcaseVisibilityPublic') }}</option>
@@ -1262,40 +1262,40 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
           <template v-if="showcaseVisibility !== 'private'">
             <label class="block">
-              <span class="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{{ t('history.showcaseTitleLabel') }}</span>
+              <span class="dark-explicit mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{{ t('history.showcaseTitleLabel') }}</span>
               <input
                 v-model="showcaseTitle"
                 type="text"
                 maxlength="120"
-                class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                class="dark-explicit min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                 :placeholder="t('history.showcaseTitlePlaceholder')"
                 :disabled="isUpdatingShowcase"
               />
             </label>
             <label class="block">
-              <span class="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{{ t('history.showcaseSummaryLabel') }}</span>
+              <span class="dark-explicit mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{{ t('history.showcaseSummaryLabel') }}</span>
               <textarea
                 v-model="showcaseSummary"
                 rows="3"
                 maxlength="360"
-                class="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                class="dark-explicit w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                 :placeholder="t('history.showcaseSummaryPlaceholder')"
                 :disabled="isUpdatingShowcase"
               />
             </label>
-            <label v-if="showcaseVisibility === 'public'" class="flex min-h-11 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <label v-if="showcaseVisibility === 'public'" class="dark-explicit flex min-h-11 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
               <input v-model="showcaseFeatured" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" :disabled="isUpdatingShowcase" />
               <span>{{ t('history.showcaseFeatured') }}</span>
             </label>
             <label v-if="showcaseVisibility === 'public' && showcaseFeatured" class="block">
-              <span class="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{{ t('history.showcaseFeaturedRank') }}</span>
-              <input v-model.number="showcaseFeaturedRank" type="number" min="0" max="1000" class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" :disabled="isUpdatingShowcase" />
+              <span class="dark-explicit mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{{ t('history.showcaseFeaturedRank') }}</span>
+              <input v-model.number="showcaseFeaturedRank" type="number" min="0" max="1000" class="dark-explicit min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" :disabled="isUpdatingShowcase" />
             </label>
           </template>
         </div>
 
         <div class="mt-6 flex justify-end gap-2">
-          <button type="button" class="min-h-11 rounded-xl px-4 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" :disabled="isUpdatingShowcase" @click="closeShowcaseSettings">{{ t('history.showcaseCancel') }}</button>
+          <button type="button" class="dark-explicit min-h-11 rounded-xl px-4 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" :disabled="isUpdatingShowcase" @click="closeShowcaseSettings">{{ t('history.showcaseCancel') }}</button>
           <button type="button" class="min-h-11 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:cursor-wait disabled:opacity-60" :disabled="isUpdatingShowcase" @click="saveShowcaseSettings">{{ isUpdatingShowcase ? t('common.loadingState') : t('history.showcaseSave') }}</button>
         </div>
       </section>

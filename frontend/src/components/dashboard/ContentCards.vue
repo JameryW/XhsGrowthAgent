@@ -128,10 +128,10 @@ function heatColor(score?: number): string {
 
 // Heat score bg
 function heatBg(score?: number): string {
-  if (score === undefined) return 'bg-slate-100 dark:bg-slate-800'
+  if (score === undefined) return 'bg-slate-100 dark-explicit dark:bg-slate-800'
   if (score >= 80) return 'bg-rose-50'
   if (score >= 60) return 'bg-amber-50'
-  return 'bg-slate-50 dark:bg-slate-800/70'
+  return 'bg-slate-50 dark-explicit dark:bg-slate-800/70'
 }
 
 // Trigger analyst node manually after publish
@@ -165,7 +165,7 @@ function publishStatusLabel(status?: string): string {
 <template>
   <!-- Empty state -->
   <div v-if="isIdle" class="text-center py-12" role="status">
-    <div class="w-16 h-16 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4 dark:bg-slate-800">
+    <div class="w-16 h-16 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4 dark-explicit dark:bg-slate-800">
       <AppIcon name="Rocket" size="lg" variant="cyan" />
     </div>
     <p class="text-slate-500 text-lg mb-2">{{ t('dashboard.header.idle') }}</p>
@@ -174,18 +174,18 @@ function publishStatusLabel(status?: string): string {
 
   <!-- Loading state with skeleton -->
   <div v-else-if="!hasAnyContent" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status">
-    <div v-for="i in 3" :key="i" class="rounded-xl p-3 md:p-5 bg-white/90 border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
+    <div v-for="i in 3" :key="i" class="rounded-xl p-3 md:p-5 bg-white/90 border border-slate-200/50 dark-explicit dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
         <div class="flex-1 space-y-2">
           <div class="h-4 w-24 rounded bg-slate-200 animate-pulse" />
-          <div class="h-3 w-16 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+          <div class="h-3 w-16 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
         </div>
       </div>
       <div class="space-y-2.5">
-        <div class="h-3 w-full rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
-        <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
-        <div class="h-3 w-5/6 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+        <div class="h-3 w-full rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
+        <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
+        <div class="h-3 w-5/6 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
       </div>
     </div>
   </div>
@@ -194,7 +194,7 @@ function publishStatusLabel(status?: string): string {
   <TransitionGroup v-else name="phase-card" tag="div" class="space-y-4">
 
     <!-- ═══ BRIEF MODE: Brief Content ═══ -->
-    <div v-if="hasBriefContent && isBriefMode" class="rounded-xl p-3 md:p-5 bg-white/90 border border-pink-100/50 dark:bg-slate-900/90 dark:border-rose-500/25">
+    <div v-if="hasBriefContent && isBriefMode" class="rounded-xl p-3 md:p-5 bg-white/90 border border-pink-100/50 dark-explicit dark:bg-slate-900/90 dark:border-rose-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-400 to-rose-400 flex items-center justify-center">
           <AppIcon name="FileText" size="md" variant="white" />
@@ -235,13 +235,13 @@ function publishStatusLabel(status?: string): string {
         </div>
         <div v-if="briefContent.required_hashtags?.length || briefContent.optional_hashtags?.length" class="flex flex-wrap gap-1.5 mt-2">
           <span v-for="tag in (briefContent.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
-          <span v-for="tag in (briefContent.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200 dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400">#{{ tag }}</span>
+          <span v-for="tag in (briefContent.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200 dark-explicit dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400">#{{ tag }}</span>
         </div>
       </div>
     </div>
 
     <!-- ═══ SCOUTING: Trend Data ═══ -->
-    <div v-if="hasTrendData && showForPhase('scouting')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-pink-100/50 dark:bg-slate-900/90 dark:border-rose-500/25">
+    <div v-if="hasTrendData && showForPhase('scouting')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-pink-100/50 dark-explicit dark:bg-slate-900/90 dark:border-rose-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-400 to-rose-400 flex items-center justify-center">
           <AppIcon name="Search" size="md" variant="white" />
@@ -256,7 +256,7 @@ function publishStatusLabel(status?: string): string {
       <div v-if="trendData.hot_topics && trendData.hot_topics.length > 0" class="mb-4">
         <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">{{ t('dashboard.scouting.hotTopics') }}</div>
         <div class="space-y-2">
-          <div v-for="(topic, idx) in trendData.hot_topics.slice(0, 5)" :key="idx" class="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
+          <div v-for="(topic, idx) in trendData.hot_topics.slice(0, 5)" :key="idx" class="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 dark-explicit dark:bg-slate-800/70 dark:border-slate-700/50">
             <span class="text-sm font-medium text-slate-700 flex-1 truncate">{{ topic.topic }}</span>
             <div class="flex items-center gap-2">
               <div :class="['px-2 py-0.5 rounded text-xs font-medium', heatBg(topic.heat_score), heatColor(topic.heat_score)]">
@@ -296,7 +296,7 @@ function publishStatusLabel(status?: string): string {
     </div>
 
     <!-- ═══ PLANNING: Ripple Progress (shown while simulating, before content_plan arrives) ═══ -->
-    <div v-if="isStrategyRunning && !hasContentPlan" class="rounded-xl p-3 md:p-5 bg-white/90 border border-cyan-100/50 dark:bg-slate-900/90 dark:border-cyan-500/25">
+    <div v-if="isStrategyRunning && !hasContentPlan" class="rounded-xl p-3 md:p-5 bg-white/90 border border-cyan-100/50 dark-explicit dark:bg-slate-900/90 dark:border-cyan-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-teal-400 flex items-center justify-center">
           <AppIcon name="ClipboardList" size="md" variant="white" />
@@ -317,7 +317,7 @@ function publishStatusLabel(status?: string): string {
     </div>
 
     <!-- ═══ PLANNING: Content Plan + Ripple ═══ -->
-    <div v-if="hasContentPlan && showForPhase('planning')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-cyan-100/50 dark:bg-slate-900/90 dark:border-cyan-500/25">
+    <div v-if="hasContentPlan && showForPhase('planning')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-cyan-100/50 dark-explicit dark:bg-slate-900/90 dark:border-cyan-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-teal-400 flex items-center justify-center">
           <AppIcon name="ClipboardList" size="md" variant="white" />
@@ -380,7 +380,7 @@ function publishStatusLabel(status?: string): string {
     </div>
 
     <!-- ═══ COPYWRITING ═══ -->
-    <div v-if="hasCopyContent && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-violet-100/50 dark:bg-slate-900/90 dark:border-violet-500/25">
+    <div v-if="hasCopyContent && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-violet-100/50 dark-explicit dark:bg-slate-900/90 dark:border-violet-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-400 flex items-center justify-center">
           <AppIcon name="Pencil" size="md" variant="white" />
@@ -407,7 +407,7 @@ function publishStatusLabel(status?: string): string {
       </div>
 
       <!-- Body preview -->
-      <div v-if="copyContent.body_text" class="p-3 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50 mb-3">
+      <div v-if="copyContent.body_text" class="p-3 rounded-lg bg-slate-50 border border-slate-100 dark-explicit dark:bg-slate-800/70 dark:border-slate-700/50 mb-3">
         <p class="text-xs text-slate-600 line-clamp-4 whitespace-pre-line">{{ copyContent.body_text }}</p>
       </div>
 
@@ -473,7 +473,7 @@ function publishStatusLabel(status?: string): string {
                 <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-200 text-rose-700' : ver.version_type === 'B' ? 'bg-blue-200 text-blue-700' : 'bg-emerald-200 text-emerald-700'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
                 <span class="text-xs font-semibold" :class="ver.version_type === 'A' ? 'text-rose-700' : ver.version_type === 'B' ? 'text-blue-700' : 'text-emerald-700'">{{ ver.title }}</span>
               </div>
-              <span v-if="ver.predicted_score" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
+              <span v-if="ver.predicted_score" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark-explicit dark:bg-slate-800 dark:text-slate-400">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
             </div>
             <div v-if="ver.body" class="text-xs text-slate-600 whitespace-pre-line line-clamp-4 mb-1">{{ ver.body }}</div>
             <div v-if="ver.changes_summary" class="text-[11px] text-slate-400 mb-1">↻ {{ ver.changes_summary }}</div>
@@ -487,7 +487,7 @@ function publishStatusLabel(status?: string): string {
     </div>
 
     <!-- ═══ SHOOTING PLAN ═══ -->
-    <div v-if="hasShootingPlan && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-amber-100/50 dark:bg-slate-900/90 dark:border-amber-500/25">
+    <div v-if="hasShootingPlan && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-amber-100/50 dark-explicit dark:bg-slate-900/90 dark:border-amber-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center">
           <AppIcon name="Camera" size="md" variant="white" />
@@ -503,7 +503,7 @@ function publishStatusLabel(status?: string): string {
         <div v-if="shootingPlan.creator_nickname || shootingPlan.content_type_label || shootingPlan.planned_publish_date" class="flex flex-wrap gap-2 text-xs">
           <span v-if="shootingPlan.creator_nickname" class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-100">{{ shootingPlan.creator_nickname }}</span>
           <span v-if="shootingPlan.content_type_label" class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-100">{{ shootingPlan.content_type_label }}</span>
-          <span v-if="shootingPlan.planned_publish_date" class="px-2 py-0.5 rounded-md bg-slate-50 text-slate-500 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50 dark:text-slate-400">{{ shootingPlan.planned_publish_date }}</span>
+          <span v-if="shootingPlan.planned_publish_date" class="px-2 py-0.5 rounded-md bg-slate-50 text-slate-500 border border-slate-100 dark-explicit dark:bg-slate-800/70 dark:border-slate-700/50 dark:text-slate-400">{{ shootingPlan.planned_publish_date }}</span>
         </div>
 
         <!-- Product spec -->
@@ -527,7 +527,7 @@ function publishStatusLabel(status?: string): string {
         </div>
 
         <!-- Body copy -->
-        <div v-if="shootingPlan.body_copy" class="p-3 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
+        <div v-if="shootingPlan.body_copy" class="p-3 rounded-lg bg-slate-50 border border-slate-100 dark-explicit dark:bg-slate-800/70 dark:border-slate-700/50">
           <p class="text-xs text-slate-600 line-clamp-4 whitespace-pre-line">{{ shootingPlan.body_copy }}</p>
         </div>
 
@@ -535,7 +535,7 @@ function publishStatusLabel(status?: string): string {
         <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length || shootingPlan.suggested_hashtags?.length" class="flex flex-wrap gap-1.5">
           <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
           <span v-for="tag in (shootingPlan.suggested_hashtags || [])" :key="'s-'+tag" class="px-2 py-1 rounded-md bg-amber-50 text-amber-600 text-xs border border-amber-100">#{{ tag }}</span>
-          <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200 dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400">#{{ tag }}</span>
+          <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200 dark-explicit dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400">#{{ tag }}</span>
         </div>
 
         <!-- Outfits -->
@@ -552,7 +552,7 @@ function publishStatusLabel(status?: string): string {
         <!-- Shooting angles -->
         <div v-if="shootingPlan.shooting_angles?.length" class="space-y-1.5">
           <div class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('shootingPlan.shootingAngles') }}</div>
-          <div v-for="(angle, idx) in shootingPlan.shooting_angles" :key="idx" class="p-2 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
+          <div v-for="(angle, idx) in shootingPlan.shooting_angles" :key="idx" class="p-2 rounded-lg bg-slate-50 border border-slate-100 dark-explicit dark:bg-slate-800/70 dark:border-slate-700/50">
             <div class="text-xs font-semibold text-slate-700">{{ angle.angle }}</div>
             <div class="text-[11px] text-slate-500">{{ angle.description }}</div>
             <div v-if="angle.tips" class="text-[11px] text-amber-500 mt-0.5">{{ t('shootingPlan.tip') }}: {{ angle.tips }}</div>
@@ -577,7 +577,7 @@ function publishStatusLabel(status?: string): string {
     </div>
 
     <!-- ═══ PUBLISHING: Publish Result ═══ -->
-    <div v-if="hasPublishResult && showForPhase('publishing')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-emerald-100/50 dark:bg-slate-900/90 dark:border-emerald-500/25">
+    <div v-if="hasPublishResult && showForPhase('publishing')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-emerald-100/50 dark-explicit dark:bg-slate-900/90 dark:border-emerald-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center">
           <AppIcon name="Upload" size="md" variant="white" />
@@ -613,13 +613,13 @@ function publishStatusLabel(status?: string): string {
     </div>
 
     <!-- ═══ Manual analyst trigger (after publish, before analytics) ═══ -->
-    <div v-if="!workflowStore.isReplayMode && hasPublishResult && !hasAnalytics && (workflowStore.currentPhase === 'completed' || workflowStore.currentPhase === 'analyzing')" class="mt-4 rounded-xl p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/60 dark:from-amber-950/50 dark:to-orange-950/40 dark:border-amber-500/30">
+    <div v-if="!workflowStore.isReplayMode && hasPublishResult && !hasAnalytics && (workflowStore.currentPhase === 'completed' || workflowStore.currentPhase === 'analyzing')" class="mt-4 rounded-xl p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/60 dark-explicit dark:from-amber-950/50 dark:to-orange-950/40 dark:border-amber-500/30">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center">
           <AppIcon name="BarChart3" size="sm" variant="white" />
         </div>
         <div class="flex-1">
-          <div class="text-sm font-semibold text-slate-800 dark:text-amber-100">{{ t('dashboard.contentCards.runAnalytics') || '分析传播效果' }}</div>
+          <div class="text-sm font-semibold text-slate-800 dark-explicit dark:text-amber-100">{{ t('dashboard.contentCards.runAnalytics') || '分析传播效果' }}</div>
           <div class="text-[10px] text-slate-400">{{ t('dashboard.contentCards.runAnalyticsDesc') || '使用 Ripple 分析预测与实际数据对比' }}</div>
         </div>
         <NeonButton variant="peach" size="sm" :loading="workflowStore.currentPhase === 'analyzing'" @click="handleTriggerAnalytics">
@@ -640,7 +640,7 @@ function publishStatusLabel(status?: string): string {
     </div>
 
     <!-- ═══ ANALYTICS summary (if no comparison but has analytics) ═══ -->
-    <div v-else-if="hasAnalytics && showForPhase('analyzing')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-teal-100/50 dark:bg-slate-900/90 dark:border-teal-500/25">
+    <div v-else-if="hasAnalytics && showForPhase('analyzing')" class="rounded-xl p-3 md:p-5 bg-white/90 border border-teal-100/50 dark-explicit dark:bg-slate-900/90 dark:border-teal-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-emerald-400 flex items-center justify-center">
           <AppIcon name="BarChart3" size="md" variant="white" />
@@ -650,7 +650,7 @@ function publishStatusLabel(status?: string): string {
         </div>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div v-if="analytics.views !== undefined" class="rounded-lg p-3 bg-slate-50 border border-slate-100 text-center dark:bg-slate-800/70 dark:border-slate-700/50">
+        <div v-if="analytics.views !== undefined" class="rounded-lg p-3 bg-slate-50 border border-slate-100 text-center dark-explicit dark:bg-slate-800/70 dark:border-slate-700/50">
           <div class="text-[10px] text-slate-400 uppercase tracking-wide">{{ t('dashboard.contentCards.views') }}</div>
           <div class="text-lg font-bold text-slate-700">{{ formatNum(analytics.views) }}</div>
         </div>
@@ -670,7 +670,7 @@ function publishStatusLabel(status?: string): string {
     </div>
 
     <!-- ═══ Ripple Retry Progress (shown at any phase when retry is running) ═══ -->
-    <div v-if="rippleProgress && !isStrategyRunning && !(hasContentPlan && (hasRipplePrediction || hasRipplePmf || rippleProgress))" class="rounded-xl p-3 md:p-5 bg-white/90 border border-violet-100/50 dark:bg-slate-900/90 dark:border-violet-500/25">
+    <div v-if="rippleProgress && !isStrategyRunning && !(hasContentPlan && (hasRipplePrediction || hasRipplePmf || rippleProgress))" class="rounded-xl p-3 md:p-5 bg-white/90 border border-violet-100/50 dark-explicit dark:bg-slate-900/90 dark:border-violet-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center">
           <AppIcon name="Zap" size="md" variant="white" />

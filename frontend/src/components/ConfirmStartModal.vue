@@ -138,7 +138,7 @@ const expectedSteps = computed(() => {
             </div>
             <div v-if="workflowMode === 'brief' && briefText" class="py-2">
               <span class="text-sm text-slate-500 block mb-1">{{ t('home.form.briefText') }}</span>
-              <p class="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 max-h-24 overflow-y-auto line-clamp-4 dark:bg-slate-800/70 dark:text-slate-300">{{ briefText }}</p>
+              <p class="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 max-h-24 overflow-y-auto line-clamp-4 dark:bg-slate-800/70 dark:text-slate-300 dark-explicit">{{ briefText }}</p>
             </div>
             <div class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.dryRun') }}</span>
@@ -173,7 +173,12 @@ const expectedSteps = computed(() => {
               <div class="flex flex-wrap gap-1.5">
                 <span v-for="(step, idx) in expectedSteps" :key="step.phase"
                   class="text-xs px-2 py-1 rounded border text-slate-600"
-                  :class="idx === 0 ? 'bg-rose-50 border-rose-200 text-rose-600 font-medium dark:bg-rose-950/40 dark:border-rose-500/30 dark:text-rose-300' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-600'">
+                  :class="[
+                    'dark-explicit',
+                    idx === 0
+                      ? 'bg-rose-50 border-rose-200 text-rose-600 font-medium dark:bg-rose-950/40 dark:border-rose-500/30 dark:text-rose-300 dark-explicit'
+                      : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-600 dark:text-slate-200 dark-explicit'
+                  ]">
                   {{ step.label }}
                 </span>
               </div>

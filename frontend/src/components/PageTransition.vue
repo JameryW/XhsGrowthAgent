@@ -37,7 +37,7 @@ const transitionStyle = {
         <component :is="Component" :key="route.fullPath" />
         <template #fallback>
           <div class="page-transition-loading" role="status" aria-busy="true" :aria-label="t('common.loadingPage')">
-            <span class="h-8 w-8 rounded-full border-2 border-slate-200 border-t-teal-500 animate-spin dark:border-slate-700 dark:border-t-teal-400" aria-hidden="true" />
+            <span class="dark-explicit h-8 w-8 rounded-full border-2 border-slate-200 border-t-teal-500 animate-spin dark:border-slate-700 dark:border-t-teal-400" aria-hidden="true" />
           </div>
         </template>
       </Suspense>

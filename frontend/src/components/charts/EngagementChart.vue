@@ -139,7 +139,7 @@ const chartOption = computed(() => {
 
 <template>
   <div
-    class="rounded-xl md:rounded-2xl p-3 md:p-6 transition-all duration-200 hover:shadow-lg bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
+    class="dark-explicit rounded-xl md:rounded-2xl p-3 md:p-6 transition-all duration-200 hover:shadow-lg bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
     :class="VARIANT_BORDER_CLASS[props.variant]"
     role="figure"
     :aria-label="chartDescription"
@@ -153,7 +153,7 @@ const chartOption = computed(() => {
       <span v-if="totalValue > 0" class="text-slate-400 normal-case tracking-normal font-semibold tabular-nums">{{ formatNumber(totalValue, locale) }}</span>
     </div>
 
-    <div v-if="!hasChartData" class="flex items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" :style="{ height: `${props.height}px` }" role="status">
+    <div v-if="!hasChartData" class="dark-explicit flex items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" :style="{ height: `${props.height}px` }" role="status">
       {{ t('charts.noEngagementData') }}
     </div>
 

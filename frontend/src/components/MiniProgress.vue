@@ -32,7 +32,7 @@ const percentage = computed(() => Math.min(100, Math.max(0, props.value)))
 
 <template>
   <div class="w-full" aria-live="polite" :aria-label="t('miniProgress.progress', { percent: percentage })">
-    <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden relative dark:bg-slate-800">
+    <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden relative dark:bg-slate-800 dark-explicit">
       <!-- Progress bar -->
       <div
         :class="['h-full rounded-full relative overflow-hidden transition-all bg-gradient-to-r', colors.bar, animated ? 'duration-500 ease-out' : '',]"

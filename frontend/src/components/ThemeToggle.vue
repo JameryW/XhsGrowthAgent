@@ -19,7 +19,7 @@ onMounted(() => themeStore.init())
 <template>
   <button
     type="button"
-    class="theme-toggle inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-200/70 bg-white/70 px-3 text-slate-600 shadow-sm transition-colors hover:bg-white hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70 dark:border-slate-700/70 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+    class="theme-toggle dark-explicit inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-200/70 bg-white/70 px-3 text-slate-600 shadow-sm transition-colors hover:bg-white hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70 dark:border-slate-700/70 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
     :aria-label="label"
     :title="label"
     @click="themeStore.toggle"

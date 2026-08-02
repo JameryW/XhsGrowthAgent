@@ -6,11 +6,11 @@
     <!-- Animated gradient mesh skeleton -->
     <div class="absolute inset-0 pointer-events-none overflow-hidden">
       <div class="absolute top-1/4 left-1/4 w-[400px] h-[400px] rounded-full opacity-60 bg-slate-200 animate-pulse" />
-      <div class="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full opacity-50 bg-slate-100 animate-pulse dark:bg-slate-800" />
+      <div class="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full opacity-50 bg-slate-100 animate-pulse dark:bg-slate-800 dark-explicit" />
     </div>
 
     <!-- Main card skeleton -->
-    <div class="rounded-2xl p-10 max-w-lg w-full relative overflow-hidden bg-white/85 backdrop-blur-xl border border-white/50 shadow-xl dark:bg-slate-900/90 dark:border-slate-700/50">
+    <div class="rounded-2xl p-10 max-w-lg w-full relative overflow-hidden bg-white/85 backdrop-blur-xl border border-white/50 shadow-xl dark:bg-slate-900/90 dark:border-slate-700/50 dark-explicit">
       <!-- Logo skeleton -->
       <div class="text-center mb-10">
         <div class="relative inline-block mb-6">
@@ -23,11 +23,11 @@
       <!-- Buttons skeleton -->
       <div class="space-y-4">
         <div class="h-12 w-full rounded-lg bg-slate-200 animate-pulse" />
-        <div class="h-10 w-full rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
+        <div class="h-10 w-full rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800 dark-explicit" />
       </div>
 
       <!-- Status bar skeleton -->
-      <div class="mt-8 bg-gradient-to-r from-slate-50/80 to-white rounded-xl p-4 border border-slate-100 dark:from-slate-800 dark:to-slate-900 dark:border-slate-700">
+      <div class="mt-8 bg-gradient-to-r from-slate-50/80 to-white rounded-xl p-4 border border-slate-100 dark:from-slate-800 dark:to-slate-900 dark:border-slate-700 dark-explicit">
         <div class="flex items-center justify-center gap-6">
           <div class="flex items-center gap-2">
             <div class="w-2 h-2 rounded-full bg-slate-200 animate-pulse" />

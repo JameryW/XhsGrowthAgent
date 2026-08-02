@@ -57,7 +57,7 @@ const statusStyles: Record<string, {
     badge: { show: true, icon: 'Clock', color: 'text-teal-500', animate: true },
   },
   pending: {
-    shape: 'bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-600',
+    shape: 'bg-slate-100 border border-slate-200 dark-explicit dark:bg-slate-800 dark:border-slate-600',
     iconVariant: 'cyan',
     animate: false,
     labelClass: 'text-slate-400',

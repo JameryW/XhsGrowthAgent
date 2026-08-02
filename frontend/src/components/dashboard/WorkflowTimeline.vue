@@ -405,7 +405,7 @@ onUnmounted(() => {
 <template>
   <div
     ref="regionEl"
-    class="bg-white/90 backdrop-blur-sm rounded-xl p-3 md:p-6 md:rounded-2xl border border-slate-200/50 shadow-sm dark:bg-slate-900/90 dark:border-slate-700/55 dark:shadow-slate-950/40"
+    class="bg-white/90 backdrop-blur-sm rounded-xl p-3 md:p-6 md:rounded-2xl border border-slate-200/50 shadow-sm dark-explicit dark:bg-slate-900/90 dark:border-slate-700/55 dark:shadow-slate-950/40"
     role="region"
     :aria-label="t('dashboard.timeline.title')"
     @keydown="handleKeyDown"
@@ -431,7 +431,7 @@ onUnmounted(() => {
     <div class="overflow-x-auto -mx-3 md:mx-0 scrollbar-thin">
       <div class="min-w-max md:min-w-0 px-1 md:px-4">
         <div class="relative py-4" aria-hidden="true">
-          <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full dark:bg-slate-700/70" aria-hidden="true" />
+          <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full dark-explicit dark:bg-slate-700/70" aria-hidden="true" />
           <div
             class="absolute top-1/2 left-0 h-1 rounded-full transition-all duration-500"
             :class="hasError ? 'bg-rose-400' : 'bg-gradient-to-r from-rose-400 to-teal-400'"
@@ -475,7 +475,7 @@ onUnmounted(() => {
         >
           <div
             v-if="shouldExpandSubSteps(phase)"
-            class="mt-2 mx-1 md:mx-6 p-2.5 md:p-3 rounded-xl bg-slate-50/80 border border-slate-100 dark:bg-slate-800/60 dark:border-slate-700/50"
+            class="mt-2 mx-1 md:mx-6 p-2.5 md:p-3 rounded-xl bg-slate-50/80 border border-slate-100 dark-explicit dark:bg-slate-800/60 dark:border-slate-700/50"
           >
             <div class="flex items-center gap-1.5 mb-2">
               <AppIcon name="Layers" size="sm" variant="cyan" />
@@ -507,7 +507,7 @@ onUnmounted(() => {
                     :class="{
                       'bg-gradient-to-br from-rose-400 to-amber-400 shadow-sm': getStatus(step.agent) === 'completed',
                       'bg-gradient-to-br from-amber-300 to-amber-400 shadow-sm animate-pulse': getStatus(step.agent) === 'running',
-                      'bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-600': getStatus(step.agent) === 'pending',
+                      'bg-slate-100 border border-slate-200 dark-explicit dark:bg-slate-800 dark:border-slate-600': getStatus(step.agent) === 'pending',
                       'bg-gradient-to-br from-rose-400 to-rose-500 shadow-sm': getStatus(step.agent) === 'error',
                     }"
                   >
@@ -559,7 +559,7 @@ onUnmounted(() => {
           v-for="entry in agentTimeline"
           :key="`${entry.agent}-${entry.started_at}`"
           class="flex items-center gap-3 p-2.5 rounded-lg border transition-colors"
-          :class="entry.status === 'error' ? 'bg-rose-50/50 border-rose-100 dark:bg-rose-950/35 dark:border-rose-500/30' : 'bg-slate-50/50 border-slate-100 dark:bg-slate-800/50 dark:border-slate-700/50'"
+          :class="entry.status === 'error' ? 'bg-rose-50/50 border-rose-100 dark-explicit dark:bg-rose-950/35 dark:border-rose-500/30' : 'bg-slate-50/50 border-slate-100 dark-explicit dark:bg-slate-800/50 dark:border-slate-700/50'"
         >
           <span
             class="w-2 h-2 rounded-full flex-shrink-0"

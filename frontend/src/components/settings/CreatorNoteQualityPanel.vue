@@ -441,24 +441,24 @@ function rqgmDimLabel(dim: string): string {
 
 <template>
   <section
-    class="min-w-0 rounded-2xl border border-violet-200/70 bg-white/95 p-4 shadow-sm backdrop-blur-sm md:p-6 dark:bg-slate-900/90 dark:border-violet-500/30"
+    class="dark-explicit min-w-0 rounded-2xl border border-violet-200/70 bg-white/95 p-4 shadow-sm backdrop-blur-sm md:p-6 dark:bg-slate-900/90 dark:border-violet-500/30"
     :aria-label="t('creatorNoteQuality.title')"
   >
     <!-- Panel chrome (title/subtitle/refresh) is omitted in compact mode:
          the host drawer supplies its own title and loading context. -->
-    <div v-if="!compact" class="flex min-w-0 flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-700/50">
+    <div v-if="!compact" class="dark-explicit flex min-w-0 flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-700/50">
       <div class="min-w-0">
         <div class="flex items-center gap-2">
           <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-fuchsia-500 shadow-sm">
             <AppIcon name="FileText" size="sm" variant="white" />
           </div>
-          <h3 class="text-base font-semibold text-slate-800 dark:text-slate-100">{{ t('creatorNoteQuality.title') }}</h3>
+          <h3 class="dark-explicit text-base font-semibold text-slate-800 dark:text-slate-100">{{ t('creatorNoteQuality.title') }}</h3>
         </div>
-        <p class="mt-1.5 break-words text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+        <p class="dark-explicit mt-1.5 break-words text-xs leading-relaxed text-slate-500 dark:text-slate-400">
           {{ t('creatorNoteQuality.subtitle') }}
-          <span v-if="accountName || accountId" class="text-slate-500 dark:text-slate-400"> · {{ accountName || accountId }}</span>
+          <span v-if="accountName || accountId" class="dark-explicit text-slate-500 dark:text-slate-400"> · {{ accountName || accountId }}</span>
         </p>
-        <p class="mt-1 break-words text-[11px] leading-4 text-slate-400 dark:text-slate-500">
+        <p class="dark-explicit mt-1 break-words text-[11px] leading-4 text-slate-400 dark:text-slate-400">
           {{ t('creatorNoteQuality.comparisonHint') }}
         </p>
       </div>
@@ -477,17 +477,17 @@ function rqgmDimLabel(dim: string): string {
     </div>
 
     <div v-if="isLoadingNotes" class="mt-4 space-y-3" aria-live="polite">
-      <div class="h-12 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
-      <div class="h-32 animate-pulse rounded-lg bg-slate-50 dark:bg-slate-800" />
+      <div class="dark-explicit h-12 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+      <div class="dark-explicit h-32 animate-pulse rounded-lg bg-slate-50 dark:bg-slate-800" />
       <p class="text-center text-xs text-slate-400">{{ t('creatorNoteQuality.loading') }}</p>
     </div>
 
-    <div v-else-if="errorMessage" class="mt-4 rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-400/20 dark:bg-rose-400/10" aria-live="polite">
+    <div v-else-if="errorMessage" class="dark-explicit mt-4 rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-400/20 dark:bg-rose-400/10" aria-live="polite">
       <div class="flex min-w-0 items-start gap-2">
         <AppIcon name="AlertTriangle" size="sm" variant="pink" class="mt-0.5 shrink-0" />
         <div class="min-w-0">
-          <div class="text-xs font-semibold text-rose-700 dark:text-rose-200">{{ t('creatorNoteQuality.error.title') }}</div>
-          <p class="mt-1 break-words text-[11px] leading-relaxed text-rose-600 dark:text-rose-300">{{ errorMessage }}</p>
+          <div class="dark-explicit text-xs font-semibold text-rose-700 dark:text-rose-200">{{ t('creatorNoteQuality.error.title') }}</div>
+          <p class="dark-explicit mt-1 break-words text-[11px] leading-relaxed text-rose-600 dark:text-rose-300">{{ errorMessage }}</p>
         </div>
       </div>
       <NeonButton variant="ghost" size="sm" class="mt-3 w-full sm:w-auto" @click="loadNotes()">
@@ -496,16 +496,16 @@ function rqgmDimLabel(dim: string): string {
       </NeonButton>
     </div>
 
-    <div v-else-if="!notes.length" class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-5 text-center dark:border-slate-600 dark:bg-slate-800/50">
+    <div v-else-if="!notes.length" class="dark-explicit mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-5 text-center dark:border-slate-600 dark:bg-slate-800/50">
       <AppIcon name="Database" size="md" variant="purple" />
-      <p class="mt-2 text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('creatorNoteQuality.empty.title') }}</p>
+      <p class="dark-explicit mt-2 text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('creatorNoteQuality.empty.title') }}</p>
       <p class="mt-1 text-[11px] leading-relaxed text-slate-400">{{ t('creatorNoteQuality.empty.description') }}</p>
     </div>
 
     <div v-else class="mt-4 grid min-w-0 grid-cols-1 gap-4" :class="compact ? '' : 'lg:grid-cols-[minmax(11rem,0.8fr)_minmax(0,2fr)]'">
       <!-- Note picker: hidden in compact mode, where the host drawer pins
            the note being viewed. -->
-      <div v-if="!compact" class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2 dark:border-slate-700/50 dark:bg-slate-800/60">
+      <div v-if="!compact" class="dark-explicit min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2 dark:border-slate-700/50 dark:bg-slate-800/60">
         <div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           {{ t('creatorNoteQuality.listTitle') }}
         </div>
@@ -514,7 +514,7 @@ function rqgmDimLabel(dim: string): string {
             v-for="note in notes"
             :key="note.note_id"
             type="button"
-            class="block min-h-11 w-full min-w-0 rounded-lg px-2.5 py-2 text-left transition"
+            class="dark-explicit block min-h-11 w-full min-w-0 rounded-lg px-2.5 py-2 text-left transition"
             :class="selectedNoteId === note.note_id
               ? 'bg-violet-100 text-violet-800 dark:bg-violet-400/20 dark:text-violet-100'
               : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800'"
@@ -531,13 +531,13 @@ function rqgmDimLabel(dim: string): string {
 
       <div class="min-w-0">
         <div v-if="isLoadingDetail" class="space-y-3" aria-live="polite">
-          <div class="h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
-          <div class="h-32 animate-pulse rounded-xl bg-slate-50 dark:bg-slate-800" />
+          <div class="dark-explicit h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+          <div class="dark-explicit h-32 animate-pulse rounded-xl bg-slate-50 dark:bg-slate-800" />
           <p class="text-center text-xs text-slate-400">{{ t('creatorNoteQuality.loadingDetail') }}</p>
         </div>
 
         <div v-else-if="selectedNote" class="min-w-0 space-y-4">
-          <article class="min-w-0 rounded-xl border border-slate-100 bg-white p-4 dark:bg-slate-900/80 dark:border-slate-700/50">
+          <article class="dark-explicit min-w-0 rounded-xl border border-slate-100 bg-white p-4 dark:bg-slate-900/80 dark:border-slate-700/50">
             <div class="flex min-w-0 flex-col gap-3 sm:flex-row">
               <img
                 v-if="selectedNote.cover_url"
@@ -548,7 +548,7 @@ function rqgmDimLabel(dim: string): string {
               <div class="min-w-0 flex-1">
                 <!-- Title omitted in compact mode: the host drawer header
                      already shows it. -->
-                <h4 v-if="!compact" class="break-words text-sm font-semibold text-slate-800 dark:text-slate-100">
+                <h4 v-if="!compact" class="dark-explicit break-words text-sm font-semibold text-slate-800 dark:text-slate-100">
                   {{ selectedNote.title || selectedNote.note_id }}
                 </h4>
                 <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400">
@@ -558,13 +558,13 @@ function rqgmDimLabel(dim: string): string {
                   <span v-if="selectedNote.synced_at">{{ t('evaluation.dataAsOf') }} {{ formatDate(selectedNote.synced_at) }}</span>
                 </div>
                 <div v-if="selectedNote.tags?.length" class="mt-2 flex flex-wrap gap-1">
-                  <span v-for="tag in selectedNote.tags" :key="tag" class="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700 dark:bg-violet-400/15 dark:text-violet-200">
+                  <span v-for="tag in selectedNote.tags" :key="tag" class="dark-explicit rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700 dark:bg-violet-400/15 dark:text-violet-200">
                     {{ tag }}
                   </span>
                 </div>
               </div>
             </div>
-            <p v-if="selectedNote.body_text" class="mt-3 whitespace-pre-wrap break-words text-xs leading-6 text-slate-600 dark:text-slate-300">
+            <p v-if="selectedNote.body_text" class="dark-explicit mt-3 whitespace-pre-wrap break-words text-xs leading-6 text-slate-600 dark:text-slate-300">
               {{ selectedNote.body_text }}
             </p>
             <p v-else class="mt-3 text-[11px] leading-relaxed text-slate-400">
@@ -573,80 +573,80 @@ function rqgmDimLabel(dim: string): string {
           </article>
 
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <div v-for="metric in metricCards" :key="metric.key" class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-center dark:border-slate-700/50 dark:bg-slate-800/60">
+            <div v-for="metric in metricCards" :key="metric.key" class="dark-explicit min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-center dark:border-slate-700/50 dark:bg-slate-800/60">
               <div class="truncate text-[10px] text-slate-400">{{ metric.label }}</div>
-              <div class="mt-1 truncate text-sm font-semibold text-slate-700 dark:text-slate-100">{{ metric.value }}</div>
+              <div class="dark-explicit mt-1 truncate text-sm font-semibold text-slate-700 dark:text-slate-100">{{ metric.value }}</div>
             </div>
           </div>
 
           <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
-            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
+            <div class="dark-explicit min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
               <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.viewSources') }}</div>
               <div v-if="selectedNote.view_sources?.length" class="mt-2 space-y-1">
                 <div v-for="point in selectedNote.view_sources.slice(0, 5)" :key="pointLabel(point)" class="flex min-w-0 justify-between gap-2 text-[11px]">
-                  <span class="truncate text-slate-600 dark:text-slate-300">{{ pointLabel(point) }}</span>
-                  <span class="shrink-0 text-violet-700 dark:text-violet-300">{{ pointValue(point) }}</span>
+                  <span class="dark-explicit truncate text-slate-600 dark:text-slate-300">{{ pointLabel(point) }}</span>
+                  <span class="dark-explicit shrink-0 text-violet-700 dark:text-violet-300">{{ pointValue(point) }}</span>
                 </div>
               </div>
               <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorNoteQuality.unavailable') }}</p>
             </div>
-            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
+            <div class="dark-explicit min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
               <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.audienceProfile') }}</div>
               <div v-if="selectedNote.audience_profile?.length" class="mt-2 flex flex-wrap gap-1">
-                <span v-for="point in selectedNote.audience_profile.slice(0, 8)" :key="pointLabel(point)" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 dark:bg-amber-400/15 dark:text-amber-200">
+                <span v-for="point in selectedNote.audience_profile.slice(0, 8)" :key="pointLabel(point)" class="dark-explicit rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 dark:bg-amber-400/15 dark:text-amber-200">
                   {{ pointLabel(point) }}<span v-if="pointValue(point)"> · {{ pointShare(point) }}</span>
                 </span>
               </div>
               <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorNoteQuality.unavailable') }}</p>
             </div>
-            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
+            <div class="dark-explicit min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
               <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.audienceTrend') }}</div>
               <div v-if="selectedNote.audience_trend?.length" class="mt-2 space-y-1">
                 <div v-for="point in selectedNote.audience_trend.slice(0, 5)" :key="pointLabel(point)" class="flex min-w-0 justify-between gap-2 text-[11px]">
-                  <span class="truncate text-slate-600 dark:text-slate-300">{{ pointLabel(point) }}</span>
-                  <span class="shrink-0 text-cyan-700 dark:text-cyan-300">{{ pointValue(point) }}</span>
+                  <span class="dark-explicit truncate text-slate-600 dark:text-slate-300">{{ pointLabel(point) }}</span>
+                  <span class="dark-explicit shrink-0 text-cyan-700 dark:text-cyan-300">{{ pointValue(point) }}</span>
                 </div>
               </div>
               <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorNoteQuality.unavailable') }}</p>
             </div>
           </div>
 
-          <section v-if="quality" class="min-w-0 rounded-xl border border-cyan-100 bg-cyan-50/40 p-4 dark:border-cyan-400/25 dark:bg-cyan-400/10">
+          <section v-if="quality" class="dark-explicit min-w-0 rounded-xl border border-cyan-100 bg-cyan-50/40 p-4 dark:border-cyan-400/25 dark:bg-cyan-400/10">
             <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div class="min-w-0">
-                <div class="text-[10px] font-semibold uppercase tracking-wider text-cyan-700 dark:text-cyan-200">{{ t('evaluation.performanceScoreLabel') }}</div>
-                <p class="mt-1 break-words text-xs leading-5 text-slate-600 dark:text-slate-300">{{ quality.summary }}</p>
+                <div class="dark-explicit text-[10px] font-semibold uppercase tracking-wider text-cyan-700 dark:text-cyan-200">{{ t('evaluation.performanceScoreLabel') }}</div>
+                <p class="dark-explicit mt-1 break-words text-xs leading-5 text-slate-600 dark:text-slate-300">{{ quality.summary }}</p>
               </div>
               <div class="flex shrink-0 items-end gap-2">
-                <span class="text-3xl font-bold leading-none text-cyan-700 dark:text-cyan-200">{{ scoreLabel }}</span>
-                <span v-if="quality.overall_score != null" class="pb-0.5 text-[10px] text-cyan-600 dark:text-cyan-300">{{ t('creatorQuality.scoreOutOf') }}</span>
+                <span class="dark-explicit text-3xl font-bold leading-none text-cyan-700 dark:text-cyan-200">{{ scoreLabel }}</span>
+                <span v-if="quality.overall_score != null" class="dark-explicit pb-0.5 text-[10px] text-cyan-600 dark:text-cyan-300">{{ t('creatorQuality.scoreOutOf') }}</span>
               </div>
             </div>
             <div class="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-500">
-              <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('grade', quality.grade) }}</span>
-              <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('confidence', quality.confidence) }}</span>
-              <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('scope', quality.scope) }}</span>
-              <span v-if="quality.status" class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ quality.status }}</span>
-              <span v-if="quality.data_as_of" class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ t('evaluation.dataAsOf') }} {{ formatDate(quality.data_as_of) }}</span>
+              <span class="dark-explicit rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('grade', quality.grade) }}</span>
+              <span class="dark-explicit rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('confidence', quality.confidence) }}</span>
+              <span class="dark-explicit rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('scope', quality.scope) }}</span>
+              <span v-if="quality.status" class="dark-explicit rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ quality.status }}</span>
+              <span v-if="quality.data_as_of" class="dark-explicit rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ t('evaluation.dataAsOf') }} {{ formatDate(quality.data_as_of) }}</span>
             </div>
             <div class="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-              <div v-for="dimension in quality.dimensions" :key="dimension.key" class="min-w-0 rounded-lg border border-white/80 bg-white/80 p-2.5 dark:border-slate-700/50 dark:bg-slate-900/75">
+              <div v-for="dimension in quality.dimensions" :key="dimension.key" class="dark-explicit min-w-0 rounded-lg border border-white/80 bg-white/80 p-2.5 dark:border-slate-700/50 dark:bg-slate-900/75">
                 <div class="flex min-w-0 items-center justify-between gap-2">
-                  <span class="truncate text-[11px] font-semibold text-slate-700 dark:text-slate-100">{{ dimensionLabel(dimension.key) }}</span>
-                  <span v-if="dimension.available !== false && !quality.insufficient_data && dimension.score != null" class="shrink-0 text-xs font-bold text-cyan-700 dark:text-cyan-300">{{ Math.round(dimension.score) }}</span>
+                  <span class="dark-explicit truncate text-[11px] font-semibold text-slate-700 dark:text-slate-100">{{ dimensionLabel(dimension.key) }}</span>
+                  <span v-if="dimension.available !== false && !quality.insufficient_data && dimension.score != null" class="dark-explicit shrink-0 text-xs font-bold text-cyan-700 dark:text-cyan-300">{{ Math.round(dimension.score) }}</span>
                   <span v-else class="shrink-0 text-[10px] text-slate-400">{{ t('creatorQuality.notScored') }}</span>
                 </div>
-                <p class="mt-1 break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ dimension.evidence }}</p>
+                <p class="dark-explicit mt-1 break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ dimension.evidence }}</p>
               </div>
             </div>
             <div v-if="visibleRecommendations.length" class="mt-3">
-              <div class="text-[10px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-200">{{ t('creatorQuality.recommendations') }}</div>
+              <div class="dark-explicit text-[10px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-200">{{ t('creatorQuality.recommendations') }}</div>
               <ol class="mt-1.5 space-y-1.5">
-                <li v-for="recommendation in visibleRecommendations" :key="recommendation.priority + '-' + recommendation.dimension" class="flex min-w-0 gap-2 rounded-lg bg-white/80 p-2.5 dark:bg-slate-900/75">
-                  <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-semibold text-violet-700 dark:bg-violet-400/20 dark:text-violet-200">{{ recommendation.priority }}</span>
+                <li v-for="recommendation in visibleRecommendations" :key="recommendation.priority + '-' + recommendation.dimension" class="dark-explicit flex min-w-0 gap-2 rounded-lg bg-white/80 p-2.5 dark:bg-slate-900/75">
+                  <span class="dark-explicit flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-semibold text-violet-700 dark:bg-violet-400/20 dark:text-violet-200">{{ recommendation.priority }}</span>
                   <div class="min-w-0">
-                    <div class="break-words text-[11px] font-semibold text-slate-700 dark:text-slate-100">{{ recommendation.title }}</div>
-                    <p class="mt-0.5 break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ recommendation.advice }}</p>
+                    <div class="dark-explicit break-words text-[11px] font-semibold text-slate-700 dark:text-slate-100">{{ recommendation.title }}</div>
+                    <p class="dark-explicit mt-0.5 break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ recommendation.advice }}</p>
                   </div>
                 </li>
               </ol>
@@ -654,15 +654,15 @@ function rqgmDimLabel(dim: string): string {
           </section>
 
           <!-- RQGM judge-panel evaluation (thread-less, manual trigger) -->
-          <section class="min-w-0 rounded-xl border border-rose-100 bg-rose-50/30 p-4 dark:border-rose-400/20 dark:bg-rose-400/10">
+          <section class="dark-explicit min-w-0 rounded-xl border border-rose-100 bg-rose-50/30 p-4 dark:border-rose-400/20 dark:bg-rose-400/10">
             <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div class="min-w-0">
-                <div class="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-200">{{ t('evaluation.rqgmScoreLabel') }}</div>
-                <p class="mt-1 break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ t('creatorNoteQuality.rqgm.sectionHint') }}</p>
+                <div class="dark-explicit text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-200">{{ t('evaluation.rqgmScoreLabel') }}</div>
+                <p class="dark-explicit mt-1 break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ t('creatorNoteQuality.rqgm.sectionHint') }}</p>
                 <!-- EV-15: set expectations for manual RQGM (runtime + LLM
                      cost). Kept inside the text block: as a third flex item
                      it was squeezed into a vertical strip in narrow drawers. -->
-                <p class="mt-1 break-words text-[11px] leading-4 text-slate-400 dark:text-slate-500">{{ t('creatorNoteQuality.rqgm.costHint') }}</p>
+                <p class="dark-explicit mt-1 break-words text-[11px] leading-4 text-slate-400 dark:text-slate-400">{{ t('creatorNoteQuality.rqgm.costHint') }}</p>
               </div>
               <NeonButton
                 variant="ghost"
@@ -677,13 +677,13 @@ function rqgmDimLabel(dim: string): string {
               </NeonButton>
             </div>
 
-            <p v-if="rqgmError" class="mt-3 break-words text-[11px] leading-4 text-rose-600 dark:text-rose-300">{{ rqgmError }}</p>
+            <p v-if="rqgmError" class="dark-explicit mt-3 break-words text-[11px] leading-4 text-rose-600 dark:text-rose-300">{{ rqgmError }}</p>
 
-            <div v-else-if="rqgmStatus === 'degraded' || rqgmStatus === 'failed' || rqgmStatus === 'unavailable' || rqgmStatus === 'running'" class="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-[11px] leading-4 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-200" role="status">
+            <div v-else-if="rqgmStatus === 'degraded' || rqgmStatus === 'failed' || rqgmStatus === 'unavailable' || rqgmStatus === 'running'" class="dark-explicit mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-[11px] leading-4 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-200" role="status">
               {{ t('creatorNoteQuality.rqgm.notReady') }}
-              <button type="button" class="ml-2 min-h-9 rounded-md border border-amber-300 px-2 py-1 font-semibold hover:bg-amber-100 dark:border-amber-300/40 dark:hover:bg-amber-400/20" @click="runRqgmEvaluation">{{ t('creatorNoteQuality.rqgm.retry') }}</button>
+              <button type="button" class="dark-explicit ml-2 min-h-9 rounded-md border border-amber-300 px-2 py-1 font-semibold hover:bg-amber-100 dark:border-amber-300/40 dark:hover:bg-amber-400/20" @click="runRqgmEvaluation">{{ t('creatorNoteQuality.rqgm.retry') }}</button>
             </div>
-            <div v-else-if="rqgmStatus === 'partial'" class="mt-3 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-[11px] leading-4 text-sky-700 dark:border-sky-400/25 dark:bg-sky-400/10 dark:text-sky-200" role="status">
+            <div v-else-if="rqgmStatus === 'partial'" class="dark-explicit mt-3 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-[11px] leading-4 text-sky-700 dark:border-sky-400/25 dark:bg-sky-400/10 dark:text-sky-200" role="status">
               {{ t('creatorNoteQuality.rqgm.partial') }}<span v-if="rqgmCoverage?.weighted_ratio != null"> ({{ Math.round(rqgmCoverage.weighted_ratio * 100) }}%)</span>
             </div>
 
@@ -698,15 +698,15 @@ function rqgmDimLabel(dim: string): string {
                 <span v-if="!rqgmUnavailable" class="rounded-full px-2 py-0.5 text-[10px] font-semibold" :class="rqgmDecisionClass">
                   {{ rqgmDecisionLabel(rqgmResult.decision || 'unknown') }}
                 </span>
-                <p v-if="rqgmResult.summary" class="min-w-0 basis-full break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ rqgmResult.summary }}</p>
+                <p v-if="rqgmResult.summary" class="dark-explicit min-w-0 basis-full break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ rqgmResult.summary }}</p>
               </div>
 
-              <div v-if="rqgmResult.bias_warning" class="rounded-lg border border-amber-200 bg-amber-50/70 p-2.5 dark:border-amber-400/25 dark:bg-amber-400/10">
-                <div class="flex items-center gap-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-200">
+              <div v-if="rqgmResult.bias_warning" class="dark-explicit rounded-lg border border-amber-200 bg-amber-50/70 p-2.5 dark:border-amber-400/25 dark:bg-amber-400/10">
+                <div class="dark-explicit flex items-center gap-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-200">
                   <AppIcon name="AlertTriangle" size="xs" variant="pink" />
                   {{ t('creatorNoteQuality.rqgm.biasTitle') }}
                 </div>
-                <p class="mt-1 break-words text-[11px] leading-4 text-amber-700 dark:text-amber-200">{{ rqgmResult.bias_warning }}</p>
+                <p class="dark-explicit mt-1 break-words text-[11px] leading-4 text-amber-700 dark:text-amber-200">{{ rqgmResult.bias_warning }}</p>
               </div>
 
               <EvaluationRadar :dimensions="rqgmResult.dimensions || []" :height="240" />
@@ -714,17 +714,17 @@ function rqgmDimLabel(dim: string): string {
               <div>
                 <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.rqgm.dimensionsTitle') }}</div>
                 <div class="mt-1.5 space-y-1.5">
-                  <div v-for="d in rqgmResult.dimensions || []" :key="d.dimension" class="rounded-lg bg-white/80 p-2.5 dark:bg-slate-900/75">
+                  <div v-for="d in rqgmResult.dimensions || []" :key="d.dimension" class="dark-explicit rounded-lg bg-white/80 p-2.5 dark:bg-slate-900/75">
                     <div class="flex min-w-0 items-center justify-between gap-2">
-                      <span class="truncate text-[11px] font-semibold text-slate-700 dark:text-slate-100">
+                      <span class="dark-explicit truncate text-[11px] font-semibold text-slate-700 dark:text-slate-100">
                         {{ rqgmDimLabel(d.dimension) }}
-                        <span v-if="d.is_blocking" class="ml-1 rounded bg-rose-100 px-1 text-[9px] font-bold text-rose-700 dark:bg-rose-400/20 dark:text-rose-200">{{ t('creatorNoteQuality.rqgm.blocking') }}</span>
+                        <span v-if="d.is_blocking" class="dark-explicit ml-1 rounded bg-rose-100 px-1 text-[9px] font-bold text-rose-700 dark:bg-rose-400/20 dark:text-rose-200">{{ t('creatorNoteQuality.rqgm.blocking') }}</span>
                       </span>
                       <span class="shrink-0 text-xs font-bold" :class="rqgmScoreTier(d.score)" >{{ d.available === false || d.score == null ? '—' : d.score.toFixed(1) }}</span>
                     </div>
-                    <p v-if="d.rationale" class="mt-1 break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ d.rationale }}</p>
+                    <p v-if="d.rationale" class="dark-explicit mt-1 break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ d.rationale }}</p>
                     <ul v-if="d.issues?.length" class="mt-1 list-disc space-y-0.5 pl-4">
-                      <li v-for="(issue, i) in d.issues" :key="i" class="break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ issue }}</li>
+                      <li v-for="(issue, i) in d.issues" :key="i" class="dark-explicit break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ issue }}</li>
                     </ul>
                   </div>
                 </div>
@@ -740,17 +740,17 @@ function rqgmDimLabel(dim: string): string {
               <div v-if="rqgmResult.revision_hints?.length">
                 <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.rqgm.hintsTitle') }}</div>
                 <ul class="mt-1.5 list-disc space-y-0.5 pl-4">
-                  <li v-for="(h, i) in rqgmResult.revision_hints" :key="i" class="break-words text-[11px] leading-4 text-slate-600 dark:text-slate-300">{{ h }}</li>
+                  <li v-for="(h, i) in rqgmResult.revision_hints" :key="i" class="dark-explicit break-words text-[11px] leading-4 text-slate-600 dark:text-slate-300">{{ h }}</li>
                 </ul>
               </div>
             </div>
           </section>
         </div>
 
-        <div v-else-if="props.noteId" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
+        <div v-else-if="props.noteId" class="dark-explicit rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
           {{ t('creatorNoteQuality.unavailableSpecific') }}
         </div>
-        <div v-else-if="selectedSummary" class="rounded-xl border border-slate-100 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
+        <div v-else-if="selectedSummary" class="dark-explicit rounded-xl border border-slate-100 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
           {{ t('creatorNoteQuality.loadingDetail') }}
         </div>
       </div>

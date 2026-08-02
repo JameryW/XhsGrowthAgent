@@ -20,6 +20,10 @@ const props = withDefaults(defineProps<Props>(), {
   delta: '',
 })
 
+// Long enough that it lives in script; keeps the template :class readable.
+const surfaceClasses =
+  'dark-explicit metric-card-surface rounded-xl md:rounded-2xl p-3 md:p-6 relative overflow-hidden bg-white/80 backdrop-blur-sm border transition-all duration-300 hover:shadow-lg group dark:bg-slate-900/75 dark:border-slate-700/50'
+
 const colors = {
   pink: {
     bg: 'from-rose-400 via-rose-500 to-amber-400',
@@ -57,7 +61,7 @@ const colors = {
 </script>
 
 <template>
-  <div :class="['metric-card-surface rounded-xl md:rounded-2xl p-3 md:p-6 relative overflow-hidden bg-white/80 backdrop-blur-sm border transition-all duration-300 hover:shadow-lg group dark:bg-slate-900/75 dark:border-slate-700/50', colors[props.variant].border, colors[props.variant].shadow]" role="region" :aria-label="t('metricCard.ariaLabel', { title })">
+  <div :class="[surfaceClasses, colors[props.variant].border, colors[props.variant].shadow]" role="region" :aria-label="t('metricCard.ariaLabel', { title })">
     <!-- Hover glow -->
     <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" :style="{ background: `radial-gradient(circle at 50% 0%, ${props.variant === 'pink' ? 'rgba(244,63,94,0.08)' : props.variant === 'cyan' ? 'rgba(20,184,166,0.08)' : props.variant === 'purple' ? 'rgba(139,92,246,0.08)' : 'rgba(245,158,11,0.08)'} 0%, transparent 50%)` }" aria-hidden="true" />
 

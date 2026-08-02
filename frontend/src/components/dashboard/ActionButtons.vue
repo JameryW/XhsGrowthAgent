@@ -164,7 +164,7 @@ const scrollToDraftInput = () => {
 
     <div
       v-if="waitingStatusText"
-      class="flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
+      class="flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark-explicit dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
       role="status"
       aria-live="polite"
     >
@@ -327,7 +327,7 @@ const scrollToDraftInput = () => {
       <!-- Context-aware: Ripple data available indicator -->
       <div
         v-if="hasRippleData && (currentPhase === 'planning' || currentPhase === 'analyzing')"
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-violet-600 text-xs dark:bg-violet-950/40 dark:border-violet-500/30 dark:text-violet-200"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-violet-600 text-xs dark-explicit dark:bg-violet-950/40 dark:border-violet-500/30 dark:text-violet-200"
       >
         <AppIcon name="Zap" size="sm" variant="purple" />
         <span>{{ t('dashboard.ripple.title') }}</span>

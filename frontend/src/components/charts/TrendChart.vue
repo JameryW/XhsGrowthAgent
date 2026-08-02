@@ -145,7 +145,7 @@ const chartOption = computed(() => {
 
 <template>
   <div
-    class="rounded-xl md:rounded-2xl p-3 md:p-6 transition-all duration-200 hover:shadow-lg bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
+    class="dark-explicit rounded-xl md:rounded-2xl p-3 md:p-6 transition-all duration-200 hover:shadow-lg bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
     :class="VARIANT_BORDER_CLASS[props.variant]"
     role="figure"
     :aria-label="chartDescription"
@@ -158,7 +158,7 @@ const chartOption = computed(() => {
     <!-- Empty state: without it, a no-data series rendered as a blank axes
          box (EngagementChart already shows a placeholder). Height follows the
          chart's own height prop so the swap doesn't jump. -->
-    <div v-if="props.data.length === 0" class="flex items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" :style="{ height: `${props.height}px` }" role="status">
+    <div v-if="props.data.length === 0" class="dark-explicit flex items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" :style="{ height: `${props.height}px` }" role="status">
       {{ t('charts.noData') }}
     </div>
 

@@ -36,17 +36,17 @@ const handleCancel = () => {
     <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
 
     <!-- Content container -->
-    <div class="relative liquid-glass-elevated bg-white rounded-2xl p-8 flex flex-col items-center gap-6 max-w-md mx-4 dark:bg-slate-900/90">
+    <div class="relative liquid-glass-elevated bg-white rounded-2xl p-8 flex flex-col items-center gap-6 max-w-md mx-4 dark:bg-slate-900/90 dark-explicit">
       <!-- Rotating spinner -->
       <div
-        class="w-16 h-16 rounded-full border-4 border-slate-200 border-t-rose-500 rotate-animation dark:border-slate-600"
+        class="w-16 h-16 rounded-full border-4 border-slate-200 border-t-rose-500 rotate-animation dark:border-slate-600 dark-explicit"
         aria-hidden="true"
       />
 
       <!-- Loading message -->
       <p
         id="loading-message"
-        class="text-slate-700 font-semibold text-center dark:text-slate-200"
+        class="text-slate-700 font-semibold text-center dark:text-slate-200 dark-explicit"
       >
         {{ message || t('loading.processing') }}
       </p>

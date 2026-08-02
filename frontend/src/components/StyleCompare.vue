@@ -75,7 +75,7 @@ function handleConfirm() {
 </script>
 
 <template>
-  <div class="rounded-xl p-5 bg-white/90 backdrop-blur-sm border border-violet-200/50 dark:bg-slate-900/90 dark:border-violet-500/25">
+  <div class="dark-explicit rounded-xl p-5 bg-white/90 backdrop-blur-sm border border-violet-200/50 dark:bg-slate-900/90 dark:border-violet-500/25">
     <div class="flex items-center gap-3 mb-4">
       <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
         <AppIcon name="Palette" size="md" variant="white" :aria-label="t('styleCompare.chooseStyle')" />
@@ -151,7 +151,7 @@ function handleConfirm() {
         </div>
 
         <!-- Style suggestion -->
-        <div v-if="version.style_suggestion" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60">
+        <div v-if="version.style_suggestion" class="dark-explicit mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60">
           <p class="text-xs text-teal-600">💡 {{ version.style_suggestion }}</p>
         </div>
       </div>
@@ -159,10 +159,10 @@ function handleConfirm() {
 
     <!-- Selection indicator -->
     <Transition name="fade">
-      <div v-if="selectedVersion" class="mt-4 p-3 rounded-lg bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:border-teal-500/30">
+      <div v-if="selectedVersion" class="dark-explicit mt-4 p-3 rounded-lg bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:border-teal-500/30">
         <div class="flex items-center gap-2">
           <AppIcon name="CheckCircle" size="sm" variant="cyan" />
-          <span class="text-xs text-teal-600 font-medium dark:text-teal-300">
+          <span class="dark-explicit text-xs text-teal-600 font-medium dark:text-teal-300">
             {{ t('styleCompare.selected', { style: selectedVersion.style_name || selectedVersion.title, title: selectedVersion.title }) }}
           </span>
         </div>
@@ -170,7 +170,7 @@ function handleConfirm() {
     </Transition>
 
     <!-- Actions -->
-    <div class="flex gap-3 mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60">
+    <div class="dark-explicit flex gap-3 mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60">
       <NeonButton
         variant="cyan"
         :disabled="!selectedVersionId || props.isLoading"

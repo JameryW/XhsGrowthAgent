@@ -25,7 +25,7 @@ const goBack = () => {
     <div class="absolute top-1/3 left-1/3 w-[400px] h-[400px] rounded-full opacity-40 pointer-events-none" style="background: radial-gradient(circle, rgba(244,63,94,0.1) 0%, transparent 60%); filter: blur(80px);" />
     <div class="absolute bottom-1/3 right-1/3 w-[350px] h-[350px] rounded-full opacity-30 pointer-events-none" style="background: radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 60%); filter: blur(100px);" />
 
-    <div class="relative w-full max-w-lg overflow-hidden rounded-3xl border border-white/80 bg-white/75 p-8 text-center shadow-xl shadow-slate-200/60 backdrop-blur-xl md:p-10 dark:border-slate-700/60 dark:bg-slate-900/90 dark:shadow-slate-950/50">
+    <div class="dark-explicit relative w-full max-w-lg overflow-hidden rounded-3xl border border-white/80 bg-white/75 p-8 text-center shadow-xl shadow-slate-200/60 backdrop-blur-xl md:p-10 dark:border-slate-700/60 dark:bg-slate-900/90 dark:shadow-slate-950/50">
       <!-- Error icon -->
       <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-rose-400 to-amber-400 flex items-center justify-center mx-auto mb-6 shadow-sm">
         <AppIcon name="SearchX" size="xl" variant="white" :aria-label="t('notFound.title')" />

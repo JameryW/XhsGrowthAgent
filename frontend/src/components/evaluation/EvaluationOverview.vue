@@ -176,13 +176,13 @@ function formatDataAsOf(value: string | null | undefined): string {
           class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto"
         >
           <label class="min-w-0 flex-1 lg:w-64">
-            <span class="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span class="dark-explicit mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
               {{ t('creatorQuality.page.accountLabel') }}
             </span>
             <span class="relative block">
               <select
                 :value="accountId"
-                class="w-full appearance-none rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-3 pr-9 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-slate-600/60 dark:bg-slate-900/80 dark:text-slate-200 dark:focus:border-violet-400/50 dark:focus:ring-violet-900/40"
+                class="dark-explicit w-full appearance-none rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-3 pr-9 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:border-slate-600/60 dark:bg-slate-900/80 dark:text-slate-200 dark:focus:border-violet-400/50 dark:focus:ring-violet-900/40"
                 :aria-label="t('creatorQuality.page.accountLabel')"
                 @change="emit('update:accountId', ($event.target as HTMLSelectElement).value)"
               >
@@ -196,7 +196,7 @@ function formatDataAsOf(value: string | null | undefined): string {
           </label>
           <button
             type="button"
-            class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:self-end dark:border-slate-600/60 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:bg-violet-950/35 dark:hover:text-violet-200"
+            class="dark-explicit inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:self-end dark:border-slate-600/60 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:bg-violet-950/35 dark:hover:text-violet-200"
             :disabled="accountsLoading"
             :aria-label="t('creatorQuality.page.refreshAccounts')"
             :title="t('creatorQuality.page.refreshAccounts')"
@@ -209,7 +209,7 @@ function formatDataAsOf(value: string | null | undefined): string {
         <div v-else-if="accounts.length && hideAccountSelector" class="flex w-full justify-end lg:w-auto">
           <button
             type="button"
-            class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600/60 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:bg-violet-950/35 dark:hover:text-violet-200"
+            class="dark-explicit inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600/60 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:bg-violet-950/35 dark:hover:text-violet-200"
             :disabled="accountsLoading"
             :aria-label="t('creatorQuality.page.refreshAccounts')"
             :title="t('creatorQuality.page.refreshAccounts')"
@@ -228,7 +228,7 @@ function formatDataAsOf(value: string | null | undefined): string {
           <p v-if="!accountId || isAllAccounts" class="ov-hint">
             {{ isAllAccounts ? t('evaluation.overview.allAccountsHint') : t('evaluation.overview.noAccount') }}
           </p>
-          <div v-else-if="reportLoading" class="mt-2 h-10 w-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" aria-busy="true" />
+          <div v-else-if="reportLoading" class="dark-explicit mt-2 h-10 w-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" aria-busy="true" />
           <template v-else>
             <div class="mt-1 flex items-end gap-2">
               <span class="ov-score-value">{{ scoreText }}</span>
@@ -245,8 +245,8 @@ function formatDataAsOf(value: string | null | undefined): string {
           <p class="ov-label">{{ t('evaluation.rqgmTrendLabel') }}</p>
           <!-- Fixed 110px skeleton (the TrendChart below renders at height 110)
                so the card doesn't jump when the trend arrives. -->
-          <div v-if="trendLoading" class="rounded-xl border border-slate-200/50 bg-white/90 p-3 dark:border-slate-700/55 dark:bg-slate-900/90" aria-busy="true">
-            <div class="h-[110px] animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+          <div v-if="trendLoading" class="dark-explicit rounded-xl border border-slate-200/50 bg-white/90 p-3 dark:border-slate-700/55 dark:bg-slate-900/90" aria-busy="true">
+            <div class="dark-explicit h-[110px] animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
           </div>
           <template v-else-if="hasTrend">
             <TrendChart :data="trendData" :height="110" />

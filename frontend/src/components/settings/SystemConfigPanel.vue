@@ -108,14 +108,14 @@ async function confirmDeleteKey() {
     </div>
 
     <div v-for="group in store.groups" :key="group.id"
-      class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-700/55"
+      class="dark-explicit rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-700/55"
     >
       <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
         {{ t(groupLabels[group.id] || group.id) }}
       </h3>
       <div class="space-y-1">
         <div v-for="keyName in group.keys" :key="keyName"
-          class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors dark:hover:bg-slate-800/50"
+          class="dark-explicit flex flex-wrap items-center gap-x-3 gap-y-1 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors dark:hover:bg-slate-800/50"
           :class="isParam(keyName) ? 'bg-slate-50/40 dark:bg-slate-800/40' : ''"
         >
           <span class="text-xs font-mono w-full sm:w-44 shrink-0 break-all" :class="isParam(keyName) ? 'text-teal-600' : 'text-slate-500'">{{ keyName }}</span>
@@ -127,7 +127,7 @@ async function confirmDeleteKey() {
               v-model="edits[keyName]"
               :type="isParam(keyName) ? 'text' : 'password'"
               :placeholder="isParam(keyName) ? keyName : t('settings.enterValue')"
-              class="w-full px-2 py-1 text-sm rounded border bg-white focus:border-rose-400 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+              class="dark-explicit w-full px-2 py-1 text-sm rounded border bg-white focus:border-rose-400 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
               :class="isParam(keyName) ? 'border-teal-200' : 'border-rose-200'"
               @keydown.escape="cancelEdit(keyName)"
             />
@@ -141,14 +141,14 @@ async function confirmDeleteKey() {
           <div class="flex items-center gap-1 shrink-0">
             <template v-if="edits[keyName] !== undefined">
               <button type="button" @click="cancelEdit(keyName)"
-                class="min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                class="dark-explicit min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
               >
                 <AppIcon name="X" size="xs" variant="pink" />
               </button>
             </template>
             <template v-else>
               <button type="button" @click="startEdit(keyName)"
-                class="min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                class="dark-explicit min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
                 :title="t('settings.edit')"
               >
                 <AppIcon name="Pencil" size="xs" variant="cyan" />
