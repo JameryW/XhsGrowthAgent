@@ -129,8 +129,14 @@ export const useThemeStore = defineStore('theme', () => {
     applyTheme(true)
   }
 
+  const MODE_CYCLE: Record<ThemeMode, ThemeMode> = {
+    light: 'dark',
+    dark: 'system',
+    system: 'light',
+  }
+
   function toggle() {
-    setMode(isDark.value ? 'light' : 'dark')
+    setMode(MODE_CYCLE[mode.value])
   }
 
   return { mode, systemPrefersDark, isDark, init, dispose, setMode, toggle }

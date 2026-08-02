@@ -49,7 +49,7 @@ describe('useThemeStore', () => {
     expect(document.documentElement.style.colorScheme).toBe('dark')
   })
 
-  it('persists explicit mode changes and toggles without a reload', () => {
+  it('persists explicit mode changes and cycles light → dark → system without a reload', () => {
     const store = useThemeStore()
     store.init()
 
@@ -59,9 +59,17 @@ describe('useThemeStore', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true)
 
     store.toggle()
-    expect(store.mode).toBe('light')
+    expect(store.mode).toBe('system')
     expect(store.isDark).toBe(false)
     expect(document.documentElement.classList.contains('dark')).toBe(false)
+
+    store.toggle()
+    expect(store.mode).toBe('light')
+
+    store.toggle()
+    expect(store.mode).toBe('dark')
+    expect(store.isDark).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 
   it('guards the first painted frames so a theme change does not animate every surface', () => {

@@ -26,8 +26,9 @@
     "run": "运行"
   },
   "theme": {
-    "switchToLight": "切换到浅色模式",
-    "switchToDark": "切换到暗黑模式"
+    "light": "浅色模式",
+    "dark": "暗黑模式",
+    "system": "跟随系统"
   },
   "health": {
     "title": "系统健康检查",

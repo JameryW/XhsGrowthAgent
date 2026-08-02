@@ -26,8 +26,9 @@
     "run": "Run"
   },
   "theme": {
-    "switchToLight": "Switch to light mode",
-    "switchToDark": "Switch to dark mode"
+    "light": "Light mode",
+    "dark": "Dark mode",
+    "system": "Follow system"
   },
   "health": {
     "title": "System Health Check",

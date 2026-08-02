@@ -28,6 +28,8 @@ export async function loadLocaleMessages(locale: string): Promise<void> {
 
 // 启动时若用户存的是非默认 locale，异步补加载（首屏先用 fallback，加载后切换，避免阻塞 mount）
 const initialLocale = localStorage.getItem('language') || 'zh-CN'
+// index.html 静态写死 lang="zh-CN"；启动时按持久化语言同步一次。
+document.documentElement.lang = initialLocale
 if (initialLocale !== 'zh-CN') {
   loadLocaleMessages(initialLocale).then(() => {
     i18n.global.locale.value = initialLocale as 'zh-CN' | 'en'

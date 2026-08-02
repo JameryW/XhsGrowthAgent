@@ -7,8 +7,11 @@ import { useThemeStore } from '@/stores/theme'
 const { t } = useI18n()
 const themeStore = useThemeStore()
 
-const label = computed(() => themeStore.isDark ? t('theme.switchToLight') : t('theme.switchToDark'))
-const iconName = computed(() => themeStore.isDark ? 'Sun' : 'Moon')
+// Tri-state cycle light → dark → system: label/icon reflect the current mode.
+const modeIcons = { light: 'Sun', dark: 'Moon', system: 'Monitor' } as const
+
+const label = computed(() => t(`theme.${themeStore.mode}`))
+const iconName = computed(() => modeIcons[themeStore.mode])
 
 onMounted(() => themeStore.init())
 </script>

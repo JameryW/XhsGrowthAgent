@@ -14,6 +14,8 @@ export const useLanguageStore = defineStore('language', () => {
     i18n.global.locale.value = lang
     locale.value = lang
     localStorage.setItem('language', lang)
+    // 保持 <html lang> 与实际界面语言一致（可访问性/朗读/输入法）。
+    document.documentElement.lang = lang
   }
 
   return { currentLocale, setLanguage }
