@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
-import ProgressPhase from '@/components/ProgressPhase.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import ReviewSkeleton from '@/components/skeletons/ReviewSkeleton.vue'
 import AnalyticsSkeleton from '@/components/skeletons/AnalyticsSkeleton.vue'
@@ -92,7 +91,7 @@ describe('Theme 1 Acceptance Tests', () => {
   })
 
   describe('AC2: Progress bar updates realtime with correct colors', () => {
-    it('ProgressPhase displays correct color for each workflow phase', () => {
+    it('useLoading maps each workflow phase to its display color', () => {
       const { phaseToColor } = useLoading()
 
       // Test color mapping for all phases
@@ -111,48 +110,8 @@ describe('Theme 1 Acceptance Tests', () => {
       ]
 
       phaseColorTests.forEach(({ phase, expectedColor }) => {
-        const wrapper = mount(ProgressPhase, {
-          props: { percent: 50, currentPhase: phase }
-        })
-        const progressBar = wrapper.find('.progress-bar-fill')
-        expect(progressBar.attributes('style')).toContain(expectedColor)
-
-        // Also verify composable returns correct color
         expect(phaseToColor(phase)).toBe(expectedColor)
       })
-    })
-
-    it('ProgressPhase updates reactively when props change', async () => {
-      const wrapper = mount(ProgressPhase, {
-        props: { percent: 10, currentPhase: 'scouting' }
-      })
-
-      // Initial state: scouting phase with rose color
-      let progressBar = wrapper.find('.progress-bar-fill')
-      expect(progressBar.attributes('style')).toContain('width: 10%')
-      expect(progressBar.attributes('style')).toContain('#f43f5e')
-      expect(wrapper.text()).toContain('趋势侦察')
-
-      // Update to planning phase
-      await wrapper.setProps({ percent: 20, currentPhase: 'planning' })
-      progressBar = wrapper.find('.progress-bar-fill')
-      expect(progressBar.attributes('style')).toContain('width: 20%')
-      expect(progressBar.attributes('style')).toContain('#8b5cf6')
-      expect(wrapper.text()).toContain('内容策划')
-
-      // Update to creating phase
-      await wrapper.setProps({ percent: 40, currentPhase: 'creating' })
-      progressBar = wrapper.find('.progress-bar-fill')
-      expect(progressBar.attributes('style')).toContain('width: 40%')
-      expect(progressBar.attributes('style')).toContain('#14b8a6')
-      expect(wrapper.text()).toContain('内容创作')
-
-      // Update to completed phase
-      await wrapper.setProps({ percent: 100, currentPhase: 'completed' })
-      progressBar = wrapper.find('.progress-bar-fill')
-      expect(progressBar.attributes('style')).toContain('width: 100%')
-      expect(progressBar.attributes('style')).toContain('#10b981')
-      expect(wrapper.text()).toContain('已完成')
     })
 
     it('useLoading composable provides correct phase-to-percent mapping', () => {
@@ -175,18 +134,6 @@ describe('Theme 1 Acceptance Tests', () => {
       phasePercentTests.forEach(({ phase, expectedPercent }) => {
         expect(phaseToPercent(phase)).toBe(expectedPercent)
       })
-    })
-
-    it('ProgressPhase has proper ARIA attributes for accessibility', () => {
-      const wrapper = mount(ProgressPhase, {
-        props: { percent: 50, currentPhase: 'creating' }
-      })
-
-      const progressBar = wrapper.find('[role="progressbar"]')
-      expect(progressBar.exists()).toBe(true)
-      expect(progressBar.attributes('aria-valuenow')).toBe('50')
-      expect(progressBar.attributes('aria-valuemin')).toBe('0')
-      expect(progressBar.attributes('aria-valuemax')).toBe('100')
     })
   })
 

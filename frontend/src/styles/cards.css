@@ -1,8 +1,11 @@
-/* Unified card styles for XHS Growth Agent */
+/* Unified card styles for XHS Growth Agent.
+   Only `@tailwind components` is emitted here: `@layer components` requires a
+   matching directive in the same file, and the components layer is tiny
+   (container/plugin components). The base and utilities bundles are emitted
+   once by main.css (single source). Tailwind still expands @apply when
+   PostCSS processes this file. */
 
-@tailwind base;
 @tailwind components;
-@tailwind utilities;
 
 @layer components {
 /* Shared page header — the visual anchor for authenticated pages */
@@ -61,22 +64,12 @@
   62%, 100% { transform: translateX(920%) skewX(-18deg); opacity: 0; }
 }
 
-/* Base card - liquid glass surface */
+/* Base card - liquid glass surface.
+   Single source: the glass body (background/blur/border/shadow/transition)
+   lives in main.css on the shared `.liquid-glass, .card` rule; dark-mode
+   override is `html.dark .card` there too. Only layout stays here. */
 .card {
   @apply rounded-xl md:rounded-2xl p-3 md:p-6;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.46)),
-    rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(20px) saturate(165%);
-  -webkit-backdrop-filter: blur(20px) saturate(165%);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 12px 32px rgba(15, 23, 42, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    inset 0 -1px 0 rgba(15, 23, 42, 0.04);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .card:hover {
@@ -140,32 +133,12 @@
   transform: translateY(-10px);
 }
 
-/* Focus styles for accessibility */
-@layer utilities {
-  :focus-visible {
-    @apply outline-none ring-2 ring-rose-500 ring-offset-2;
-  }
-}
+/* Focus ring lives in main.css (@layer utilities, right after the @tailwind
+   directives) so this file does not need to re-emit the utilities bundle. */
 
-/* Scrollbar styles - pseudo-elements, keep outside layer */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
+/* Scrollbar styling is owned by main.css (@layer base, refined thin
+   scrollbar). The previous unlayered block here silently overrode it and
+   was removed. */
 
 /* Selection styles */
 ::selection {
