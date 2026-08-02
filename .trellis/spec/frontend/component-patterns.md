@@ -259,9 +259,10 @@ Rules for new code:
 
 In this toolchain, a scoped-style selector written as
 `:global(html.dark) .x` compiles to bare `html.dark` — the trailing class is
-dropped, so the rule matches nothing and silently never applies. Known
-unrepaired instances: `Navbar.vue` (2), `WorkflowTabBar.vue` (4),
-`EvaluationView.vue` (10, as `:global(.dark) .x`).
+dropped, so the rule matches nothing and silently never applies. All known
+instances were repaired (2026-08-02): `Navbar.vue` and `EvaluationView.vue`
+now use plain `html.dark .x` scoped selectors; `WorkflowTabBar.vue`'s
+duplicates of the main.css remap rules were removed.
 
 For dark overrides either write the component's own `dark:` utility variants
 (preferred), or use a plain `html.dark .x` selector inside the scoped block
