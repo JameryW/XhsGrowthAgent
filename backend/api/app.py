@@ -17,6 +17,7 @@ from typing import Any, cast
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from starlette.responses import FileResponse, Response
 
 from backend.api.middleware import error_handler_middleware
@@ -1394,6 +1395,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ponytail: gzip static assets + JSON responses. Frontend dist is served
+# uncompressed by StaticFiles (index.js 251K raw → ~80K gzipped). API JSON
+# payloads benefit too. minimum_size skips tiny responses where overhead
+# exceeds savings. Added after CORS so it wraps the CORS-decorated response.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.middleware("http")(error_handler_middleware)
 
