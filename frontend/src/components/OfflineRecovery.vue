@@ -27,6 +27,10 @@ const toastStore = useToastStore()
 const internalIsOnline = ref(props.isOnline ?? true)
 const wasOffline = ref(false)
 const initialized = ref(props.isOnline !== undefined)
+// ponytail: cancel the deferred onLine probe so a rAF scheduled before
+// unmount can't fire after the test env (happy-dom) tears down — that reads
+// navigator in a bare Node global and crashes the process with exit 1.
+let rafHandle: number | null = null
 
 const isOffline = computed(() => !(props.isOnline ?? internalIsOnline.value))
 
@@ -79,9 +83,11 @@ onMounted(() => {
   // controlled prop was supplied. Use requestAnimationFrame so the first
   // browser paint is not blocked by a connectivity probe.
   if (props.isOnline === undefined) {
-    requestAnimationFrame(() => {
-      // A parent may have supplied a prop while the frame was pending.
-      if (props.isOnline !== undefined) return
+    rafHandle = requestAnimationFrame(() => {
+      rafHandle = null
+      // A parent may have supplied a prop while the frame was pending, or the
+      // component may have unmounted; guard navigator for the bare-Node case.
+      if (props.isOnline !== undefined || typeof navigator === 'undefined') return
       const currentOnlineStatus = navigator.onLine
       internalIsOnline.value = currentOnlineStatus
       initialized.value = true
@@ -96,6 +102,10 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
+  if (rafHandle !== null) {
+    cancelAnimationFrame(rafHandle)
+    rafHandle = null
+  }
 })
 </script>
 
