@@ -3,6 +3,7 @@ import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import AccountScopeBar from '@/components/AccountScopeBar.vue'
 import AccountViewNotice from '@/components/AccountViewNotice.vue'
@@ -819,16 +820,8 @@ function dimDescription(dim: string): string {
           <span v-if="searchQuery.trim()" class="result-count">{{ t('evaluation.list.loadedCount', { loaded: visibleRowsCount, total: visibleRowsTotal }) }}</span>
         </section>
 
-        <div v-if="sourceTab === 'workflow' && listError" class="error-card" role="alert">
-          <AppIcon name="AlertCircle" variant="pink" />
-          <span>{{ listError }}</span>
-          <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadList(true, selectedAccountId)">{{ t('evaluation.error.retry') }}</button>
-        </div>
-        <div v-if="sourceTab === 'historical' && notesError" class="error-card" role="alert">
-          <AppIcon name="AlertCircle" variant="pink" />
-          <span>{{ notesError }}</span>
-          <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadNotes(selectedAccountId, true)">{{ t('evaluation.error.retry') }}</button>
-        </div>
+        <ErrorState v-if="sourceTab === 'workflow' && listError" variant="api" :message="listError" :retry-label="t('evaluation.error.retry')" hide-dismiss @retry="loadList(true, selectedAccountId)" />
+        <ErrorState v-if="sourceTab === 'historical' && notesError" variant="api" :message="notesError" :retry-label="t('evaluation.error.retry')" hide-dismiss @retry="loadNotes(selectedAccountId, true)" />
 
         <EvaluationSkeleton v-if="(sourceTab === 'workflow' ? listLoading && !listItems.length : notesLoading && !notesItems.length)" variant="list" />
 
@@ -916,12 +909,8 @@ function dimDescription(dim: string): string {
       <!-- 加载中 -->
       <EvaluationSkeleton v-if="detailLoading" variant="detail" />
 
-      <!-- 错误 -->
-      <div v-else-if="detailError" class="error-card" role="alert">
-        <AppIcon name="AlertCircle" variant="pink" />
-        <span>{{ detailError }}</span>
-        <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="retryDetail">{{ t('evaluation.error.retry') }}</button>
-      </div>
+      <!-- 错误 (INF-01: shared presentational ErrorState) -->
+      <ErrorState v-else-if="detailError" variant="api" :message="detailError" :retry-label="t('evaluation.error.retry')" hide-dismiss @retry="retryDetail" />
 
       <!-- 空状态：无评估结果 -->
       <div v-else-if="hasResult === false && result" class="empty-state">
@@ -1171,11 +1160,6 @@ html.dark .filter-chip--active { background: #0d9488; border-color: #0d9488; col
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.error-card {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.875rem 1rem; background: #fef2f2; border: 1px solid #fecaca;
-  border-radius: 0.5rem; color: #b91c1c; font-size: 0.875rem; margin-bottom: 1rem;
-}
 .empty-state {
   display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
   padding: 3rem 1rem; text-align: center; color: #94a3b8;

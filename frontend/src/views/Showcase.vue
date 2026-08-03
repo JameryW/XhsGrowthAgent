@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import AnimatedCounter from '@/components/AnimatedCounter.vue'
+import ErrorState from '@/components/ErrorState.vue'
+import { ShowcaseSkeleton } from '@/components/skeletons'
 import AuroraBackground from '@/components/showcase/AuroraBackground.vue'
 import PublicReplayResult from '@/components/replay/PublicReplayResult.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -534,15 +536,18 @@ watch(filteredCases, async () => {
           </div>
         </div>
 
-        <div v-if="loading && !loaded" class="mt-5 grid gap-4 md:grid-cols-3">
-          <div v-for="index in 6" :key="index" class="dark-explicit h-72 animate-pulse rounded-2xl bg-white/80 dark:bg-slate-900/80" :class="index === 1 ? 'md:col-span-2' : ''" aria-busy="true" />
-        </div>
-        <div v-else-if="loadError && !loaded" class="dark-explicit mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-400/20 dark:bg-rose-400/10">
-          <AppIcon name="WifiOff" size="lg" variant="pink" aria-hidden="true" />
-          <h3 class="mt-3 text-base font-semibold">{{ t('showcase.casesLoadFailed') }}</h3>
-          <p class="dark-explicit mt-2 text-sm text-slate-600 dark:text-slate-300">{{ t('showcase.casesLoadFailedDesc') }}</p>
-          <button type="button" class="mt-4 min-h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900" :disabled="retrying" @click="retryCases">{{ retrying ? t('common.loadingState') : t('common.retry') }}</button>
-        </div>
+        <ShowcaseSkeleton v-if="loading && !loaded" class="mt-5" />
+        <!-- INF-01: shared presentational ErrorState (no store binding on public pages) -->
+        <ErrorState
+          v-else-if="loadError && !loaded"
+          class="mt-5"
+          variant="api"
+          :title="t('showcase.casesLoadFailed')"
+          :message="t('showcase.casesLoadFailedDesc')"
+          :retrying="retrying"
+          hide-dismiss
+          @retry="retryCases"
+        />
         <div v-else-if="loaded && !cases.length" class="dark-explicit mt-5 rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center dark:border-slate-700 dark:bg-slate-900/70">
           <AppIcon name="Layers" size="lg" variant="cyan" aria-hidden="true" />
           <h3 class="mt-3 text-base font-semibold">{{ t('showcase.noPublicCases') }}</h3>
