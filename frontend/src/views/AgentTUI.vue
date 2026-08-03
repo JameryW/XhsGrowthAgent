@@ -18,7 +18,10 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
-import { WebglAddon } from '@xterm/addon-webgl'
+// ponytail: WebglAddon (~150K) lazy-loaded — only mobile-excluded + webgl2
+// capable users hit it. Static import forced it into the AgentTUI route chunk
+// for everyone, bloating the 520K bundle. Dynamic import trims it to on-demand.
+import type { WebglAddon as WebglAddonType } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { useAccountsStore, useWorkflowStore } from '@/stores'
 import {
@@ -2438,7 +2441,8 @@ onMounted(async () => {
   })()
   if (!isMobile.value && webgl2Supported) {
     try {
-      const webglAddon = new WebglAddon()
+      const { WebglAddon } = await import('@xterm/addon-webgl')
+      const webglAddon: WebglAddonType = new WebglAddon()
       webglAddon.onContextLoss(() => {
         webglAddon.dispose()
       })
