@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import { prefersReducedMotion } from '@/composables/useReducedMotion'
 
 const { t } = useI18n()
 
@@ -28,11 +29,12 @@ const displayMessage = computed(() => props.message || t('celebration.message'))
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
 const previousFocusElement = ref<HTMLElement | null>(null)
 
-// Confetti particles
+// DB-10: skip confetti generation entirely under prefers-reduced-motion.
 const particles = ref<{ id: number; x: number; y: number; color: string; delay: number; size: number }[]>([])
 
-// Generate confetti particles
+// Generate confetti particles (unless reduced motion is requested)
 onMounted(() => {
+  if (prefersReducedMotion.value) return
   const colors = ['#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#ec4899']
   const particleCount = 50
 
@@ -125,8 +127,8 @@ const handleKeyDown = (e: KeyboardEvent) => {
           <!-- Message -->
           <p id="celebration-message" class="text-slate-600 mb-6">{{ displayMessage }}</p>
 
-          <!-- Stats Preview — DB-10: real artifact counts -->
-          <div class="grid grid-cols-3 gap-3 mb-6">
+          <!-- Stats Preview — DB-10: real artifact counts (decorative 100% cell removed) -->
+          <div class="grid grid-cols-2 gap-3 mb-6">
             <div class="dark-explicit p-3 rounded-lg bg-rose-50 border border-rose-100 dark:bg-rose-950/40 dark:border-rose-500/30">
               <div class="text-rose-500 font-bold text-lg">{{ props.copyCount || '—' }}</div>
               <div class="text-xs text-slate-500">{{ t('celebration.copyCount') }}</div>
@@ -134,10 +136,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
             <div class="dark-explicit p-3 rounded-lg bg-teal-50 border border-teal-100 dark:bg-teal-950/40 dark:border-teal-500/30">
               <div class="text-teal-500 font-bold text-lg">{{ props.imageCount || '—' }}</div>
               <div class="text-xs text-slate-500">{{ t('celebration.imageCount') }}</div>
-            </div>
-            <div class="dark-explicit p-3 rounded-lg bg-violet-50 border border-violet-100 dark:bg-violet-950/40 dark:border-violet-500/30">
-              <div class="text-violet-500 font-bold text-lg">100%</div>
-              <div class="text-xs text-slate-500">{{ t('celebration.progressComplete') }}</div>
             </div>
           </div>
 
