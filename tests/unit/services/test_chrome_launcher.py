@@ -995,9 +995,7 @@ async def test_hygiene_browser_pages_closes_multiple(_profile_dir, monkeypatch):
     stats = cl.CdpTarget("stats", "page", "https://creator.xiaohongshu.com/statistics/account/v2")
     blank = cl.CdpTarget("blank", "page", "about:blank")
     # list → recheck → post-close
-    list_targets = MagicMock(
-        side_effect=[[home, stats, blank], [home, stats, blank], [home]]
-    )
+    list_targets = MagicMock(side_effect=[[home, stats, blank], [home, stats, blank], [home]])
     close = MagicMock(return_value=True)
     monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
     monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda port: False)

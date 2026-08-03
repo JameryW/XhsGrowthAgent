@@ -363,7 +363,7 @@ def _period_metrics_from_detail(
     posts_in_window: int,
     now: datetime | None = None,
     previous: bool = False,
-) -> dict[str, float | int] | None:
+) -> dict[str, Any] | None:
     """Build period metrics from Creator Center daily series when present.
 
     Account overview ``views`` / ``detail_metrics.view_list`` count *view events
@@ -386,9 +386,7 @@ def _period_metrics_from_detail(
     else:
         start, stop, end_exclusive = current_start, end, False
 
-    views = _sum_detail_series(
-        view_list, start=start, end=stop, end_exclusive=end_exclusive
-    )
+    views = _sum_detail_series(view_list, start=start, end=stop, end_exclusive=end_exclusive)
     likes = _sum_detail_series(
         detail_metrics.get("like_list"), start=start, end=stop, end_exclusive=end_exclusive
     )
@@ -713,16 +711,12 @@ async def get_growth_report(
             detail_metrics = account_obj["detail_metrics"]
     filtered_posts = _filter_by_period(posts, period)
     report = _build_growth_report(account_id, period, filtered_posts, topics)
-    period_summary = _build_period_summary(
-        posts, period, detail_metrics=detail_metrics or None
-    )
+    period_summary = _build_period_summary(posts, period, detail_metrics=detail_metrics or None)
     current_metrics = period_summary.get("current") or {}
     if current_metrics.get("metric_source") == "creator_center_series":
         metrics = report.setdefault("metrics", {})
         metrics["total_engagement"] = int(current_metrics.get("engagement") or 0)
-        metrics["avg_engagement_rate"] = float(
-            current_metrics.get("avg_engagement_rate") or 0.0
-        )
+        metrics["avg_engagement_rate"] = float(current_metrics.get("avg_engagement_rate") or 0.0)
         metrics["total_views"] = int(current_metrics.get("views") or 0)
     snapshot = _complete_snapshot_metadata(
         account_id,
@@ -1089,9 +1083,7 @@ async def get_dashboard(
         elif isinstance(account_obj, dict) and isinstance(account_obj.get("detail_metrics"), dict):
             detail_metrics = account_obj["detail_metrics"]
 
-    period_summary = _build_period_summary(
-        posts, period, detail_metrics=detail_metrics or None
-    )
+    period_summary = _build_period_summary(posts, period, detail_metrics=detail_metrics or None)
     filtered_posts = _filter_by_period(posts, period)
     report = _build_growth_report(account_id, period, filtered_posts, topics)
     # Align report engagement totals with Creator Center series when available
@@ -1100,9 +1092,7 @@ async def get_dashboard(
     if current_metrics.get("metric_source") == "creator_center_series":
         metrics = report.setdefault("metrics", {})
         metrics["total_engagement"] = int(current_metrics.get("engagement") or 0)
-        metrics["avg_engagement_rate"] = float(
-            current_metrics.get("avg_engagement_rate") or 0.0
-        )
+        metrics["avg_engagement_rate"] = float(current_metrics.get("avg_engagement_rate") or 0.0)
         metrics["total_views"] = int(current_metrics.get("views") or 0)
 
     # ── Performance ──

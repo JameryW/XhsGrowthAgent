@@ -53,7 +53,8 @@ def _normalize(data: dict[str, Any] | None) -> dict[str, Any]:
 async def load_risk_gate_state() -> dict[str, Any]:
     """Load durable risk-gate cool-downs (wall-clock ISO timestamps)."""
     if not is_pool_ready():
-        return _normalize(_mem.get(_RISK_GATE_KEY) if isinstance(_mem.get(_RISK_GATE_KEY), dict) else None)
+        mem = _mem.get(_RISK_GATE_KEY)
+        return _normalize(mem if isinstance(mem, dict) else None)
     try:
         pool = get_pool()
         async with pool.connection() as conn, conn.cursor() as cur:

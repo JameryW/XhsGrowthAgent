@@ -402,11 +402,7 @@ async def _build_health_payload() -> dict[str, Any]:
             "message": (
                 f"CDP 占用中（{len(sessions)}）"
                 if sessions
-                else (
-                    f"冷却中 {len(active)} 项"
-                    if active
-                    else "无本地 CDP 占用"
-                )
+                else (f"冷却中 {len(active)} 项" if active else "无本地 CDP 占用")
             ),
             "cdp_sessions": sessions,
             "risk_gates": gates,
@@ -487,9 +483,11 @@ async def get_risk_gates(
 ) -> ApiResponse[Any]:
     """List active anti-risk cool-downs with remaining seconds."""
     from backend.services.cdp_session_lock import snapshot_cdp_sessions
-    from backend.services.xhs_risk_gate import list_active_cooldowns, snapshot_risk_gates
-
-    from backend.services.xhs_risk_gate import get_cooldown_policy
+    from backend.services.xhs_risk_gate import (
+        get_cooldown_policy,
+        list_active_cooldowns,
+        snapshot_risk_gates,
+    )
 
     gates = snapshot_risk_gates()
     active = list_active_cooldowns(account_id=account_id)

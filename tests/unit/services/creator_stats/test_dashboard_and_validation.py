@@ -132,6 +132,7 @@ def test_period_summary_prefers_creator_center_daily_series() -> None:
             "engagement_rate": 11.9,
         },
     ]
+
     # 30 daily points ending at 2026-07-30 16:00 UTC (matches live payloads).
     def _day(offset: int, count: int) -> dict[str, Any]:
         day = datetime(2026, 7, 1, 16, tzinfo=UTC) + timedelta(days=offset)

@@ -84,9 +84,7 @@ def snapshot_cdp_sessions() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for key, holder in list(_holders.items()):
         since_mono = _held_since_mono.get(key)
-        held_for = (
-            round(max(0.0, now_mono - since_mono), 1) if since_mono is not None else None
-        )
+        held_for = round(max(0.0, now_mono - since_mono), 1) if since_mono is not None else None
         rows.append(
             {
                 "key": key,
@@ -106,9 +104,7 @@ def is_cdp_session_busy(*, account_id: str = "", cdp_endpoint: str = "") -> bool
     return bool(lock is not None and lock.locked())
 
 
-async def is_cdp_session_busy_async(
-    *, account_id: str = "", cdp_endpoint: str = ""
-) -> bool:
+async def is_cdp_session_busy_async(*, account_id: str = "", cdp_endpoint: str = "") -> bool:
     """Busy check including a non-destructive Postgres advisory-lock probe."""
     key = _normalize_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
     if is_cdp_session_busy(account_id=account_id, cdp_endpoint=cdp_endpoint):

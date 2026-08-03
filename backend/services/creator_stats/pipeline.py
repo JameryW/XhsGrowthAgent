@@ -264,8 +264,7 @@ async def preflight_creator_login(account_id: str, cdp_endpoint: str) -> SyncRes
     # when no creator tab is already open. Let the live CDP crawl decide.
     if reason == "www_only":
         logger.info(
-            "creator login preflight www_only for %s; allowing crawl "
-            "(live CDP is authoritative)",
+            "creator login preflight www_only for %s; allowing crawl (live CDP is authoritative)",
             account_id,
         )
         return None
@@ -906,8 +905,7 @@ def _mark_empty_shell_soft_risk(
     if isinstance(resolution, dict) and resolution.get("skipped"):
         return result
     reason = (
-        f"empty shell risk: note list collapsed "
-        f"(prior_note_count={prior_note_count}, fetched=0)"
+        f"empty shell risk: note list collapsed (prior_note_count={prior_note_count}, fetched=0)"
     )
     result.soft_risk = True
     result.soft_risk_reason = reason
@@ -1022,8 +1020,7 @@ async def sync_all_active_accounts(
         code = str(item.get("error_code") or "")
         text = f"{code} {err}".lower()
         if (
-            code == ERROR_AUTH_EXPIRED
-            or code == ERROR_EMPTY_SHELL
+            code in (ERROR_AUTH_EXPIRED, ERROR_EMPTY_SHELL)
             or "401" in text
             or "auth" in text
             or "re-login" in text

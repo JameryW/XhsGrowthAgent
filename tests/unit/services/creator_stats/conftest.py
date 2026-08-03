@@ -42,6 +42,27 @@ def _deterministic_enrichment(monkeypatch):
     monkeypatch.setenv("CREATOR_STATS_DASHBOARD_BROWSE_CHANCE", "0")
 
 
+@pytest.fixture(autouse=True)
+def _bypass_cdp_hold(monkeypatch: pytest.MonkeyPatch):
+    """Neutralize the shared CDP lock + publish cooldown for creator-stats tests.
+
+    fetch_creator_center acquires hold_cdp_session(wait=False); in a full pytest
+    run earlier tests arm browser_action_cooldown, so CdpSessionBusyError fires
+    and every transport test fails with CreatorStatsFetchError. A no-op async
+    context manager lets the transport reach its internal happy paths.
+    """
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _noop_hold(**_):
+        yield
+
+    monkeypatch.setattr(
+        "backend.services.cdp_session_lock.hold_cdp_session",
+        _noop_hold,
+    )
+
+
 @contextmanager
 def grant_test_user(app: FastAPI) -> Iterator[None]:
     """Authenticate requests as a console user who owns any requested account.

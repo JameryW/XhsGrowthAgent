@@ -390,9 +390,7 @@ class CdpTransport:
         True the caller must close the page; when False, leave it open after a
         gentle wind-down so the profile does not look like open→scrape→close.
         """
-        reuse_chance = max(
-            0.0, min(1.0, _env_float("CREATOR_STATS_REUSE_TAB_CHANCE", 0.65))
-        )
+        reuse_chance = max(0.0, min(1.0, _env_float("CREATOR_STATS_REUSE_TAB_CHANCE", 0.65)))
         if reuse_chance > 0 and random.random() < reuse_chance:
             pages = list(getattr(context, "pages", None) or [])
             creator_pages: list[Any] = []
@@ -577,156 +575,203 @@ class CdpTransport:
         detail_filter: Callable[[dict[str, Any]], bool] | None,
         force_light: bool,
     ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
-            # 每轮换一个节奏基准：本轮整体偏快或偏慢，跨运行无统一节奏。
-            self._new_run_pace()
-            # 轻量轮：本轮只看概览+列表就离开，不做逐篇详情深入。
-            # High pressure always forces light even if caller forgot force_light.
-            if force_light or self._risk_pressure >= 2:
-                light_run = True
-            else:
-                light_run = self._light_run_chance > 0 and random.random() < self._light_run_chance
-            if light_run:
-                logger.info(
-                    "creator stats light run: skipping per-note enrichment this round"
-                    + (" (forced)" if force_light or self._risk_pressure >= 2 else "")
-                )
-            # Hard wall-clock for the whole session — never sit in Creator Center
-            # for a long fixed automation window (human visits are short).
-            import time as _time
-
-            session_limit_s = _env_float("CREATOR_STATS_SESSION_MAX_SECONDS", 240.0)
-            if self._risk_pressure >= 2:
-                session_limit_s = min(session_limit_s, 150.0)
-            elif self._risk_pressure >= 1:
-                session_limit_s = min(session_limit_s, 200.0)
-            session_limit_s = max(60.0, session_limit_s) * random.uniform(0.7, 1.15)
-            session_deadline = _time.monotonic() + session_limit_s
+        # 每轮换一个节奏基准：本轮整体偏快或偏慢，跨运行无统一节奏。
+        self._new_run_pace()
+        # 轻量轮：本轮只看概览+列表就离开，不做逐篇详情深入。
+        # High pressure always forces light even if caller forgot force_light.
+        if force_light or self._risk_pressure >= 2:
+            light_run = True
+        else:
+            light_run = self._light_run_chance > 0 and random.random() < self._light_run_chance
+        if light_run:
             logger.info(
-                "creator stats session budget: max_list_pages=%s light=%s period=%s "
-                "wall_clock<=%.0fs pressure=%s",
-                max_pages,
-                light_run,
-                period_norm,
-                session_limit_s,
-                self._risk_pressure,
+                "creator stats light run: skipping per-note enrichment this round"
+                + (" (forced)" if force_light or self._risk_pressure >= 2 else "")
             )
-            # 每轮的深入预算也随机缩放——会话总时长不聚类在固定上限。
-            # Slightly lower ceiling than before to keep sessions short under risk.
-            detail_budget = self._detail_timeout * random.uniform(0.35, 0.75)
-            browser = await self._ensure_browser()
-            context = browser.contexts[0]
-            page, page_owned = await self._acquire_page(context)
-            account_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
-            profile_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
-            personal_info_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
-            note_responses: dict[int, tuple[int, dict[str, Any] | list[Any] | None]] = {}
-            insight_responses: dict[str, tuple[int, dict[str, Any] | list[Any] | None]] = {}
-            note_detail_responses: dict[
-                str, dict[str, tuple[int, dict[str, Any] | list[Any] | None]]
-            ] = {}
-            account_ready = asyncio.Event()
-            profile_ready = asyncio.Event()
-            personal_ready = asyncio.Event()
-            first_notes_ready = asyncio.Event()
-            auth_failed = asyncio.Event()
-            pending: set[asyncio.Task[None]] = set()
-            auth_status: int | None = None
+        # Hard wall-clock for the whole session — never sit in Creator Center
+        # for a long fixed automation window (human visits are short).
+        import time as _time
 
-            def _record_auth_status(status: int) -> None:
-                nonlocal auth_status
-                if status in (401, 403):
-                    auth_status = status
-                    auth_failed.set()
+        session_limit_s = _env_float("CREATOR_STATS_SESSION_MAX_SECONDS", 240.0)
+        if self._risk_pressure >= 2:
+            session_limit_s = min(session_limit_s, 150.0)
+        elif self._risk_pressure >= 1:
+            session_limit_s = min(session_limit_s, 200.0)
+        session_limit_s = max(60.0, session_limit_s) * random.uniform(0.7, 1.15)
+        session_deadline = _time.monotonic() + session_limit_s
+        logger.info(
+            "creator stats session budget: max_list_pages=%s light=%s period=%s "
+            "wall_clock<=%.0fs pressure=%s",
+            max_pages,
+            light_run,
+            period_norm,
+            session_limit_s,
+            self._risk_pressure,
+        )
+        # 每轮的深入预算也随机缩放——会话总时长不聚类在固定上限。
+        # Slightly lower ceiling than before to keep sessions short under risk.
+        detail_budget = self._detail_timeout * random.uniform(0.35, 0.75)
+        browser = await self._ensure_browser()
+        context = browser.contexts[0]
+        page, page_owned = await self._acquire_page(context)
+        account_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
+        profile_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
+        personal_info_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
+        note_responses: dict[int, tuple[int, dict[str, Any] | list[Any] | None]] = {}
+        insight_responses: dict[str, tuple[int, dict[str, Any] | list[Any] | None]] = {}
+        note_detail_responses: dict[
+            str, dict[str, tuple[int, dict[str, Any] | list[Any] | None]]
+        ] = {}
+        account_ready = asyncio.Event()
+        profile_ready = asyncio.Event()
+        personal_ready = asyncio.Event()
+        first_notes_ready = asyncio.Event()
+        auth_failed = asyncio.Event()
+        pending: set[asyncio.Task[None]] = set()
+        auth_status: int | None = None
 
-            async def capture(response: Any) -> None:
-                nonlocal account_response, profile_response, personal_info_response
-                path = urlsplit(response.url).path
-                note_id = _note_detail_id(response.url)
-                if path not in (
-                    ACCOUNT_OVERVIEW_PATH,
-                    CREATOR_PROFILE_PATH,
-                    CREATOR_PERSONAL_INFO_PATH,
-                    NOTE_LIST_PATH,
-                    LEGACY_NOTE_LIST_PATH,
-                    AUDIENCE_SOURCE_PATH,
-                    AUDIENCE_PERIODS_PATH,
-                    NOTE_DETAIL_PATH,
-                    *NOTE_DETAIL_RESPONSE_PATHS,
-                ):
-                    return
-                try:
-                    body: dict[str, Any] | list[Any] | None = await response.json()
-                except Exception:
-                    body = None
-                status = int(getattr(response, "status", 0) or 0)
-                if path == ACCOUNT_OVERVIEW_PATH:
-                    account_response = (status, body)
-                    _record_auth_status(status)
-                    account_ready.set()
-                    return
-                if path == CREATOR_PROFILE_PATH:
-                    profile_response = (status, body)
-                    _record_auth_status(status)
-                    profile_ready.set()
-                    return
-                if path == CREATOR_PERSONAL_INFO_PATH:
-                    personal_info_response = (status, body)
-                    personal_ready.set()
-                    return
-                if path in (AUDIENCE_SOURCE_PATH, AUDIENCE_PERIODS_PATH, NOTE_DETAIL_PATH):
-                    # These are optional enrichment calls.  A permission or
-                    # rollout failure must not discard the note snapshot.
-                    insight_responses[path] = (status, body)
-                    return
-                if path in NOTE_DETAIL_RESPONSE_PATHS and note_id:
-                    note_detail_responses.setdefault(note_id, {})[path] = (status, body)
-                    return
-                page_index = self._page_index(response.url)
-                note_responses[page_index] = (status, body)
-                _record_auth_status(status)
-                # First list page may be page=0 or page=1 depending on frontend.
-                if page_index in (0, 1) or len(note_responses) == 1:
-                    first_notes_ready.set()
+        def _record_auth_status(status: int) -> None:
+            nonlocal auth_status
+            if status in (401, 403):
+                auth_status = status
+                auth_failed.set()
 
-            def on_response(response: Any) -> None:
-                task = asyncio.create_task(capture(response))
-                pending.add(task)
-                task.add_done_callback(pending.discard)
-
-            page.on("response", on_response)
+        async def capture(response: Any) -> None:
+            nonlocal account_response, profile_response, personal_info_response
+            path = urlsplit(response.url).path
+            note_id = _note_detail_id(response.url)
+            if path not in (
+                ACCOUNT_OVERVIEW_PATH,
+                CREATOR_PROFILE_PATH,
+                CREATOR_PERSONAL_INFO_PATH,
+                NOTE_LIST_PATH,
+                LEGACY_NOTE_LIST_PATH,
+                AUDIENCE_SOURCE_PATH,
+                AUDIENCE_PERIODS_PATH,
+                NOTE_DETAIL_PATH,
+                *NOTE_DETAIL_RESPONSE_PATHS,
+            ):
+                return
             try:
-                try:
-                    # 入口随机化：真人通常从创作者主页点进数据页，而不是每次
-                    # 都直接深链。主页加载顺带带出 personal_info（总粉丝数）。
-                    if self._home_entry_chance > 0 and random.random() < self._home_entry_chance:
-                        with contextlib.suppress(Exception):
-                            await page.goto(
-                                CREATOR_HOME_PAGE,
-                                wait_until="domcontentloaded",
-                                timeout=self._timeout * 1000,
-                            )
-                            await page.wait_for_timeout(random.uniform(900.0, 2200.0))
-                            await self._human_touch(page)
-                    # Start at the statistics dashboard: it loads the account
-                    # overview request we need, then use the site's own menu
-                    # transition to Note Manager so the signed note request is
-                    # generated by the same app session.
-                    dashboard_url = CREATOR_STATS_PAGE
-                    if period_norm != "30d":
-                        dashboard_url = (
-                            f"{CREATOR_STATS_PAGE}?date_type={period_to_date_type(period_norm)}"
+                body: dict[str, Any] | list[Any] | None = await response.json()
+            except Exception:
+                body = None
+            status = int(getattr(response, "status", 0) or 0)
+            if path == ACCOUNT_OVERVIEW_PATH:
+                account_response = (status, body)
+                _record_auth_status(status)
+                account_ready.set()
+                return
+            if path == CREATOR_PROFILE_PATH:
+                profile_response = (status, body)
+                _record_auth_status(status)
+                profile_ready.set()
+                return
+            if path == CREATOR_PERSONAL_INFO_PATH:
+                personal_info_response = (status, body)
+                personal_ready.set()
+                return
+            if path in (AUDIENCE_SOURCE_PATH, AUDIENCE_PERIODS_PATH, NOTE_DETAIL_PATH):
+                # These are optional enrichment calls.  A permission or
+                # rollout failure must not discard the note snapshot.
+                insight_responses[path] = (status, body)
+                return
+            if path in NOTE_DETAIL_RESPONSE_PATHS and note_id:
+                note_detail_responses.setdefault(note_id, {})[path] = (status, body)
+                return
+            page_index = self._page_index(response.url)
+            note_responses[page_index] = (status, body)
+            _record_auth_status(status)
+            # First list page may be page=0 or page=1 depending on frontend.
+            if page_index in (0, 1) or len(note_responses) == 1:
+                first_notes_ready.set()
+
+        def on_response(response: Any) -> None:
+            task = asyncio.create_task(capture(response))
+            pending.add(task)
+            task.add_done_callback(pending.discard)
+
+        page.on("response", on_response)
+        try:
+            try:
+                # 入口随机化：真人通常从创作者主页点进数据页，而不是每次
+                # 都直接深链。主页加载顺带带出 personal_info（总粉丝数）。
+                if self._home_entry_chance > 0 and random.random() < self._home_entry_chance:
+                    with contextlib.suppress(Exception):
+                        await page.goto(
+                            CREATOR_HOME_PAGE,
+                            wait_until="domcontentloaded",
+                            timeout=self._timeout * 1000,
                         )
+                        await page.wait_for_timeout(random.uniform(900.0, 2200.0))
+                        await self._human_touch(page)
+                # Start at the statistics dashboard: it loads the account
+                # overview request we need, then use the site's own menu
+                # transition to Note Manager so the signed note request is
+                # generated by the same app session.
+                dashboard_url = CREATOR_STATS_PAGE
+                if period_norm != "30d":
+                    dashboard_url = (
+                        f"{CREATOR_STATS_PAGE}?date_type={period_to_date_type(period_norm)}"
+                    )
+                await page.goto(
+                    dashboard_url,
+                    wait_until="domcontentloaded",
+                    timeout=self._timeout * 1000,
+                )
+                # SPA login shell may paint after domcontentloaded.  停顿
+                # 时长抖动——固定毫秒数是时序特征。
+                with contextlib.suppress(Exception):
+                    await page.wait_for_timeout(random.uniform(700.0, 1600.0))
+                await self._human_touch(page)
+                # Fail fast when the profile is logged out of Creator Center.
+                if await self._page_shows_login_ui(page) or auth_failed.is_set():
+                    login_ui = await self._page_shows_login_ui(page)
+                    auth_err = self._auth_error_from_captured(
+                        profile_response=profile_response,
+                        account_response=account_response,
+                        note_responses=note_responses,
+                        login_ui=login_ui or auth_failed.is_set(),
+                    )
+                    if auth_err is not None:
+                        raise auth_err
+                # 数据页浏览噪声：以一定概率先点一下别的日期范围 Tab
+                # （人看数据会切换时间范围对比）。Tab 文案可能随改版变
+                # 化，逐个候选尝试、失败静默。
+                if (
+                    self._dashboard_browse_chance > 0
+                    and random.random() < self._dashboard_browse_chance
+                ):
+                    for tab_text in ("近7天", "7天", "近 7 天"):
+                        try:
+                            await page.get_by_text(tab_text, exact=True).click(timeout=1500)
+                            with contextlib.suppress(Exception):
+                                await page.wait_for_timeout(random.uniform(600.0, 1500.0))
+                            await self._human_touch(page)
+                            break
+                        except Exception:
+                            continue
+                try:
+                    await page.get_by_text("笔记管理", exact=True).click(
+                        timeout=min(15_000, int(self._timeout * 1000))
+                    )
+                    # Linger on the note list like a human skimming titles
+                    # before scrolling — open→instant-scroll is bot-shaped.
+                    with contextlib.suppress(Exception):
+                        await page.wait_for_timeout(random.uniform(800.0, 2800.0))
+                        await self._human_touch(page)
+                except Exception:
+                    # A direct route is a compatibility fallback for a
+                    # Creator Center navigation redesign.  The account
+                    # response may already have been captured above.
                     await page.goto(
-                        dashboard_url,
+                        CREATOR_NOTE_MANAGER_PAGE,
                         wait_until="domcontentloaded",
                         timeout=self._timeout * 1000,
                     )
-                    # SPA login shell may paint after domcontentloaded.  停顿
-                    # 时长抖动——固定毫秒数是时序特征。
                     with contextlib.suppress(Exception):
                         await page.wait_for_timeout(random.uniform(700.0, 1600.0))
                     await self._human_touch(page)
-                    # Fail fast when the profile is logged out of Creator Center.
                     if await self._page_shows_login_ui(page) or auth_failed.is_set():
                         login_ui = await self._page_shows_login_ui(page)
                         auth_err = self._auth_error_from_captured(
@@ -736,96 +781,35 @@ class CdpTransport:
                             login_ui=login_ui or auth_failed.is_set(),
                         )
                         if auth_err is not None:
-                            raise auth_err
-                    # 数据页浏览噪声：以一定概率先点一下别的日期范围 Tab
-                    # （人看数据会切换时间范围对比）。Tab 文案可能随改版变
-                    # 化，逐个候选尝试、失败静默。
-                    if (
-                        self._dashboard_browse_chance > 0
-                        and random.random() < self._dashboard_browse_chance
-                    ):
-                        for tab_text in ("近7天", "7天", "近 7 天"):
-                            try:
-                                await page.get_by_text(tab_text, exact=True).click(timeout=1500)
-                                with contextlib.suppress(Exception):
-                                    await page.wait_for_timeout(random.uniform(600.0, 1500.0))
-                                await self._human_touch(page)
-                                break
-                            except Exception:
-                                continue
-                    try:
-                        await page.get_by_text("笔记管理", exact=True).click(
-                            timeout=min(15_000, int(self._timeout * 1000))
-                        )
-                        # Linger on the note list like a human skimming titles
-                        # before scrolling — open→instant-scroll is bot-shaped.
-                        with contextlib.suppress(Exception):
-                            await page.wait_for_timeout(random.uniform(800.0, 2800.0))
-                            await self._human_touch(page)
-                    except Exception:
-                        # A direct route is a compatibility fallback for a
-                        # Creator Center navigation redesign.  The account
-                        # response may already have been captured above.
-                        await page.goto(
-                            CREATOR_NOTE_MANAGER_PAGE,
-                            wait_until="domcontentloaded",
-                            timeout=self._timeout * 1000,
-                        )
-                        with contextlib.suppress(Exception):
-                            await page.wait_for_timeout(random.uniform(700.0, 1600.0))
-                        await self._human_touch(page)
-                        if await self._page_shows_login_ui(page) or auth_failed.is_set():
-                            login_ui = await self._page_shows_login_ui(page)
-                            auth_err = self._auth_error_from_captured(
-                                profile_response=profile_response,
-                                account_response=account_response,
-                                note_responses=note_responses,
-                                login_ui=login_ui or auth_failed.is_set(),
-                            )
-                            if auth_err is not None:
-                                raise auth_err from None
-                except CreatorStatsFetchError:
-                    raise
-                except Exception as e:
-                    raise CreatorStatsFetchError(
-                        f"creator note manager did not load: {type(e).__name__}: {e}"
-                    ) from e
+                            raise auth_err from None
+            except CreatorStatsFetchError:
+                raise
+            except Exception as e:
+                raise CreatorStatsFetchError(
+                    f"creator note manager did not load: {type(e).__name__}: {e}"
+                ) from e
 
-                async def _wait_initial_data() -> None:
-                    await account_ready.wait()
-                    await first_notes_ready.wait()
+            async def _wait_initial_data() -> None:
+                await account_ready.wait()
+                await first_notes_ready.wait()
 
-                data_ready = asyncio.create_task(_wait_initial_data())
-                auth_ready = asyncio.create_task(auth_failed.wait())
-                try:
-                    done, pending_wait = await asyncio.wait(
-                        {data_ready, auth_ready},
-                        timeout=self._timeout,
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    for task in pending_wait:
-                        task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await asyncio.gather(*pending_wait, return_exceptions=True)
-                    if (
-                        auth_ready in done
-                        and auth_failed.is_set()
-                        and not (account_ready.is_set() and first_notes_ready.is_set())
-                    ):
-                        login_ui = await self._page_shows_login_ui(page)
-                        auth_err = self._auth_error_from_captured(
-                            profile_response=profile_response,
-                            account_response=account_response,
-                            note_responses=note_responses,
-                            login_ui=login_ui,
-                        )
-                        if auth_err is not None:
-                            raise auth_err
-                    if data_ready not in done:
-                        raise TimeoutError("timed out waiting for creator stats responses")
-                    # Propagate wait exceptions if any.
-                    await data_ready
-                except TimeoutError as e:
+            data_ready = asyncio.create_task(_wait_initial_data())
+            auth_ready = asyncio.create_task(auth_failed.wait())
+            try:
+                done, pending_wait = await asyncio.wait(
+                    {data_ready, auth_ready},
+                    timeout=self._timeout,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for task in pending_wait:
+                    task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.gather(*pending_wait, return_exceptions=True)
+                if (
+                    auth_ready in done
+                    and auth_failed.is_set()
+                    and not (account_ready.is_set() and first_notes_ready.is_set())
+                ):
                     login_ui = await self._page_shows_login_ui(page)
                     auth_err = self._auth_error_from_captured(
                         profile_response=profile_response,
@@ -834,77 +818,87 @@ class CdpTransport:
                         login_ui=login_ui,
                     )
                     if auth_err is not None:
-                        raise auth_err from e
-                    detail_bits = [
-                        f"account_ready={account_ready.is_set()}",
-                        f"notes_ready={first_notes_ready.is_set()}",
-                        f"note_pages={sorted(note_responses)}",
-                    ]
-                    if auth_status is not None:
-                        detail_bits.append(f"auth_http={auth_status}")
-                    raise CreatorStatsFetchError(
-                        "creator note manager did not return account and first note page "
-                        f"({', '.join(detail_bits)}); verify the profile is logged in to "
-                        "creator.xiaohongshu.com",
-                        status_code=auth_status,
-                    ) from e
-                finally:
-                    for task in (data_ready, auth_ready):
-                        if not task.done():
-                            task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError, Exception):
-                        await asyncio.gather(data_ready, auth_ready, return_exceptions=True)
-
-                first_note_page = 0 if 0 in note_responses else (1 if 1 in note_responses else None)
-                if account_response is None or first_note_page is None:
-                    raise CreatorStatsFetchError(
-                        "creator note manager returned incomplete initial data"
-                    )
-                self._validate_creator_response(*account_response, operation="account overview")
-                self._validate_creator_response(
-                    *note_responses[first_note_page], operation="note list"
+                        raise auth_err
+                if data_ready not in done:
+                    raise TimeoutError("timed out waiting for creator stats responses")
+                # Propagate wait exceptions if any.
+                await data_ready
+            except TimeoutError as e:
+                login_ui = await self._page_shows_login_ui(page)
+                auth_err = self._auth_error_from_captured(
+                    profile_response=profile_response,
+                    account_response=account_response,
+                    note_responses=note_responses,
+                    login_ui=login_ui,
                 )
-                try:
-                    await asyncio.wait_for(profile_ready.wait(), timeout=min(2.0, self._timeout))
-                except TimeoutError:
-                    # Identity data enriches the snapshot but must not discard already-read stats.
-                    logger.info("creator profile response was not observed during stats sync")
-                if profile_response is not None and profile_response[0] in (401, 403):
-                    # Profile is optional for metrics, but 401 is a strong auth signal.
-                    logger.warning(
-                        "creator profile returned HTTP %s during stats sync",
-                        profile_response[0],
-                    )
+                if auth_err is not None:
+                    raise auth_err from e
+                detail_bits = [
+                    f"account_ready={account_ready.is_set()}",
+                    f"notes_ready={first_notes_ready.is_set()}",
+                    f"note_pages={sorted(note_responses)}",
+                ]
+                if auth_status is not None:
+                    detail_bits.append(f"auth_http={auth_status}")
+                raise CreatorStatsFetchError(
+                    "creator note manager did not return account and first note page "
+                    f"({', '.join(detail_bits)}); verify the profile is logged in to "
+                    "creator.xiaohongshu.com",
+                    status_code=auth_status,
+                ) from e
+            finally:
+                for task in (data_ready, auth_ready):
+                    if not task.done():
+                        task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await asyncio.gather(data_ready, auth_ready, return_exceptions=True)
 
-                # The Creator Center app itself knows how to generate a fresh
-                # signature for every page. Trigger its infinite-scroll path
-                # instead of replaying a stale signed request.
-                start_page = first_note_page + 1
-                for page_index in range(start_page, start_page + max_pages - 1):
-                    # Hard session wall-clock: leave before the visit looks automated-long.
-                    if _time.monotonic() >= session_deadline:
-                        logger.info(
-                            "creator stats session wall-clock reached; stopping pagination"
-                        )
-                        break
-                    # 翻页提前停止：人很少每次都把列表滚到底。每翻一页前掷一次，
-                    # 命中就停——被截断的旧笔记下轮仍有机会被翻到。
-                    if self._page_stop_chance > 0 and random.random() < self._page_stop_chance:
-                        logger.info("creator note list pagination stopped early (human-like)")
-                        break
-                    previous_pages = len(note_responses)
-                    # 翻页也保持人的节奏——连续秒翻列表是明显的机器特征。
-                    await self._pace()
-                    # 渐进滚动：瞬时 scrollTop=scrollHeight 是典型机器行为。
-                    # 分 2-4 段滚动、段间停顿，最后一段才到底触发加载。
-                    scroll_steps = random.randint(2, 4)
-                    for step in range(scroll_steps):
-                        last_step = step == scroll_steps - 1
-                        # 偶尔往回滚一下——人看列表会回看上一屏。
-                        if not last_step and random.random() < 0.15:
-                            with contextlib.suppress(Exception):
-                                await page.locator("div.content").evaluate(
-                                    """el => {
+            first_note_page = 0 if 0 in note_responses else (1 if 1 in note_responses else None)
+            if account_response is None or first_note_page is None:
+                raise CreatorStatsFetchError(
+                    "creator note manager returned incomplete initial data"
+                )
+            self._validate_creator_response(*account_response, operation="account overview")
+            self._validate_creator_response(*note_responses[first_note_page], operation="note list")
+            try:
+                await asyncio.wait_for(profile_ready.wait(), timeout=min(2.0, self._timeout))
+            except TimeoutError:
+                # Identity data enriches the snapshot but must not discard already-read stats.
+                logger.info("creator profile response was not observed during stats sync")
+            if profile_response is not None and profile_response[0] in (401, 403):
+                # Profile is optional for metrics, but 401 is a strong auth signal.
+                logger.warning(
+                    "creator profile returned HTTP %s during stats sync",
+                    profile_response[0],
+                )
+
+            # The Creator Center app itself knows how to generate a fresh
+            # signature for every page. Trigger its infinite-scroll path
+            # instead of replaying a stale signed request.
+            start_page = first_note_page + 1
+            for page_index in range(start_page, start_page + max_pages - 1):
+                # Hard session wall-clock: leave before the visit looks automated-long.
+                if _time.monotonic() >= session_deadline:
+                    logger.info("creator stats session wall-clock reached; stopping pagination")
+                    break
+                # 翻页提前停止：人很少每次都把列表滚到底。每翻一页前掷一次，
+                # 命中就停——被截断的旧笔记下轮仍有机会被翻到。
+                if self._page_stop_chance > 0 and random.random() < self._page_stop_chance:
+                    logger.info("creator note list pagination stopped early (human-like)")
+                    break
+                previous_pages = len(note_responses)
+                # 翻页也保持人的节奏——连续秒翻列表是明显的机器特征。
+                await self._pace()
+                # 渐进滚动：瞬时 scrollTop=scrollHeight 是典型机器行为。
+                # 分 2-4 段滚动、段间停顿，最后一段才到底触发加载。
+                scroll_steps = random.randint(2, 4)
+                for step in range(scroll_steps):
+                    last_step = step == scroll_steps - 1
+                    # 偶尔往回滚一下——人看列表会回看上一屏。
+                    if not last_step and random.random() < 0.15:
+                        with contextlib.suppress(Exception):
+                            await page.locator("div.content").evaluate(
+                                """el => {
                                         el.scrollTop = Math.max(
                                             el.scrollTop
                                                 - el.clientHeight * (0.3 + Math.random() * 0.5),
@@ -912,230 +906,220 @@ class CdpTransport:
                                         )
                                         el.dispatchEvent(new Event('scroll', { bubbles: true }))
                                     }"""
-                                )
-                                await asyncio.sleep(random.uniform(0.2, 0.6))
-                        script = (
-                            """el => {
+                            )
+                            await asyncio.sleep(random.uniform(0.2, 0.6))
+                    script = (
+                        """el => {
                                 el.scrollTop = el.scrollHeight
                                 el.dispatchEvent(new Event('scroll', { bubbles: true }))
                             }"""
-                            if last_step
-                            else """el => {
+                        if last_step
+                        else """el => {
                                 el.scrollTop = Math.min(
                                     el.scrollTop + el.clientHeight * (0.6 + Math.random() * 0.8),
                                     el.scrollHeight
                                 )
                                 el.dispatchEvent(new Event('scroll', { bubbles: true }))
                             }"""
-                        )
-                        try:
-                            await page.locator("div.content").evaluate(script)
-                        except Exception as e:
-                            logger.debug(
-                                "creator note list cannot scroll for page %s: %s", page_index, e
-                            )
-                            break
-                        if not last_step:
-                            await asyncio.sleep(random.uniform(0.15, 0.45))
-                    else:
-                        # All scroll steps completed — wait for the next page.
-                        try:
-                            await self._wait_for(
-                                lambda expected=page_index, before=previous_pages: (
-                                    expected in note_responses or len(note_responses) > before
-                                ),
-                                min(8.0, self._timeout),
-                            )
-                        except TimeoutError:
-                            # No next request is the normal end-of-list condition.
-                            break
-                        if page_index not in note_responses:
-                            break
-                        self._validate_creator_response(
-                            *note_responses[page_index], operation=f"note list page {page_index}"
-                        )
-                        next_data = _unwrap_api_body(note_responses[page_index][1])
-                        if (isinstance(next_data, dict) and not extract_note_items(next_data)) or (
-                            isinstance(next_data, list) and not next_data
-                        ):
-                            break
-                        continue
-                    # Scroll evaluate failed — stop paginating.
-                    break
-
-                raw_notes: list[dict[str, Any]] = []
-                for page_index in sorted(note_responses):
-                    _status, body = note_responses[page_index]
-                    data = _unwrap_api_body(body)
-                    if isinstance(data, dict):
-                        # Posted notes API may nest under notes / note_list / list.
-                        items = (
-                            data.get("notes")
-                            or data.get("note_list")
-                            or data.get("note_infos")
-                            or data.get("list")
-                        )
-                        if isinstance(items, list):
-                            raw_notes.extend(item for item in items if isinstance(item, dict))
-                    elif isinstance(data, list):
-                        raw_notes.extend(item for item in data if isinstance(item, dict))
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
-
-                # The note manager list endpoint does not include the audience
-                # breakdowns shown on the detail page.  Open each note detail
-                # route in the same signed browser session so the page itself
-                # issues the four authenticated requests we capture above.
-                # Keep a bounded batch: a malformed/slow note must not prevent
-                # the account snapshot from being imported.
-                detail_deadline = asyncio.get_running_loop().time() + detail_budget
-                detail_failures = 0
-                detail_candidates: list[str] = []
-                if not light_run:
-                    for note in raw_notes[:100]:
-                        note_id = str(
-                            note.get("note_id") or note.get("noteId") or note.get("id") or ""
-                        ).strip()
-                        if not note_id:
-                            continue
-                        if detail_filter is not None and not detail_filter(note):
-                            continue
-                        # 逐篇随机跳过：人翻笔记列表不会每篇都点开，候选全扫
-                        # 是机器人的完备性特征；跳过的笔记下轮仍会被过滤器选中。
-                        if (
-                            self._enrich_skip_chance > 0
-                            and random.random() < self._enrich_skip_chance
-                        ):
-                            continue
-                        detail_candidates.append(note_id)
-                # 乱序访问：每次以不同顺序浏览笔记详情，避免固定的"新→旧"
-                # 访问序列——固定顺序本身是可被风控识别的爬行特征。
-                random.shuffle(detail_candidates)
-                if self._max_detail_visits >= 0:
-                    detail_candidates = detail_candidates[: self._max_detail_visits]
-                for visit_order, note_id in enumerate(detail_candidates):
-                    remaining = detail_deadline - asyncio.get_running_loop().time()
-                    if remaining <= 0:
-                        logger.info("note detail enrichment budget exhausted")
-                        break
-                    if visit_order:
-                        await self._pace()
+                    )
                     try:
-                        await page.goto(
-                            f"{NOTE_DETAIL_PAGE}?noteId={quote(note_id, safe='')}",
-                            wait_until="domcontentloaded",
-                            timeout=max(
-                                100,
-                                min(int(self._timeout * 1000), int(remaining * 1000)),
-                            ),
+                        await page.locator("div.content").evaluate(script)
+                    except Exception as e:
+                        logger.debug(
+                            "creator note list cannot scroll for page %s: %s", page_index, e
                         )
-                        remaining = detail_deadline - asyncio.get_running_loop().time()
-                        if remaining <= 0:
-                            break
-                        # 打开详情页后偶尔动一下鼠标，避免整段会话无指针轨迹。
-                        if random.random() < 0.7:
-                            await self._human_touch(page)
+                        break
+                    if not last_step:
+                        await asyncio.sleep(random.uniform(0.15, 0.45))
+                else:
+                    # All scroll steps completed — wait for the next page.
+                    try:
                         await self._wait_for(
-                            lambda current=note_id: (
-                                len(note_detail_responses.get(current, {})) >= 2
+                            lambda expected=page_index, before=previous_pages: (
+                                expected in note_responses or len(note_responses) > before
                             ),
-                            min(5.0, self._timeout, remaining),
+                            min(8.0, self._timeout),
                         )
-                        detail_failures = 0
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:
-                        logger.info("note detail enrichment skipped for %s: %s", note_id, exc)
-                        detail_failures += 1
-                        if detail_failures >= self._detail_circuit_failures:
-                            # Repeated failures usually mean risk control or a
-                            # dead page — stop instead of hammering the site.
-                            logger.warning(
-                                "note detail enrichment circuit break after %s "
-                                "consecutive failures",
-                                detail_failures,
-                            )
-                            break
+                    except TimeoutError:
+                        # No next request is the normal end-of-list condition.
+                        break
+                    if page_index not in note_responses:
+                        break
+                    self._validate_creator_response(
+                        *note_responses[page_index], operation=f"note list page {page_index}"
+                    )
+                    next_data = _unwrap_api_body(note_responses[page_index][1])
+                    if (isinstance(next_data, dict) and not extract_note_items(next_data)) or (
+                        isinstance(next_data, list) and not next_data
+                    ):
+                        break
+                    continue
+                # Scroll evaluate failed — stop paginating.
+                break
 
-                # Wait for response callbacks created by the final navigation
-                # before taking the captured payloads out of the local map.
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
+            raw_notes: list[dict[str, Any]] = []
+            for page_index in sorted(note_responses):
+                _status, body = note_responses[page_index]
+                data = _unwrap_api_body(body)
+                if isinstance(data, dict):
+                    # Posted notes API may nest under notes / note_list / list.
+                    items = (
+                        data.get("notes")
+                        or data.get("note_list")
+                        or data.get("note_infos")
+                        or data.get("list")
+                    )
+                    if isinstance(items, list):
+                        raw_notes.extend(item for item in items if isinstance(item, dict))
+                elif isinstance(data, list):
+                    raw_notes.extend(item for item in data if isinstance(item, dict))
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
-                for index, note in enumerate(raw_notes):
+            # The note manager list endpoint does not include the audience
+            # breakdowns shown on the detail page.  Open each note detail
+            # route in the same signed browser session so the page itself
+            # issues the four authenticated requests we capture above.
+            # Keep a bounded batch: a malformed/slow note must not prevent
+            # the account snapshot from being imported.
+            detail_deadline = asyncio.get_running_loop().time() + detail_budget
+            detail_failures = 0
+            detail_candidates: list[str] = []
+            if not light_run:
+                for note in raw_notes[:100]:
                     note_id = str(
                         note.get("note_id") or note.get("noteId") or note.get("id") or ""
                     ).strip()
-                    if note_id:
-                        enriched = _note_detail_snapshot(note_detail_responses.get(note_id, {}))
-                        if enriched:
-                            raw_notes[index] = {**note, **enriched}
+                    if not note_id:
+                        continue
+                    if detail_filter is not None and not detail_filter(note):
+                        continue
+                    # 逐篇随机跳过：人翻笔记列表不会每篇都点开，候选全扫
+                    # 是机器人的完备性特征；跳过的笔记下轮仍会被过滤器选中。
+                    if self._enrich_skip_chance > 0 and random.random() < self._enrich_skip_chance:
+                        continue
+                    detail_candidates.append(note_id)
+            # 乱序访问：每次以不同顺序浏览笔记详情，避免固定的"新→旧"
+            # 访问序列——固定顺序本身是可被风控识别的爬行特征。
+            random.shuffle(detail_candidates)
+            if self._max_detail_visits >= 0:
+                detail_candidates = detail_candidates[: self._max_detail_visits]
+            for visit_order, note_id in enumerate(detail_candidates):
+                remaining = detail_deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    logger.info("note detail enrichment budget exhausted")
+                    break
+                if visit_order:
+                    await self._pace()
+                try:
+                    await page.goto(
+                        f"{NOTE_DETAIL_PAGE}?noteId={quote(note_id, safe='')}",
+                        wait_until="domcontentloaded",
+                        timeout=max(
+                            100,
+                            min(int(self._timeout * 1000), int(remaining * 1000)),
+                        ),
+                    )
+                    remaining = detail_deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        break
+                    # 打开详情页后偶尔动一下鼠标，避免整段会话无指针轨迹。
+                    if random.random() < 0.7:
+                        await self._human_touch(page)
+                    await self._wait_for(
+                        lambda current=note_id: len(note_detail_responses.get(current, {})) >= 2,
+                        min(5.0, self._timeout, remaining),
+                    )
+                    detail_failures = 0
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.info("note detail enrichment skipped for %s: %s", note_id, exc)
+                    detail_failures += 1
+                    if detail_failures >= self._detail_circuit_failures:
+                        # Repeated failures usually mean risk control or a
+                        # dead page — stop instead of hammering the site.
+                        logger.warning(
+                            "note detail enrichment circuit break after %s consecutive failures",
+                            detail_failures,
+                        )
+                        break
 
-                detail_body = insight_responses.get(NOTE_DETAIL_PATH, (0, {}))[1]
-                details = _note_detail_map(detail_body)
-                if details:
-                    for index, note in enumerate(raw_notes):
-                        legacy_note_id: Any = (
-                            note.get("note_id") or note.get("noteId") or note.get("id")
-                        )
-                        detail = details.get(str(legacy_note_id))
-                        if isinstance(detail, dict):
-                            raw_notes[index] = {**note, **detail}
+            # Wait for response callbacks created by the final navigation
+            # before taking the captured payloads out of the local map.
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
-                # personal_info (total fans_count) is often only requested from the
-                # creator home shell, not the stats dashboard. Fetch it once when
-                # the stats navigation did not already observe it.
-                if personal_info_response is None:
-                    with contextlib.suppress(Exception):
-                        await page.goto(
-                            CREATOR_HOME_PAGE,
-                            wait_until="domcontentloaded",
-                            timeout=min(10_000, int(self._timeout * 1000)),
-                        )
-                        await asyncio.wait_for(
-                            personal_ready.wait(), timeout=min(4.0, self._timeout)
-                        )
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
+            for index, note in enumerate(raw_notes):
+                note_id = str(
+                    note.get("note_id") or note.get("noteId") or note.get("id") or ""
+                ).strip()
+                if note_id:
+                    enriched = _note_detail_snapshot(note_detail_responses.get(note_id, {}))
+                    if enriched:
+                        raw_notes[index] = {**note, **enriched}
 
-                account_body = account_response[1]
-                profile_body = profile_response[1] if profile_response is not None else {}
-                if isinstance(account_body, dict):
-                    account_body = dict(account_body)
-                    account_body["_creator_insights"] = {
-                        "audience_source": insight_responses.get(AUDIENCE_SOURCE_PATH, (0, {}))[1],
-                        "audience_periods": insight_responses.get(AUDIENCE_PERIODS_PATH, (0, {}))[
-                            1
-                        ],
-                        "note_detail": insight_responses.get(NOTE_DETAIL_PATH, (0, {}))[1],
-                    }
-                    if personal_info_response is not None:
-                        account_body["_personal_info"] = personal_info_response[1]
-                # Human-like wind-down: linger briefly before leaving the tab.
-                wind_min, wind_max = self._session_wind_down
-                if wind_max > 0:
-                    await asyncio.sleep(random.uniform(wind_min, max(wind_min, wind_max)))
-                # Reused tabs: park on creator home (not a deep-link leftover).
-                if not page_owned:
-                    with contextlib.suppress(Exception):
-                        await page.goto(
-                            CREATOR_HOME_PAGE,
-                            wait_until="domcontentloaded",
-                            timeout=min(8_000, int(self._timeout * 1000)),
-                        )
-                return (
-                    account_body if isinstance(account_body, dict) else {},
-                    profile_body if isinstance(profile_body, dict) else {},
-                    raw_notes,
-                )
-            finally:
+            detail_body = insight_responses.get(NOTE_DETAIL_PATH, (0, {}))[1]
+            details = _note_detail_map(detail_body)
+            if details:
+                for index, note in enumerate(raw_notes):
+                    legacy_note_id: Any = (
+                        note.get("note_id") or note.get("noteId") or note.get("id")
+                    )
+                    detail = details.get(str(legacy_note_id))
+                    if isinstance(detail, dict):
+                        raw_notes[index] = {**note, **detail}
+
+            # personal_info (total fans_count) is often only requested from the
+            # creator home shell, not the stats dashboard. Fetch it once when
+            # the stats navigation did not already observe it.
+            if personal_info_response is None:
                 with contextlib.suppress(Exception):
-                    page.remove_listener("response", on_response)
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
-                if page_owned:
-                    with contextlib.suppress(Exception):
-                        await page.close()
+                    await page.goto(
+                        CREATOR_HOME_PAGE,
+                        wait_until="domcontentloaded",
+                        timeout=min(10_000, int(self._timeout * 1000)),
+                    )
+                    await asyncio.wait_for(personal_ready.wait(), timeout=min(4.0, self._timeout))
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+            account_body = account_response[1]
+            profile_body = profile_response[1] if profile_response is not None else {}
+            if isinstance(account_body, dict):
+                account_body = dict(account_body)
+                account_body["_creator_insights"] = {
+                    "audience_source": insight_responses.get(AUDIENCE_SOURCE_PATH, (0, {}))[1],
+                    "audience_periods": insight_responses.get(AUDIENCE_PERIODS_PATH, (0, {}))[1],
+                    "note_detail": insight_responses.get(NOTE_DETAIL_PATH, (0, {}))[1],
+                }
+                if personal_info_response is not None:
+                    account_body["_personal_info"] = personal_info_response[1]
+            # Human-like wind-down: linger briefly before leaving the tab.
+            wind_min, wind_max = self._session_wind_down
+            if wind_max > 0:
+                await asyncio.sleep(random.uniform(wind_min, max(wind_min, wind_max)))
+            # Reused tabs: park on creator home (not a deep-link leftover).
+            if not page_owned:
+                with contextlib.suppress(Exception):
+                    await page.goto(
+                        CREATOR_HOME_PAGE,
+                        wait_until="domcontentloaded",
+                        timeout=min(8_000, int(self._timeout * 1000)),
+                    )
+            return (
+                account_body if isinstance(account_body, dict) else {},
+                profile_body if isinstance(profile_body, dict) else {},
+                raw_notes,
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                page.remove_listener("response", on_response)
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            if page_owned:
+                with contextlib.suppress(Exception):
+                    await page.close()
 
     async def get(
         self, url: str, *, headers: dict[str, str], params: dict[str, Any] | None = None

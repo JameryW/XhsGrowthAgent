@@ -13,7 +13,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, Page
@@ -203,25 +203,20 @@ class XHSEngagement:
             "error": message,
         }
 
-    async def _hold_cdp(self):
+    async def _hold_cdp(self) -> _EngagementCdpHold:
         """Shared CDP lock so stats/publish/engagement never attach together."""
         from backend.services.cdp_session_lock import hold_cdp_session
         from backend.services.xhs_risk_gate import (
             check_engagement_allowed,
-            note_engagement,
         )
 
-        block = check_engagement_allowed(
-            self.account_id, cdp_endpoint=self.cdp_endpoint
-        )
+        block = check_engagement_allowed(self.account_id, cdp_endpoint=self.cdp_endpoint)
         if block is not None:
             # Sleep out account-level engagement cool-down when possible.
             wait_s = max(0, int(block.retry_after_seconds or 0))
             if wait_s > 0:
                 await asyncio.sleep(min(float(wait_s), 30.0))
-            block2 = check_engagement_allowed(
-                self.account_id, cdp_endpoint=self.cdp_endpoint
-            )
+            block2 = check_engagement_allowed(self.account_id, cdp_endpoint=self.cdp_endpoint)
             if block2 is not None:
                 raise EngagementRiskError(block2.risk_code, block2.message)
 
@@ -250,17 +245,12 @@ class XHSEngagement:
         from backend.services.cdp_session_lock import CdpSessionBusyError
 
         try:
-            async with await self._hold_cdp():
-                async with self._guard.lock:
-                    return await self._reply_to_comment_locked(
-                        note_id, comment_id, reply_content
-                    )
+            async with await self._hold_cdp(), self._guard.lock:
+                return await self._reply_to_comment_locked(note_id, comment_id, reply_content)
         except EngagementRiskError as exc:
             return self._blocked_result(exc.error_code, str(exc))
         except CdpSessionBusyError as exc:
-            return self._blocked_result(
-                "cdp_busy", f"CDP session busy (held by {exc.holder})"
-            )
+            return self._blocked_result("cdp_busy", f"CDP session busy (held by {exc.holder})")
 
     async def _reply_to_comment_locked(
         self,
@@ -268,156 +258,146 @@ class XHSEngagement:
         comment_id: str,
         reply_content: str,
     ) -> dict[str, Any]:
-            try:
-                page = await self._ensure_page()
-                await self._assert_safe_page(page)
-                note_url = self.NOTE_URL_TEMPLATE.format(note_id=note_id)
-                await self._paced(lambda: page.goto(note_url, wait_until="domcontentloaded"))
+        try:
+            page = await self._ensure_page()
+            await self._assert_safe_page(page)
+            note_url = self.NOTE_URL_TEMPLATE.format(note_id=note_id)
+            await self._paced(lambda: page.goto(note_url, wait_until="domcontentloaded"))
+            await self._assert_safe_page(page)
+
+            comment_selector = f".comment-item[data-id='{comment_id}'], .comment-wrapper"
+            await page.wait_for_selector(comment_selector, timeout=10000)
+            comment_element = await page.query_selector(comment_selector)
+            if comment_element is None:
+                return {"success": False, "error": "未找到目标评论"}
+            await self._assert_safe_page(page)
+            reply_btn = await comment_element.query_selector("text=回复, .reply-btn")
+            if reply_btn:
+                await self._paced(reply_btn.click)
                 await self._assert_safe_page(page)
 
-                comment_selector = f".comment-item[data-id='{comment_id}'], .comment-wrapper"
-                await page.wait_for_selector(comment_selector, timeout=10000)
-                comment_element = await page.query_selector(comment_selector)
-                if comment_element is None:
-                    return {"success": False, "error": "未找到目标评论"}
+            reply_input = await page.query_selector(
+                "textarea[placeholder*=回复], .reply-input, input.reply-input"
+            )
+            if reply_input is None:
+                return {"success": False, "error": "无法找到回复输入框"}
+            await self._paced(lambda: reply_input.fill(reply_content))
+            send_btn = await page.query_selector("text=发送, button.send-btn")
+            if send_btn:
+                await self._paced(send_btn.click)
                 await self._assert_safe_page(page)
-                reply_btn = await comment_element.query_selector("text=回复, .reply-btn")
-                if reply_btn:
-                    await self._paced(reply_btn.click)
-                    await self._assert_safe_page(page)
-
-                reply_input = await page.query_selector(
-                    "textarea[placeholder*=回复], .reply-input, input.reply-input"
-                )
-                if reply_input is None:
-                    return {"success": False, "error": "无法找到回复输入框"}
-                await self._paced(lambda: reply_input.fill(reply_content))
-                send_btn = await page.query_selector("text=发送, button.send-btn")
-                if send_btn:
-                    await self._paced(send_btn.click)
-                    await self._assert_safe_page(page)
-                await page.wait_for_function(
-                    """
+            await page.wait_for_function(
+                """
                     const replies = document.querySelectorAll('.reply-item');
                     return replies.length > 0;
                     """,
-                    timeout=5000,
-                )
-                return {"success": True, "reply_id": f"reply_{int(time.time())}"}
-            except EngagementRiskError as exc:
-                logger.warning(
-                    "engagement stopped without retry account=%s code=%s: %s",
-                    self.account_id or "unknown",
-                    exc.error_code,
-                    exc,
-                )
-                return self._blocked_result(exc.error_code, str(exc))
-            except EngagementConfigurationError as exc:
-                logger.warning("engagement unavailable: %s", exc)
-                return self._blocked_result("configuration", str(exc))
-            except Exception as exc:
-                logger.error("回复评论失败: %s", exc, exc_info=True)
-                return {"success": False, "status": "failed", "error": str(exc)}
+                timeout=5000,
+            )
+            return {"success": True, "reply_id": f"reply_{int(time.time())}"}
+        except EngagementRiskError as exc:
+            logger.warning(
+                "engagement stopped without retry account=%s code=%s: %s",
+                self.account_id or "unknown",
+                exc.error_code,
+                exc,
+            )
+            return self._blocked_result(exc.error_code, str(exc))
+        except EngagementConfigurationError as exc:
+            logger.warning("engagement unavailable: %s", exc)
+            return self._blocked_result("configuration", str(exc))
+        except Exception as exc:
+            logger.error("回复评论失败: %s", exc, exc_info=True)
+            return {"success": False, "status": "failed", "error": str(exc)}
 
     async def send_dm(self, target_user_id: str, message: str) -> dict[str, Any]:
         """发送私信；遇到登录/风控页面后立即停止且不重试。"""
         from backend.services.cdp_session_lock import CdpSessionBusyError
 
         try:
-            async with await self._hold_cdp():
-                async with self._guard.lock:
-                    try:
-                        page = await self._ensure_page()
-                        await self._assert_safe_page(page)
-                        await self._paced(
-                            lambda: page.goto(self.DM_URL, wait_until="domcontentloaded")
-                        )
-                        await self._assert_safe_page(page)
+            async with await self._hold_cdp(), self._guard.lock:
+                try:
+                    page = await self._ensure_page()
+                    await self._assert_safe_page(page)
+                    await self._paced(lambda: page.goto(self.DM_URL, wait_until="domcontentloaded"))
+                    await self._assert_safe_page(page)
 
-                        new_dm_btn = await page.query_selector("text=新建私信, .new-dm-btn")
-                        if new_dm_btn:
-                            await self._paced(new_dm_btn.click)
-                            await self._assert_safe_page(page)
-                        search_input = await page.query_selector(
-                            "input[placeholder*=搜索], .dm-search-input"
+                    new_dm_btn = await page.query_selector("text=新建私信, .new-dm-btn")
+                    if new_dm_btn:
+                        await self._paced(new_dm_btn.click)
+                        await self._assert_safe_page(page)
+                    search_input = await page.query_selector(
+                        "input[placeholder*=搜索], .dm-search-input"
+                    )
+                    if search_input:
+                        await self._paced(lambda: search_input.fill(target_user_id))
+                        user_result = await page.query_selector(
+                            f".user-item[data-id='{target_user_id}'], .search-result-item"
                         )
-                        if search_input:
-                            await self._paced(lambda: search_input.fill(target_user_id))
-                            user_result = await page.query_selector(
-                                f".user-item[data-id='{target_user_id}'], .search-result-item"
-                            )
-                            if user_result:
-                                await self._paced(user_result.click)
-                                await self._assert_safe_page(page)
+                        if user_result:
+                            await self._paced(user_result.click)
+                            await self._assert_safe_page(page)
 
-                        dm_input = await page.query_selector(
-                            "textarea[placeholder*=输入], .dm-input"
-                        )
-                        if dm_input is None:
-                            return {"success": False, "error": "无法找到私信输入框"}
-                        await self._paced(lambda: dm_input.fill(message))
-                        send_btn = await page.query_selector("text=发送, button.send-btn")
-                        if send_btn:
-                            await self._paced(send_btn.click)
-                            await self._assert_safe_page(page)
-                        return {"success": True, "message_id": f"dm_{int(time.time())}"}
-                    except EngagementRiskError as exc:
-                        logger.warning(
-                            "engagement stopped without retry account=%s code=%s: %s",
-                            self.account_id or "unknown",
-                            exc.error_code,
-                            exc,
-                        )
-                        return self._blocked_result(exc.error_code, str(exc))
-                    except EngagementConfigurationError as exc:
-                        logger.warning("engagement unavailable: %s", exc)
-                        return self._blocked_result("configuration", str(exc))
-                    except Exception as exc:
-                        logger.error("发送私信失败: %s", exc, exc_info=True)
-                        return {"success": False, "status": "failed", "error": str(exc)}
+                    dm_input = await page.query_selector("textarea[placeholder*=输入], .dm-input")
+                    if dm_input is None:
+                        return {"success": False, "error": "无法找到私信输入框"}
+                    await self._paced(lambda: dm_input.fill(message))
+                    send_btn = await page.query_selector("text=发送, button.send-btn")
+                    if send_btn:
+                        await self._paced(send_btn.click)
+                        await self._assert_safe_page(page)
+                    return {"success": True, "message_id": f"dm_{int(time.time())}"}
+                except EngagementRiskError as exc:
+                    logger.warning(
+                        "engagement stopped without retry account=%s code=%s: %s",
+                        self.account_id or "unknown",
+                        exc.error_code,
+                        exc,
+                    )
+                    return self._blocked_result(exc.error_code, str(exc))
+                except EngagementConfigurationError as exc:
+                    logger.warning("engagement unavailable: %s", exc)
+                    return self._blocked_result("configuration", str(exc))
+                except Exception as exc:
+                    logger.error("发送私信失败: %s", exc, exc_info=True)
+                    return {"success": False, "status": "failed", "error": str(exc)}
         except EngagementRiskError as exc:
             return self._blocked_result(exc.error_code, str(exc))
         except CdpSessionBusyError as exc:
-            return self._blocked_result(
-                "cdp_busy", f"CDP session busy (held by {exc.holder})"
-            )
+            return self._blocked_result("cdp_busy", f"CDP session busy (held by {exc.holder})")
 
     async def get_unread_messages(self) -> list[dict[str, Any]]:
         """获取未读私信列表；登录/风控页面返回空结果并停止。"""
         from backend.services.cdp_session_lock import CdpSessionBusyError
 
         try:
-            async with await self._hold_cdp():
-                async with self._guard.lock:
-                    try:
-                        page = await self._ensure_page()
-                        await self._assert_safe_page(page)
-                        await self._paced(
-                            lambda: page.goto(self.DM_URL, wait_until="domcontentloaded")
-                        )
-                        await self._assert_safe_page(page)
-                        unread_items = await page.query_selector_all(
-                            ".message-item.unread, .unread-badge"
-                        )
-                        messages = []
-                        for item in unread_items:
-                            sender = await item.query_selector(".sender-name")
-                            content = await item.query_selector(".message-preview")
-                            if sender and content:
-                                messages.append(
-                                    {
-                                        "sender_name": await sender.inner_text(),
-                                        "preview": await content.inner_text(),
-                                        "is_unread": True,
-                                    }
-                                )
-                        return messages
-                    except (EngagementRiskError, EngagementConfigurationError) as exc:
-                        logger.warning("message read stopped: %s", exc)
-                        return []
-                    except Exception as exc:
-                        logger.error("获取未读消息失败: %s", exc, exc_info=True)
-                        return []
+            async with await self._hold_cdp(), self._guard.lock:
+                try:
+                    page = await self._ensure_page()
+                    await self._assert_safe_page(page)
+                    await self._paced(lambda: page.goto(self.DM_URL, wait_until="domcontentloaded"))
+                    await self._assert_safe_page(page)
+                    unread_items = await page.query_selector_all(
+                        ".message-item.unread, .unread-badge"
+                    )
+                    messages = []
+                    for item in unread_items:
+                        sender = await item.query_selector(".sender-name")
+                        content = await item.query_selector(".message-preview")
+                        if sender and content:
+                            messages.append(
+                                {
+                                    "sender_name": await sender.inner_text(),
+                                    "preview": await content.inner_text(),
+                                    "is_unread": True,
+                                }
+                            )
+                    return messages
+                except (EngagementRiskError, EngagementConfigurationError) as exc:
+                    logger.warning("message read stopped: %s", exc)
+                    return []
+                except Exception as exc:
+                    logger.error("获取未读消息失败: %s", exc, exc_info=True)
+                    return []
         except CdpSessionBusyError:
             return []
 
@@ -451,7 +431,6 @@ class XHSEngagement:
         await self.close()
 
 
-
 class _EngagementCdpHold:
     """Async context that notes engagement cool-down on exit."""
 
@@ -461,7 +440,7 @@ class _EngagementCdpHold:
         self._cdp_endpoint = cdp_endpoint
 
     async def __aenter__(self) -> str:
-        return await self._cm.__aenter__()
+        return cast("str", await self._cm.__aenter__())
 
     async def __aexit__(self, *exc: Any) -> None:
         try:
@@ -470,5 +449,3 @@ class _EngagementCdpHold:
             from backend.services.xhs_risk_gate import note_engagement
 
             note_engagement(self._account_id, cdp_endpoint=self._cdp_endpoint)
-
-
