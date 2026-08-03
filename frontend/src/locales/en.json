@@ -1756,7 +1756,8 @@
     "noResults": "No matching workflows",
     "noResultsWithFilters": "Current filters: {status} · {mode}",
     "viewDetail": "View Detail",
-    "featuredLive": "live"
+    "featuredLive": "live",
+    "loadingCases": "Loading cases…"
   },
   "blogger": {
     "selectTitle": "Select Reference Blogger",

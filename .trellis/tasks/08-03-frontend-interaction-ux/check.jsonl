@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "核查 ErrorState/skeletons/TooltipHelper 改造是否符合组件规范"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "核查 confetti/AnimatedCounter reduced-motion 降级是否符合动效约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "核查错误态统一后各页恢复语义（重试/缓存提示条等）未被破坏"}
+{"file": "docs/frontend-ux-optimization.md", "reason": "红线核查：空态区分、状态唯一来源、i18n 双语、44px、不新增全局 dark 重映射"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/prd.md", "reason": "逐条核对剩余条目验收标准（§10、§18）是否达成、无 P0/P1 遗留"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/shared-infra-audit.md", "reason": "核对 INF-01/02/09/11 是否真正统一而非新增第三套实现"}

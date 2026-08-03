@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "ErrorState 泛化、skeletons 接入、TooltipHelper 启用的组件规范依据"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "confetti/AnimatedCounter 的 reduced-motion 降级必须遵守的动效约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "INF-01 替换各页错误卡时保留页面恢复语义（store 绑定经适配层）的约束"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "统一错误态/骨架/TooltipHelper 属共享组件收敛，先查复用再新写"}
+{"file": "docs/frontend-ux-optimization.md", "reason": "交互红线基线：状态来源唯一、空态区分、44px、i18n、动效降级、不新增全局 dark 重映射"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/prd.md", "reason": "剩余条目（INF-01/02/09/11、DB-10/11/13、AN-15、EV-08/12/15）的原始定义与验收标准（§10、§18）"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/shared-infra-audit.md", "reason": "INF-01/02/09/11 的现状证据与统一方案依据"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/dashboard-audit.md", "reason": "DB-10/11/13（庆祝模态、进度去重、ContentCards 硬编码）证据"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/analytics-audit.md", "reason": "AN-15（MetricCard aria-live、AnimatedCounter）证据"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/evaluation-audit.md", "reason": "EV-08/12/15（维度解释、暗色迁移、评估提示）证据"}

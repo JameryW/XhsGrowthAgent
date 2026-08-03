@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import ErrorState from '@/components/ErrorState.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import AccountScopeBar from '@/components/AccountScopeBar.vue'
@@ -796,27 +797,17 @@ function startWithTopic(topic: string, niche?: string) {
 
   <AnalyticsSkeleton v-if="isLoading" />
 
-  <!-- Error state -->
+  <!-- Error state (INF-01: shared presentational ErrorState) -->
   <div v-else-if="hasError" class="relative space-y-4 md:space-y-6">
-    <div class="card">
-      <div class="flex flex-col items-center gap-3 md:gap-4 py-6 md:py-8">
-        <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-rose-50 flex items-center justify-center">
-          <AppIcon name="AlertTriangle" size="md" variant="pink" class="md:hidden" />
-          <AppIcon name="AlertTriangle" size="xl" variant="pink" class="hidden md:block" />
-        </div>
-        <div class="text-base md:text-lg font-semibold text-slate-800">{{ t('analytics.error.title') }}</div>
-        <div class="text-xs md:text-sm text-slate-500 text-center max-w-md">{{ t('analytics.error.description') }}</div>
-        <button
-          type="button"
-          @click="refreshData"
-          :disabled="analyticsStore.isLoading"
-          class="min-h-11 px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600 transition-all duration-200 flex items-center gap-2 disabled:opacity-50"
-        >
-          <AppIcon name="RefreshCw" size="sm" variant="white" />
-          {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.error.retry') }}
-        </button>
-      </div>
-    </div>
+    <ErrorState
+      variant="api"
+      :title="t('analytics.error.title')"
+      :message="t('analytics.error.description')"
+      :retry-label="t('analytics.error.retry')"
+      :retrying="analyticsStore.isLoading"
+      hide-dismiss
+      @retry="refreshData"
+    />
   </div>
 
   <!-- Empty state -->
