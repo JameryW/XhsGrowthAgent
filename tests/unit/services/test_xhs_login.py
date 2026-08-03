@@ -85,6 +85,27 @@ def _wire_playwright_mock(
     return mock_module, mock_page, on_response_calls
 
 
+@pytest.fixture(autouse=True)
+def _bypass_cdp_hold(monkeypatch: pytest.MonkeyPatch):
+    """start() acquires the shared CDP lock via hold_cdp_session (#399).
+
+    The real lock checks browser_action_cooldown + PG advisory lock; in a full
+    pytest run earlier tests arm the cooldown, so login tests fail with
+    CdpSessionBusyError before page.on('response') is registered. Neutralize
+    hold_cdp_session with a no-op async context manager so start() proceeds.
+    """
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _noop_hold(**_):
+        yield
+
+    monkeypatch.setattr(
+        "backend.services.cdp_session_lock.hold_cdp_session",
+        _noop_hold,
+    )
+
+
 class TestStart:
     """start() — launch Chrome, intercept qrcode/create, return qr_id+url."""
 

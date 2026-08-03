@@ -90,7 +90,9 @@ async def test_cdp_fetch_all_uses_native_creator_page_data():
     transport.fetch_creator_center.assert_awaited_once_with(max_pages=3, period="30d")
     assert bundle.account.views == 30
     assert bundle.account.likes == 8
-    assert bundle.account.note_count == 2
+    # note_count is deliberately overridden to len(notes) — the overview's
+    # publish_note_num is known to be inflated vs the Note Manager list.
+    assert bundle.account.note_count == 1
     assert bundle.account.creator_user_id == "creator-1"
     assert bundle.account.creator_name == "真实创作者"
     assert bundle.account.red_id == "creator_red"
@@ -674,8 +676,12 @@ async def test_cdp_detail_visits_follow_shuffled_order(monkeypatch):
     assert ids == ["note-4", "note-3", "note-2", "note-1"]
 
 
-async def test_cdp_paces_between_list_page_turns():
+async def test_cdp_paces_between_list_page_turns(monkeypatch):
     """列表翻页也经过 _pace——连续秒翻是机器特征。"""
+    # Disable per-run list-depth jitter (random.randint(1, max_pages)) so the
+    # pagination count is deterministic; this test is about _pace wiring, not
+    # the anti-fingerprint jitter.
+    monkeypatch.setattr(client_module.random, "randint", lambda a, b: b)
     page = _FakeNotesPage(note_count=2)
     transport = _transport_with_page(page)
     transport._pace = AsyncMock()
@@ -826,6 +832,9 @@ async def test_cdp_page_stop_chance_one_skips_pagination(monkeypatch):
 async def test_cdp_pagination_still_works_when_stop_disabled(monkeypatch):
     """翻页提前停止关闭时，保持原有翻页行为（回归保护）。"""
     monkeypatch.setenv("CREATOR_STATS_PAGE_STOP_CHANCE", "0")
+    # Disable per-run list-depth jitter so pagination actually runs (jitter
+    # rolls 1..max_pages and would skip the page turn half the time).
+    monkeypatch.setattr(client_module.random, "randint", lambda a, b: b)
     page = _FakeNotesPage(note_count=2)
     transport = _transport_with_page(page)
     transport._pace = AsyncMock()

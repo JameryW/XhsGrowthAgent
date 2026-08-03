@@ -539,9 +539,7 @@ class XhsLoginSession:
         try:
             await cm.__aenter__()
         except CdpSessionBusyError as exc:
-            raise LoginError(
-                f"浏览器正被其他任务占用（{exc.holder}），请稍后再扫码登录。"
-            ) from exc
+            raise LoginError(f"浏览器正被其他任务占用（{exc.holder}），请稍后再扫码登录。") from exc
         self._cdp_hold = cm
 
     async def _release_cdp_hold(self) -> None:

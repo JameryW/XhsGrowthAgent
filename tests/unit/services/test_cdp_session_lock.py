@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -35,9 +35,7 @@ async def test_hold_cdp_session_exclusive_nonblocking():
         assert is_cdp_session_busy(account_id="a1")
         assert cdp_session_holder(account_id="a1") == "publisher"
         with pytest.raises(CdpSessionBusyError) as exc:
-            async with hold_cdp_session(
-                account_id="a1", owner="creator_stats", wait=False
-            ):
+            async with hold_cdp_session(account_id="a1", owner="creator_stats", wait=False):
                 pass
         assert exc.value.holder == "publisher"
     assert not is_cdp_session_busy(account_id="a1")
@@ -45,18 +43,18 @@ async def test_hold_cdp_session_exclusive_nonblocking():
 
 @pytest.mark.asyncio
 async def test_different_accounts_do_not_block():
-    async with hold_cdp_session(account_id="a1", owner="pub", wait=True):
-        async with hold_cdp_session(account_id="a2", owner="eng", wait=False):
-            assert cdp_session_holder(account_id="a2") == "eng"
+    async with (
+        hold_cdp_session(account_id="a1", owner="pub", wait=True),
+        hold_cdp_session(account_id="a2", owner="eng", wait=False),
+    ):
+        assert cdp_session_holder(account_id="a2") == "eng"
 
 
 @pytest.mark.asyncio
 async def test_wait_timeout_raises_busy():
     async with hold_cdp_session(account_id="a1", owner="pub", wait=True):
         with pytest.raises(CdpSessionBusyError):
-            async with hold_cdp_session(
-                account_id="a1", owner="other", wait=True, timeout=0.05
-            ):
+            async with hold_cdp_session(account_id="a1", owner="other", wait=True, timeout=0.05):
                 pass
 
 
@@ -88,6 +86,7 @@ async def test_async_busy_probe_uses_local_first():
     async with hold_cdp_session(account_id="a1", owner="pub", wait=True):
         assert await is_cdp_session_busy_async(account_id="a1") is True
     assert await is_cdp_session_busy_async(account_id="a1") is False
+
 
 @pytest.mark.asyncio
 async def test_snapshot_cdp_sessions_shows_holder(monkeypatch):

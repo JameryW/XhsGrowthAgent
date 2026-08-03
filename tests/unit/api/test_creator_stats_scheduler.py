@@ -57,12 +57,8 @@ def _isolate_durable_scheduler_state(monkeypatch):
     async def _noop_save(*_a, **_k):
         return None
 
-    monkeypatch.setattr(
-        "backend.db.creator_stats.load_scheduler_success_history", _empty_load
-    )
-    monkeypatch.setattr(
-        "backend.db.creator_stats.save_scheduler_success_history", _noop_save
-    )
+    monkeypatch.setattr("backend.db.creator_stats.load_scheduler_success_history", _empty_load)
+    monkeypatch.setattr("backend.db.creator_stats.save_scheduler_success_history", _noop_save)
     # Freshness/auth probes often import accounts — default to no active account
     # so scheduler tests don't hit live DB unless they opt in.
     monkeypatch.setattr(
@@ -313,9 +309,7 @@ def test_clip_to_active_window_avoids_recent_success_hour():
     hits = 0
     samples = 800
     for _ in range(samples):
-        local = _clip_to_active_window(
-            candidate, 9, 22, avoid_hours={21}
-        ).astimezone(_CN_TZ)
+        local = _clip_to_active_window(candidate, 9, 22, avoid_hours={21}).astimezone(_CN_TZ)
         if local.hour == 21:
             hits += 1
     # Without avoidance, hour 21 weight 4.0 / sum≈30 ≈ 13%; with *0.12 residual
@@ -572,9 +566,7 @@ def test_risk_pressure_level_escalates_with_failures_and_budget():
     )
     soft = [(now - timedelta(hours=1)).isoformat()]
     assert _risk_pressure_level([], soft_risk_signals=soft, now=now) == 1
-    soft3 = [
-        (now - timedelta(hours=i)).isoformat() for i in (3, 2, 1)
-    ]
+    soft3 = [(now - timedelta(hours=i)).isoformat() for i in (3, 2, 1)]
     assert _risk_pressure_level([], soft_risk_signals=soft3, now=now) == 2
 
 
@@ -628,9 +620,7 @@ async def test_scheduler_settles_before_crawl_when_pre_run_delay_set(monkeypatch
             period_7d_chance=0.0,
         )
 
-    sync.assert_awaited_once_with(
-        store=None, period="30d", prefer_light=None, risk_pressure=0
-    )
+    sync.assert_awaited_once_with(store=None, period="30d", prefer_light=None, risk_pressure=0)
     # Pre-run settle mid of [60,120] = 90 (pressure=0 — no stretch).
     assert sleep_calls[0] == 90.0
     assert app.state.creator_stats_scheduler_status["last_period"] == "30d"
@@ -666,7 +656,9 @@ async def test_scheduler_arms_skip_after_riskish_failure(monkeypatch):
             raise asyncio.CancelledError
 
     monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
-    monkeypatch.setattr(app_module.random, "random", lambda: 0.0)  # always arm skip / no long-break chance roll fail
+    monkeypatch.setattr(
+        app_module.random, "random", lambda: 0.0
+    )  # always arm skip / no long-break chance roll fail
     monkeypatch.setattr(app_module.random, "uniform", lambda a, b: a)
     monkeypatch.setattr(app_module.random, "triangular", lambda a, b, c: 1.0)
     with (
@@ -809,9 +801,7 @@ async def test_scheduler_success_history_persists_to_db_helper(monkeypatch):
         saved.append((list(timestamps), kwargs))
 
     monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
-    monkeypatch.setattr(
-        "backend.db.creator_stats.save_scheduler_success_history", fake_save
-    )
+    monkeypatch.setattr("backend.db.creator_stats.save_scheduler_success_history", fake_save)
     with (
         patch(
             "backend.services.creator_stats.pipeline.sync_all_active_accounts",
@@ -1045,9 +1035,7 @@ async def test_scheduler_soft_risk_empty_shell_cools_without_live_success(monkey
 
     monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
-    monkeypatch.setattr(
-        "backend.db.creator_stats.save_scheduler_success_history", fake_save
-    )
+    monkeypatch.setattr("backend.db.creator_stats.save_scheduler_success_history", fake_save)
     with (
         patch(
             "backend.services.creator_stats.pipeline.sync_all_active_accounts",
@@ -1104,7 +1092,11 @@ async def test_scheduler_skips_when_page_budget_exceeded(monkeypatch):
         ) as sync,
         patch(
             "backend.db.accounts.get_active_account",
-            new=AsyncMock(return_value=SimpleNamespace(id="acc-1", cdp_port=9222, chrome_profile_path="/tmp/p")),
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    id="acc-1", cdp_port=9222, chrome_profile_path="/tmp/p"
+                )
+            ),
         ),
         patch(
             "backend.services.creator_stats.pipeline._account_freshness_skip",
@@ -1172,9 +1164,7 @@ async def test_scheduler_restores_quiet_cycles_from_durable_state(monkeypatch):
         }
 
     monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_interval)
-    monkeypatch.setattr(
-        "backend.db.creator_stats.load_scheduler_success_history", seeded_load
-    )
+    monkeypatch.setattr("backend.db.creator_stats.load_scheduler_success_history", seeded_load)
     with (
         patch(
             "backend.services.creator_stats.pipeline.sync_all_active_accounts",

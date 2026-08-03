@@ -329,8 +329,7 @@ def _hygiene_page_cleanup_candidates(
     def _creator_keep_score(t: CdpTarget) -> tuple[int, str]:
         url = t.url or ""
         preferred = any(
-            token in url
-            for token in ("/new/home", "/statistics/account", "/new/note-manager")
+            token in url for token in ("/new/home", "/statistics/account", "/new/note-manager")
         )
         return (0 if preferred else 1, url)
 
@@ -1467,9 +1466,7 @@ async def hygiene_browser_pages_all(
             return PageCleanupStatus(
                 account.id, account.cdp_port, 0, 0, 0, "failed", "cannot list CDP targets"
             )
-        page_count, candidates = _hygiene_page_cleanup_candidates(
-            cdp_targets, max_pages=page_cap
-        )
+        page_count, candidates = _hygiene_page_cleanup_candidates(cdp_targets, max_pages=page_cap)
         candidates = candidates[:close_limit]
         if not candidates:
             return PageCleanupStatus(
@@ -1546,7 +1543,9 @@ async def hygiene_browser_pages_all(
                         closed += 1
                 post = await asyncio.to_thread(_list_cdp_targets, account.cdp_port)
                 remaining = (
-                    sum(1 for t in post if t.target_type == "page") if post is not None else page_count
+                    sum(1 for t in post if t.target_type == "page")
+                    if post is not None
+                    else page_count
                 )
                 return PageCleanupStatus(
                     account.id,

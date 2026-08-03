@@ -324,15 +324,11 @@ async def save_scheduler_success_history(
             "last_success_local_hour": last_success_local_hour
             if last_success_local_hour is not None
             else existing.get("last_success_local_hour"),
-            "last_period": last_period
-            if last_period is not None
-            else existing.get("last_period"),
+            "last_period": last_period if last_period is not None else existing.get("last_period"),
             "risk_failures": list(risk_failures)
             if risk_failures is not None
             else list(existing.get("risk_failures") or []),
-            "pause_until": pause_until
-            if pause_until is not None
-            else existing.get("pause_until"),
+            "pause_until": pause_until if pause_until is not None else existing.get("pause_until"),
             "quiet_cycles_remaining": quiet_cycles_remaining
             if quiet_cycles_remaining is not None
             else existing.get("quiet_cycles_remaining"),
@@ -1223,4 +1219,7 @@ async def get_note_stats(account_id: str, note_id: str) -> NoteStats | None:
             """,
             (account_id, note_id),
         )
-        row: Any = awai
+        row: Any = await cur.fetchone()
+    if row is None:
+        return None
+    return _note_from_row(row)

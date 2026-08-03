@@ -16,9 +16,7 @@ def test_classify_empty_shell_error_code():
 
 def test_mark_empty_shell_when_prior_notes_collapse():
     result = SyncResult(account_id="a1", account_synced=True, notes_imported=0)
-    marked = _mark_empty_shell_soft_risk(
-        result, prior_note_count=5, fetched_note_count=0
-    )
+    marked = _mark_empty_shell_soft_risk(result, prior_note_count=5, fetched_note_count=0)
     assert marked.soft_risk is True
     assert marked.error_code == ERROR_EMPTY_SHELL
     assert "collapsed" in (marked.soft_risk_reason or "")
@@ -26,17 +24,13 @@ def test_mark_empty_shell_when_prior_notes_collapse():
 
 def test_mark_empty_shell_skips_cold_start():
     result = SyncResult(account_id="a1", account_synced=True, notes_imported=0)
-    marked = _mark_empty_shell_soft_risk(
-        result, prior_note_count=0, fetched_note_count=0
-    )
+    marked = _mark_empty_shell_soft_risk(result, prior_note_count=0, fetched_note_count=0)
     assert marked.soft_risk is False
 
 
 def test_mark_empty_shell_skips_when_notes_fetched():
     result = SyncResult(account_id="a1", account_synced=True, notes_imported=3)
-    marked = _mark_empty_shell_soft_risk(
-        result, prior_note_count=5, fetched_note_count=3
-    )
+    marked = _mark_empty_shell_soft_risk(result, prior_note_count=5, fetched_note_count=3)
     assert marked.soft_risk is False
 
 

@@ -102,11 +102,10 @@ def _clip_to_active_window(
     local = candidate.astimezone(_CN_TZ)
     day_start = local.replace(hour=start_hour, minute=0, second=0, microsecond=0)
     day_end = local.replace(hour=end_hour, minute=0, second=0, microsecond=0)
-    if day_start <= local < day_end:
+    if day_start <= local < day_end and (not avoid_hours or local.hour not in avoid_hours):
         # Inside the window: still re-jitter within ±45min and re-weight if the
         # candidate hour is one we should avoid (e.g. last crawl was 21:xx).
-        if not avoid_hours or local.hour not in avoid_hours:
-            return candidate
+        return candidate
     base = day_start if local < day_end else day_start + timedelta(days=1)
     if local >= day_end:
         base = day_start + timedelta(days=1)
@@ -185,12 +184,8 @@ def _risk_pressure_level(
     now_utc = (now or datetime.now(UTC)).astimezone(UTC)
     if pause_until and _circuit_pause_active(pause_until, now=now_utc):
         return 2
-    failure_n = len(
-        _prune_success_timestamps(list(risk_failures or []), now=now_utc, days=3)
-    )
-    soft_n = len(
-        _prune_success_timestamps(list(soft_risk_signals or []), now=now_utc, days=3)
-    )
+    failure_n = len(_prune_success_timestamps(list(risk_failures or []), now=now_utc, days=3))
+    soft_n = len(_prune_success_timestamps(list(soft_risk_signals or []), now=now_utc, days=3))
     if failure_n >= 2 or soft_n >= 3:
         return 2
     if failure_n >= 1 or soft_n >= 1:
@@ -275,10 +270,8 @@ async def _seed_success_history_from_db(
         if stored.get("pause_until"):
             pause_until = str(stored["pause_until"])
         stored_quiet = stored.get("quiet_cycles_remaining")
-        try:
+        with contextlib.suppress(TypeError, ValueError):
             quiet = max(quiet, int(stored_quiet or 0))
-        except (TypeError, ValueError):
-            pass
         # Seed a single success from the active account's last import if history empty.
         if not success_history:
             from backend.db.accounts import get_active_account
@@ -513,10 +506,7 @@ async def _creator_stats_scheduler(
             return None
         # Also soft-avoid adjacent hours so the distribution does not snap to
         # hour±1 as a new fixed pattern.
-        return {
-            (last_success_local_hour + delta) % 24
-            for delta in (-1, 0, 1)
-        }
+        return {(last_success_local_hour + delta) % 24 for delta in (-1, 0, 1)}
 
     def _next_run(candidate: datetime) -> datetime:
         if active_window is not None:
@@ -574,7 +564,7 @@ async def _creator_stats_scheduler(
         try:
             from urllib.parse import urlparse
 
-            from backend.db.accounts import get_active_account, get_account_cdp_endpoint
+            from backend.db.accounts import get_account_cdp_endpoint, get_active_account
             from backend.services.chrome_launcher import probe_port
 
             account = await get_active_account()
@@ -634,7 +624,7 @@ async def _creator_stats_scheduler(
         try:
             from urllib.parse import urlparse
 
-            from backend.db.accounts import get_active_account, get_account_cdp_endpoint
+            from backend.db.accounts import get_account_cdp_endpoint, get_active_account
             from backend.services.chrome_launcher import count_open_pages
 
             account = await get_active_account()
@@ -668,7 +658,7 @@ async def _creator_stats_scheduler(
     async def _active_cdp_session_busy() -> bool:
         """True when publisher/engagement/login holds the CDP session lock."""
         try:
-            from backend.db.accounts import get_active_account, get_account_cdp_endpoint
+            from backend.db.accounts import get_account_cdp_endpoint, get_active_account
             from backend.services.cdp_session_lock import is_cdp_session_busy_async
 
             account = await get_active_account()
@@ -719,9 +709,7 @@ async def _creator_stats_scheduler(
         soft_risk_hit = False
         success_history = _prune_success_timestamps(success_history, now=started_at)
         risk_failures = _prune_success_timestamps(risk_failures, now=started_at, days=3)
-        soft_risk_signals = _prune_success_timestamps(
-            soft_risk_signals, now=started_at, days=3
-        )
+        soft_risk_signals = _prune_success_timestamps(soft_risk_signals, now=started_at, days=3)
         state["success_timestamps"] = success_history
         state["successes_last_7d"] = len(success_history)
         state["risk_failures"] = risk_failures
@@ -760,8 +748,7 @@ async def _creator_stats_scheduler(
                 }
             )
             logger.info(
-                "scheduled creator stats import skipped this cycle "
-                "(armed quiet, remaining=%s)",
+                "scheduled creator stats import skipped this cycle (armed quiet, remaining=%s)",
                 quiet_cycles_remaining,
             )
             await _persist_anti_risk()
@@ -813,8 +800,7 @@ async def _creator_stats_scheduler(
                     }
                 )
                 logger.info(
-                    "scheduled creator stats import skipped: auth cooldown "
-                    "(retry_after≈%ss)",
+                    "scheduled creator stats import skipped: auth cooldown (retry_after≈%ss)",
                     auth_retry,
                 )
             elif not cdp_ready:
@@ -851,14 +837,12 @@ async def _creator_stats_scheduler(
                 # Publisher/engagement/login already attached — do not queue a crawl.
                 holder = None
                 with contextlib.suppress(Exception):
-                    from backend.db.accounts import get_active_account, get_account_cdp_endpoint
+                    from backend.db.accounts import get_account_cdp_endpoint, get_active_account
                     from backend.services.cdp_session_lock import cdp_session_holder
 
                     account = await get_active_account()
                     if account is not None:
-                        endpoint = (
-                            await get_account_cdp_endpoint(str(account.id)) or ""
-                        ).strip()
+                        endpoint = (await get_account_cdp_endpoint(str(account.id)) or "").strip()
                         holder = cdp_session_holder(
                             account_id=str(account.id), cdp_endpoint=endpoint
                         )
@@ -899,8 +883,7 @@ async def _creator_stats_scheduler(
                         state["status"] = "settling"
                         state["pre_run_delay_seconds"] = round(settle, 1)
                         logger.info(
-                            "creator stats scheduler settling %.0fs before crawl "
-                            "(pressure=%s)",
+                            "creator stats scheduler settling %.0fs before crawl (pressure=%s)",
                             settle,
                             pressure,
                         )
@@ -968,7 +951,9 @@ async def _creator_stats_scheduler(
                             if not isinstance(item, dict):
                                 continue
                             err = item.get("error")
-                            if not err or (item.get("account_synced") and not item.get("soft_risk")):
+                            if not err or (
+                                item.get("account_synced") and not item.get("soft_risk")
+                            ):
                                 continue
                             account_id = str(item.get("account_id") or "?").strip() or "?"
                             account_errors.append(f"{account_id}: {err}")
@@ -979,9 +964,8 @@ async def _creator_stats_scheduler(
                     # cooldown（冷却期内跳过）不是失败——不计入退避序列。
                     # Soft-risk empty shells report ok/synced but still need cooling.
                     succeeded = (
-                        (bool(result.get("ok")) or result.get("status") == "cooldown")
-                        and not soft_risk_hit
-                    )
+                        bool(result.get("ok")) or result.get("status") == "cooldown"
+                    ) and not soft_risk_hit
                     live_success = _has_successful_live_sync(result)
                     if live_success:
                         success_history.append(finished_at.isoformat())
@@ -1067,16 +1051,12 @@ async def _creator_stats_scheduler(
         last_err = str(state.get("last_error") or "")
         # Only score risk/backoff from a crawl we actually attempted this cycle.
         # A skipped window must not re-apply the previous failure's risk backoff.
-        riskish = ran_crawl and (not succeeded) and (
-            soft_risk_hit or _is_riskish_error(last_err)
-        )
+        riskish = ran_crawl and (not succeeded) and (soft_risk_hit or _is_riskish_error(last_err))
         if riskish:
             backoff = random.uniform(3.0, 6.0)
             # Extra quiet window(s) after risk/auth/empty-shell — do not crawl→crawl.
             # Under pressure, sometimes arm two cycles (multi-day calm stretch).
-            armed = _quiet_cycles_to_arm(
-                pressure, risk_skip_next_chance=risk_skip_next_chance
-            )
+            armed = _quiet_cycles_to_arm(pressure, risk_skip_next_chance=risk_skip_next_chance)
             if armed > 0:
                 quiet_cycles_remaining = max(quiet_cycles_remaining, armed)
                 state["quiet_cycles_remaining"] = quiet_cycles_remaining
@@ -1109,9 +1089,7 @@ async def _creator_stats_scheduler(
                 if new_pause:
                     pause_until = new_pause
                     state["pause_until"] = pause_until
-                    logger.warning(
-                        "creator stats risk circuit breaker open until %s", pause_until
-                    )
+                    logger.warning("creator stats risk circuit breaker open until %s", pause_until)
             await _persist_anti_risk()
         elif consecutive_failures <= 1:
             backoff = 1.0
@@ -1124,17 +1102,14 @@ async def _creator_stats_scheduler(
         elif pressure >= 1 and not riskish:
             backoff *= random.uniform(1.1, 1.4)
         # 6. 成功后偶尔长休——人不会永远按同一节奏回来。
-        if (
-            live_success
-            and random.random()
-            < max(0.0, min(1.0, _finite_float(post_success_long_break_chance, 0.18)))
+        if live_success and random.random() < max(
+            0.0, min(1.0, _finite_float(post_success_long_break_chance, 0.18))
         ):
             backoff *= random.uniform(1.8, 2.8)
             state["last_long_break"] = True
         # Near weekly budget: stretch the next interval instead of dense retries.
-        if (
-            max_successful_crawls_per_week > 0
-            and len(success_history) >= max(1, max_successful_crawls_per_week - 1)
+        if max_successful_crawls_per_week > 0 and len(success_history) >= max(
+            1, max_successful_crawls_per_week - 1
         ):
             backoff *= random.uniform(1.25, 1.7)
             state["near_budget_stretch"] = True
@@ -1196,6 +1171,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             from backend.db.creative_memory import ensure_tables as ensure_creative_memory
             from backend.db.creator_stats import ensure_tables as ensure_creator_stats
+
             # risk gate durable cool-downs hydrate after creator_stats tables exist
             from backend.db.evaluator_config import (
                 ensure_tables as ensure_evaluator_config,
@@ -1317,9 +1293,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _finite_float(cs_settings.pre_run_delay_min_seconds, 45.0),
             _finite_float(cs_settings.pre_run_delay_max_seconds, 240.0),
         )
-        period_7d_chance = max(
-            0.0, min(1.0, _finite_float(cs_settings.period_7d_chance, 0.35))
-        )
+        period_7d_chance = max(0.0, min(1.0, _finite_float(cs_settings.period_7d_chance, 0.35)))
         post_success_long_break_chance = max(
             0.0,
             min(1.0, _finite_float(cs_settings.post_success_long_break_chance, 0.18)),
@@ -1327,9 +1301,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         risk_skip_next_chance = max(
             0.0, min(1.0, _finite_float(cs_settings.risk_skip_next_chance, 0.85))
         )
-        max_successful_crawls_per_week = max(
-            0, int(cs_settings.max_successful_crawls_per_week)
-        )
+        max_successful_crawls_per_week = max(0, int(cs_settings.max_successful_crawls_per_week))
     except (AttributeError, TypeError, ValueError):
         startup_delay = None
         active_window = None

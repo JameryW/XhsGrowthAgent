@@ -52,22 +52,14 @@ def global_cooldown_defaults() -> dict[str, float]:
     # SAFE_MODE env acts as a global floor of 1 when enabled.
     env_safe = 1.0 if _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1 else 0.0
     return {
-        "browser_action_seconds": max(
-            0.0, _env_float("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", 20.0)
-        ),
+        "browser_action_seconds": max(0.0, _env_float("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", 20.0)),
         "publish_seconds": max(0.0, _env_float("XHS_PUBLISH_COOLDOWN_SECONDS", 90.0)),
-        "engagement_seconds": max(
-            0.0, _env_float("XHS_ENGAGEMENT_ACCOUNT_COOLDOWN_SECONDS", 30.0)
-        ),
+        "engagement_seconds": max(0.0, _env_float("XHS_ENGAGEMENT_ACCOUNT_COOLDOWN_SECONDS", 30.0)),
         "sync_auth_minutes": max(
             0.0, _env_float("CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES", 120.0)
         ),
-        "qr_cooldown_seconds": max(
-            0.0, _env_float("XHS_QR_LOGIN_COOLDOWN_SECONDS", 900.0)
-        ),
-        "qr_risk_block_seconds": max(
-            0.0, _env_float("XHS_QR_RISK_BLOCK_SECONDS", 3600.0)
-        ),
+        "qr_cooldown_seconds": max(0.0, _env_float("XHS_QR_LOGIN_COOLDOWN_SECONDS", 900.0)),
+        "qr_risk_block_seconds": max(0.0, _env_float("XHS_QR_RISK_BLOCK_SECONDS", 3600.0)),
         "min_risk_pressure": env_safe,
     }
 
@@ -438,9 +430,7 @@ def note_qr_risk_block(account_id: str, *, reason: str = "300012") -> None:
         return
     _qr_risk_blocked_until[account_id] = _now() + block_s
     _qr_risk_reason[account_id] = reason
-    _qr_risk_until_wall[account_id] = (
-        datetime.now(UTC) + timedelta(seconds=block_s)
-    ).isoformat()
+    _qr_risk_until_wall[account_id] = (datetime.now(UTC) + timedelta(seconds=block_s)).isoformat()
     # Also push the attempt clock so cooldown stacks with the risk block.
     _qr_last_attempt_at[account_id] = _now()
     _qr_last_attempt_wall[account_id] = _wall_now()
@@ -512,9 +502,7 @@ def note_sync_auth_failure(account_id: str, *, reason: str = "AUTH_EXPIRED") -> 
     block_s = minutes * 60.0
     _sync_auth_blocked_until[account_id] = _now() + block_s
     _sync_auth_reason[account_id] = reason
-    _sync_auth_until_wall[account_id] = (
-        datetime.now(UTC) + timedelta(seconds=block_s)
-    ).isoformat()
+    _sync_auth_until_wall[account_id] = (datetime.now(UTC) + timedelta(seconds=block_s)).isoformat()
     _schedule_persist()
 
 
@@ -620,9 +608,7 @@ def note_engagement(account_id: str = "", *, cdp_endpoint: str = "") -> None:
     _schedule_persist()
 
 
-def check_engagement_allowed(
-    account_id: str = "", *, cdp_endpoint: str = ""
-) -> GateBlock | None:
+def check_engagement_allowed(account_id: str = "", *, cdp_endpoint: str = "") -> GateBlock | None:
     """Min gap between engagement *sessions* for one account/profile."""
     aid = (account_id or "").strip() or _account_id_from_profile_key(
         _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
@@ -660,7 +646,7 @@ def list_active_cooldowns(*, account_id: str = "") -> list[dict[str, Any]]:
     def _want_key(key: str) -> bool:
         if not account_id:
             return True
-        return key == account_key or key == account_id or key.endswith(f":{account_id}")
+        return key in (account_key, account_id) or key.endswith(f":{account_id}")
 
     def _want_aid(aid: str) -> bool:
         if not account_id:
@@ -775,7 +761,9 @@ def list_active_cooldowns(*, account_id: str = "") -> list[dict[str, Any]]:
     return rows
 
 
-def clear_account_cooldowns(account_id: str = "", *, kinds: list[str] | None = None) -> dict[str, Any]:
+def clear_account_cooldowns(
+    account_id: str = "", *, kinds: list[str] | None = None
+) -> dict[str, Any]:
     """Clear cool-downs for one account (or all keys when account_id empty).
 
     ``kinds`` optional filter: browser_action, publish, engagement, sync_auth,
@@ -790,7 +778,7 @@ def clear_account_cooldowns(account_id: str = "", *, kinds: list[str] | None = N
     def _match_profile_key(key: str) -> bool:
         if not account_id:
             return True
-        return key == account_key or key == account_id
+        return key in (account_key, account_id)
 
     def _match_aid(aid: str) -> bool:
         if not account_id:

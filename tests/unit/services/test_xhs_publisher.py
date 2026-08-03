@@ -21,6 +21,31 @@ def publisher() -> XHSPublisher:
     return XHSPublisher(cookie="a=1; b=2", headless=True)
 
 
+@pytest.fixture(autouse=True)
+def _bypass_risk_gates(monkeypatch: pytest.MonkeyPatch):
+    """Anti-risk gates were added to publish_note (check_publish_allowed +
+    hold_cdp_session). Unit tests must reach the internal happy/error paths, so
+    neutralize both: no cooldown block, and a no-op CDP context manager.
+
+    Without this, a full pytest run leaves cooldown state armed from earlier
+    tests → every publish test returns status="failed" (publish_cooldown)."""
+    from contextlib import asynccontextmanager
+
+    monkeypatch.setattr(
+        "backend.services.xhs_risk_gate.check_publish_allowed",
+        lambda **_: None,
+    )
+
+    @asynccontextmanager
+    async def _noop_hold(**_):
+        yield
+
+    monkeypatch.setattr(
+        "backend.services.cdp_session_lock.hold_cdp_session",
+        _noop_hold,
+    )
+
+
 def _make_image(tmp_path: Path) -> str:
     """Create a tiny fake image file so it passes os.path.exists."""
     p = tmp_path / "img.jpg"
