@@ -6,6 +6,10 @@ import i18n from '@/locales'
 const { t } = i18n.global
 
 export const useOfflineStore = defineStore('offline', () => {
+  // ponytail: hoisted so onUnmounted can clear it — same navigator-after-teardown
+  // flake as OfflineRecovery: a 100ms setTimeout reading navigator.onLine fires
+  // after happy-dom tears down in slow CI → ReferenceError → exit 1.
+  let initTimer: ReturnType<typeof setTimeout> | null = null
   const toastStore = useToastStore()
 
   // State - default to true (online) to avoid false warnings during browser initialization
@@ -73,7 +77,8 @@ export const useOfflineStore = defineStore('offline', () => {
 
     // Delayed check to handle browser initialization timing issues
     // Some browsers may report offline during initialization but become online shortly after
-    setTimeout(() => {
+    initTimer = setTimeout(() => {
+      if (typeof navigator === 'undefined') return
       const currentOnlineStatus = navigator.onLine ?? true
       if (currentOnlineStatus !== isOnline.value) {
         isOnline.value = currentOnlineStatus
@@ -85,6 +90,10 @@ export const useOfflineStore = defineStore('offline', () => {
   })
 
   onUnmounted(() => {
+    if (initTimer !== null) {
+      clearTimeout(initTimer)
+      initTimer = null
+    }
     window.removeEventListener('online', handleOnline)
     window.removeEventListener('offline', handleOffline)
   })

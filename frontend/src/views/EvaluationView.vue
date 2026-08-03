@@ -1149,7 +1149,7 @@ function dimDescription(dim: string): string {
   padding: 0.5rem 1.25rem; border-radius: 0.5rem;
   font-size: 0.8125rem; font-weight: 600;
   cursor: pointer; transition: background 0.15s;
-  @apply border border-slate-200 bg-white text-slate-700 hover:not-disabled:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:not-disabled:bg-slate-800;
+  @apply border border-slate-200 bg-white text-slate-700 enabled:hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:enabled:hover:bg-slate-800;
 }
 .no-more { text-align: center; font-size: 0.75rem; margin-top: 0.75rem; @apply text-slate-400 dark:text-slate-500; }
 .spin { animation: spin 1s linear infinite; }
