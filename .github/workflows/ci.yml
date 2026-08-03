@@ -81,3 +81,28 @@ jobs:
         run: npm install
       - name: Typecheck
         run: npm run typecheck
+
+  frontend:
+    name: Frontend (type-check · test · i18n · axe)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package.json
+      - name: Install
+        run: npm install
+      # INF-09: frontend quality gate — type-check + unit/axe tests + i18n key
+      # consistency. Build is intentionally NOT here (vite OOM on CI runners is
+      # a known issue; type-check is the static gate).
+      - name: Type-check
+        run: npm run type-check
+      - name: Test (vitest + axe)
+        run: npm run test:run
+      - name: i18n check
+        run: npm run i18n:check
