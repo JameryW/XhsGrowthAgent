@@ -1,23 +1,21 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 
+// INF-11/EV-08: accessible floating tooltip. Wrap any inline trigger in the
+// default slot; hover/focus toggles a Teleported, positioned tooltip.
 interface Props {
   content: string
-  position: 'top' | 'bottom' | 'left' | 'right'
+  position?: 'top' | 'bottom' | 'left' | 'right'
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  position: 'top',
+})
 
-// Target element reference (passed via expose)
 const targetEl = ref<HTMLElement | null>(null)
-
-// Tooltip visibility
 const isVisible = ref(false)
-
-// Tooltip position coordinates
 const tooltipPos = ref({ top: 0, left: 0 })
 
-// Arrow position
 const arrowPos = computed(() => {
   switch (props.position) {
     case 'top':
@@ -31,21 +29,19 @@ const arrowPos = computed(() => {
   }
 })
 
-// Arrow direction class
 const arrowClass = computed(() => {
   switch (props.position) {
     case 'top':
-      return 'border-l-transparent border-r-transparent border-b-white border-t-transparent'
+      return 'border-l-transparent border-r-transparent border-b-white border-t-transparent dark:border-b-slate-900'
     case 'bottom':
-      return 'border-l-transparent border-r-transparent border-t-white border-b-transparent'
+      return 'border-l-transparent border-r-transparent border-t-white border-b-transparent dark:border-t-slate-900'
     case 'left':
-      return 'border-t-transparent border-b-transparent border-r-white border-l-transparent'
+      return 'border-t-transparent border-b-transparent border-r-white border-l-transparent dark:border-r-slate-900'
     case 'right':
-      return 'border-t-transparent border-b-transparent border-l-white border-r-transparent'
+      return 'border-t-transparent border-b-transparent border-l-white border-r-transparent dark:border-l-slate-900'
   }
 })
 
-// Update tooltip position
 const updatePosition = async () => {
   if (!targetEl.value || !isVisible.value) return
 
@@ -83,43 +79,16 @@ const updatePosition = async () => {
   }
 }
 
-// Show tooltip
 const show = () => {
+  if (!props.content) return
   isVisible.value = true
   updatePosition()
 }
 
-// Hide tooltip
 const hide = () => {
   isVisible.value = false
 }
 
-// Handle hover/focus events
-const handleMouseEnter = () => show()
-const handleMouseLeave = () => hide()
-const handleFocus = () => show()
-const handleBlur = () => hide()
-
-// Attach listeners to target element
-const attachListeners = (el: HTMLElement) => {
-  targetEl.value = el
-  el.addEventListener('mouseenter', handleMouseEnter)
-  el.addEventListener('mouseleave', handleMouseLeave)
-  el.addEventListener('focus', handleFocus)
-  el.addEventListener('blur', handleBlur)
-}
-
-// Detach listeners
-const detachListeners = () => {
-  if (targetEl.value) {
-    targetEl.value.removeEventListener('mouseenter', handleMouseEnter)
-    targetEl.value.removeEventListener('mouseleave', handleMouseLeave)
-    targetEl.value.removeEventListener('focus', handleFocus)
-    targetEl.value.removeEventListener('blur', handleBlur)
-  }
-}
-
-// Handle window resize
 const handleResize = () => {
   if (isVisible.value) {
     updatePosition()
@@ -131,20 +100,21 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  detachListeners()
   window.removeEventListener('resize', handleResize)
-})
-
-// Expose attach method for parent to bind target
-defineExpose({
-  attach: attachListeners,
-  detach: detachListeners,
-  show,
-  hide,
 })
 </script>
 
 <template>
+  <span
+    ref="targetEl"
+    class="inline-flex"
+    @mouseenter="show"
+    @mouseleave="hide"
+    @focus="show"
+    @blur="hide"
+  >
+    <slot />
+  </span>
   <Teleport to="body">
     <Transition name="tooltip">
       <div
@@ -158,7 +128,6 @@ defineExpose({
         :aria-hidden="!isVisible"
       >
         {{ content }}
-        <!-- Arrow -->
         <span
           class="absolute w-0 h-0 border-8"
           :style="arrowPos"

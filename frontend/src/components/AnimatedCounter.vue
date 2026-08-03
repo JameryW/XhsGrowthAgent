@@ -74,4 +74,16 @@ defineExpose({
 .animated-counter.is-animating {
   transform: scale(1.02);
 }
+
+/* AN-15: drop the scale pulse under prefers-reduced-motion. The rAF count-up
+   itself already short-circuits in useAnimation (INF-05); this kills the
+   remaining declarative transform. */
+@media (prefers-reduced-motion: reduce) {
+  .animated-counter {
+    transition: none;
+  }
+  .animated-counter.is-animating {
+    transform: none;
+  }
+}
 </style>

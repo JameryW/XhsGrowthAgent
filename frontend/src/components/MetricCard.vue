@@ -72,7 +72,9 @@ const colors = {
       </div>
       <div class="text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium">{{ props.title }}</div>
     </div>
-    <div :class="['text-xl md:text-3xl font-bold tabular-nums transition-all duration-300 group-hover:translate-x-1', colors[props.variant].text]" aria-live="polite">
+    <!-- AN-15: value is plain text inside the labelled region; no aria-live so
+         refreshes don't re-announce every metric on the dashboard. -->
+    <div :class="['text-xl md:text-3xl font-bold tabular-nums transition-all duration-300 group-hover:translate-x-1', colors[props.variant].text]">
       {{ props.value }}
     </div>
     <div v-if="props.delta" class="mt-0.5 text-[11px] md:text-xs font-medium text-slate-500">
