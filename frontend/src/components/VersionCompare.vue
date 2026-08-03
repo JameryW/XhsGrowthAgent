@@ -236,9 +236,8 @@ function getCardClass(version: ContentVersion): string[] {
           <!-- Predicted Score -->
           <MiniProgress
             :value="version.predicted_score ?? 0"
-            :max="100"
-            :label="t('versionCompare.predictedScore')"
-            :color="version.version_type === 'C' ? 'pink' : version.version_type === 'B' ? 'cyan' : 'teal'"
+            show-label
+            :variant="version.version_type === 'C' ? 'pink' : version.version_type === 'B' ? 'cyan' : 'peach'"
           />
 
           <!-- Title Preview -->

@@ -8,6 +8,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import AccountScopeBar from '@/components/AccountScopeBar.vue'
 import AccountViewNotice from '@/components/AccountViewNotice.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import TooltipHelper from '@/components/TooltipHelper.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import EvaluationOverview from '@/components/evaluation/EvaluationOverview.vue'
 import CreatorQualityPanel from '@/components/settings/CreatorQualityPanel.vue'
@@ -964,7 +965,9 @@ function dimDescription(dim: string): string {
             <div class="dim-head">
               <span class="dim-name">
                 {{ dimLabel(d.dimension) }}
-                <span class="dim-help" tabindex="0" :title="dimDescription(d.dimension)" :aria-label="dimDescription(d.dimension)">?</span>
+                <TooltipHelper :content="dimDescription(d.dimension)" position="top">
+                  <span class="dim-help" tabindex="0" role="button" :aria-label="dimDescription(d.dimension)">?</span>
+                </TooltipHelper>
                 <span v-if="d.is_blocking" class="blocking-tag">{{ t('evaluation.blocking') }}</span>
               </span>
               <span class="dim-score" :class="d.available === false || d.score == null ? 'score-none' : scoreTierClass(d.score, scoreThresholds)">
