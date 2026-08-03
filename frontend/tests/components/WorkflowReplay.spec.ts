@@ -122,7 +122,10 @@ describe('WorkflowReplay public UX contract', () => {
     await vi.advanceTimersByTimeAsync(150)
     await flushPromises()
 
-    expect(getCheckpointMock).toHaveBeenLastCalledWith(
+    // The idle prefetch (setTimeout 120ms fallback in happy-dom) loads
+    // step-2 ahead of navigation. Use toHaveBeenCalledWith (not "last") so a
+    // later on-demand call from another path doesn't mask the prefetch.
+    expect(getCheckpointMock).toHaveBeenCalledWith(
       'case-1',
       'step-2',
       false,
