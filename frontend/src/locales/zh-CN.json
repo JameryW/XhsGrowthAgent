@@ -1756,7 +1756,8 @@
     "noResults": "没有匹配的工作流",
     "noResultsWithFilters": "当前筛选：{status} · {mode}",
     "viewDetail": "查看详情",
-    "featuredLive": "进行中"
+    "featuredLive": "进行中",
+    "loadingCases": "正在加载案例…"
   },
   "blogger": {
     "selectTitle": "选择参考博主",

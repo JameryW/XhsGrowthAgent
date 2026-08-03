@@ -19,6 +19,7 @@ const props = defineProps<{
   retryLabel?: string
   dismissLabel?: string
   retrying?: boolean
+  hideDismiss?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -87,15 +88,18 @@ const presentationalMessage = computed(() => props.message || '')
 const showRetryButton = computed(() => props.variant !== 'retry_success')
 
 // --- Legacy store-bound mode (Dashboard zero-change) ---
-const workflowStore = useWorkflowStore()
-const toastStore = useToastStore()
+// ponytail: presentational mode (public pages) must not instantiate business
+// stores — docs red line "公开页不引入业务 store". Legacy Dashboard mounts are
+// the only callers of the branch below, and they never set `variant`.
+const workflowStore = isPresentational.value ? null : useWorkflowStore()
+const toastStore = isPresentational.value ? null : useToastStore()
 
-const hasError = computed(() => workflowStore.error !== null)
-const currentPhase = computed(() => workflowStore.currentPhase)
+const hasError = computed(() => Boolean(workflowStore?.error))
+const currentPhase = computed(() => workflowStore?.currentPhase)
 
 // Detect error type and provide recovery suggestions
 const errorType = computed(() => {
-  const error = workflowStore.error || ''
+  const error = workflowStore?.error || ''
   if (error.includes('network') || error.includes('Network') || error.includes('连接') || error.includes('timeout')) {
     return 'network'
   }
@@ -123,6 +127,7 @@ const recoverySuggestions = computed(() => {
 })
 
 const retryAction = async () => {
+  if (!workflowStore || !toastStore) return
   if (workflowStore.currentStatus === 'error' && workflowStore.currentThreadId) {
     await workflowStore.resumeWorkflow()
   } else {
@@ -132,6 +137,7 @@ const retryAction = async () => {
 }
 
 const goBackAction = () => {
+  if (!workflowStore || !toastStore) return
   if (workflowStore.activeThreadId) {
     workflowStore.closeTab(workflowStore.activeThreadId)
   }
@@ -155,7 +161,7 @@ const shouldRender = computed(() => (isPresentational.value ? true : hasError.va
       <!-- Error content -->
       <div class="flex-1">
         <h3 class="text-lg font-semibold mb-1" :class="isPresentational ? ERROR_TITLE_CLASSES[props.variant!] : 'text-red-700'">{{ isPresentational ? presentationalTitle : t('errorState.workflowError') }}</h3>
-        <p class="text-sm mb-2" :class="isPresentational ? ERROR_MESSAGE_CLASSES[props.variant!] : 'text-red-600'">{{ isPresentational ? presentationalMessage : workflowStore.error }}</p>
+        <p class="text-sm mb-2" :class="isPresentational ? ERROR_MESSAGE_CLASSES[props.variant!] : 'text-red-600'">{{ isPresentational ? presentationalMessage : workflowStore?.error }}</p>
         <p v-if="!isPresentational" class="text-red-500/70 text-xs mb-3">{{ t('errorState.currentPhase', { phase: currentPhase }) }}</p>
 
         <!-- Recovery suggestions (legacy mode only) -->
@@ -172,13 +178,13 @@ const shouldRender = computed(() => (isPresentational.value ? true : hasError.va
 
       <!-- Actions -->
       <div class="flex flex-col gap-2">
-        <NeonButton v-if="isPresentational ? showRetryButton : true" variant="pink" size="sm" :loading="isPresentational ? props.retrying : workflowStore.isLoading" @click="isPresentational ? emit('retry') : retryAction()">
+        <NeonButton v-if="isPresentational ? showRetryButton : true" variant="pink" size="sm" :loading="isPresentational ? props.retrying : Boolean(workflowStore?.isLoading)" @click="isPresentational ? emit('retry') : retryAction()">
           <span class="inline-flex items-center gap-2">
             <AppIcon name="RefreshCw" size="sm" variant="white" />
             <span>{{ isPresentational ? (props.retryLabel || t('common.retry')) : t('errorState.retry') }}</span>
           </span>
         </NeonButton>
-        <NeonButton variant="ghost" size="sm" :class="isPresentational ? ERROR_MESSAGE_CLASSES[props.variant!] : 'text-red-500 hover:bg-red-50'" @click="isPresentational ? emit('dismiss') : goBackAction()">
+        <NeonButton v-if="!(isPresentational && props.hideDismiss)" variant="ghost" size="sm" :class="isPresentational ? ERROR_MESSAGE_CLASSES[props.variant!] : 'text-red-500 hover:bg-red-50'" @click="isPresentational ? emit('dismiss') : goBackAction()">
           <span class="inline-flex items-center gap-2">
             <AppIcon :name="isPresentational ? 'X' : 'Home'" size="sm" :variant="isPresentational ? ERROR_ICON_VARIANT[props.variant!] : 'pink'" />
             <span>{{ isPresentational ? (props.dismissLabel || t('common.close')) : t('errorState.back') }}</span>
