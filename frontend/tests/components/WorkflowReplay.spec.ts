@@ -133,6 +133,10 @@ describe('WorkflowReplay public UX contract', () => {
 
   it('moves to the next key step and updates the deep link', async () => {
     // Step without an embedded manifest result is fetched on demand.
+    // Use fake timers so the scheduled idle prefetch (setTimeout 120ms on
+    // mount) cannot race the click and cache step-2 first — the test asserts
+    // the on-demand fetch path, not the prefetch.
+    vi.useFakeTimers()
     getManifestMock.mockResolvedValue(buildManifest([steps[0], { ...steps[1], result: null }]))
     const wrapper = mount(WorkflowReplay, {
       global: {
