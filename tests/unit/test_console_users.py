@@ -35,6 +35,16 @@ def _make_mock_conn(cursor):
     return mock_conn
 
 
+@pytest.fixture(autouse=True)
+def _fast_pbkdf2(monkeypatch: pytest.MonkeyPatch):
+    """Shrink PBKDF2 rounds for the test suite.
+
+    The tests verify hash/verify wiring (roundtrip, unique salt, login match),
+    not the 200k-round cost — full rounds only add wall-clock here.
+    """
+    monkeypatch.setattr("backend.db.console_users._PBKDF2_ROUNDS", 1_000)
+
+
 def test_password_hash_roundtrip():
     """Correct password verifies; wrong password rejects."""
     from backend.db.console_users import _hash_password, _verify_password
