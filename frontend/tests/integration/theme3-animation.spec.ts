@@ -375,8 +375,6 @@ describe('Theme 3 Acceptance Tests', () => {
     })
 
     it('NeonButton has scale-bounce success animation', async () => {
-      vi.useRealTimers()
-
       const wrapper = mount(NeonButton, {
         props: { success: false }
       })
@@ -391,8 +389,8 @@ describe('Theme 3 Acceptance Tests', () => {
       // Should have animation class
       expect(wrapper.classes()).toContain('scale-bounce-animation')
 
-      // Wait for animation to complete (600ms)
-      await new Promise(resolve => setTimeout(resolve, 700))
+      // Advance past the 600ms cleanup setTimeout (fake timers, instant).
+      await vi.advanceTimersByTimeAsync(700)
 
       // Animation class should be removed
       expect(wrapper.classes()).not.toContain('scale-bounce-animation')
@@ -412,8 +410,6 @@ describe('Theme 3 Acceptance Tests', () => {
     })
 
     it('ErrorCard shake animation triggers on mount and stops after 300ms', async () => {
-      vi.useRealTimers()
-
       const wrapper = mount(ErrorCard, {
         props: { type: 'api', message: 'Test error' }
       })
@@ -422,8 +418,8 @@ describe('Theme 3 Acceptance Tests', () => {
       const vm = wrapper.vm as any
       expect(vm.isShaking).toBe(true)
 
-      // Wait for animation to complete (300ms)
-      await new Promise(resolve => setTimeout(resolve, 350))
+      // Advance past the 300ms shake cleanup setTimeout (fake timers, instant).
+      await vi.advanceTimersByTimeAsync(350)
 
       // Animation should stop
       expect(vm.isShaking).toBe(false)
@@ -514,8 +510,6 @@ describe('Theme 3 Acceptance Tests', () => {
     })
 
     it('NeonButton scale-bounce animation is 600ms (timely)', async () => {
-      vi.useRealTimers()
-
       const wrapper = mount(NeonButton, { props: { success: false } })
 
       await wrapper.setProps({ success: true })
@@ -523,19 +517,13 @@ describe('Theme 3 Acceptance Tests', () => {
       // Animation should start
       expect(wrapper.classes()).toContain('scale-bounce-animation')
 
-      // Wait exactly 600ms (animation duration)
-      await new Promise(resolve => setTimeout(resolve, 600))
-
-      // Animation class should still be present (600ms timeout in component)
-      // Wait a bit more for cleanup
-      await new Promise(resolve => setTimeout(resolve, 50))
+      // Advance past the 600ms cleanup setTimeout (fake timers, instant).
+      await vi.advanceTimersByTimeAsync(650)
 
       expect(wrapper.classes()).not.toContain('scale-bounce-animation')
     })
 
     it('ErrorCard shake animation is 300ms (timely)', async () => {
-      vi.useRealTimers()
-
       const wrapper = mount(ErrorCard, {
         props: { type: 'api', message: 'Test error' }
       })
@@ -545,8 +533,8 @@ describe('Theme 3 Acceptance Tests', () => {
       // Initially shaking
       expect(vm.isShaking).toBe(true)
 
-      // Wait 300ms
-      await new Promise(resolve => setTimeout(resolve, 300))
+      // Advance past the 300ms cleanup setTimeout (fake timers, instant).
+      await vi.advanceTimersByTimeAsync(300)
 
       // Animation stops
       expect(vm.isShaking).toBe(false)
