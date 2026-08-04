@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -791,8 +792,11 @@ class TestGetStatus:
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
         ):
             await self._start_session(session, on_calls)
-            # Wait past the (autouse-shrunk tiny) expiry (_QR_CONFIRM_TIMEOUT_S=0.01).
-            await asyncio.sleep(0.02)
+            # Force expiry deterministically rather than sleeping past the
+            # autouse-shrunk _QR_CONFIRM_TIMEOUT_S (0.01s). A real-time sleep at
+            # that margin flakes under suite load (import-timing shifts the
+            # created_at baseline); pinning created_at to the past is exact.
+            session._qr_created_at = time.time() - 1
 
             # get_status will detect expiry → _refresh_qr → goto + wait for new create.
             # Fire a new create response after get_status's refresh goto lands.
@@ -973,7 +977,8 @@ class TestGetStatus:
             pytest.raises(LoginError, match="navigation failed"),
         ):
             await self._start_session(session, on_calls)
-            await asyncio.sleep(0.02)  # past expiry (_QR_CONFIRM_TIMEOUT_S=0.01)
+            # Force expiry deterministically (sleep-at-margin flakes under load).
+            session._qr_created_at = time.time() - 1
             await session.get_status()  # expired → refresh → goto raises
         # refresh-failure path closed context (no zombie)
         assert session._context is None
