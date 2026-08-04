@@ -1293,13 +1293,16 @@ class TestOmpSessionMode:
     async def test_session_free_mode_registers_subset(self):
         """OmpSession(mode='free') start() registers only the free subset."""
         session = OmpSession("test-free", mode="free")
+        # Pre-set the ready event so start()'s wait_for(_ready.wait()) resolves
+        # immediately. (Patching asyncio.wait_for instead leaks an un-awaited
+        # Event.wait coroutine — the arg is still evaluated under the mock.)
+        session._ready.set()
         with (
             patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock) as mock_reg,
             patch.object(OmpSession, "_drain_stderr", new_callable=AsyncMock),
             patch.object(OmpSession, "_read_stdout", new_callable=AsyncMock),
             patch("shutil.which", return_value="/fake/omp"),
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock),
-            patch("asyncio.wait_for", new_callable=AsyncMock),
         ):
             await session.start()
         mock_reg.assert_awaited_once()
@@ -1312,13 +1315,13 @@ class TestOmpSessionMode:
     async def test_session_workflow_mode_registers_full(self):
         """OmpSession(mode='workflow') start() registers the full list."""
         session = OmpSession("test-wf", mode="workflow")
+        session._ready.set()  # see test_session_free_mode_registers_subset
         with (
             patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock) as mock_reg,
             patch.object(OmpSession, "_drain_stderr", new_callable=AsyncMock),
             patch.object(OmpSession, "_read_stdout", new_callable=AsyncMock),
             patch("shutil.which", return_value="/fake/omp"),
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock),
-            patch("asyncio.wait_for", new_callable=AsyncMock),
         ):
             await session.start()
         mock_reg.assert_awaited_once()
@@ -1562,13 +1565,13 @@ class TestCompactionRetryForwarding:
 class TestSubprocessSpawn:
     async def test_start_passes_large_stdout_limit(self):
         session = OmpSession("s-spawn")
+        session._ready.set()  # see test_session_free_mode_registers_subset
         with (
             patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock),
             patch.object(OmpSession, "_drain_stderr", new_callable=AsyncMock),
             patch.object(OmpSession, "_read_stdout", new_callable=AsyncMock),
             patch("shutil.which", return_value="/fake/omp"),
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
-            patch("asyncio.wait_for", new_callable=AsyncMock),
         ):
             await session.start()
         assert mock_exec.await_args.kwargs["limit"] == _STDOUT_BUFFER_LIMIT
