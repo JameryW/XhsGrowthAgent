@@ -63,7 +63,13 @@ class TestHTTPClientBlogger:
                 raise XHSRateLimitError("rate limited")
             return {"users": [{"user_id": "u1"}]}
 
-        with patch.object(http_client, "_request", new_callable=AsyncMock, side_effect=side_effect):
+        with (
+            patch.object(http_client, "_request", new_callable=AsyncMock, side_effect=side_effect),
+            # search_users retries via a tenacity @retry with wait_exponential
+            # (min 5s). The retry sleep is the only asyncio.sleep on this path
+            # (_request is mocked), so neutralize it to keep the test sub-second.
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
             result = await http_client.search_users(keyword="美食")
 
         assert len(result) == 1

@@ -172,6 +172,15 @@ _SECURITY_REDIRECT_SETTLE_S = 1.5
 # rendering, irrelevant under the playwright mock).
 _LOGIN_MODAL_CLICK_SETTLE_S = 0.8
 _LOGIN_MODAL_FINAL_SETTLE_S = 0.5
+# Creator SPA warm-up settle after navigating to creator home: lets the app
+# mint access-token cookies before we check. Extracted so tests can shrink it
+# (the mock page does no SPA rendering to settle).
+_CREATOR_WARMUP_SETTLE_S = 1.5
+# Polling intervals for the login-flow wait loops. Extracted so tests can
+# shrink them — each fires once on the first poll iteration in the mock path.
+_EXISTING_LOGIN_POLL_S = 0.2
+_QR_READY_POLL_S = 0.3
+_EXPLORE_POLL_S = 0.25
 
 _VERIFICATION_CODE_FILL_SCRIPT = r"""
 async (code) => {
@@ -1095,7 +1104,7 @@ class XhsLoginSession:
                 return False
             if await self._looks_logged_in():
                 return True
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(_EXISTING_LOGIN_POLL_S)
         return False
 
     async def _looks_logged_in(self) -> bool:
@@ -1250,7 +1259,7 @@ class XhsLoginSession:
         while time.time() < deadline:
             if self._qr_id and self._qr_url:
                 return {"qr_id": self._qr_id, "url": self._qr_url}
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(_QR_READY_POLL_S)
         return None
 
     async def _submit_raw_verification_code(self, code: str) -> dict[str, Any]:
@@ -1301,7 +1310,7 @@ class XhsLoginSession:
                 logger.info("从 XHS 页面 DOM 提取到登录二维码: account=%s", self.account_id)
                 return {"qr_id": self._qr_id, "url": self._qr_url}
 
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(_QR_READY_POLL_S)
 
         # Final diagnosis for a clearer operator-facing error.
         security_error = await self._detect_security_restriction()
@@ -1373,7 +1382,7 @@ class XhsLoginSession:
 
         # www_only: try creator home warm-up before clearing cookies (less risk).
         await self._raw_send("Page.navigate", {"url": _CREATOR_HOME_URL})
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(_CREATOR_WARMUP_SETTLE_S)
         if await self._raw_has_strong_cookie():
             self._confirmed = True
             self._code_status = _CODE_CONFIRMED
@@ -1490,7 +1499,7 @@ class XhsLoginSession:
                 self._qr_url = result
                 self._qr_created_at = time.time()
                 return {"qr_id": self._qr_id, "url": self._qr_url}
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(_QR_READY_POLL_S)
         return None
 
     async def _get_raw_status(self) -> dict[str, Any]:
@@ -1643,7 +1652,7 @@ class XhsLoginSession:
                 timeout=15_000,
             )
             # Give the creator SPA a brief window to mint auth cookies.
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(_CREATOR_WARMUP_SETTLE_S)
             logger.info("creator session warm-up finished: account=%s", self.account_id)
         except Exception as e:
             logger.info(
@@ -1707,7 +1716,7 @@ class XhsLoginSession:
             security_error = await self._detect_security_restriction()
             if security_error:
                 raise LoginError(security_error)
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(_EXPLORE_POLL_S)
 
         security_error = await self._detect_security_restriction()
         if security_error:

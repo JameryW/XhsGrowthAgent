@@ -104,6 +104,21 @@ def _bypass_cdp_hold(monkeypatch: pytest.MonkeyPatch):
         "backend.services.cdp_session_lock.hold_cdp_session",
         _noop_hold,
     )
+    # Shrink the real-browser settle/poll constants — under the playwright mock
+    # these only add wall-clock (no rendering to settle, no real polls to space).
+    # start() AND the qrcode/status confirmed-handler both hit _warm_creator_session
+    # (1.5s) and the QR/explore poll loops, so patching here covers every path.
+    for _c in (
+        "_ALREADY_LOGIN_CHECK_S",
+        "_SECURITY_REDIRECT_SETTLE_S",
+        "_LOGIN_MODAL_CLICK_SETTLE_S",
+        "_LOGIN_MODAL_FINAL_SETTLE_S",
+        "_CREATOR_WARMUP_SETTLE_S",
+        "_EXISTING_LOGIN_POLL_S",
+        "_QR_READY_POLL_S",
+        "_EXPLORE_POLL_S",
+    ):
+        monkeypatch.setattr("backend.services.xhs_login." + _c, 0.01)
 
 
 class TestStart:
@@ -526,19 +541,11 @@ class TestGetStatus:
 
     async def _start_session(self, session, on_calls):
         """Helper: start a session and fire an initial qrcode/create."""
-        # Shrink the real-browser settle/wait constants — under the playwright
-        # mock these only add wall-clock (no rendering to settle), so each
-        # un-patched constant costs the full 1.5s/0.8s/0.5s per start().
-        with (
-            patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
-            patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
-            patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
-            patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
-        ):
-            await asyncio.gather(
-                session.start(),
-                _fire_create_after_delay(on_calls, 0.05),
-            )
+        # Settle/poll constants are shrunk by the autouse _bypass_cdp_hold fixture.
+        await asyncio.gather(
+            session.start(),
+            _fire_create_after_delay(on_calls, 0.05),
+        )
 
     async def test_status_waiting_initially(self, tmp_path):
         """Freshly started session → status=waiting (codeStatus=0)."""
