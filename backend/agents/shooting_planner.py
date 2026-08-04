@@ -24,6 +24,7 @@ class ShootingPlannerAgent(BaseAgent):
     prompt_file = "shooting_planner.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         brief = state.get("brief_content", {})
         content_plan = state.get("content_plan", {})
         copy_content = state.get("copy_content", {})
@@ -47,7 +48,7 @@ class ShootingPlannerAgent(BaseAgent):
             }
 
         system_prompt = self._build_system_prompt(state)
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),

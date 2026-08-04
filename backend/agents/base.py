@@ -30,12 +30,48 @@ class BaseAgent(ABC):
     def __init__(self) -> None:
         self._model: BaseChatModel | None = None
         self._prompt_template: dict[str, str] | None = None
+        self._llm_perf_entries: list[dict[str, Any]] = []
 
     @property
     def model(self) -> BaseChatModel:
         if self._model is None:
             self._model = get_model(self.task_type.value)
         return self._model
+
+    async def _llm_ainvoke(self, messages: list[Any]) -> Any:
+        """Invoke the routed model and capture a kind:"llm" perf_log entry.
+
+        Wraps :meth:`model.ainvoke` with timing + token/cost capture (via
+        :func:`backend.agents.nodes._base.llm_perf_entry`). Entries accumulate
+        on ``self._llm_perf_entries``; the node wrapper merges them with the
+        node-level entry into ``performance_log``. Reset per execute() via
+        :meth:`_reset_llm_perf`. Best-effort: a capture failure never breaks
+        the call.
+        """
+        from datetime import UTC, datetime
+
+        from backend.agents.nodes._base import llm_perf_entry
+        from backend.config.models import get_model_id_for_task
+
+        started = datetime.now(UTC).isoformat()
+        response = await self.model.ainvoke(messages)
+        try:
+            entry = llm_perf_entry(
+                self.agent_name,
+                response,
+                get_model_id_for_task(self.task_type),  # routed model id
+                started_at=started,
+                completed_at=datetime.now(UTC).isoformat(),
+            )
+            if entry is not None:
+                self._llm_perf_entries.append(entry)
+        except Exception as exc:  # best-effort: never break the call
+            logger.debug("llm perf entry capture failed: %s", exc)
+        return response
+
+    def _reset_llm_perf(self) -> None:
+        """Clear accumulated llm perf entries at the start of execute()."""
+        self._llm_perf_entries = []
 
     @property
     def prompt_template(self) -> dict[str, str]:
@@ -223,7 +259,7 @@ class BaseAgent(ABC):
             # Best-effort failed perf entry — now possible because we return
             # (not raise), so the dict reaches the reducer.
             try:
-                result["performance_log"] = [
+                entries = [
                     node_perf_entry(
                         self.agent_name,
                         started_at=started,
@@ -233,6 +269,8 @@ class BaseAgent(ABC):
                         retries=retries + 1,
                     )
                 ]
+                entries.extend(self._llm_perf_entries)
+                result["performance_log"] = entries
             except Exception as timer_err:  # best-effort: never break the node
                 logger.debug("performance_log failed entry failed: %s", timer_err)
             return result
@@ -240,7 +278,9 @@ class BaseAgent(ABC):
         result["current_agent"] = self.agent_name
         result["error"] = None  # Clear stale error on success
         try:
-            result["performance_log"] = [
+            # Merge node-level entry with any kind:"llm" entries captured by
+            # _llm_ainvoke() during execute() (token/cost per LLM call).
+            entries = [
                 node_perf_entry(
                     self.agent_name,
                     started_at=started,
@@ -250,6 +290,8 @@ class BaseAgent(ABC):
                     retries=retries,
                 )
             ]
+            entries.extend(self._llm_perf_entries)
+            result["performance_log"] = entries
         except Exception as timer_err:  # best-effort: never break the node
             logger.debug("performance_log node entry failed: %s", timer_err)
         return result

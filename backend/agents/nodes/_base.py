@@ -80,6 +80,58 @@ def node_perf_entry(
     }
 
 
+def llm_perf_entry(
+    agent: str,
+    response: Any,
+    model: str,
+    *,
+    started_at: str,
+    completed_at: str,
+) -> dict[str, Any] | None:
+    """Build a kind:"llm" performance_log entry from a LangChain chat response.
+
+    Extracts token usage from ``response.usage_metadata`` and computes cost_usd
+    via :data:`backend.config.models.MODEL_COST_PER_1K`. The analytics cost
+    reader filters on ``kind == "llm"`` and aggregates ``cost_usd`` by
+    ``model`` — without this entry, the cost dashboard is perpetually $0.
+
+    Returns ``None`` when no usage metadata is present (timeout/degraded path
+    with no response) so the caller can skip appending. Best-effort: never
+    raises; missing fields degrade to 0.
+    """
+    from backend.config.models import MODEL_COST_PER_1K
+
+    usage = getattr(response, "usage_metadata", None) or {}
+    input_tokens = int(usage.get("input_tokens", 0) or 0)
+    output_tokens = int(usage.get("output_tokens", 0) or 0)
+    # Response may carry a provider-specific model_name (actual billed model);
+    # fall back to the routed model id passed by the caller.
+    resp_meta = getattr(response, "response_metadata", None) or {}
+    billed_model = str(resp_meta.get("model_name") or resp_meta.get("model") or model or "")
+
+    rates = MODEL_COST_PER_1K.get(
+        billed_model, MODEL_COST_PER_1K.get(model, {"input": 0.001, "output": 0.005})
+    )
+    cost_usd = round(
+        (input_tokens / 1000) * rates["input"] + (output_tokens / 1000) * rates["output"],
+        6,
+    )
+    if not input_tokens and not output_tokens:
+        return None
+    return {
+        "kind": "llm",
+        "agent": agent,
+        "model": billed_model or model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cost_usd": cost_usd,
+        "timestamp": completed_at,  # analytics cost reader filters period/today on this
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "duration_seconds": _duration_seconds(started_at, completed_at),
+    }
+
+
 def _duration_seconds(started_at: str, completed_at: str) -> float:
     """Seconds between two ISO8601 timestamps; 0.0 on parse failure."""
     from datetime import UTC, datetime

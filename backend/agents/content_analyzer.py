@@ -24,6 +24,7 @@ class ContentAnalyzerAgent(BaseAgent):
     prompt_file = "content_analyzer.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         draft: dict[str, Any] | None = cast(dict[str, Any] | None, state.get("draft_content"))
         viral_posts = state.get("viral_posts", [])
 
@@ -61,7 +62,7 @@ class ContentAnalyzerAgent(BaseAgent):
 
 请分析用户草稿与参考内容之间的差距，并提供优化建议。"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),

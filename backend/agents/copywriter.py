@@ -27,6 +27,7 @@ class CopywriterAgent(BaseAgent):
     prompt_file = "copywriter.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         account_id = state.get("account_id", "default")
         plan = state.get("content_plan", {})
         brief = state.get("brief_content") or {}
@@ -134,7 +135,7 @@ class CopywriterAgent(BaseAgent):
 内容类型：{plan.get("content_type", "note")}
 垂类赛道：{niche}"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),
@@ -283,7 +284,7 @@ class CopywriterAgent(BaseAgent):
             HumanMessage(content=variant_prompt),
         ]
 
-        response = await self.model.ainvoke(messages)
+        response = await self._llm_ainvoke(messages)
 
         raw_response = cast(str, response.content)
         parsed = self._parse_json_response(raw_response)
@@ -295,7 +296,7 @@ class CopywriterAgent(BaseAgent):
             logger.warning(
                 f"copywriter style variants empty on first attempt: {raw_response[:200]}"
             )
-            retry_response = await self.model.ainvoke(messages)
+            retry_response = await self._llm_ainvoke(messages)
             raw_response = cast(str, retry_response.content)
             parsed = self._parse_json_response(raw_response)
             variants = parsed.get("variants", [])

@@ -25,6 +25,7 @@ class BloggerScoutAgent(BaseAgent):
     prompt_file = "blogger_scout.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         limit = state.get("blogger_candidate_limit", 5)
 
         keywords = self._extract_keywords(state)
@@ -98,7 +99,7 @@ class BloggerScoutAgent(BaseAgent):
         )
 
         try:
-            response = await self.model.ainvoke(
+            response = await self._llm_ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=user_prompt),
@@ -160,7 +161,7 @@ class BloggerScoutAgent(BaseAgent):
             f"只输出JSON，不要输出其他任何内容。"
         )
         try:
-            response = await self.model.ainvoke([HumanMessage(content=prompt)])
+            response = await self._llm_ainvoke([HumanMessage(content=prompt)])
             content = response.content
             if isinstance(content, list):
                 content = str(content)
