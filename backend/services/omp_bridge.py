@@ -2684,6 +2684,10 @@ class OmpSession:
 
 _DEFAULT_IDLE_TIMEOUT = 300  # 5 minutes
 
+# Shutdown grace poll interval: how often stop() re-checks whether busy
+# sessions have finished. Extracted so tests can shrink it.
+_SHUTDOWN_BUSY_POLL_S = 0.5
+
 
 class OmpBridgeManager:
     """Manages multiple OmpSession instances, keyed by session_id.
@@ -2715,8 +2719,8 @@ class OmpBridgeManager:
                 busy = [sid for sid, s in self._sessions.items() if s.is_busy]
                 logger.info("Shutdown grace expired with busy sessions: %s", busy)
                 break
-            await asyncio.sleep(0.5)
-            busy_waited += 0.5
+            await asyncio.sleep(_SHUTDOWN_BUSY_POLL_S)
+            busy_waited += _SHUTDOWN_BUSY_POLL_S
 
         # Cancel all idle timers
         for timer_task in self._idle_timers.values():
