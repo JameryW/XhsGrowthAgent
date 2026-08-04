@@ -11,19 +11,30 @@ from __future__ import annotations
 import os
 from typing import Any
 
-try:
-    import tiktoken
+_ENCODER: Any = None
+_ENCODER_INIT = False
 
-    _ENCODER: Any = tiktoken.get_encoding("cl100k_base")
 
-    def _encode_len(text: str) -> int:
-        return len(_ENCODER.encode(text))
-except Exception:  # pragma: no cover - tiktoken always present in this repo
-    _ENCODER = None
+def _encode_len(text: str) -> int:
+    """Token estimate for ``text``.
 
-    def _encode_len(text: str) -> int:
+    tiktoken's ``get_encoding("cl100k_base")`` costs ~128ms (BPE vocab load);
+    deferring it to first call keeps ``import backend.models.context_cap`` off
+    the app cold-start path. Falls back to char/4 when tiktoken is unavailable.
+    """
+    global _ENCODER, _ENCODER_INIT
+    if not _ENCODER_INIT:
+        _ENCODER_INIT = True
+        try:
+            import tiktoken
+
+            _ENCODER = tiktoken.get_encoding("cl100k_base")
+        except Exception:  # pragma: no cover - tiktoken always present here
+            _ENCODER = None
+    if _ENCODER is None:
         # ponytail: char/4 fallback — rough but fine for the over-limit check.
         return len(text) // 4
+    return len(_ENCODER.encode(text))
 
 
 _DEFAULT_MAX_INPUT_TOKENS = 500_000
