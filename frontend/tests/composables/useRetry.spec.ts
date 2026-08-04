@@ -1,3 +1,4 @@
+// @vitest-environment node
 // frontend/tests/composables/useRetry.spec.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useRetry, retryWithBackoff, calculateDelay, DEFAULT_CONFIG } from '@/composables/useRetry'

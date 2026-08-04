@@ -1,3 +1,4 @@
+// @vitest-environment node
 // frontend/tests/composables/useLoading.spec.ts
 import { describe, it, expect } from 'vitest'
 import { useLoading } from '@/composables/useLoading'

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // frontend/tests/utils/markdownToAnsi.spec.ts
 import { describe, it, expect } from 'vitest'
 import { markdownToAnsi, ANSI } from '@/utils/markdownToAnsi'

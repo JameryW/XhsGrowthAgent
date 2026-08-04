@@ -1,3 +1,4 @@
+// @vitest-environment node
 // frontend/tests/utils/ansiCards.spec.ts
 import { describe, it, expect } from 'vitest'
 import {

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { getDashboardHero } from '@/composables/dashboardHero'
 import type { WorkflowPhase, WorkflowStatus } from '@/types/workflow'

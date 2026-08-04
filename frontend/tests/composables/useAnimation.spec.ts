@@ -1,3 +1,4 @@
+// @vitest-environment node
 // frontend/tests/composables/useAnimation.spec.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { animatedCounter } from '@/composables/useAnimation'
