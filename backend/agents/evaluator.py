@@ -14,10 +14,14 @@ import asyncio
 import hashlib
 import json
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.store.base import BaseStore
+if TYPE_CHECKING:
+    # BaseStore only appears in annotations. HumanMessage/SystemMessage are
+    # constructed at runtime inside execute() (local import there) — not needed
+    # for type-checking. Importing langgraph.store.base at module load adds
+    # ~0.4s to every import of this module (and the routes that pull it).
+    from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TASK_TIMEOUT_OVERRIDES, TaskType
@@ -127,6 +131,10 @@ class EvaluatorAgent(BaseAgent):
         return template
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        # Lazy import — langchain_core.messages is heavy (~0.16s); only needed
+        # when the LLM judge path runs, not on module import.
+        from langchain_core.messages import HumanMessage, SystemMessage
+
         self._reset_llm_perf()
         copy_content = state.get("copy_content") or {}
         visual_plan = state.get("visual_plan") or {}

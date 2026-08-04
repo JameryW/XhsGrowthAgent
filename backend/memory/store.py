@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from langgraph.store.base import BaseStore
+if TYPE_CHECKING:
+    # BaseStore only appears in annotations. Importing langgraph.store.base at
+    # module load pulls langchain_core.runnables (~0.4s) on every import of
+    # backend.memory.store (pulled by agents.base → MemoryManager). Deferred.
+    from langgraph.store.base import BaseStore
 
 logger = logging.getLogger("xhs_growth.memory.store")
 
