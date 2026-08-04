@@ -8,6 +8,7 @@ the workflow (used by omp / external callers).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -194,17 +195,49 @@ async def list_evaluated_workflows(
             break
 
     enriched: list[dict[str, Any]] = []
-    threshold_cache: dict[str, dict[str, float]] = {}
-    for row in rows:
-        # Defense in depth: even if an adapter/database view ignores its
-        # account predicate, never serialize a foreign-account checkpoint.
-        if account_id and (row.account_id or "").strip() != account_id.strip():
-            continue
-        config = {"configurable": {"thread_id": row.thread_id}}
+
+    # Filter to owned rows first (account predicate is defense-in-depth even
+    # though the DB query already scopes by account_id).
+    owned = [
+        row
+        for row in rows
+        if not account_id or (row.account_id or "").strip() == account_id.strip()
+    ]
+
+    # Prefetch per-account thresholds concurrently — the per-row loop used to
+    # await _score_thresholds on first sighting of each account, serializing
+    # checkpoint reads behind DB lookups. Resolve all up front instead.
+    unique_account_keys: list[str] = []
+    seen: set[str] = set()
+    for row in owned:
+        k = (row.account_id or "").strip()
+        if k not in seen:
+            seen.add(k)
+            unique_account_keys.append(k)
+    thresholds_list = await asyncio.gather(*(_score_thresholds(k) for k in unique_account_keys))
+    threshold_cache: dict[str, dict[str, float]] = dict(
+        zip(unique_account_keys, thresholds_list, strict=True)
+    )
+
+    # Fetch checkpoint states concurrently instead of one sequential aget_state
+    # per row — this was the list-endpoint's hot path (N serial checkpoint reads
+    # per page). Failures on individual threads are logged and skipped, matching
+    # the prior try/except-per-row contract.
+    configs = [{"configurable": {"thread_id": row.thread_id}} for row in owned]
+
+    async def _safe_aget(cfg: dict[str, Any], thread_id: str) -> Any | None:
         try:
-            state = await graph.aget_state(config)
+            return await graph.aget_state(cfg)
         except Exception:
-            logger.exception("aget_state failed for %s during evaluation list", row.thread_id)
+            logger.exception("aget_state failed for %s during evaluation list", thread_id)
+            return None
+
+    states = await asyncio.gather(
+        *(_safe_aget(cfg, row.thread_id) for cfg, row in zip(configs, owned, strict=True))
+    )
+
+    for row, state in zip(owned, states, strict=True):
+        if state is None:
             continue
         values = _get_state_values(state)
         if not values:
@@ -220,8 +253,6 @@ async def list_evaluated_workflows(
             copy_content = {}
         selected_title = copy_content.get("selected_title") or ""
         account_key = (row.account_id or "").strip()
-        if account_key not in threshold_cache:
-            threshold_cache[account_key] = await _score_thresholds(account_key)
         thresholds = threshold_cache[account_key]
         evaluation = values.get("evaluation_result") or {}
         status_detail = str(evaluation.get("status") or "ready")
