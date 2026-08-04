@@ -8,6 +8,7 @@ per-gate submit endpoints.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -123,14 +124,22 @@ async def get_inbox(
 
     rows, _total = await db_list(account_id=account_id, limit=100, offset=0)
 
-    inbox: list[dict[str, Any]] = []
-    for row in rows:
-        thread_id = row.thread_id
-        config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+    # Fetch checkpoint states concurrently — each aget_state is a separate
+    # checkpointer round trip; a serial loop made inbox latency scale with row
+    # count. _safe_aget preserves the per-row try/except skip from the loop.
+    async def _safe_aget(thread_id: str) -> Any | None:
         try:
-            state = await graph.aget_state(config)
+            return await graph.aget_state({"configurable": {"thread_id": thread_id}})
         except Exception:
             logger.debug("aget_state failed for %s", thread_id, exc_info=True)
+            return None
+
+    states = await asyncio.gather(*(_safe_aget(row.thread_id) for row in rows))
+
+    inbox: list[dict[str, Any]] = []
+    for row, state in zip(rows, states, strict=True):
+        thread_id = row.thread_id
+        if state is None:
             continue
 
         # Skip threads with no live checkpoint (created but not started, or
