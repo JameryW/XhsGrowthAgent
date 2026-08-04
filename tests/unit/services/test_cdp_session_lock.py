@@ -20,6 +20,9 @@ from backend.services.cdp_session_lock import (
 def _reset_locks(monkeypatch):
     # Disable cross-feature cool-down so lock unit tests stay fast.
     monkeypatch.setenv("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", "0")
+    # Shrink the busy-wait poll gap so timeout=0.05 tests don't sleep the full
+    # 0.15s default (deadline check only fires after the poll sleep).
+    monkeypatch.setattr("backend.services.cdp_session_lock._BUSY_POLL_S", 0.01)
     from backend.services.xhs_risk_gate import reset_gates_for_tests
 
     reset_cdp_session_locks_for_tests()

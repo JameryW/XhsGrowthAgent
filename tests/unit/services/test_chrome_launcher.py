@@ -748,7 +748,7 @@ async def test_profile_launch_lock_serializes_same_profile(tmp_path):
     holder = asyncio.create_task(_holder())
     await entered.wait()
     waiter = asyncio.create_task(_waiter())
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.01)
     assert not waiter.done()
     release.set()
     await holder
