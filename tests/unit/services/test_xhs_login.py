@@ -120,10 +120,11 @@ def _bypass_cdp_hold(monkeypatch: pytest.MonkeyPatch):
         "_QR_CONFIRM_TIMEOUT_S",
     ):
         monkeypatch.setattr("backend.services.xhs_login." + _c, 0.01)
-    # QR create wait: success-path tests fire the create handler at 0.05s, so
-    # the deadline needs headroom past that. 0.1s gives one poll tick (0.01s)
-    # after the 0.05s fire for detection. Failure-path tests just time out here.
-    monkeypatch.setattr("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.1)
+    # QR create wait: success-path tests fire the create handler at 0.02s, so
+    # the deadline needs headroom past that. 0.05s gives one poll tick (0.01s)
+    # after the 0.02s fire for detection. Failure-path tests just time out here
+    # (the www_only recovery path waits this TWICE, so halving it halves that cost).
+    monkeypatch.setattr("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.05)
 
 
 class TestStart:
@@ -141,7 +142,9 @@ class TestStart:
             # in _wait_for_qr_create polling loop; we fire the handler mid-flight.
             async def _fire_qr_create():
                 # Give start() a moment to register the listener + call goto.
-                await asyncio.sleep(0.05)
+                # 0.02s is enough under the mock (page.on registers on first await);
+                # _QR_CREATE_WAIT_S=0.05 (autouse) leaves a poll tick to detect it.
+                await asyncio.sleep(0.02)
                 assert on_calls, "page.on('response', ...) was not registered"
                 handler = on_calls[0][1]
                 resp = _build_mock_response(
@@ -544,9 +547,12 @@ class TestGetStatus:
     async def _start_session(self, session, on_calls):
         """Helper: start a session and fire an initial qrcode/create."""
         # Settle/poll constants are shrunk by the autouse _bypass_cdp_hold fixture.
+        # Fire at 0.02s: start() registers page.on('response') on its first awaits
+        # (mock playwright yields fast); _QR_CREATE_WAIT_S=0.05 (autouse) leaves
+        # headroom for one _QR_READY_POLL_S tick to detect the fired _qr_id.
         await asyncio.gather(
             session.start(),
-            _fire_create_after_delay(on_calls, 0.05),
+            _fire_create_after_delay(on_calls, 0.02),
         )
 
     async def test_status_waiting_initially(self, tmp_path):
@@ -785,13 +791,15 @@ class TestGetStatus:
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
         ):
             await self._start_session(session, on_calls)
-            # Wait past the (autouse-shrunk tiny) expiry.
-            await asyncio.sleep(0.05)
+            # Wait past the (autouse-shrunk tiny) expiry (_QR_CONFIRM_TIMEOUT_S=0.01).
+            await asyncio.sleep(0.02)
 
             # get_status will detect expiry → _refresh_qr → goto + wait for new create.
             # Fire a new create response after get_status's refresh goto lands.
+            # 0.02s: refresh's _wait_for_qr_ready deadline is _QR_CREATE_WAIT_S=0.05
+            # (autouse), so firing at 0.02s leaves a poll tick to detect the new id.
             async def _fire_refresh_create():
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.02)
                 handler = on_calls[0][1]
                 await handler(
                     _build_mock_response(
@@ -840,7 +848,7 @@ class TestGetStatus:
             )
 
             async def _fire_refresh_create():
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.02)
                 handler = on_calls[0][1]
                 await handler(
                     _build_mock_response(
@@ -965,7 +973,7 @@ class TestGetStatus:
             pytest.raises(LoginError, match="navigation failed"),
         ):
             await self._start_session(session, on_calls)
-            await asyncio.sleep(0.05)  # past expiry
+            await asyncio.sleep(0.02)  # past expiry (_QR_CONFIRM_TIMEOUT_S=0.01)
             await session.get_status()  # expired → refresh → goto raises
         # refresh-failure path closed context (no zombie)
         assert session._context is None
