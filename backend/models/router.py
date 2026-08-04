@@ -6,13 +6,19 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_model_id
 from backend.models.retry import with_retry
+
+# ChatAnthropic / ChatOpenAI are imported lazily inside _create_model (see
+# below). Importing them at module load drags in langchain_anthropic +
+# langchain_openai (~0.8s of one-time langchain cost) on every import of
+# backend.models.router, which is pulled by backend.agents.base — i.e. every
+# agent/route import, including test collection. They are only needed when a
+# model instance is actually constructed (request time), so deferring them
+# keeps the import chain light with no behavior change.
 
 # 加载 .env 文件（确保环境变量可用）
 # override=False：不覆盖已设的 os.environ——host 跑 launcher 时 shell export 的
@@ -33,6 +39,10 @@ _PROVIDER_ENV_VARS: dict[ModelProvider, str] = {
 
 def _create_model(config: ModelConfig, timeout: int | None = None) -> BaseChatModel:
     """根据 ModelConfig 创建对应的 ChatModel 实例"""
+    # Lazy import — see module docstring note above.
+    from langchain_anthropic import ChatAnthropic
+    from langchain_openai import ChatOpenAI
+
     env_var = _PROVIDER_ENV_VARS.get(config.provider)
     api_key = os.environ.get(env_var, "") if env_var else ""
     if not api_key:
