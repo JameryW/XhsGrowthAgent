@@ -29,6 +29,11 @@ logger = logging.getLogger("xhs_growth.cdp_session_lock")
 # Namespace for two-int advisory locks (avoids colliding with other hashtext uses).
 _PG_LOCK_CLASS = 8910
 
+# Busy-wait poll interval for the PG advisory-lock acquisition loop. Extracted
+# so tests can shrink it below the wait timeout — otherwise a 0.05s timeout
+# still sleeps the full 0.15s gap (deadline check only fires after the sleep).
+_BUSY_POLL_S = 0.15
+
 _locks: dict[str, asyncio.Lock] = {}
 _holders: dict[str, str] = {}
 _held_since_mono: dict[str, float] = {}
@@ -224,7 +229,7 @@ async def _acquire_pg_with_policy(
             raise CdpSessionBusyError(key, "remote")
         if time.monotonic() >= deadline:
             raise CdpSessionBusyError(key, "remote")
-        await asyncio.sleep(0.15)
+        await asyncio.sleep(_BUSY_POLL_S)
 
 
 @asynccontextmanager

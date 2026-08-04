@@ -66,8 +66,8 @@ def test_sync_auth_fail_cooldown():
 
 
 def test_qr_cooldown_expires(monkeypatch):
-    monkeypatch.setenv("XHS_QR_LOGIN_COOLDOWN_SECONDS", "0.05")
+    monkeypatch.setenv("XHS_QR_LOGIN_COOLDOWN_SECONDS", "0.01")
     gate.note_qr_attempt("acc-exp")
     assert gate.check_qr_start_allowed("acc-exp") is not None
-    time.sleep(0.08)
+    time.sleep(0.02)
     assert gate.check_qr_start_allowed("acc-exp") is None
