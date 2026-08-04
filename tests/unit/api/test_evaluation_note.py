@@ -16,7 +16,7 @@ from backend.db.accounts import AccountRow
 from backend.services.creator_stats.types import NoteStats
 
 _EXEC_PATCH = "backend.api.routes.evaluation._evaluator.execute"
-_GET_BUNDLE = "backend.api.routes.evaluation.get_creator_stats_snapshot_bundle"
+_GET_BUNDLE = "backend.db.creator_stats.get_creator_stats_snapshot_bundle"
 _GET_ACCOUNT = "backend.api.routes.evaluation.get_account"
 
 

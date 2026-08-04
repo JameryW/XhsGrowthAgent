@@ -20,7 +20,9 @@ from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     # Annotation-only; deferring state.schema keeps langgraph.graph.message
-    # (~0.3s) off the app cold-start import chain.
+    # (~0.3s) off the app cold-start import chain. NoteStats (creator_stats
+    # types — dataclasses/inspect at module load) also annotation-only here.
+    from backend.services.creator_stats.types import NoteStats
     from backend.state.schema import XHSGrowthState
 
 from backend.agents.evaluator import MIN_EVALUATION_COVERAGE, EvaluatorAgent
@@ -33,13 +35,8 @@ from backend.api.deps import get_current_user
 from backend.api.errors import CreatorNoteNotFoundError, ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.db.accounts import get_account
-from backend.db.creator_stats import (
-    canonicalize_note_stats,
-    get_creator_stats_snapshot_bundle,
-)
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
-from backend.services.creator_stats.types import NoteStats
 from backend.services.quality_consistency import (
     QUALITY_CONSISTENCY_CONTRACT,
     quality_consistency_v2_enabled,
@@ -609,6 +606,11 @@ async def _get_historical_note_with_snapshot(
     that versions the response.  Keeping the lookup here prevents the route
     from pairing a single-note read with a later, unrelated snapshot query.
     """
+
+    from backend.db.creator_stats import (
+        canonicalize_note_stats,
+        get_creator_stats_snapshot_bundle,
+    )
 
     bundle = await get_creator_stats_snapshot_bundle(account_id)
     normalized_note_id = (note_id or "").strip()
