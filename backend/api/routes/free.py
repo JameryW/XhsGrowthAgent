@@ -21,10 +21,15 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
+
+if TYPE_CHECKING:
+    # Annotation-only; deferring state.schema keeps langgraph.graph.message
+    # (~0.3s) off the app cold-start import chain.
+    from backend.state.schema import XHSGrowthState
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.publisher import run_publish
@@ -36,7 +41,6 @@ from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError
 from backend.api.responses import ApiResponse, success
 from backend.config.settings import Settings
-from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.api.free")
 

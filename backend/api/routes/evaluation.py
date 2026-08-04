@@ -13,10 +13,15 @@ import hashlib
 import json
 import logging
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    # Annotation-only; deferring state.schema keeps langgraph.graph.message
+    # (~0.3s) off the app cold-start import chain.
+    from backend.state.schema import XHSGrowthState
 
 from backend.agents.evaluator import MIN_EVALUATION_COVERAGE, EvaluatorAgent
 from backend.api.account_scope import (
@@ -42,7 +47,6 @@ from backend.services.quality_consistency import (
 from backend.services.quality_consistency import (
     snapshot_id as build_snapshot_id,
 )
-from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.api.evaluation")
 

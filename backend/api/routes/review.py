@@ -11,9 +11,12 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    # Annotation-only; deferring langgraph.types keeps it off the app cold-start
-    # import chain (~600ms). Command is imported locally where constructed.
+    # Annotation-only; deferring langgraph.types + state.schema keeps them off
+    # the app cold-start import chain. Command is imported locally where
+    # constructed.
     from langgraph.types import StateSnapshot
+
+    from backend.state.schema import XHSGrowthState
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.api.account_scope import assert_thread_owned
@@ -22,7 +25,6 @@ from backend.api.errors import ReviewNotPendingError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 from backend.state.enums import ContentStatus
-from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.api.review")
 
