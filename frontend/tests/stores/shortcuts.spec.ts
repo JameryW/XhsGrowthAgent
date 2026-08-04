@@ -1,3 +1,4 @@
+// @vitest-environment node
 // frontend/tests/stores/shortcuts.spec.ts
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'

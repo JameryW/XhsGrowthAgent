@@ -1,3 +1,4 @@
+// @vitest-environment node
 // frontend/tests/api/review.spec.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 

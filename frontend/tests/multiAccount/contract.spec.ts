@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Multi-account product contract — locks the rules that caused
  * "just published but not in history" confusion.
