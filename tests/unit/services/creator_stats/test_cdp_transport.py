@@ -34,6 +34,14 @@ from backend.services.creator_stats.client import (
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def _shrink_wait_for_poll(monkeypatch: pytest.MonkeyPatch):
+    """_wait_for's poll gap (prod 0.1s) exceeds the 0.05s test timeout, so a
+    bare 0.05s wait still sleeps the full 0.1s gap. Shrink to 0.01s so waits
+    time out promptly under the FakeNotesPage (no real rendering to settle)."""
+    monkeypatch.setattr(client_module, "_WAIT_FOR_POLL_S", 0.01)
+
+
 def _native_account() -> dict:
     return {
         "code": 0,
