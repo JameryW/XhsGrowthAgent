@@ -1627,7 +1627,13 @@ class TestManagerResilience:
         session = OmpSession("s-grace")
         session._busy = True
         manager._sessions["s-grace"] = session
-        with patch.object(session, "stop", new_callable=AsyncMock) as mock_stop:
+        with (
+            patch.object(session, "stop", new_callable=AsyncMock) as mock_stop,
+            # Shrink the grace poll interval so the 0.5s default doesn't
+            # dominate this test — finish_turn completes at 0.2s, the poll
+            # just needs to catch that within the 2.0s grace.
+            patch.object(omp_bridge_module, "_SHUTDOWN_BUSY_POLL_S", 0.05),
+        ):
 
             async def finish_turn() -> None:
                 await asyncio.sleep(0.2)
@@ -1644,7 +1650,12 @@ class TestManagerResilience:
         session = OmpSession("s-grace-x")
         session._busy = True
         manager._sessions["s-grace-x"] = session
-        with patch.object(session, "stop", new_callable=AsyncMock) as mock_stop:
+        with (
+            patch.object(session, "stop", new_callable=AsyncMock) as mock_stop,
+            # Shrink the grace poll interval (default 0.5s) — the un-patched
+            # poll exceeds the 0.1s grace, so the test would sleep a full 0.5s.
+            patch.object(omp_bridge_module, "_SHUTDOWN_BUSY_POLL_S", 0.02),
+        ):
             await manager.stop(grace_seconds=0.1)
         mock_stop.assert_awaited_once()
         assert manager._sessions == {}
