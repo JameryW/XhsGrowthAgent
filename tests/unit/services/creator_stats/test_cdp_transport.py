@@ -194,8 +194,9 @@ async def test_cdp_capture_associates_camel_case_note_id_with_profile_responses(
     class FakeBrowser:
         contexts = [FakeContext()]
 
-    transport = CdpTransport("http://127.0.0.1:9222", timeout=1)
+    transport = CdpTransport("http://127.0.0.1:9222", timeout=0.05, request_delay=(0, 0))
     transport._ensure_browser = AsyncMock(return_value=FakeBrowser())
+    transport._session_wind_down = (0.0, 0.0)
     account, _profile, notes = await transport.fetch_creator_center(max_pages=1)
 
     assert account["_creator_insights"]["audience_source"] == {}
@@ -461,7 +462,10 @@ def _transport_with_page(page: _FakeNotesPage) -> CdpTransport:
     class FakeBrowser:
         contexts = [FakeContext()]
 
-    transport = CdpTransport("http://127.0.0.1:9222", timeout=1, request_delay=(0, 0))
+    # timeout=0.05 bounds _wait_for's end-of-list poll (caught as the normal
+    # no-next-page exit) to a few ms instead of the full 1s window — 20+ tests
+    # hit this path, so the saved ~0.95s each adds up across the suite.
+    transport = CdpTransport("http://127.0.0.1:9222", timeout=0.05, request_delay=(0, 0))
     transport._ensure_browser = AsyncMock(return_value=FakeBrowser())
     # Deliberately mutate the legacy cap: it must not enable public-page visits.
     transport._max_body_visits = 10
