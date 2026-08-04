@@ -10,8 +10,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from psycopg.rows import dict_row
-
 from backend.db.pool import get_pool, is_pool_ready
 
 _CREATE_TABLE_SQL = """
@@ -174,6 +172,8 @@ async def summarize_events(days: int = 7, event_name: str | None = None) -> list
         params.append(event_name)
 
     pool = get_pool()
+    from psycopg.rows import dict_row
+
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             f"""
