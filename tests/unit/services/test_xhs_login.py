@@ -153,6 +153,9 @@ class TestStart:
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
             patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
             patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.2),
+            patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
+            patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
+            patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
             pytest.raises(Exception, match="未找到登录二维码"),
         ):
             await session.start()
@@ -305,6 +308,9 @@ class TestStart:
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
             patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
             patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.15),
+            patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
+            patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
+            patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
             pytest.raises(Exception, match="未找到登录二维码"),
         ):
             await session.start()
@@ -328,6 +334,9 @@ class TestStart:
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
             patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
             patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.2),
+            patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
+            patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
+            patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
             pytest.raises(Exception, match="未找到登录二维码"),
         ):
             await session.start()
@@ -517,10 +526,19 @@ class TestGetStatus:
 
     async def _start_session(self, session, on_calls):
         """Helper: start a session and fire an initial qrcode/create."""
-        await asyncio.gather(
-            session.start(),
-            _fire_create_after_delay(on_calls, 0.05),
-        )
+        # Shrink the real-browser settle/wait constants — under the playwright
+        # mock these only add wall-clock (no rendering to settle), so each
+        # un-patched constant costs the full 1.5s/0.8s/0.5s per start().
+        with (
+            patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
+            patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
+            patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
+            patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
+        ):
+            await asyncio.gather(
+                session.start(),
+                _fire_create_after_delay(on_calls, 0.05),
+            )
 
     async def test_status_waiting_initially(self, tmp_path):
         """Freshly started session → status=waiting (codeStatus=0)."""
