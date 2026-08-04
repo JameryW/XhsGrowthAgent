@@ -6,14 +6,16 @@ import re
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
-from PIL import Image, ImageDraw, ImageFont
+if TYPE_CHECKING:
+    from PIL import Image, ImageDraw, ImageFont
+
+    # ponytail: PIL stubs place FreeTypeFont and ImageFont as siblings (no
+    # subtype relation at runtime either); a font factory returns the union.
+    Font: TypeAlias = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 RgbColor: TypeAlias = tuple[int, int, int]
-# ponytail: PIL stubs place FreeTypeFont and ImageFont as siblings (no subtype
-# relation at runtime either); a font factory returns the union of both.
-Font: TypeAlias = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 _IMAGE_SIZE = (1080, 1440)
 _PANEL_BOX = (72, 108, 1008, 1332)
@@ -38,6 +40,8 @@ def generate_text_cover_image(
     output_dir: str | Path,
 ) -> str:
     """Create a 3:4 PNG text cover and return its absolute path."""
+
+    from PIL import Image, ImageDraw
 
     colors = _select_colors(color_palette)
     image = _make_background(colors)
@@ -105,6 +109,8 @@ def _select_points(key_points: Sequence[str]) -> list[str]:
 
 
 def _make_background(colors: list[RgbColor]) -> Image.Image:
+    from PIL import Image, ImageDraw
+
     first = colors[0]
     second = colors[1] if len(colors) > 1 else colors[0]
     width, height = _IMAGE_SIZE
@@ -124,6 +130,8 @@ def _make_background(colors: list[RgbColor]) -> Image.Image:
 
 
 def _font(size: int) -> Font:
+    from PIL import ImageFont
+
     for candidate in _FONT_CANDIDATES:
         path = Path(candidate)
         if path.exists():
