@@ -22,6 +22,19 @@ def _clear_index_cache():
     clear_store_index_cache()
 
 
+@pytest.fixture(autouse=True)
+def _stub_openai_embeddings():
+    """Stub OpenAIEmbeddings so openai-provider tests don't pay the SDK import
+    + SSL init cost (~0.12s each). Tests assert config wiring (routing, dims,
+    cache identity), not the SDK itself — same pattern TestLocalProvider uses
+    for HuggingFaceEmbeddings.
+    """
+    mock_module = MagicMock()
+    mock_module.OpenAIEmbeddings = MagicMock(return_value=MagicMock())
+    with patch.dict(sys.modules, {"langchain_openai": mock_module}):
+        yield
+
+
 class TestGetStoreIndex:
     @patch.dict("os.environ", {}, clear=True)
     def test_returns_none_without_openai_key(self):
