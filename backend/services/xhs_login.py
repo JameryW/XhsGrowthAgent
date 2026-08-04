@@ -166,6 +166,12 @@ _ALREADY_LOGIN_CHECK_S = 1.5
 _EXPLORE_GOTO_TIMEOUT_MS = 12000
 # XHS often commits explore then redirects to /website-login/error a moment later.
 _SECURITY_REDIRECT_SETTLE_S = 1.5
+# Settle pauses inside _ensure_login_modal: after each 登录-label click (SPA
+# paint) and one final settle if no label opened the modal. Extracted as
+# constants so tests can shrink them (the real waits are for live-browser
+# rendering, irrelevant under the playwright mock).
+_LOGIN_MODAL_CLICK_SETTLE_S = 0.8
+_LOGIN_MODAL_FINAL_SETTLE_S = 0.5
 
 _VERIFICATION_CODE_FILL_SCRIPT = r"""
 async (code) => {
@@ -1663,7 +1669,7 @@ class XhsLoginSession:
             try:
                 locator = self._page.get_by_text(label, exact=True).first
                 await locator.click(timeout=2_000)
-                await asyncio.sleep(0.8)
+                await asyncio.sleep(_LOGIN_MODAL_CLICK_SETTLE_S)
             except Exception as e:
                 logger.debug("打开登录浮层点击 %r 失败: %s", label, e)
                 continue
@@ -1671,7 +1677,7 @@ class XhsLoginSession:
                 logger.info("已打开小红书登录浮层: account=%s via=%s", self.account_id, label)
                 return
         # One more settle for SPA paint after the last click attempt.
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(_LOGIN_MODAL_FINAL_SETTLE_S)
 
     async def _goto_explore(self) -> None:
         """Navigate to XHS explore without blocking on safety pages forever."""
