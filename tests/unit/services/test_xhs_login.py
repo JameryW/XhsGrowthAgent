@@ -121,11 +121,13 @@ def _bypass_cdp_hold(monkeypatch: pytest.MonkeyPatch):
         "_QR_CONFIRM_TIMEOUT_S",
     ):
         monkeypatch.setattr("backend.services.xhs_login." + _c, 0.01)
-    # QR create wait: success-path tests fire the create handler at 0.02s, so
-    # the deadline needs headroom past that. 0.05s gives one poll tick (0.01s)
-    # after the 0.02s fire for detection. Failure-path tests just time out here
-    # (the www_only recovery path waits this TWICE, so halving it halves that cost).
-    monkeypatch.setattr("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.05)
+    # QR create wait: success-path tests fire the create handler at 0.02–0.05s,
+    # so the deadline needs headroom past the latest fire (0.05s). 0.15s gives
+    # ~0.10s margin — the prior 0.05s == 0.05s deadline left zero margin and
+    # flaked under scheduling jitter (lazy package __init__ shifted import
+    # timing enough to lose the race 50% of runs). Failure-path tests time out
+    # here (the www_only recovery path waits this TWICE, so the 3x adds ~0.3s).
+    monkeypatch.setattr("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.15)
 
 
 class TestStart:
