@@ -18,6 +18,7 @@ class VisualDesignerAgent(BaseAgent):
     prompt_file = "visual_designer.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         account_id = state.get("account_id", "default")
         plan = state.get("content_plan", {})
         copy = state.get("copy_content", {})
@@ -54,7 +55,7 @@ class VisualDesignerAgent(BaseAgent):
 视觉要求：{brief_requirements}
 拍摄要求：{shooting_notes}{shooting_ctx}"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from backend.agents.base import BaseAgent
 from backend.agents.nodes._base import (
+    llm_perf_entry,
     node_perf_entry,
     record_human_wait,
 )
@@ -20,12 +21,16 @@ class _DummyAgent(BaseAgent):
     agent_name = "dummy"
     prompt_file = ""
 
-    def __init__(self, *, result=None, exc=None):
+    def __init__(self, *, result=None, exc=None, llm_entries=None):
         super().__init__()
         self._result = result or {}
         self._exc = exc
+        self._llm_entries = llm_entries or []
 
     async def execute(self, state, store):  # type: ignore[override]
+        # Simulate _llm_ainvoke capturing entries during execute() — must happen
+        # before any raise so the failure path still records captured cost.
+        self._llm_perf_entries = list(self._llm_entries)
         if self._exc:
             raise self._exc
         return dict(self._result)
@@ -158,3 +163,105 @@ class TestRecordHumanWait:
         }
         entry = record_human_wait(state, "review_gate", now_iso="2026-07-06T00:01:05+00:00")
         assert entry["entered_at"] == "2026-07-06T00:00:05+00:00"
+
+
+class _FakeLLMResponse:
+    """Minimal stand-in for a LangChain AIMessage with usage metadata."""
+
+    def __init__(self, *, input_tokens, output_tokens, model_name=None):
+        self.usage_metadata = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        }
+        self.response_metadata = {"model_name": model_name} if model_name else {}
+        self.content = "{}"
+
+
+class TestLlmPerfEntry:
+    def test_builds_entry_with_cost_from_canonical_table(self):
+        # astron-code-latest: $0.0002 input / $0.0006 output per 1K tokens
+        # 1000 in + 500 out -> (1000/1000)*0.0002 + (500/1000)*0.0006 = 0.0005
+        resp = _FakeLLMResponse(
+            input_tokens=1000, output_tokens=500, model_name="astron-code-latest"
+        )
+        entry = llm_perf_entry(
+            "copywriter",
+            resp,
+            "astron-code-latest",
+            started_at="2026-08-04T00:00:00+00:00",
+            completed_at="2026-08-04T00:00:02+00:00",
+        )
+        assert entry["kind"] == "llm"
+        assert entry["agent"] == "copywriter"
+        assert entry["model"] == "astron-code-latest"
+        assert entry["input_tokens"] == 1000
+        assert entry["output_tokens"] == 500
+        assert entry["cost_usd"] == round(0.0002 + 0.0003, 6)
+        assert entry["timestamp"] == "2026-08-04T00:00:02+00:00"
+        assert entry["duration_seconds"] == 2.0
+
+    def test_returns_none_when_no_usage(self):
+        # Timeout/degraded path: no response usage -> nothing to record.
+        resp = _FakeLLMResponse(input_tokens=0, output_tokens=0)
+        entry = llm_perf_entry(
+            "evaluator",
+            resp,
+            "astron-code-latest",
+            started_at="2026-08-04T00:00:00+00:00",
+            completed_at="2026-08-04T00:00:01+00:00",
+        )
+        assert entry is None
+
+    def test_falls_back_to_routed_model_when_response_has_no_model_name(self):
+        resp = _FakeLLMResponse(input_tokens=100, output_tokens=50, model_name=None)
+        entry = llm_perf_entry(
+            "analyst",
+            resp,
+            "astron-code-latest",
+            started_at="2026-08-04T00:00:00+00:00",
+            completed_at="2026-08-04T00:00:01+00:00",
+        )
+        assert entry["model"] == "astron-code-latest"
+
+    def test_unknown_model_uses_default_rate(self):
+        resp = _FakeLLMResponse(input_tokens=1000, output_tokens=1000, model_name="mystery-model")
+        entry = llm_perf_entry(
+            "x",
+            resp,
+            "mystery-model",
+            started_at="2026-08-04T00:00:00+00:00",
+            completed_at="2026-08-04T00:00:01+00:00",
+        )
+        # default 0.001/0.005 per 1K -> 0.001 + 0.005 = 0.006
+        assert entry["cost_usd"] == round(0.001 + 0.005, 6)
+
+
+class TestLlmEntryMerge:
+    async def test_llm_entries_merged_with_node_entry(self):
+        llm_entry = {
+            "kind": "llm",
+            "agent": "dummy",
+            "model": "astron-code-latest",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cost_usd": 0.001,
+        }
+        agent = _DummyAgent(result={"copy_content": {"body": "hi"}}, llm_entries=[llm_entry])
+        result = await agent({"retry_count": 0}, store=None)
+        # node entry first, then the llm entry
+        assert len(result["performance_log"]) == 2
+        assert result["performance_log"][0]["kind"] == "node"
+        assert result["performance_log"][1]["kind"] == "llm"
+        assert result["performance_log"][1]["cost_usd"] == 0.001
+
+    async def test_failure_path_preserves_llm_entries_before_crash(self):
+        # An LLM call succeeded (entry captured) but execute later raised;
+        # the captured cost must still ride the failed perf entry.
+        llm_entry = {"kind": "llm", "cost_usd": 0.002, "model": "astron-code-latest"}
+        agent = _DummyAgent(exc=RuntimeError("late crash"), llm_entries=[llm_entry])
+        result = await agent({"retry_count": 0}, store=None)
+        kinds = [e["kind"] for e in result["performance_log"]]
+        assert kinds == ["node", "llm"]
+        assert result["performance_log"][0]["status"] == "failed"
+        assert result["performance_log"][1]["cost_usd"] == 0.002

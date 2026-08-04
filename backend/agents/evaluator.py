@@ -127,6 +127,7 @@ class EvaluatorAgent(BaseAgent):
         return template
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         copy_content = state.get("copy_content") or {}
         visual_plan = state.get("visual_plan") or {}
         plan = state.get("content_plan") or {}
@@ -198,7 +199,7 @@ class EvaluatorAgent(BaseAgent):
         # 对齐（默认 120s），超时抛 TimeoutError → 返回 degraded（不伪造 100/approved）。
         try:
             response = await asyncio.wait_for(
-                self.model.ainvoke(
+                self._llm_ainvoke(
                     [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)]
                 ),
                 timeout=_EVALUATION_LLM_TIMEOUT_S,

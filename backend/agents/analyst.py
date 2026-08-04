@@ -41,6 +41,7 @@ class AnalystAgent(BaseAgent):
     prompt_file = "analyst.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         account_id = state.get("account_id", "default")
         publish_result = state.get("publish_result", {})
 
@@ -64,7 +65,7 @@ class AnalystAgent(BaseAgent):
 账号定位：{account_id}
 垂类赛道：{niche}{ripple_context}"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),

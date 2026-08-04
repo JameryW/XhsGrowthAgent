@@ -24,6 +24,7 @@ class ViralMatcherAgent(BaseAgent):
     prompt_file = "viral_matcher.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         draft = state.get("draft_content")
         brief = state.get("brief_content")
         has_draft = draft and draft.get("text")
@@ -82,7 +83,7 @@ class ViralMatcherAgent(BaseAgent):
 自动搜索关键词：{", ".join(auto_keywords[:5]) if auto_keywords else "无"}"""
 
         try:
-            response = await self.model.ainvoke(
+            response = await self._llm_ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=user_msg),
