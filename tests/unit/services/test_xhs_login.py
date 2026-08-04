@@ -117,8 +117,13 @@ def _bypass_cdp_hold(monkeypatch: pytest.MonkeyPatch):
         "_EXISTING_LOGIN_POLL_S",
         "_QR_READY_POLL_S",
         "_EXPLORE_POLL_S",
+        "_QR_CONFIRM_TIMEOUT_S",
     ):
         monkeypatch.setattr("backend.services.xhs_login." + _c, 0.01)
+    # QR create wait: success-path tests fire the create handler at 0.05s, so
+    # the deadline needs headroom past that. 0.1s gives one poll tick (0.01s)
+    # after the 0.05s fire for detection. Failure-path tests just time out here.
+    monkeypatch.setattr("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.1)
 
 
 class TestStart:
@@ -161,13 +166,12 @@ class TestStart:
         from backend.services.xhs_login import XhsLoginSession
 
         mock_module, _, _ = _wire_playwright_mock()
-        # Patch the wait timeout to be tiny so the test doesn't hang 30s.
+        # QR create wait timeout is shrunk by the autouse _bypass_cdp_hold fixture.
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
 
         with (
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
             patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
-            patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.2),
             patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
@@ -322,7 +326,6 @@ class TestStart:
         with (
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
             patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
-            patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.15),
             patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
@@ -348,7 +351,6 @@ class TestStart:
         with (
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
             patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
-            patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.2),
             patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
@@ -781,11 +783,10 @@ class TestGetStatus:
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
         with (
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
-            patch("backend.services.xhs_login._QR_CONFIRM_TIMEOUT_S", 0.1),
         ):
             await self._start_session(session, on_calls)
-            # Wait past the (patched tiny) expiry.
-            await asyncio.sleep(0.15)
+            # Wait past the (autouse-shrunk tiny) expiry.
+            await asyncio.sleep(0.05)
 
             # get_status will detect expiry → _refresh_qr → goto + wait for new create.
             # Fire a new create response after get_status's refresh goto lands.
@@ -961,11 +962,10 @@ class TestGetStatus:
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
         with (
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
-            patch("backend.services.xhs_login._QR_CONFIRM_TIMEOUT_S", 0.1),
             pytest.raises(LoginError, match="navigation failed"),
         ):
             await self._start_session(session, on_calls)
-            await asyncio.sleep(0.15)  # past expiry
+            await asyncio.sleep(0.05)  # past expiry
             await session.get_status()  # expired → refresh → goto raises
         # refresh-failure path closed context (no zombie)
         assert session._context is None
