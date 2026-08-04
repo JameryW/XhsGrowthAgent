@@ -1606,19 +1606,19 @@ class TestManagerResilience:
         assert "s-drop" not in manager._idle_timers
 
     async def test_idle_timer_defers_while_busy(self):
-        manager = OmpBridgeManager(idle_timeout=0.05)
+        manager = OmpBridgeManager(idle_timeout=0.01)
         session = OmpSession("s-idle")
         session._busy = True
         manager._sessions["s-idle"] = session
         with patch.object(session, "stop", new_callable=AsyncMock) as mock_stop:
             manager.start_idle_timer("s-idle")
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.03)
             # Turn in flight — the timer must not kill the subprocess
             mock_stop.assert_not_awaited()
             assert "s-idle" in manager._sessions
 
             session._busy = False
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.03)
             mock_stop.assert_awaited_once()
             assert "s-idle" not in manager._sessions
 
@@ -1630,13 +1630,13 @@ class TestManagerResilience:
         with (
             patch.object(session, "stop", new_callable=AsyncMock) as mock_stop,
             # Shrink the grace poll interval so the 0.5s default doesn't
-            # dominate this test — finish_turn completes at 0.2s, the poll
+            # dominate this test — finish_turn completes at 0.05s, the poll
             # just needs to catch that within the 2.0s grace.
-            patch.object(omp_bridge_module, "_SHUTDOWN_BUSY_POLL_S", 0.05),
+            patch.object(omp_bridge_module, "_SHUTDOWN_BUSY_POLL_S", 0.01),
         ):
 
             async def finish_turn() -> None:
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.05)
                 session._busy = False
 
             task = asyncio.create_task(finish_turn())

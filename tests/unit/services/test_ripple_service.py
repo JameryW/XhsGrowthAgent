@@ -807,8 +807,8 @@ class TestAutoRecovery:
             patch.object(svc, "health_check", side_effect=mock_health_check),
             patch.object(svc, "_rebuild_client", new_callable=AsyncMock) as mock_rebuild,
         ):
-            task = asyncio.create_task(svc._health_check_loop(interval_seconds=0.05))
-            await asyncio.sleep(0.2)
+            task = asyncio.create_task(svc._health_check_loop(interval_seconds=0.01))
+            await asyncio.sleep(0.03)
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
@@ -1150,7 +1150,7 @@ class TestWaitForCompletionWithSSE:
             mock_sse.side_effect = sse_noop
 
             result = await svc.wait_for_completion(
-                "job_123", thread_id="thread_abc", poll_interval=0.05
+                "job_123", thread_id="thread_abc", poll_interval=0.01
             )
 
         assert result["status"] == "completed"
@@ -1232,16 +1232,16 @@ class TestWaitForCompletionWithSSE:
 
             # Use a small max_wait so time-based estimate is visible
             result = await svc.wait_for_completion(
-                "job_123", thread_id="thread_abc", poll_interval=0.05, max_wait=1.0
+                "job_123", thread_id="thread_abc", poll_interval=0.01, max_wait=1.0
             )
 
         assert result["status"] == "completed"
         # Non-final emits should use time-based estimate (progress based on elapsed/max_wait)
         non_final = [e for e in emitted if e["progress"] < 1.0]
         assert len(non_final) > 0
-        # With max_wait=1.0 and poll_interval=0.05, at least the 2nd/3rd poll
-        # should have elapsed > 0.05s, so progress > 0.05
-        assert any(e["progress"] >= 0.03 for e in non_final), (
+        # With max_wait=1.0 and poll_interval=0.01, at least the 2nd/3rd poll
+        # should have elapsed > 0.01s, so progress > 0.01
+        assert any(e["progress"] >= 0.01 for e in non_final), (
             f"Time-based fallback not working: {non_final}"
         )
 
