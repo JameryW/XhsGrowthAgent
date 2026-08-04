@@ -1,238 +1,253 @@
-"""Database layer — workflow metadata + account/credential management via PostgreSQL."""
+"""Database layer — workflow metadata + account/credential management via PostgreSQL.
 
-from backend.db.accounts import (
-    AccountRow,
-    CredentialRow,
-    create_account,
-    delete_account,
-    get_account,
-    get_account_cdp_endpoint,
-    get_active_account,
-    list_accounts,
-    list_credentials,
-    set_active_account,
-    update_account,
-)
-from backend.db.accounts import (
-    ensure_tables as ensure_account_tables,
-)
-from backend.db.console_users import (
-    ConsoleUserRow,
-    bootstrap_default_user,
-    create_user,
-    delete_user,
-    list_users,
-    update_password,
-    verify_login,
-)
-from backend.db.console_users import (
-    ensure_tables as ensure_console_users_tables,
-)
-from backend.db.creative_memory import (
-    ensure_tables as ensure_creative_memory_tables,
-)
-from backend.db.creative_memory import (
-    list_materials,
-    list_plays,
-    list_styles,
-    upsert_material,
-    upsert_play,
-    upsert_style,
-)
-from backend.db.creator_stats import (
-    canonicalize_note_stats,
-    decode_note_cursor,
-    encode_note_cursor,
-    get_account_stats,
-    get_note_stats,
-    list_all_note_stats,
-    list_note_stats,
-    list_note_stats_cursor,
-    list_note_stats_page,
-    upsert_account_stats,
-    upsert_bundle,
-    upsert_note_stats,
-    upsert_notes,
-)
-from backend.db.creator_stats import (
-    ensure_tables as ensure_creator_stats_tables,
-)
-from backend.db.evaluator_config import (
-    BIAS_SEVERITY_LEVELS,
-    BIAS_SEVERITY_NOTES,
-    DEFAULT_DIMENSION_WEIGHTS,
-    DEFAULT_WEIGHTS,
-    WEIGHTED_DIMENSIONS,
-    EvaluatorSample,
-    EvaluatorWeights,
-    PromptEpoch,
-    TrainingReport,
-    activate_epoch,
-    avg_bias_score,
-    backfill_engagement,
-    create_epoch,
-    export_samples,
-    fetch_labeled_samples,
-    fetch_trend,
-    fit_weights,
-    get_active_epoch,
-    insert_sample,
-    list_epochs,
-    list_weights,
-    load_weights,
-    set_weight,
-    train_weights,
-)
-from backend.db.evaluator_config import (
-    ensure_tables as ensure_evaluator_config_tables,
-)
-from backend.db.pool import close_pool, get_pool, init_pool, is_pool_ready
-from backend.db.quality_evaluations import (
-    QualityEvaluationRun,
-)
-from backend.db.quality_evaluations import (
-    create_run as create_quality_evaluation_run,
-)
-from backend.db.quality_evaluations import (
-    ensure_tables as ensure_quality_evaluation_tables,
-)
-from backend.db.quality_evaluations import (
-    get_cached as get_cached_quality_evaluation,
-)
-from backend.db.quality_evaluations import (
-    get_latest_for_subject as get_latest_quality_evaluation,
-)
-from backend.db.quality_evaluations import (
-    mark_subject_stale as mark_quality_evaluations_stale,
-)
-from backend.db.quality_evaluations import (
-    new_run as new_quality_evaluation_run,
-)
-from backend.db.quality_evaluations import (
-    update_run as update_quality_evaluation_run,
-)
-from backend.db.system_config import (
-    SYSTEM_KEY_GROUPS,
-    SYSTEM_KEYS,
-    SystemConfigRow,
-    activate_system_config,
-    bootstrap_from_environ,
-    list_config,
-    migrate_from_accounts,
-    set_config,
-)
-from backend.db.system_config import (
-    ensure_tables as ensure_system_config_tables,
-)
-from backend.db.workflows import (
-    WorkflowRow,
-    count_workflows_for_accounts,
-    create_workflow,
-    delete_workflow,
-    get_workflow,
-    list_workflows,
-    update_workflow,
-)
+Lazy re-exports: the eager imports below previously pulled every db submodule
+(accounts/console_users/creative_memory/creator_stats/evaluator_config/
+quality_evaluations/system_config/workflows) on the first ``from backend.db.X
+import Y`` — because importing a submodule runs the parent ``__init__.py``.
+That cascade cost ~13ms+ and triggered pydantic.v1 via the creator_stats path.
+Resolved on first attribute access; tests/code use ``from backend.db.X import Y``
+directly (no consumer relies on the re-exports at import time).
+"""
+
+from typing import Any
 
 __all__ = [
-    "get_pool",
-    "init_pool",
-    "close_pool",
-    "is_pool_ready",
-    "WorkflowRow",
-    "create_workflow",
-    "get_workflow",
-    "list_workflows",
-    "count_workflows_for_accounts",
-    "update_workflow",
-    "delete_workflow",
     "AccountRow",
-    "CredentialRow",
-    "create_account",
-    "delete_account",
-    "get_account",
-    "get_active_account",
-    "get_account_cdp_endpoint",
-    "list_accounts",
-    "set_active_account",
-    "update_account",
-    "list_credentials",
-    "ensure_account_tables",
-    # Console users
-    "ConsoleUserRow",
-    "bootstrap_default_user",
-    "create_user",
-    "delete_user",
-    "list_users",
-    "update_password",
-    "verify_login",
-    "ensure_console_users_tables",
-    # System config
-    "SystemConfigRow",
-    "SYSTEM_KEYS",
-    "SYSTEM_KEY_GROUPS",
-    "activate_system_config",
-    "bootstrap_from_environ",
-    "list_config",
-    "migrate_from_accounts",
-    "set_config",
-    "ensure_system_config_tables",
-    # Evaluator config (learnable grader weights + training samples + prompt epochs)
     "BIAS_SEVERITY_LEVELS",
-    "BIAS_SEVERITY_NOTES",
+    "BIAS_SEVERITY_NOTICES",
+    "ContentHistory",
+    "CredentialRow",
     "DEFAULT_DIMENSION_WEIGHTS",
     "DEFAULT_WEIGHTS",
     "EvaluatorSample",
     "EvaluatorWeights",
     "PromptEpoch",
+    "QualityEvaluationRun",
+    "SYSTEM_KEY_GROUPS",
+    "SYSTEM_KEYS",
+    "SystemConfigRow",
     "TrainingReport",
     "WEIGHTED_DIMENSIONS",
+    "WorkflowRow",
     "activate_epoch",
+    "activate_system_config",
     "avg_bias_score",
     "backfill_engagement",
+    "bootstrap_default_user",
+    "bootstrap_from_environ",
+    "canonicalize_note_stats",
+    "close_pool",
+    "count_workflows_for_accounts",
+    "create_account",
     "create_epoch",
+    "create_quality_evaluation_run",
+    "create_user",
+    "create_workflow",
+    "decode_note_cursor",
+    "delete_account",
+    "delete_user",
+    "delete_workflow",
+    "encode_note_cursor",
+    "ensure_account_tables",
+    "ensure_console_users_tables",
+    "ensure_creative_memory_tables",
+    "ensure_creator_stats_tables",
     "ensure_evaluator_config_tables",
+    "ensure_quality_evaluation_tables",
+    "ensure_system_config_tables",
     "export_samples",
     "fetch_labeled_samples",
     "fetch_trend",
     "fit_weights",
-    "get_active_epoch",
-    "insert_sample",
-    "list_epochs",
-    "list_weights",
-    "load_weights",
-    "set_weight",
-    "train_weights",
-    # Creator-center stats
-    "ensure_creator_stats_tables",
+    "get_account",
+    "get_account_cdp_endpoint",
     "get_account_stats",
-    "get_note_stats",
-    "list_all_note_stats",
-    "list_note_stats",
-    "list_note_stats_page",
-    "list_note_stats_cursor",
-    "encode_note_cursor",
-    "decode_note_cursor",
-    "canonicalize_note_stats",
-    "upsert_account_stats",
-    "upsert_bundle",
-    "upsert_note_stats",
-    "upsert_notes",
-    # Durable user-visible RQGM evaluation runs
-    "QualityEvaluationRun",
-    "create_quality_evaluation_run",
-    "ensure_quality_evaluation_tables",
+    "get_active_account",
     "get_cached_quality_evaluation",
     "get_latest_quality_evaluation",
-    "mark_quality_evaluations_stale",
-    "new_quality_evaluation_run",
-    "update_quality_evaluation_run",
-    # Durable creative memory (style DNA / playbook / materials)
-    "ensure_creative_memory_tables",
+    "get_note_stats",
+    "get_pool",
+    "get_workflow",
+    "init_pool",
+    "insert_sample",
+    "is_pool_ready",
+    "list_accounts",
+    "list_all_note_stats",
+    "list_config",
+    "list_credentials",
+    "list_epochs",
     "list_materials",
+    "list_note_stats",
+    "list_note_stats_cursor",
+    "list_note_stats_page",
     "list_plays",
     "list_styles",
+    "list_users",
+    "list_weights",
+    "list_workflows",
+    "load_weights",
+    "mark_quality_evaluations_stale",
+    "migrate_from_accounts",
+    "new_quality_evaluation_run",
+    "set_active_account",
+    "set_config",
+    "set_weight",
+    "train_weights",
+    "update_account",
+    "update_password",
+    "update_quality_evaluation_run",
+    "update_workflow",
+    "upsert_account_stats",
+    "upsert_bundle",
     "upsert_material",
+    "upsert_note_stats",
+    "upsert_notes",
     "upsert_play",
     "upsert_style",
+    "verify_login",
 ]
+
+# Map of re-exported names to the submodule + attribute that provides them.
+# Resolved on first access via __getattr__ (PEP 562).
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "AccountRow": ("backend.db.accounts", "AccountRow"),
+    "CredentialRow": ("backend.db.accounts", "CredentialRow"),
+    "create_account": ("backend.db.accounts", "create_account"),
+    "delete_account": ("backend.db.accounts", "delete_account"),
+    "get_account": ("backend.db.accounts", "get_account"),
+    "get_account_cdp_endpoint": ("backend.db.accounts", "get_account_cdp_endpoint"),
+    "get_active_account": ("backend.db.accounts", "get_active_account"),
+    "list_accounts": ("backend.db.accounts", "list_accounts"),
+    "list_credentials": ("backend.db.accounts", "list_credentials"),
+    "set_active_account": ("backend.db.accounts", "set_active_account"),
+    "update_account": ("backend.db.accounts", "update_account"),
+    "ensure_account_tables": ("backend.db.accounts", "ensure_tables"),
+    "ConsoleUserRow": ("backend.db.console_users", "ConsoleUserRow"),
+    "bootstrap_default_user": ("backend.db.console_users", "bootstrap_default_user"),
+    "create_user": ("backend.db.console_users", "create_user"),
+    "delete_user": ("backend.db.console_users", "delete_user"),
+    "list_users": ("backend.db.console_users", "list_users"),
+    "update_password": ("backend.db.console_users", "update_password"),
+    "verify_login": ("backend.db.console_users", "verify_login"),
+    "ensure_console_users_tables": ("backend.db.console_users", "ensure_tables"),
+    "ensure_creative_memory_tables": ("backend.db.creative_memory", "ensure_tables"),
+    "list_materials": ("backend.db.creative_memory", "list_materials"),
+    "list_plays": ("backend.db.creative_memory", "list_plays"),
+    "list_styles": ("backend.db.creative_memory", "list_styles"),
+    "upsert_material": ("backend.db.creative_memory", "upsert_material"),
+    "upsert_play": ("backend.db.creative_memory", "upsert_play"),
+    "upsert_style": ("backend.db.creative_memory", "upsert_style"),
+    "canonicalize_note_stats": ("backend.db.creator_stats", "canonicalize_note_stats"),
+    "decode_note_cursor": ("backend.db.creator_stats", "decode_note_cursor"),
+    "encode_note_cursor": ("backend.db.creator_stats", "encode_note_cursor"),
+    "get_account_stats": ("backend.db.creator_stats", "get_account_stats"),
+    "get_note_stats": ("backend.db.creator_stats", "get_note_stats"),
+    "list_all_note_stats": ("backend.db.creator_stats", "list_all_note_stats"),
+    "list_note_stats": ("backend.db.creator_stats", "list_note_stats"),
+    "list_note_stats_cursor": ("backend.db.creator_stats", "list_note_stats_cursor"),
+    "list_note_stats_page": ("backend.db.creator_stats", "list_note_stats_page"),
+    "upsert_account_stats": ("backend.db.creator_stats", "upsert_account_stats"),
+    "upsert_bundle": ("backend.db.creator_stats", "upsert_bundle"),
+    "upsert_note_stats": ("backend.db.creator_stats", "upsert_note_stats"),
+    "upsert_notes": ("backend.db.creator_stats", "upsert_notes"),
+    "ensure_creator_stats_tables": ("backend.db.creator_stats", "ensure_tables"),
+    "BIAS_SEVERITY_LEVELS": ("backend.db.evaluator_config", "BIAS_SEVERITY_LEVELS"),
+    "BIAS_SEVERITY_NOTES": ("backend.db.evaluator_config", "BIAS_SEVERITY_NOTES"),
+    "DEFAULT_DIMENSION_WEIGHTS": (
+        "backend.db.evaluator_config",
+        "DEFAULT_DIMENSION_WEIGHTS",
+    ),
+    "DEFAULT_WEIGHTS": ("backend.db.evaluator_config", "DEFAULT_WEIGHTS"),
+    "EvaluatorSample": ("backend.db.evaluator_config", "EvaluatorSample"),
+    "EvaluatorWeights": ("backend.db.evaluator_config", "EvaluatorWeights"),
+    "PromptEpoch": ("backend.db.evaluator_config", "PromptEpoch"),
+    "TrainingReport": ("backend.db.evaluator_config", "TrainingReport"),
+    "WEIGHTED_DIMENSIONS": ("backend.db.evaluator_config", "WEIGHTED_DIMENSIONS"),
+    "activate_epoch": ("backend.db.evaluator_config", "activate_epoch"),
+    "avg_bias_score": ("backend.db.evaluator_config", "avg_bias_score"),
+    "backfill_engagement": ("backend.db.evaluator_config", "backfill_engagement"),
+    "create_epoch": ("backend.db.evaluator_config", "create_epoch"),
+    "ensure_evaluator_config_tables": (
+        "backend.db.evaluator_config",
+        "ensure_tables",
+    ),
+    "export_samples": ("backend.db.evaluator_config", "export_samples"),
+    "fetch_labeled_samples": ("backend.db.evaluator_config", "fetch_labeled_samples"),
+    "fetch_trend": ("backend.db.evaluator_config", "fetch_trend"),
+    "fit_weights": ("backend.db.evaluator_config", "fit_weights"),
+    "get_active_epoch": ("backend.db.evaluator_config", "get_active_epoch"),
+    "insert_sample": ("backend.db.evaluator_config", "insert_sample"),
+    "list_epochs": ("backend.db.evaluator_config", "list_epochs"),
+    "list_weights": ("backend.db.evaluator_config", "list_weights"),
+    "load_weights": ("backend.db.evaluator_config", "load_weights"),
+    "set_weight": ("backend.db.evaluator_config", "set_weight"),
+    "train_weights": ("backend.db.evaluator_config", "train_weights"),
+    "close_pool": ("backend.db.pool", "close_pool"),
+    "get_pool": ("backend.db.pool", "get_pool"),
+    "init_pool": ("backend.db.pool", "init_pool"),
+    "is_pool_ready": ("backend.db.pool", "is_pool_ready"),
+    "QualityEvaluationRun": ("backend.db.quality_evaluations", "QualityEvaluationRun"),
+    "create_quality_evaluation_run": (
+        "backend.db.quality_evaluations",
+        "create_run",
+    ),
+    "ensure_quality_evaluation_tables": (
+        "backend.db.quality_evaluations",
+        "ensure_tables",
+    ),
+    "get_cached_quality_evaluation": (
+        "backend.db.quality_evaluations",
+        "get_cached",
+    ),
+    "get_latest_quality_evaluation": (
+        "backend.db.quality_evaluations",
+        "get_latest_for_subject",
+    ),
+    "mark_quality_evaluations_stale": (
+        "backend.db.quality_evaluations",
+        "mark_subject_stale",
+    ),
+    "new_quality_evaluation_run": (
+        "backend.db.quality_evaluations",
+        "new_run",
+    ),
+    "update_quality_evaluation_run": (
+        "backend.db.quality_evaluations",
+        "update_run",
+    ),
+    "SYSTEM_KEY_GROUPS": ("backend.db.system_config", "SYSTEM_KEY_GROUPS"),
+    "SYSTEM_KEYS": ("backend.db.system_config", "SYSTEM_KEYS"),
+    "SystemConfigRow": ("backend.db.system_config", "SystemConfigRow"),
+    "activate_system_config": ("backend.db.system_config", "activate_system_config"),
+    "bootstrap_from_environ": ("backend.db.system_config", "bootstrap_from_environ"),
+    "list_config": ("backend.db.system_config", "list_config"),
+    "migrate_from_accounts": ("backend.db.system_config", "migrate_from_accounts"),
+    "set_config": ("backend.db.system_config", "set_config"),
+    "ensure_system_config_tables": ("backend.db.system_config", "ensure_tables"),
+    "WorkflowRow": ("backend.db.workflows", "WorkflowRow"),
+    "count_workflows_for_accounts": (
+        "backend.db.workflows",
+        "count_workflows_for_accounts",
+    ),
+    "create_workflow": ("backend.db.workflows", "create_workflow"),
+    "delete_workflow": ("backend.db.workflows", "delete_workflow"),
+    "get_workflow": ("backend.db.workflows", "get_workflow"),
+    "list_workflows": ("backend.db.workflows", "list_workflows"),
+    "update_workflow": ("backend.db.workflows", "update_workflow"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    mapping = _LAZY_EXPORTS.get(name)
+    if mapping is None:
+        raise AttributeError(f"module 'backend.db' has no attribute {name!r}")
+    import importlib
+
+    module = importlib.import_module(mapping[0])
+    value = getattr(module, mapping[1])
+    globals()[name] = value  # cache for subsequent access
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_LAZY_EXPORTS))
