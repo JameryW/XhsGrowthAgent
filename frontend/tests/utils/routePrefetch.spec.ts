@@ -21,6 +21,14 @@ vi.mock('@/api/system', () => ({
   getSystemHealth,
 }))
 
+// ponytail: stub the lazy-loaded view chunks so the warm-path tests don't pay
+// the cost of transforming Home/AgentTUI/Dashboard.vue (the slowest dynamic
+// imports in this file). The tests assert coalescing/dedup behavior, not the
+// chunk contents — an empty default satisfies prefetchRouteChunk's .then().
+vi.mock('@/views/Home.vue', () => ({ default: {} }))
+vi.mock('@/views/AgentTUI.vue', () => ({ default: {} }))
+vi.mock('@/views/Dashboard.vue', () => ({ default: {} }))
+
 describe('routePrefetch', () => {
   beforeEach(() => {
     _resetRoutePrefetchStateForTests()
