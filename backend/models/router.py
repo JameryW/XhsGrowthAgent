@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
-from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
+
+if TYPE_CHECKING:
+    # BaseChatModel only appears in annotations. Importing langchain_core
+    # .language_models at module load pulls langsmith.run_trees (~0.4s) on
+    # every import of backend.models.router (pulled by agents.base). Deferred.
+    from langchain_core.language_models import BaseChatModel
 
 from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_model_id
 from backend.models.retry import with_retry

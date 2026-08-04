@@ -13,9 +13,13 @@ import logging
 import os
 import random
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from langchain_core.language_models import BaseChatModel
+if TYPE_CHECKING:
+    # BaseChatModel only appears in annotations; importing it at module load
+    # pulls langchain_core.language_models → langsmith (~1s) on every import of
+    # backend.models.retry (pulled by router.py). Deferred to TYPE_CHECKING.
+    from langchain_core.language_models import BaseChatModel
 
 logger = logging.getLogger("xhs_growth.models.retry")
 
