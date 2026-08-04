@@ -8,8 +8,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-import yaml
-
 if TYPE_CHECKING:
     # BaseChatModel / BaseStore / XHSGrowthState are only used in annotations.
     # Importing them at module load drags in langchain_core.language_models →
@@ -94,6 +92,8 @@ class BaseAgent(ABC):
             return {"system": "", "user_template": ""}
         path = Path(__file__).parent.parent / "config" / "prompts" / self.prompt_file
         if path.exists():
+            import yaml
+
             with open(path) as f:
                 data = yaml.safe_load(f)
             return {
