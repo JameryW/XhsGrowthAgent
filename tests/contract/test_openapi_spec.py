@@ -16,6 +16,18 @@ import yaml
 OPENAPI_SPEC_PATH = Path(__file__).resolve().parent.parent.parent / "api" / "spec" / "openapi.yaml"
 
 
+@pytest.fixture(scope="session")
+def _spec():
+    """Parse the 1387-line openapi.yaml once per session, not per test.
+
+    The five per-class fixtures below previously each ran ``yaml.safe_load``
+    on every test (function-scoped), adding ~0.13s of repeated parse cost per
+    test. Request this session-scoped fixture and slice from the cached dict.
+    """
+    with open(OPENAPI_SPEC_PATH) as f:
+        return yaml.safe_load(f)
+
+
 class TestOpenAPISpecExists:
     """Tests for OpenAPI spec file existence."""
 
@@ -34,10 +46,9 @@ class TestOpenAPISpecValidYAML:
     """Tests for YAML validity."""
 
     @pytest.fixture
-    def spec_content(self):
-        """Load OpenAPI spec content."""
-        with open(OPENAPI_SPEC_PATH) as f:
-            return yaml.safe_load(f)
+    def spec_content(self, _spec):
+        """Load OpenAPI spec content (cached at session scope via _spec)."""
+        return _spec
 
     def test_spec_loads_as_yaml(self, spec_content):
         """Verify spec loads without YAML parsing errors."""
@@ -61,11 +72,9 @@ class TestOpenAPIRequiredEndpoints:
     """Tests for required API endpoints."""
 
     @pytest.fixture
-    def paths(self):
-        """Get paths from OpenAPI spec."""
-        with open(OPENAPI_SPEC_PATH) as f:
-            spec = yaml.safe_load(f)
-        return spec.get("paths", {})
+    def paths(self, _spec):
+        """Get paths from OpenAPI spec (cached at session scope via _spec)."""
+        return _spec.get("paths", {})
 
     def test_workflow_start_endpoint_exists(self, paths):
         """Verify /workflow/start endpoint exists."""
@@ -124,11 +133,9 @@ class TestOpenAPIUnifiedResponse:
     """Tests for unified ApiResponse wrapper."""
 
     @pytest.fixture
-    def schemas(self):
-        """Get schemas from OpenAPI spec."""
-        with open(OPENAPI_SPEC_PATH) as f:
-            spec = yaml.safe_load(f)
-        return spec.get("components", {}).get("schemas", {})
+    def schemas(self, _spec):
+        """Get schemas from OpenAPI spec (cached at session scope via _spec)."""
+        return _spec.get("components", {}).get("schemas", {})
 
     def test_api_response_schema_exists(self, schemas):
         """Verify ApiResponse schema exists."""
@@ -170,11 +177,9 @@ class TestOpenAPITypedResponseWrappers:
     """Tests for typed ApiResponse wrappers."""
 
     @pytest.fixture
-    def schemas(self):
-        """Get schemas from OpenAPI spec."""
-        with open(OPENAPI_SPEC_PATH) as f:
-            spec = yaml.safe_load(f)
-        return spec.get("components", {}).get("schemas", {})
+    def schemas(self, _spec):
+        """Get schemas from OpenAPI spec (cached at session scope via _spec)."""
+        return _spec.get("components", {}).get("schemas", {})
 
     def test_workflow_response_wrapper_exists(self, schemas):
         """Verify ApiResponse_WorkflowResponse wrapper exists."""
@@ -211,11 +216,9 @@ class TestOpenAPIEnums:
     """Tests for enum definitions in OpenAPI spec."""
 
     @pytest.fixture
-    def schemas(self):
-        """Get schemas from OpenAPI spec."""
-        with open(OPENAPI_SPEC_PATH) as f:
-            spec = yaml.safe_load(f)
-        return spec.get("components", {}).get("schemas", {})
+    def schemas(self, _spec):
+        """Get schemas from OpenAPI spec (cached at session scope via _spec)."""
+        return _spec.get("components", {}).get("schemas", {})
 
     def test_workflow_phase_enum_exists(self, schemas):
         """Verify WorkflowPhase enum exists."""
