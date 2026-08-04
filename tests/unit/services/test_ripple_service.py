@@ -147,7 +147,7 @@ class TestRippleServiceRetry:
             mock_client.return_value = client
 
             _result = await service._request_with_retry(
-                "POST", "http://test/url", json_data={}, max_retries=3
+                "POST", "http://test/url", json_data={}, max_retries=3, retry_delay=0
             )
             assert client.post.call_count == 2
 
@@ -696,7 +696,9 @@ class TestAutoRecovery:
             mock_client.return_value = mock_http_client
 
             with pytest.raises(httpx.ConnectError):
-                await svc._request_with_retry("POST", "http://ripple-service:8080/api/test")
+                await svc._request_with_retry(
+                    "POST", "http://ripple-service:8080/api/test", retry_delay=0
+                )
 
         assert not svc.is_healthy()
         assert svc._health_status.reason == "unreachable"
