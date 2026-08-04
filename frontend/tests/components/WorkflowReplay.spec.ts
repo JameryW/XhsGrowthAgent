@@ -81,6 +81,9 @@ describe('WorkflowReplay public UX contract', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    // Restore requestIdleCallback if a test nulled it (happy-dom defines it
+    // on window; leaving it undefined could skew other idle-scheduling tests).
+    delete (window as any).requestIdleCallback
   })
 
   it('loads the public manifest and first result together', async () => {
@@ -107,6 +110,12 @@ describe('WorkflowReplay public UX contract', () => {
 
   it('prefetches the next step during idle time', async () => {
     vi.useFakeTimers()
+    // happy-dom's requestIdleCallback support is version-dependent; when it
+    // exists the component schedules via rIC (timeout 700ms) which won't fire
+    // under our 150ms timer advance, making the prefetch assert flaky. Force
+    // the component's own setTimeout(120ms) fallback path — the deterministic
+    // branch it keeps exactly for non-rIC environments like tests.
+    Object.defineProperty(window, 'requestIdleCallback', { configurable: true, value: undefined })
     // Only steps without an embedded manifest result need a network prefetch.
     getManifestMock.mockResolvedValue(buildManifest([steps[0], { ...steps[1], result: null }]))
     const wrapper = mount(WorkflowReplay, {
