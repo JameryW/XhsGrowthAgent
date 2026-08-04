@@ -11,6 +11,20 @@ from unittest.mock import AsyncMock, MagicMock
 # cover them; all other graph/integration tests should remain hermetic.
 os.environ.setdefault("XHS_USE_BROWSER", "false")
 
+# Hermetic env: tests must not inherit a developer's `.env` (which points
+# POSTGRES_URI at a container host like `postgres-xhs` that is unreachable
+# from the host). If that URI leaks in, the app lifespan's init_pool() retries
+# DNS for ~60s before giving up — paid by the first TestClient(app) in every
+# pytest process. Pop it before any backend import and neutralise load_dotenv
+# so app.py's module-level `load_dotenv(override=True)` can't re-inject it.
+# Tests that need pool behavior mock `is_pool_ready` explicitly; none rely on a
+# live DB connection (verified across the suite).
+os.environ.pop("POSTGRES_URI", None)
+os.environ.pop("REDIS_URI", None)
+import dotenv as _dotenv
+
+_dotenv.load_dotenv = lambda *a, **kw: False  # type: ignore[assignment]
+
 # Mock playwright before any imports
 playwright_mock = MagicMock()
 sys.modules["playwright"] = playwright_mock
