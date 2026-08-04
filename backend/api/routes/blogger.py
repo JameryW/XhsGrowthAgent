@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Request
-from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    # Annotation-only; deferring langgraph.types keeps it off the app cold-start
+    # import chain (~600ms). Command is imported locally where constructed.
+    from langgraph.types import StateSnapshot
 
 from backend.api.account_scope import assert_thread_owned
 from backend.api.deps import get_current_user
@@ -109,6 +113,8 @@ async def select_blogger(
 
     # If graph is interrupted at blogger_gate, resume it
     if _is_at_blogger_gate(state):
+        from langgraph.types import Command
+
         result = await _runner._run_graph_and_persist(
             thread_id,
             graph,

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from langgraph.types import StateSnapshot
+if TYPE_CHECKING:
+    # StateSnapshot is annotation-only; deferring langgraph.types keeps it off
+    # the app cold-start import chain (~600ms).
+    from langgraph.types import StateSnapshot
 
 from backend.state.enums import WorkflowPhase
 

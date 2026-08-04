@@ -6,9 +6,13 @@ import asyncio
 import contextlib
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from langgraph.types import StateSnapshot
+if TYPE_CHECKING:
+    # StateSnapshot is annotation-only; importing langgraph.types at module load
+    # costs ~600ms (pulls langgraph.graph.state). Deferred — resolved only when
+    # type checkers need it, never at runtime.
+    from langgraph.types import StateSnapshot
 
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
