@@ -23,6 +23,47 @@ FRONTEND_TYPES_PATH = PROJECT_ROOT / "frontend" / "src" / "types"
 BACKEND_SUBSTATES_PATH = PROJECT_ROOT / "backend" / "state" / "substates.py"
 
 
+@pytest.fixture(scope="session")
+def _spec():
+    """Parse openapi.yaml once per session (1387 lines) — shared by the
+    openapi_enums/openapi_schemas fixtures across all classes below, which
+    previously each re-parsed per test (function-scoped)."""
+    with open(OPENAPI_SPEC_PATH) as f:
+        return yaml.safe_load(f)
+
+
+@pytest.fixture(scope="session")
+def _backend_enum_values():
+    """Extract enum values from backend enums file once per session."""
+    return {
+        "WorkflowPhase": extract_python_enum_values(BACKEND_ENUMS_PATH, "WorkflowPhase"),
+        "ContentStatus": extract_python_enum_values(BACKEND_ENUMS_PATH, "ContentStatus"),
+        "ContentType": extract_python_enum_values(BACKEND_ENUMS_PATH, "ContentType"),
+        "Urgency": extract_python_enum_values(BACKEND_ENUMS_PATH, "Urgency"),
+    }
+
+
+@pytest.fixture(scope="session")
+def _workflow_types_content():
+    """Read workflow.ts once per session."""
+    with open(FRONTEND_TYPES_PATH / "workflow.ts") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def _review_types_content():
+    """Read review.ts once per session."""
+    with open(FRONTEND_TYPES_PATH / "review.ts") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def _analytics_types_content():
+    """Read analytics.ts once per session."""
+    with open(FRONTEND_TYPES_PATH / "analytics.ts") as f:
+        return f.read()
+
+
 def extract_python_enum_values(file_path: Path, enum_name: str) -> set[str]:
     """Extract enum values from a Python enum class by parsing the file."""
     with open(file_path) as f:
@@ -44,11 +85,9 @@ class TestBackendEnumSync:
     """Tests for backend enum synchronization with OpenAPI spec."""
 
     @pytest.fixture
-    def openapi_enums(self):
-        """Extract enums from OpenAPI spec."""
-        with open(OPENAPI_SPEC_PATH) as f:
-            spec = yaml.safe_load(f)
-        schemas = spec.get("components", {}).get("schemas", {})
+    def openapi_enums(self, _spec):
+        """Extract enums from OpenAPI spec (cached at session scope via _spec)."""
+        schemas = _spec.get("components", {}).get("schemas", {})
 
         enums = {}
         for name, schema in schemas.items():
@@ -57,14 +96,9 @@ class TestBackendEnumSync:
         return enums
 
     @pytest.fixture
-    def backend_enum_values(self):
-        """Extract enum values from backend enums file by parsing."""
-        return {
-            "WorkflowPhase": extract_python_enum_values(BACKEND_ENUMS_PATH, "WorkflowPhase"),
-            "ContentStatus": extract_python_enum_values(BACKEND_ENUMS_PATH, "ContentStatus"),
-            "ContentType": extract_python_enum_values(BACKEND_ENUMS_PATH, "ContentType"),
-            "Urgency": extract_python_enum_values(BACKEND_ENUMS_PATH, "Urgency"),
-        }
+    def backend_enum_values(self, _backend_enum_values):
+        """Backend enum values (cached at session scope)."""
+        return _backend_enum_values
 
     def test_workflow_phase_sync(self, openapi_enums, backend_enum_values):
         """Verify WorkflowPhase backend enum matches OpenAPI."""
@@ -143,18 +177,14 @@ class TestFrontendWorkflowTypes:
     """Tests for frontend workflow type definitions."""
 
     @pytest.fixture
-    def workflow_types_content(self):
-        """Read workflow.ts content."""
-        workflow_types = FRONTEND_TYPES_PATH / "workflow.ts"
-        with open(workflow_types) as f:
-            return f.read()
+    def workflow_types_content(self, _workflow_types_content):
+        """workflow.ts content (cached at session scope)."""
+        return _workflow_types_content
 
     @pytest.fixture
-    def openapi_enums(self):
-        """Extract enums from OpenAPI spec."""
-        with open(OPENAPI_SPEC_PATH) as f:
-            spec = yaml.safe_load(f)
-        schemas = spec.get("components", {}).get("schemas", {})
+    def openapi_enums(self, _spec):
+        """Extract enums from OpenAPI spec (cached at session scope via _spec)."""
+        schemas = _spec.get("components", {}).get("schemas", {})
 
         enums = {}
         for name, schema in schemas.items():
@@ -203,11 +233,9 @@ class TestFrontendReviewTypes:
     """Tests for frontend review type definitions."""
 
     @pytest.fixture
-    def review_types_content(self):
-        """Read review.ts content."""
-        review_types = FRONTEND_TYPES_PATH / "review.ts"
-        with open(review_types) as f:
-            return f.read()
+    def review_types_content(self, _review_types_content):
+        """review.ts content (cached at session scope)."""
+        return _review_types_content
 
     def test_pending_review_type_defined(self, review_types_content):
         """Verify PendingReview interface is defined."""
@@ -224,11 +252,9 @@ class TestFrontendAnalyticsTypes:
     """Tests for frontend analytics type definitions."""
 
     @pytest.fixture
-    def analytics_types_content(self):
-        """Read analytics.ts content."""
-        analytics_types = FRONTEND_TYPES_PATH / "analytics.ts"
-        with open(analytics_types) as f:
-            return f.read()
+    def analytics_types_content(self, _analytics_types_content):
+        """analytics.ts content (cached at session scope)."""
+        return _analytics_types_content
 
     def test_growth_report_type_defined(self, analytics_types_content):
         """Verify GrowthReport interface is defined."""
@@ -243,11 +269,9 @@ class TestGeneratedModelsConsistency:
     """Tests for generated model consistency (if generation tools exist)."""
 
     @pytest.fixture
-    def openapi_schemas(self):
-        """Get schemas from OpenAPI spec."""
-        with open(OPENAPI_SPEC_PATH) as f:
-            spec = yaml.safe_load(f)
-        return spec.get("components", {}).get("schemas", {})
+    def openapi_schemas(self, _spec):
+        """Get schemas from OpenAPI spec (cached at session scope via _spec)."""
+        return _spec.get("components", {}).get("schemas", {})
 
     def test_backend_substates_exist(self):
         """Verify backend substates module exists."""
