@@ -471,6 +471,12 @@ def _transport_with_page(page: _FakeNotesPage) -> CdpTransport:
     transport._max_body_visits = 10
     transport._max_detail_visits = 20
     transport._session_wind_down = (0.0, 0.0)
+    # Shrink the anti-fingerprint scroll/mouse pauses to 0 — the FakeNotesPage
+    # does no real rendering, so these sleeps only add wall-clock.
+    transport._scroll_step_pause = (0.0, 0.0)
+    transport._scroll_back_pause = (0.0, 0.0)
+    transport._mouse_move_pause = (0.0, 0.0)
+    transport._mouse_wheel_pause = (0.0, 0.0)
     return transport
 
 

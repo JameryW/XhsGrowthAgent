@@ -215,6 +215,25 @@ class CdpTransport:
         long_min = max(0.0, _env_float("CREATOR_STATS_LONG_PAUSE_MIN_S", 20.0))
         long_max = max(long_min, _env_float("CREATOR_STATS_LONG_PAUSE_MAX_S", 60.0))
         self._long_pause = (long_min, long_max)
+        # 渐进滚动段间停顿区间（秒）。段间停顿避免瞬时 scrollTop=scrollHeight
+        # 的机器特征；env 化便于测试把停顿缩到 0。
+        self._scroll_step_pause = (
+            max(0.0, _env_float("CREATOR_STATS_SCROLL_STEP_PAUSE_MIN_S", 0.15)),
+            max(0.0, _env_float("CREATOR_STATS_SCROLL_STEP_PAUSE_MAX_S", 0.45)),
+        )
+        self._scroll_back_pause = (
+            max(0.0, _env_float("CREATOR_STATS_SCROLL_BACK_PAUSE_MIN_S", 0.2)),
+            max(0.0, _env_float("CREATOR_STATS_SCROLL_BACK_PAUSE_MAX_S", 0.6)),
+        )
+        # 幽灵浏览抑制：鼠标移动段间停顿 + 偶发滚轮停顿（秒）。
+        self._mouse_move_pause = (
+            max(0.0, _env_float("CREATOR_STATS_MOUSE_MOVE_PAUSE_MIN_S", 0.05)),
+            max(0.0, _env_float("CREATOR_STATS_MOUSE_MOVE_PAUSE_MAX_S", 0.3)),
+        )
+        self._mouse_wheel_pause = (
+            max(0.0, _env_float("CREATOR_STATS_MOUSE_WHEEL_PAUSE_MIN_S", 0.08)),
+            max(0.0, _env_float("CREATOR_STATS_MOUSE_WHEEL_PAUSE_MAX_S", 0.35)),
+        )
         # 轻量轮：更高默认概率只看概览+列表——大幅减少详情请求面。
         self._light_run_chance = max(
             0.0, min(1.0, _env_float("CREATOR_STATS_LIGHT_RUN_CHANCE", 0.35))
@@ -350,14 +369,14 @@ class CdpTransport:
                 x = min(max(x + random.uniform(-240.0, 240.0), 8.0), width - 8.0)
                 y = min(max(y + random.uniform(-160.0, 160.0), 8.0), height - 8.0)
                 await mouse.move(x, y, steps=random.randint(3, 12))
-                await asyncio.sleep(random.uniform(0.05, 0.3))
+                await asyncio.sleep(random.uniform(*self._mouse_move_pause))
             # Occasional small wheel nudge — pure pointer-only sessions look flat.
             if random.random() < 0.35 and hasattr(mouse, "wheel"):
                 await mouse.wheel(
                     random.uniform(-40.0, 40.0),
                     random.uniform(80.0, 420.0) * random.choice((-1.0, 1.0)),
                 )
-                await asyncio.sleep(random.uniform(0.08, 0.35))
+                await asyncio.sleep(random.uniform(*self._mouse_wheel_pause))
 
     async def _ensure_browser(self) -> Any:
         if self._browser is not None:
@@ -907,7 +926,7 @@ class CdpTransport:
                                         el.dispatchEvent(new Event('scroll', { bubbles: true }))
                                     }"""
                             )
-                            await asyncio.sleep(random.uniform(0.2, 0.6))
+                            await asyncio.sleep(random.uniform(*self._scroll_back_pause))
                     script = (
                         """el => {
                                 el.scrollTop = el.scrollHeight
@@ -930,7 +949,7 @@ class CdpTransport:
                         )
                         break
                     if not last_step:
-                        await asyncio.sleep(random.uniform(0.15, 0.45))
+                        await asyncio.sleep(random.uniform(*self._scroll_step_pause))
                 else:
                     # All scroll steps completed — wait for the next page.
                     try:
