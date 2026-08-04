@@ -5,11 +5,15 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, Depends, Request
-from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    # Annotation-only; deferring langgraph.types keeps it off the app cold-start
+    # import chain (~600ms). Command is imported locally where constructed.
+    from langgraph.types import StateSnapshot
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.api.account_scope import assert_thread_owned
@@ -178,6 +182,8 @@ async def submit_review(
 
     # Resume the dynamic interrupt() inside review_gate_node with the decision.
     # The node reads this value, writes human_feedback, and sets phase.
+    from langgraph.types import Command
+
     result = await _runner._run_graph_and_persist(
         thread_id,
         graph,
@@ -332,6 +338,8 @@ async def submit_ripple_decision(
         await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
     # Resume the graph with the user's decision
+    from langgraph.types import Command
+
     result = await _runner._run_graph_and_persist(
         thread_id,
         graph,

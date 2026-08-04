@@ -15,7 +15,6 @@ from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
@@ -1139,6 +1138,8 @@ async def resume_workflow(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """恢复暂停或可重试错误的工作流"""
+    from langgraph.types import Command
+
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
@@ -1417,6 +1418,8 @@ async def recover_workflow(
       - retry_from_last_success: Command(goto=上次成功节点) 重跑该节点起的链
       - skip_to_next: Command(goto=state.next[0]) 跳过失败节点，从后继继续
     """
+    from langgraph.types import Command
+
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
@@ -2426,6 +2429,8 @@ async def trigger_analytics(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """手动触发 analyst 节点（发布后手动运行 Ripple 分析）"""
+    from langgraph.types import Command
+
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
