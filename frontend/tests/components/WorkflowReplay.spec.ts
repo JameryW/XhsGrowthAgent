@@ -109,13 +109,16 @@ describe('WorkflowReplay public UX contract', () => {
   })
 
   it('prefetches the next step during idle time', async () => {
-    vi.useFakeTimers()
-    // happy-dom's requestIdleCallback support is version-dependent; when it
-    // exists the component schedules via rIC (timeout 700ms) which won't fire
-    // under our 150ms timer advance, making the prefetch assert flaky. Force
-    // the component's own setTimeout(120ms) fallback path — the deterministic
-    // branch it keeps exactly for non-rIC environments like tests.
-    Object.defineProperty(window, 'requestIdleCallback', { configurable: true, value: undefined })
+    // Drive the component's requestIdleCallback path deterministically: define
+    // rIC to fire its callback synchronously (the routePrefetch.spec.ts pattern).
+    // This exercises the production rIC branch without depending on happy-dom's
+    // version-dependent rIC support or on fake-timer advancing past a 700ms idle
+    // timeout, which is what made the prior setTimeout-fallback approach flaky
+    // under full-suite CI load.
+    Object.defineProperty(window, 'requestIdleCallback', {
+      configurable: true,
+      value: (cb: () => void) => { cb(); return 1 },
+    })
     // Only steps without an embedded manifest result need a network prefetch.
     getManifestMock.mockResolvedValue(buildManifest([steps[0], { ...steps[1], result: null }]))
     const wrapper = mount(WorkflowReplay, {
@@ -128,18 +131,16 @@ describe('WorkflowReplay public UX contract', () => {
       },
     })
     await flushPromises()
-    await vi.advanceTimersByTimeAsync(150)
-    await flushPromises()
-
-    // The idle prefetch (setTimeout 120ms fallback in happy-dom) loads
-    // step-2 ahead of navigation. Use toHaveBeenCalledWith (not "last") so a
-    // later on-demand call from another path doesn't mask the prefetch.
-    expect(getCheckpointMock).toHaveBeenCalledWith(
-      'case-1',
-      'step-2',
-      false,
-      expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }),
-    )
+    // rIC fires synchronously on manifest settle; the prefetch network call
+    // resolves on the next microtask flush.
+    await vi.waitFor(() => {
+      expect(getCheckpointMock).toHaveBeenCalledWith(
+        'case-1',
+        'step-2',
+        false,
+        expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }),
+      )
+    })
     wrapper.unmount()
   })
 
