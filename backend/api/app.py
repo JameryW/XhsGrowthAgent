@@ -22,7 +22,6 @@ from starlette.responses import FileResponse, Response
 
 from backend.api.middleware import error_handler_middleware
 from backend.api.responses import ApiResponse, success
-from backend.config.settings import Settings
 
 # compile_graph_dev + RippleService are imported lazily inside lifespan (see
 # startup) — pulling backend.graph.builder / ripple_service at module load
@@ -1249,6 +1248,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await hydrate_risk_gates()
 
     # Start Ripple background health check
+    from backend.config.settings import Settings
+
     settings = Settings()
     ripple = RippleService.get_instance()
     interval = settings.ripple.health_check_interval

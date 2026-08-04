@@ -40,7 +40,6 @@ from backend.api.account_scope import (  # noqa: F401
 from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError
 from backend.api.responses import ApiResponse, success
-from backend.config.settings import Settings
 
 logger = logging.getLogger("xhs_growth.api.free")
 
@@ -643,6 +642,7 @@ async def _resolve_free_cdp_endpoint(account_id: str) -> str:
     endpoint if one is bound. Returns "" when no endpoint is available.
     """
     from backend.agents.publisher import _resolve_cdp_endpoint
+    from backend.config.settings import Settings
     from backend.db.accounts import get_account_cdp_endpoint
 
     settings = Settings()

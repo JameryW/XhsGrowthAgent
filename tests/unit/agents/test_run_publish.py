@@ -35,7 +35,7 @@ def _browser_settings(monkeypatch):
     fake.platform.use_browser = True
     fake.platform.headless = True
     fake.platform.cdp_endpoint = ""
-    monkeypatch.setattr("backend.agents.publisher.Settings", lambda: fake)
+    monkeypatch.setattr("backend.config.settings.Settings", lambda: fake)
     return fake
 
 
