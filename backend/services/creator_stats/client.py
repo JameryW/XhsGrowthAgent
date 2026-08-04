@@ -43,6 +43,12 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+# In-memory predicate poll interval for _wait_for. Extracted so tests can
+# shrink it below the wait timeout — otherwise a 0.05s timeout still sleeps
+# the full 0.1s poll gap, dominating fetch_creator_center test wall-clock.
+_WAIT_FOR_POLL_S = _env_float("CREATOR_STATS_WAIT_FOR_POLL_S", 0.1)
+
+
 # Creator-center statistics surface (product UI)
 CREATOR_STATS_PAGE = "https://creator.xiaohongshu.com/statistics/account/v2"
 
@@ -435,7 +441,7 @@ class CdpTransport:
         while not predicate():
             if asyncio.get_running_loop().time() >= deadline:
                 raise TimeoutError("timed out waiting for Creator Center response")
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(_WAIT_FOR_POLL_S)
 
     @staticmethod
     def _page_index(url: str) -> int:
