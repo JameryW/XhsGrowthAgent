@@ -100,14 +100,20 @@ class ToolRegistry:
     @classmethod
     def register_content_tools(cls) -> None:
         """注册所有内容生成工具"""
-        from backend.tools.content import (
-            de_ai_taste,
-            hashtag_researcher,
-            image_prompt_generator,
-            layout_recommender,
-            style_library,
-            title_generator,
-        )
+        # Import tools from their defining submodules, not the lazy
+        # ``backend.tools.content`` namespace. Three submodules
+        # (de_ai_taste, hashtag_researcher, title_generator) share their
+        # name with the exported tool symbol; once the submodule is
+        # imported anywhere, ``from backend.tools.content import X``
+        # resolves to the module, not the tool (PEP 562 __getattr__ does
+        # not shadow an already-imported submodule). Going to the source
+        # module sidesteps the ambiguity.
+        from backend.tools.content.de_ai_taste import de_ai_taste
+        from backend.tools.content.hashtag_researcher import hashtag_researcher
+        from backend.tools.content.image_prompt import image_prompt_generator
+        from backend.tools.content.layout import layout_recommender
+        from backend.tools.content.style import style_library
+        from backend.tools.content.title_generator import title_generator
 
         cls.register_many(
             [
