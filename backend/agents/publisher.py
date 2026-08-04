@@ -10,16 +10,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    # BaseStore only appears in annotations; importing langgraph.store.base at
-    # module load pulls langchain_core.runnables on every app import (publisher
-    # is eagerly loaded by the free route singleton). Deferred to TYPE_CHECKING.
+    # BaseStore / XHSGrowthState only appears in annotations; importing
+    # langgraph.store.base + state.schema at module load pulls
+    # langchain_core.runnables + langgraph.graph.message on every app import
+    # (publisher is eagerly loaded by the free route singleton). Deferred to
+    # TYPE_CHECKING.
     from langgraph.store.base import BaseStore
+
+    from backend.state.schema import XHSGrowthState
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.config.settings import Settings
 from backend.services.text_cover import generate_text_cover_image
-from backend.state.schema import WorkflowPhase, XHSGrowthState
+from backend.state.enums import WorkflowPhase
 
 logger = logging.getLogger("xhs_growth.agents.publisher")
 

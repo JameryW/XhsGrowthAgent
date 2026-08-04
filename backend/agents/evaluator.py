@@ -17,11 +17,13 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    # BaseStore only appears in annotations. HumanMessage/SystemMessage are
-    # constructed at runtime inside execute() (local import there) — not needed
-    # for type-checking. Importing langgraph.store.base at module load adds
-    # ~0.4s to every import of this module (and the routes that pull it).
+    # BaseStore / XHSGrowthState only appear in annotations. HumanMessage/
+    # SystemMessage are constructed at runtime inside execute() (local import
+    # there). Importing langgraph.store.base + state.schema at module load adds
+    # ~0.7s to every import of this module (and the routes that pull it).
     from langgraph.store.base import BaseStore
+
+    from backend.state.schema import XHSGrowthState
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TASK_TIMEOUT_OVERRIDES, TaskType
@@ -32,7 +34,6 @@ from backend.db.evaluator_config import (
     load_weights,
 )
 from backend.state.enums import ContentStatus
-from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.evaluator")
 

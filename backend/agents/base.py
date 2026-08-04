@@ -11,19 +11,21 @@ from typing import TYPE_CHECKING, Any, cast
 import yaml
 
 if TYPE_CHECKING:
-    # BaseChatModel / BaseStore are only used in annotations. Importing them at
-    # module load drags in langchain_core.language_models → langsmith.run_trees
-    # (~0.9s) and langgraph.store.base, on every import of backend.agents.base
+    # BaseChatModel / BaseStore / XHSGrowthState are only used in annotations.
+    # Importing them at module load drags in langchain_core.language_models →
+    # langsmith.run_trees (~0.9s), langgraph.store.base, and state.schema →
+    # langgraph.graph.message (~0.3s), on every import of backend.agents.base
     # — i.e. every agent/route import, including test collection. With
     # ``from __future__ import annotations`` they are strings, never evaluated
     # at runtime, so deferring to TYPE_CHECKING keeps the import chain light.
     from langchain_core.language_models import BaseChatModel
     from langgraph.store.base import BaseStore
 
+    from backend.state.schema import XHSGrowthState
+
 from backend.config.models import TaskType
 from backend.memory.store import MemoryManager
 from backend.models.router import get_model
-from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents")
 
