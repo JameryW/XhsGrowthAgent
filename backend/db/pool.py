@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
 
-from psycopg_pool import AsyncConnectionPool
+if TYPE_CHECKING:
+    # AsyncConnectionPool is constructed only in init_pool; importing
+    # psycopg_pool at module load pulls psycopg (~900ms) onto every app
+    # cold start. Deferred — the class is resolved at first init_pool call.
+    from psycopg_pool import AsyncConnectionPool
 
 logger = logging.getLogger("xhs_growth.db.pool")
 
@@ -19,6 +24,8 @@ def _conn_string() -> str:
 async def init_pool() -> AsyncConnectionPool:
     """Initialize the shared connection pool. Called once at app startup."""
     global _pool
+    from psycopg_pool import AsyncConnectionPool
+
     conn_string = _conn_string()
     if not conn_string:
         raise RuntimeError("POSTGRES_URI is not configured")
