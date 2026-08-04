@@ -24,11 +24,10 @@ from backend.api.middleware import error_handler_middleware
 from backend.api.responses import ApiResponse, success
 from backend.config.settings import Settings
 
-# compile_graph_dev is imported lazily inside lifespan (see startup) — pulling
-# backend.graph.builder at module load drags in the full agent/model-router
-# chain (langchain_anthropic/openai, ~1.3s) on every app import, including
-# test collection that never starts the server. Lifespan imports it where used.
-from backend.services.ripple_service import RippleService
+# compile_graph_dev + RippleService are imported lazily inside lifespan (see
+# startup) — pulling backend.graph.builder / ripple_service at module load
+# drags in the agent/model-router chain + httpx on every app import, including
+# test collection that never starts the server. Lifespan imports them where used.
 
 # 加载 .env 文件（必须在其他导入之前）
 load_dotenv(override=True)
@@ -1151,8 +1150,10 @@ async def _creator_stats_scheduler(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Lazy import — keeps ``import backend.api.app`` off the graph-builder chain.
+    # Lazy imports — keeps ``import backend.api.app`` off the graph-builder +
+    # ripple_service chains (httpx, model router). Loaded once at startup.
     from backend.graph.builder import compile_graph_dev
+    from backend.services.ripple_service import RippleService
 
     # ── DB + checkpointer initialization ──
     db_uri = os.environ.get("POSTGRES_URI")
