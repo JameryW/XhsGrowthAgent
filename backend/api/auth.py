@@ -8,8 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.config.settings import Settings
-
 
 class TokenData(BaseModel):
     """Token payload data."""
@@ -35,6 +33,8 @@ def generate_token(user_id: str, username: str) -> TokenData:
     Returns:
         TokenData with token and metadata
     """
+    from backend.config.settings import Settings
+
     settings = Settings().auth
     token = secrets.token_urlsafe(32)
     now = datetime.now()

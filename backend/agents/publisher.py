@@ -10,18 +10,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    # BaseStore / XHSGrowthState only appears in annotations; importing
-    # langgraph.store.base + state.schema at module load pulls
-    # langchain_core.runnables + langgraph.graph.message on every app import
-    # (publisher is eagerly loaded by the free route singleton). Deferred to
-    # TYPE_CHECKING.
+    # BaseStore / XHSGrowthState / Settings only appears in annotations;
+    # importing langgraph.store.base + state.schema + pydantic_settings at
+    # module load pulls langchain_core.runnables + langgraph.graph.message +
+    # pydantic.v1 on every app import (publisher is eagerly loaded by the
+    # free route singleton). Deferred to TYPE_CHECKING; runtime Settings()
+    # calls use a function-local import.
     from langgraph.store.base import BaseStore
 
+    from backend.config.settings import Settings
     from backend.state.schema import XHSGrowthState
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.config.settings import Settings
 from backend.services.text_cover import generate_text_cover_image
 from backend.state.enums import WorkflowPhase
 
@@ -116,6 +117,8 @@ class PublisherAgent(BaseAgent):
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         # 获取配置
+        from backend.config.settings import Settings
+
         settings = Settings()
         use_browser = settings.platform.use_browser
 
@@ -171,6 +174,8 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
     plan = state.get("content_plan", {})
     publish_options = state.get("publish_options") or {}
     publish_account_id = publish_options.get("account_id")
+    from backend.config.settings import Settings
+
     settings = Settings()
 
     # CDP multi-profile: per-account endpoint takes priority over the global

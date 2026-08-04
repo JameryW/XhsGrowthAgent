@@ -29,7 +29,7 @@ def _browser_settings(monkeypatch):
     fake.platform.use_browser = True
     fake.platform.headless = True
     fake.platform.cdp_endpoint = ""
-    monkeypatch.setattr("backend.agents.publisher.Settings", lambda: fake)
+    monkeypatch.setattr("backend.config.settings.Settings", lambda: fake)
     return fake
 
 
@@ -215,7 +215,7 @@ async def test_state_dry_run_overrides_publish_options(mock_store, monkeypatch):
     fake.platform.use_browser = True
     fake.platform.headless = True
     fake.platform.cdp_endpoint = ""
-    monkeypatch.setattr("backend.agents.publisher.Settings", lambda: fake)
+    monkeypatch.setattr("backend.config.settings.Settings", lambda: fake)
 
     state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
     state["dry_run"] = True  # top-level dry_run from /start

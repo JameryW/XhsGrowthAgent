@@ -961,7 +961,7 @@ class TestGetAnalytics:
                 AsyncMock(return_value="http://localhost:9222"),
             ),
             patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
-            patch("backend.api.routes.free.Settings") as mock_settings,
+            patch("backend.config.settings.Settings") as mock_settings,
         ):
             mock_settings.return_value.platform.headless = True
             instance = mock_client_cls.return_value
@@ -1015,7 +1015,7 @@ class TestGetAnalytics:
                 "backend.db.accounts.get_account_cdp_endpoint",
                 AsyncMock(return_value=""),
             ),
-            patch("backend.api.routes.free.Settings") as mock_settings,
+            patch("backend.config.settings.Settings") as mock_settings,
         ):
             # No per-account CDP override + no global cdp_endpoint on settings →
             # _resolve_cdp_endpoint falls through to the socket check, which
@@ -1034,7 +1034,7 @@ class TestGetAnalytics:
                 AsyncMock(return_value="http://localhost:9222"),
             ),
             patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
-            patch("backend.api.routes.free.Settings") as mock_settings,
+            patch("backend.config.settings.Settings") as mock_settings,
         ):
             mock_settings.return_value.platform.headless = True
             instance = mock_client_cls.return_value
