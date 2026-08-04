@@ -23,7 +23,11 @@ from starlette.responses import FileResponse, Response
 from backend.api.middleware import error_handler_middleware
 from backend.api.responses import ApiResponse, success
 from backend.config.settings import Settings
-from backend.graph.builder import compile_graph_dev
+
+# compile_graph_dev is imported lazily inside lifespan (see startup) — pulling
+# backend.graph.builder at module load drags in the full agent/model-router
+# chain (langchain_anthropic/openai, ~1.3s) on every app import, including
+# test collection that never starts the server. Lifespan imports it where used.
 from backend.services.ripple_service import RippleService
 
 # 加载 .env 文件（必须在其他导入之前）
@@ -1147,6 +1151,9 @@ async def _creator_stats_scheduler(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Lazy import — keeps ``import backend.api.app`` off the graph-builder chain.
+    from backend.graph.builder import compile_graph_dev
+
     # ── DB + checkpointer initialization ──
     db_uri = os.environ.get("POSTGRES_URI")
     checkpointer = None
