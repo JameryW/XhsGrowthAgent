@@ -48,7 +48,6 @@ export default function register(pi: ExtensionAPI) {
   const schema = pi.zod.object({
     account_id: pi.zod
       .string()
-      .trim()
       .min(1)
       .describe("Account ID with imported Creator Center statistics"),
     limit: pi.zod
