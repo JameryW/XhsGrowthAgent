@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "_db_upsert 改动涉及 DB 读写模式（db_get + db_update），需遵循 DB 层规范"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "/status 端点 + workflow row 字段（phase/status/progress/label/workflow_mode）状态语义"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "新增单测需符合质量基线"}
