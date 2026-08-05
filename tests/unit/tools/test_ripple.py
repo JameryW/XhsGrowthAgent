@@ -162,41 +162,6 @@ def test_ripple_settings_default(monkeypatch):
     assert s.workflow_timeout == 1800
 
 
-def test_tool_registry_has_ripple():
-    """工具注册表包含 Ripple 工具"""
-    from backend.tools.registry import ToolRegistry
-
-    ToolRegistry.register_ripple_tools()
-    names = ToolRegistry.available_tool_names()
-    assert "ripple_predict_content_spread" in names
-    assert "ripple_validate_pmf" in names
-    assert "ripple_get_simulation_result" in names
-    assert "ripple_generate_report" in names
-    assert "ripple_cancel_simulation" in names
-
-
-def test_content_strategist_has_ripple_tools():
-    """ContentStrategist agent 分配有 Ripple 工具"""
-    from backend.tools.registry import ToolRegistry
-
-    ToolRegistry.register_ripple_tools()
-    tools = ToolRegistry.get_tools_for_agent("content_strategist")
-    tool_names = [t.name for t in tools]
-    assert "ripple_predict_content_spread" in tool_names
-    assert "ripple_validate_pmf" in tool_names
-
-
-def test_analyst_has_ripple_tools():
-    """Analyst agent 分配有 Ripple 工具"""
-    from backend.tools.registry import ToolRegistry
-
-    ToolRegistry.register_ripple_tools()
-    tools = ToolRegistry.get_tools_for_agent("analyst")
-    tool_names = [t.name for t in tools]
-    assert "ripple_get_simulation_result" in tool_names
-    assert "ripple_generate_report" in tool_names
-
-
 @pytest.mark.asyncio
 async def test_cancel_simulation_wrapper():
     """integration.py cancel_simulation 包装器"""

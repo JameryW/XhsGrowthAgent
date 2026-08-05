@@ -306,15 +306,15 @@ See [CLAUDE.md](./CLAUDE.md) for detailed development guidelines.
 
 1. Create `agents/<name>.py` extending `BaseAgent`
 2. Add prompt YAML to `config/prompts/<name>.yaml`
-3. Register tools in `tools/registry.py`
+3. Import any needed tools via direct submodule imports inside `execute()` (no central registry)
 4. Add node + edges in `graph/builder.py`
 
 ### Adding a New Tool
 
 1. Create tool file in `tools/<category>/<name>.py`
 2. Use `@tool` decorator from `langchain_core.tools`
-3. Register in `ToolRegistry.register()`
-4. Add to agent's tool list in `_agent_tools`
+3. Export tool in `tools/<category>/__init__.py`
+4. Have the consuming agent import it via direct submodule import (no central registry)
 
 ---
 
