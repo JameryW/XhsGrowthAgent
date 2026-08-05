@@ -23,11 +23,6 @@ from backend.services.ripple_service import RippleService, RippleTimeoutError
 logger = logging.getLogger("xhs_growth.tools.ripple")
 
 
-def _parser_service() -> RippleService:
-    """Create a stateless parser instance without touching RippleService's singleton."""
-    return object.__new__(RippleService)
-
-
 async def _get_service() -> RippleService:
     """获取 RippleService 实例并确保健康检查已执行"""
     service = RippleService.get_instance()
@@ -139,16 +134,6 @@ async def validate_pmf(
         return {"error": str(e), "ripple_pmf": None}
 
 
-async def get_result(job_id: str) -> dict[str, Any]:
-    """获取模拟结果"""
-    try:
-        service = await _get_service()
-        return await service.get_result(job_id)
-    except Exception as e:
-        logger.error(f"Ripple get result failed for {job_id}: {e}")
-        return {"error": str(e)}
-
-
 async def get_report(job_id: str) -> dict[str, Any]:
     """生成模拟报告"""
     try:
@@ -157,59 +142,3 @@ async def get_report(job_id: str) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Ripple report generation failed for {job_id}: {e}")
         return {"error": str(e)}
-
-
-async def cancel_simulation(job_id: str) -> dict[str, Any]:
-    """尝试取消 Ripple 模拟任务
-
-    使用 Ripple 两步取消协议，对旧服务回退 DELETE，并对 404/405/网络错误做优雅降级。
-
-    Args:
-        job_id: 模拟任务 ID
-
-    Returns:
-        {"cancelled": bool, "job_id": str, "status": str, "error"?: str}
-    """
-    try:
-        service = await _get_service()
-        return await service.cancel_simulation(job_id)
-    except Exception as e:
-        logger.error(f"Ripple cancel failed for {job_id}: {e}")
-        return {"cancelled": False, "job_id": job_id, "status": "error", "error": str(e)}
-
-
-async def recover_result(job_id: str) -> dict[str, Any]:
-    """恢复超时模拟的结果 — 检查任务状态，若已完成则获取结果
-
-    返回结构化状态，支持未来后台轮询扩展。
-
-    Args:
-        job_id: 模拟任务 ID
-
-    Returns:
-        RecoveryStatus 的 dict 形式: {"job_id", "status", "result"?, "error"?}
-    """
-    try:
-        service = await _get_service()
-        recovery = await service.recover_result(job_id)
-        return recovery.model_dump()
-    except Exception as e:
-        logger.error(f"Ripple recover failed for {job_id}: {e}")
-        return {"job_id": job_id, "status": "failed", "error": str(e)}
-
-
-def parse_spread_prediction(result: dict[str, Any]) -> dict[str, Any]:
-    """解析 Ripple 传播预测结果，映射到 XHS Growth 状态字段
-
-    从 Ripple 输出中提取:
-    - 预计互动量级
-    - 爆发概率
-    - 传播路径特征
-    - 关键影响节点
-    """
-    return _parser_service()._parse_spread_result(result)
-
-
-def parse_pmf_result(result: dict[str, Any]) -> dict[str, Any]:
-    """解析 Ripple PMF 验证结果"""
-    return _parser_service()._parse_pmf_result(result)
