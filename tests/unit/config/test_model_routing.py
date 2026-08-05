@@ -50,3 +50,10 @@ def test_all_task_types_have_routing():
     for task in TaskType:
         model_id = resolve_model_id(task)
         assert model_id in MODEL_REGISTRY, f"Task {task} routes to unknown model {model_id}"
+
+
+def test_viral_matching_routes_to_light_model():
+    """VIRAL_MATCHING routes to the lighter deepseek-v4-flash model."""
+    assert resolve_model_id(TaskType.VIRAL_MATCHING) == "deepseek-v4-flash"
+    # The model must exist in the registry (no KeyError).
+    get_model_config("deepseek-v4-flash")
