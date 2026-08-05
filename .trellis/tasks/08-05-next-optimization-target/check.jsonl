@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查新增单测符合质量基线"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "检查 _db_upsert skip-unchanged 不破坏 DB 一致性"}
