@@ -1746,3 +1746,36 @@ content_strategist 352s 同步阻塞根因: RIPPLE_BACKGROUND 未设默认 False
 ### Next Steps
 
 - None - task complete
+
+
+## Session 87: 删除 vestigial ToolRegistry 架构层
+
+**Date**: 2026-08-06
+**Task**: 删除 vestigial ToolRegistry 架构层
+**Branch**: `main`
+
+### Summary
+
+trellis-check 删 stub 时发现 ToolRegistry 整体 vestigial。trellis-research 确认 register_all_tools/get_tools_for_agent/_agent_tools 全链路(agents/graph/api/services/omp/cli)零生产调用,agents 直接 submodule import 取工具。删 registry.py+__init__ lazy 导出+10 registry 测试(保留 11 LLM fallback + 12 ripple),更新 CLAUDE/CONTRIBUTING/README/spec 文档为实际机制。check 额外修 3 处文档遗漏。净删 305 行,2040 测试绿。死代码清理系列:stub(2处)+ToolRegistry 架构层。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `49c4d072` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

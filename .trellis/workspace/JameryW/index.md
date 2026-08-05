@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 86
+- **Total Sessions**: 87
 - **Last Active**: 2026-08-06
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1748 | Active |
+| `journal-0.md` | ~1781 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 87 | 2026-08-06 | 删除 vestigial ToolRegistry 架构层 | `49c4d072` | `main` |
 | 86 | 2026-08-06 | 删除死代码 stub OptimizationService + report_generator | `cfc53f48` | `main` |
 | 85 | 2026-08-06 | prod 开启 RIPPLE_BACKGROUND content_strategist 异步化 | `5d88ffe5` | `main` |
 | 84 | 2026-08-06 | creator_stats 同步周期改 24h | `98114060` | `main` |
