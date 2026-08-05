@@ -304,7 +304,7 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         logger.info(f"发布完成: {publish_result['post_id']}")
 
     except Exception as e:
-        logger.error(f"发布失败: {e}")
+        logger.error(f"发布失败: {type(e).__name__}: {e}")
         from backend.api.errors import classify_publish_error
 
         error_type, recovery = classify_publish_error(str(e))

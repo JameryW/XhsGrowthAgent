@@ -334,7 +334,7 @@ class XHSClient:
             return topics
 
         except Exception as e:
-            logger.error(f"获取热门话题失败: {e}")
+            logger.error(f"获取热门话题失败: {type(e).__name__}: {e}")
             return []
 
     async def search_posts(self, keyword: str, limit: int = 20) -> list[XHSSearchResult]:
@@ -368,7 +368,7 @@ class XHSClient:
             return results
 
         except Exception as e:
-            logger.error(f"搜索帖子失败: {e}")
+            logger.error(f"搜索帖子失败: {type(e).__name__}: {e}")
             return []
 
     async def get_comments(self, post_id: str, limit: int = 20) -> list[XHSComment]:
@@ -399,7 +399,7 @@ class XHSClient:
             return comments
 
         except Exception as e:
-            logger.error(f"获取评论失败: {e}")
+            logger.error(f"获取评论失败: {type(e).__name__}: {e}")
             return []
 
     async def get_post_analytics(self, post_id: str) -> XHSAnalytics:
@@ -462,7 +462,7 @@ class XHSClient:
             users = await self._http.search_users(keyword=keyword)
             return users[:limit]
         except Exception as e:
-            logger.error(f"搜索用户失败: {e}")
+            logger.error(f"搜索用户失败: {type(e).__name__}: {e}")
             return []
 
     async def get_user_info(self, user_id: str) -> dict[str, Any]:
@@ -476,7 +476,7 @@ class XHSClient:
         try:
             return await self._http.get_user_info(user_id=user_id)
         except Exception as e:
-            logger.error(f"获取用户信息失败: {e}")
+            logger.error(f"获取用户信息失败: {type(e).__name__}: {e}")
             return {}
 
     async def get_user_notes(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -502,7 +502,7 @@ class XHSClient:
                     break
             return all_notes[:limit]
         except Exception as e:
-            logger.error(f"获取用户笔记失败: {e}")
+            logger.error(f"获取用户笔记失败: {type(e).__name__}: {e}")
             return []
 
     # ── Playwright 方法 (复杂操作) ───────────────────────────────────────────
