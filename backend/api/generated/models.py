@@ -106,7 +106,7 @@ class Data12(BaseModel):
             examples=[
                 {
                     "claude-sonnet-4-20250514": 15.0,
-                    "deepseek-chat": 8.5,
+                    "deepseek-v4-flash": 8.5,
                     "gpt-4o": 12.17,
                     "qwen-plus": 10.0,
                 }
@@ -339,7 +339,7 @@ class CostReport(BaseModel):
             examples=[
                 {
                     "claude-sonnet-4-20250514": 15.0,
-                    "deepseek-chat": 8.5,
+                    "deepseek-v4-flash": 8.5,
                     "gpt-4o": 12.17,
                     "qwen-plus": 10.0,
                 }

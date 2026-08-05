@@ -19,15 +19,15 @@ def test_resolve_model_id_default():
 
 def test_resolve_model_id_override():
     """用户覆盖路由"""
-    overrides = {"writing": "deepseek-chat"}
-    assert resolve_model_id(TaskType.WRITING, overrides) == "deepseek-chat"
+    overrides = {"writing": "deepseek-v4-flash"}
+    assert resolve_model_id(TaskType.WRITING, overrides) == "deepseek-v4-flash"
 
 
 def test_get_model_config():
     """获取模型配置"""
-    config = get_model_config("deepseek-chat")
+    config = get_model_config("deepseek-v4-flash")
     assert config.provider == ModelProvider.DEEPSEEK
-    assert config.model_name == "deepseek-chat"
+    assert config.model_name == "deepseek-v4-flash"
 
 
 def test_get_model_config_unknown():

@@ -80,7 +80,7 @@ class TestModelRegistry:
         expected_models = [
             "claude-sonnet-4-20250514",
             "gpt-4o",
-            "deepseek-chat",
+            "deepseek-v4-flash",
             "qwen-plus",
             "mimo-v2.5-pro",
             "astron-code-latest",
@@ -123,9 +123,9 @@ class TestResolveModelId:
 
     def test_routing_overrides(self):
         """Routing overrides allow custom model assignments."""
-        overrides = {"routing": "deepseek-chat"}
+        overrides = {"routing": "deepseek-v4-flash"}
         result = resolve_model_id(TaskType.ROUTING, routing_overrides=overrides)
-        assert result == "deepseek-chat"
+        assert result == "deepseek-v4-flash"
 
 
 class TestGetModelConfig:

@@ -225,14 +225,11 @@ Pinia stores with toast notifications:
 
 ### Model Router (models/router.py)
 
-Routes tasks to different LLM providers by `TaskType`:
-- ROUTING/SCOUTING/ENGAGEMENT → `deepseek-chat`
-- STRATEGY/WRITING → `claude-sonnet-4-20250514`
-- VISUAL/ANALYSIS → `gpt-4o`
-- PUBLISHING → `qwen-plus`
-- EVALUATION → `astron-code-latest` (RQGM agent-as-a-judge panel)
+Routes tasks to LLM providers by `TaskType` via `resolve_model_id`:
+- All agent task types (ROUTING/SCOUTING/STRATEGY/WRITING/VISUAL/ANALYSIS/PUBLISHING/ENGAGEMENT/VIRAL_MATCHING/CONTENT_ANALYSIS/VERSION_GEN/BRIEF_ANALYSIS/SHOOTING_PLAN/EVALUATION) → `astron-code-latest`
+- POLISH (de_ai_taste 去套话润色，窄转换) → `deepseek-v4-flash` (更轻/便宜；草稿生成仍走 WRITING→astron)
 
-Provider support: Anthropic, OpenAI, DeepSeek, DashScope (Qwen).
+Provider support: Anthropic, OpenAI, DeepSeek, DashScope (Qwen), XiaomiMiMo, Xunfei.
 
 ### Tool Registry (tools/registry.py)
 

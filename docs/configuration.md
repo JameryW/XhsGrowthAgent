@@ -143,14 +143,14 @@ class Settings(BaseSettings):
 
 | TaskType | Model | Provider | 用途 |
 |----------|-------|----------|------|
-| `ROUTING` | deepseek-chat | DeepSeek | 编排决策 |
-| `SCOUTING` | deepseek-chat | DeepSeek | 趋势发现 |
+| `ROUTING` | deepseek-v4-flash | DeepSeek | 编排决策 |
+| `SCOUTING` | deepseek-v4-flash | DeepSeek | 趋势发现 |
 | `STRATEGY` | claude-sonnet-4-20250514 | Anthropic | 内容策略 |
 | `WRITING` | claude-sonnet-4-20250514 | Anthropic | 文案生成 |
 | `VISUAL` | gpt-4o | OpenAI | 视觉分析 |
 | `ANALYSIS` | gpt-4o | OpenAI | 数据分析 |
 | `PUBLISHING` | qwen-plus | DashScope | 发布执行 |
-| `ENGAGEMENT` | deepseek-chat | DeepSeek | 用户互动 |
+| `ENGAGEMENT` | deepseek-v4-flash | DeepSeek | 用户互动 |
 
 ### 模型参数默认值
 
