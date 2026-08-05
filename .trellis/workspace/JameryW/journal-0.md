@@ -1713,3 +1713,36 @@ content_strategist 352s 同步阻塞根因: RIPPLE_BACKGROUND 未设默认 False
 ### Next Steps
 
 - None - task complete
+
+
+## Session 86: 删除死代码 stub OptimizationService + report_generator
+
+**Date**: 2026-08-06
+**Task**: 删除死代码 stub OptimizationService + report_generator
+**Branch**: `main`
+
+### Summary
+
+深挖未探方向找到死代码 stub。OptimizationService.analyze_titles 返回空 dict+TODO,report_generator 两方法返回硬编码占位数据,两者导出但全代码库零消费方。删文件+清理 lazy 导出/__all__。topic_scorer 保留。净删 40 行,2050 测试绿。check 额外发现 ToolRegistry 整体 vestigial(register_all_tools 零生产调用)——标为 separate task 候选。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cfc53f48` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 85
+- **Total Sessions**: 86
 - **Last Active**: 2026-08-06
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1715 | Active |
+| `journal-0.md` | ~1748 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 86 | 2026-08-06 | 删除死代码 stub OptimizationService + report_generator | `cfc53f48` | `main` |
 | 85 | 2026-08-06 | prod 开启 RIPPLE_BACKGROUND content_strategist 异步化 | `5d88ffe5` | `main` |
 | 84 | 2026-08-06 | creator_stats 同步周期改 24h | `98114060` | `main` |
 | 83 | 2026-08-02 | 修复剩余前端技术债：global-dark 陷阱、dark 变体全量迁移、WorkflowReplay 测试 | `ca2e5c63` | `main` |
