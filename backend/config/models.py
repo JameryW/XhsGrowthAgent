@@ -24,6 +24,8 @@ class TaskType(StrEnum):
     SHOOTING_PLAN = "shooting_plan"
     EVALUATION = "evaluation"  # 创作质量评估 (RQGM agent-as-a-judge 面板)
     POLISH = "polish"  # de_ai_taste 去套话润色：窄转换，降级到更轻/便宜的模型
+    # blogger_scout 虚构 mock_ 博主候选，纯结构化生成，降级轻模型 (不动 trend_scout)
+    MOCK_GEN = "mock_gen"
 
 
 class ModelProvider(StrEnum):
@@ -119,6 +121,8 @@ def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | No
         TaskType.EVALUATION: "astron-code-latest",
         # 去套话润色是窄转换，用 deepseek-v4-flash（更轻/便宜），草稿生成仍走 WRITING→astron
         TaskType.POLISH: "deepseek-v4-flash",
+        # blogger_scout 虚构博主候选（结构化生成），降级轻模型
+        TaskType.MOCK_GEN: "deepseek-v4-flash",
     }
     if routing_overrides:
         for k, v in routing_overrides.items():

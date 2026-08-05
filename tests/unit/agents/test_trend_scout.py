@@ -196,4 +196,7 @@ class TestTrendScoutAgent:
         """Verify agent class attributes."""
         assert agent.agent_name == "trend_scout"
         assert agent.prompt_file == "trend_scout.yaml"
-        # SCOUTING task type for trend discovery
+        # SCOUTING task type for trend discovery (blogger_scout moved to MOCK_GEN)
+        from backend.config.models import TaskType
+
+        assert agent.task_type == TaskType.SCOUTING

@@ -17,6 +17,12 @@ def test_resolve_model_id_default():
     assert resolve_model_id(TaskType.PUBLISHING) == "astron-code-latest"
 
 
+def test_mock_gen_routes_to_light_model():
+    """blogger_scout 虚构候选生成降级轻模型；trend_scout 保持 SCOUTING→astron."""
+    assert resolve_model_id(TaskType.MOCK_GEN) == "deepseek-v4-flash"
+    assert resolve_model_id(TaskType.SCOUTING) == "astron-code-latest"
+
+
 def test_resolve_model_id_override():
     """用户覆盖路由"""
     overrides = {"writing": "deepseek-v4-flash"}
