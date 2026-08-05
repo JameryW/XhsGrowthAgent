@@ -23,6 +23,7 @@ class TaskType(StrEnum):
     BRIEF_ANALYSIS = "brief_analysis"
     SHOOTING_PLAN = "shooting_plan"
     EVALUATION = "evaluation"  # 创作质量评估 (RQGM agent-as-a-judge 面板)
+    POLISH = "polish"  # de_ai_taste 去套话润色：窄转换，降级到更轻/便宜的模型
 
 
 class ModelProvider(StrEnum):
@@ -70,9 +71,9 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         temperature=0.5,
         max_tokens=4096,
     ),
-    "deepseek-chat": ModelConfig(
+    "deepseek-v4-flash": ModelConfig(
         provider=ModelProvider.DEEPSEEK,
-        model_name="deepseek-chat",
+        model_name="deepseek-v4-flash",
         temperature=0.6,
         max_tokens=4096,
     ),
@@ -116,6 +117,8 @@ def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | No
         TaskType.BRIEF_ANALYSIS: "astron-code-latest",
         TaskType.SHOOTING_PLAN: "astron-code-latest",
         TaskType.EVALUATION: "astron-code-latest",
+        # 去套话润色是窄转换，用 deepseek-v4-flash（更轻/便宜），草稿生成仍走 WRITING→astron
+        TaskType.POLISH: "deepseek-v4-flash",
     }
     if routing_overrides:
         for k, v in routing_overrides.items():
@@ -134,7 +137,7 @@ def get_model_config(model_id: str) -> ModelConfig:
 MODEL_COST_PER_1K: dict[str, dict[str, float]] = {
     "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
     "gpt-4o": {"input": 0.0025, "output": 0.01},
-    "deepseek-chat": {"input": 0.00014, "output": 0.00028},
+    "deepseek-v4-flash": {"input": 0.00014, "output": 0.00028},
     "qwen-plus": {"input": 0.0004, "output": 0.0012},
     "mimo-v2.5-pro": {"input": 0.0002, "output": 0.0006},
     "astron-code-latest": {"input": 0.0002, "output": 0.0006},

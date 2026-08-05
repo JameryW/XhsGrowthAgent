@@ -212,7 +212,7 @@ async def polish_copy(
         prompt_template = _load_prompt()
         service = get_llm_service()
         result = await service.enrich_with_llm(
-            task_type=TaskType.WRITING,
+            task_type=TaskType.POLISH,
             prompt_template=prompt_template,
             input_data=input_data,
             fallback_fn=algorithmic_de_ai,

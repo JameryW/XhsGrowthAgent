@@ -520,7 +520,7 @@ paths:
                   today_cost_usd: 5.23
                   by_model:
                     claude-sonnet-4-20250514: 15.00
-                    deepseek-chat: 8.50
+                    deepseek-v4-flash: 8.50
                     gpt-4o: 12.17
                     qwen-plus: 10.00
                   circuit_open: false
@@ -1034,7 +1034,7 @@ components:
             type: number
           example:
             claude-sonnet-4-20250514: 15.00
-            deepseek-chat: 8.50
+            deepseek-v4-flash: 8.50
             gpt-4o: 12.17
             qwen-plus: 10.00
         circuit_open:

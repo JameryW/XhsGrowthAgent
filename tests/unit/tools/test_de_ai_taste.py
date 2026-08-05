@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.config.models import TaskType
 from backend.tools.content.de_ai_taste import algorithmic_de_ai, de_ai_taste, polish_copy
 
 
@@ -97,6 +98,35 @@ async def test_polish_copy_use_llm_false_skips_model():
     )
     assert out["method"] == "algorithmic"
     assert "值得一提的是" not in out["body_text"]
+
+
+@pytest.mark.asyncio
+async def test_polish_copy_routes_to_polish_task_type():
+    """polish_copy LLM 路径走 TaskType.POLISH (deepseek-v4-flash)，非 WRITING (astron)。"""
+    llm_result = {
+        "selected_title": "用了一周，这些点真香",
+        "body_text": "自己测下来续航稳。",
+        "cta": "",
+        "tone": "口语",
+        "changes": ["去掉套话"],
+        "ai_signals_found": [],
+        "polished": True,
+    }
+    mock_service = MagicMock()
+    mock_service.enrich_with_llm = AsyncMock(return_value=llm_result)
+
+    with (
+        patch("backend.tools.content.de_ai_taste._load_prompt", return_value={"system": "x"}),
+        patch("backend.tools.content.de_ai_taste.get_llm_service", return_value=mock_service),
+    ):
+        await polish_copy(
+            selected_title="测试",
+            body_text="综上所述这是AI味正文",
+            use_llm=True,
+        )
+
+    mock_service.enrich_with_llm.assert_awaited_once()
+    assert mock_service.enrich_with_llm.await_args.kwargs["task_type"] is TaskType.POLISH
 
 
 @pytest.mark.asyncio
