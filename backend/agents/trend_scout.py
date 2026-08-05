@@ -77,6 +77,7 @@ class TrendScoutAgent(BaseAgent):
         return data
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         account_id = state.get("account_id", "default")
         niche = state.get("niche", "母婴")
         # User-provided topic override: include it in the keyword seed so trend
@@ -146,7 +147,7 @@ class TrendScoutAgent(BaseAgent):
 
 请基于以上数据进行分析，输出 JSON 格式的趋势报告。"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),

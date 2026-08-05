@@ -28,6 +28,7 @@ class ContentStrategistAgent(BaseAgent):
     prompt_file = "content_strategist.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         account_id = state.get("account_id", "default")
         thread_id = state.get("session_id")
 
@@ -101,7 +102,7 @@ class ContentStrategistAgent(BaseAgent):
 用户指定主题：{user_topic or "（未指定，从趋势候选中选取）"}
 历史表现洞察：{memory_context}"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),
@@ -131,7 +132,7 @@ class ContentStrategistAgent(BaseAgent):
                 f"候选话题为：{candidates}。必须从中选取一个，不得自创或改写措辞。",
             )
             retry_prompt = retry_prompt.replace("{ripple_context}", "")
-            retry_response = await self.model.ainvoke(
+            retry_response = await self._llm_ainvoke(
                 [SystemMessage(content=retry_prompt), HumanMessage(content=user_msg)]
             )
             retry_content = retry_response.content
@@ -290,7 +291,7 @@ class ContentStrategistAgent(BaseAgent):
             # 将 ripple_context 直接拼入 system prompt
             retry_prompt = retry_prompt.replace("{ripple_context}", ripple_context)
 
-            retry_response = await self.model.ainvoke(
+            retry_response = await self._llm_ainvoke(
                 [
                     SystemMessage(content=retry_prompt),
                     HumanMessage(content=user_msg),
