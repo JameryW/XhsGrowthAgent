@@ -349,8 +349,14 @@ def copywriter_router(
 
 def visual_designer_router(
     state: XHSGrowthState,
-) -> Literal["review_gate", "__end__"]:
-    """Route after visual_designer — both modes go to review_gate.
+) -> Literal["review_gate", "ripple_late_recheck", "__end__"]:
+    """Route after visual_designer.
+
+    Background mode with a still-pending Ripple result (ripple_pending=True):
+    go to ripple_late_recheck, which bounded-polls the store for the
+    late-arriving prediction and may interrupt for a suboptimal result.
+    Blocking mode (or background result already consumed by ripple_finalize):
+    ripple_pending is False → go straight to review_gate.
 
     review_gate uses dynamic interrupt() (like ripple_gate): low-risk drafts
     with auto_approve_low_risk enabled auto-pass inside the node (writing the
@@ -361,6 +367,9 @@ def visual_designer_router(
     """
     if _check_terminal(state):
         return "__end__"
+
+    if state.get("ripple_pending"):
+        return "ripple_late_recheck"
 
     return "review_gate"
 
@@ -433,3 +442,27 @@ def ripple_finalize_router(
         return "trend_scout"
 
     return "copywriter"
+
+
+def ripple_late_recheck_router(
+    state: XHSGrowthState,
+) -> Literal["review_gate", "content_strategist", "brief_analyzer", "trend_scout", "__end__"]:
+    """Route after ripple_late_recheck.
+
+    accept (or no interrupt — result acceptable / poll timeout fail-open) → review_gate.
+    reangle → content_strategist (trend) / brief_analyzer (brief).
+    retopic → trend_scout.
+    """
+    if terminal := _check_terminal(state):
+        return terminal
+
+    decision = state.get("ripple_decision") or {}
+    action = decision.get("action", "accept")
+
+    if action == "reangle":
+        mode = state.get("workflow_mode", "trend")
+        return "brief_analyzer" if mode == "brief" else "content_strategist"
+    if action == "retopic":
+        return "trend_scout"
+
+    return "review_gate"

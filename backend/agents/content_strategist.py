@@ -163,7 +163,7 @@ class ContentStrategistAgent(BaseAgent):
 
         if Settings().ripple.background and thread_id:
             # 后台模式：fire-and-forget Ripple，不阻塞主链
-            self._schedule_ripple_background(
+            await self._schedule_ripple_background(
                 store, thread_id, content_plan, ripple_timeout, ripple_env
             )
             content_plan["ripple_pending"] = True
@@ -344,7 +344,7 @@ class ContentStrategistAgent(BaseAgent):
         if play_id:
             content_plan["play_id"] = play_id
 
-    def _schedule_ripple_background(
+    async def _schedule_ripple_background(
         self,
         store: BaseStore,
         thread_id: str,
@@ -358,7 +358,13 @@ class ContentStrategistAgent(BaseAgent):
         store namespace ``ripple/{thread_id}`` key ``result``, and emits a
         WORKFLOW_DATA_UPDATED event. Exceptions are isolated — logged via done
         callback, never crash the main workflow chain.
+
+        Clears any stale result from a prior run (e.g. a reangle cycle) before
+        scheduling, so ``ripple_finalize`` / ``ripple_late_recheck`` never read
+        the previous angle's prediction as if it were fresh.
         """
+
+        await self._safe_store_delete(store, thread_id)
 
         async def _run() -> None:
             stored: dict[str, Any] = {"ripple_pending": False}
@@ -420,13 +426,8 @@ class ContentStrategistAgent(BaseAgent):
             if exc:
                 logger.error(f"Ripple background task failed: {exc}", exc_info=True)
 
-        try:
-            task = asyncio.create_task(_run())
-            task.add_done_callback(_on_done)
-        except RuntimeError:
-            # No running event loop — degrade to blocking would defeat the
-            # purpose; just log and continue without ripple.
-            logger.warning("No event loop for background Ripple, skipping")
+        task = asyncio.create_task(_run())
+        task.add_done_callback(_on_done)
 
     @staticmethod
     async def _safe_store_put(store: BaseStore, thread_id: str, value: dict[str, Any]) -> None:
@@ -435,6 +436,17 @@ class ContentStrategistAgent(BaseAgent):
             await store.aput(("ripple", thread_id), "result", value=value)
         except Exception as e:
             logger.error(f"Failed to persist Ripple background result: {e}", exc_info=True)
+
+    @staticmethod
+    async def _safe_store_delete(store: BaseStore, thread_id: str) -> None:
+        """Clear a stale Ripple result before re-scheduling (reangle/retopic).
+
+        Best-effort: a missing key or store error must not block the new run.
+        """
+        try:
+            await store.adelete(("ripple", thread_id), "result")
+        except Exception as e:
+            logger.warning(f"Failed to clear stale Ripple result for {thread_id}: {e}")
 
     async def _ripple_cancel_safely(self, job_id: str) -> None:
         """Best-effort cancel — never raises into the background task."""

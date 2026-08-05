@@ -107,12 +107,18 @@ class TestRippleFinalizeNode:
         assert result["ripple_pending"] is False
 
     @pytest.mark.asyncio
-    async def test_store_none_passes_pending_reason(self, mock_store):
-        """ripple_pending=True + store None (still running) → pass-through with reason=pending."""
+    async def test_store_none_keeps_pending(self, mock_store):
+        """ripple_pending=True + store None (still running) → keep ripple_pending=True.
+
+        Finalize no longer consumes the pending flag when the store is empty;
+        the late-arriving result is recovered by ripple_late_recheck after
+        visual_designer. ripple_reason is set to "pending" so downstream can
+        tell the prediction is not yet available.
+        """
         state = _state(ripple_pending=True)
         mock_store.aget = AsyncMock(return_value=None)
         result = await ripple_finalize_node(state, store=mock_store)
-        assert result["ripple_pending"] is False
+        assert result["ripple_pending"] is True
         assert result["ripple_reason"] == "pending"
         assert "ripple_prediction" not in result
 

@@ -40,6 +40,10 @@ _LAZY_EXPORTS = {
     "revise_content_node": ("backend.agents.nodes.revise_content", "revise_content_node"),
     "ripple_finalize_node": ("backend.agents.nodes.ripple_finalize", "ripple_finalize_node"),
     "ripple_gate_node": ("backend.agents.nodes.ripple_gate", "ripple_gate_node"),
+    "ripple_late_recheck_node": (
+        "backend.agents.nodes.ripple_late_recheck",
+        "ripple_late_recheck_node",
+    ),
     "shooting_planner_node": ("backend.agents.nodes.shooting_planner", "shooting_planner_node"),
     "trend_scout_node": ("backend.agents.nodes.trend_scout", "trend_scout_node"),
     "visual_designer_node": ("backend.agents.nodes.visual_designer", "visual_designer_node"),
@@ -63,6 +67,7 @@ __all__ = [
     # Ripple gate
     "ripple_gate_node",
     "ripple_finalize_node",
+    "ripple_late_recheck_node",
     # Brief mode nodes
     "brief_analyzer_node",
     "brief_gate_node",

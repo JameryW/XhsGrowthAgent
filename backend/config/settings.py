@@ -87,6 +87,10 @@ class RippleSettings(BaseSettings):
     enabled: bool = False
     # 后台模式：strategist fire-and-forget Ripple，不阻塞主链；结果由 ripple_finalize 读回
     background: bool = False
+    # ripple_late_recheck 节点 bounded poll cap（秒）。background 模式下 copywriter+
+    # visual 与 Ripple 并发，recheck 在 review_gate 前等剩余 Ripple 时间，超时则 fail-open
+    # 不阻塞 publish。应 <= workflow_timeout。
+    late_recheck_timeout: int = 300
     health_check_interval: float = 30.0
     # LLM config passed to Ripple engine for simulation roles
     llm_model: str = "deepseek-v4-flash"
