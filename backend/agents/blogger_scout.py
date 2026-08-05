@@ -20,7 +20,7 @@ logger = logging.getLogger("xhs_growth.blogger_scout")
 class BloggerScoutAgent(BaseAgent):
     """博主发现 Agent — 从赛道热门笔记中提取博主并排序."""
 
-    task_type = TaskType.SCOUTING
+    task_type = TaskType.MOCK_GEN
     agent_name = "blogger_scout"
     prompt_file = "blogger_scout.yaml"
 

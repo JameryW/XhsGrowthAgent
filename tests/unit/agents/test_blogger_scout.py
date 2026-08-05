@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from backend.agents.blogger_scout import BloggerScoutAgent
+from backend.config.models import TaskType
 from backend.state.enums import WorkflowMode, WorkflowPhase
 
 
@@ -56,6 +57,12 @@ class TestBloggerScoutAgent:
         """Verify agent class attributes."""
         assert agent.agent_name == "blogger_scout"
         assert agent.prompt_file == "blogger_scout.yaml"
+
+    def test_task_type_is_mock_gen(self, agent):
+        """blogger_scout routes to MOCK_GEN (轻模型) for虚构候选生成,
+        not SCOUTING (which trend_scout keeps for真实趋势分析)."""
+        assert agent.task_type == TaskType.MOCK_GEN
+        assert agent.task_type != TaskType.SCOUTING
 
     def test_extract_keywords_trend_mode(self, agent, trend_state):
         """Extract keywords from trend mode state."""
