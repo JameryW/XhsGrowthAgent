@@ -202,7 +202,7 @@ class RippleService:
             self._health_status = RippleHealthStatus(
                 is_healthy=False, last_check="error", error=str(e), reason="error"
             )
-            logger.error(f"Ripple health check error: {e}")
+            logger.error(f"Ripple health check error: {type(e).__name__}: {e}")
 
         return self._health_status
 
@@ -297,7 +297,7 @@ class RippleService:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error(f"Ripple background health check crashed: {e}")
+            logger.error(f"Ripple background health check crashed: {type(e).__name__}: {e}")
 
     def _emit_progress(
         self,
@@ -522,7 +522,7 @@ class RippleService:
                 raise
 
             except Exception as e:
-                logger.error(f"Ripple request error: {e}")
+                logger.error(f"Ripple request error: {type(e).__name__}: {e}")
                 raise
 
         return {"error": "max_retries_exceeded"}
@@ -656,7 +656,7 @@ class RippleService:
             # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
             raise
         except Exception as e:
-            logger.error(f"Ripple spread prediction failed: {e}")
+            logger.error(f"Ripple spread prediction failed: {type(e).__name__}: {e}")
             if use_fallback:
                 return self._default_spread_prediction()
             return {"error": str(e)}
@@ -736,7 +736,7 @@ class RippleService:
             # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
             raise
         except Exception as e:
-            logger.error(f"Ripple PMF validation failed: {e}")
+            logger.error(f"Ripple PMF validation failed: {type(e).__name__}: {e}")
             if use_fallback:
                 return self._default_pmf_result()
             return {"error": str(e)}
