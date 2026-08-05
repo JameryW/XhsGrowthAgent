@@ -28,6 +28,7 @@ from backend.agents.nodes import (
     revise_content_node,
     ripple_finalize_node,
     ripple_gate_node,
+    ripple_late_recheck_node,
     shooting_planner_node,
     trend_scout_node,
     visual_designer_node,
@@ -52,6 +53,7 @@ from backend.graph.routers import (
     review_outcome,
     ripple_finalize_router,
     ripple_gate_router,
+    ripple_late_recheck_router,
     shooting_planner_router,
     should_continue,
     should_plan,
@@ -101,6 +103,11 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     builder.add_node("ripple_gate", ripple_gate_node)
     # Ripple finalize — reads background Ripple result from store (background mode only)
     builder.add_node("ripple_finalize", ripple_finalize_node)
+    # Ripple late-recheck — bounded-polls the store after visual_designer for
+    # the late-arriving background Ripple result (background mode only). Inserts
+    # between visual_designer and review_gate so copywriter+visual run concurrent
+    # with Ripple; interrupts for a suboptimal result.
+    builder.add_node("ripple_late_recheck", ripple_late_recheck_node)
     # 发布前优化节点
     builder.add_node("draft_gate", draft_gate_node)
     builder.add_node("viral_matcher", viral_matcher_node)
@@ -291,14 +298,34 @@ def build_graph() -> StateGraph[XHSGrowthState]:
         },
     )
 
-    # visual_designer → review_gate (both modes go through review)
+    # visual_designer → [ripple_late_recheck | review_gate | __end__]
+    # Background mode with a still-pending Ripple result → ripple_late_recheck
+    # (bounded-polls the store for the late-arriving prediction, may interrupt).
+    # Blocking mode or result already consumed → review_gate directly.
     # review_gate uses dynamic interrupt() (like ripple_gate): low-risk auto-pass
     # happens inside the node, so the router never bypasses it.
     builder.add_conditional_edges(
         "visual_designer",
         visual_designer_router,
         {
+            "ripple_late_recheck": "ripple_late_recheck",
             "review_gate": "review_gate",
+            "__end__": END,
+        },
+    )
+
+    # ripple_late_recheck → [review_gate | content_strategist | brief_analyzer |
+    # trend_scout | __end__] accept (or poll-timeout fail-open) → review_gate;
+    # reangle → strategist/brief_analyzer; retopic → trend_scout. Mirrors
+    # ripple_finalize_router but accept lands at review_gate (after visual).
+    builder.add_conditional_edges(
+        "ripple_late_recheck",
+        ripple_late_recheck_router,
+        {
+            "review_gate": "review_gate",
+            "content_strategist": "content_strategist",
+            "brief_analyzer": "brief_analyzer",
+            "trend_scout": "trend_scout",
             "__end__": END,
         },
     )

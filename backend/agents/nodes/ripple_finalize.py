@@ -3,6 +3,12 @@
 Only meaningful in RIPPLE_BACKGROUND mode. In blocking mode the strategist
 already wrote ripple_prediction to state and ripple_gate already ran, so this
 node is a pass-through (no store result, no interrupt).
+
+In background mode, if the store result has not arrived yet (Ripple still
+running), this node keeps ``ripple_pending=True`` and passes through — the
+late-arriving result is recovered by ``ripple_late_recheck`` after
+visual_designer. If the result is present, this node writes it to state and
+optionally interrupts (same logic as recheck, but runs before copywriter).
 """
 
 from __future__ import annotations
@@ -32,7 +38,8 @@ def _is_suboptimal(prediction: dict[str, Any], pmf: dict[str, Any]) -> bool:
 async def ripple_finalize_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Read background Ripple result from store; interrupt if suboptimal.
 
-    - If store has no result yet (still running or failed) → pass through
+    - If store has no result yet (still running) → keep ripple_pending=True and
+      pass through (ripple_late_recheck recovers the late result after visual)
     - If result is acceptable → write ripple_prediction/ripple_pmf to state
     - If suboptimal AND reselect_count < 2 → interrupt for user decision
     - If suboptimal AND reselect_count >= 2 → accept (prevent loops)
@@ -50,10 +57,12 @@ async def ripple_finalize_node(state: XHSGrowthState, *, store: BaseStore) -> di
 
     item = await store.aget(("ripple", thread_id), "result")
     if item is None:
-        # Still running or never wrote — don't block the main chain
+        # Still running — leave ripple_pending=True so the late-recheck node
+        # (after visual_designer) polls the store for the late-arriving result.
+        # Late data recovery is ripple_late_recheck's job, not this node's.
         logger.info(f"Ripple background result not yet available for {thread_id}")
         return NodeResult(
-            {"ripple_pending": False, "ripple_reason": "pending"},
+            {"ripple_pending": True, "ripple_reason": "pending"},
             "ripple_finalize",
         ).to_dict()
 

@@ -12,6 +12,7 @@ from backend.graph.routers import (
     review_outcome,
     ripple_finalize_router,
     ripple_gate_router,
+    ripple_late_recheck_router,
     shooting_planner_router,
     should_continue,
     should_plan,
@@ -494,6 +495,36 @@ class TestRippleFinalizeRouter:
         assert ripple_finalize_router(state) == "__end__"
 
 
+class TestRippleLateRecheckRouter:
+    """Tests for ripple_late_recheck_router — accept lands at review_gate."""
+
+    def test_accept_routes_to_review_gate(self):
+        """Accept (or no interrupt — result acceptable / poll timeout) → review_gate."""
+        state = {"ripple_decision": {"action": "accept"}}
+        assert ripple_late_recheck_router(state) == "review_gate"
+
+    def test_default_accept_routes_to_review_gate(self):
+        """No decision (background result accepted silently) → review_gate."""
+        state = {}
+        assert ripple_late_recheck_router(state) == "review_gate"
+
+    def test_reangle_trend_routes_to_strategist(self):
+        state = {"ripple_decision": {"action": "reangle"}, "workflow_mode": "trend"}
+        assert ripple_late_recheck_router(state) == "content_strategist"
+
+    def test_reangle_brief_routes_to_brief_analyzer(self):
+        state = {"ripple_decision": {"action": "reangle"}, "workflow_mode": "brief"}
+        assert ripple_late_recheck_router(state) == "brief_analyzer"
+
+    def test_retopic_routes_to_trend_scout(self):
+        state = {"ripple_decision": {"action": "retopic"}}
+        assert ripple_late_recheck_router(state) == "trend_scout"
+
+    def test_cancelled_routes_to_end(self):
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert ripple_late_recheck_router(state) == "__end__"
+
+
 class TestBloggerGateRouter:
     """Tests for blogger_gate_router conditional edge."""
 
@@ -582,9 +613,14 @@ class TestVisualDesignerRouter:
     """Tests for visual_designer_router."""
 
     def test_routes_to_review_gate(self):
-        """Normal → review_gate."""
+        """Normal (blocking mode, no pending Ripple) → review_gate."""
         state = {"phase": WorkflowPhase.CREATING}
         assert visual_designer_router(state) == "review_gate"
+
+    def test_background_pending_routes_to_late_recheck(self):
+        """ripple_pending=True (background result not yet consumed) → ripple_late_recheck."""
+        state = {"phase": WorkflowPhase.CREATING, "ripple_pending": True}
+        assert visual_designer_router(state) == "ripple_late_recheck"
 
     def test_cancelled_routes_to_end(self):
         """CANCELLED → __end__."""
