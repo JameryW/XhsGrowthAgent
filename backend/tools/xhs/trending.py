@@ -63,7 +63,7 @@ async def xhs_trending(category: str = "", account_id: str = "") -> list[dict[st
         return results
 
     except Exception as e:
-        logger.error(f"获取热门话题失败: {e}")
+        logger.error(f"获取热门话题失败: {type(e).__name__}: {e}")
         return []
 
     finally:
@@ -103,7 +103,7 @@ async def keyword_monitor(keywords: list[str], account_id: str = "") -> list[dic
         return results
 
     except Exception as e:
-        logger.error(f"关键词监控失败: {e}")
+        logger.error(f"关键词监控失败: {type(e).__name__}: {e}")
         return []
 
     finally:
@@ -171,7 +171,7 @@ async def competitor_analyzer(
         ]
 
     except Exception as e:
-        logger.error(f"竞品分析失败: {e}")
+        logger.error(f"竞品分析失败: {type(e).__name__}: {e}")
         return []
 
     finally:
