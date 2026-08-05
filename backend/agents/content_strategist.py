@@ -515,14 +515,15 @@ class ContentStrategistAgent(BaseAgent):
             if not topic:
                 return None
 
+            ripple_cfg = Settings().ripple
             result = await predict_spread(
                 topic=topic,
                 content_type=content_plan.get("content_type", "note"),
                 tags=content_plan.get("hashtags", []),
                 tone=content_plan.get("content_angle", ""),
                 description=content_plan.get("content_angle", ""),
-                max_waves=3,
-                simulation_horizon="12h",
+                max_waves=ripple_cfg.default_max_waves,
+                simulation_horizon=ripple_cfg.default_simulation_horizon,
                 max_wait=max_wait,
                 thread_id=thread_id,
                 environment=environment,
@@ -565,14 +566,15 @@ class ContentStrategistAgent(BaseAgent):
             if not topic:
                 return None
 
+            ripple_cfg = Settings().ripple
             result = await validate_pmf(
                 product_name=topic,
                 category=content_plan.get("content_type", "note"),
                 description=content_plan.get("content_angle", ""),
                 differentiators=content_plan.get("key_points", []),
-                max_waves=3,
-                simulation_horizon="12h",
-                ensemble_runs=1,
+                max_waves=ripple_cfg.default_max_waves,
+                simulation_horizon=ripple_cfg.default_simulation_horizon,
+                ensemble_runs=ripple_cfg.default_ensemble_runs,
                 max_wait=max_wait,
                 thread_id=thread_id,
             )
