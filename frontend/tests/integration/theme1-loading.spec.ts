@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
-import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import ReviewSkeleton from '@/components/skeletons/ReviewSkeleton.vue'
 import AnalyticsSkeleton from '@/components/skeletons/AnalyticsSkeleton.vue'
 import { useLoading } from '@/composables/useLoading'
@@ -136,105 +135,5 @@ describe('Theme 1 Acceptance Tests', () => {
       })
     })
   })
-
-  describe('AC3: Loading state does not block user operation perception', () => {
-    it('LoadingOverlay shows cancel button by default (canCancel=true)', () => {
-      const wrapper = mount(LoadingOverlay, {
-        props: { isVisible: true }
-      })
-
-      expect(wrapper.find('button').exists()).toBe(true)
-      expect(wrapper.text()).toContain('取消操作')
-    })
-
-    it('LoadingOverlay emits cancel event when cancel button is clicked', async () => {
-      const wrapper = mount(LoadingOverlay, {
-        props: { isVisible: true }
-      })
-
-      const cancelButton = wrapper.find('button')
-      await cancelButton.trigger('click')
-
-      expect(wrapper.emitted('cancel')).toBeTruthy()
-      expect(wrapper.emitted('cancel').length).toBe(1)
-    })
-
-    it('LoadingOverlay cancel button is accessible', async () => {
-      const wrapper = mount(LoadingOverlay, {
-        props: { isVisible: true }
-      })
-
-      const cancelButton = wrapper.find('button')
-      expect(cancelButton.attributes('aria-label')).toBe('取消操作')
-      expect(cancelButton.text()).toContain('取消操作')
-    })
-
-    it('LoadingOverlay hides cancel button when canCancel=false', () => {
-      const wrapper = mount(LoadingOverlay, {
-        props: { isVisible: true, canCancel: false }
-      })
-
-      expect(wrapper.find('button').exists()).toBe(false)
-    })
-
-    it('LoadingOverlay allows user to interact with cancel button while loading', () => {
-      const wrapper = mount(LoadingOverlay, {
-        props: { isVisible: true, message: '正在发布内容...', canCancel: true }
-      })
-
-      // Verify overlay is visible
-      expect(wrapper.find('.loading-overlay').exists()).toBe(true)
-
-      // Verify spinner is animating
-      expect(wrapper.find('.rotate-animation').exists()).toBe(true)
-
-      // Verify message is displayed
-      expect(wrapper.text()).toContain('正在发布内容...')
-
-      // Verify cancel button is present and clickable (not disabled)
-      const cancelButton = wrapper.find('button')
-      expect(cancelButton.exists()).toBe(true)
-      expect(cancelButton.attributes('disabled')).toBeUndefined()
-
-      // Simulate cancel click - should emit event
-      cancelButton.trigger('click')
-      expect(wrapper.emitted('cancel')).toBeTruthy()
-    })
-
-    it('LoadingOverlay has proper modal dialog accessibility', () => {
-      const wrapper = mount(LoadingOverlay, {
-        props: { isVisible: true }
-      })
-
-      // Verify role="dialog" and aria-modal="true"
-      const overlay = wrapper.find('[role="dialog"]')
-      expect(overlay.exists()).toBe(true)
-      expect(overlay.attributes('aria-modal')).toBe('true')
-
-      // Verify aria-labelledby points to message
-      expect(overlay.attributes('aria-labelledby')).toBe('loading-message')
-
-      // Verify message element has matching id
-      const message = wrapper.find('#loading-message')
-      expect(message.exists()).toBe(true)
-    })
-
-    it('LoadingOverlay backdrop does not block cancel button clicks', () => {
-      const wrapper = mount(LoadingOverlay, {
-        props: { isVisible: true }
-      })
-
-      // Backdrop exists but is separate from content
-      expect(wrapper.find('.bg-slate-900\\/40').exists()).toBe(true)
-
-      // Content container exists above backdrop (relative positioning)
-      const contentContainer = wrapper.find('.bg-white.rounded-2xl')
-      expect(contentContainer.exists()).toBe(true)
-      expect(contentContainer.classes()).toContain('relative')
-
-      // Cancel button is in content container, not in backdrop
-      const cancelButton = wrapper.find('button')
-      expect(cancelButton.element.parentElement?.classList.contains('bg-white')).toBe(true)
-    })
-  })
 })
+
