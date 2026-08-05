@@ -25,6 +25,7 @@ class BriefAnalyzerAgent(BaseAgent):
     prompt_file = "brief_analyzer.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        self._reset_llm_perf()
         account_id = state.get("account_id", "default")
         brief_content = state.get("brief_content", {})
         raw_text = brief_content.get("raw_text", "")
@@ -68,7 +69,7 @@ class BriefAnalyzerAgent(BaseAgent):
 - notes: 特殊注意事项列表
 - confidence: 解析置信度 (0-1，信息越模糊越低)"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),
@@ -143,7 +144,7 @@ class BriefAnalyzerAgent(BaseAgent):
 - options: 2-3个建议选项列表
 - inferred_value: LLM 推断的默认值"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),

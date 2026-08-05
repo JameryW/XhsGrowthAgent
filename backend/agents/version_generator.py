@@ -33,6 +33,7 @@ class VersionGeneratorAgent(BaseAgent):
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         """执行版本生成."""
+        self._reset_llm_perf()
         style_selected = state.get("style_selected", False)
         draft = cast("dict[str, Any] | None", state.get("draft_content"))
         analysis = cast("dict[str, Any] | None", state.get("optimization_analysis"))
@@ -146,7 +147,7 @@ class VersionGeneratorAgent(BaseAgent):
   ]
 }}"""
 
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),
@@ -244,7 +245,7 @@ class VersionGeneratorAgent(BaseAgent):
 """
 
         # 调用 LLM
-        response = await self.model.ainvoke(
+        response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),
