@@ -113,7 +113,9 @@ def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | No
         TaskType.PUBLISHING: "astron-code-latest",
         TaskType.ENGAGEMENT: "astron-code-latest",
         # 新增
-        TaskType.VIRAL_MATCHING: "astron-code-latest",
+        # VIRAL_MATCHING fabricates viral-post references (no real XHS search),
+        # so a lighter model suffices; optimization_error fallback covers LLM failures.
+        TaskType.VIRAL_MATCHING: "deepseek-v4-flash",
         TaskType.CONTENT_ANALYSIS: "astron-code-latest",
         TaskType.VERSION_GEN: "astron-code-latest",
         TaskType.BRIEF_ANALYSIS: "astron-code-latest",
