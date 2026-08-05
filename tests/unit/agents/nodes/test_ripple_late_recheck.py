@@ -169,7 +169,7 @@ class TestRippleLateRecheckNode:
         state = _state(ripple_pending=True)
         mock_store.aget = AsyncMock(return_value=None)
         with (
-            patch("backend.config.settings.Settings") as mock_settings,
+            patch("backend.agents.nodes.ripple_late_recheck.Settings") as mock_settings,
             patch(
                 "backend.agents.nodes.ripple_late_recheck.asyncio.sleep", new=AsyncMock()
             ) as mock_sleep,
@@ -195,7 +195,7 @@ class TestRippleLateRecheckNode:
         )
         mock_store.aget = AsyncMock(side_effect=[None, None, good])
         with (
-            patch("backend.config.settings.Settings") as mock_settings,
+            patch("backend.agents.nodes.ripple_late_recheck.Settings") as mock_settings,
             patch("backend.agents.nodes.ripple_late_recheck.asyncio.sleep", new=AsyncMock()),
         ):
             mock_settings.return_value.ripple.late_recheck_timeout = 60
