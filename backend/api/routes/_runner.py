@@ -35,6 +35,20 @@ _background_tasks: dict[str, asyncio.Task[Any]] = {}
 _last_status: dict[str, WorkflowStatus] = {}
 
 
+def _fields_differ(fields: dict[str, Any], existing: Any) -> bool:
+    """True if any field in ``fields`` differs from the existing WorkflowRow.
+
+    Used by :func:`_db_upsert` to skip no-op UPDATEs on the /status poll path.
+    Missing attributes on ``existing`` count as differing (write to be safe).
+    """
+    for key, new_value in fields.items():
+        if not hasattr(existing, key):
+            return True
+        if getattr(existing, key) != new_value:
+            return True
+    return False
+
+
 async def _db_upsert(thread_id: str, **fields: Any) -> None:
     """Create or update a workflow row in DB. No-ops if DB is unavailable."""
     try:
@@ -57,6 +71,15 @@ async def _db_upsert(thread_id: str, **fields: Any) -> None:
 
         existing = await db_get(thread_id)
         if existing:
+            # ponytail: skip the write when nothing changed. /status polls every
+            # 5s (frontend workflow.ts startPolling) and calls _db_upsert with the
+            # same phase/status/progress each tick — a no-op UPDATE still costs a
+            # DB round trip + row lock. Comparing against the fetched row first
+            # makes unchanged polls read-only. Callers that mutate state
+            # (start/resume/pause/cancel) always pass a differing field, so they
+            # still write.
+            if not _fields_differ(fields, existing):
+                return
             await db_update(thread_id, **fields)
         else:
             row = WorkflowRow(thread_id=thread_id, **fields)
