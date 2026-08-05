@@ -1647,3 +1647,36 @@ WorkflowReplay spec 适配 manifest 内嵌结果优化（696 全绿）；:global
 ### Next Steps
 
 - None - task complete
+
+
+## Session 84: creator_stats 同步周期改 24h
+
+**Date**: 2026-08-06
+**Task**: creator_stats 同步周期改 24h
+**Branch**: `main`
+
+### Summary
+
+creator_stats 调度基线 36h→24h(保留反风控三角分布)。根因: deploy.sh env 兜底 CREATOR_STATS_SYNC_INTERVAL_HOURS=36 覆盖 settings 代码默认,光改 settings 无效。三处对齐: settings.py/deploy.sh/.env.example。正文不同步现状不变(公开页爬取永久禁用)。部署验证 interval_hours=24.0 生效。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `98114060` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
