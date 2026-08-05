@@ -1680,3 +1680,36 @@ creator_stats 调度基线 36h→24h(保留反风控三角分布)。根因: depl
 ### Next Steps
 
 - None - task complete
+
+
+## Session 85: prod 开启 RIPPLE_BACKGROUND content_strategist 异步化
+
+**Date**: 2026-08-06
+**Task**: prod 开启 RIPPLE_BACKGROUND content_strategist 异步化
+**Branch**: `main`
+
+### Summary
+
+content_strategist 352s 同步阻塞根因: RIPPLE_BACKGROUND 未设默认 False。代码已支持 background mode(PR#466 fire-and-forget+late_recheck+stale race 修复),只差 env 开关。deploy.sh+.env.example 加 RIPPLE_BACKGROUND=1(默认开),补 _schedule_ripple_background 7 单测(persist/timeout/unreachable/stale-delete/exception-isolation/event-emit)。关键: RIPPLE_BACKGROUND 不在 system_config SYSTEM_KEYS 白名单,env 不被 DB 覆盖(避开 sync_interval 那次陷阱)。不改 settings 默认(保 sync 测试),不动 graph/节点。trellis-check 0 问题,396 回归绿。部署验证 env=1 生效。收益: content_strategist 352s→<10s。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5d88ffe5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
