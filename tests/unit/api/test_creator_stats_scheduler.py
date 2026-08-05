@@ -687,11 +687,15 @@ async def test_scheduler_arms_skip_after_riskish_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_scheduler_skips_when_weekly_budget_exhausted(monkeypatch):
     app = _scheduler_app()
+    # Relative timestamps so the 7-day rolling window can't flake as the real
+    # clock crosses the boundary (hard-coded calendar dates drift out of the
+    # window once "now" passes their time-of-day). 3 successes in 7d == budget.
+    now = datetime.now(UTC)
     app.state.creator_stats_scheduler_status = {
         "success_timestamps": [
-            "2026-07-29T10:00:00+00:00",
-            "2026-07-30T10:00:00+00:00",
-            "2026-07-31T01:00:00+00:00",
+            (now - timedelta(days=1)).isoformat(),
+            (now - timedelta(days=2)).isoformat(),
+            (now - timedelta(days=3)).isoformat(),
         ]
     }
     sleep_calls: list[float] = []
