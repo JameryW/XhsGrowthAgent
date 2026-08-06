@@ -141,3 +141,36 @@ class TestRippleFinalizeNode:
         result = await ripple_finalize_node(state, store=mock_store)
         mock_store.aget.assert_not_called()
         assert "ripple_prediction" not in result
+
+    @pytest.mark.asyncio
+    async def test_gate_viral_threshold_read_from_settings(self, mock_store):
+        """Raising gate_viral_threshold via Settings makes a viral_probability=0.8
+        result (acceptable at the default 0.4) trigger the finalize interrupt.
+
+        Pins the wiring extracted from the old hardcoded ``_VIRAL_PROB_THRESHOLD``
+        gate: with the threshold raised to 0.9, 0.8 < 0.9 fires the interrupt.
+        Non-vacuous — reverts to the hardcoded ``0.4`` literal (0.8 is not < 0.4)
+        and this fails (no interrupt called).
+        """
+        state = _state(ripple_pending=True, reselect_count=0)
+        mock_store.aget = AsyncMock(
+            return_value=_store_item(
+                {
+                    "ripple_pending": False,
+                    "ripple_prediction": {"viral_probability": 0.8},
+                    "ripple_pmf": {"pmf_score": 0.7},
+                }
+            )
+        )
+        with (
+            patch("backend.agents.nodes.ripple_finalize.Settings") as mock_settings,
+            patch(
+                "backend.agents.nodes.ripple_finalize.interrupt",
+                return_value={"action": "accept"},
+            ) as mock_int,
+        ):
+            mock_settings.return_value.ripple.gate_viral_threshold = 0.9
+            mock_settings.return_value.ripple.gate_pmf_threshold = 0.5
+            mock_settings.return_value.ripple.max_reselect_count = 2
+            await ripple_finalize_node(state, store=mock_store)
+        mock_int.assert_called_once()
