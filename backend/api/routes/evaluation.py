@@ -33,6 +33,7 @@ from backend.api.account_scope import (
 )
 from backend.api.deps import get_current_user
 from backend.api.errors import CreatorNoteNotFoundError, ValidationError, WorkflowNotFoundError
+from backend.api.latency import LatencyTimer
 from backend.api.responses import ApiResponse, success
 from backend.db.accounts import get_account
 from backend.db.pool import is_pool_ready
@@ -329,17 +330,31 @@ async def get_evaluation_result(
 
     owned_account_id = await assert_thread_owned(str(user["id"]), thread_id, account_id)
 
+    _lat = (
+        LatencyTimer("/evaluation/result", thread_id)
+        if LatencyTimer.should_sample("/evaluation/result")
+        else None
+    )
+
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    state = await graph.aget_state(config)
+    if _lat:
+        with _lat.segment("aget_state"):
+            state = await graph.aget_state(config)
+    else:
+        state = await graph.aget_state(config)
     values = _get_state_values(state)
     if not values:
         raise WorkflowNotFoundError(thread_id)
 
     evaluation = values.get("evaluation_result") or {}
-    thresholds = await _score_thresholds(owned_account_id)
-    return success(
+    if _lat:
+        with _lat.segment("db"):
+            thresholds = await _score_thresholds(owned_account_id)
+    else:
+        thresholds = await _score_thresholds(owned_account_id)
+    _resp = success(
         data={
             "thread_id": thread_id,
             "has_evaluation": bool(evaluation),
@@ -366,6 +381,9 @@ async def get_evaluation_result(
             else "legacy_compatible",
         }
     )
+    if _lat:
+        _lat.emit(phase="ok")
+    return _resp
 
 
 @router.post("/run/{thread_id}")
