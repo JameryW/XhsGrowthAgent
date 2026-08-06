@@ -26,6 +26,7 @@ from backend.api.account_scope import (
 )
 from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError, WorkflowNotFoundError
+from backend.api.latency import LatencyTimer
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 from backend.db.pool import is_pool_ready
@@ -699,10 +700,16 @@ async def get_workflow_status(
 
     await assert_thread_owned(str(user["id"]), thread_id)
 
+    _lat = LatencyTimer("/status", thread_id) if LatencyTimer.should_sample("/status") else None
+
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    state = await graph.aget_state(config)
+    if _lat:
+        with _lat.segment("aget_state"):
+            state = await graph.aget_state(config)
+    else:
+        state = await graph.aget_state(config)
 
     # Check if workflow exists in live graph state
     if state.values and state.values.get("session_id") is not None:
@@ -775,13 +782,21 @@ async def get_workflow_status(
             if wm:
                 update_fields["workflow_mode"] = wm
 
-        await _db_upsert(thread_id, **update_fields)
+        if _lat:
+            with _lat.segment("db"):
+                await _db_upsert(thread_id, **update_fields)
+        else:
+            await _db_upsert(thread_id, **update_fields)
 
         # Resolve label for response: prefer DB/persisted label, then auto-generated
         label = update_fields.get("label", "")
         if not label:
             row = await db_get(thread_id) if is_pool_ready() else None
             label = row.label if row else ""
+
+        _serialize_seg = _lat.segment("serialize") if _lat else None
+        if _serialize_seg:
+            _serialize_seg.__enter__()
 
         perf_log = state.values.get("performance_log") or []
         # ponytail: filter to node-level entries (kind=="node" or absent for
@@ -800,7 +815,7 @@ async def get_workflow_status(
             if entry.get("kind", "node") == "node"
         ]
 
-        return success(
+        _resp = success(
             data=WorkflowStatusResponse(
                 thread_id=thread_id,
                 phase=phase,
@@ -841,6 +856,11 @@ async def get_workflow_status(
                 orphan=is_orphan,
             ).model_dump()
         )
+        if _serialize_seg:
+            _serialize_seg.__exit__(None, None, None)
+        if _lat:
+            _lat.emit(phase=phase)
+        return _resp
 
     # Fallback 1: check history file (pre-DB completed workflows)
     saved = _load_history_file(thread_id)
@@ -1776,13 +1796,26 @@ async def list_workflows_endpoint(
 ) -> ApiResponse[Any]:
     """列出工作流 — 从 DB 查询，按创建时间倒序（单账号隔离，禁止全量聚合）."""
     account_id = await resolve_required_account_id(str(user["id"]), account_id)
+    _lat = LatencyTimer("/list", account_id) if LatencyTimer.should_sample("/list") else None
     if is_pool_ready():
-        rows, total = await db_list(
-            account_id=account_id,
-            status=status,
-            limit=limit,
-            offset=offset,
-        )
+        if _lat:
+            with _lat.segment("db"):
+                rows, total = await db_list(
+                    account_id=account_id,
+                    status=status,
+                    limit=limit,
+                    offset=offset,
+                )
+        else:
+            rows, total = await db_list(
+                account_id=account_id,
+                status=status,
+                limit=limit,
+                offset=offset,
+            )
+        _serialize_seg = _lat.segment("serialize") if _lat else None
+        if _serialize_seg:
+            _serialize_seg.__enter__()
         workflows: list[dict[str, Any]] = []
         for r in rows:
             item = r.to_dict()
@@ -1802,7 +1835,7 @@ async def list_workflows_endpoint(
             else:
                 item["orphan"] = False
             workflows.append(item)
-        return success(
+        _resp = success(
             data={
                 "workflows": workflows,
                 "total": total,
@@ -1810,6 +1843,11 @@ async def list_workflows_endpoint(
                 "offset": offset,
             }
         )
+        if _serialize_seg:
+            _serialize_seg.__exit__(None, None, None)
+        if _lat:
+            _lat.emit(phase="ok")
+        return _resp
 
     # Fallback when DB is unavailable: return empty list
     return success(
@@ -1839,15 +1877,35 @@ async def workflow_account_totals(
     from backend.db.accounts import list_accounts as db_list_accounts
     from backend.db.workflows import count_workflows_for_accounts
 
-    owned = await db_list_accounts(owner_user_id=str(user["id"]))
-    ids = [a.id for a in owned if a.id]
+    _lat = (
+        LatencyTimer("/account-totals", str(user["id"]))
+        if LatencyTimer.should_sample("/account-totals")
+        else None
+    )
+    if _lat:
+        with _lat.segment("db"):
+            owned = await db_list_accounts(owner_user_id=str(user["id"]))
+            ids = [a.id for a in owned if a.id]
+    else:
+        owned = await db_list_accounts(owner_user_id=str(user["id"]))
+        ids = [a.id for a in owned if a.id]
     if not ids:
+        if _lat:
+            _lat.emit(phase="empty")
         return success(data={"totals": {}, "status": status})
 
     if not is_pool_ready():
+        if _lat:
+            _lat.emit(phase="no-pool")
         return success(data={"totals": {aid: 0 for aid in ids}, "status": status})
 
-    totals = await count_workflows_for_accounts(ids, status=status)
+    if _lat:
+        with _lat.segment("count"):
+            totals = await count_workflows_for_accounts(ids, status=status)
+    else:
+        totals = await count_workflows_for_accounts(ids, status=status)
+    if _lat:
+        _lat.emit(phase="ok")
     return success(data={"totals": totals, "status": status})
 
 
