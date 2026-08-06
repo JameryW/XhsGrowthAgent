@@ -1,0 +1,1 @@
+{"file": "prd.md", "reason": "AC: content_strategist:40-47 uses asyncio.gather for 4 recalls; :60-67 + :85 untouched; existing test_content_strategist.py green; new non-vacuous concurrency test fails on revert to serial; verify none of 4 recalls can raise to caller (each swallows own exceptions); pre-push triple."}
