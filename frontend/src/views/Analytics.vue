@@ -1053,10 +1053,14 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
       </summary>
 
-      <div class="grid grid-cols-3 gap-2 md:gap-4 mb-3 md:mb-5 mt-3 md:mt-5">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-3 md:mb-5 mt-3 md:mt-5">
         <div class="rounded-lg p-2 md:p-4 liquid-glass-rose liquid-glass-hover">
           <div class="text-[10px] md:text-xs text-rose-500 font-medium">{{ t('analytics.cost.total') }}</div>
           <div class="text-base md:text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
+        </div>
+        <div class="rounded-lg p-2 md:p-4 liquid-glass-violet liquid-glass-hover">
+          <div class="text-[10px] md:text-xs text-violet-500 font-medium">{{ t('analytics.cost.period_' + (analyticsStore.costData.period || 'weekly')) }}</div>
+          <div class="text-base md:text-xl font-bold text-violet-700">${{ analyticsStore.costData.period_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
         <div class="rounded-lg p-2 md:p-4 liquid-glass-amber liquid-glass-hover">
           <div class="text-[10px] md:text-xs text-amber-500 font-medium">{{ t('analytics.cost.today') }}</div>
