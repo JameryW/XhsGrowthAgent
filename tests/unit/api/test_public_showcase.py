@@ -20,6 +20,7 @@ from backend.api.routes.public_showcase import (
     revoke_showcase_visibility,
     update_showcase_visibility,
 )
+from backend.config.models import TaskType
 from backend.db.workflows import WorkflowRow
 
 
@@ -684,6 +685,7 @@ class TestGenerateCaseSummary:
 
         assert summary == "联系 [已脱敏邮箱] 获取春日减脂餐灵感"
         service.enrich_with_llm.assert_awaited_once()
+        assert service.enrich_with_llm.call_args.kwargs["task_type"] == TaskType.POLISH
 
     @pytest.mark.asyncio
     async def test_falls_back_to_content_excerpt_when_llm_fails(self):
