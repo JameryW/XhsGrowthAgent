@@ -105,3 +105,36 @@ Copywriter ran 4 independent read-only memory recalls serially before LLM call o
 ### Next Steps
 
 - None - task complete
+
+
+## Session 97: PR#503 content_strategist parallel memory recalls
+
+**Date**: 2026-08-07
+**Task**: PR#503 content_strategist parallel memory recalls
+**Branch**: `main`
+
+### Summary
+
+content_strategist ran 4 independent read-only memory recalls serially before main LLM call (recall_style/recall_plays/recall_benchmark/_recall_memory performance_insights, disjoint namespaces). Gathered into one asyncio.gather → ~3-4 fewer serial DB+store RTTs on costliest node (352s prod) path before WRITING→astron call. Exact PR#502 precedent, same idiom as content_strategist:218 ripple gather. All 4 recalls swallow own exceptions → no new exception surface. build_mode_creative_context + _score_trend_topics stay sequential (keep-simple). No helper needed (args fit ruff limit, unlike #502). Non-vacuous concurrency test filters gather calls to 4-awaitable one (module has 3 gathers: memory=4, ripple×2=2 each), revert-then-fail verified. Merged during ongoing GHA outage; no branch protection + local triple green (2100 pytest). Gather-parallel series: #502 copywriter, #503 strategist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `871aeba9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
