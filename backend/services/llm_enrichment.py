@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -119,7 +120,32 @@ class LLMEnrichmentService:
                     HumanMessage(content=user_content),
                 ]
             )
+            started_at = datetime.now(UTC).isoformat()
             response = await model.ainvoke(messages)
+
+            # Capture token cost for the cost dashboard. Only accumulates when a
+            # BaseAgent.__call__ scope set the ContextVar (workflow path); omp/
+            # manual standalone callers leave it unset (None) and we skip. The
+            # whole method is already in a try/except, but capture is itself
+            # best-effort so a bug here never trips the fallback path.
+            try:
+                from backend.agents.nodes._base import _tool_llm_cost, llm_perf_entry
+                from backend.config.models import get_model_id_for_task
+
+                bucket = _tool_llm_cost.get()
+                if bucket is not None:
+                    completed = datetime.now(UTC).isoformat()
+                    entry = llm_perf_entry(
+                        f"tool:{task_type.value}",
+                        response,
+                        get_model_id_for_task(task_type),
+                        started_at=started_at,
+                        completed_at=completed,
+                    )
+                    if entry is not None:
+                        bucket.append(entry)
+            except Exception as exc:  # best-effort: never break the call
+                logger.debug("tool llm cost capture failed for %s: %s", task_type.value, exc)
 
             # Parse response
             result = self._parse_json_response(response.content)

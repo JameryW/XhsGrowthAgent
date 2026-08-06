@@ -281,58 +281,75 @@ class BaseAgent(ABC):
         LangGraph's RetryPolicy (framework-level) only triggers on exceptions;
         by not raising we trade it for stateful cross-super-step retry.
         """
-        from backend.agents.nodes._base import node_perf_entry
+        from backend.agents.nodes._base import _tool_llm_cost, node_perf_entry
         from backend.core.error_handling import handle_agent_error
 
         started = _now_iso()
         retries = int(state.get("retry_count", 0) or 0)
+        # Set a per-execute tool-LLM-cost accumulator so enrich_with_llm calls
+        # made inside tools during execute() can append kind:"llm" entries.
+        # Drained + reset below (both paths) so tool-path token cost reaches
+        # performance_log and the /analytics/costs reader; the set/reset token
+        # isolates per-execute and prevents stale leakage across requests.
+        tool_token = _tool_llm_cost.set([])
         try:
-            result = await self.execute(state, store)
-        except Exception as e:
-            logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
-            # Stateful retry: return error state (not raise) so LangGraph
-            # merges it and should_plan/orchestrator routers can read
-            # retry_count to retry/terminate. See prd ADR-lite.
-            result = handle_agent_error(e, state, agent_name=self.agent_name)
-            # Best-effort failed perf entry — now possible because we return
-            # (not raise), so the dict reaches the reducer.
             try:
+                result = await self.execute(state, store)
+            except Exception as e:
+                logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
+                # Drain tool-path cost captured during execute() BEFORE building
+                # the failed entry so it rides the perf log; reset via token.
+                self._llm_perf_entries.extend(_tool_llm_cost.get() or [])
+                # Stateful retry: return error state (not raise) so LangGraph
+                # merges it and should_plan/orchestrator routers can read
+                # retry_count to retry/terminate. See prd ADR-lite.
+                result = handle_agent_error(e, state, agent_name=self.agent_name)
+                # Best-effort failed perf entry — now possible because we return
+                # (not raise), so the dict reaches the reducer.
+                try:
+                    entries = [
+                        node_perf_entry(
+                            self.agent_name,
+                            started_at=started,
+                            completed_at=_now_iso(),
+                            status="failed",
+                            error=str(e),
+                            retries=retries + 1,
+                        )
+                    ]
+                    entries.extend(self._llm_perf_entries)
+                    result["performance_log"] = entries
+                except Exception as timer_err:  # best-effort: never break the node
+                    logger.debug("performance_log failed entry failed: %s", timer_err)
+                return result
+
+            # Drain tool-path cost captured during execute() BEFORE building the
+            # success entry so it rides the perf log; reset via token below.
+            self._llm_perf_entries.extend(_tool_llm_cost.get() or [])
+            result["current_agent"] = self.agent_name
+            result["error"] = None  # Clear stale error on success
+            try:
+                # Merge node-level entry with any kind:"llm" entries captured by
+                # _llm_ainvoke() during execute() (token/cost per LLM call).
                 entries = [
                     node_perf_entry(
                         self.agent_name,
                         started_at=started,
                         completed_at=_now_iso(),
-                        status="failed",
-                        error=str(e),
-                        retries=retries + 1,
+                        status="success",
+                        error=None,
+                        retries=retries,
                     )
                 ]
                 entries.extend(self._llm_perf_entries)
                 result["performance_log"] = entries
             except Exception as timer_err:  # best-effort: never break the node
-                logger.debug("performance_log failed entry failed: %s", timer_err)
+                logger.debug("performance_log node entry failed: %s", timer_err)
             return result
-
-        result["current_agent"] = self.agent_name
-        result["error"] = None  # Clear stale error on success
-        try:
-            # Merge node-level entry with any kind:"llm" entries captured by
-            # _llm_ainvoke() during execute() (token/cost per LLM call).
-            entries = [
-                node_perf_entry(
-                    self.agent_name,
-                    started_at=started,
-                    completed_at=_now_iso(),
-                    status="success",
-                    error=None,
-                    retries=retries,
-                )
-            ]
-            entries.extend(self._llm_perf_entries)
-            result["performance_log"] = entries
-        except Exception as timer_err:  # best-effort: never break the node
-            logger.debug("performance_log node entry failed: %s", timer_err)
-        return result
+        finally:
+            # Always reset via the token so a nested/errored execute never leaks
+            # stale entries to the next request (drain already happened above).
+            _tool_llm_cost.reset(tool_token)
 
 
 def _now_iso() -> str:
