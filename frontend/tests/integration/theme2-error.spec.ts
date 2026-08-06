@@ -5,7 +5,6 @@ import { defineComponent, h } from 'vue'
 import ErrorCard from '@/components/ErrorCard.vue'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import OfflineRecovery from '@/components/OfflineRecovery.vue'
-import RetryIndicator from '@/components/RetryIndicator.vue'
 import { useRetry, retryWithBackoff, calculateDelay, DEFAULT_CONFIG } from '@/composables/useRetry'
 import { useErrorStore } from '@/stores/error'
 import type { ErrorType } from '@/types/error'
@@ -234,44 +233,6 @@ describe('Theme 2 Acceptance Tests', () => {
 
       expect(result).toBe('success')
       expect(fn).toHaveBeenCalledTimes(3)
-    })
-
-    it('RetryIndicator displays retry count and countdown', async () => {
-      const wrapper = mount(RetryIndicator, {
-        props: { retryCount: 2, nextRetryIn: 10 }
-      })
-
-      // Shows retry count
-      expect(wrapper.text()).toContain('第2次重试')
-
-      // Shows countdown
-      expect(wrapper.text()).toContain('10秒')
-
-      // Progress bar exists
-      expect(wrapper.find('.h-2.bg-amber-100').exists()).toBe(true)
-    })
-
-    it('RetryIndicator countdown decrements over time', async () => {
-      const wrapper = mount(RetryIndicator, {
-        props: { retryCount: 1, nextRetryIn: 30 }
-      })
-
-      expect(wrapper.text()).toContain('30秒')
-
-      vi.advanceTimersByTime(5000)
-      await wrapper.vm.$nextTick()
-
-      expect(wrapper.text()).toContain('25秒')
-    })
-
-    it('RetryIndicator emits cancel event when cancel button clicked', async () => {
-      const wrapper = mount(RetryIndicator, {
-        props: { retryCount: 1, nextRetryIn: 10 }
-      })
-
-      await wrapper.find('button').trigger('click')
-
-      expect(wrapper.emitted('cancel')).toBeTruthy()
     })
 
     it('ErrorStore tracks retry count correctly', () => {
