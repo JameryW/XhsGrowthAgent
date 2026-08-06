@@ -204,3 +204,36 @@ visual_designer.execute: gather recall_style + recall_materials (independent, di
 ### Next Steps
 
 - None - task complete
+
+
+## Session 100: trend_scout overlap memory recall with XHS fetch (#506)
+
+**Date**: 2026-08-07
+**Task**: trend_scout overlap memory recall with XHS fetch (#506)
+**Branch**: `main`
+
+### Summary
+
+trend_scout.execute top-level gather: _recall_memory (fast Postgres) + _fetch_real_data (slow XHS long pole, 3 RTT). Memory RTT hidden behind XHS fetch. First nested-gather (_fetch_real_data gathers internally per #504, now gathered whole with _recall_memory). Both swallow own exc → no wrapper. Module now 2 gathers both 2-awaitable → refined #504 test discriminator count→qualname (__qualname__ substring), mutually exclusive. Both revert-then-fail proof. 5th gather-parallel example. Triple green (2103). GHA outage — merged no-CI.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `295fdc4a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
