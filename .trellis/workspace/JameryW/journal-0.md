@@ -1888,3 +1888,36 @@ blogger_gate._generate_mock_notes routed pure-fiction JSON gen through SCOUTING 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 91: track tool-path enrich_with_llm LLM cost via ContextVar
+
+**Date**: 2026-08-06
+**Task**: track tool-path enrich_with_llm LLM cost via ContextVar
+**Branch**: `main`
+
+### Summary
+
+enrich_with_llm (de_ai_taste polish in copywriter等) bypass _llm_ainvoke → cost dashboard /usr/bin/zsh。加 ContextVar accumulator：enrich 捕获 kind:llm entry，BaseAgent.__call__ set/drain(双路径)/reset(token)。PR#491 merged，6 CI green，2070 pytest。covers all 5 enrich callers。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f1cb23f3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
