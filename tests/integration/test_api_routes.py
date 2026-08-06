@@ -6,6 +6,8 @@ Uses FastAPI TestClient and mocks graph execution.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,6 +20,13 @@ from backend.db.workflows import WorkflowRow
 from backend.state.enums import WorkflowPhase
 
 TEST_USER_ID = "user-test"
+
+
+@contextmanager
+def _cm(obj: Any):
+    """Wrap a plain object as a context manager (mimics pdfplumber.open)."""
+    yield obj
+
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -411,6 +420,158 @@ class TestWorkflowRoutes:
 
         response = client.get("/api/workflow/history/nonexistent_thread")
         assert response.status_code == 404
+
+
+# ── Brief PDF LLM cost tracking ──────────────────────────────────────────────
+
+
+class TestBriefPdfCostTracking:
+    """Upload path merges the BRIEF_ANALYSIS token cost into performance_log.
+
+    The _extract_pdf_with_llm multimodal call is the last route-local LLM
+    invocation invisible to /analytics/costs. The upload path (stateful) merges
+    the captured llm_perf_entry into aupdate_state so the cost reader sees it;
+    the extract path (stateless) drops the entry.
+    """
+
+    def test_upload_merges_llm_cost_entry_into_performance_log(self, client, mock_graph):
+        """Upload with PDF + LLM usage → aupdate_state values carry perf entry.
+
+        Forces the LLM fallback (pdfplumber yields no text) and mocks get_model
+        to return usage_metadata so llm_perf_entry builds a real cost entry.
+        """
+        # get_model is imported function-locally inside _extract_pdf_with_llm;
+        # the conftest autouse fixture patches backend.models.router.get_model,
+        # which that import resolves to — override it here with a usage-bearing
+        # response so a real perf entry is constructed end-to-end.
+        llm_response = MagicMock()
+        llm_response.content = "提取出的PDF文字内容"
+        llm_response.usage_metadata = {"input_tokens": 100, "output_tokens": 50}
+        llm_response.response_metadata = {}
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=llm_response)
+
+        # pdfplumber returns no text → forces the multimodal LLM fallback path.
+        empty_page = MagicMock()
+        empty_page.extract_text.return_value = ""
+        empty_pdf = MagicMock()
+        empty_pdf.pages = [empty_page]
+
+        # aget_state.next == [] (from mock_graph fixture) → no resume task.
+        with (
+            patch("backend.models.router.get_model", lambda *a, **kw: mock_model),
+            patch("pdfplumber.open", return_value=_cm(empty_pdf)),
+        ):
+            response = client.post(
+                "/api/workflow/brief/upload/xhs_test_abc123",
+                files={"file": ("brief.pdf", b"%PDF-1.4 fake", "application/pdf")},
+            )
+
+        assert response.status_code == 200
+        mock_graph.aupdate_state.assert_awaited_once()
+        _, kwargs = mock_graph.aupdate_state.call_args
+        values = kwargs["values"]
+        assert "performance_log" in values
+        entry = values["performance_log"][0]
+        assert entry["kind"] == "llm"
+        assert entry["agent"] == "brief_pdf_extract"
+        assert entry["model"] == "astron-code-latest"
+        assert entry["cost_usd"] > 0
+        assert entry["input_tokens"] == 100
+        assert entry["output_tokens"] == 50
+        # brief_content still written alongside the perf entry.
+        assert values["brief_content"]["raw_text"] == "提取出的PDF文字内容"
+
+    def test_upload_capture_failure_does_not_break_extraction(self, client, mock_graph):
+        """llm_perf_entry raising → extraction still returns text, no perf entry."""
+        llm_response = MagicMock()
+        llm_response.content = "提取出的PDF文字内容"
+        llm_response.usage_metadata = {"input_tokens": 100, "output_tokens": 50}
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=llm_response)
+
+        empty_page = MagicMock()
+        empty_page.extract_text.return_value = ""
+        empty_pdf = MagicMock()
+        empty_pdf.pages = [empty_page]
+
+        with (
+            patch("backend.models.router.get_model", lambda *a, **kw: mock_model),
+            patch("pdfplumber.open", return_value=_cm(empty_pdf)),
+            patch(
+                "backend.agents.nodes._base.llm_perf_entry",
+                side_effect=RuntimeError("capture boom"),
+            ),
+        ):
+            response = client.post(
+                "/api/workflow/brief/upload/xhs_test_abc123",
+                files={"file": ("brief.pdf", b"%PDF-1.4 fake", "application/pdf")},
+            )
+
+        assert response.status_code == 200
+        mock_graph.aupdate_state.assert_awaited_once()
+        _, kwargs = mock_graph.aupdate_state.call_args
+        # No perf entry merged (capture failed) but brief_content still written.
+        assert "performance_log" not in kwargs["values"]
+        assert kwargs["values"]["brief_content"]["raw_text"] == "提取出的PDF文字内容"
+
+    def test_upload_pdfplumber_success_skips_performance_log(self, client, mock_graph):
+        """pdfplumber extracts text → no LLM call → no perf entry in update."""
+        page = MagicMock()
+        page.extract_text.return_value = "pdfplumber提取的文字"
+        pdf = MagicMock()
+        pdf.pages = [page]
+
+        with patch("pdfplumber.open", return_value=_cm(pdf)):
+            response = client.post(
+                "/api/workflow/brief/upload/xhs_test_abc123",
+                files={"file": ("brief.pdf", b"%PDF-1.4 fake", "application/pdf")},
+            )
+
+        assert response.status_code == 200
+        mock_graph.aupdate_state.assert_awaited_once()
+        _, kwargs = mock_graph.aupdate_state.call_args
+        assert "performance_log" not in kwargs["values"]
+        assert kwargs["values"]["brief_content"]["raw_text"] == "pdfplumber提取的文字"
+
+    def test_extract_stateless_does_not_write_perf_entry(self, client, mock_graph):
+        """Extract path has no thread_id → no aupdate_state perf write."""
+        # Provide a perf entry via the helper to prove the extract path drops it
+        # (no graph interaction for the perf entry regardless of capture).
+        with patch(
+            "backend.api.routes.workflow._extract_pdf_text",
+            AsyncMock(return_value=("预览文字", {"kind": "llm", "agent": "brief_pdf_extract"})),
+        ):
+            response = client.post(
+                "/api/workflow/brief/extract",
+                files={"file": ("brief.pdf", b"%PDF-1.4 fake", "application/pdf")},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["brief_text"] == "预览文字"
+        # Stateless: graph.aupdate_state never called for the perf entry.
+        mock_graph.aupdate_state.assert_not_awaited()
+
+    def test_upload_text_file_skips_performance_log(self, client, mock_graph):
+        """Non-PDF upload never invokes the LLM → no perf entry, no crash.
+
+        Regression guard: perf_entry is only assigned on the PDF branch; the
+        text path must not raise UnboundLocalError when checking the entry.
+        """
+        response = client.post(
+            "/api/workflow/brief/upload/xhs_test_abc123",
+            files={"file": ("brief.txt", b"plain text brief content", "text/plain")},
+        )
+
+        assert response.status_code == 200
+        mock_graph.aupdate_state.assert_awaited_once()
+        _, kwargs = mock_graph.aupdate_state.call_args
+        # No LLM call on the text path → no performance_log key in the update.
+        assert "performance_log" not in kwargs["values"]
+        assert kwargs["values"]["brief_content"]["raw_text"] == "plain text brief content"
+        assert kwargs["values"]["brief_content"]["source_type"] == "text"
 
 
 # ── Review Routes ────────────────────────────────────────────────────────────
