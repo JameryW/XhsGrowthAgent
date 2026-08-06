@@ -20,9 +20,14 @@ from backend.state.machine import WorkflowStatus, derive_status
 
 logger = logging.getLogger("xhs_growth.api.runner")
 
+# ponytail: in-process cache of last serialized history per thread.
+# /status polls completed workflows every 5s and would otherwise re-dump the
+# (potentially MB-scale) full state to disk on every poll. Completed state is
+# immutable, so a content-equal skip is safe. Process-local; if throughput ever
+# needs cross-process dedup, move to file stat comparison.
+_LAST_HISTORY_WRITE: dict[str, str] = {}
+
 # Track threads currently executing via synchronous request handlers
-# (submit_draft, select_version, etc.) so derive_status knows the graph
-# is actively running even without a background asyncio.Task entry.
 _active_sync_executions: set[str] = set()
 
 # Background task registry (for cancellation + has_active checks)
@@ -256,10 +261,18 @@ def _save_history_file(thread_id: str, state_values: dict[str, Any]) -> None:
         import os
         from pathlib import Path
 
+        serialized = json.dumps(state_values, default=str, ensure_ascii=False)
+        # Skip rewrite when content is unchanged since last write for this
+        # thread. /status polls completed workflows repeatedly; the state is
+        # immutable post-completion, so re-dumping is pure waste.
+        if _LAST_HISTORY_WRITE.get(thread_id) == serialized:
+            return
+        _LAST_HISTORY_WRITE[thread_id] = serialized
+
         history_dir = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs")) / "history"
         history_dir.mkdir(parents=True, exist_ok=True)
         path = history_dir / f"{thread_id}.json"
-        path.write_text(json.dumps(state_values, default=str, ensure_ascii=False))
+        path.write_text(serialized)
     except Exception:
         logger.exception("Failed to save history for %s", thread_id)
 

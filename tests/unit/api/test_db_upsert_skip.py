@@ -99,3 +99,46 @@ class TestDbUpsertSkipUnchanged:
         ):
             await runner_module._db_upsert("t1", phase="scouting")
         get_mock.assert_not_called()
+
+
+class TestSaveHistoryFileSkipUnchanged:
+    """_save_history_file must skip the disk rewrite when the serialized state
+    is identical to the last write for that thread — /status polls completed
+    workflows every 5s and would otherwise re-dump the full state each tick.
+    """
+
+    def test_first_call_writes_file(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XHS_REGISTRY_PATH", str(tmp_path))
+        runner_module._LAST_HISTORY_WRITE.pop("t1", None)
+        runner_module._save_history_file("t1", {"phase": "completed", "v": 1})
+        history_file = tmp_path / "history" / "t1.json"
+        assert history_file.read_text() == '{"phase": "completed", "v": 1}'
+
+    def test_unchanged_state_skips_rewrite(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XHS_REGISTRY_PATH", str(tmp_path))
+        runner_module._LAST_HISTORY_WRITE.pop("t1", None)
+        state = {"phase": "completed", "v": 1}
+        runner_module._save_history_file("t1", state)
+        history_file = tmp_path / "history" / "t1.json"
+        mtime_after_first = history_file.stat().st_mtime_ns
+
+        # Same state — must not touch the file.
+        runner_module._save_history_file("t1", state)
+        assert history_file.stat().st_mtime_ns == mtime_after_first
+
+    def test_changed_state_rewrites(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XHS_REGISTRY_PATH", str(tmp_path))
+        runner_module._LAST_HISTORY_WRITE.pop("t1", None)
+        runner_module._save_history_file("t1", {"phase": "completed", "v": 1})
+        runner_module._save_history_file("t1", {"phase": "completed", "v": 2})
+        history_file = tmp_path / "history" / "t1.json"
+        assert history_file.read_text() == '{"phase": "completed", "v": 2}'
+
+    def test_distinct_threads_independent(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XHS_REGISTRY_PATH", str(tmp_path))
+        runner_module._LAST_HISTORY_WRITE.pop("t1", None)
+        runner_module._LAST_HISTORY_WRITE.pop("t2", None)
+        runner_module._save_history_file("t1", {"v": 1})
+        runner_module._save_history_file("t2", {"v": 1})
+        assert (tmp_path / "history" / "t1.json").exists()
+        assert (tmp_path / "history" / "t2.json").exists()
