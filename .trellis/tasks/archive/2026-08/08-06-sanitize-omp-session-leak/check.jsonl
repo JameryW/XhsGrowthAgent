@@ -1,0 +1,1 @@
+{"file": ".trellis/tasks/08-06-sanitize-omp-session-leak/prd.md", "reason": "AC checklist: message 'omp session failed' no str(e), logger.exception unchanged, except Exception no binding, non-vacuous test fails on revert, pre-push triple."}

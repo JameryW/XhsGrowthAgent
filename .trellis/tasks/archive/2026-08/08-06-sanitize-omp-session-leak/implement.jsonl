@@ -1,0 +1,1 @@
+{"file": ".trellis/tasks/08-06-sanitize-omp-session-leak/prd.md", "reason": "Full spec: agent.py:125 omp-session-start f'omp session failed: {e}' raw leak → sanitize to 'omp session failed' (label without internals), drop as e binding, logger.exception unchanged. Exact #497 site-3 precedent. Non-vacuous test."}

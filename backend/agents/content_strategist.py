@@ -280,7 +280,8 @@ class ContentStrategistAgent(BaseAgent):
         if (
             ripple_prediction
             and "ripple_reason" not in ripple_prediction
-            and ripple_prediction.get("viral_probability", 1.0) < 0.3
+            and ripple_prediction.get("viral_probability", 1.0)
+            < Settings().ripple.low_viral_threshold
         ):
             logger.info(
                 f"Low viral probability ({ripple_prediction['viral_probability']:.2f}), "

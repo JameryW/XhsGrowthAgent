@@ -82,6 +82,8 @@ class RippleSettings(BaseSettings):
     default_max_waves: int = 3
     default_simulation_horizon: str = "12h"
     default_ensemble_runs: int = 1
+    # 传播概率低于此值则注入 Ripple 数据重新生成策略
+    low_viral_threshold: float = 0.3
     request_timeout: int = 300
     workflow_timeout: int = 1800
     enabled: bool = False
