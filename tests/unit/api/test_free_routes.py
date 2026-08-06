@@ -214,11 +214,12 @@ class TestCreateDraft:
     def test_create_gathers_creative_recalls_concurrently(self, client):
         """recall_style + recall_plays + recall_materials run via asyncio.gather.
 
-        Discriminator: free module has 0 other asyncio.gather calls. Patch
-        backend.api.routes.free.asyncio.gather; serial implementation calls it
-        0 times, gather implementation calls it once with exactly 3 awaitables
-        whose coroutines are CreativeMemory.recall_style / recall_plays /
-        recall_materials. Reverts to serial → gather never called → test fails.
+        Discriminator: among all gather calls in the call tree, exactly one has
+        3 awaitables whose coroutines are CreativeMemory.recall_style /
+        recall_plays / recall_materials. (Other gather calls in nested services
+        e.g. niche_resolver.resolve_account_niche have a different awaitable
+        count, so filtering by the creative-recall signature is robust.)
+        Serial creative-recall implementation → 0 matching gathers → test fails.
         """
         captured: list[tuple] = []
         real_gather = asyncio.gather
@@ -231,10 +232,13 @@ class TestCreateDraft:
             r = client.post("/api/free/draft", json=DRAFT_BODY)
         assert r.status_code == 200, r.text
 
-        # gather called exactly once (the only gather in the module)
-        assert len(captured) == 1, f"expected 1 gather, got {len(captured)}"
-        awaitables = captured[0]
-        assert len(awaitables) == 3, f"expected 3 awaitables, got {len(awaitables)}"
+        # Find the gather with the 3 creative-recall coroutines.
+        creative_gathers = [aws for aws in captured if len(aws) == 3]
+        assert len(creative_gathers) == 1, (
+            f"expected 1 creative-recall gather (3 awaitables), "
+            f"got {len(creative_gathers)} among {len(captured)} total gathers"
+        )
+        awaitables = creative_gathers[0]
 
         # Each awaitable is a coroutine; verify sources via __qualname__.
         qualnames = sorted(getattr(aw, "__qualname__", "") for aw in awaitables)
