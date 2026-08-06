@@ -289,6 +289,59 @@ class TestContentStrategistAgent:
         assert result["content_plan"]["selected_topic"] == "辅食食谱"
         assert result["content_plan"].get("topic_revised") is True
 
+    @pytest.mark.asyncio
+    async def test_execute_recalls_memory_concurrently(self, agent, mock_state, mock_store):
+        """The 4 memory recalls run via one asyncio.gather (not 4 serial awaits).
+
+        Non-vacuous: patches ``asyncio.gather`` in the content_strategist
+        module and asserts exactly one gather call receives 4 awaitables (the
+        memory recalls). The module also gathers the 2 Ripple calls later in
+        ``execute`` — those have 2 awaitables and are filtered out. If the
+        recalls are reverted to 4 serial ``await`` assignments, no gather has
+        4 awaitables and this test fails.
+        """
+        import asyncio as _asyncio
+
+        mock_response = MagicMock()
+        mock_response.content = '{"selected_topic": "美食探店"}'
+
+        real_gather = _asyncio.gather
+        gather_calls: list[tuple[tuple, dict]] = []
+
+        async def _fake_gather(*awaitables, **kwargs):
+            gather_calls.append((awaitables, kwargs))
+            # Drive the coroutines the way real gather would, preserving order.
+            return list(await real_gather(*awaitables, **kwargs))
+
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+            patch("backend.agents.content_strategist.asyncio.gather", new=_fake_gather),
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            agent._model = mock_model
+
+            await agent.execute(mock_state, store=mock_store)
+
+        # The module also gathers the 2 Ripple calls (predict + pmf) later in
+        # execute; the memory-recall gather is the one with 4 awaitables. This
+        # stays non-vacuous: revert to 4 serial awaits → no gather has 4 args.
+        memory_gather = [c for c, _ in gather_calls if len(c) == 4]
+        assert len(memory_gather) == 1, "memory recalls must be gathered in one call"
+        assert len(memory_gather[0]) == 4, "expected exactly 4 concurrent recalls"
+
     def test_agent_attributes(self, agent):
         """Verify agent class attributes."""
         assert agent.agent_name == "content_strategist"
