@@ -1819,3 +1819,39 @@ User: 合并，部署. Squash-merged all 11 open PRs (#475-485) oldest-first; 3 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 89: Merge #486-489 + hot-patch deploy (rebuild OOM); prod pipeline live
+
+**Date**: 2026-08-06
+**Task**: Merge #486-489 + hot-patch deploy (rebuild OOM); prod pipeline live
+**Branch**: `main`
+
+### Summary
+
+User: 全部合并，部署. Merged 4 PRs (#486 latency sink, #487 deploy env passthrough, #488 list_workflows 2→1 query via COUNT(*) OVER(), #489 collect_latency marker space-tolerant regex). All CI green, all mergeable, squash-merged oldest-first. Deploy: scripts/deploy.sh deploy hit no-space during playwright step (uv export cache miss → apt/playwright/bun rebuild ~6G peak > 5.6G free on root). Pruned dangling images first (29→0) but still OOM'd. Fell back to podman cp hot-patch of db/workflows.py into running container + restart (latency.py sink already hot-patched prior session; scripts/collect_latency.py runs on host not in container so no patch needed). Verified live: /list 7-sample p50=2.7ms p95=29.6ms(old cold outlier) db=2.6ms serialize≈0.02ms; collect script parses live container logs end-to-end. list_workflows single-query live. Hot-patches NOT persisted to image (rebuild failed) — next clean rebuild needs root disk freed or Dockerfile layer-cache fix for uv export. Archived 2 tasks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `18d4234a` | (see git log) |
+| `8b7554c3` | (see git log) |
+| `affc1223` | (see git log) |
+| `40de4a2d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 88
+- **Total Sessions**: 89
 - **Last Active**: 2026-08-06
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1821 | Active |
+| `journal-0.md` | ~1857 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 89 | 2026-08-06 | Merge #486-489 + hot-patch deploy (rebuild OOM); prod pipeline live | `18d4234a`, `8b7554c3`, `affc1223`, `40de4a2d` | `main` |
 | 88 | 2026-08-06 | Merge 11 PRs + deploy instrumentation; found sink bug → PR#486/#487 | `d091b483`, `fbdf7eef`, `e7f65f9a`, `013e1842`, `a2134ece`, `ee87f295`, `f281da05`, `aef027a9` | `main` |
 | 87 | 2026-08-06 | 删除 vestigial ToolRegistry 架构层 | `49c4d072` | `main` |
 | 86 | 2026-08-06 | 删除死代码 stub OptimizationService + report_generator | `cfc53f48` | `main` |
