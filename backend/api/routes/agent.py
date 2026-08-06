@@ -117,12 +117,14 @@ async def agent_ws(websocket: WebSocket) -> None:
     session: OmpSession | None = None
     try:
         session = await manager.get_or_create_session(session_id_param, mode=mode_param)
-    except Exception as e:
+    except Exception:
         logger.exception("failed to start omp session")
+        # ponytail: raw str(e) to the omp ws client leaks internals;
+        # full detail preserved in logger.exception above. Same fix as #497 site 3.
         await websocket.send_json(
             {
                 "type": ServerEventType.ERROR,
-                "message": f"omp session failed: {e}",
+                "message": "omp session failed",
             }
         )
         await websocket.close()
