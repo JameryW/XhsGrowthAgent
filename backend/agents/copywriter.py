@@ -7,8 +7,10 @@ can choose a preferred style before optimization.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
+from collections.abc import Mapping
 from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -19,6 +21,12 @@ from backend.config.models import TaskType
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.copywriter")
+
+
+def _audience_pref_query(plan: Mapping[str, Any], brief: Mapping[str, Any]) -> str:
+    """Build the audience-preference recall query from plan/brief."""
+    kind = plan.get("content_type", "note") or brief.get("style_requirements", "note")
+    return f"audience preference for {kind}"
 
 
 class CopywriterAgent(BaseAgent):
@@ -38,26 +46,27 @@ class CopywriterAgent(BaseAgent):
 
         cm = CreativeMemory(account_id, store=store)
         recall_query = plan.get("selected_topic", "") or brief.get("product_name", "")
-        styles = await cm.recall_style(query=recall_query)
-        materials = await cm.recall_materials(category="文案片段", tags=["高转化", "爆款标题"])
-
-        # 保留原有的 _recall_memory 召回
-        past_content = await self._recall_memory(
-            store,
-            account_id,
-            query=recall_query,
-            namespace="content_history",
-            limit=3,
-        )
-        audience_prefs = await self._recall_memory(
-            store,
-            account_id,
-            query=(
-                f"audience preference for"
-                f" {plan.get('content_type', 'note') or brief.get('style_requirements', 'note')}"
+        # 4 independent read-only recalls with disjoint namespaces → one
+        # concurrent wave instead of 4 serial ones. Each recall swallows its
+        # own exceptions internally (returns []), so gather adds no new
+        # exception surface. Precedent: content_strategist.py:210.
+        styles, materials, past_content, audience_prefs = await asyncio.gather(
+            cm.recall_style(query=recall_query),
+            cm.recall_materials(category="文案片段", tags=["高转化", "爆款标题"]),
+            self._recall_memory(
+                store,
+                account_id,
+                query=recall_query,
+                namespace="content_history",
+                limit=3,
             ),
-            namespace="audience_preferences",
-            limit=3,
+            self._recall_memory(
+                store,
+                account_id,
+                query=_audience_pref_query(plan, brief),
+                namespace="audience_preferences",
+                limit=3,
+            ),
         )
 
         # 构建完整 memory context
