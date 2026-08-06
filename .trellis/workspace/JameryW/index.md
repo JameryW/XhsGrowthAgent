@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 102
+- **Total Sessions**: 103
 - **Last Active**: 2026-08-07
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~305 | Active |
+| `journal-1.md` | ~338 | Active |
 | `journal-0.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -22,6 +22,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 103 | 2026-08-07 | delete 4 dead LLM tools + yamls + tests (#509) | `f5383f9cdbb676cd95a44cd8d2ca1078c3940bea` | `main` |
 | 102 | 2026-08-07 | analyst overlap memory recall with ripple report (#508) | `83d9d67e` | `main` |
 | 101 | 2026-08-07 | brief_analyzer gather style + benchmark recalls (#507) | `0d38f79b` | `main` |
 | 100 | 2026-08-07 | trend_scout overlap memory recall with XHS fetch (#506) | `295fdc4a` | `main` |

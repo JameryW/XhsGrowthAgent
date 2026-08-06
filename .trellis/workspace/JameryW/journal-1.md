@@ -303,3 +303,36 @@ analyst.execute top-level gather: _recall_memory (fast Postgres) + _ripple_repor
 ### Next Steps
 
 - None - task complete
+
+
+## Session 103: delete 4 dead LLM tools + yamls + tests (#509)
+
+**Date**: 2026-08-07
+**Task**: delete 4 dead LLM tools + yamls + tests (#509)
+**Branch**: `main`
+
+### Summary
+
+Delete 4 dead LLM tools (title_generator/hashtag_researcher/image_prompt_generator/timing_optimizer) 0 prod callers. PR#480 fixed their prompt paths but never wired into agents. 10 deletions (4 tools + 4 yamls + scheduling/ package entire + test_llm_tools.py), 1 created (test_xhs_manual_tools.py relocated manual-tool test preserve coverage NOT dropped), 1 modified (content/__init__ prune _LAZY_EXPORTS map per PEP 562 lazy-init-symbol-clash memory, keep __getattr__/__dir__ machinery + live entries). de_ai_taste untouched (live). Cleanup not perf — honest PR title. mypy 170→165 files, pytest 2107→2090. Triple green. GHA outage — merged no-CI.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5383f9cdbb676cd95a44cd8d2ca1078c3940bea` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
