@@ -1,0 +1,1 @@
+{"file": ".trellis/tasks/08-06-sanitize-client-exception-leak/prd.md", "reason": "AC checklist: no raw str(e) at 3 sites, server-side logging unchanged, no frontend break, tests assert no raw exception in client payloads, pre-push triple."}

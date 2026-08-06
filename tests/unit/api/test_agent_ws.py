@@ -266,6 +266,69 @@ async def test_ws_handler_error_does_not_leak_raw_exception_text() -> None:
     assert "/etc/passwd" not in errors[-1]["message"]
 
 
+class _SessionStartErrorManager:
+    """Manager whose get_or_create_session() raises -- exercises the
+    omp-session-start failure path (the early return before the receive loop)."""
+
+    def __init__(self) -> None:
+        self.session = None
+
+    def get_session(self, _session_id: str | None):
+        return None
+
+    async def get_or_create_session(self, session_id=None, mode="workflow"):
+        raise RuntimeError("secret internal path /etc/passwd")
+
+    def start_idle_timer(self, _session_id: str) -> None:
+        return None
+
+
+class _SessionStartErrorWebSocket:
+    """Connect path only -- disconnects are never reached because session
+    creation fails before the receive loop starts."""
+
+    query_params: dict = {}
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+        self.accepted = False
+        self.closed = False
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+    async def close(self) -> None:
+        self.closed = True
+
+    async def receive_text(self) -> str:
+        raise WebSocketDisconnect()
+
+
+async def test_omp_session_start_failure_does_not_leak_raw_exception_text() -> None:
+    """Session-start failure must send a generic label, not raw str(e)."""
+    websocket = _SessionStartErrorWebSocket()
+    manager = _SessionStartErrorManager()
+
+    with patch("backend.api.routes.agent.get_bridge_manager", return_value=manager):
+        await agent_ws(websocket)  # type: ignore[arg-type]
+
+    assert websocket.accepted
+    assert websocket.closed
+    errors = [m for m in websocket.sent if m.get("type") == "error"]
+    assert errors, "expected an error message after get_or_create_session() raised"
+    # Subsystem label only; raw exception text must not leak.
+    assert errors[-1]["message"] == "omp session failed"
+    assert "secret internal path" not in errors[-1]["message"]
+    assert "/etc/passwd" not in errors[-1]["message"]
+    # The secret must not appear anywhere else in the sent payload either.
+    for payload in websocket.sent:
+        assert "secret internal path" not in json.dumps(payload)
+        assert "/etc/passwd" not in json.dumps(payload)
+
+
 class _PrewarmManager:
     def __init__(self, *, ready_mode: str | None = None) -> None:
         self.created: list[str] = []

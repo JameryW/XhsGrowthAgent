@@ -1,0 +1,1 @@
+{"file": ".trellis/tasks/08-06-sanitize-client-exception-leak/prd.md", "reason": "Full spec: 3 confirmed leak sites (middleware.py:37 details.exception, workflow.py:147→165 task_error→DB error col→/list→UI, agent.py:286 ws message), one-line sanitization each, server-side logging unchanged, tests assert no raw str(e) in client payloads."}
