@@ -54,6 +54,7 @@ class TestContentStrategistBackground:
         fake_settings = MagicMock()
         fake_settings.ripple.background = False
         fake_settings.ripple.workflow_timeout = 60
+        fake_settings.ripple.low_viral_threshold = 0.3
 
         scorer = AsyncMock()
         scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})

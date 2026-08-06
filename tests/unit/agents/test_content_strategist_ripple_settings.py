@@ -139,3 +139,39 @@ class TestRippleSettingsFlowThrough:
         assert pmf_kwargs["max_waves"] == 3
         assert pmf_kwargs["simulation_horizon"] == "12h"
         assert pmf_kwargs["ensemble_runs"] == 1
+
+    @pytest.mark.asyncio
+    async def test_low_viral_threshold_read_from_settings(
+        self, agent, content_plan_state, mock_store
+    ):
+        """Raising low_viral_threshold via Settings makes a viral_probability=0.3
+        prediction trigger the Ripple-insight regen branch (ripple_revised=True).
+
+        Pins the wiring extracted from the old hardcoded ``< 0.3`` gate: with the
+        threshold raised to 0.5, 0.3 < 0.5 fires the regen. Non-vacuous — reverts
+        to the hardcoded ``< 0.3`` literal (0.3 is not < 0.3) and this fails.
+        """
+        self._wire_model(agent)
+        scorer = self._scorer()
+
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+            patch("backend.agents.content_strategist.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.ripple.low_viral_threshold = 0.5
+            mock_settings.return_value.ripple.background = False
+            mock_pred.return_value = {
+                "ripple_prediction": {"estimated_reach": 5000, "viral_probability": 0.3},
+            }
+            mock_pmf.return_value = {"ripple_pmf": None}
+
+            result = await agent.execute(content_plan_state, store=mock_store)
+
+        # ripple_revised is set ONLY in the low-viral-probability regen branch.
+        assert result["content_plan"].get("ripple_revised") is True
