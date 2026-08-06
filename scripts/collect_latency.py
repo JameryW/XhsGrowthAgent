@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 import subprocess
 import sys
@@ -33,20 +34,24 @@ from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
-_EVENT_MARKER = '"event":"http_latency"'
+# backend/api/latency.py emits via json.dumps(..., ensure_ascii=False), which
+# puts a space after the colon (``"event": "http_latency"``). Older log lines
+# may be compact (``"event":"http_latency"``). Tolerate any whitespace around
+# the colon so the filter matches real prod output.
+_EVENT_MARKER = re.compile(r'"event"\s*:\s*"http_latency"')
 
 
 def _fetch_lines(args: argparse.Namespace) -> Iterable[str]:
     """Yield raw log lines containing a latency JSON payload."""
     if args.file == "-":
         for line in sys.stdin:
-            if _EVENT_MARKER in line:
+            if _EVENT_MARKER.search(line):
                 yield line
         return
     if args.file:
         with open(args.file, encoding="utf-8", errors="replace") as fh:
             for line in fh:
-                if _EVENT_MARKER in line:
+                if _EVENT_MARKER.search(line):
                     yield line
         return
 
@@ -57,7 +62,7 @@ def _fetch_lines(args: argparse.Namespace) -> Iterable[str]:
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     # podman logs writes to stderr too; merge both streams.
     for line in (proc.stdout + proc.stderr).splitlines():
-        if _EVENT_MARKER in line:
+        if _EVENT_MARKER.search(line):
             yield line
 
 
