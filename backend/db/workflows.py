@@ -270,6 +270,9 @@ async def list_workflows(
 
     ``showcase_visibility`` scopes public Showcase listing without scanning
     private rows. ``order_by`` accepts ``created_at`` (default) or ``updated_at``.
+
+    Runs a single query: ``COUNT(*) OVER()`` attaches the pre-LIMIT total to
+    each row, so ``total`` reflects all matching rows regardless of pagination.
     """
     conditions: list[str] = []
     params: list[Any] = []
@@ -292,19 +295,18 @@ async def list_workflows(
         from psycopg.rows import dict_row
 
         async with conn.cursor(row_factory=dict_row) as cur:
-            # Count
-            await cur.execute(f"SELECT COUNT(*) AS cnt FROM workflows {where}", params)
-            count_row = await cur.fetchone()
-            total = count_row["cnt"] if count_row else 0
-
-            # Rows
+            # Single query: COUNT(*) OVER() window function attaches the
+            # pre-LIMIT total to every row, collapsing the old COUNT + SELECT
+            # pair (2 round-trips) into 1. With no rows, full_count is absent
+            # and total falls back to 0.
             order_and_limit = f"ORDER BY {order_col} DESC LIMIT %s OFFSET %s"
             await cur.execute(
-                f"SELECT * FROM workflows {where} {order_and_limit}",
+                f"SELECT *, COUNT(*) OVER() AS full_count FROM workflows {where} {order_and_limit}",
                 params + [limit, offset],
             )
             rows = await cur.fetchall()
 
+    total = int(rows[0]["full_count"]) if rows else 0
     return [_row_from_dict(r) for r in rows], total
 
 
