@@ -1779,3 +1779,43 @@ trellis-check 删 stub 时发现 ToolRegistry 整体 vestigial。trellis-researc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 88: Merge 11 PRs + deploy instrumentation; found sink bug → PR#486/#487
+
+**Date**: 2026-08-06
+**Task**: Merge 11 PRs + deploy instrumentation; found sink bug → PR#486/#487
+**Branch**: `main`
+
+### Summary
+
+User: 合并，部署. Squash-merged all 11 open PRs (#475-485) oldest-first; 3 (#476-479) had stale-commit chaff from prior sessions, rebuilt each via cherry-pick-only-feature-commit onto origin/main + force-push, then merged. Deployed via scripts/deploy.sh deploy (TMPDIR=/test/xhs/.tmp-build) — hit disk-full (podman overlay 27G, 59 dangling images); freed via podman image prune -f + builder prune -af (dropped to 6 dangling), never podman rm -f/system prune (cascade-kill prod per memory). After deploy: XHS_LATENCY_LOG=1 in container verified, but /list emitted NO http_latency line. Root cause: latency.py used bare logger.info() on xhs_growth.api.latency logger; app root logger defaults to WARNING + no handlers → INFO silently dropped. Existing tests masked it (caplog.set_level attached its own handler). Fix PR#486: when _ENABLED at import, attach stderr StreamHandler@INFO + propagate=False (self-contained sink). Verified via subprocess re-import test (real import-time wiring). Hot-patched prod via podman cp + restart (avoid rebuild OOM): /list 29.6ms = db 28.2ms + serialize 1.4ms → DB query is the bottleneck, NOT serialization. PR#487: deploy.sh -e XHS_LATENCY_LOG passthrough (container-env-completeness rule). Both PRs CI green, opened. Instrumentation task stays in_progress (AC: collect ≥1 day prod data → identify bottleneck → follow-up optimization PR). Archived 6 completed tasks (5 merged-PR tasks + showcase-replay).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d091b483` | (see git log) |
+| `fbdf7eef` | (see git log) |
+| `e7f65f9a` | (see git log) |
+| `013e1842` | (see git log) |
+| `a2134ece` | (see git log) |
+| `ee87f295` | (see git log) |
+| `f281da05` | (see git log) |
+| `aef027a9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

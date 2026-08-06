@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "结构化 logger JSON 行插桩须遵循项目日志规范（字段/级别/格式）"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "插桩失败必静默 try/except，遵循项目错误处理规范"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "env-gated 插桩 + 采样逻辑质量要求（默认关零开销、不破坏请求）"}
+{"file": "backend/agents/nodes/_base.py", "reason": "llm_perf_entry/node_perf_entry 现有 perf_log schema，PR-B 追加 ainvoke 三段 ms 须对齐字段"}
+{"file": "backend/api/routes/workflow.py", "reason": "PR-A /status + /list + /account-totals 端点分段计时落点（aget_state/db_upsert/serialize/ripple_progress）"}
+{"file": "backend/agents/base.py", "reason": "PR-B _llm_ainvoke 内 prompt 构造/ainvoke/解析三段计时落点"}
