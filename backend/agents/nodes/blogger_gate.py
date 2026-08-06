@@ -8,8 +8,8 @@ from langchain_core.messages import HumanMessage
 from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
-from backend.agents.nodes._base import NodeResult, _check_cancelled
-from backend.config.models import TaskType
+from backend.agents.nodes._base import NodeResult, _check_cancelled, llm_perf_entry
+from backend.config.models import TaskType, get_model_id_for_task
 from backend.models.router import get_model
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
@@ -78,7 +78,15 @@ async def blogger_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
         ).to_dict()
 
     note_limit = state.get("blogger_note_limit", 3)
-    blogger_notes = await _fetch_blogger_notes(state, selected_user_id, note_limit)
+    # ponytail: bare node has no BaseAgent.__call__ to set #491's _tool_llm_cost
+    # ContextVar, and this is a direct model.ainvoke (not enrich_with_llm). A
+    # local accumulator threaded through the 2 private helpers captures the
+    # kind:"llm" cost entry; merged into the returned performance_log so the
+    # /analytics/costs reader sees it (state._append_list reducer merges).
+    perf_acc: list[dict[str, Any]] = []
+    blogger_notes = await _fetch_blogger_notes(
+        state, selected_user_id, note_limit, perf_acc=perf_acc
+    )
 
     selected = decision if isinstance(decision, dict) else {"user_id": selected_user_id}
     logger.info(
@@ -86,37 +94,43 @@ async def blogger_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
         f"fetched {len(blogger_notes)} notes"
     )
 
-    return NodeResult(
-        {
-            "selected_blogger": selected,
-            "blogger_notes": blogger_notes,
-            "phase": WorkflowPhase.CREATING,
-        },
-        "blogger_gate",
-    ).to_dict()
+    updates: dict[str, Any] = {
+        "selected_blogger": selected,
+        "blogger_notes": blogger_notes,
+        "phase": WorkflowPhase.CREATING,
+    }
+    if perf_acc:
+        updates["performance_log"] = perf_acc
+    return NodeResult(updates, "blogger_gate").to_dict()
 
 
 async def _fetch_blogger_notes(
     state: XHSGrowthState,
     user_id: str,
     limit: int,
+    *,
+    perf_acc: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch a blogger's top notes sorted by engagement.
 
     For mock bloggers (mock_ prefix), generates simulated notes via LLM.
+    ``perf_acc`` (when provided) accumulates a kind:"llm" cost entry from the
+    underlying model.ainvoke so the bare node can merge it into performance_log.
     """
     # Mock blogger — generate simulated notes via LLM
     if user_id.startswith("mock_"):
-        return await _generate_mock_notes(state, user_id, limit)
+        return await _generate_mock_notes(state, user_id, limit, perf_acc=perf_acc)
 
     logger.info("Generating simulated notes for selected blogger")
-    return await _generate_mock_notes(state, user_id, limit)
+    return await _generate_mock_notes(state, user_id, limit, perf_acc=perf_acc)
 
 
 async def _generate_mock_notes(
     state: XHSGrowthState,
     user_id: str,
     limit: int,
+    *,
+    perf_acc: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Generate simulated blogger notes via LLM for mock bloggers."""
     nickname = ""
@@ -150,7 +164,26 @@ async def _generate_mock_notes(
 
     try:
         model = get_model(TaskType.MOCK_GEN.value)
+        from datetime import UTC, datetime
+
+        started = datetime.now(UTC).isoformat()
         response = await model.ainvoke([HumanMessage(content=prompt)])
+        completed = datetime.now(UTC).isoformat()
+        if perf_acc is not None:
+            # ponytail: best-effort cost capture — a capture bug must never
+            # break note generation. Mirrors BaseAgent._llm_ainvoke's pattern.
+            try:
+                entry = llm_perf_entry(
+                    "blogger_gate",
+                    response,
+                    get_model_id_for_task(TaskType.MOCK_GEN),
+                    started_at=started,
+                    completed_at=completed,
+                )
+                if entry is not None:
+                    perf_acc.append(entry)
+            except Exception as exc:  # best-effort: never break the call
+                logger.debug("blogger_gate llm perf entry capture failed: %s", exc)
         content = response.content
         if isinstance(content, list):
             content = str(content)
