@@ -577,6 +577,30 @@ def _account_still_exists(row: WorkflowRow, existing: set[str] | None = None) ->
     return True
 
 
+async def _demote_one(row: WorkflowRow) -> None:
+    """Demote a single orphaned public row to private; swallow per-row failure."""
+    try:
+        await db_update(
+            row.thread_id,
+            showcase_visibility="private",
+            showcase_featured=False,
+            featured_rank=None,
+            approved_at=None,
+            approved_by=None,
+        )
+        row.showcase_visibility = "private"
+        row.showcase_featured = False
+        row.featured_rank = None
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "failed to demote orphaned public showcase %s",
+            row.thread_id,
+            exc_info=True,
+        )
+
+
 async def _demote_orphaned_public_rows(rows: list[WorkflowRow]) -> list[WorkflowRow]:
     """Hide + persist private for public/unlisted rows whose account was deleted."""
     if not rows:
@@ -589,32 +613,15 @@ async def _demote_orphaned_public_rows(rows: list[WorkflowRow]) -> list[Workflow
         # which is safer than leaking deleted-account content.
         pass
     kept: list[WorkflowRow] = []
+    to_demote: list[WorkflowRow] = []
     for row in rows:
         if _account_still_exists(row, existing):
             kept.append(row)
             continue
-        if _visibility(row) not in _PUBLIC_VISIBILITIES:
-            continue
-        try:
-            await db_update(
-                row.thread_id,
-                showcase_visibility="private",
-                showcase_featured=False,
-                featured_rank=None,
-                approved_at=None,
-                approved_by=None,
-            )
-            row.showcase_visibility = "private"
-            row.showcase_featured = False
-            row.featured_rank = None
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "failed to demote orphaned public showcase %s",
-                row.thread_id,
-                exc_info=True,
-            )
+        if _visibility(row) in _PUBLIC_VISIBILITIES:
+            to_demote.append(row)
+    if to_demote:
+        await asyncio.gather(*(_demote_one(row) for row in to_demote))
     return kept
 
 
