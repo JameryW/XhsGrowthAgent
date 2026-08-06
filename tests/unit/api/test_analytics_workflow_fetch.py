@@ -61,6 +61,24 @@ def _patch_db(monkeypatch: pytest.MonkeyPatch, rows: list[WorkflowRow]) -> None:
     monkeypatch.setattr(analytics, "db_list", fake_db_list)
 
 
+def _patch_db_with_status_filter(
+    monkeypatch: pytest.MonkeyPatch,
+    completed_rows: list[WorkflowRow],
+    error_rows: list[WorkflowRow],
+) -> None:
+    """db_list that returns different rows per status, modeling the real filter."""
+
+    async def fake_db_list(account_id=None, status=None, limit=100, offset=0):
+        if status == "completed":
+            return completed_rows, len(completed_rows)
+        if status == "error":
+            return error_rows, len(error_rows)
+        return [], 0  # analyzing + others → empty
+
+    monkeypatch.setattr(analytics, "is_pool_ready", lambda: True)
+    monkeypatch.setattr(analytics, "db_list", fake_db_list)
+
+
 @pytest.mark.asyncio
 async def test_state_reads_run_concurrently_and_preserve_row_order(monkeypatch):
     thread_ids = [f"thread-{i}" for i in range(16)]
@@ -105,3 +123,52 @@ async def test_pool_not_ready_returns_empty(monkeypatch):
 
     assert await analytics._get_completed_workflows(graph, "acc-a") == []
     assert graph.calls == []
+
+
+@pytest.mark.asyncio
+async def test_include_error_reads_error_status_rows(monkeypatch):
+    """include_error=True widens the DB status filter to include 'error' rows."""
+    completed = WorkflowRow(thread_id="ok-1", account_id="acc-a", status="completed")
+    errored = WorkflowRow(thread_id="err-1", account_id="acc-a", status="error")
+    _patch_db_with_status_filter(monkeypatch, [completed], [errored])
+    graph = _FakeGraph()
+
+    results = await analytics._get_completed_workflows(graph, "acc-a", include_error=True)
+
+    thread_ids = sorted(r["thread_id"] for r in results)
+    assert thread_ids == ["err-1", "ok-1"]
+
+
+@pytest.mark.asyncio
+async def test_default_excludes_error_status_rows(monkeypatch):
+    """Default (include_error=False) keeps the narrow completed/analyzing filter."""
+    completed = WorkflowRow(thread_id="ok-1", account_id="acc-a", status="completed")
+    errored = WorkflowRow(thread_id="err-1", account_id="acc-a", status="error")
+    _patch_db_with_status_filter(monkeypatch, [completed], [errored])
+    graph = _FakeGraph()
+
+    results = await analytics._get_completed_workflows(graph, "acc-a")
+
+    assert [r["thread_id"] for r in results] == ["ok-1"]
+
+
+@pytest.mark.asyncio
+async def test_cache_key_splits_include_error_flag(monkeypatch):
+    """Narrow and wide fetches must not share a cache entry (no contamination)."""
+    completed = WorkflowRow(thread_id="ok-1", account_id="acc-a", status="completed")
+    errored = WorkflowRow(thread_id="err-1", account_id="acc-a", status="error")
+    _patch_db_with_status_filter(monkeypatch, [completed], [errored])
+    graph = _FakeGraph()
+
+    narrow = await analytics._get_completed_workflows(graph, "acc-a")
+    wide = await analytics._get_completed_workflows(graph, "acc-a", include_error=True)
+
+    assert [r["thread_id"] for r in narrow] == ["ok-1"]
+    assert sorted(r["thread_id"] for r in wide) == ["err-1", "ok-1"]
+
+    # A second narrow fetch must hit cache (no new aget_state calls) and stay
+    # uncontaminated by the wide result that was just cached.
+    before = list(graph.calls)
+    narrow_again = await analytics._get_completed_workflows(graph, "acc-a")
+    assert narrow_again == narrow
+    assert graph.calls == before  # cache hit → no new reads

@@ -15,6 +15,7 @@ from backend.api.account_scope import require_owned_account, resolve_required_ac
 from backend.api.deps import get_current_user
 from backend.api.errors import CreatorNoteNotFoundError, ValidationError
 from backend.api.responses import ApiResponse, success
+from backend.config.settings import Settings
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
 from backend.services.quality_consistency import (
@@ -162,23 +163,38 @@ def _set_cached(key: str, value: Any) -> None:
 
 
 async def _get_completed_workflows(
-    graph: Any, account_id: str | None = None
+    graph: Any, account_id: str | None = None, *, include_error: bool = False
 ) -> list[dict[str, Any]]:
     """Read full state for completed workflows, with caching.
 
     Checkpoint reads run concurrently (bounded by ``_STATE_FETCH_CONCURRENCY``):
     each ``aget_state`` is a separate checkpointer round trip, so fetching them
     serially made every cold dashboard/report request cost N sequential reads.
+
+    ``include_error`` widens the status filter to also read ``error``-status
+    workflows. The report path needs ``publish_result`` (only
+    completed/analyzing have it) and must stay narrow; the cost path includes
+    errored runs because their checkpoint ``performance_log`` retains LLM spend.
+    The cache key carries the flag so the two paths never share an entry.
     """
-    cache_key = f"completed_{account_id or 'all'}"
+    cache_key = f"completed_{account_id or 'all'}_{include_error}"
     cached = _get_cached(cache_key)
     if cached is not None:
         return cast(list[dict[str, Any]], cached)
 
     rows: list[Any] = []
     if is_pool_ready():
-        # Include completed and analyzing workflows (both have publish_result)
-        for status_filter in ("completed", "analyzing"):
+        # Include completed and analyzing workflows (both have publish_result).
+        # Cost path additionally reads errored workflows (LLM spend retained).
+        statuses: tuple[str, ...] = (
+            ("completed", "analyzing", "error")
+            if include_error
+            else (
+                "completed",
+                "analyzing",
+            )
+        )
+        for status_filter in statuses:
             offset = 0
             while True:
                 batch, total = await db_list(
@@ -974,7 +990,7 @@ async def get_costs(
     """获取 LLM 调用成本 — aggregated from workflow performance logs."""
     assert request is not None
     graph = request.app.state.graph
-    workflows = await _get_completed_workflows(graph)
+    workflows = await _get_completed_workflows(graph, include_error=True)
 
     now = datetime.now(UTC)
     cutoff_hours = _period_cutoff_hours(period)
@@ -1022,7 +1038,9 @@ async def get_costs(
             "period": period,
             "by_model": {k: round(v, 2) for k, v in by_model.items()},
             "circuit_open": False,
-            "budget_remaining_usd": round(max(0, 10.0 - total_cost), 2),
+            "budget_remaining_usd": round(
+                max(0, Settings().models.daily_budget_usd - total_cost), 2
+            ),
             "updated_at": datetime.now().isoformat(),
         }
     )
@@ -1038,9 +1056,12 @@ async def get_dashboard(
 ) -> ApiResponse[Any]:
     """Single-request analytics bundle — report + performance + costs.
 
-    Avoids 3× the cold-start cost of _get_completed_workflows by computing
-    all three payloads from one fetch. Includes imported creator-center notes
-    (frontend Analytics uses this path exclusively).
+    Report + performance share one narrow ``_get_completed_workflows`` fetch
+    (both need ``publish_result``, only completed/analyzing have it). Costs use
+    a second, wider fetch (``include_error=True``) so errored workflows' LLM
+    spend is counted; the wide fetch is cached under a distinct key so the two
+    paths don't interfere. Includes imported creator-center notes (frontend
+    Analytics uses this path exclusively).
     """
     assert request is not None
     account_id = (account_id or "").strip()
@@ -1108,6 +1129,10 @@ async def get_dashboard(
     }
 
     # ── Costs ──
+    # ponytail: cost path fetches error-status workflows too (their checkpoint
+    # performance_log retains LLM spend); the report path above stays narrow
+    # because _extract_post_data needs publish_result, which errors lack.
+    cost_workflows = await _get_completed_workflows(graph, account_id, include_error=True)
     now = datetime.now(UTC)
     cutoff_hours = _period_cutoff_hours(period)
     cutoff_time = now.timestamp() - cutoff_hours * 3600
@@ -1117,7 +1142,7 @@ async def get_dashboard(
     today_cost = 0.0
     today = now.date()
 
-    for wf in workflows:
+    for wf in cost_workflows:
         state = wf.get("_state", {})
         perf_log = state.get("performance_log") or []
         for entry in perf_log:
@@ -1149,7 +1174,7 @@ async def get_dashboard(
         "period": period,
         "by_model": {k: round(v, 2) for k, v in by_model.items()},
         "circuit_open": False,
-        "budget_remaining_usd": round(max(0, 10.0 - total_cost), 2),
+        "budget_remaining_usd": round(max(0, Settings().models.daily_budget_usd - total_cost), 2),
         "updated_at": datetime.now().isoformat(),
     }
 
