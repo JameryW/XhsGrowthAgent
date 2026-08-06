@@ -435,11 +435,15 @@ async def run_evaluation(
         }
     thresholds = await _score_thresholds(str(values.get("account_id") or ""))
 
-    # Persist evaluation_result to state (does not advance the graph)
-    await graph.aupdate_state(
-        config,
-        {"evaluation_result": evaluation},
-    )
+    # Persist evaluation_result to state (does not advance the graph).
+    # Merge result["performance_log"] (kind:"llm" cost entries from
+    # BaseAgent.__call__) so the manual-eval LLM spend is retained in the
+    # thread checkpoint and visible to /analytics/costs. Mirrors PR#493.
+    perf_log = result.get("performance_log") or []
+    update_values: dict[str, Any] = {"evaluation_result": evaluation}
+    if perf_log:
+        update_values["performance_log"] = perf_log
+    await graph.aupdate_state(config, update_values)
 
     return success(
         data={

@@ -131,6 +131,68 @@ class TestRunEvaluationRoute:
         r = client.post("/api/evaluation/run/t1")
         assert r.status_code == 404
 
+    def test_run_merges_performance_log_into_state(self, client, mock_graph, owned_thread):
+        """Manual eval must merge result["performance_log"] (LLM cost) into the
+        thread checkpoint so /analytics/costs can see the spend. Mirrors PR#493
+        upload-brief pattern; the _append_list reducer appends the entries."""
+        perf_entry = {
+            "kind": "llm",
+            "node": "evaluator",
+            "cost_usd": 0.05,
+            "timestamp": "2026-08-06T00:00:00Z",
+        }
+        eval_result = {
+            "overall_score": 80.0,
+            "decision": "approved",
+            "dimensions": [],
+            "status": "ready",
+            "revision_hints": [],
+            "bias_warning": "",
+            "summary": "ok",
+        }
+        with patch.object(
+            EvaluatorAgent,
+            "__call__",
+            new=AsyncMock(
+                return_value={
+                    "evaluation_result": eval_result,
+                    "performance_log": [perf_entry],
+                }
+            ),
+        ):
+            r = client.post("/api/evaluation/run/t1")
+
+        assert r.status_code == 200
+        mock_graph.aupdate_state.assert_called_once()
+        _config, values = mock_graph.aupdate_state.call_args.args
+        assert values["evaluation_result"] == eval_result
+        assert values["performance_log"] == [perf_entry]
+
+    def test_run_skips_performance_log_when_empty(self, client, mock_graph, owned_thread):
+        """Empty/missing performance_log must not produce a spurious empty merge
+        (match #493's `if perf_entry is not None` guard)."""
+        eval_result = {
+            "overall_score": 80.0,
+            "decision": "approved",
+            "dimensions": [],
+            "status": "ready",
+            "revision_hints": [],
+            "bias_warning": "",
+            "summary": "ok",
+        }
+        with patch.object(
+            EvaluatorAgent,
+            "__call__",
+            new=AsyncMock(return_value={"evaluation_result": eval_result}),
+        ):
+            r = client.post("/api/evaluation/run/t1")
+
+        assert r.status_code == 200
+        mock_graph.aupdate_state.assert_called_once()
+        _config, values = mock_graph.aupdate_state.call_args.args
+        assert values["evaluation_result"] == eval_result
+        assert "performance_log" not in values
+
 
 class TestEvaluationEpochsRoute:
     """GET /evaluation/epochs — prompt epoch evolution history."""
