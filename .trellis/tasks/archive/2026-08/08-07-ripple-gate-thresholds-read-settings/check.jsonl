@@ -1,0 +1,1 @@
+{"file": "prd.md", "reason": "AC: 3 RippleSettings fields defaults 0.4/0.5/2; ripple_gate+ripple_finalize grep-clean of hardcoded constants; late_recheck import updated non-broken; existing finalize/late_recheck tests green at default; new test patching threshold=0.9 proves read (fails on revert); pre-push triple."}
