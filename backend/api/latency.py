@@ -32,6 +32,18 @@ logger = logging.getLogger("xhs_growth.api.latency")
 # Read once at import; flipping the env var requires a process restart.
 _ENABLED: bool = os.environ.get("XHS_LATENCY_LOG", "").strip() in ("1", "true", "yes")
 
+# Self-contained sink: the app's root logger defaults to WARNING with no
+# handlers, so bare logger.info() would be silently dropped in prod. When
+# instrumentation is on, attach a stderr StreamHandler at INFO so the JSON
+# lines reach `podman logs`. propagate=False keeps them off the root logger
+# (no double-emit, no coupling to app logging config).
+if _ENABLED:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(_h)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
 # ponytail: 1-in-N sampling for the hottest poll endpoint. Other endpoints
 # are low-frequency enough to log every call. Bump if log volume is a problem.
 _STATUS_SAMPLE_RATE = 10
