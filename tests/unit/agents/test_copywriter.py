@@ -142,6 +142,44 @@ class TestCopywriterAgent:
         assert mock_store.asearch.call_count >= 2
 
     @pytest.mark.asyncio
+    async def test_execute_recalls_memory_concurrently(
+        self, agent, mock_state, mock_store, _mock_de_ai
+    ):
+        """The 4 memory recalls run via one asyncio.gather (not 4 serial awaits).
+
+        Non-vacuous: patches ``asyncio.gather`` in the copywriter module and
+        asserts it's awaited exactly once with 4 awaitables. If the recalls
+        are reverted to 4 serial ``await`` assignments, ``asyncio.gather`` is
+        never called and this test fails.
+        """
+        import asyncio as _asyncio
+
+        mock_response = MagicMock()
+        mock_response.content = '{"title_candidates": [], "body_text": ""}'
+
+        real_gather = _asyncio.gather
+        gather_calls: list[tuple[tuple, dict]] = []
+
+        async def _fake_gather(*awaitables, **kwargs):
+            gather_calls.append((awaitables, kwargs))
+            # Drive the coroutines the way real gather would, preserving order.
+            return list(await real_gather(*awaitables, **kwargs))
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch("backend.agents.copywriter.asyncio.gather", new=_fake_gather),
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+
+            await agent.execute(mock_state, store=mock_store)
+
+        assert len(gather_calls) == 1, "memory recalls must be gathered in one call"
+        awaitables, _ = gather_calls[0]
+        assert len(awaitables) == 4, "expected exactly 4 concurrent recalls"
+
+    @pytest.mark.asyncio
     async def test_execute_handles_empty_plan(self, agent, mock_store, _mock_de_ai):
         """Execute handles empty content plan."""
         mock_state = {"account_id": "test", "content_plan": {}}
