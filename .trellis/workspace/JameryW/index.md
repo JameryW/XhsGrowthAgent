@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 92
+- **Total Sessions**: 93
 - **Last Active**: 2026-08-06
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1956 | Active |
+| `journal-0.md` | ~1989 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 93 | 2026-08-06 | sanitize omp-session-start exception leak (#498) | `db971300` | `main` |
 | 92 | 2026-08-06 | stop leaking raw exception text to API/websocket clients | `d0aa0128` | `main` |
 | 91 | 2026-08-06 | track tool-path enrich_with_llm LLM cost via ContextVar | `f1cb23f3` | `main` |
 | 90 | 2026-08-06 | blogger_gate mock note gen → lighter MOCK_GEN model | `b4aea94a` | `main` |

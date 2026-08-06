@@ -1954,3 +1954,36 @@ enrich_with_llm (de_ai_taste polish in copywriter等) bypass _llm_ainvoke → co
 ### Next Steps
 
 - None - task complete
+
+
+## Session 93: sanitize omp-session-start exception leak (#498)
+
+**Date**: 2026-08-06
+**Task**: sanitize omp-session-start exception leak (#498)
+**Branch**: `main`
+
+### Summary
+
+Closed last flagged client-facing exception leak: agent.py:125 omp-session-start sent raw str(e) to ws client. Sanitized to 'omp session failed', dropped as e binding, logger.exception unchanged. Same #497 site-3 precedent. Non-vacuous test (stash-revert confirmed fail). 2096 pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `db971300` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
