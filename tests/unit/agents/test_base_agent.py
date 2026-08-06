@@ -1,7 +1,7 @@
 """Unit tests for BaseAgent class."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -293,3 +293,61 @@ Some text after"""
 
         assert template1 == template2
         assert agent._prompt_template is not None
+
+
+class TestLlmPerfBreakdown:
+    """ainvoke_ms + parse_ms are recorded onto the llm perf_log entry."""
+
+    @pytest.mark.asyncio
+    async def test_llm_ainvoke_records_ainvoke_ms(self):
+        class DummyAgent(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "dummy"
+            prompt_file = ""
+
+            async def execute(self, state, store):
+                return {}
+
+        agent = DummyAgent()
+        # Fake chat response carrying usage_metadata so llm_perf_entry returns
+        # a non-None entry (the gate for ainvoke_ms being attached).
+        fake_response = MagicMock()
+        fake_response.usage_metadata = {"input_tokens": 10, "output_tokens": 5}
+        fake_response.response_metadata = {"model_name": "test-model"}
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as m:
+            m.return_value = MagicMock(ainvoke=AsyncMock(return_value=fake_response))
+            await agent._llm_ainvoke([MagicMock()])
+        assert len(agent._llm_perf_entries) == 1
+        entry = agent._llm_perf_entries[0]
+        assert "ainvoke_ms" in entry
+        assert entry["ainvoke_ms"] >= 0.0
+
+    def test_parse_records_parse_ms_on_last_entry(self):
+        class DummyAgent(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "dummy"
+            prompt_file = ""
+
+            async def execute(self, state, store):
+                return {}
+
+        agent = DummyAgent()
+        agent._llm_perf_entries.append({"kind": "llm", "agent": "dummy"})
+        agent._parse_json_response('{"k": "v"}')
+        assert agent._llm_perf_entries[-1].get("parse_ms") is not None
+        assert agent._llm_perf_entries[-1]["parse_ms"] >= 0.0
+
+    def test_parse_without_prior_entry_does_not_raise(self):
+        class DummyAgent(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "dummy"
+            prompt_file = ""
+
+            async def execute(self, state, store):
+                return {}
+
+        agent = DummyAgent()
+        # No prior _llm_ainvoke → empty entries; parse must still work + not raise.
+        result = agent._parse_json_response('{"k": "v"}')
+        assert result == {"k": "v"}
+        assert agent._llm_perf_entries == []

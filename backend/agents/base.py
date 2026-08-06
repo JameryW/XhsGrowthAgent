@@ -62,7 +62,14 @@ class BaseAgent(ABC):
         from backend.config.models import get_model_id_for_task
 
         started = datetime.now(UTC).isoformat()
+        # ponytail: precise ainvoke wall-clock (perf_counter), separate from the
+        # ISO started/completed pair used for cost-window filtering. The pair
+        # above also covers entry-build overhead; ainvoke_ms isolates the call.
+        import time
+
+        _ainvoke_start = time.perf_counter()
         response = await self.model.ainvoke(messages)
+        ainvoke_ms = (time.perf_counter() - _ainvoke_start) * 1000.0
         try:
             entry = llm_perf_entry(
                 self.agent_name,
@@ -72,6 +79,7 @@ class BaseAgent(ABC):
                 completed_at=datetime.now(UTC).isoformat(),
             )
             if entry is not None:
+                entry["ainvoke_ms"] = round(ainvoke_ms, 3)
                 self._llm_perf_entries.append(entry)
         except Exception as exc:  # best-effort: never break the call
             logger.debug("llm perf entry capture failed: %s", exc)
@@ -135,6 +143,26 @@ class BaseAgent(ABC):
             return []
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
+        """从 LLM 响应中提取 JSON（增强版，处理多种格式和常见语法错误）"""
+        import time
+
+        # ponytail: record parse wall-clock onto the most recent llm perf entry.
+        # Parse (regex repair + bracket fix + json.loads) can dominate when the
+        # model returns malformed JSON needing heavy repair. Best-effort: if no
+        # entry exists yet, the timing is simply discarded.
+        _parse_start = time.perf_counter()
+        try:
+            return self._parse_json_response_impl(content)
+        finally:
+            try:
+                if self._llm_perf_entries:
+                    self._llm_perf_entries[-1]["parse_ms"] = round(
+                        (time.perf_counter() - _parse_start) * 1000.0, 3
+                    )
+            except Exception:
+                pass
+
+    def _parse_json_response_impl(self, content: str) -> dict[str, Any]:
         """从 LLM 响应中提取 JSON（增强版，处理多种格式和常见语法错误）"""
         import re
 
