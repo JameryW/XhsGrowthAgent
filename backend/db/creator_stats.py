@@ -429,6 +429,40 @@ async def _upsert_note_on_conn(conn: Any, note: NoteStats) -> bool:
     return existing is None
 
 
+async def _upsert_notes_batch_on_conn(conn: Any, valid_notes: list[NoteStats]) -> tuple[int, int]:
+    """Batched upsert of pre-validated notes through an existing connection.
+
+    Collapses the per-note SELECT+UPSERT (2N round trips) to one account-grouped
+    existence SELECT plus a single ``executemany`` upsert. ``valid_notes`` must be
+    pre-filtered (normalized, non-blank account_id/note_id) by each caller.
+    Returns ``(imported_new, updated)`` via set diff against the existing rows.
+    """
+    if not valid_notes:
+        return 0, 0
+
+    # Group by account_id so the existence query stays a simple account-scoped
+    # ``note_id = ANY(%s)`` (same idiom as _delete_stale_notes_on_conn).
+    by_account: dict[str, list[str]] = {}
+    for note in valid_notes:
+        by_account.setdefault(note.account_id, []).append(note.note_id)
+
+    existing_ids: set[str] = set()
+    async with conn.cursor() as cur:
+        for account_id, note_ids in by_account.items():
+            await cur.execute(
+                "SELECT note_id FROM creator_note_stats "
+                "WHERE account_id = %s AND note_id = ANY(%s)",
+                (account_id, note_ids),
+            )
+            rows = await cur.fetchall()
+            existing_ids.update(str(row[0]) for row in rows if row)
+        await cur.executemany(_UPSERT_NOTE_SQL, [_note_values(n) for n in valid_notes])
+
+    imported = sum(1 for n in valid_notes if n.note_id not in existing_ids)
+    updated = len(valid_notes) - imported
+    return imported, updated
+
+
 async def upsert_account_stats(overview: AccountStatsOverview) -> None:
     """Upsert account-level overview (idempotent by account_id)."""
     account_id = (overview.account_id or "").strip()
@@ -499,21 +533,19 @@ async def upsert_notes(notes: list[NoteStats]) -> tuple[int, int]:
         return imported, updated
 
     pool = get_pool()
-    imported = 0
-    updated = 0
+    valid_notes: list[NoteStats] = []
+    for note in notes:
+        account_id = (note.account_id or "").strip()
+        note_id = (note.note_id or "").strip()
+        if not account_id or not note_id:
+            continue
+        note.account_id = account_id
+        note.note_id = note_id
+        valid_notes.append(note)
+    if not valid_notes:
+        return 0, 0
     async with pool.connection() as conn:
-        for note in notes:
-            account_id = (note.account_id or "").strip()
-            note_id = (note.note_id or "").strip()
-            if not account_id or not note_id:
-                continue
-            note.account_id = account_id
-            note.note_id = note_id
-            if await _upsert_note_on_conn(conn, note):
-                imported += 1
-            else:
-                updated += 1
-    return imported, updated
+        return await _upsert_notes_batch_on_conn(conn, valid_notes)
 
 
 async def _delete_stale_notes_on_conn(conn: Any, account_id: str, keep_note_ids: set[str]) -> int:
@@ -604,16 +636,9 @@ async def upsert_bundle(
         return imported, updated, deleted
 
     pool = get_pool()
-    imported = 0
-    updated = 0
-    deleted = 0
     async with pool.connection() as conn, conn.transaction():
         await _upsert_account_on_conn(conn, bundle_account)
-        for note in valid_notes:
-            if await _upsert_note_on_conn(conn, note):
-                imported += 1
-            else:
-                updated += 1
+        imported, updated = await _upsert_notes_batch_on_conn(conn, valid_notes)
         deleted = await _delete_stale_notes_on_conn(conn, account_id, keep_note_ids)
     return imported, updated, deleted
 
