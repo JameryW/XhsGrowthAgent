@@ -1855,3 +1855,36 @@ User: 全部合并，部署. Merged 4 PRs (#486 latency sink, #487 deploy env pa
 ### Next Steps
 
 - None - task complete
+
+
+## Session 90: blogger_gate mock note gen → lighter MOCK_GEN model
+
+**Date**: 2026-08-06
+**Task**: blogger_gate mock note gen → lighter MOCK_GEN model
+**Branch**: `main`
+
+### Summary
+
+blogger_gate._generate_mock_notes routed pure-fiction JSON gen through SCOUTING (astron, heavy); sibling blogger_scout already on MOCK_GEN (PR#468). One-token fix SCOUTING→MOCK_GEN + regression test. PR#490 merged, all CI green. Matches lighter-model series #467/#468/#470.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b4aea94a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
