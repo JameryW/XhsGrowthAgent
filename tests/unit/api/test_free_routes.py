@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -209,6 +210,39 @@ class TestCreateDraft:
         data = r.json()["data"]
         assert data["draft"]["niche"] == "fashion"
         assert data["niche_resolution"]["source"] == "manual"
+
+    def test_create_gathers_creative_recalls_concurrently(self, client):
+        """recall_style + recall_plays + recall_materials run via asyncio.gather.
+
+        Discriminator: free module has 0 other asyncio.gather calls. Patch
+        backend.api.routes.free.asyncio.gather; serial implementation calls it
+        0 times, gather implementation calls it once with exactly 3 awaitables
+        whose coroutines are CreativeMemory.recall_style / recall_plays /
+        recall_materials. Reverts to serial → gather never called → test fails.
+        """
+        captured: list[tuple] = []
+        real_gather = asyncio.gather
+
+        async def _fake_gather(*awaitables, **kwargs):
+            captured.append(awaitables)
+            return await real_gather(*awaitables, **kwargs)
+
+        with patch("backend.api.routes.free.asyncio.gather", side_effect=_fake_gather):
+            r = client.post("/api/free/draft", json=DRAFT_BODY)
+        assert r.status_code == 200, r.text
+
+        # gather called exactly once (the only gather in the module)
+        assert len(captured) == 1, f"expected 1 gather, got {len(captured)}"
+        awaitables = captured[0]
+        assert len(awaitables) == 3, f"expected 3 awaitables, got {len(awaitables)}"
+
+        # Each awaitable is a coroutine; verify sources via __qualname__.
+        qualnames = sorted(getattr(aw, "__qualname__", "") for aw in awaitables)
+        assert qualnames == [
+            "CreativeMemory.recall_materials",
+            "CreativeMemory.recall_plays",
+            "CreativeMemory.recall_style",
+        ], f"coroutine sources mismatch: {qualnames}"
 
 
 class TestEvaluateDraft:
