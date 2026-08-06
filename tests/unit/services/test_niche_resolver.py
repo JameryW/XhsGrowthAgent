@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from backend.db.creator_stats import _reset_memory_store, upsert_notes
+from backend.services import niche_resolver
 from backend.services.creator_stats.types import NoteStats
 from backend.services.niche_resolver import (
     infer_niche_from_notes,
@@ -133,3 +136,83 @@ async def test_resolve_account_manual_override_with_imported_notes():
     res = await resolve_account_niche("niche_man", manual_niche="美妆")
     assert res.niche == "美妆"
     assert res.source == "manual"
+
+
+def _make_fake_gather():
+    """Record awaitables passed to asyncio.gather, then delegate to real gather.
+
+    Captures the real ``asyncio.gather`` up front — ``monkeypatch.setattr`` on
+    ``niche_resolver.asyncio.gather`` mutates the shared ``asyncio`` module
+    attribute, so the fake must not re-resolve ``asyncio.gather`` (else
+    infinite recursion).
+    """
+    calls: list[tuple] = []
+    real_gather = asyncio.gather
+
+    async def fake_gather(*awaitables, **kwargs):
+        calls.append(awaitables)
+        return await real_gather(*awaitables, **kwargs)
+
+    return fake_gather, calls
+
+
+@pytest.mark.asyncio
+async def test_resolve_account_niche_gathers_when_notes_none(monkeypatch):
+    """notes=None path: get_account + load_notes_for_account gathered concurrently."""
+    await upsert_notes(
+        [
+            NoteStats(
+                note_id="g1",
+                account_id="niche_gather",
+                title="宝宝辅食添加时间表",
+                tags=["母婴"],
+                views=100,
+            )
+        ]
+    )
+
+    fake_gather, gather_calls = _make_fake_gather()
+    monkeypatch.setattr(niche_resolver.asyncio, "gather", fake_gather)
+
+    res = await resolve_account_niche("niche_gather", manual_niche="")
+
+    assert res.niche == "母婴"
+    assert res.source == "inferred"
+    # Exactly one gather call with two awaitables (get_account path + load_notes_for_account)
+    assert len(gather_calls) == 1
+    assert len(gather_calls[0]) == 2
+    # Discriminate by __qualname__: _fetch_account coroutine (nested in resolve_account_niche)
+    # + load_notes_for_account coroutine
+    qualnames = {aw.__qualname__ for aw in gather_calls[0]}
+    assert any(q.endswith("._fetch_account") for q in qualnames)
+    assert "load_notes_for_account" in qualnames
+
+
+@pytest.mark.asyncio
+async def test_resolve_account_niche_no_gather_when_notes_provided(monkeypatch):
+    """notes= path: only _fetch_account runs serial — no gather call."""
+    await upsert_notes(
+        [
+            NoteStats(
+                note_id="ng1",
+                account_id="niche_nogather",
+                title="宝宝辅食添加时间表",
+                tags=["母婴"],
+                views=100,
+            )
+        ]
+    )
+
+    fake_gather, gather_calls = _make_fake_gather()
+    monkeypatch.setattr(niche_resolver.asyncio, "gather", fake_gather)
+
+    res = await resolve_account_niche(
+        "niche_nogather",
+        manual_niche="",
+        notes=[{"title": "宝宝辅食", "tags": ["母婴"]}],
+    )
+
+    assert res.niche == "母婴"
+    assert res.source == "inferred"
+    # No gather — _fetch_account runs serial (nothing to gather with)
+    assert gather_calls == []

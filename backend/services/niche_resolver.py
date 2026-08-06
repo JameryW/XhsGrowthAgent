@@ -6,6 +6,7 @@ Manual niche always wins when non-empty — inference never silently replaces it
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import asdict, dataclass, field
@@ -301,20 +302,24 @@ async def resolve_account_niche(
     When ``persist`` and source is inferred/manual (not cold_start), writes
     niche onto the account row (best-effort when DB available).
     """
-    bound = ""
-    bound_source = ""
-    try:
-        from backend.db.accounts import get_account
 
-        acc = await get_account(account_id)
-        if acc is not None:
-            bound = getattr(acc, "niche", "") or ""
-            bound_source = getattr(acc, "niche_source", "") or ""
-    except Exception as e:
-        logger.debug("get_account for niche bind failed: %s", e)
+    async def _fetch_account() -> tuple[str, str]:
+        try:
+            from backend.db.accounts import get_account
+
+            acc = await get_account(account_id)
+            if acc is not None:
+                return getattr(acc, "niche", "") or "", getattr(acc, "niche_source", "") or ""
+        except Exception as e:
+            logger.debug("get_account for niche bind failed: %s", e)
+        return "", ""
 
     if notes is None:
-        notes = await load_notes_for_account(account_id)
+        (bound, bound_source), notes = await asyncio.gather(
+            _fetch_account(), load_notes_for_account(account_id)
+        )
+    else:
+        bound, bound_source = await _fetch_account()
 
     manual = (manual_niche or "").strip()
     if manual:
