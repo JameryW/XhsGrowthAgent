@@ -34,7 +34,10 @@ async def error_handler_middleware(
             content=error(
                 code=ErrorCode.INTERNAL_ERROR.value,
                 message="Internal server error",
-                details={"exception": str(e)},
+                # ponytail: raw str(e) leaks internals (paths/SQL/traceback) to
+                # the client; full detail is preserved in logger.exception above
+                # and request_id lets support cross-ref the server logs.
+                details=None,
                 request_id=request_id,
             ).model_dump(mode="json"),
         )

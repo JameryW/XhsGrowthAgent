@@ -195,6 +195,77 @@ async def test_pong_heartbeat_reply_is_silently_ignored() -> None:
     assert errors == []
 
 
+# ── Client-facing exception sanitization ────────────────────────────────────
+
+
+class _StatusErrorSession:
+    """Session whose get_status() raises — exercises the ws catch-all branch."""
+
+    def __init__(self, session_id: str = "err1", mode: str = "free") -> None:
+        self.session_id = session_id
+        self.mode = mode
+        self.is_ready = True
+        self.callbacks = []
+
+    def on_event(self, callback) -> None:
+        self.callbacks.append(callback)
+
+    def remove_event_callback(self, callback) -> None:
+        if callback in self.callbacks:
+            self.callbacks.remove(callback)
+
+    async def get_status(self):
+        raise RuntimeError("secret internal path /etc/passwd")
+
+
+class _StatusErrorManager:
+    def __init__(self) -> None:
+        self.session = _StatusErrorSession()
+
+    async def get_or_create_session(self, session_id=None, mode="workflow"):
+        return self.session
+
+    def start_idle_timer(self, _session_id: str) -> None:
+        return None
+
+
+class _StatusErrorWebSocket:
+    query_params: dict = {}
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+        self.accepted = False
+        self._asked = False
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+    async def receive_text(self) -> str:
+        if not self._asked:
+            self._asked = True
+            return json.dumps({"type": ClientMessageType.GET_STATUS})
+        raise WebSocketDisconnect()
+
+
+async def test_ws_handler_error_does_not_leak_raw_exception_text() -> None:
+    """Catch-all ws error must send a generic message, not raw str(e)."""
+    websocket = _StatusErrorWebSocket()
+    manager = _StatusErrorManager()
+
+    with patch("backend.api.routes.agent.get_bridge_manager", return_value=manager):
+        await agent_ws(websocket)  # type: ignore[arg-type]
+
+    errors = [m for m in websocket.sent if m.get("type") == "error"]
+    assert errors, "expected an error message after get_status() raised"
+    # Generic message only; raw exception text must not leak.
+    assert errors[-1]["message"] == "internal error"
+    assert "secret internal path" not in errors[-1]["message"]
+    assert "/etc/passwd" not in errors[-1]["message"]
+
+
 class _PrewarmManager:
     def __init__(self, *, ready_mode: str | None = None) -> None:
         self.created: list[str] = []

@@ -65,7 +65,34 @@ async def test_generic_exception_handling():
     assert data["success"] is False
     assert data["error"]["code"] == ErrorCode.INTERNAL_ERROR.value
     assert data["error"]["message"] == "Internal server error"
-    assert data["error"]["details"]["exception"] == "Something went wrong"
+    # ponytail: raw exception text must NOT leak to the client `details`.
+    assert data["error"]["details"] is None
+
+
+@pytest.mark.asyncio
+async def test_generic_exception_does_not_leak_raw_text():
+    """Catch-all 500 must not leak raw exception text (paths/SQL/traceback)."""
+    request = MockRequest()
+
+    secret = "secret internal path /etc/passwd"
+
+    async def raise_generic_error(req):
+        raise RuntimeError(secret)
+
+    response = await error_handler_middleware(request, raise_generic_error)
+
+    body = response.body.decode()
+    import json
+
+    data = json.loads(body)
+
+    # Generic message, no raw text in the client payload.
+    assert data["error"]["message"] == "Internal server error"
+    assert data["error"]["details"] is None
+    assert secret not in body
+    # request_id is still sent so support can cross-ref server logs.
+    assert data["request_id"]
+    assert len(data["request_id"]) == 8
 
 
 @pytest.mark.asyncio
