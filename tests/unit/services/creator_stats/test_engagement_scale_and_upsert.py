@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -379,3 +380,119 @@ async def test_upsert_skips_blank_account_and_note_ids():
     assert len(notes) == 1
     assert notes[0].note_id == "ok"
     assert notes[0].views == 3
+
+
+# ── Postgres path: batched upsert (N+1 collapse) ────────────────────────────
+
+
+def _make_mock_pool(conn: MagicMock) -> MagicMock:
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def connection_context():
+        yield conn
+
+    pool.connection = connection_context
+    return pool
+
+
+def _make_mock_conn(cursor: AsyncMock, *, transactional: bool = False) -> MagicMock:
+    conn = MagicMock()
+
+    @asynccontextmanager
+    async def cursor_context():
+        yield cursor
+
+    conn.cursor = cursor_context
+    conn.execute = AsyncMock()
+    if transactional:
+        tx = MagicMock()
+
+        @asynccontextmanager
+        async def transaction_context():
+            yield tx
+
+        conn.transaction = transaction_context
+    return conn
+
+
+@pytest.mark.asyncio
+async def test_upsert_notes_batches_pg_path():
+    """PG path issues one batched SELECT + one executemany, not 2N executes."""
+    cursor = AsyncMock()
+    cursor.fetchall.return_value = []  # no existing rows → all imported
+    conn = _make_mock_conn(cursor)
+    pool = _make_mock_pool(conn)
+
+    notes = [NoteStats(note_id=f"n{i}", account_id="acc", title=f"t{i}", views=i) for i in range(3)]
+
+    with (
+        patch("backend.db.creator_stats.is_pool_ready", return_value=True),
+        patch("backend.db.creator_stats.get_pool", return_value=pool),
+    ):
+        imported, updated = await upsert_notes(notes)
+
+    # One batched existence SELECT, not one per note.
+    assert cursor.execute.call_count == 1
+    # One executemany carrying all 3 rows — not 3 separate upsert executes.
+    assert cursor.executemany.call_count == 1
+    executemany_args, _ = cursor.executemany.call_args
+    assert len(executemany_args[1]) == 3
+    # The per-note conn.execute upsert path must be gone.
+    assert conn.execute.call_count == 0
+    assert (imported, updated) == (3, 0)
+
+
+@pytest.mark.asyncio
+async def test_upsert_notes_pg_path_counts_mixed():
+    """Count semantics: pre-existing note_ids count as updated, rest imported."""
+    cursor = AsyncMock()
+    cursor.fetchall.return_value = [("n1",)]  # n1 already exists
+    conn = _make_mock_conn(cursor)
+    pool = _make_mock_pool(conn)
+
+    notes = [
+        NoteStats(note_id="n1", account_id="acc", views=1),
+        NoteStats(note_id="n2", account_id="acc", views=2),
+        NoteStats(note_id="n3", account_id="acc", views=3),
+    ]
+
+    with (
+        patch("backend.db.creator_stats.is_pool_ready", return_value=True),
+        patch("backend.db.creator_stats.get_pool", return_value=pool),
+    ):
+        imported, updated = await upsert_notes(notes)
+
+    assert cursor.executemany.call_count == 1
+    assert len(cursor.executemany.call_args[0][1]) == 3
+    assert (imported, updated) == (2, 1)
+
+
+@pytest.mark.asyncio
+async def test_upsert_bundle_batches_pg_path():
+    """upsert_bundle batches the note upsert inside its existing transaction."""
+    cursor = AsyncMock()
+    cursor.fetchall.return_value = []
+    cursor.rowcount = 0  # _delete_stale_notes_on_conn deletes nothing
+    conn = _make_mock_conn(cursor, transactional=True)
+    pool = _make_mock_pool(conn)
+
+    account = AccountStatsOverview(account_id="bacc", note_count=2, synced_at="t1")
+    notes = [
+        NoteStats(note_id="bn1", account_id="bacc", views=1),
+        NoteStats(note_id="bn2", account_id="bacc", views=2),
+    ]
+
+    with (
+        patch("backend.db.creator_stats.is_pool_ready", return_value=True),
+        patch("backend.db.creator_stats.get_pool", return_value=pool),
+    ):
+        imported, updated, deleted = await upsert_bundle(account, notes)
+
+    # Account upsert is a single conn.execute; the note batch is one executemany.
+    assert conn.execute.call_count == 1
+    assert cursor.executemany.call_count == 1
+    assert len(cursor.executemany.call_args[0][1]) == 2
+    # Existence SELECT (1) + stale-notes DELETE (1) on the shared cursor.
+    assert cursor.execute.call_count == 2
+    assert (imported, updated, deleted) == (2, 0, 0)
