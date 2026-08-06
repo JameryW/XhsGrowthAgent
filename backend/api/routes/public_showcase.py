@@ -903,7 +903,7 @@ async def _generate_case_summary(state: dict[str, Any] | None, row: WorkflowRow)
         from backend.services.llm_enrichment import get_llm_service
 
         generated = await get_llm_service().enrich_with_llm(
-            task_type=TaskType.WRITING,
+            task_type=TaskType.POLISH,
             prompt_template=_SUMMARY_PROMPT,
             input_data=inputs,
             fallback_fn=_fallback,
