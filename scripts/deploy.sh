@@ -286,6 +286,7 @@ LLMEOF
         -e XHS_SERVICE_TOKEN="${XHS_SERVICE_TOKEN}" \
         -e TAVILY_API_KEY="${TAVILY_API_KEY:-}" \
         -e REDIS_URI="${REDIS_URI:-redis://redis:6379/0}" \
+        -e XHS_LATENCY_LOG="${XHS_LATENCY_LOG:-0}" \
         -e OMP_CWD="${OMP_CWD:-/app}" \
         -v "$PROJECT_DIR/frontend/dist:/app/frontend/dist:ro" \
         -v "$PROJECT_DIR/.hf-cache:/opt/hf-cache" \

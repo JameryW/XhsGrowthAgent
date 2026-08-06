@@ -45,6 +45,8 @@ def test_status_sampling_is_bounded(enabled):
 
 
 def test_emit_writes_structured_json_line(enabled, caplog):
+    # caplog captures via its own handler; the module's self-contained sink
+    # (added when _ENABLED) also emits, but caplog is the portable assertion.
     caplog.set_level(logging.INFO, logger="xhs_growth.api.latency")
     timer = LatencyTimer("/list", "acct-1")
     with timer.segment("db"):
@@ -61,6 +63,36 @@ def test_emit_writes_structured_json_line(enabled, caplog):
     assert "total_ms" in payload
     assert "db_ms" in payload
     assert "serialize_ms" in payload
+
+
+def test_enabled_attaches_self_contained_sink():
+    # Prod gap (PR fix): the app root logger defaults to WARNING with no
+    # handlers, so bare logger.info() is silently dropped. When _ENABLED is
+    # set at import, the module must attach its own INFO StreamHandler so JSON
+    # lines reach `podman logs` without depending on app logging config.
+    # We re-import in a subprocess with the env var set to verify the real
+    # import-time wiring (monkeypatching _ENABLED after import is too late —
+    # the handler is attached once at module load).
+    import subprocess
+    import sys
+
+    code = (
+        "import logging; from backend.api import latency as m; "
+        "lg = logging.getLogger('xhs_growth.api.latency'); "
+        "print(m._ENABLED, lg.getEffectiveLevel() <= logging.INFO, "
+        "len(lg.handlers) >= 1, lg.propagate)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        env={**__import__("os").environ, "XHS_LATENCY_LOG": "1"},
+        capture_output=True,
+        text=True,
+    )
+    enabled_flag, has_info_level, has_handler, propagates = out.stdout.strip().split()
+    assert enabled_flag == "True"
+    assert has_info_level == "True"
+    assert has_handler == "True"
+    assert propagates == "False"
 
 
 def test_emit_never_raises_on_bad_payload(enabled, caplog):
