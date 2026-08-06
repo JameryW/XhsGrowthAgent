@@ -171,3 +171,36 @@ trend_scout._fetch_real_data: gather xhs_trending + competitor_analyzer (indepen
 ### Next Steps
 
 - None - task complete
+
+
+## Session 99: visual_designer gather 2 creative-memory recalls (#505)
+
+**Date**: 2026-08-07
+**Task**: visual_designer gather 2 creative-memory recalls (#505)
+**Branch**: `main`
+
+### Summary
+
+visual_designer.execute: gather recall_style + recall_materials (independent, disjoint namespaces style_dna/material_vault, both swallow own exc → no _safe_* wrappers unlike #504). Return-value pattern, build_creative_context consumes identically. ~2 fewer serial store/DB RTT before VISUAL→astron. 4th gather-parallel example (#502/#503/#504), simplest. Non-vacuous test (1 gather in module, no filter). Triple green (2102). GHA outage continues — merged no-CI.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a4d33f0d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
