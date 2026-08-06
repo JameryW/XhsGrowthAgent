@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 91
+- **Total Sessions**: 92
 - **Last Active**: 2026-08-06
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1923 | Active |
+| `journal-0.md` | ~1956 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 92 | 2026-08-06 | stop leaking raw exception text to API/websocket clients | `d0aa0128` | `main` |
 | 91 | 2026-08-06 | track tool-path enrich_with_llm LLM cost via ContextVar | `f1cb23f3` | `main` |
 | 90 | 2026-08-06 | blogger_gate mock note gen → lighter MOCK_GEN model | `b4aea94a` | `main` |
 | 89 | 2026-08-06 | Merge #486-489 + hot-patch deploy (rebuild OOM); prod pipeline live | `18d4234a`, `8b7554c3`, `affc1223`, `40de4a2d` | `main` |

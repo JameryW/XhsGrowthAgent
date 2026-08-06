@@ -1921,3 +1921,36 @@ enrich_with_llm (de_ai_taste polish in copywriter等) bypass _llm_ainvoke → co
 ### Next Steps
 
 - None - task complete
+
+
+## Session 92: stop leaking raw exception text to API/websocket clients
+
+**Date**: 2026-08-06
+**Task**: stop leaking raw exception text to API/websocket clients
+**Branch**: `main`
+
+### Summary
+
+3 sites sent raw str(e) to client — info-leak security gap. Server-side logging already captured full detail; sanitized only client-facing copy. Same family as error-log-type-name series (#471/#474) now on client side. (1) middleware.py:37 catch-all 500 details={exception: str(e)} → details=None; logger.exception unchanged, request_id still sent. (2) workflow.py:147 task_error = str(e) → f'后台任务异常: {type(e).__name__}'; raw flowed to DB error/task_error cols → to_dict → /list + /status → frontend WorkflowListItem.error → UI; generic+typename preserves ops diagnosability without leaking message/paths; logger.error unchanged. (3) agent.py:286 ws message: str(e) → 'internal error'; except Exception as e → except Exception (e unused, ruff F841); logger.exception captures active exception automatically, unchanged. 3 non-vacuous tests (stash-and-revert confirmed all FAIL without fix): each raises secret-bearing exception, asserts secret absent from client payload. Middleware asserts details None + request_id present; workflow asserts 后台任务异常: ValueError + secret absent from DB cols; ws asserts internal error + secret absent. Existing test_callback_records_error_on_exception strengthened — was silently skipping error branch via if mock_update.called conditional, now registers task in _background_tasks (test-quality fix). 2095 pass. ruff+mypy green. Frontend grep: no consumer parses raw error text (workflow.ts:876 plain display). Out of scope: agent.py:125 omp-session-start f'omp session failed: {e}' same-class pre-existing leak, separate follow-up. Investigator also found: test_xhs_login flake is timing-race (zero-margin asyncio.sleep) not global-state leak (couldn't repro in 10+ sweeps); workflows table well-indexed; vue-tsc clean; candidate #2 hardcoded 0.3 viral-probability gate (content_strategist:283) triggers extra LLM call — next cost/latency candidate.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d0aa0128` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
