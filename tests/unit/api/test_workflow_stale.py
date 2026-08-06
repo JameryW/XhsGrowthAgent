@@ -57,6 +57,7 @@ class TestOnTaskDone:
     @pytest.mark.asyncio
     async def test_callback_records_error_on_exception(self):
         """Done callback records task_error when task raised exception."""
+        from backend.api.routes._runner import _background_tasks
         from backend.api.routes.workflow import _on_task_done
 
         thread_id = "test_task_error"
@@ -74,14 +75,69 @@ class TestOnTaskDone:
         ):
             callback = _on_task_done(thread_id)
             task = asyncio.create_task(_fail())
+            # Register the task so the callback's "replaced by a newer task"
+            # guard does not early-return (matches production wiring).
+            _background_tasks[thread_id] = task
             task.add_done_callback(callback)
-            await asyncio.sleep(0.05)
-
-            if mock_update.called:
+            for _ in range(100):
+                if mock_update.called:
+                    break
+                await asyncio.sleep(0.01)
+            try:
+                assert mock_update.called
                 call_kwargs = mock_update.call_args
                 assert call_kwargs[0][0] == thread_id
                 assert "task_error" in call_kwargs[1]
-                assert call_kwargs[1]["task_error"] == "test failure"
+                # ponytail: generic + typename, NOT raw str(e).
+                assert call_kwargs[1]["task_error"] == "后台任务异常: RuntimeError"
+                assert "error" in call_kwargs[1]
+                assert call_kwargs[1]["error"] == "后台任务异常: RuntimeError"
+            finally:
+                _background_tasks.pop(thread_id, None)
+
+    @pytest.mark.asyncio
+    async def test_callback_does_not_leak_raw_exception_text(self):
+        """Done callback must not leak raw str(e) (paths/SQL) to DB columns."""
+        from backend.api.routes._runner import _background_tasks
+        from backend.api.routes.workflow import _on_task_done
+
+        thread_id = "test_task_error_leak"
+
+        secret = "secret internal path /etc/passwd"
+
+        async def _fail():
+            raise ValueError(secret)
+
+        mock_row = MagicMock()
+        mock_row.status = "running"
+
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=mock_row),
+            patch(_DB_UPDATE, new_callable=AsyncMock) as mock_update,
+        ):
+            callback = _on_task_done(thread_id)
+            task = asyncio.create_task(_fail())
+            _background_tasks[thread_id] = task
+            task.add_done_callback(callback)
+            # The callback schedules the DB update via asyncio.ensure_future;
+            # poll until it runs (deterministic across slow CI runners).
+            for _ in range(100):
+                if mock_update.called:
+                    break
+                await asyncio.sleep(0.01)
+            try:
+                assert mock_update.called, "DB update should fire on task error"
+                call_kwargs = mock_update.call_args
+                task_error = call_kwargs[1].get("task_error", "")
+                error = call_kwargs[1].get("error", "")
+                # Generic + typename only; raw message must not leak.
+                assert task_error == "后台任务异常: ValueError"
+                assert error == "后台任务异常: ValueError"
+                assert secret not in task_error
+                assert secret not in error
+            finally:
+                _background_tasks.pop(thread_id, None)
 
     @pytest.mark.asyncio
     async def test_callback_ignores_cancelled_error(self):

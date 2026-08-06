@@ -144,7 +144,12 @@ def _on_task_done(thread_id: str) -> Callable[[asyncio.Task[None]], None]:
             pass
         except Exception as e:
             logger.error("Background task for %s failed: %s", thread_id, e)
-            task_error = str(e)
+            # ponytail: raw str(e) flows to the DB `error`/`task_error` columns
+            # → /list + /status JSON → frontend UI; keep the full detail in the
+            # logger only. Preserve the type name for ops diagnosability (same
+            # pattern as the error-log-type-name series #471/#474) without
+            # leaking the message/paths.
+            task_error = f"后台任务异常: {type(e).__name__}"
 
         # Best-effort DB update via ensure_future (can't await in a sync callback,
         # and run_until_complete would crash inside an already-running event loop).

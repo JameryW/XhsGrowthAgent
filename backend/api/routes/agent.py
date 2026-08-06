@@ -281,9 +281,13 @@ async def agent_ws(websocket: WebSocket) -> None:
                             "message": f"unknown message type: {msg_type}",
                         }
                     )
-            except Exception as e:
+            except Exception:
                 logger.exception("agent ws handler error")
-                await websocket.send_json({"type": ServerEventType.ERROR, "message": str(e)})
+                # ponytail: raw str(e) to the websocket client leaks internals;
+                # full detail is preserved in logger.exception above.
+                await websocket.send_json(
+                    {"type": ServerEventType.ERROR, "message": "internal error"}
+                )
 
     except WebSocketDisconnect:
         logger.info("agent ws disconnected (session %s)", current_session_id)
