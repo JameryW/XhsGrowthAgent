@@ -1,0 +1,1 @@
+{"file": ".trellis/tasks/08-06-viral-gate-read-settings/prd.md", "reason": "AC checklist: RippleSettings.low_viral_threshold field added default 0.3; content_strategist:283 reads Settings().ripple.low_viral_threshold; existing :134 test (0.3 at threshold, no regen) still green; new env-override test non-vacuous (fails if hardcoded 0.3 stays); pre-push triple."}

@@ -1,0 +1,1 @@
+{"file": ".trellis/tasks/08-06-viral-gate-read-settings/prd.md", "reason": "Full spec: settings.py RippleSettings add low_viral_threshold: float = 0.3 (env RIPPLE_LOW_VIRAL_THRESHOLD); content_strategist.py:283 < 0.3 → < Settings().ripple.low_viral_threshold. Exact #465 precedent. Non-vacuous env-override test proving setting is read. Default 0.3 = no behavior change."}
