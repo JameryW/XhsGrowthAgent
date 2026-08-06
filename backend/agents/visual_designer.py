@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -35,8 +36,10 @@ class VisualDesignerAgent(BaseAgent):
         from backend.memory.creative import CreativeMemory
 
         cm = CreativeMemory(account_id, store=store)
-        styles = await cm.recall_style(query=plan.get("selected_topic", ""))
-        cover_materials = await cm.recall_materials(category="封面", limit=3)
+        styles, cover_materials = await asyncio.gather(
+            cm.recall_style(query=plan.get("selected_topic", "")),
+            cm.recall_materials(category="封面", limit=3),
+        )
 
         creative_ctx = cm.build_creative_context(styles, [], cover_materials)
         system_prompt = self._build_system_prompt(state, extra_context=creative_ctx)
