@@ -149,7 +149,7 @@ async def _generate_mock_notes(
     )
 
     try:
-        model = get_model(TaskType.SCOUTING.value)
+        model = get_model(TaskType.MOCK_GEN.value)
         response = await model.ainvoke([HumanMessage(content=prompt)])
         content = response.content
         if isinstance(content, list):
