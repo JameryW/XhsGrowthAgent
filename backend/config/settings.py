@@ -84,6 +84,12 @@ class RippleSettings(BaseSettings):
     default_ensemble_runs: int = 1
     # 传播概率低于此值则注入 Ripple 数据重新生成策略
     low_viral_threshold: float = 0.3
+    # ripple_gate/finalize: 传播概率低于此值触发 HITL reselect
+    gate_viral_threshold: float = 0.4
+    # ripple_gate/finalize: PMF 分数低于此值触发 HITL reselect
+    gate_pmf_threshold: float = 0.5
+    # ripple_gate/finalize: HITL reselect 上限，超出自动 accept
+    max_reselect_count: int = 2
     request_timeout: int = 300
     workflow_timeout: int = 1800
     enabled: bool = False

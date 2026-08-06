@@ -20,19 +20,17 @@ from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled
+from backend.config.settings import Settings
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.graph.nodes")
-
-_VIRAL_PROB_THRESHOLD = 0.4
-_PMF_SCORE_THRESHOLD = 0.5
-_MAX_RESELECT_COUNT = 2
 
 
 def _is_suboptimal(prediction: dict[str, Any], pmf: dict[str, Any]) -> bool:
     viral_prob = prediction.get("viral_probability", 1.0)
     pmf_score = pmf.get("pmf_score", 1.0)
-    return bool(viral_prob < _VIRAL_PROB_THRESHOLD or pmf_score < _PMF_SCORE_THRESHOLD)
+    cfg = Settings().ripple
+    return bool(viral_prob < cfg.gate_viral_threshold or pmf_score < cfg.gate_pmf_threshold)
 
 
 async def ripple_finalize_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
@@ -88,7 +86,7 @@ async def ripple_finalize_node(state: XHSGrowthState, *, store: BaseStore) -> di
         logger.info("Ripple background results acceptable, continuing")
         return NodeResult(result, "ripple_finalize").to_dict()
 
-    if reselect_count >= _MAX_RESELECT_COUNT:
+    if reselect_count >= Settings().ripple.max_reselect_count:
         logger.info(f"Reselect limit reached ({reselect_count}), accepting suboptimal")
         return NodeResult(result, "ripple_finalize").to_dict()
 
@@ -104,7 +102,7 @@ async def ripple_finalize_node(state: XHSGrowthState, *, store: BaseStore) -> di
             "viral_probability": prediction.get("viral_probability", 0),
             "pmf_score": pmf.get("pmf_score", 0),
             "reselect_count": reselect_count,
-            "max_reselect": _MAX_RESELECT_COUNT,
+            "max_reselect": Settings().ripple.max_reselect_count,
             "source": "background_finalize",
         },
     }

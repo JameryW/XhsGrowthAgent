@@ -119,8 +119,9 @@ def review_outcome(state: XHSGrowthState) -> Literal["evaluator_gate", "revise_c
 
 
 # Max evaluator→revise_content cycles before force-approving.
-# Mirrors ripple_gate's _MAX_RESELECT_COUNT: prevents infinite revision loops
-# when the RQGM panel is miscalibrated or adversarial (keeps rejecting).
+# Mirrors ripple_gate's reselect cap (Settings().ripple.max_reselect_count,
+# default 2): prevents infinite revision loops when the RQGM panel is
+# miscalibrated or adversarial (keeps rejecting).
 _MAX_REVISION_COUNT = 2
 
 # Max analyst→orchestrator cycles in continuous execution mode before

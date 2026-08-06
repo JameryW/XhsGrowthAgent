@@ -9,9 +9,9 @@ prediction/pmf to state, interrupts for a suboptimal result, or fails open
 
 ``ripple_finalize`` runs immediately after the strategist and leaves
 ``ripple_pending=True`` when the store has no result yet; this node is the
-late-arriving consumer that recovers it. Reuses ``_is_suboptimal`` /
-``_MAX_RESELECT_COUNT`` from :mod:`ripple_finalize` so thresholds stay in
-one place.
+late-arriving consumer that recovers it. Reuses ``_is_suboptimal`` from
+:mod:`ripple_finalize` so the suboptimal predicate stays in one place; the
+reselect cap is read from ``Settings().ripple.max_reselect_count``.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled
-from backend.agents.nodes.ripple_finalize import _MAX_RESELECT_COUNT, _is_suboptimal
+from backend.agents.nodes.ripple_finalize import _is_suboptimal
 from backend.config.settings import Settings
 from backend.state.schema import XHSGrowthState
 
@@ -95,7 +95,7 @@ async def ripple_late_recheck_node(state: XHSGrowthState, *, store: BaseStore) -
         logger.info("Ripple late-recheck results acceptable, continuing")
         return NodeResult(result, "ripple_late_recheck").to_dict()
 
-    if reselect_count >= _MAX_RESELECT_COUNT:
+    if reselect_count >= Settings().ripple.max_reselect_count:
         logger.info(f"Reselect limit reached ({reselect_count}), accepting suboptimal")
         return NodeResult(result, "ripple_late_recheck").to_dict()
 
@@ -111,7 +111,7 @@ async def ripple_late_recheck_node(state: XHSGrowthState, *, store: BaseStore) -
             "viral_probability": prediction.get("viral_probability", 0),
             "pmf_score": pmf.get("pmf_score", 0),
             "reselect_count": reselect_count,
-            "max_reselect": _MAX_RESELECT_COUNT,
+            "max_reselect": Settings().ripple.max_reselect_count,
             "source": "late_recheck",
         },
     }
