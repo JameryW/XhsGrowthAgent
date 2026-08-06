@@ -161,6 +161,42 @@ class TestVisualDesignerAgent:
         # Verify LLM was called
         assert mock_model.ainvoke.called
 
+    @pytest.mark.asyncio
+    async def test_execute_recalls_memory_concurrently(self, agent, mock_state, mock_store):
+        """The 2 creative-memory recalls run via one asyncio.gather (not 2 serial awaits).
+
+        Non-vacuous: patches ``asyncio.gather`` in the visual_designer module and
+        asserts it's awaited exactly once with 2 awaitables. If the recalls are
+        reverted to 2 serial ``await`` assignments, ``asyncio.gather`` is never
+        called and this test fails.
+        """
+        import asyncio as _asyncio
+
+        mock_response = MagicMock()
+        mock_response.content = '{"cover_prompt": ""}'
+
+        real_gather = _asyncio.gather
+        gather_calls: list[tuple[tuple, dict]] = []
+
+        async def _fake_gather(*awaitables, **kwargs):
+            gather_calls.append((awaitables, kwargs))
+            # Drive the coroutines the way real gather would, preserving order.
+            return list(await real_gather(*awaitables, **kwargs))
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch("backend.agents.visual_designer.asyncio.gather", new=_fake_gather),
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+
+            await agent.execute(mock_state, store=mock_store)
+
+        assert len(gather_calls) == 1, "memory recalls must be gathered in one call"
+        awaitables, _ = gather_calls[0]
+        assert len(awaitables) == 2, "expected exactly 2 concurrent recalls"
+
     def test_agent_attributes(self, agent):
         """Verify agent class attributes."""
         assert agent.agent_name == "visual_designer"
