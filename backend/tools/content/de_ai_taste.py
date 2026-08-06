@@ -60,7 +60,6 @@ def _load_prompt() -> dict[str, Any]:
     candidates = [
         Path(__file__).resolve().parents[2] / "config" / "prompts" / "tools" / "de_ai_taste.yaml",
         Path("backend/config/prompts/tools/de_ai_taste.yaml"),
-        Path("xhs_growth/config/prompts/tools/de_ai_taste.yaml"),
     ]
     for path in candidates:
         if path.is_file():
