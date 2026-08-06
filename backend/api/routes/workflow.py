@@ -2140,7 +2140,7 @@ async def extract_brief_file(
 
     if filename.lower().endswith(".pdf"):
         source_type = "pdf"
-        brief_text = await _extract_pdf_text(content_bytes)
+        brief_text, _ = await _extract_pdf_text(content_bytes)
     else:
         try:
             brief_text = content_bytes.decode("utf-8")
@@ -2190,10 +2190,11 @@ async def upload_brief_file(
 
     brief_text = ""
     source_type = "text"
+    perf_entry: dict[str, Any] | None = None
 
     if filename.lower().endswith(".pdf"):
         source_type = "pdf"
-        brief_text = await _extract_pdf_text(content_bytes)
+        brief_text, perf_entry = await _extract_pdf_text(content_bytes)
     else:
         try:
             brief_text = content_bytes.decode("utf-8")
@@ -2208,14 +2209,18 @@ async def upload_brief_file(
 
     as_node = _get_as_node(await graph.aget_state(config))
 
-    update_kwargs: dict[str, Any] = {
-        "values": {
-            "brief_content": {
-                "raw_text": brief_text,
-                "source_type": source_type,
-            },
+    update_values: dict[str, Any] = {
+        "brief_content": {
+            "raw_text": brief_text,
+            "source_type": source_type,
         },
     }
+    # Merge the LLM cost entry (if any) into performance_log via the
+    # _append_list reducer so /analytics/costs sees the BRIEF_ANALYSIS spend.
+    if perf_entry is not None:
+        update_values["performance_log"] = [perf_entry]
+
+    update_kwargs: dict[str, Any] = {"values": update_values}
     if as_node:
         update_kwargs["as_node"] = as_node
 
@@ -2242,8 +2247,13 @@ async def upload_brief_file(
     )
 
 
-async def _extract_pdf_text(content_bytes: bytes) -> str:
-    """Extract text from PDF using pdfplumber, with multimodal LLM fallback."""
+async def _extract_pdf_text(content_bytes: bytes) -> tuple[str, dict[str, Any] | None]:
+    """Extract text from PDF using pdfplumber, with multimodal LLM fallback.
+
+    Returns the extracted text plus a kind:"llm" performance_log entry when the
+    LLM fallback ran (None when pdfplumber succeeded — no LLM call made). The
+    caller merges the entry into state.performance_log via aupdate_state.
+    """
     try:
         import io
 
@@ -2257,7 +2267,7 @@ async def _extract_pdf_text(content_bytes: bytes) -> str:
 
         extracted = "\n".join(text_parts).strip()
         if extracted:
-            return extracted
+            return extracted, None
 
         logger.info("PDF text extraction yielded no text, attempting multimodal LLM fallback")
         return await _extract_pdf_with_llm(content_bytes)
@@ -2266,22 +2276,30 @@ async def _extract_pdf_text(content_bytes: bytes) -> str:
         return await _extract_pdf_with_llm(content_bytes)
     except Exception as e:
         logger.error(f"PDF extraction failed: {e}")
-        return ""
+        return "", None
 
 
-async def _extract_pdf_with_llm(content_bytes: bytes) -> str:
-    """Extract text from PDF using multimodal LLM (for scanned documents)."""
+async def _extract_pdf_with_llm(content_bytes: bytes) -> tuple[str, dict[str, Any] | None]:
+    """Extract text from PDF using multimodal LLM (for scanned documents).
+
+    Captures token usage + cost via llm_perf_entry (best-effort: never breaks
+    extraction) so the upload path can merge it into state.performance_log and
+    the /analytics/costs reader sees the BRIEF_ANALYSIS token spend.
+    """
     import base64
 
+    from backend.agents.nodes._base import llm_perf_entry
+    from backend.config.models import TaskType, get_model_id_for_task
+    from backend.models.router import get_model
+
+    model = get_model(TaskType.BRIEF_ANALYSIS.value)
+    model_id = get_model_id_for_task(TaskType.BRIEF_ANALYSIS)
+    b64 = base64.b64encode(content_bytes).decode()
+
+    from langchain_core.messages import HumanMessage
+
+    started = datetime.now(UTC).isoformat()
     try:
-        from backend.config.models import TaskType
-        from backend.models.router import get_model
-
-        model = get_model(TaskType.BRIEF_ANALYSIS.value)
-        b64 = base64.b64encode(content_bytes).decode()
-
-        from langchain_core.messages import HumanMessage
-
         response = await model.ainvoke(
             [
                 HumanMessage(
@@ -2298,10 +2316,26 @@ async def _extract_pdf_with_llm(content_bytes: bytes) -> str:
                 )
             ]
         )
-        return cast(str, response.content or "")
     except Exception as e:
         logger.error(f"Multimodal LLM PDF extraction failed: {e}")
-        return ""
+        return "", None
+
+    completed = datetime.now(UTC).isoformat()
+    text = cast(str, response.content or "")
+
+    perf_entry: dict[str, Any] | None = None
+    try:
+        perf_entry = llm_perf_entry(
+            "brief_pdf_extract",
+            response,
+            model_id,
+            started_at=started,
+            completed_at=completed,
+        )
+    except Exception as e:
+        logger.error(f"brief_pdf_extract cost capture failed: {e}")
+
+    return text, perf_entry
 
 
 @router.get("/brief/export/{thread_id}")
