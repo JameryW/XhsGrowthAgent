@@ -101,8 +101,12 @@ export interface AnalyticsPeriodSummary {
 // 成本数据
 export interface CostData {
   total_cost_usd: number
+  period_cost_usd: number
+  period: string
   today_cost_usd: number
   budget_remaining_usd?: number
   by_model?: Record<string, number>
   circuit_open: boolean
+  /** Type-only — backend returns it; no UI slot yet (future-proofing). */
+  updated_at?: string
 }
