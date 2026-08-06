@@ -22,6 +22,9 @@ if TYPE_CHECKING:
     # Annotation-only; deferring state.schema keeps langgraph.graph.message
     # (~0.3s) off the app cold-start import chain. NoteStats (creator_stats
     # types — dataclasses/inspect at module load) also annotation-only here.
+    # EvaluatorWeights is annotation-only too — evaluator_config pulls psycopg
+    # at module load, which is deferred to the lazy import inside _score_thresholds.
+    from backend.db.evaluator_config import EvaluatorWeights
     from backend.services.creator_stats.types import NoteStats
     from backend.state.schema import XHSGrowthState
 
@@ -103,6 +106,19 @@ def _extract_eval_summary(values: dict[str, Any]) -> tuple[float | None, str | N
     return score_val, decision_val
 
 
+def _thresholds_from_weights(weights: EvaluatorWeights) -> dict[str, float]:
+    """Project resolved weights into the {pass, warn} thresholds API/UI consume.
+
+    Shared by ``_score_thresholds`` (DB-fetch path) and ``run_note_evaluation``
+    (reuse the weights ``_resolve_weights`` already fetched) so the manual eval
+    hot path does one ``load_weights`` round trip instead of two.
+    """
+    return {
+        "pass": float(weights.pass_threshold),
+        "warn": float(weights.reject_threshold),
+    }
+
+
 async def _score_thresholds(account_id: str | None = None) -> dict[str, float]:
     """Resolve the effective evaluator thresholds for API/UI consumers.
 
@@ -128,10 +144,7 @@ async def _score_thresholds(account_id: str | None = None) -> dict[str, float]:
     except Exception:
         logger.exception("failed to resolve evaluator thresholds for account=%s", account_id)
         return defaults
-    return {
-        "pass": float(weights.pass_threshold),
-        "warn": float(weights.reject_threshold),
-    }
+    return _thresholds_from_weights(weights)
 
 
 @router.get("/list")
@@ -925,13 +938,22 @@ async def run_note_evaluation(
     )
     # Resolve account-specific weights before the cache lookup so an override
     # changes the evaluator fingerprint and cannot reuse an incompatible run.
+    # ponytail: _resolve_weights already fetches the account weights (load_weights)
+    # for the fingerprint; reuse them for thresholds instead of fetching the same
+    # row again via _score_thresholds. The two try/except paths stay independent —
+    # fingerprint resolution also depends on get_active_epoch (separate row), and
+    # threshold default-fallback must remain reachable on its own.
+    resolved_weights: EvaluatorWeights | None = None
     try:
-        await _evaluator._resolve_weights(account_id)
+        resolved_weights = await _evaluator._resolve_weights(account_id)
         evaluator_fingerprint = _evaluator.evaluator_fingerprint()
     except Exception as exc:
         logger.debug("evaluator fingerprint resolution failed: %s", exc)
         evaluator_fingerprint = "rqgm:unknown"
-    thresholds = await _score_thresholds(account_id)
+    if resolved_weights is not None:
+        thresholds = _thresholds_from_weights(resolved_weights)
+    else:
+        thresholds = await _score_thresholds(account_id)
 
     from backend.db import quality_evaluations as quality_db
 

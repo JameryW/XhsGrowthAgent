@@ -336,3 +336,36 @@ Delete 4 dead LLM tools (title_generator/hashtag_researcher/image_prompt_generat
 ### Next Steps
 
 - None - task complete
+
+
+## Session 104: PR#510 free route gather 3 creative recalls
+
+**Date**: 2026-08-07
+**Task**: PR#510 free route gather 3 creative recalls
+**Branch**: `main`
+
+### Summary
+
+free-draft create 3 serial creative-memory recalls (recall_style/recall_plays/recall_materials) → asyncio.gather. First gather-parallel in API route (series #502-#508 were agents). All 3 swallow own exc internally + recall_plays handles empty niche internally → no _safe_*/_noop_* wrappers (#508 pattern). Outer try/except safety net kept. Non-vacuous test revert-then-fail proof. Triple green. GHA still down, merged direct (no branch protection on main).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0233fc44` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

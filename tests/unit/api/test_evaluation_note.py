@@ -18,6 +18,14 @@ from backend.services.creator_stats.types import NoteStats
 _EXEC_PATCH = "backend.api.routes.evaluation._evaluator.execute"
 _GET_BUNDLE = "backend.db.creator_stats.get_creator_stats_snapshot_bundle"
 _GET_ACCOUNT = "backend.api.routes.evaluation.get_account"
+# _resolve_weights calls load_weights via the name bound at evaluator.py module
+# load (backend.agents.evaluator.load_weights); _score_thresholds re-imports it
+# fresh from the source module (backend.db.evaluator_config.load_weights). Patch
+# both with one shared AsyncMock so call_count reflects every load_weights call.
+_LOAD_WEIGHTS_EVALUATOR = "backend.agents.evaluator.load_weights"
+_LOAD_WEIGHTS_SOURCE = "backend.db.evaluator_config.load_weights"
+_GET_ACTIVE_EPOCH = "backend.agents.evaluator.get_active_epoch"
+_IS_POOL_READY = "backend.api.routes.evaluation.is_pool_ready"
 
 
 @pytest.fixture
@@ -200,6 +208,33 @@ class TestRunNoteEvaluation:
             client.post("/api/evaluation/note", json={"account_id": "acct1", "note_id": "n1"})
         # EvaluatorAgent.execute(state, store) — store is positional arg #2
         assert mock_exec.call_args.args[1] is store
+
+    def test_load_weights_fetched_once_not_twice(self, client):
+        # Dedupe: run_note_evaluation previously fetched the account weights
+        # twice — once via _resolve_weights (for the fingerprint) and again via
+        # _score_thresholds (for the thresholds). It must now reuse the weights
+        # _resolve_weights already fetched. Non-vacuous: is_pool_ready is forced
+        # True so _score_thresholds would reach load_weights if the dedupe were
+        # reverted (otherwise it short-circuits and the count is 1 either way).
+        from backend.db.evaluator_config import EvaluatorWeights
+
+        note = _note()
+        shared_weights = EvaluatorWeights()
+        load_weights_mock = AsyncMock(return_value=shared_weights)
+        with (
+            patch(_GET_BUNDLE, AsyncMock(return_value=_bundle(note))),
+            patch(_GET_ACCOUNT, AsyncMock(return_value=_account())),
+            _patch_executor(),
+            patch(_IS_POOL_READY, return_value=True),
+            patch(_LOAD_WEIGHTS_EVALUATOR, load_weights_mock),
+            patch(_LOAD_WEIGHTS_SOURCE, load_weights_mock),
+            patch(_GET_ACTIVE_EPOCH, AsyncMock(return_value=MagicMock(bias_severity="standard"))),
+        ):
+            r = client.post("/api/evaluation/note", json={"account_id": "acct1", "note_id": "n1"})
+        assert r.status_code == 200, r.text
+        # One call from _resolve_weights; zero from _score_thresholds (reused).
+        # Before the dedupe this was 2 — revert would fail this assertion.
+        assert load_weights_mock.await_count == 1
 
     def test_latest_marks_run_stale_when_creator_stats_snapshot_changes(self, client):
         from backend.api.routes.evaluation import (
