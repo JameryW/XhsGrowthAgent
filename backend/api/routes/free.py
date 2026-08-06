@@ -18,6 +18,7 @@ checkpoint storage was.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -275,10 +276,10 @@ async def create_draft(
 
         cm = CreativeMemory(account_id, store=store)
         niche = str(record.get("niche") or "")
-        styles = await cm.recall_style(query=f"free draft {niche}".strip())
-        plays = await cm.recall_plays(condition="free creation", niche=niche)
-        materials = await cm.recall_materials(
-            category="文案片段", tags=["高转化", "爆款标题", "开头"]
+        styles, plays, materials = await asyncio.gather(
+            cm.recall_style(query=f"free draft {niche}".strip()),
+            cm.recall_plays(condition="free creation", niche=niche),
+            cm.recall_materials(category="文案片段", tags=["高转化", "爆款标题", "开头"]),
         )
         creative_context = cm.build_creative_context(styles, plays, materials)
     except Exception as e:
