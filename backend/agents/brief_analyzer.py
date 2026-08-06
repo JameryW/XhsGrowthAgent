@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -17,6 +18,13 @@ logger = logging.getLogger("xhs_growth.agents.brief_analyzer")
 
 # Confidence threshold below which we flag the brief as vague
 _CLARIFICATION_THRESHOLD = 0.6
+
+
+async def _noop_benchmark() -> None:
+    """Return None without a lookup — preserves the ``if niche else None`` guard
+    inside a gather (avoids a pointless ``recall_benchmark("")`` DB call when
+    niche is empty)."""
+    return None
 
 
 class BriefAnalyzerAgent(BaseAgent):
@@ -43,8 +51,10 @@ class BriefAnalyzerAgent(BaseAgent):
         from backend.memory.creative import CreativeMemory
 
         cm = CreativeMemory(account_id, store=store)
-        styles = await cm.recall_style(query="商单 brief 风格")
-        benchmark = await cm.recall_benchmark(niche) if niche else None
+        styles, benchmark = await asyncio.gather(
+            cm.recall_style(query="商单 brief 风格"),
+            cm.recall_benchmark(niche) if niche else _noop_benchmark(),
+        )
 
         creative_ctx = cm.build_creative_context(styles, [], [], benchmark)
         system_prompt = self._build_system_prompt(state, extra_context=creative_ctx)
