@@ -45,13 +45,17 @@ class AnalystAgent(BaseAgent):
         account_id = state.get("account_id", "default")
         publish_result = state.get("publish_result", {})
 
-        # 召回历史数据
-        history = await self._recall_memory(
-            store, account_id, query="content performance", namespace="content_history", limit=10
+        # 召回历史数据 + 获取 Ripple 报告（并发：memory RTT 隐藏在 Ripple 长轮询后）
+        history, ripple_report = await asyncio.gather(
+            self._recall_memory(
+                store,
+                account_id,
+                query="content performance",
+                namespace="content_history",
+                limit=10,
+            ),
+            self._ripple_report(state),
         )
-
-        # 尝试获取 Ripple 预测报告（如果之前有模拟）
-        ripple_report = await self._ripple_report(state)
 
         system_prompt = self._build_system_prompt(state)
 
@@ -169,8 +173,6 @@ class AnalystAgent(BaseAgent):
                         # prompt epoch. Never blocks the publish path.
                         # ponytail: create_task; _safe_evolve swallows all errors
                         # and maybe_evolve is re-entry-guarded per account.
-                        import asyncio
-
                         asyncio.create_task(_safe_evolve(state.get("account_id")))  # noqa: RUF006
             except Exception as e:
                 logger.debug(f"样本 engagement 回灌失败 (non-blocking): {e}")
