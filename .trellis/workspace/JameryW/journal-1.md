@@ -237,3 +237,36 @@ trend_scout.execute top-level gather: _recall_memory (fast Postgres) + _fetch_re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 101: brief_analyzer gather style + benchmark recalls (#507)
+
+**Date**: 2026-08-07
+**Task**: brief_analyzer gather style + benchmark recalls (#507)
+**Branch**: `main`
+
+### Summary
+
+brief_analyzer.execute: gather recall_style + recall_benchmark (independent, disjoint ns, both swallow own exc → no wrapper). Niche guard preserved via _noop_benchmark coroutine (empty niche → no recall_benchmark("") lookup, one unified gather path no branch dup). 2 non-vacuous tests (concurrency revert-then-fail + guard test: drop guard → recall_benchmark("") called + unawaited-coroutine RuntimeWarning proof load-bearing). 6th gather-parallel example, first with conditional-call guard. Triple green (2106). GHA outage — merged no-CI.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0d38f79b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
