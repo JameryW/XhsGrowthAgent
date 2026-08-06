@@ -72,3 +72,36 @@ Extracted 3 hardcoded Ripple quality thresholds (0.4 viral/0.5 pmf/2 max-reselec
 ### Next Steps
 
 - None - task complete
+
+
+## Session 96: PR#502 copywriter parallel memory recalls
+
+**Date**: 2026-08-07
+**Task**: PR#502 copywriter parallel memory recalls
+**Branch**: `main`
+
+### Summary
+
+Copywriter ran 4 independent read-only memory recalls serially before LLM call on every run (recall_style/recall_materials/2x _recall_memory, disjoint namespaces, no data dependency). Gathered into one asyncio.gather → ~3-4 fewer serial DB+store RTTs on hot path before WRITING→astron call. Same idiom as content_strategist:210. All 4 recalls swallow own exceptions → gather adds no new exception surface. build_mode_creative_context (separate resilience try/except) stays sequential. Audience-prefs f-string extracted to _audience_pref_query helper (ruff 100-char limit when nested in gather); byte-identical across 9 edge cases. Non-vacuous concurrency test (patch asyncio.gather, assert 1 call w/ 4 awaitables; reverts to serial → fails). Merged during ongoing GHA outage (webhooks still delayed, CI not triggering); no branch protection + local triple green (2099 pytest).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4f23e64c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

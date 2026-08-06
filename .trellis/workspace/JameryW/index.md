@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 95
+- **Total Sessions**: 96
 - **Last Active**: 2026-08-07
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~74 | Active |
+| `journal-1.md` | ~107 | Active |
 | `journal-0.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -22,6 +22,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 96 | 2026-08-07 | PR#502 copywriter parallel memory recalls | `4f23e64c` | `main` |
 | 95 | 2026-08-07 | PR#501 ripple-gate thresholds → Settings | `a15b0b34` | `main` |
 | 94 | 2026-08-07 | PR#499 viral-gate→Settings + PR#500 showcase WRITING→POLISH (GHA-outage-merged) | `28cf9f11`, `d4a51414` | `main` |
 | 93 | 2026-08-06 | sanitize omp-session-start exception leak (#498) | `db971300` | `main` |

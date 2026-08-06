@@ -37,13 +37,21 @@ class ContentStrategistAgent(BaseAgent):
 
         cm = CreativeMemory(account_id, store=store)
         niche = state.get("niche", "母婴")
-        styles = await cm.recall_style(query=f"content strategy {niche}")
-        plays = await cm.recall_plays(condition="content strategy", niche=niche)
-        benchmark = await cm.recall_benchmark(niche)
-
-        # 保留原有的 _recall_memory 召回
-        insights = await self._recall_memory(
-            store, account_id, query="content strategy", namespace="performance_insights", limit=5
+        # 4 independent read-only recalls with disjoint namespaces → one
+        # concurrent wave instead of 4 serial ones. Each recall swallows its
+        # own exceptions internally (returns [] / None), so gather adds no new
+        # exception surface. Same idiom as content_strategist.py:210 + #502.
+        styles, plays, benchmark, insights = await asyncio.gather(
+            cm.recall_style(query=f"content strategy {niche}"),
+            cm.recall_plays(condition="content strategy", niche=niche),
+            cm.recall_benchmark(niche),
+            self._recall_memory(
+                store,
+                account_id,
+                query="content strategy",
+                namespace="performance_insights",
+                limit=5,
+            ),
         )
         memory_context = ""
         if insights:
