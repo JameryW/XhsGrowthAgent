@@ -1,0 +1,1 @@
+{"file": ".trellis/tasks/08-07-showcase-summary-lighter-model/prd.md", "reason": "Spec: public_showcase.py:906 task_type=TaskType.WRITING → TaskType.POLISH (→deepseek-v4-flash). 1-LOC. Narrow 1-sentence summary on public read path ×4 concurrent. Same #467/#470/#490 precedent. Non-vacuous test pinning task_type=POLISH. No #499 conflict."}
