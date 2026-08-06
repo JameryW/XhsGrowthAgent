@@ -9,7 +9,6 @@ import httpx
 import pytest
 
 from backend.services.ripple_service import (
-    RecoveryStatus,
     RippleHealthStatus,
     RippleService,
     RippleTimeoutError,
@@ -547,108 +546,6 @@ class TestRippleServiceCancelSimulation:
         assert result["job_id"] == "job-net"
         assert result["status"] == "error"
         assert "Connection refused" in result["error"]
-
-
-class TestRippleServiceRecoverResult:
-    """测试 recover_result 方法"""
-
-    @pytest.mark.asyncio
-    async def test_recover_result_completed(self):
-        """任务已完成 — 返回结果"""
-        service = RippleService()
-
-        with (
-            patch.object(service, "get_simulation_status", new_callable=AsyncMock) as mock_status,
-            patch.object(service, "get_result", new_callable=AsyncMock) as mock_result,
-        ):
-            mock_status.return_value = {"status": "completed"}
-            mock_result.return_value = {"output": {"metrics": {"estimated_reach": 5000}}}
-
-            recovery = await service.recover_result("job-done")
-
-        assert isinstance(recovery, RecoveryStatus)
-        assert recovery.job_id == "job-done"
-        assert recovery.status == "completed"
-        assert recovery.result is not None
-        assert recovery.result["output"]["metrics"]["estimated_reach"] == 5000
-
-    @pytest.mark.asyncio
-    async def test_recover_result_running(self):
-        """任务仍在运行 — 返回 running 状态"""
-        service = RippleService()
-
-        with patch.object(service, "get_simulation_status", new_callable=AsyncMock) as mock_status:
-            mock_status.return_value = {"status": "running"}
-
-            recovery = await service.recover_result("job-running")
-
-        assert isinstance(recovery, RecoveryStatus)
-        assert recovery.job_id == "job-running"
-        assert recovery.status == "running"
-        assert recovery.result is None
-
-    @pytest.mark.asyncio
-    async def test_recover_result_failed(self):
-        """任务失败 — 返回 failed 状态"""
-        service = RippleService()
-
-        with patch.object(service, "get_simulation_status", new_callable=AsyncMock) as mock_status:
-            mock_status.return_value = {"status": "failed", "error": "OOM"}
-
-            recovery = await service.recover_result("job-failed")
-
-        assert isinstance(recovery, RecoveryStatus)
-        assert recovery.job_id == "job-failed"
-        assert recovery.status == "failed"
-        assert "OOM" in recovery.error
-
-    @pytest.mark.asyncio
-    async def test_recover_result_timed_out(self):
-        """任务服务端超时 — 返回 timed_out 状态"""
-        service = RippleService()
-
-        with patch.object(service, "get_simulation_status", new_callable=AsyncMock) as mock_status:
-            mock_status.return_value = {"status": "timed_out", "error": "phase timeout"}
-
-            recovery = await service.recover_result("job-timeout")
-
-        assert isinstance(recovery, RecoveryStatus)
-        assert recovery.job_id == "job-timeout"
-        assert recovery.status == "timed_out"
-        assert "phase timeout" in recovery.error
-
-    @pytest.mark.asyncio
-    async def test_recover_result_not_found(self):
-        """任务 404 — 返回 not_found 状态"""
-        service = RippleService()
-
-        with patch.object(service, "get_simulation_status", new_callable=AsyncMock) as mock_status:
-            mock_status.side_effect = httpx.HTTPStatusError(
-                "404",
-                request=MagicMock(),
-                response=MagicMock(status_code=404),
-            )
-
-            recovery = await service.recover_result("job-404")
-
-        assert isinstance(recovery, RecoveryStatus)
-        assert recovery.job_id == "job-404"
-        assert recovery.status == "not_found"
-
-    @pytest.mark.asyncio
-    async def test_recover_result_network_error(self):
-        """网络错误 — 返回 failed 状态"""
-        service = RippleService()
-
-        with patch.object(service, "get_simulation_status", new_callable=AsyncMock) as mock_status:
-            mock_status.side_effect = httpx.ConnectError("Connection refused")
-
-            recovery = await service.recover_result("job-net")
-
-        assert isinstance(recovery, RecoveryStatus)
-        assert recovery.job_id == "job-net"
-        assert recovery.status == "failed"
-        assert "Connection refused" in recovery.error
 
 
 class TestAutoRecovery:

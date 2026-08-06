@@ -78,8 +78,7 @@ backend/
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)
-│   ├── __init__.py                      # Exports: ToolRegistry
-│   ├── registry.py                      # ToolRegistry — maps workflow agents to tools
+│   ├── __init__.py                      # Namespace docstring (no central registry)
 │   ├── content/                         # Content generation tools
 │   │   ├── __init__.py                  # Exports: hashtag_researcher, title_generator, etc.
 │   │   ├── hashtag_researcher.py        # hashtag_researcher
@@ -238,8 +237,7 @@ from backend.core import BaseAgent, AgentError, handle_agent_error
 from backend.state import XHSGrowthState, WorkflowPhase, merge_dict, append_list
 from backend.state.substates import TrendData, ContentPlan
 
-# Tools
-from backend.tools import ToolRegistry
+# Tools (agents import these directly; no central registry)
 from backend.tools.content import hashtag_researcher, title_generator
 from backend.tools.ripple import ripple_predict_content_spread
 from backend.tools.xhs import xhs_trending
@@ -279,7 +277,7 @@ from backend.memory import MemoryManager, SceneDatabase
 2. Create matching node `backend/agents/nodes/<name>.py` — async function named `<snake_case>_node`
 3. Add prompt YAML to `backend/config/prompts/<name>.yaml`
 4. Add `TaskType` entry in `backend/config/models.py` if needed
-5. Register tools in `backend/tools/registry.py:_agent_tools`
+5. Import any needed tools via direct submodule imports inside `execute()` (no central registry)
 6. Add node + edges in `backend/graph/builder.py`
 7. Add routing logic in `backend/graph/routers.py` if conditional edges needed
 8. Export agent class in `backend/agents/__init__.py`
@@ -296,16 +294,16 @@ from backend.memory import MemoryManager, SceneDatabase
 
 1. Create tool file in `backend/tools/<category>/<name>.py` — use `@tool` decorator from `langchain_core.tools`
 2. Export tool function in `backend/tools/<category>/__init__.py`
-3. For a workflow-agent tool, register it in `ToolRegistry._agent_tools` in
-   `backend/tools/registry.py`; manual-only operator tools must remain importable
-   but unregistered (for example, `backend/tools/xhs/engagement.py`)
+3. Have the consuming agent import it via direct submodule import (no central
+   registry); manual-only operator tools (e.g. `backend/tools/xhs/engagement.py`)
+   remain importable but are simply never imported by workflow agents
 4. Add tool-specific prompt YAML in `backend/config/prompts/tools/<name>.yaml` if LLM-enriched
 
 **Real example — hashtag_researcher tool:**
 - Tool: `backend/tools/content/hashtag_researcher.py` → `hashtag_researcher`
 - Exported in: `backend/tools/content/__init__.py`
 - Prompt: `backend/config/prompts/tools/hashtag_researcher.yaml`
-- Registered for agent `"copywriter"` in `ToolRegistry._agent_tools`
+- Consumed by the `copywriter` agent via `from backend.tools.content import hashtag_researcher`
 
 ### Adding a New Optimization Node
 
@@ -398,7 +396,7 @@ The `agent_name` class attribute uses `snake_case` matching the file name, while
 | `brief_analyzer.py` | `"brief_analyzer"` | `BriefAnalyzerAgent` |
 | `viral_matcher.py` | `"viral_matcher"` | `ViralMatcherAgent` |
 
-This `agent_name` string is used in `ToolRegistry._agent_tools` keys, `current_agent` state field, and logging.
+This `agent_name` string is used in the `current_agent` state field and logging.
 
 ### Prompt YAML Structure
 
@@ -453,7 +451,7 @@ async def trend_scout_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     return NodeResult(result, "trend_scout").to_dict()
 ```
 
-### Tool Registration
+### Tool Definition & Consumption
 
 **Tool definition** (`backend/tools/content/hashtag_researcher.py`):
 ```python
@@ -462,12 +460,12 @@ async def hashtag_researcher(keyword: str, ...) -> dict:
     ...
 ```
 
-**Registry mapping** (`backend/tools/registry.py`):
+**Consumption** (`backend/agents/copywriter.py` — direct import, no registry):
 ```python
-_agent_tools: dict[str, list[str]] = {
-    "copywriter": ["hashtag_researcher", "title_generator", "ripple_predict_content_spread"],
+async def execute(self, state, store):
+    from backend.tools.content import hashtag_researcher
+    result = await hashtag_researcher.ainvoke({"keyword": ...})
     ...
-}
 ```
 
 ### Graph Topology

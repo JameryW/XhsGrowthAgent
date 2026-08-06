@@ -141,7 +141,7 @@ gh pr create --title "feat: add new agent for XYZ" --body "..."
 
 1. 创建 `xhs_growth/agents/<name>.py`，继承 `BaseAgent`
 2. 添加 prompt YAML 到 `xhs_growth/config/prompts/<name>.yaml`
-3. 注册 tools 到 `xhs_growth/tools/registry.py:_agent_tools`
+3. 在 `execute()` 内通过直接 submodule import 引入所需 tools（如 `from backend.tools.analysis.topic_scorer import topic_scorer`）；无中心注册表
 4. 添加 node + edges 到 `xhs_growth/graph/builder.py`
 5. 更新 `TaskType` enum (如需要)
 6. 导出 Agent 类到 `xhs_growth/agents/__init__.py`
@@ -153,10 +153,9 @@ gh pr create --title "feat: add new agent for XYZ" --body "..."
 
 1. 创建 tool 文件在 `xhs_growth/tools/<category>/<name>.py`
 2. 使用 `@tool` decorator 从 `langchain_core.tools`
-3. 注册到 `ToolRegistry.register()` 或 `register_many()`
-4. 添加到 agent's tool list 在 `_agent_tools`
-5. 导出 tool 到 `xhs_growth/tools/<category>/__init__.py`
-6. 创建单元测试 `tests/unit/tools/<category>/test_<name>.py`
+3. 导出 tool 到 `xhs_growth/tools/<category>/__init__.py`
+4. 由消费该 tool 的 agent 在 `execute()` 内直接 submodule import 引入（无中心注册表）；manual-only 操作员工具只需保持可 import、不被任何 workflow agent 引用
+5. 创建单元测试 `tests/unit/tools/<category>/test_<name>.py`
 
 ## 问题反馈
 

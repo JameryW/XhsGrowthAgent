@@ -233,16 +233,15 @@ Routes tasks to LLM providers by `TaskType` via `resolve_model_id`:
 
 Provider support: Anthropic, OpenAI, DeepSeek, DashScope (Qwen), XiaomiMiMo, Xunfei.
 
-### Tool Registry (tools/registry.py)
+### Tool Discovery (direct submodule imports)
 
-Maps agents to their tools:
-- `trend_scout`: xhs_trending, keyword_monitor, competitor_analyzer
-- `content_strategist`: topic_scorer, timing_optimizer, calendar_manager, ripple_predict_content_spread, ripple_validate_pmf
-- `copywriter`: hashtag_researcher, title_generator, ripple_predict_content_spread
-- `visual_designer`: image_prompt_generator, layout_recommender, style_library
-- `analyst`: analytics_reader, pattern_detector, report_generator, ripple_get_simulation_result, ripple_generate_report
-- `publisher`: xhs_publisher, ab_test_manager, post_scheduler
-- `engagement`: comment_replier, dm_handler, escalation_flagger
+There is no central tool registry. Agents obtain their tools via direct,
+function-level submodule imports inside `execute()` (lazy), e.g.
+`backend/agents/content_strategist.py: from backend.tools.analysis.topic_scorer import topic_scorer`.
+Tools are LangChain `@tool`-decorated functions; agents invoke them directly
+(no `bind_tools` / `tools=` wiring on `BaseAgent`). Manual-only operator tools
+(e.g. `backend/tools/xhs/engagement.py`) are importable but never pulled into
+any workflow agent.
 
 ### Ripple CAS Integration (tools/ripple/client.py)
 
@@ -366,7 +365,7 @@ Deploy using `scripts/deploy.sh` (not manual `podman run`):
 
 1. Create `agents/<name>.py` extending `BaseAgent`
 2. Add prompt YAML to `config/prompts/<name>.yaml`
-3. Register tools in `tools/registry.py:_agent_tools`
+3. Import any needed tools via direct submodule imports inside `execute()` (lazy)
 4. Add node + edges in `graph/builder.py`
 5. Update `TaskType` enum in `config/models.py` if needed
 6. Export agent class in `agents/__init__.py`
@@ -375,9 +374,8 @@ Deploy using `scripts/deploy.sh` (not manual `podman run`):
 
 1. Create tool file in appropriate `tools/<category>/` subdirectory
 2. Use `@tool` decorator from `langchain_core.tools`
-3. Register in `ToolRegistry.register()` or `register_many()`
-4. Add to agent's tool list in `_agent_tools`
-5. Export tool in `tools/<category>/__init__.py`
+3. Export tool in `tools/<category>/__init__.py`
+4. Have the consuming agent import it via direct submodule import (no central registry)
 
 ### Prompt YAML Format
 

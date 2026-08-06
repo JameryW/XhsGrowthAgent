@@ -663,7 +663,7 @@ The `_on_task_done` callback:
    - Calls `_check_cancelled(state)`.
    - Emits `WORKFLOW_AGENT_STARTED` and `WORKFLOW_AGENT_COMPLETED` events.
    - Wraps result in `NodeResult(..., "agent_name").to_dict()`.
-4. Be registered in `tools/registry.py` if it uses tools.
+4. Import any needed tools via direct submodule imports inside `execute()` (no central registry).
 5. Have edges added in `graph/builder.py`.
 6. Be exported in `agents/__init__.py` and `agents/nodes/__init__.py`.
 

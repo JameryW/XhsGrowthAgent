@@ -130,8 +130,10 @@ class CreatorStatsSettings(BaseSettings):
     # A complete account crawl opens a real logged-in browser tab, so keep the
     # default conservative.  Set to 0 to disable the background worker while
     # retaining the manual ``sync-all`` API.
-    # 36h base + jitter ≈ ~1-2.5 days between crawls — safer under risk control.
-    sync_interval_hours: float = 36.0
+    # 24h base + jitter (triangular 0.65-1.75x -> ~15.6-42h) — roughly once a
+    # day while keeping the anti-risk random spread.  Set to 0 to disable the
+    # background worker while retaining the manual ``sync-all`` API.
+    sync_interval_hours: float = 24.0
 
     # 反风控调度：部署/重启后不立即爬取，先随机延迟（秒），避免"启动即爬"
     # 的机器模式。设为 0 可关闭（恢复启动即跑）。

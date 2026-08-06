@@ -1647,3 +1647,135 @@ WorkflowReplay spec 适配 manifest 内嵌结果优化（696 全绿）；:global
 ### Next Steps
 
 - None - task complete
+
+
+## Session 84: creator_stats 同步周期改 24h
+
+**Date**: 2026-08-06
+**Task**: creator_stats 同步周期改 24h
+**Branch**: `main`
+
+### Summary
+
+creator_stats 调度基线 36h→24h(保留反风控三角分布)。根因: deploy.sh env 兜底 CREATOR_STATS_SYNC_INTERVAL_HOURS=36 覆盖 settings 代码默认,光改 settings 无效。三处对齐: settings.py/deploy.sh/.env.example。正文不同步现状不变(公开页爬取永久禁用)。部署验证 interval_hours=24.0 生效。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `98114060` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 85: prod 开启 RIPPLE_BACKGROUND content_strategist 异步化
+
+**Date**: 2026-08-06
+**Task**: prod 开启 RIPPLE_BACKGROUND content_strategist 异步化
+**Branch**: `main`
+
+### Summary
+
+content_strategist 352s 同步阻塞根因: RIPPLE_BACKGROUND 未设默认 False。代码已支持 background mode(PR#466 fire-and-forget+late_recheck+stale race 修复),只差 env 开关。deploy.sh+.env.example 加 RIPPLE_BACKGROUND=1(默认开),补 _schedule_ripple_background 7 单测(persist/timeout/unreachable/stale-delete/exception-isolation/event-emit)。关键: RIPPLE_BACKGROUND 不在 system_config SYSTEM_KEYS 白名单,env 不被 DB 覆盖(避开 sync_interval 那次陷阱)。不改 settings 默认(保 sync 测试),不动 graph/节点。trellis-check 0 问题,396 回归绿。部署验证 env=1 生效。收益: content_strategist 352s→<10s。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5d88ffe5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 86: 删除死代码 stub OptimizationService + report_generator
+
+**Date**: 2026-08-06
+**Task**: 删除死代码 stub OptimizationService + report_generator
+**Branch**: `main`
+
+### Summary
+
+深挖未探方向找到死代码 stub。OptimizationService.analyze_titles 返回空 dict+TODO,report_generator 两方法返回硬编码占位数据,两者导出但全代码库零消费方。删文件+清理 lazy 导出/__all__。topic_scorer 保留。净删 40 行,2050 测试绿。check 额外发现 ToolRegistry 整体 vestigial(register_all_tools 零生产调用)——标为 separate task 候选。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cfc53f48` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 87: 删除 vestigial ToolRegistry 架构层
+
+**Date**: 2026-08-06
+**Task**: 删除 vestigial ToolRegistry 架构层
+**Branch**: `main`
+
+### Summary
+
+trellis-check 删 stub 时发现 ToolRegistry 整体 vestigial。trellis-research 确认 register_all_tools/get_tools_for_agent/_agent_tools 全链路(agents/graph/api/services/omp/cli)零生产调用,agents 直接 submodule import 取工具。删 registry.py+__init__ lazy 导出+10 registry 测试(保留 11 LLM fallback + 12 ripple),更新 CLAUDE/CONTRIBUTING/README/spec 文档为实际机制。check 额外修 3 处文档遗漏。净删 305 行,2040 测试绿。死代码清理系列:stub(2处)+ToolRegistry 架构层。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `49c4d072` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

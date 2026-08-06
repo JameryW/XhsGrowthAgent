@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "验证 background mode 数据正确性契约：late_recheck 恢复、store persist、stale 清理不丢数据"}

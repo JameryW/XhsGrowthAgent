@@ -33,15 +33,6 @@ _DEFAULT_MAX_WAVES = 3
 _DEFAULT_SIMULATION_HORIZON = "12h"
 
 
-class RecoveryStatus(BaseModel):
-    """Ripple 模拟恢复状态 — 支持未来后台轮询扩展"""
-
-    job_id: str
-    status: str  # "completed", "running", "timed_out", "failed", "not_found"
-    result: dict[str, Any] | None = None
-    error: str = ""
-
-
 class RippleHealthStatus(BaseModel):
     """Ripple 服务健康状态"""
 
@@ -1096,82 +1087,6 @@ class RippleService:
         except Exception as e:
             logger.warning(f"Ripple cancel failed for {job_id}: {e}")
             return {"cancelled": False, "job_id": job_id, "status": "error", "error": str(e)}
-
-    async def recover_result(self, job_id: str) -> RecoveryStatus:
-        """恢复超时模拟的结果 — 检查任务状态，若已完成则获取结果
-
-        返回结构化的 RecoveryStatus，支持未来后台轮询扩展：
-        - status="completed": result 字段包含完整数据
-        - status="running": 任务仍在执行，可稍后重试
-        - status="failed": 任务失败，error 字段包含原因
-        - status="not_found": 任务不存在
-
-        Args:
-            job_id: 模拟任务 ID
-
-        Returns:
-            RecoveryStatus 结构化恢复状态
-        """
-        try:
-            status_resp = await self.get_simulation_status(job_id)
-            state = status_resp.get("status", "").lower()
-
-            if state in ("completed", "done", "finished"):
-                result = await self.get_result(job_id)
-                return RecoveryStatus(
-                    job_id=job_id,
-                    status="completed",
-                    result=result,
-                )
-
-            if state in ("failed", "error"):
-                error_msg = status_resp.get("error", "Unknown simulation error")
-                return RecoveryStatus(
-                    job_id=job_id,
-                    status="failed",
-                    error=error_msg,
-                )
-
-            if state in ("timed_out", "timeout"):
-                error_msg = status_resp.get("error", "Ripple simulation timed out")
-                return RecoveryStatus(
-                    job_id=job_id,
-                    status="timed_out",
-                    error=error_msg,
-                )
-
-            if state in ("running", "pending", "submitted", "in_progress"):
-                return RecoveryStatus(
-                    job_id=job_id,
-                    status="running",
-                )
-
-            # 未知状态视为运行中
-            logger.warning(f"Ripple simulation {job_id} has unknown status: {state}")
-            return RecoveryStatus(
-                job_id=job_id,
-                status="running",
-            )
-
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                return RecoveryStatus(
-                    job_id=job_id,
-                    status="not_found",
-                    error=f"Simulation {job_id} not found",
-                )
-            return RecoveryStatus(
-                job_id=job_id,
-                status="failed",
-                error=str(e),
-            )
-
-        except Exception as e:
-            return RecoveryStatus(
-                job_id=job_id,
-                status="failed",
-                error=str(e),
-            )
 
     # ── 结果解析 ──
 
