@@ -1,0 +1,1 @@
+{"file": "prd.md", "reason": "AC: copywriter:41-61 uses asyncio.gather for 4 recalls; :82-93 build_mode_creative_context try/except untouched; existing test_copywriter.py green (output-based not call-order); new non-vacuous concurrency test fails on revert to serial; verify none of 4 recalls can raise to caller (each swallows own exceptions); pre-push triple."}
