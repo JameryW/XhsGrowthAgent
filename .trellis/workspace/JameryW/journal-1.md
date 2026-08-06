@@ -369,3 +369,36 @@ free-draft create 3 serial creative-memory recalls (recall_style/recall_plays/re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 105: PR#511 evaluation dedupe load_weights
+
+**Date**: 2026-08-07
+**Task**: PR#511 evaluation dedupe load_weights
+**Branch**: `main`
+
+### Summary
+
+run_note_evaluation fetched same account weights twice (resolve_weights + score_thresholds both called load_weights). Capture resolve_weights return, derive thresholds via _thresholds_from_weights helper (shared with score_thresholds for DRY, 6 callers unaffected). Two try/except kept independent (fingerprint depends on get_active_epoch too; thresholds don't). Defensive None-guard. Zero behavior change, 1 fewer DB RTT per /evaluation/note POST. Non-vacuous test revert-then-fail proof. Triple green. GHA still down, merged direct.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1260f3d7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
