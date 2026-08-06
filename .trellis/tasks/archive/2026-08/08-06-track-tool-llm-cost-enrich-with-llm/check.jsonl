@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "cost-aware + best-effort capture semantics standard"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "best-effort capture must never break the LLM call — matches existing _llm_ainvoke semantics"}
