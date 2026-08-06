@@ -12,7 +12,11 @@ from backend.tools.content import (
     image_prompt_generator,
     title_generator,
 )
+from backend.tools.content.hashtag_researcher import _load_prompt as _load_hashtag_prompt
+from backend.tools.content.image_prompt import _load_prompt as _load_image_prompt
+from backend.tools.content.title_generator import _load_prompt as _load_title_prompt
 from backend.tools.scheduling import timing_optimizer
+from backend.tools.scheduling.calendar import _load_prompt as _load_timing_prompt
 from backend.tools.xhs import (
     comment_replier,
     dm_handler,
@@ -373,3 +377,39 @@ def test_manual_engagement_tools_remain_importable():
         "fetch_pending_comments",
     }
     assert all("manual-only" in tool.description for tool in tools)
+
+
+# ── _load_prompt path resolution tests ──
+# Regression: prompt paths pointed at stale `xhs_growth/` dir after the
+# package rename to `backend`. LLM path raised FileNotFoundError, silently
+# swallowed → tools always degraded to algorithmic fallback. These tests
+# call _load_prompt WITHOUT patching, so a stale path fails loudly.
+
+
+def test_hashtag_researcher_load_prompt_resolves():
+    """_load_prompt reads the real YAML at backend/config/..."""
+    data = _load_hashtag_prompt()
+    assert isinstance(data, dict)
+    assert "system" in data
+    assert "user_template" in data
+
+
+def test_title_generator_load_prompt_resolves():
+    data = _load_title_prompt()
+    assert isinstance(data, dict)
+    assert "system" in data
+    assert "user_template" in data
+
+
+def test_image_prompt_load_prompt_resolves():
+    data = _load_image_prompt()
+    assert isinstance(data, dict)
+    assert "system" in data
+    assert "user_template" in data
+
+
+def test_timing_optimizer_load_prompt_resolves():
+    data = _load_timing_prompt()
+    assert isinstance(data, dict)
+    assert "system" in data
+    assert "user_template" in data

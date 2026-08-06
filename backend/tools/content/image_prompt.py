@@ -20,7 +20,9 @@ logger = logging.getLogger("xhs_growth.tools.image_prompt")
 
 def _load_prompt() -> dict[str, Any]:
     """Load prompt template from YAML file."""
-    prompt_path = Path("xhs_growth/config/prompts/tools/image_prompt.yaml")
+    prompt_path = (
+        Path(__file__).resolve().parents[2] / "config" / "prompts" / "tools" / "image_prompt.yaml"
+    )
     with open(prompt_path) as f:
         return cast(dict[str, Any], yaml.safe_load(f))
 
