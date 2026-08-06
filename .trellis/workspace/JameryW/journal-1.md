@@ -402,3 +402,36 @@ run_note_evaluation fetched same account weights twice (resolve_weights + score_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 106: PR#512 showcase gather orphan demote
+
+**Date**: 2026-08-07
+**Task**: PR#512 showcase gather orphan demote
+**Branch**: `main`
+
+### Summary
+
+_demote_orphaned_public_rows serial db_update per orphaned row in for-loop → partition kept vs to_demote + asyncio.gather via _demote_one wrapper (mirrors :955 _backfill). Per-row exc isolation preserved (wrapper swallows, gather first-exception can't abort siblings). kept filter unchanged, empty-existing-set demote-all + no-account-id edge cases preserved. Zero behavior change. Write-gather (db_update) not read — same idiom as :955 backfill. New test file (no prior coverage), 5 tests, revert-then-fail proof. Triple green. GHA still down, merged direct.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `54030388` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
