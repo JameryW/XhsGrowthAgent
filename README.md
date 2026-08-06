@@ -316,6 +316,30 @@ See [CLAUDE.md](./CLAUDE.md) for detailed development guidelines.
 3. Export tool in `tools/<category>/__init__.py`
 4. Have the consuming agent import it via direct submodule import (no central registry)
 
+### Latency Instrumentation
+
+HTTP request + LLM call latency is env-gated and off by default (zero overhead when unset). Enable it to discover bottlenecks with prod data:
+
+```bash
+# 1. Enable on the backend container (restart required — gate is read once at import)
+XHS_LATENCY_LOG=1
+
+# 2. Drive traffic to an instrumented endpoint (/status /list /account-totals /evaluation/result),
+#    then aggregate:
+python scripts/collect_latency.py                 # live tail of backend-xhs
+python scripts/collect_latency.py --since 1h      # last hour
+python scripts/collect_latency.py --file logs.txt # a saved log file
+```
+
+Each sampled request emits one JSON line to the `xhs_growth.api.latency` logger:
+
+```json
+{"event":"http_latency","endpoint":"/status","thread_id":"...","phase":"completed",
+ "total_ms":12.3,"aget_state_ms":4.1,"db_ms":1.2,"serialize_ms":3.0}
+```
+
+`/status` is sampled 1-in-10 (the 5s poller); other endpoints log every call. The aggregate script reports per-endpoint p50/p95/avg + per-segment p50 (aget_state / db / count / serialize) and a phase breakdown. LLM call timing (`ainvoke_ms` / `parse_ms`) is recorded onto the existing `performance_log` `kind:"llm"` entries.
+
 ---
 
 ## oh-my-pi (omp) Extension
