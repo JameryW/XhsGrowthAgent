@@ -198,11 +198,17 @@ class TestTrendScoutAgent:
         3 serial awaits); keyword_monitor stays serial after (needs trending).
 
         Non-vacuous: patches ``asyncio.gather`` in the trend_scout module and
-        asserts exactly one gather call receives 2 awaitables (the independent
-        XHS fetches). keyword_monitor is NOT gathered (it depends on trending
-        for its keyword seed), so the gather must have 2 — not 3 — awaitables.
-        If the calls are reverted to 3 serial ``await`` assignments,
-        ``asyncio.gather`` is never called and this test fails.
+        asserts exactly one gather call whose awaitables are the independent
+        XHS fetches (_safe_xhs_trending + _safe_competitor_analyzer
+        coroutines). Discriminates by coroutine source (qualified name), not
+        by awaitable count alone — the module now also has a top-level
+        2-awaitable gather (_recall_memory + _fetch_real_data, see
+        test_execute_gathers_memory_with_xhs_fetch), so count-based filtering
+        cannot disambiguate. keyword_monitor is NOT gathered (it depends on
+        trending for its keyword seed), so the XHS gather has 2 — not 3 —
+        awaitables. If the XHS calls are reverted to 3 serial ``await``
+        assignments, no gather contains the _safe_xhs_trending coroutine and
+        this test fails.
         """
         import asyncio as _asyncio
 
@@ -242,16 +248,88 @@ class TestTrendScoutAgent:
         ):
             await agent.execute(state, store=mock_store)
 
-        # The only gather in trend_scout is the 2-awaitable one
-        # (xhs_trending + competitor_analyzer). keyword_monitor is serial.
-        two_awaitable_gathers = [c for c, _ in gather_calls if len(c) == 2]
-        assert len(two_awaitable_gathers) == 1, (
+        def _names(awaitables):
+            return ",".join(getattr(a, "__qualname__", "") for a in awaitables)
+
+        # The internal _fetch_real_data gather: xhs_trending + competitor.
+        xhs_gathers = [
+            c
+            for c, _ in gather_calls
+            if "_safe_xhs_trending" in _names(c) and "_safe_competitor_analyzer" in _names(c)
+        ]
+        assert len(xhs_gathers) == 1, (
             "xhs_trending + competitor_analyzer must be gathered in one call"
         )
+        assert len(xhs_gathers[0]) == 2, "keyword_monitor must stay serial, not gathered too"
         # Sanity: no 3-awaitable gather (would mean keyword_monitor was
         # gathered too — that breaks its trending-derived keyword seed).
         assert not any(len(c) == 3 for c, _ in gather_calls), (
             "keyword_monitor must stay serial, not gathered with the other two"
+        )
+
+    @pytest.mark.asyncio
+    async def test_execute_gathers_memory_with_xhs_fetch(self, agent, mock_store):
+        """_recall_memory + _fetch_real_data run via one top-level
+        asyncio.gather (not 2 serial awaits), so the fast Postgres memory RTT
+        hides behind the slow XHS fetch (the long pole).
+
+        Non-vacuous: patches ``asyncio.gather`` in the trend_scout module and
+        asserts exactly one gather call whose awaitables include the
+        ``_recall_memory`` coroutine. Discriminates by coroutine source
+        (qualified name), not by awaitable count alone — the module also has
+        #504's internal 2-awaitable gather (_safe_xhs_trending +
+        _safe_competitor_analyzer inside _fetch_real_data), so count-based
+        filtering cannot disambiguate the top-level gather. If the top-level
+        calls are reverted to 2 serial ``await`` assignments, no gather
+        contains the _recall_memory coroutine and this test fails.
+        """
+        import asyncio as _asyncio
+
+        mock_response = MagicMock()
+        mock_response.content = '{"trending_topics": []}'
+
+        real_gather = _asyncio.gather
+        gather_calls: list[tuple[tuple, dict]] = []
+
+        async def _fake_gather(*awaitables, **kwargs):
+            gather_calls.append((awaitables, kwargs))
+            return list(await real_gather(*awaitables, **kwargs))
+
+        xhs_trending = MagicMock()
+        xhs_trending.ainvoke = AsyncMock(return_value=[])
+        keyword_monitor = MagicMock()
+        keyword_monitor.ainvoke = AsyncMock(return_value={})
+        competitor = MagicMock()
+        competitor.ainvoke = AsyncMock(return_value=[])
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
+
+        state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.IDLE,
+            "niche": "母婴",
+        }
+
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending", new=xhs_trending),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=keyword_monitor),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=competitor),
+            patch("backend.agents.trend_scout.asyncio.gather", new=_fake_gather),
+        ):
+            await agent.execute(state, store=mock_store)
+
+        def _names(awaitables):
+            return ",".join(getattr(a, "__qualname__", "") for a in awaitables)
+
+        # The top-level gather: _recall_memory + _fetch_real_data.
+        top_level_gathers = [c for c, _ in gather_calls if "_recall_memory" in _names(c)]
+        assert len(top_level_gathers) == 1, (
+            "_recall_memory + _fetch_real_data must be gathered in one top-level call"
+        )
+        assert "_fetch_real_data" in _names(top_level_gathers[0]), (
+            "top-level gather must also contain _fetch_real_data"
         )
 
     def test_agent_attributes(self, agent):

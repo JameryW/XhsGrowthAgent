@@ -112,18 +112,30 @@ class TrendScoutAgent(BaseAgent):
         # the niche. Previously dead data — trend_scout only seeded niche.
         user_topic = str(state.get("topic") or "").strip()
 
-        # 召回历史洞察
-        insights = await self._recall_memory(
-            store, account_id, query="trend insights", namespace="performance_insights", limit=3
+        # _recall_memory (fast Postgres asearch) + _fetch_real_data (slow XHS,
+        # 3 RTTs — the long pole) are independent (memory reads
+        # performance_insights ns, fetch reads XHS API; neither needs the other's
+        # result — both feed separate context strings concatenated at :168). Both
+        # swallow own exceptions (_recall_memory via base.py try/except,
+        # _fetch_real_data via _safe_* + keyword_monitor try/except). Gather so
+        # memory RTT hides behind the XHS long pole. Return-value pattern.
+        # Precedent: #502/#503/#504/#505; _fetch_real_data itself gathers
+        # internally (#504) — first nested-gather example.
+        insights, real_data = await asyncio.gather(
+            self._recall_memory(
+                store,
+                account_id,
+                query="trend insights",
+                namespace="performance_insights",
+                limit=3,
+            ),
+            self._fetch_real_data(niche, account_id=account_id, user_topic=user_topic),
         )
         memory_context = ""
         if insights:
             memory_context = "\n历史趋势洞察：\n"
             for i in insights:
                 memory_context += f"- {i.get('insight', '')}\n"
-
-        # Fetch real data from XHS API
-        real_data = await self._fetch_real_data(niche, account_id=account_id, user_topic=user_topic)
 
         # Build data context for the LLM
         data_context = ""
