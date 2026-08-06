@@ -98,6 +98,53 @@ class TestAnalystAgent:
         assert mock_store.aput.called
 
     @pytest.mark.asyncio
+    async def test_execute_gathers_memory_and_ripple_concurrently(
+        self, agent, mock_state, mock_store
+    ):
+        """_recall_memory + _ripple_report run concurrently via asyncio.gather.
+
+        Discriminator: analyst module has 0 other asyncio.gather calls (only
+        wait_for + create_task). Patch backend.agents.analyst.asyncio.gather;
+        serial implementation calls it 0 times, gather implementation calls it
+        once with exactly 2 awaitables whose coroutines are _recall_memory and
+        _ripple_report. Reverts to serial → gather never called → test fails.
+        """
+        captured: list[tuple] = []
+
+        async def _fake_gather(*awaitables, **kwargs):
+            captured.append(awaitables)
+            results = []
+            for aw in awaitables:
+                results.append(await aw)
+            return tuple(results)
+
+        mock_response = MagicMock()
+        mock_response.content = '{"insights": [], "recommendations": []}'
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch("backend.agents.analyst.asyncio.gather", side_effect=_fake_gather),
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+
+            await agent.execute(mock_state, store=mock_store)
+
+        # gather called exactly once (the only gather in the module)
+        assert len(captured) == 1, f"expected 1 gather, got {len(captured)}"
+        awaitables = captured[0]
+        assert len(awaitables) == 2, f"expected 2 awaitables, got {len(awaitables)}"
+
+        # Each awaitable is a coroutine; verify sources via __qualname__.
+        # _recall_memory lives on BaseAgent, _ripple_report on AnalystAgent.
+        qualnames = sorted(getattr(aw, "__qualname__", "") for aw in awaitables)
+        assert qualnames == [
+            "AnalystAgent._ripple_report",
+            "BaseAgent._recall_memory",
+        ], f"coroutine sources mismatch: {qualnames}"
+
+    @pytest.mark.asyncio
     async def test_ripple_report_returns_report(self, agent, mock_state, mock_store):
         """_ripple_report returns report when job_id exists."""
         state_with_ripple = {
