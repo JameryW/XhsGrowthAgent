@@ -270,3 +270,36 @@ brief_analyzer.execute: gather recall_style + recall_benchmark (independent, dis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 102: analyst overlap memory recall with ripple report (#508)
+
+**Date**: 2026-08-07
+**Task**: analyst overlap memory recall with ripple report (#508)
+**Branch**: `main`
+
+### Summary
+
+analyst.execute top-level gather: _recall_memory (fast Postgres) + _ripple_report (slow Ripple long pole up to 120s). Memory RTT hidden behind Ripple fetch when job_id exists. No wrapper — _ripple_report internal zero-cost early-return guard (:212 no job_id→None no lookup) unlike #507 wasteful recall_benchmark("") needing _noop_benchmark. Also removed redundant inner import asyncio (:172, surfaced F823 from new top-level gather, module-level :5 covers). Test: module 0 gathers before, new only one, __qualname__ BaseAgent._recall_memory + AnalystAgent._ripple_report. 7th gather-parallel example, same shape as #506 but simpler than #507. Triple green (2107). GHA outage — merged no-CI.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `83d9d67e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
