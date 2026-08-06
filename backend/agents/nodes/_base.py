@@ -1,5 +1,6 @@
 """Base classes for graph nodes."""
 
+import contextvars
 from typing import Any
 
 from langgraph.store.base import BaseStore
@@ -7,6 +8,17 @@ from langgraph.store.base import BaseStore
 from backend.core.error_handling import WorkflowCancelledError
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
+
+# Tool-path LLM cost accumulator. Set to a fresh list by BaseAgent.__call__
+# before execute(); enrich_with_llm appends kind:"llm" entries to it when the
+# calling tool runs inside that scope. Drained and reset by __call__ after
+# execute() so tool-path token cost (e.g. de_ai_taste polish → deepseek-v4-flash)
+# reaches state.performance_log and the /analytics/costs reader. Default None
+# means "not in an agent scope" (omp/manual standalone callers) — capture is
+# skipped and the call still succeeds. Set/reset token isolates per-execute.
+_tool_llm_cost: contextvars.ContextVar[list[dict[str, Any]] | None] = contextvars.ContextVar(
+    "tool_llm_cost", default=None
+)
 
 
 class NodeContext:
