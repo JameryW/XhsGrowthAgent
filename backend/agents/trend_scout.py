@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
@@ -16,6 +17,40 @@ from backend.state.schema import XHSGrowthState
 logger = logging.getLogger("xhs_growth.agents.trend_scout")
 
 
+async def _safe_xhs_trending(niche: str, account_id: str) -> list[dict[str, Any]]:
+    """Fetch trending topics; swallow + log own failures (return [])."""
+    from backend.tools.xhs.trending import xhs_trending
+
+    try:
+        return cast(
+            list[dict[str, Any]],
+            await xhs_trending.ainvoke({"category": niche, "account_id": account_id}),
+        )
+    except Exception as e:
+        logger.warning(f"xhs_trending failed: {e}")
+        return []
+
+
+async def _safe_competitor_analyzer(niche: str, account_id: str) -> list[dict[str, Any]]:
+    """Analyze competitors; swallow + log own failures (return [])."""
+    from backend.tools.xhs.trending import competitor_analyzer
+
+    try:
+        return cast(
+            list[dict[str, Any]],
+            await competitor_analyzer.ainvoke(
+                {
+                    "account_id": niche,
+                    "niche": niche,
+                    "credential_account_id": account_id,
+                }
+            ),
+        )
+    except Exception as e:
+        logger.warning(f"competitor_analyzer failed: {e}")
+        return []
+
+
 class TrendScoutAgent(BaseAgent):
     task_type = TaskType.SCOUTING
     agent_name = "trend_scout"
@@ -25,20 +60,26 @@ class TrendScoutAgent(BaseAgent):
         self, niche: str, account_id: str = "", user_topic: str = ""
     ) -> dict[str, Any]:
         """Fetch real data from XHS API via tools. Returns empty dict if unavailable."""
-        from backend.tools.xhs.trending import competitor_analyzer, keyword_monitor, xhs_trending
+        from backend.tools.xhs.trending import keyword_monitor
+
+        # xhs_trending + competitor_analyzer are independent (no data
+        # dependency, disjoint data keys, each swallows own exceptions) → run
+        # concurrently. keyword_monitor DEPENDS on trending (builds its keyword
+        # seed from trending[:3] topic titles) so it stays serial after the
+        # gather. Return-value pattern: assign to `data` after gather (no
+        # concurrent dict mutation). Precedent: copywriter.py:53, #502/#503.
+        trending, competitor_data = await asyncio.gather(
+            _safe_xhs_trending(niche, account_id),
+            _safe_competitor_analyzer(niche, account_id),
+        )
 
         data: dict[str, Any] = {}
-        trending: list[dict[str, Any]] = []
+        if trending:
+            data["hot_topics"] = trending
+        if competitor_data:
+            data["competitor_analysis"] = competitor_data
 
-        # 1. Fetch trending topics for the niche
-        try:
-            trending = await xhs_trending.ainvoke({"category": niche, "account_id": account_id})
-            if trending:
-                data["hot_topics"] = trending
-        except Exception as e:
-            logger.warning(f"xhs_trending failed: {e}")
-
-        # 2. Extract keywords from niche and monitor them
+        # keyword_monitor needs trending (enriches keyword seed) — sequential.
         try:
             # Keyword seed: niche + user-provided topic (if any), so trend /
             # keyword monitoring revolves around the user's topic, not just niche.
@@ -59,20 +100,6 @@ class TrendScoutAgent(BaseAgent):
                 data["keyword_monitor"] = monitor_data
         except Exception as e:
             logger.warning(f"keyword_monitor failed: {e}")
-
-        # 3. Analyze competitors in this niche
-        try:
-            competitor_data = await competitor_analyzer.ainvoke(
-                {
-                    "account_id": niche,
-                    "niche": niche,
-                    "credential_account_id": account_id,
-                }
-            )
-            if competitor_data:
-                data["competitor_analysis"] = competitor_data
-        except Exception as e:
-            logger.warning(f"competitor_analyzer failed: {e}")
 
         return data
 
