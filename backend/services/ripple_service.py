@@ -470,10 +470,11 @@ class RippleService:
         method: str,
         url: str,
         json_data: dict[str, Any] | None = None,
-        max_retries: int = 3,
-        retry_delay: float = 1.0,
     ) -> dict[str, Any]:
         """带重试的请求"""
+        cfg = Settings().ripple
+        max_retries = cfg.request_max_retries
+        retry_delay = cfg.request_retry_delay
         client = await self._get_client()
 
         for attempt in range(max_retries):

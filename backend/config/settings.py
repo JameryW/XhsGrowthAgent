@@ -91,6 +91,9 @@ class RippleSettings(BaseSettings):
     # ripple_gate/finalize: HITL reselect 上限，超出自动 accept
     max_reselect_count: int = 2
     request_timeout: int = 300
+    # _request_with_retry: max attempts + linear backoff base (retry_delay * attempt)
+    request_max_retries: int = 3
+    request_retry_delay: float = 1.0
     workflow_timeout: int = 1800
     enabled: bool = False
     # 后台模式：strategist fire-and-forget Ripple，不阻塞主链；结果由 ripple_finalize 读回

@@ -145,10 +145,36 @@ class TestRippleServiceRetry:
             client.post.side_effect = [first_response, mock_response]
             mock_client.return_value = client
 
-            _result = await service._request_with_retry(
-                "POST", "http://test/url", json_data={}, max_retries=3, retry_delay=0
-            )
+            with patch("backend.services.ripple_service.Settings") as mock_settings:
+                mock_settings.return_value.ripple.request_max_retries = 3
+                mock_settings.return_value.ripple.request_retry_delay = 0
+                _result = await service._request_with_retry("POST", "http://test/url", json_data={})
             assert client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_request_max_retries_read_from_settings(self):
+        """Raising request_max_retries via Settings makes _request_with_retry
+        attempt the request that many times before exhausting retries.
+
+        Pins the wiring extracted from the old hardcoded ``max_retries=3`` default:
+        with the value raised to 5, a persistently failing ConnectError is retried
+        5 times (not 3). Non-vacuous — reverts to the hardcoded ``3`` literal and
+        this fails (call_count == 3 != 5).
+        """
+        service = RippleService()
+
+        with patch.object(service, "_get_client") as mock_client:
+            client = MagicMock()
+            client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+            mock_client.return_value = client
+
+            with patch("backend.services.ripple_service.Settings") as mock_settings:
+                mock_settings.return_value.ripple.request_max_retries = 5
+                mock_settings.return_value.ripple.request_retry_delay = 0
+                with pytest.raises(httpx.ConnectError):
+                    await service._request_with_retry("POST", "http://test/url", json_data={})
+
+            assert client.post.call_count == 5
 
 
 class TestRippleServicePredict:
@@ -592,10 +618,11 @@ class TestAutoRecovery:
             mock_http_client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
             mock_client.return_value = mock_http_client
 
-            with pytest.raises(httpx.ConnectError):
-                await svc._request_with_retry(
-                    "POST", "http://ripple-service:8080/api/test", retry_delay=0
-                )
+            with patch("backend.services.ripple_service.Settings") as mock_settings:
+                mock_settings.return_value.ripple.request_max_retries = 3
+                mock_settings.return_value.ripple.request_retry_delay = 0
+                with pytest.raises(httpx.ConnectError):
+                    await svc._request_with_retry("POST", "http://ripple-service:8080/api/test")
 
         assert not svc.is_healthy()
         assert svc._health_status.reason == "unreachable"
