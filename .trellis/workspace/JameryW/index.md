@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 108
+- **Total Sessions**: 109
 - **Last Active**: 2026-08-07
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~503 | Active |
+| `journal-1.md` | ~537 | Active |
 | `journal-0.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -22,6 +22,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 109 | 2026-08-07 | gather deposit_from_analysis writes (#523) + fix telemetry test CI flake (#524) | `63836dff`, `b1783858` | `main` |
 | 108 | 2026-08-07 | throttle public_telemetry prune DELETE per beacon (PR #522) | `ca5f6e8b` | `main` |
 | 107 | 2026-08-07 | PR#521 gather analyst serial store_insight + store_strategy_note writes | `1ab8cb70` | `main` |
 | 106 | 2026-08-07 | PR#512 showcase gather orphan demote | `54030388` | `main` |

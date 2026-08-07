@@ -501,3 +501,37 @@ Throttled record_event's per-beacon 30-day DELETE to ≤ once per 5 min via modu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 109: gather deposit_from_analysis writes (#523) + fix telemetry test CI flake (#524)
+
+**Date**: 2026-08-07
+**Task**: gather deposit_from_analysis writes (#523) + fix telemetry test CI flake (#524)
+**Branch**: `main`
+
+### Summary
+
+PR#523: deposit_from_analysis 12 serial creative-memory writes (1 style+1 play+≤10 material)→single asyncio.gather; counters pre-computed (deposit self-isolates, no wrapper); call-overlap discriminator test; saves up to 11 RT on sync path. PR#523 CI red on main: #522 test_record_event_prune_throttled flaked (assert 0==1) — root cause test relied on real time.monotonic()≥300, CI runner monotonic<300 (fresh sandbox)→gate False→deletes=0; reproduced locally (mock 250→0). PR#524: patch time.monotonic in both throttle tests via iter([1000.0,...]) clock, prod unchanged, revert-then-fail assert 2==1. #523 rebased post-#524-merge → CI green. gather-parallel series #14 (no-wrapper variant).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `63836dff` | (see git log) |
+| `b1783858` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
