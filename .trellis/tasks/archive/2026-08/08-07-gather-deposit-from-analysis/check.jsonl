@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "backend quality bar — verify gather impl meets guidelines (no wrapper when callee self-isolates, ponytail, non-vacuous test)"}
+{"file": ".trellis/tasks/08-07-gather-deposit-from-analysis/prd.md", "reason": "task spec — verify against AC (single gather, counters pre-computed, no wrapper, deposit self-isolates verified, call-overlap discriminator test, revert-then-fail)"}

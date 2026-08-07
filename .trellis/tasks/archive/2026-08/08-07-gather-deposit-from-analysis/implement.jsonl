@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "backend code quality bar — gather change must follow guidelines (no wrapper when callee self-isolates, ponytail, test non-vacuous)"}
+{"file": ".trellis/tasks/08-07-gather-deposit-from-analysis/prd.md", "reason": "task spec — gather pattern, counter pre-compute, no-wrapper rule (deposit self-isolates), call-overlap discriminator test plan"}
