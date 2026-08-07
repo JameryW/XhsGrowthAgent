@@ -7,10 +7,20 @@ accepted by the API layer that calls this module.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from typing import Any
 
 from backend.db.pool import get_pool, is_pool_ready
+
+# Best-effort prune throttle: run the 30-day DELETE at most once per interval,
+# not on every beacon. Idempotent DELETE; delaying prune by up to the interval
+# is fine for best-effort telemetry cleanup.
+# ponytail: module-level float assign atomic under GIL; no lock for
+# best-effort throttle (worst case: 2 workers prune same window = idempotent
+# DELETE, harmless).
+_PRUNE_INTERVAL_S: float = 300.0
+_last_prune_ts: float = 0.0
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS public_ux_events (
@@ -142,10 +152,15 @@ async def record_event(event: Mapping[str, Any]) -> bool:
             ),
         )
         # Keep the receiver bounded without retaining a visitor identifier.
-        await conn.execute(
-            "DELETE FROM public_ux_events "
-            "WHERE received_at < CURRENT_TIMESTAMP - INTERVAL '30 days'"
-        )
+        # Throttled: runs ≤ once per _PRUNE_INTERVAL_S, not per beacon.
+        global _last_prune_ts
+        now = time.monotonic()
+        if now - _last_prune_ts >= _PRUNE_INTERVAL_S:
+            await conn.execute(
+                "DELETE FROM public_ux_events "
+                "WHERE received_at < CURRENT_TIMESTAMP - INTERVAL '30 days'"
+            )
+            _last_prune_ts = now
     return True
 
 
