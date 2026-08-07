@@ -34,7 +34,7 @@ async def orchestrator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
     else:
         # Not the first orchestrator run → this is a continuous-mode loop-back
         # (analyst→orchestrator). Bump cycle_count so should_continue can cap
-        # the loop at _MAX_CYCLE_COUNT.
+        # the loop at Settings().workflow.max_cycle_count.
         result["cycle_count"] = state.get("cycle_count", 0) + 1
 
     # Emit phase change event if phase changed

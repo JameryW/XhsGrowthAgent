@@ -300,6 +300,25 @@ class TestEvaluatorOutcome:
         }
         assert evaluator_outcome(state) == "publisher"
 
+    def test_evaluator_outcome_force_approve_at_settings_limit(self):
+        """Patch Settings max_revision_count=0 → revision_count=0 force-approves.
+
+        Non-vacuous: with max_revision_count=0, even the first needs_revision
+        (revision_count=0) hits the 0 >= 0 cap → publisher (force-approve
+        immediately, no revisions allowed). Reverting to the hardcoded default
+        of 2 would make 0 >= 2 False → revise_content, failing this assert.
+        """
+        from unittest.mock import patch
+
+        state = {
+            "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
+            "revision_count": 0,
+        }
+        with patch("backend.graph.routers.Settings") as mock_settings:
+            # REAL int — int >= MagicMock() raises TypeError (#513/#516/#517 trap)
+            mock_settings.return_value.workflow.max_revision_count = 0
+            assert evaluator_outcome(state) == "publisher"
+
 
 class TestShouldContinue:
     """Tests for should_continue conditional edge."""
@@ -329,24 +348,25 @@ class TestShouldContinue:
         assert result == "orchestrator"
 
     def test_continuous_mode_caps_at_max_cycle_count(self):
-        """ANALYZING + continuous + cycle_count >= _MAX_CYCLE_COUNT → END.
+        """ANALYZING + continuous + cycle_count >= max_cycle_count → END.
 
         Prevents an unbounded analyst→orchestrator→analyst loop in continuous
         mode when the orchestrator keeps routing back to analyst.
         """
-        from backend.graph.routers import _MAX_CYCLE_COUNT
+        from backend.config.settings import Settings
 
+        max_cycle_count = Settings().workflow.max_cycle_count
         state = {
             "phase": WorkflowPhase.ANALYZING,
             "error": None,
             "execution_mode": "continuous",
-            "cycle_count": _MAX_CYCLE_COUNT,
+            "cycle_count": max_cycle_count,
         }
         result = should_continue(state)
         assert result == "__end__"
 
     def test_continuous_mode_below_cap_still_loops(self):
-        """ANALYZING + continuous + cycle_count < _MAX_CYCLE_COUNT → orchestrator."""
+        """ANALYZING + continuous + cycle_count < max_cycle_count → orchestrator."""
         state = {
             "phase": WorkflowPhase.ANALYZING,
             "error": None,
@@ -355,6 +375,27 @@ class TestShouldContinue:
         }
         result = should_continue(state)
         assert result == "orchestrator"
+
+    def test_should_continue_force_end_at_settings_limit(self):
+        """Patch Settings max_cycle_count=0 → cycle_count=0 force-ends.
+
+        Non-vacuous: with max_cycle_count=0, the first continuous cycle
+        (cycle_count=0) hits the 0 >= 0 cap → __end__ (force-end immediately,
+        no cycles allowed). Reverting to the hardcoded default of 5 would make
+        0 >= 5 False → orchestrator, failing this assert.
+        """
+        from unittest.mock import patch
+
+        state = {
+            "phase": WorkflowPhase.ANALYZING,
+            "error": None,
+            "execution_mode": "continuous",
+            "cycle_count": 0,
+        }
+        with patch("backend.graph.routers.Settings") as mock_settings:
+            # REAL int — int >= MagicMock() raises TypeError (#513/#516/#517 trap)
+            mock_settings.return_value.workflow.max_cycle_count = 0
+            assert should_continue(state) == "__end__"
 
     def test_routes_to_end_default(self):
         """Default phase → END."""
