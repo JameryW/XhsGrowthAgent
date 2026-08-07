@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,13 +16,13 @@ from backend.api.routes import analytics as analytics_routes
 from backend.api.routes import free as free_routes
 from backend.cli.main import app as cli_app
 from backend.db.creator_stats import _reset_memory_store, list_note_stats
-from backend.services.creator_stats.analyze import analyze_notes
+from backend.services.creator_stats.analyze import analyze_notes, deposit_from_analysis
 from backend.services.creator_stats.normalize import (
     normalize_account_overview,
     normalize_bundle,
 )
 from backend.services.creator_stats.pipeline import import_bundle, sync_from_fixture
-from backend.services.creator_stats.types import NoteStats
+from backend.services.creator_stats.types import AnalysisResult, NoteStats
 
 from .conftest import grant_test_user
 
@@ -416,3 +417,149 @@ async def test_free_draft_create_includes_creative_suggestions():
     cats = {s["category"] for s in data["creative_suggestions"]}
     assert "cold_start" not in cats or len(cats) > 1
     assert any(s.get("mode") == "free" for s in data["creative_suggestions"])
+
+
+# ── deposit_from_analysis writes concurrently via gather ─────────────────────
+
+
+def _overlapping(a: tuple[float, float], b: tuple[float, float]) -> bool:
+    """True if the two [start, finish] windows overlap in time."""
+    return a[0] <= b[1] and b[0] <= a[1]
+
+
+@pytest.mark.asyncio
+async def test_deposit_from_analysis_gathers_writes():
+    """deposit_style + deposit_play + deposit_material run concurrently via gather.
+
+    Uses the call-overlap discriminator (#519/#520 pattern): each mocked
+    CreativeMemory deposit records a start/finish window and yields via
+    asyncio.sleep(0). Under gather the writes overlap; under serial ``await``
+    loops the intervals are disjoint. This avoids patching asyncio.gather
+    globally (the shared-asyncio-module leak trap from #515). deposit_* methods
+    self-isolate (try/except → logger.warning), so no _safe_* wrapper is used —
+    the bare coros are gathered directly.
+    """
+    notes = [
+        NoteStats(
+            note_id="n1",
+            account_id="acct_gather",
+            title="3个方法让你轻松搞定",
+            body_text="慢慢来比较快",
+            views=1000,
+            likes=200,
+            comments=50,
+            collects=50,
+            engagement_rate=0.30,
+        ),
+        NoteStats(
+            note_id="n2",
+            account_id="acct_gather",
+            title="避雷清单｜这些千万别买",
+            body_text="姐妹们冲",
+            views=800,
+            likes=120,
+            comments=30,
+            collects=40,
+            engagement_rate=0.24,
+        ),
+    ]
+    analysis = analyze_notes(notes, "acct_gather")
+    assert not analysis.cold_start
+
+    windows: list[dict] = []
+
+    async def _tracked_deposit(self_cm, payload):
+        start = asyncio.get_event_loop().time()
+        # Per-call slot captured by closure (not a shared-list index) so each
+        # concurrent deposit updates its own finish without racing on the list.
+        slot: dict = {
+            "id": payload.get("style_id") or payload.get("play_id") or payload.get("material_id"),
+            "start": start,
+            "finish": start,
+        }
+        windows.append(slot)
+        await asyncio.sleep(0.01)  # real suspension so sibling gather tasks overlap
+        slot["finish"] = asyncio.get_event_loop().time()
+
+    with (
+        patch("backend.memory.creative.CreativeMemory.deposit_style", new=_tracked_deposit),
+        patch("backend.memory.creative.CreativeMemory.deposit_play", new=_tracked_deposit),
+        patch("backend.memory.creative.CreativeMemory.deposit_material", new=_tracked_deposit),
+    ):
+        result = await deposit_from_analysis(analysis, notes, store=None, account_niche="母婴")
+
+    # 1 style + 1 play + 2 top notes × (1 title + 1 hook) = 6 deposits
+    assert len(windows) == 6
+    assert result.styles_deposited == 1
+    assert result.plays_deposited == 1
+    assert result.materials_deposited == 4
+
+    # At least one pair of deposits must overlap in time (concurrent gather,
+    # not serial). Serial awaits produce strictly disjoint windows.
+    intervals = [(w["start"], w["finish"]) for w in windows]
+    any_overlap = any(
+        _overlapping(intervals[i], intervals[j])
+        for i in range(len(intervals))
+        for j in range(i + 1, len(intervals))
+    )
+    assert any_overlap, "deposit_* writes must overlap (concurrent gather), not run serially"
+
+
+@pytest.mark.asyncio
+async def test_deposit_from_analysis_cold_start_no_writes():
+    """Cold-start early-return path is unchanged: no deposits, zero counters."""
+    analysis = AnalysisResult(account_id="acct_cold", cold_start=True)
+
+    async def _fail_deposit(*args, **kwargs):
+        raise AssertionError("no deposit should run on cold-start path")
+
+    with (
+        patch("backend.memory.creative.CreativeMemory.deposit_style", new=_fail_deposit),
+        patch("backend.memory.creative.CreativeMemory.deposit_play", new=_fail_deposit),
+        patch("backend.memory.creative.CreativeMemory.deposit_material", new=_fail_deposit),
+    ):
+        result = await deposit_from_analysis(analysis, [], store=None)
+
+    assert result.cold_start is True
+    assert result.styles_deposited == 0
+    assert result.materials_deposited == 0
+    assert result.plays_deposited == 0
+
+
+@pytest.mark.asyncio
+async def test_deposit_from_analysis_counters_match_top_notes():
+    """Counters computed from local iteration, not deposit returns.
+
+    With one top note (title+snippet) the expected counts are style=1, play=1,
+    materials=2 (one title entry + one hook entry). A second top note whose
+    title matches its snippet still yields 2 materials (title + hook share
+    content but use distinct material_ids).
+    """
+    notes = [
+        NoteStats(
+            note_id="solo",
+            account_id="acct_count",
+            title="绝绝子｜宝藏好物分享",
+            body_text="",
+            views=500,
+            likes=80,
+            comments=10,
+            collects=20,
+            engagement_rate=0.22,
+        ),
+    ]
+    analysis = analyze_notes(notes, "acct_count")
+
+    async def _noop_deposit(self_cm, payload):
+        return None
+
+    with (
+        patch("backend.memory.creative.CreativeMemory.deposit_style", new=_noop_deposit),
+        patch("backend.memory.creative.CreativeMemory.deposit_play", new=_noop_deposit),
+        patch("backend.memory.creative.CreativeMemory.deposit_material", new=_noop_deposit),
+    ):
+        result = await deposit_from_analysis(analysis, notes, store=None)
+
+    assert result.styles_deposited == 1
+    assert result.plays_deposited == 1
+    assert result.materials_deposited == 2
