@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "backend quality bar — verify throttle impl meets guidelines (no lock, ponytail comment, non-vacuous test)"}
+{"file": ".trellis/tasks/08-07-throttle-telemetry-prune/prd.md", "reason": "task spec — verify against acceptance criteria (throttle gate, INSERT always, time.monotonic, revert-then-fail test)"}

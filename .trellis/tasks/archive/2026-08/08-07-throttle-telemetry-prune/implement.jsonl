@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "backend code quality bar — throttle change must follow guidelines (no lock for best-effort, ponytail comment, test non-vacuous)"}
+{"file": ".trellis/tasks/08-07-throttle-telemetry-prune/prd.md", "reason": "task spec — throttle pattern, _PRUNE_INTERVAL_S/_last_prune_ts module constants, time.monotonic, test plan"}
