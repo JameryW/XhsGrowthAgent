@@ -468,3 +468,36 @@ Gather-parallel series #13 (write-gather variant #512): analyst execute two seri
 ### Next Steps
 
 - None - task complete
+
+
+## Session 108: throttle public_telemetry prune DELETE per beacon (PR #522)
+
+**Date**: 2026-08-07
+**Task**: throttle public_telemetry prune DELETE per beacon (PR #522)
+**Branch**: `main`
+
+### Summary
+
+Throttled record_event's per-beacon 30-day DELETE to ≤ once per 5 min via module-level time.monotonic() gate (_PRUNE_INTERVAL_S=300.0). INSERT still per beacon. Idempotent best-effort prune — retention ~30d+5min acceptable. Module constant kept (Ponytail, not Settings — internal write-throttle, low churn). 2 non-vacuous tests revert-then-fail proven. Pre-push triple green. 7th in optimization loop window.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ca5f6e8b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
