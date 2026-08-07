@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -101,14 +100,20 @@ async def test_record_event_prune_throttled():
     # Reset throttle so the first call elapses (now - 0 >> interval) and prunes.
     mod._last_prune_ts = 0.0
 
+    # Control the clock so the test does not depend on the real time.monotonic()
+    # absolute value (CI runners may return < _PRUNE_INTERVAL_S at process start,
+    # which would make the gate False and the DELETE never run).
+    clock = iter([1000.0, 1000.1])
+
     event = {"event": "replay_select_to_render"}
 
     with (
         patch("backend.db.public_telemetry.is_pool_ready", return_value=True),
         patch("backend.db.public_telemetry.get_pool", return_value=_mock_pool(conn)),
+        patch("backend.db.public_telemetry.time.monotonic", side_effect=lambda: next(clock)),
     ):
-        await mod.record_event(event)
-        await mod.record_event(event)
+        await mod.record_event(event)  # 1000 - 0 >= 300 → DELETE + ts=1000
+        await mod.record_event(event)  # 1000.1 - 1000 < 300 → skip
 
     executed = [call.args[0] for call in conn.execute.await_args_list]
     inserts = [sql for sql in executed if "INSERT INTO public_ux_events" in sql]
@@ -130,8 +135,11 @@ async def test_record_event_prune_runs_after_interval():
     conn = MagicMock()
     conn.execute = AsyncMock()
 
-    # Force elapsed: last prune was more than one interval ago.
-    mod._last_prune_ts = time.monotonic() - mod._PRUNE_INTERVAL_S - 1.0
+    # Fixed clock; force elapsed by setting last prune one interval+1 in the
+    # past. Controlling the clock keeps this deterministic regardless of the
+    # real time.monotonic() absolute value (CI runners may return < interval).
+    clock = iter([1000.0])
+    mod._last_prune_ts = 1000.0 - mod._PRUNE_INTERVAL_S - 1.0  # =699
     before = mod._last_prune_ts
 
     event = {"event": "replay_select_to_render"}
@@ -139,8 +147,9 @@ async def test_record_event_prune_runs_after_interval():
     with (
         patch("backend.db.public_telemetry.is_pool_ready", return_value=True),
         patch("backend.db.public_telemetry.get_pool", return_value=_mock_pool(conn)),
+        patch("backend.db.public_telemetry.time.monotonic", side_effect=lambda: next(clock)),
     ):
-        await mod.record_event(event)
+        await mod.record_event(event)  # 1000 - 699 >= 300 → DELETE + ts=1000
 
     executed = [call.args[0] for call in conn.execute.await_args_list]
     deletes = [sql for sql in executed if "DELETE FROM public_ux_events" in sql]
