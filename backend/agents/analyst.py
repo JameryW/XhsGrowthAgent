@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
@@ -13,6 +13,11 @@ from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.services.ripple_service import RippleTimeoutError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
+
+if TYPE_CHECKING:
+    # MemoryManager pulled lazily inside execute() to avoid import cycles;
+    # needed here only for the _safe_store_* helper annotations.
+    from backend.memory.store import MemoryManager
 
 logger = logging.getLogger("xhs_growth.agents.analyst")
 
@@ -33,6 +38,33 @@ async def _safe_evolve(account_id: object) -> None:
         await maybe_evolve(account_id if isinstance(account_id, str) else None)
     except Exception as e:
         logger.debug("evaluator auto-evolve failed (non-blocking): %s", e)
+
+
+async def _safe_store_insight(
+    mm: MemoryManager, store: BaseStore, insight: str, post_id: str
+) -> None:
+    """Per-row write wrapper: store one insight, swallow errors.
+
+    Write-gather variant (#512): store_insight is a bare store.aput call with
+    no internal try/except, so without this wrapper the first failing write
+    would abort the rest of the gather. Best-effort post-publish telemetry —
+    losing one insight shouldn't skip the others.
+    """
+    try:
+        await mm.store_insight(store, insight, {"source": "analyst", "post_id": post_id})
+    except Exception:
+        logger.warning("store_insight failed", exc_info=True)
+
+
+async def _safe_store_strategy_note(mm: MemoryManager, store: BaseStore, rec: str) -> None:
+    """Per-row write wrapper: store one strategy note, swallow errors.
+
+    See _safe_store_insight — same rationale (bare aput, best-effort telemetry).
+    """
+    try:
+        await mm.store_strategy_note(store, rec, {"source": "analyst"})
+    except Exception:
+        logger.warning("store_strategy_note failed", exc_info=True)
 
 
 class AnalystAgent(BaseAgent):
@@ -107,16 +139,19 @@ class AnalystAgent(BaseAgent):
                         {"source": "analyst", "type": "ripple_calibration"},
                     )
 
-        # 将洞察存入原有记忆（保持兼容）
+        # 将洞察存入原有记忆（保持兼容）— gather 并发写入，per-row 隔离
+        # （写-gather 变体 #512：store_insight/store_strategy_note 是裸 aput 调用，
+        # 不吞异常 → _safe_* 包装每行 try/except，部分失败不再中断其余写入）
         from backend.memory.store import MemoryManager
 
         mm = MemoryManager(account_id)
-        for insight in analytics.get("insights", []):
-            post_id = publish_result.get("post_id", "")
-            await mm.store_insight(store, insight, {"source": "analyst", "post_id": post_id})
-
-        for rec in analytics.get("recommendations", []):
-            await mm.store_strategy_note(store, rec, {"source": "analyst"})
+        post_id = publish_result.get("post_id", "")
+        insights = analytics.get("insights", [])
+        recommendations = analytics.get("recommendations", [])
+        await asyncio.gather(
+            *(_safe_store_insight(mm, store, insight, post_id) for insight in insights),
+            *(_safe_store_strategy_note(mm, store, rec) for rec in recommendations),
+        )
 
         # ── Update content history with actual engagement metrics ──
         post_id = publish_result.get("post_id", "")
