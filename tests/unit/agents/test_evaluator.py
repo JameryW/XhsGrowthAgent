@@ -2,11 +2,14 @@
 
 # ruff: noqa: E501, UP031  — long JSON test fixtures + %-format avoids {}/f-string clash
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from backend.agents import evaluator as evaluator_module
 from backend.agents.evaluator import EvaluatorAgent
+from backend.db.evaluator_config import EvaluatorWeights, PromptEpoch
 from backend.state.enums import ContentStatus
 from backend.state.schema import WorkflowPhase
 
@@ -424,3 +427,225 @@ class TestEvaluatorAgent:
         assert "altruism 0.09" in prompt
         assert "{weights_block}" not in prompt
         assert "{bias_severity_note}" not in prompt  # standard note (may be empty-ish)
+
+
+class TestEvaluatorGatherConcurrency:
+    """Two-layer gather: _resolve_weights (load_weights + get_active_epoch) and
+    the top-level execute gather (_resolve_weights + _recall_memory).
+
+    Uses the call-overlap discriminator (#519 pattern): each mocked coroutine
+    records a start/finish timestamp and yields control via ``asyncio.sleep(0)``.
+    Under a real ``asyncio.gather`` the two awaitables overlap (one is paused at
+    its yield point while the other runs); under serial ``await`` the intervals
+    are disjoint. This avoids patching ``asyncio.gather`` globally (the
+    shared-asyncio-module leak trap from #515).
+    """
+
+    @pytest.fixture
+    def agent(self):
+        return EvaluatorAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    @pytest.fixture
+    def mock_state(self):
+        return {
+            "account_id": "test_account",
+            "niche": "母婴",
+            "phase": WorkflowPhase.REVIEWING,
+            "content_plan": {
+                "selected_topic": "婴儿车推荐",
+                "content_angle": "通勤场景",
+                "target_audience": "都市宝妈",
+                "content_type": "note",
+            },
+            "copy_content": {
+                "selected_title": "通勤带娃神器",
+                "body_text": "这款婴儿车轻便...",
+                "hashtags": ["#婴儿车", "#通勤"],
+                "cta": "点击购买",
+                "tone": "friendly",
+            },
+            "visual_plan": {
+                "cover_prompt": "婴儿车通勤场景",
+                "image_count": 3,
+                "image_prompts": ["图1", "图2", "图3"],
+                "layout_style": "grid",
+                "color_palette": ["#FFFFFF", "#F5F5F5"],
+            },
+        }
+
+    def _full_panel_response(self, scores: dict[str, float], blocking: str | None = None) -> str:
+        """Build a full 10-dimension LLM JSON response string (incl. altruism)."""
+        dims = []
+        for name in [
+            "copywriting",
+            "visual",
+            "compliance",
+            "reach",
+            "audience",
+            "ai_taste",
+            "image_quality",
+            "commercial_tone",
+            "altruism",
+            "bias_check",
+        ]:
+            extra = ', "bias_severity": 10' if name == "bias_check" else ""
+            dims.append(
+                '{"dimension": "%s", "score": %s, "rationale": "r", "issues": [], "is_blocking": %s%s}'
+                % (
+                    name,
+                    scores.get(name, 80.0),
+                    "true" if name == blocking else "false",
+                    extra,
+                )
+            )
+        return (
+            '{"overall_score": 80, "dimensions": [%s], "decision": "approved", "revision_hints": [], "bias_warning": "", "summary": "ok"}'
+            % ",".join(dims)
+        )
+
+    @staticmethod
+    def _overlapping(a: tuple[float, float], b: tuple[float, float]) -> bool:
+        """True if the two [start, finish] windows overlap in time."""
+        return a[0] <= b[1] and b[0] <= a[1]
+
+    @pytest.mark.asyncio
+    async def test_resolve_weights_gathers_load_and_epoch(self, agent):
+        """Inside _resolve_weights, load_weights + get_active_epoch run concurrently."""
+        windows: dict[str, list[float]] = {}
+
+        async def _tracked_load(_account_id):
+            start = asyncio.get_event_loop().time()
+            windows["load"] = [start, start]
+            await asyncio.sleep(0)  # yield so the sibling gather task can start
+            windows["load"][1] = asyncio.get_event_loop().time()
+            return EvaluatorWeights()
+
+        async def _tracked_epoch():
+            start = asyncio.get_event_loop().time()
+            windows["epoch"] = [start, start]
+            await asyncio.sleep(0)  # yield so the sibling gather task can start
+            windows["epoch"][1] = asyncio.get_event_loop().time()
+            return PromptEpoch(0, "standard", "default", True, "")
+
+        with (
+            patch.object(
+                evaluator_module, "load_weights", new=AsyncMock(side_effect=_tracked_load)
+            ),
+            patch.object(
+                evaluator_module, "get_active_epoch", new=AsyncMock(side_effect=_tracked_epoch)
+            ),
+        ):
+            await agent._resolve_weights("acct")
+
+        assert "load" in windows and "epoch" in windows
+        assert self._overlapping(windows["load"], windows["epoch"])  # concurrent, not serial
+
+    @pytest.mark.asyncio
+    async def test_resolve_weights_preserves_fallback_on_failure(self, agent):
+        """load_weights failure → EvaluatorWeights default; epoch failure → 'standard'.
+
+        Both fallbacks must survive the gather refactor (each closure swallows its
+        own exception and returns the fallback).
+        """
+        with (
+            patch.object(
+                evaluator_module,
+                "load_weights",
+                new=AsyncMock(side_effect=RuntimeError("db down")),
+            ),
+            patch.object(
+                evaluator_module,
+                "get_active_epoch",
+                new=AsyncMock(side_effect=RuntimeError("db down")),
+            ),
+        ):
+            result = await agent._resolve_weights("acct")
+
+        # Returns the default weights and sets side-effects identically to the
+        # pre-gather serial implementation.
+        assert isinstance(result, EvaluatorWeights)
+        assert result is agent._weights
+        assert agent._bias_severity == "standard"
+
+    @pytest.mark.asyncio
+    async def test_execute_gathers_weights_and_memory_concurrently(
+        self, agent, mock_state, mock_store
+    ):
+        """Top-level execute gathers _resolve_weights + _recall_memory concurrently.
+
+        Drives a full execute() with a mocked LLM panel response, patching
+        load_weights/get_active_epoch (inside _resolve_weights) and _recall_memory
+        to record overlap windows. Asserts the _resolve_weights fetch overlaps
+        _recall_memory — only possible under a top-level gather, not serial awaits.
+        """
+        windows: dict[str, list[float]] = {}
+
+        # Capture the real unbound methods before patching, so the tracked
+        # wrappers can delegate without recursing into themselves.
+        real_resolve_weights = EvaluatorAgent._resolve_weights
+        real_recall_memory = EvaluatorAgent._recall_memory
+
+        async def _tracked_resolve(self_unused, account_id_unused):
+            # _resolve_weights itself: record its start, yield, then let the real
+            # method run (which gathers load_weights + get_active_epoch). Patched
+            # onto the class, so descriptor binding passes (self, account_id).
+            del self_unused, account_id_unused
+            start = asyncio.get_event_loop().time()
+            windows["resolve"] = [start, start]
+            await asyncio.sleep(0)
+            try:
+                return await real_resolve_weights(agent, "test_account")
+            finally:
+                windows["resolve"][1] = asyncio.get_event_loop().time()
+
+        async def _tracked_recall(self_unused, *args, **kwargs):
+            del self_unused
+            start = asyncio.get_event_loop().time()
+            windows["recall"] = [start, start]
+            await asyncio.sleep(0)
+            try:
+                return await real_recall_memory(agent, *args, **kwargs)
+            finally:
+                windows["recall"][1] = asyncio.get_event_loop().time()
+
+        mock_response = MagicMock()
+        mock_response.content = self._full_panel_response(
+            {
+                "copywriting": 85,
+                "visual": 80,
+                "compliance": 90,
+                "reach": 75,
+                "audience": 80,
+                "bias_check": 90,
+            }
+        )
+        with (
+            patch.object(
+                evaluator_module, "load_weights", new=AsyncMock(return_value=EvaluatorWeights())
+            ),
+            patch.object(
+                evaluator_module,
+                "get_active_epoch",
+                new=AsyncMock(return_value=PromptEpoch(0, "standard", "default", True, "")),
+            ),
+            patch.object(EvaluatorAgent, "_resolve_weights", new=_tracked_resolve),
+            patch.object(EvaluatorAgent, "_recall_memory", new=_tracked_recall),
+            patch.object(type(agent), "model", new_callable=PropertyMock) as m,
+        ):
+            model = MagicMock()
+            model.ainvoke = AsyncMock(return_value=mock_response)
+            m.return_value = model
+            result = await agent.execute(mock_state, store=mock_store)
+
+        # Sanity: execute completed and produced a real evaluation result.
+        assert "evaluation_result" in result
+        assert result["evaluation_result"]["decision"] == ContentStatus.APPROVED
+        # Concurrency: _resolve_weights and _recall_memory overlapped in time.
+        assert "resolve" in windows and "recall" in windows
+        assert self._overlapping(windows["resolve"], windows["recall"])

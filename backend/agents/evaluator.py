@@ -88,18 +88,29 @@ class EvaluatorAgent(BaseAgent):
         self._bias_severity: str = "standard"
 
     async def _resolve_weights(self, account_id: str) -> EvaluatorWeights:
-        """Load per-account weights + active prompt epoch from DB; fall back on failure."""
-        try:
-            self._weights = await load_weights(account_id)
-        except Exception as e:
-            logger.debug("weight load failed, using defaults: %s", e)
-            self._weights = EvaluatorWeights()
-        try:
-            epoch = await get_active_epoch()
-            self._bias_severity = epoch.bias_severity
-        except Exception as e:
-            logger.debug("epoch load failed, using standard: %s", e)
-            self._bias_severity = "standard"
+        """Load per-account weights + active prompt epoch from DB; fall back on failure.
+
+        Both fetches are read-only and independent; gather them so 2 DB round
+        trips collapse into 1 concurrent wave. Each closure swallows its own
+        exceptions and returns the fallback value, so gather propagates nothing.
+        """
+
+        async def _load() -> EvaluatorWeights:
+            try:
+                return await load_weights(account_id)
+            except Exception as e:
+                logger.debug("weight load failed, using defaults: %s", e)
+                return EvaluatorWeights()
+
+        async def _epoch() -> str:
+            try:
+                epoch = await get_active_epoch()
+                return epoch.bias_severity
+            except Exception as e:
+                logger.debug("epoch load failed, using standard: %s", e)
+                return "standard"
+
+        self._weights, self._bias_severity = await asyncio.gather(_load(), _epoch())
         return self._weights
 
     def _build_system_prompt(self, state: XHSGrowthState, extra_context: str = "") -> str:
@@ -168,13 +179,19 @@ class EvaluatorAgent(BaseAgent):
             }
 
         account_id = state.get("account_id", "default")
-        await self._resolve_weights(account_id)
-        memory_context = await self._recall_memory(
-            store,
-            account_id,
-            query=plan.get("selected_topic", "") or copy_content.get("selected_title", ""),
-            namespace="audience_preferences",
-            limit=3,
+        # Gather _resolve_weights (DB weights + epoch) with _recall_memory (store
+        # asearch): both read-only + independent, and each swallows its own
+        # exceptions → gather propagates nothing, no wrapper needed. Side-effects
+        # (self._weights/self._bias_severity) land before _build_system_prompt.
+        _, memory_context = await asyncio.gather(
+            self._resolve_weights(account_id),
+            self._recall_memory(
+                store,
+                account_id,
+                query=plan.get("selected_topic", "") or copy_content.get("selected_title", ""),
+                namespace="audience_preferences",
+                limit=3,
+            ),
         )
         audience_ctx = ""
         for ap in memory_context:
