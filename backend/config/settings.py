@@ -135,6 +135,17 @@ class AuthSettings(BaseSettings):
     model_config = {"env_prefix": "AUTH_", "env_file": ".env", "extra": "ignore"}
 
 
+class OmpSettings(BaseSettings):
+    """omp bridge host-tool HTTP retry config"""
+
+    # _retry_http: max attempts on transient HTTP errors
+    retry_max_retries: int = 3
+    # _retry_http: exponential backoff base (backoff_base * 2**attempt)
+    retry_backoff_base: float = 0.5
+
+    model_config = {"env_prefix": "OMP_", "env_file": ".env", "extra": "ignore"}
+
+
 class CreatorStatsSettings(BaseSettings):
     """后台 Creator Center 导入配置。"""
 
@@ -197,5 +208,6 @@ class Settings(BaseSettings):
     ripple: RippleSettings = Field(default_factory=RippleSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     creator_stats: CreatorStatsSettings = Field(default_factory=CreatorStatsSettings)
+    omp: OmpSettings = Field(default_factory=OmpSettings)
 
     model_config = {"env_file": ".env", "extra": "ignore"}

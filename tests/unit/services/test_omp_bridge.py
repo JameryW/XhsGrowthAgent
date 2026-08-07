@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 import backend.services.omp_bridge as omp_bridge_module
@@ -20,6 +21,7 @@ from backend.services.omp_bridge import (
     ServerEventType,
     _execute_xhs_host_tool,
     _make_text_result,
+    _retry_http,
     _tools_for_mode,
     _validate_creator_stats_arguments,
 )
@@ -1679,3 +1681,55 @@ class TestGetBridgeManager:
         monkeypatch.setattr(omp_bridge_module, "_manager", None)
         manager = omp_bridge_module.get_bridge_manager()
         assert manager._idle_timeout == _DEFAULT_IDLE_TIMEOUT
+
+
+# ── _retry_http reads retry config from OmpSettings ──────────────────────
+
+
+@pytest.mark.asyncio
+class TestRetryHttpSettings:
+    """_retry_http retry_max_retries / retry_backoff_base come from Settings().omp."""
+
+    async def test_retry_http_max_retries_read_from_settings(self):
+        """retry_max_retries flows from Settings().omp into the attempt loop.
+
+        Patch Settings to report retry_max_retries=5 and feed a persistent
+        httpx.ConnectError — _retry_http must call fn exactly 5 times before
+        re-raising. retry_backoff_base=0 avoids real sleeps.
+
+        Revert-then-fail: if _retry_http is reverted to hardcoded _MAX_RETRIES=3,
+        fn.call_count == 3 and the assertion ``3 == 5`` fails.
+        """
+        mock_settings = MagicMock()
+        # REAL int — range(MagicMock()) raises TypeError (per #513 trap).
+        mock_settings.return_value.omp.retry_max_retries = 5
+        # REAL float — avoids real asyncio.sleep delays; enters arithmetic.
+        mock_settings.return_value.omp.retry_backoff_base = 0
+        fn = AsyncMock(side_effect=httpx.ConnectError("boom"))
+        with (
+            patch("backend.services.omp_bridge.Settings", mock_settings),
+            pytest.raises(httpx.ConnectError),
+        ):
+            await _retry_http(fn, tool_name="test")
+        assert fn.call_count == 5
+
+    async def test_retry_http_backoff_base_read_from_settings(self):
+        """retry_backoff_base flows into the exponential delay formula.
+
+        backoff_base=1.0, max_retries=2 → first retry delay is 1.0 * 2**0 = 1.0s.
+        Patch asyncio.sleep to capture the delay without real waiting.
+        """
+        mock_settings = MagicMock()
+        mock_settings.return_value.omp.retry_max_retries = 2
+        mock_settings.return_value.omp.retry_backoff_base = 1.0
+        fn = AsyncMock(side_effect=httpx.ConnectError("boom"))
+        sleep_mock = AsyncMock()
+        with (
+            patch("backend.services.omp_bridge.Settings", mock_settings),
+            patch("backend.services.omp_bridge.asyncio.sleep", sleep_mock),
+            pytest.raises(httpx.ConnectError),
+        ):
+            await _retry_http(fn, tool_name="test")
+        # First retry (attempt 0) sleeps backoff_base * 2**0 = 1.0s
+        first_sleep = sleep_mock.await_args_list[0]
+        assert first_sleep.args[0] == 1.0

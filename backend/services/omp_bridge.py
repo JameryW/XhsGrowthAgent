@@ -58,6 +58,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from backend.config.settings import Settings
+
 logger = logging.getLogger("xhs_growth.omp_bridge")
 
 # ── High-level protocol types (frontend <-> backend) ────────────────────────
@@ -858,7 +860,6 @@ def _tools_for_mode(mode: str) -> list[dict[str, Any]]:
 
 # Retry config for transient HTTP errors
 _RETRYABLE_STATUS = {429, 502, 503, 504}
-_MAX_RETRIES = 3
 
 
 async def _retry_http(
@@ -870,19 +871,22 @@ async def _retry_http(
     """Call an httpx method with exponential backoff on transient errors."""
     import httpx
 
+    cfg = Settings().omp
+    max_retries = cfg.retry_max_retries
+    backoff_base = cfg.retry_backoff_base
     last_exc: Exception | None = None
-    for attempt in range(_MAX_RETRIES):
+    for attempt in range(max_retries):
         try:
             return await fn(*args, **kwargs)
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in _RETRYABLE_STATUS and attempt < _MAX_RETRIES - 1:
-                delay = 0.5 * (2**attempt)
+            if e.response.status_code in _RETRYABLE_STATUS and attempt < max_retries - 1:
+                delay = backoff_base * (2**attempt)
                 logger.info(
                     "retryable HTTP %d for %s, retry %d/%d in %.1fs",
                     e.response.status_code,
                     tool_name,
                     attempt + 1,
-                    _MAX_RETRIES,
+                    max_retries,
                     delay,
                 )
                 await asyncio.sleep(delay)
@@ -890,13 +894,13 @@ async def _retry_http(
             raise
         except (httpx.ConnectError, httpx.ReadTimeout) as e:
             last_exc = e
-            if attempt < _MAX_RETRIES - 1:
-                delay = 0.5 * (2**attempt)
+            if attempt < max_retries - 1:
+                delay = backoff_base * (2**attempt)
                 logger.info(
                     "connection error for %s, retry %d/%d in %.1fs",
                     tool_name,
                     attempt + 1,
-                    _MAX_RETRIES,
+                    max_retries,
                     delay,
                 )
                 await asyncio.sleep(delay)
