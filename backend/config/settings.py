@@ -67,6 +67,14 @@ class WorkflowSettings(BaseSettings):
     auto_publish: bool = False
     review_required: bool = True
     max_retries: int = 3
+    # evaluator_outcome: max evaluator→revise_content cycles before force-approve
+    # (mirrors ripple.max_reselect_count — prevents infinite revision loop when
+    # the RQGM panel is miscalibrated or adversarial and keeps rejecting).
+    max_revision_count: int = 2
+    # should_continue: max analyst→orchestrator cycles in continuous execution
+    # mode before force-end (prevents runaway loops when the orchestrator keeps
+    # routing back to the same phase without making progress).
+    max_cycle_count: int = 5
     scout_interval_hours: int = 6
     post_interval_hours: int = 4
     analytics_interval_hours: int = 12

@@ -6,9 +6,9 @@ unit tests on individual routers cannot catch.
 
 Scenario coverage:
   1. Continuous mode loop: analyst → orchestrator → analyst cycles until
-     cycle_count reaches _MAX_CYCLE_COUNT, then the workflow ENDS. This
-     validates the round-4 cycle_count cap fix in a real execution context
-     (the unit tests only verify the router function in isolation).
+     cycle_count reaches Settings().workflow.max_cycle_count, then the workflow
+     ENDS. This validates the round-4 cycle_count cap fix in a real execution
+     context (the unit tests only verify the router function in isolation).
   2. cycle_count increments on each orchestrator loop-back (not on the
      first run), confirming orchestrator_node's current_agent check works.
   3. Interrupt/resume counter preservation: revision_count survives a
@@ -23,8 +23,8 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.memory import InMemoryStore
 
+from backend.config.settings import Settings
 from backend.graph.builder import build_graph
-from backend.graph.routers import _MAX_CYCLE_COUNT
 from backend.state.enums import ContentStatus, WorkflowPhase
 
 
@@ -47,7 +47,7 @@ class TestContinuousModeE2E:
 
     @pytest.mark.asyncio
     async def test_continuous_loop_terminates_at_cycle_cap(self):
-        """Continuous mode: analyst↔orchestrator loop ends at _MAX_CYCLE_COUNT.
+        """Continuous mode: analyst↔orchestrator loop ends at max_cycle_count.
 
         This is the e2e validation of the round-4 cycle_count fix. Unit tests
         verify should_continue returns __end__ when cycle_count >= cap, but
@@ -60,9 +60,10 @@ class TestContinuousModeE2E:
         execution_mode=continuous. The mocked LLM makes the analyst return
         analytics without an "insights" key, so the orchestrator routes back
         to ANALYZING → analyst. Each orchestrator run bumps cycle_count.
-        After _MAX_CYCLE_COUNT orchestrator runs, should_continue returns
+        After max_cycle_count orchestrator runs, should_continue returns
         __end__ and the graph stops.
         """
+        max_cycle_count = Settings().workflow.max_cycle_count
         graph = _compile_test_graph()
         thread_id = "e2e-continuous-cap"
         config = {"configurable": {"thread_id": thread_id}}
@@ -110,11 +111,11 @@ class TestContinuousModeE2E:
         # work, this test would time out.
         assert final_state is not None
 
-        # cycle_count should have reached exactly _MAX_CYCLE_COUNT (the
+        # cycle_count should have reached exactly max_cycle_count (the
         # orchestrator bumps it on each loop-back, and should_continue ends
         # when it's >= cap). The orchestrator runs cap times before the
         # router stops the loop.
-        assert final_state.get("cycle_count", 0) >= _MAX_CYCLE_COUNT
+        assert final_state.get("cycle_count", 0) >= max_cycle_count
 
         # Phase should be a terminal/analyzing state — NOT stuck in a loop.
         # After the cap, should_continue returns __end__, so the final phase
@@ -165,7 +166,7 @@ class TestContinuousModeE2E:
         # In single mode, should_continue routes ANALYZING → END.
         # cycle_count may be 1 (orchestrator runs first, sees pre-set
         # current_agent, bumps the counter) but must NOT reach the cap.
-        assert final_state.get("cycle_count", 0) < _MAX_CYCLE_COUNT
+        assert final_state.get("cycle_count", 0) < Settings().workflow.max_cycle_count
         # The analyst result remains visible at the terminal graph boundary.
         assert final_state.get("phase") in (
             WorkflowPhase.ANALYZING,
@@ -176,7 +177,7 @@ class TestContinuousModeE2E:
 class TestRevisionCountInterruptPreservation:
     """E2E: revision_count survives a review_gate interrupt + resume.
 
-    The evaluator_outcome cap (revision_count >= _MAX_REVISION_COUNT → publisher)
+    The evaluator_outcome cap (revision_count >= max_revision_count → publisher)
     only works if revision_count persists across the interrupt boundary. The
     checkpointer must save it when the graph pauses at review_gate, and restore
     it when /resume fires. This test validates that round-3 fix in a real
@@ -242,7 +243,7 @@ class TestRevisionCountInterruptPreservation:
         )
 
         # The graph will run review_gate → evaluator_gate → publisher (dry_run)
-        # revision_count=2 is below _MAX_REVISION_COUNT(2)? No: >= means 2 >= 2
+        # revision_count=2 is below max_revision_count(2)? No: >= means 2 >= 2
         # is True, so if the evaluator rejects, it force-approves. But we're
         # approving, so it goes straight to publisher.
         final_state = await graph.ainvoke(resume_input, config)

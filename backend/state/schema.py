@@ -66,13 +66,13 @@ class XHSGrowthState(TypedDict, total=False):
     evaluation_result: EvaluationResult
 
     # Revision loop guard — counts evaluator→revise_content→copywriter cycles.
-    # evaluator_outcome force-approves after _MAX_REVISION_COUNT to prevent
-    # infinite revision loops when the panel is miscalibrated or adversarial.
+    # evaluator_outcome force-approves after Settings().workflow.max_revision_count
+    # to prevent infinite revision loops when the panel is miscalibrated or adversarial.
     revision_count: int
 
     # Continuous-mode cycle guard — counts analyst→orchestrator cycles.
-    # should_continue force-ends after _MAX_CYCLE_COUNT to prevent runaway
-    # workflows in continuous execution mode.
+    # should_continue force-ends after Settings().workflow.max_cycle_count to
+    # prevent runaway workflows in continuous execution mode.
     cycle_count: int
 
     # Ripple CAS engine

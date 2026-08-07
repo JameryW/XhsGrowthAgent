@@ -17,7 +17,7 @@ async def revise_content_node(state: XHSGrowthState, *, store: BaseStore) -> dic
     evaluator feedback feeds back into the writer).
 
     Increments revision_count on each cycle; evaluator_outcome force-approves
-    after _MAX_REVISION_COUNT to prevent infinite revision loops.
+    after Settings().workflow.max_revision_count to prevent infinite revision loops.
     """
     _check_cancelled(state)
     # Carry evaluator revision hints into human_feedback for the copywriter

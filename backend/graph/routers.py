@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from backend.config.settings import Settings
 from backend.state.enums import ContentStatus, WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -118,16 +119,9 @@ def review_outcome(state: XHSGrowthState) -> Literal["evaluator_gate", "revise_c
     return "__end__"
 
 
-# Max evaluator→revise_content cycles before force-approving.
-# Mirrors ripple_gate's reselect cap (Settings().ripple.max_reselect_count,
-# default 2): prevents infinite revision loops when the RQGM panel is
-# miscalibrated or adversarial (keeps rejecting).
-_MAX_REVISION_COUNT = 2
-
-# Max analyst→orchestrator cycles in continuous execution mode before
-# force-ending. Prevents runaway workflows when the orchestrator keeps routing
-# back to the same phase without making progress.
-_MAX_CYCLE_COUNT = 5
+# Loop-guard caps live in WorkflowSettings (env WORKFLOW_MAX_REVISION_COUNT /
+# WORKFLOW_MAX_CYCLE_COUNT). They mirror ripple.max_reselect_count — see
+# evaluator_outcome / should_continue below.
 
 
 def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content"]:
@@ -137,8 +131,9 @@ def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_con
     - approved → publisher
     - needs_revision / rejected → revise_content（revision_hints 随 evaluation_result 携带）
 
-    循环防护：revision_count >= _MAX_REVISION_COUNT 时强制放行 publisher，
-    防止评估器反复否决导致无限修订循环（与 ripple_gate 的 reselect 上限同理）。
+    循环防护：revision_count >= Settings().workflow.max_revision_count（默认 2）
+    时强制放行 publisher，防止评估器反复否决导致无限修订循环（与 ripple_gate
+    的 reselect 上限同理）。
 
     不读 _check_terminal：评估器节点已自带降级放行，且此处只在人审通过后触发，
     不会有 cancelled/paused 分支（那些在 review_outcome 已拦截）。
@@ -154,7 +149,7 @@ def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_con
         "rejected",
     ):
         # Force-approve if revision limit reached — prevent infinite loop
-        if revision_count >= _MAX_REVISION_COUNT:
+        if revision_count >= Settings().workflow.max_revision_count:
             return "publisher"
         return "revise_content"
     # approved 或未知 → 放行发布
@@ -164,9 +159,9 @@ def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_con
 def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:
     """分析后决定是否继续下一个周期
 
-    Continuous-mode loop guard: cycle_count >= _MAX_CYCLE_COUNT forces __end__,
-    preventing an unbounded analyst→orchestrator→analyst loop when the
-    orchestrator keeps routing back to analyst (phase stays ANALYZING).
+    Continuous-mode loop guard: cycle_count >= Settings().workflow.max_cycle_count
+    （默认 5）forces __end__, preventing an unbounded analyst→orchestrator→analyst
+    loop when the orchestrator keeps routing back to analyst (phase stays ANALYZING).
     Mirrors the revision_count / reselect_count caps on the other loops.
     """
     if terminal := _check_terminal(state):
@@ -178,7 +173,7 @@ def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]
         mode = state.get("execution_mode", "single")
         if mode == "continuous":
             # Cap continuous-mode cycles — no infinite orchestrator loop
-            if state.get("cycle_count", 0) >= _MAX_CYCLE_COUNT:
+            if state.get("cycle_count", 0) >= Settings().workflow.max_cycle_count:
                 return "__end__"
             return "orchestrator"
         return "__end__"
