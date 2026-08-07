@@ -146,6 +146,15 @@ class OmpSettings(BaseSettings):
     model_config = {"env_prefix": "OMP_", "env_file": ".env", "extra": "ignore"}
 
 
+class AnalyticsSettings(BaseSettings):
+    """Analytics dashboard/report in-memory cache config"""
+
+    # _get_cached: TTL in seconds for the dashboard/report cache
+    cache_ttl: int = 30
+
+    model_config = {"env_prefix": "ANALYTICS_", "env_file": ".env", "extra": "ignore"}
+
+
 class CreatorStatsSettings(BaseSettings):
     """后台 Creator Center 导入配置。"""
 
@@ -209,5 +218,6 @@ class Settings(BaseSettings):
     auth: AuthSettings = Field(default_factory=AuthSettings)
     creator_stats: CreatorStatsSettings = Field(default_factory=CreatorStatsSettings)
     omp: OmpSettings = Field(default_factory=OmpSettings)
+    analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
 
     model_config = {"env_file": ".env", "extra": "ignore"}

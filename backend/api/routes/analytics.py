@@ -61,7 +61,6 @@ class CreatorStatsSyncAllRequest(BaseModel):
 
 # Simple in-memory cache with TTL
 _cache: dict[str, tuple[float, Any]] = {}
-_CACHE_TTL = 30  # seconds
 
 # Bound on concurrent checkpointer reads in _get_completed_workflows.  The
 # checkpointer pool is created with max_size=10 (backend/graph/builder.py), so
@@ -152,7 +151,7 @@ def _complete_snapshot_metadata(
 def _get_cached(key: str) -> Any | None:
     if key in _cache:
         ts, val = _cache[key]
-        if time.time() - ts < _CACHE_TTL:
+        if time.time() - ts < Settings().analytics.cache_ttl:
             return val
         del _cache[key]
     return None
