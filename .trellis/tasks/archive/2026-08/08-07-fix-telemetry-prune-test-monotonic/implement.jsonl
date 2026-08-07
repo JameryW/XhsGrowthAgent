@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "backend quality bar — test fix must follow guidelines (deterministic, non-vacuous, revert-then-fail)"}
+{"file": ".trellis/tasks/08-07-fix-telemetry-prune-test-monotonic/prd.md", "reason": "task spec — patch time.monotonic in both throttle tests, root cause repro, revert-then-fail plan"}

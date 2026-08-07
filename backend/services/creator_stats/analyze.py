@@ -5,6 +5,7 @@ Pure analysis helpers are I/O-free; deposit_from_notes talks to CreativeMemory.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from collections import Counter
@@ -355,6 +356,7 @@ async def deposit_from_analysis(
     styles = 0
     materials = 0
     plays = 0
+    coros = []
 
     tone_finding = next((f for f in analysis.findings if f.finding_type == "tone"), None)
     top = sorted(notes, key=lambda n: n.engagement_rate, reverse=True)[:5]
@@ -362,7 +364,7 @@ async def deposit_from_analysis(
     top_snippets = [s for n in top if (s := _note_content_snippet(n))]
 
     style = _style_from_finding(tone_finding, analysis.avg_engagement_rate, top_snippets)
-    await cm.deposit_style(style)
+    coros.append(cm.deposit_style(style))
     styles = 1
 
     formula_finding = next(
@@ -393,7 +395,7 @@ async def deposit_from_analysis(
         proven_count=len(top),
         last_proven="",
     )
-    await cm.deposit_play(play)
+    coros.append(cm.deposit_play(play))
     plays = 1
 
     for n in top:
@@ -415,7 +417,7 @@ async def deposit_from_analysis(
                 weight=1.0 + rate,
                 created_at=n.synced_at or "",
             )
-            await cm.deposit_material(entry)
+            coros.append(cm.deposit_material(entry))
             materials += 1
 
         # 文案片段: title or body_text (covers empty-title notes)
@@ -430,8 +432,13 @@ async def deposit_from_analysis(
             weight=1.0 + rate,
             created_at=n.synced_at or "",
         )
-        await cm.deposit_material(body_entry)
+        coros.append(cm.deposit_material(body_entry))
         materials += 1
+
+    # deposit_style/play/material each self-isolate (try/except → logger.warning,
+    # return None), so bare coros in gather — no _safe_* wrapper needed. Writes are
+    # independent upsert-by-key with no cross-write read dependency (gather-safe).
+    await asyncio.gather(*coros)
 
     analysis.styles_deposited = styles
     analysis.materials_deposited = materials

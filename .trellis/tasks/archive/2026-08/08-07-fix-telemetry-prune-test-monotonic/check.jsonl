@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "backend quality bar — verify test fix deterministic + non-vacuous + revert-then-fail + prod unchanged"}
+{"file": ".trellis/tasks/08-07-fix-telemetry-prune-test-monotonic/prd.md", "reason": "task spec — verify AC (patch time.monotonic both tests, repro CI condition, revert-then-fail, prod record_event unchanged)"}
