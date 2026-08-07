@@ -1,5 +1,6 @@
 """Unit tests for AnalystAgent."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -103,11 +104,11 @@ class TestAnalystAgent:
     ):
         """_recall_memory + _ripple_report run concurrently via asyncio.gather.
 
-        Discriminator: analyst module has 0 other asyncio.gather calls (only
-        wait_for + create_task). Patch backend.agents.analyst.asyncio.gather;
-        serial implementation calls it 0 times, gather implementation calls it
-        once with exactly 2 awaitables whose coroutines are _recall_memory and
-        _ripple_report. Reverts to serial → gather never called → test fails.
+        Discriminator: analyst module now has TWO gather calls — the top-level
+        memory+ripple gather and the post-publish store-write gather. Both patch
+        backend.agents.analyst.asyncio.gather; we filter captured calls for the
+        one whose awaitables are the _recall_memory + _ripple_report coroutines
+        (qualname check). Serial implementation never calls gather with that pair.
         """
         captured: list[tuple] = []
 
@@ -131,18 +132,20 @@ class TestAnalystAgent:
 
             await agent.execute(mock_state, store=mock_store)
 
-        # gather called exactly once (the only gather in the module)
-        assert len(captured) == 1, f"expected 1 gather, got {len(captured)}"
-        awaitables = captured[0]
+        # Find the memory+ripple gather call (exactly 2 awaitables whose
+        # coroutines are _recall_memory + _ripple_report).
+        memory_ripple_calls = []
+        for awaitables in captured:
+            if len(awaitables) != 2:
+                continue
+            qualnames = sorted(getattr(aw, "__qualname__", "") for aw in awaitables)
+            if qualnames == ["AnalystAgent._ripple_report", "BaseAgent._recall_memory"]:
+                memory_ripple_calls.append(awaitables)
+        assert len(memory_ripple_calls) == 1, (
+            f"expected 1 memory+ripple gather, got {len(memory_ripple_calls)}"
+        )
+        awaitables = memory_ripple_calls[0]
         assert len(awaitables) == 2, f"expected 2 awaitables, got {len(awaitables)}"
-
-        # Each awaitable is a coroutine; verify sources via __qualname__.
-        # _recall_memory lives on BaseAgent, _ripple_report on AnalystAgent.
-        qualnames = sorted(getattr(aw, "__qualname__", "") for aw in awaitables)
-        assert qualnames == [
-            "AnalystAgent._ripple_report",
-            "BaseAgent._recall_memory",
-        ], f"coroutine sources mismatch: {qualnames}"
 
     @pytest.mark.asyncio
     async def test_ripple_report_returns_report(self, agent, mock_state, mock_store):
@@ -306,3 +309,142 @@ async def test_safe_evolve_passes_account_id():
     ) as me:
         await _safe_evolve(None)
         me.assert_awaited_once_with(None)
+
+
+class TestAnalystWriteGather:
+    """Post-publish store-write gather: store_insight + store_strategy_note runs
+    concurrently via asyncio.gather with per-row _safe_* isolation (write-gather
+    variant #512).
+
+    Uses the call-overlap discriminator (#519/#520 pattern): each mocked write
+    records a start/finish timestamp and yields control via asyncio.sleep(0).
+    Under a real asyncio.gather the writes overlap; under serial ``await`` loops
+    the intervals are disjoint. This avoids patching asyncio.gather globally
+    (the shared-asyncio-module leak trap from #515).
+    """
+
+    @pytest.fixture
+    def agent(self):
+        return AnalystAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        store.aput = AsyncMock()
+        store.aget = AsyncMock(return_value=None)
+        return store
+
+    @staticmethod
+    def _overlapping(a: tuple[float, float], b: tuple[float, float]) -> bool:
+        """True if the two [start, finish] windows overlap in time."""
+        return a[0] <= b[1] and b[0] <= a[1]
+
+    @pytest.mark.asyncio
+    async def test_stores_insights_and_notes_concurrently(self, agent, mock_store):
+        """store_insight + store_strategy_note writes overlap under gather.
+
+        Discriminator: each mocked MemoryManager write records a start/finish
+        window and yields via asyncio.sleep(0). Under gather the insight write
+        and the note write overlap; under serial loops they don't. Reverts to
+        serial → overlap absent → assertion fails.
+        """
+        windows: dict[str, list[float]] = {}
+
+        async def _tracked_store_insight(self_mm, store, insight, metadata):
+            start = asyncio.get_event_loop().time()
+            windows.setdefault("insight", [start, start])
+            await asyncio.sleep(0)  # yield so the sibling gather task can start
+            windows["insight"][1] = asyncio.get_event_loop().time()
+
+        async def _tracked_store_strategy_note(self_mm, store, note, data):
+            start = asyncio.get_event_loop().time()
+            windows.setdefault("note", [start, start])
+            await asyncio.sleep(0)  # yield so the sibling gather task can start
+            windows["note"][1] = asyncio.get_event_loop().time()
+
+        mock_response = MagicMock()
+        mock_response.content = '{"insights": ["i1", "i2", "i3"], "recommendations": ["r1", "r2"]}'
+        mock_state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.PUBLISHING,
+            "publish_result": {"post_id": "p1"},
+        }
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch(
+                "backend.memory.store.MemoryManager.store_insight",
+                new=_tracked_store_insight,
+            ),
+            patch(
+                "backend.memory.store.MemoryManager.store_strategy_note",
+                new=_tracked_store_strategy_note,
+            ),
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+            await agent.execute(mock_state, store=mock_store)
+
+        assert "insight" in windows and "note" in windows
+        assert self._overlapping(
+            (windows["insight"][0], windows["insight"][1]),
+            (windows["note"][0], windows["note"][1]),
+        ), "store_insight + store_strategy_note must overlap (concurrent), not run serially"
+
+    @pytest.mark.asyncio
+    async def test_partial_write_failure_does_not_abort_others(self, agent, mock_store):
+        """A failing store_insight write does not abort the remaining writes.
+
+        Wrapper isolation: _safe_store_insight/_safe_store_strategy_note swallow
+        per-row exceptions. With 3 insights + 2 recs, make the 2nd store_insight
+        call raise; the other 2 insights + both recs must still be stored.
+        Reverts to bare gather (no wrapper) → 2nd failure aborts the rest → the
+        later insight + recs are never stored → assertion fails. Reverts to
+        serial → 2nd failure aborts the loop → recs never run → fails too.
+        """
+        stored_insights: list[str] = []
+        stored_notes: list[str] = []
+        insight_call_count = 0
+
+        async def _flaky_store_insight(self_mm, store, insight, metadata):
+            nonlocal insight_call_count
+            insight_call_count += 1
+            if insight_call_count == 2:
+                raise RuntimeError("simulated 2nd-write failure")
+            stored_insights.append(insight)
+
+        async def _tracking_store_strategy_note(self_mm, store, note, data):
+            stored_notes.append(note)
+
+        mock_response = MagicMock()
+        mock_response.content = '{"insights": ["i1", "i2", "i3"], "recommendations": ["r1", "r2"]}'
+        mock_state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.PUBLISHING,
+            "publish_result": {"post_id": "p1"},
+        }
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch(
+                "backend.memory.store.MemoryManager.store_insight",
+                new=_flaky_store_insight,
+            ),
+            patch(
+                "backend.memory.store.MemoryManager.store_strategy_note",
+                new=_tracking_store_strategy_note,
+            ),
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+            await agent.execute(mock_state, store=mock_store)
+
+        # 2nd insight failed; 1st + 3rd must still be stored (wrapper isolation).
+        assert stored_insights == ["i1", "i3"], (
+            f"expected i1 + i3 stored (2nd failed, isolated), got {stored_insights}"
+        )
+        # All recs stored regardless of the insight failure.
+        assert stored_notes == ["r1", "r2"], f"expected both recs stored, got {stored_notes}"
