@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 106
+- **Total Sessions**: 107
 - **Last Active**: 2026-08-07
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~437 | Active |
+| `journal-1.md` | ~470 | Active |
 | `journal-0.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -22,6 +22,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 107 | 2026-08-07 | PR#521 gather analyst serial store_insight + store_strategy_note writes | `1ab8cb70` | `main` |
 | 106 | 2026-08-07 | PR#512 showcase gather orphan demote | `54030388` | `main` |
 | 105 | 2026-08-07 | PR#511 evaluation dedupe load_weights | `1260f3d7` | `main` |
 | 104 | 2026-08-07 | PR#510 free route gather 3 creative recalls | `0233fc44` | `main` |

@@ -435,3 +435,36 @@ _demote_orphaned_public_rows serial db_update per orphaned row in for-loop → p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 107: PR#521 gather analyst serial store_insight + store_strategy_note writes
+
+**Date**: 2026-08-07
+**Task**: PR#521 gather analyst serial store_insight + store_strategy_note writes
+**Branch**: `main`
+
+### Summary
+
+Gather-parallel series #13 (write-gather variant #512): analyst execute two serial memory-write loops (for insight: store_insight)+(for rec: store_strategy_note)→single asyncio.gather. N+M sequential store.aput writes (independent UUID keys, post-publish)→1 wave. store_insight/store_strategy_note bare store.aput no internal swallow→_safe_store_insight/_safe_store_strategy_note wrappers (per-row try/except→warning exc_info=True, swallow) for per-row isolation. Behavior change (documented): serial aborted on first write failure; gather+wrapper continues on partial failure (memory writes best-effort non-transactional, mirrors _recall_memory read-side swallow). post_id hoisted outside gather. content_history aget/update block unchanged (order-dependent serial). TYPE_CHECKING import for MemoryManager annotations (lazy import inside execute preserved, no runtime circular). 2 non-vacuous tests (call-overlap discriminator + partial-failure isolation), both revert-then-fail proven. Existing memory+ripple gather test discriminator updated (module now 2 gathers, filter by qualname). Full pytest 2114 green, all 6 CI checks pass. Investigator round-3 ranked #2 of 7.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1ab8cb70` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

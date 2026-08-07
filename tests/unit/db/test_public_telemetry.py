@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -86,3 +87,63 @@ async def test_ensure_tables_backfills_cached_column_for_old_deploys():
     assert any("ADD COLUMN IF NOT EXISTS cached BOOLEAN" in sql for sql in add_column_sqls)
     assert any("ADD COLUMN IF NOT EXISTS decision TEXT" in sql for sql in add_column_sqls)
     assert any("ADD COLUMN IF NOT EXISTS old_period TEXT" in sql for sql in add_column_sqls)
+
+
+@pytest.mark.asyncio
+async def test_record_event_prune_throttled():
+    """Rapid successive beacons run INSERT every time but DELETE only once
+    (throttled to ≤ once per _PRUNE_INTERVAL_S)."""
+    import backend.db.public_telemetry as mod
+
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+
+    # Reset throttle so the first call elapses (now - 0 >> interval) and prunes.
+    mod._last_prune_ts = 0.0
+
+    event = {"event": "replay_select_to_render"}
+
+    with (
+        patch("backend.db.public_telemetry.is_pool_ready", return_value=True),
+        patch("backend.db.public_telemetry.get_pool", return_value=_mock_pool(conn)),
+    ):
+        await mod.record_event(event)
+        await mod.record_event(event)
+
+    executed = [call.args[0] for call in conn.execute.await_args_list]
+    inserts = [sql for sql in executed if "INSERT INTO public_ux_events" in sql]
+    deletes = [sql for sql in executed if "DELETE FROM public_ux_events" in sql]
+
+    # INSERT runs per beacon (always).
+    assert len(inserts) == 2
+    # DELETE throttled: runs on the first call (now - 0 >= interval), skipped
+    # on the second (immediately after, within interval).
+    assert len(deletes) == 1
+
+
+@pytest.mark.asyncio
+async def test_record_event_prune_runs_after_interval():
+    """Once _PRUNE_INTERVAL_S has elapsed since the last prune, the next beacon
+    runs DELETE again and updates the throttle timestamp."""
+    import backend.db.public_telemetry as mod
+
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+
+    # Force elapsed: last prune was more than one interval ago.
+    mod._last_prune_ts = time.monotonic() - mod._PRUNE_INTERVAL_S - 1.0
+    before = mod._last_prune_ts
+
+    event = {"event": "replay_select_to_render"}
+
+    with (
+        patch("backend.db.public_telemetry.is_pool_ready", return_value=True),
+        patch("backend.db.public_telemetry.get_pool", return_value=_mock_pool(conn)),
+    ):
+        await mod.record_event(event)
+
+    executed = [call.args[0] for call in conn.execute.await_args_list]
+    deletes = [sql for sql in executed if "DELETE FROM public_ux_events" in sql]
+    assert len(deletes) == 1
+    # Timestamp advanced past the stale value.
+    assert mod._last_prune_ts > before
