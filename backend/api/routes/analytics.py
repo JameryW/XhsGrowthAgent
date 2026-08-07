@@ -1663,8 +1663,10 @@ async def get_creator_analysis(
 
     account_id = (account_id or "").strip()
     await require_owned_account(str(user["id"]), account_id)
-    notes = await stats_db.list_note_stats(account_id, limit=100)
-    account = await stats_db.get_account_stats(account_id)
+    notes, account = await asyncio.gather(
+        stats_db.list_note_stats(account_id, limit=100),
+        stats_db.get_account_stats(account_id),
+    )
     analysis = analyze_notes(notes, account_id)
     suggestions = suggestions_from_analysis(analysis, notes)
     return success(
