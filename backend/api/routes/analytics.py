@@ -693,7 +693,10 @@ async def get_growth_report(
     account_id = (account_id or "").strip()
     await require_owned_account(str(user["id"]), account_id)
     graph = request.app.state.graph
-    workflows = await _get_completed_workflows(graph, account_id)
+    workflows, snapshot_bundle = await asyncio.gather(
+        _get_completed_workflows(graph, account_id),
+        _creator_snapshot_bundle(account_id),
+    )
 
     posts: list[dict[str, Any]] = []
     topics: dict[str, int] = {}
@@ -707,7 +710,6 @@ async def get_growth_report(
         if topic:
             topics[topic] = topics.get(topic, 0) + 1
 
-    snapshot_bundle = await _creator_snapshot_bundle(account_id)
     posts = await _merge_imported_posts(
         account_id,
         posts,
@@ -928,7 +930,10 @@ async def get_performance(
     account_id = (account_id or "").strip()
     await require_owned_account(str(user["id"]), account_id)
     graph = request.app.state.graph
-    workflows = await _get_completed_workflows(graph, account_id)
+    workflows, snapshot_bundle = await asyncio.gather(
+        _get_completed_workflows(graph, account_id),
+        _creator_snapshot_bundle(account_id),
+    )
 
     posts: list[dict[str, Any]] = []
     for wf in workflows:
@@ -937,7 +942,6 @@ async def get_performance(
         if post:
             posts.append(post)
 
-    snapshot_bundle = await _creator_snapshot_bundle(account_id)
     posts = await _merge_imported_posts(
         account_id,
         posts,
@@ -1066,7 +1070,13 @@ async def get_dashboard(
     account_id = (account_id or "").strip()
     await require_owned_account(str(user["id"]), account_id)
     graph = request.app.state.graph
-    workflows = await _get_completed_workflows(graph, account_id)
+    # workflows (checkpointer reads, cached) and the imported creator snapshot
+    # (creator_stats DB read, uncached) hit independent storage — gather them so
+    # the snapshot RT hides behind the checkpoint gather.
+    workflows, snapshot_bundle = await asyncio.gather(
+        _get_completed_workflows(graph, account_id),
+        _creator_snapshot_bundle(account_id),
+    )
 
     # ── Extract posts once ──
     posts: list[dict[str, Any]] = []
@@ -1084,7 +1094,6 @@ async def get_dashboard(
     # Merge the full imported snapshot before computing period aggregates. The
     # visible table remains paginated below, but current/previous totals must
     # not depend on its ``limit``.
-    snapshot_bundle = await _creator_snapshot_bundle(account_id)
     posts = await _merge_imported_posts(
         account_id,
         posts,

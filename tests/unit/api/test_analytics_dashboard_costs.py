@@ -175,3 +175,58 @@ class TestDashboardBudgetFromSettings:
         costs = resp.json()["data"]["costs"]
         # 50.0 budget - 0.01 cost = 49.99 (hardcoded 10.0 would have given 9.99)
         assert costs["budget_remaining_usd"] == 49.99
+
+
+class TestDashboardGathersSnapshotWithWorkflows:
+    """_get_completed_workflows (checkpointer) and _creator_snapshot_bundle
+    (creator_stats DB) hit independent storage and must run concurrently — the
+    snapshot RT hides behind the checkpoint gather. A serial call would make
+    peak in-flight == 1; a gather makes it == 2."""
+
+    def test_dashboard_runs_workflows_and_snapshot_concurrently(self, client):
+        import asyncio
+
+        in_flight = 0
+        peak = 0
+
+        async def _slow_workflows(graph, account_id=None, *, include_error=False):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.05)
+            in_flight -= 1
+            return [_completed_post_workflow()]
+
+        async def _slow_snapshot(account_id):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.05)
+            in_flight -= 1
+            return {
+                "account_id": TEST_ACCOUNT_ID,
+                "account": None,
+                "notes": [],
+                "data_as_of": None,
+                "snapshot_id": None,
+                "note_count": 0,
+            }
+
+        with (
+            patch(
+                "backend.api.routes.analytics.require_owned_account",
+                new=AsyncMock(return_value=None),
+            ),
+            patch.object(
+                analytics, "_get_completed_workflows", AsyncMock(side_effect=_slow_workflows)
+            ),
+            patch.object(
+                analytics, "_creator_snapshot_bundle", AsyncMock(side_effect=_slow_snapshot)
+            ),
+        ):
+            resp = client.get(f"/api/analytics/dashboard/{TEST_ACCOUNT_ID}")
+
+        assert resp.status_code == 200
+        # gather → both helpers overlap → peak in-flight reaches 2.
+        # A serial implementation would peak at 1 (revert-then-fail: peak == 1).
+        assert peak == 2
