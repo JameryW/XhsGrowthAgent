@@ -701,3 +701,40 @@ Discriminator tests: peak in-flight cm_db.get_* probe (4× asyncio.sleep(0) yiel
 ### Next Steps
 
 - Loop continues (cron c06703ff). Serial-IO vein now substantially exhausted across routes/agents/memory/db (16+ gather PRs #502-#531). Remaining: publisher get_account+get_cdp_endpoint (single publish, marginal). Pivot to PRD direction 2 (LLM cost) needs prod perf_log measurement, or direction 3 (reliability/coverage gaps). Re-scan for untested critical paths or races.
+
+## 2026-08-08 — evaluator_config log type-name (#532)
+
+**Task**: add type(e).__name__ to 4 evaluator_config error logs
+**Branch**: `fix/evaluator-config-log-type-name`
+
+### Summary
+
+Serial-IO vein exhausted (16+ gather PRs #502-#531). Pivoted to reliability direction 3. Scanned bare-%s error logs missing type name — found db/evaluator_config.py 4 sites uncovered by #471 (ripple) / #474 (xhs_client/publisher/trending). All on RQGM evaluator-weights path that silently falls back to defaults on DB failure → opaque log = silent-default regression hard to diagnose.
+
+4 sites: load_weights (returns {}), train_weights fetch (samples=[]), train_weights apply (report.note suffix), maybe_evolve (report["reason"]). Each now %s: %s with type(e).__name__, e. Two user-facing strings (report.note, report["reason"]) also carry type name.
+
+Test safety: existing asserts are substrings ("db down" in reason → still present as "OperationalError: db down"; "keeping defaults" in note → success path no suffix). No test changes needed.
+
+### Main Changes
+
+- `backend/db/evaluator_config.py`: 4 logger.warning %s→%s: %s + type(e).__name__; 2 user-facing strings (note, reason) carry type name
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| (pending) | fix(log): include exception type in evaluator_config error logs |
+
+### Testing
+
+- [OK] ruff format+check clean
+- [OK] mypy 1 file no issues
+- [OK] full pytest 2124 passed
+
+### Status
+
+[OK] **PR #532 open**
+
+### Next Steps
+
+- Loop continues (cron c06703ff). Remaining bare-%s logs in xhs_login (6), chrome_launcher (3), xhs_publisher (2), accounts (2), pipeline (2), llm_enrichment (1), middleware (1) — same series, per-module PRs. Or pivot back to perf: LLM-cost direction needs prod perf_log measurement data.
