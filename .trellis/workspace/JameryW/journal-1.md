@@ -580,3 +580,48 @@ mypy caught psycopg3 trap: `executemany` is on **cursor** not connection (first 
 ### Next Steps
 
 - Loop continues (cron 4f9aeee2 every 10min). Next investigator candidates queued: copywriter dual deposit_material (#512 write-gather idiom, minor), creative.calibrate 3 serial blocks (fire-and-forget, moderate). train_weights+avg_bias_score gather in maybe_evolve deprioritized (fire-and-forget, no user-facing latency).
+
+
+## Session 111: gather _creator_snapshot_bundle with _get_completed_workflows (#527)
+
+**Date**: 2026-08-08
+**Task**: gather _creator_snapshot_bundle with _get_completed_workflows (#527)
+**Branch**: `main`
+
+### Summary
+
+Continued optimization loop. Ran investigator for USER-FACING serial I/O (avoided fire-and-forget background paths). Found analytics trio: get_dashboard / get_growth_report / get_performance all ran _get_completed_workflows (checkpointer reads, cached) then _creator_snapshot_bundle (creator_stats DB, uncached) serially despite independent storage + no data dependency. Snapshot RT stacked on checkpoint gather every load.
+
+Chose this over fire-and-forget calibrate (no user latency) and /status redundant db_get (read-after-write dependency, not gather — needs _db_upsert to return row, separate PR).
+
+Gathered both calls at all 3 call sites (identical workflows→extract→snapshot structure). _creator_snapshot_bundle reads only creator_stats DB (verified no graph/workflows dep). Sync extraction loop moved after gather. asyncio already imported; file already uses gather (checkpoint reads line 228, snapshot internal line 1666).
+
+Test: peak in-flight discriminator (not timing — avoids CI flake). Patch both helpers to sleep 0.05s while tracking concurrent in-flight count. gather→peak==2, serial→peak==1. Revert-then-fail proven (serial version: assert 1==2 fails). Existing dashboard cost tests patch both helpers as independent AsyncMocks, no call-order assertion → unchanged.
+
+Pre-push triple green: ruff format+check, mypy 165 files, full pytest 2124 passed. CI 6/6 green. Squash-merged.
+
+### Main Changes
+
+- `backend/api/routes/analytics.py`: 3 call sites (get_dashboard/get_growth_report/get_performance) serial pair → asyncio.gather; sync extraction loop moved after gather
+- `tests/unit/api/test_analytics_dashboard_costs.py`: +TestDashboardGathersSnapshotWithWorkflows (peak in-flight discriminator)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e9d2b27b` | perf(analytics): gather _creator_snapshot_bundle with _get_completed_workflows (#527) |
+
+### Testing
+
+- [OK] ruff format --check + ruff check clean
+- [OK] mypy backend 165 files no issues
+- [OK] full pytest 2124 passed
+- [OK] CI 6/6 green
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Loop continues (cron 4f9aeee2). Next candidate: /status redundant db_get for label (workflow.py:799) — read-after-write dependency, fix = _db_upsert returns row it fetched at _runner.py:77; highest-frequency hit (5s poll). Then calibrate 3 serial blocks (fire-and-forget, lower priority).
