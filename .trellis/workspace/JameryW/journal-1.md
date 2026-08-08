@@ -535,3 +535,48 @@ PR#523: deposit_from_analysis 12 serial creative-memory writes (1 style+1 play+�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 110: batch train_weights set_weight loop into single executemany (#526)
+
+**Date**: 2026-08-08
+**Task**: batch train_weights set_weight loop into single executemany (#526)
+**Branch**: `main`
+
+### Summary
+
+Continued optimization loop. Merged PR#525 (creator_stats batch existence SELECT) first to clear queue, then found next target via investigator: `train_weights` apply path wrote 11 serial `set_weight` calls (9 fitted dimension weights + threshold.pass + threshold.reject), each acquiring own pool connection + separate INSERT ... ON CONFLICT RT. Fires every RQGM epoch boundary (maybe_evolve → train_weights on analyst publish path).
+
+Chose single-connection `executemany` over `asyncio.gather`: 11 writes target same table, same (weight_key, account_id) conflict key — gather would fan into 11 concurrent pool acquisitions for one-table writes (wrong trade) + partial-failure semantics change. Batch = 1 connection + 1 RT, keeps all-or-nothing semantics the loop had. Mirrors #514 creator_stats executemany precedent.
+
+Added `_set_weights_batch(items, account_id)` helper: validates all keys against DEFAULT_WEIGHTS (same contract as set_weight) before writing — bad key fails whole batch, no partial write. train_weights builds items list (fitted_weights + 2 thresholds), calls helper once. set_weight (public, 3 callers + tests) unchanged. Existing train_weights/maybe_evolve tests mock train_weights wholesale → no call-order/count assertions break.
+
+mypy caught psycopg3 trap: `executemany` is on **cursor** not connection (first draft used `conn.executemany` → mypy attr-defined error; creator_stats:466 uses `cur.executemany`). Fixed to `async with pool.connection() as conn, conn.cursor() as cur: await cur.executemany(...)`.
+
+4 new tests (batch upsert, unknown-key rejection, empty no-op, train_weights apply writes batch not loop). Last revert-then-fail proven (loop version → applied=False, batch raises on un-awaited mock). Pre-push triple green: ruff format+check, mypy 165 files clean, full pytest 2123 passed. CI 6/6 green. Squash-merged.
+
+### Main Changes
+
+- `backend/db/evaluator_config.py`: +`_set_weights_batch` helper (key validation + single `cur.executemany` ON CONFLICT upsert); `train_weights` loop → single batch call
+- `tests/unit/db/test_evaluator_config.py`: +4 tests
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e5057343` | perf(db): batch train_weights set_weight loop into single executemany (#526) |
+
+### Testing
+
+- [OK] ruff format --check + ruff check clean
+- [OK] mypy backend 165 files no issues
+- [OK] full pytest 2123 passed
+- [OK] CI 6/6 green (Frontend/Lint/Mypy/OMP/py3.11/py3.12)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Loop continues (cron 4f9aeee2 every 10min). Next investigator candidates queued: copywriter dual deposit_material (#512 write-gather idiom, minor), creative.calibrate 3 serial blocks (fire-and-forget, moderate). train_weights+avg_bias_score gather in maybe_evolve deprioritized (fire-and-forget, no user-facing latency).
