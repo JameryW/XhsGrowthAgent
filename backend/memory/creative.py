@@ -9,6 +9,7 @@ Namespaces:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -396,57 +397,88 @@ class CreativeMemory:
         aget as secondary. More reliable when semantic search is disabled.
 
         Returns update stats: {"styles": N, "plays": N, "materials": N}
+
+        The three namespace updates (style / play / material) are independent —
+        distinct IDs, distinct namespaces, no shared state. Gathered so the
+        fire-and-forget calibration task releases its DB/store connections
+        sooner. Each helper has its own try/except (swallow + log), so a failure
+        in one namespace does not abort the others (no _safe_* wrapper needed).
+        """
+        styles, plays, materials = await asyncio.gather(
+            self._calibrate_style(payload),
+            self._calibrate_play(payload),
+            self._calibrate_materials(payload),
+        )
+        return {"styles": styles, "plays": plays, "materials": materials}
+
+    async def _calibrate_style(self, payload: CalibrationPayload) -> int:
+        """Update Style DNA engagement_rate. Returns 1 on update, 0 otherwise."""
+        from backend.db import creative_memory as cm_db
+
+        style_id = payload.get("style_id", "")
+        if not style_id:
+            return 0
+        try:
+            old = await cm_db.get_style(self.account_id, style_id)
+            if old is None and self._has_store:
+                item = await self._store.aget(  # type: ignore[union-attr]
+                    self.style_dna_ns, key=style_id
+                )
+                if item is not None:
+                    old = item.value
+            if old is not None:
+                old_rate = old.get("engagement_rate", 0.0)
+                new_rate = payload.get("actual_engagement_rate", old_rate)
+                n = old.get("sample_count", 1)
+                old["engagement_rate"] = round((old_rate * n + new_rate) / (n + 1), 4)
+                old["sample_count"] = n + 1
+                old["last_used"] = datetime.now(UTC).isoformat()
+                await self._persist_style(style_id, dict(old))
+                return 1
+        except Exception as e:
+            logger.warning(f"calibrate style failed: {e}")
+        return 0
+
+    async def _calibrate_play(self, payload: CalibrationPayload) -> int:
+        """Update Conversion Playbook proven_count. Returns 1 on update, 0 otherwise."""
+        from backend.db import creative_memory as cm_db
+
+        play_id = payload.get("play_id", "")
+        if not play_id:
+            return 0
+        try:
+            old = await cm_db.get_play(self.account_id, play_id)
+            if old is None and self._has_store:
+                item = await self._store.aget(  # type: ignore[union-attr]
+                    self.playbook_ns, key=play_id
+                )
+                if item is not None:
+                    old = item.value
+            if old is not None:
+                if payload.get("play_success", False):
+                    old["proven_count"] = old.get("proven_count", 0) + 1
+                    old["last_proven"] = datetime.now(UTC).isoformat()
+                await self._persist_play(play_id, dict(old))
+                return 1
+        except Exception as e:
+            logger.warning(f"calibrate play failed: {e}")
+        return 0
+
+    async def _calibrate_materials(self, payload: CalibrationPayload) -> int:
+        """Update Material Vault effectiveness + soft-downgrade for each material.
+
+        Materials are independent (distinct IDs in the vault namespace), so the
+        per-item read-then-write is gathered. Each item has its own try/except
+        (swallow + log), so one failing material does not abort the rest.
+        Returns the count of materials updated.
         """
         from backend.db import creative_memory as cm_db
 
-        stats = {"styles": 0, "plays": 0, "materials": 0}
-
-        # 1. 更新 Style DNA engagement_rate
-        style_id = payload.get("style_id", "")
-        if style_id:
-            try:
-                old = await cm_db.get_style(self.account_id, style_id)
-                if old is None and self._has_store:
-                    item = await self._store.aget(  # type: ignore[union-attr]
-                        self.style_dna_ns, key=style_id
-                    )
-                    if item is not None:
-                        old = item.value
-                if old is not None:
-                    old_rate = old.get("engagement_rate", 0.0)
-                    new_rate = payload.get("actual_engagement_rate", old_rate)
-                    n = old.get("sample_count", 1)
-                    old["engagement_rate"] = round((old_rate * n + new_rate) / (n + 1), 4)
-                    old["sample_count"] = n + 1
-                    old["last_used"] = datetime.now(UTC).isoformat()
-                    await self._persist_style(style_id, dict(old))
-                    stats["styles"] = 1
-            except Exception as e:
-                logger.warning(f"calibrate style failed: {e}")
-
-        # 2. 更新 Conversion Playbook proven_count
-        play_id = payload.get("play_id", "")
-        if play_id:
-            try:
-                old = await cm_db.get_play(self.account_id, play_id)
-                if old is None and self._has_store:
-                    item = await self._store.aget(  # type: ignore[union-attr]
-                        self.playbook_ns, key=play_id
-                    )
-                    if item is not None:
-                        old = item.value
-                if old is not None:
-                    if payload.get("play_success", False):
-                        old["proven_count"] = old.get("proven_count", 0) + 1
-                        old["last_proven"] = datetime.now(UTC).isoformat()
-                    await self._persist_play(play_id, dict(old))
-                    stats["plays"] = 1
-            except Exception as e:
-                logger.warning(f"calibrate play failed: {e}")
-
-        # 3. 更新 Material Vault effectiveness + 软降权
         material_effectiveness = payload.get("material_effectiveness", {})
-        for mid, eff in material_effectiveness.items():
+        if not material_effectiveness:
+            return 0
+
+        async def _update_one(mid: str, eff: float) -> int:
             try:
                 old = await cm_db.get_material(self.account_id, mid)
                 if old is None and self._has_store:
@@ -461,11 +493,15 @@ class CreativeMemory:
                     if eff < EFFECTIVENESS_THRESHOLD:
                         old["weight"] = round(old.get("weight", 1.0) * DOWNGRADE_FACTOR, 4)
                     await self._persist_material(mid, dict(old))
-                    stats["materials"] += 1
+                    return 1
             except Exception as e:
                 logger.warning(f"calibrate material {mid} failed: {e}")
+            return 0
 
-        return stats
+        results = await asyncio.gather(
+            *(_update_one(mid, eff) for mid, eff in material_effectiveness.items())
+        )
+        return sum(results)
 
     # ── 内部方法 ──
 

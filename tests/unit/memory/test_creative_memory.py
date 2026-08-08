@@ -507,6 +507,128 @@ class TestCalibrateStats:
         assert stats["materials"] == 0
 
 
+# ── Calibrate Concurrency ──
+
+
+class TestCalibrateConcurrency:
+    """The 3 namespace updates (style/play/material) run concurrently via gather."""
+
+    @pytest.mark.asyncio
+    async def test_three_namespaces_gathered_concurrently(self):
+        """Discriminator: peak in-flight cm_db.get_* calls must reach 3 when
+        style_id + play_id + material_effectiveness are all present. Serial
+        blocks would peak at 1. Also asserts the stats dict is still correct
+        (each block updated exactly once).
+        """
+        import asyncio
+
+        style = StyleDNA(style_id="s1", tone="治愈", sample_count=1, engagement_rate=0.05)
+        play = ConversionPlay(play_id="p1", trigger_condition="新品首发", proven_count=1)
+        material = MaterialEntry(
+            material_id="m1",
+            category="标题模板",
+            content="test",
+            effectiveness=0.5,
+            weight=1.0,
+            reuse_count=0,
+        )
+        # store.aget fallback returns None — force cm_db.get_* path
+        store = _make_store(get_result=None)
+        cm = CreativeMemory("test_acct", store=store)
+
+        in_flight = 0
+        peak = 0
+
+        def _make_probe(value):
+            async def _probe(*a, **k):
+                nonlocal in_flight, peak
+                in_flight += 1
+                peak = max(peak, in_flight)
+                # Yield repeatedly so all sibling block coroutines get scheduled
+                # into their probe before any decrements — reliable concurrency
+                # observation without timing flakiness.
+                for _ in range(4):
+                    await asyncio.sleep(0)
+                in_flight -= 1
+                return value
+
+            return _probe
+
+        payload = CalibrationPayload(
+            account_id="test_acct",
+            niche="母婴",
+            style_id="s1",
+            actual_engagement_rate=0.08,
+            actual_save_rate=0.02,
+            play_id="p1",
+            play_success=True,
+            material_ids=["m1"],
+            material_effectiveness={"m1": 0.6},
+            post_id="post1",
+        )
+
+        with (
+            patch.object(cm_db, "get_style", new=_make_probe(dict(style))),
+            patch.object(cm_db, "get_play", new=_make_probe(dict(play))),
+            patch.object(cm_db, "get_material", new=_make_probe(dict(material))),
+        ):
+            stats = await cm.calibrate(payload)
+
+        assert peak == 3, f"3 namespace blocks not gathered concurrently (peak={peak})"
+        assert stats == {"styles": 1, "plays": 1, "materials": 1}, stats
+
+    @pytest.mark.asyncio
+    async def test_partial_failure_does_not_abort_other_namespaces(self):
+        """Style block raises, play + material blocks still update.
+
+        Each block has its own try/except (swallow + log) — gather cannot raise
+        where serial did not. Asserts play + material stats populated despite
+        style failure.
+        """
+        play = ConversionPlay(play_id="p1", trigger_condition="新品首发", proven_count=1)
+        material = MaterialEntry(
+            material_id="m1",
+            category="标题模板",
+            content="test",
+            effectiveness=0.5,
+            weight=1.0,
+            reuse_count=0,
+        )
+        store = _make_store(get_result=None)
+        cm = CreativeMemory("test_acct", store=store)
+
+        async def _raise(*a, **k):
+            raise RuntimeError("style db down")
+
+        payload = CalibrationPayload(
+            account_id="test_acct",
+            niche="母婴",
+            style_id="s1",
+            actual_engagement_rate=0.08,
+            actual_save_rate=0.02,
+            play_id="p1",
+            play_success=True,
+            material_ids=["m1"],
+            material_effectiveness={"m1": 0.6},
+            post_id="post1",
+        )
+
+        async def _get_play(*a, **k):
+            return dict(play)
+
+        async def _get_material(*a, **k):
+            return dict(material)
+
+        with (
+            patch.object(cm_db, "get_style", new=_raise),
+            patch.object(cm_db, "get_play", new=_get_play),
+            patch.object(cm_db, "get_material", new=_get_material),
+        ):
+            stats = await cm.calibrate(payload)
+
+        assert stats == {"styles": 0, "plays": 1, "materials": 1}, stats
+
+
 # ── Keyword Recall ──
 
 
