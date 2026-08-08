@@ -282,6 +282,36 @@ async def set_weight(key: str, value: float, account_id: str | None = None) -> N
         )
 
 
+async def _set_weights_batch(items: list[tuple[str, float]], account_id: str | None = None) -> None:
+    """Upsert multiple weight overrides in one connection/round-trip.
+
+    Each item is ``(key, value)``. Validates every key against DEFAULT_WEIGHTS
+    (same contract as :func:`set_weight`) before writing, so a bad key fails the
+    whole batch rather than leaving a partial write. Used by :func:`train_weights`
+    to write the fitted dimension weights + thresholds as a single ``executemany``
+    instead of N serial ``set_weight`` calls (each of which acquired its own
+    pool connection).
+    """
+    if not items:
+        return
+    for key, _ in items:
+        if key not in DEFAULT_WEIGHTS:
+            raise ValueError(f"unknown evaluator weight key: {key}")
+    scope_id = (account_id or "").strip()
+    now = datetime.now(UTC).isoformat()
+    pool = get_pool()
+    async with pool.connection() as conn, conn.cursor() as cur:
+        await cur.executemany(
+            """
+            INSERT INTO evaluator_config (weight_key, account_id, weight_value, updated_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (weight_key, account_id) DO UPDATE SET weight_value = EXCLUDED.weight_value,
+                updated_at = EXCLUDED.updated_at
+            """,
+            [(key, value, scope_id, now) for key, value in items],
+        )
+
+
 async def list_weights(account_id: str | None = None) -> list[dict[str, Any]]:
     """List all effective weights (default + override resolved) for inspection/UI."""
     resolved = await load_weights(account_id)
@@ -650,12 +680,13 @@ async def train_weights(account_id: str | None = None, *, apply: bool = False) -
     if report.n_samples < MIN_TRAIN_SAMPLES:
         return report  # keep defaults, don't write
 
-    # Write fitted weights + thresholds back to DB.
+    # Write fitted weights + thresholds back to DB — single executemany on one
+    # connection instead of 11 serial set_weight calls (11 pool acquisitions).
     try:
-        for name, w in report.fitted_weights.items():
-            await set_weight(f"weight.{name}", w, account_id)
-        await set_weight("threshold.pass", report.pass_threshold, account_id)
-        await set_weight("threshold.reject", report.reject_threshold, account_id)
+        items = [(f"weight.{name}", w) for name, w in report.fitted_weights.items()]
+        items.append(("threshold.pass", report.pass_threshold))
+        items.append(("threshold.reject", report.reject_threshold))
+        await _set_weights_batch(items, account_id)
         report.applied = True
     except Exception as e:
         logger.warning("train_weights: apply failed: %s", e)

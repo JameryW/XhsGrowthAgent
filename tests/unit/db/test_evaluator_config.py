@@ -161,6 +161,105 @@ async def test_set_weight_uses_empty_scope_for_global_override():
 
 
 @pytest.mark.asyncio
+async def test_set_weights_batch_upserts_all_in_one_executemany():
+    """train_weights apply path: 9 dimension weights + 2 thresholds → one
+    executemany on one connection, not 11 serial set_weight calls."""
+    from backend.db.evaluator_config import _set_weights_batch
+
+    executemany_mock = AsyncMock()
+    cursor = MagicMock()
+    cursor.executemany = executemany_mock
+    conn = _make_mock_conn(cursor=cursor)
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        items = [
+            ("weight.copywriting", 0.2),
+            ("threshold.pass", 72.0),
+            ("threshold.reject", 48.0),
+        ]
+        await _set_weights_batch(items, account_id="acct1")
+
+    executemany_mock.assert_awaited_once()
+    sql, rows = executemany_mock.await_args.args
+    assert "ON CONFLICT" in sql
+    # one row per item, each (key, value, scope_id, now)
+    assert len(rows) == 3
+    assert rows[0][0] == "weight.copywriting"
+    assert rows[0][1] == 0.2
+    assert rows[0][2] == "acct1"  # account_id scoped
+    assert rows[1][0] == "threshold.pass"
+    assert rows[2][0] == "threshold.reject"
+
+
+@pytest.mark.asyncio
+async def test_set_weights_batch_rejects_unknown_key_before_writing():
+    """A bad key fails the whole batch — no partial write, no DB call."""
+    from backend.db.evaluator_config import _set_weights_batch
+
+    executemany_mock = AsyncMock()
+    cursor = MagicMock()
+    cursor.executemany = executemany_mock
+    conn = _make_mock_conn(cursor=cursor)
+    with (
+        patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)),
+        pytest.raises(ValueError, match="unknown evaluator weight key"),
+    ):
+        await _set_weights_batch(
+            [("weight.copywriting", 0.2), ("weight.bogus", 1.0)], account_id="acct1"
+        )
+    executemany_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_set_weights_batch_empty_list_no_write():
+    from backend.db.evaluator_config import _set_weights_batch
+
+    executemany_mock = AsyncMock()
+    cursor = MagicMock()
+    cursor.executemany = executemany_mock
+    conn = _make_mock_conn(cursor=cursor)
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        await _set_weights_batch([], account_id="acct1")
+    executemany_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_train_weights_apply_writes_batch_not_loop():
+    """train_weights(apply=True) writes fitted weights via one executemany,
+    not 11 serial set_weight calls; report.applied=True on success."""
+    from backend.db.evaluator_config import DEFAULT_DIMENSION_WEIGHTS, train_weights
+
+    executemany_mock = AsyncMock()
+    cursor = MagicMock()
+    cursor.executemany = executemany_mock
+    conn = _make_mock_conn(cursor=cursor)
+    with (
+        patch(
+            "backend.db.evaluator_config.fetch_labeled_samples",
+            AsyncMock(return_value=[object()] * 20),
+        ),
+        patch("backend.db.evaluator_config.fit_weights") as fw,
+        patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)),
+    ):
+        fw.return_value = MagicMock(
+            account_id=None,
+            n_samples=20,
+            fitted_weights=dict(DEFAULT_DIMENSION_WEIGHTS),
+            pass_threshold=72.0,
+            reject_threshold=48.0,
+            r_squared=0.5,
+            note="fitted",
+            applied=False,
+        )
+        report = await train_weights("acct1", apply=True)
+
+    assert report.applied is True
+    executemany_mock.assert_awaited_once()
+    _sql, rows = executemany_mock.await_args.args
+    # 9 dimension weights + pass + reject
+    assert len(rows) == len(DEFAULT_DIMENSION_WEIGHTS) + 2
+
+
+@pytest.mark.asyncio
 async def test_insert_sample_persists_and_returns_id():
     from backend.db.evaluator_config import EvaluatorSample, insert_sample
 
