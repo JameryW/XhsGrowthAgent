@@ -446,19 +446,26 @@ async def _upsert_notes_batch_on_conn(conn: Any, valid_notes: list[NoteStats]) -
     for note in valid_notes:
         by_account.setdefault(note.account_id, []).append(note.note_id)
 
-    existing_ids: set[str] = set()
+    # Single existence SELECT across all accounts in the batch (was one SELECT
+    # per account → A round trips on multi-account imports). PK is
+    # (account_id, note_id), so note_id is not globally unique — track existing
+    # rows as (account_id, note_id) pairs, not bare note_ids, to keep the
+    # membership check account-scoped and equivalent to the per-account loop.
+    account_ids = list(by_account)
+    all_note_ids = [nid for nids in by_account.values() for nid in nids]
+
+    existing_pairs: set[tuple[str, str]] = set()
     async with conn.cursor() as cur:
-        for account_id, note_ids in by_account.items():
-            await cur.execute(
-                "SELECT note_id FROM creator_note_stats "
-                "WHERE account_id = %s AND note_id = ANY(%s)",
-                (account_id, note_ids),
-            )
-            rows = await cur.fetchall()
-            existing_ids.update(str(row[0]) for row in rows if row)
+        await cur.execute(
+            "SELECT account_id, note_id FROM creator_note_stats "
+            "WHERE account_id = ANY(%s) AND note_id = ANY(%s)",
+            (account_ids, all_note_ids),
+        )
+        rows = await cur.fetchall()
+        existing_pairs.update((str(row[0]), str(row[1])) for row in rows if row)
         await cur.executemany(_UPSERT_NOTE_SQL, [_note_values(n) for n in valid_notes])
 
-    imported = sum(1 for n in valid_notes if n.note_id not in existing_ids)
+    imported = sum(1 for n in valid_notes if (n.account_id, n.note_id) not in existing_pairs)
     updated = len(valid_notes) - imported
     return imported, updated
 

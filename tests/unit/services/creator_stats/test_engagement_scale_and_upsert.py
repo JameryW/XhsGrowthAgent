@@ -447,7 +447,7 @@ async def test_upsert_notes_batches_pg_path():
 async def test_upsert_notes_pg_path_counts_mixed():
     """Count semantics: pre-existing note_ids count as updated, rest imported."""
     cursor = AsyncMock()
-    cursor.fetchall.return_value = [("n1",)]  # n1 already exists
+    cursor.fetchall.return_value = [("acc", "n1")]  # n1 already exists
     conn = _make_mock_conn(cursor)
     pool = _make_mock_pool(conn)
 
@@ -469,7 +469,41 @@ async def test_upsert_notes_pg_path_counts_mixed():
 
 
 @pytest.mark.asyncio
-async def test_upsert_bundle_batches_pg_path():
+async def test_upsert_notes_pg_path_multi_account_single_select():
+    """Multi-account import issues ONE existence SELECT (not one per account)
+    and keeps counts account-scoped when a note_id recurs across accounts.
+
+    PK is (account_id, note_id): note_id "shared" exists for acc-a but not
+    acc-b. The single cross-account SELECT returns the (account_id, note_id)
+    pair, so acc-b's "shared" counts as imported — proving the batched query
+    did not leak acc-a's existence into acc-b (the regression a bare-note_id
+    set would reintroduce).
+    """
+    cursor = AsyncMock()
+    # acc-a/n1 exists; acc-a/"shared" exists; acc-b has nothing pre-existing.
+    cursor.fetchall.return_value = [("acc-a", "n1"), ("acc-a", "shared")]
+    conn = _make_mock_conn(cursor)
+    pool = _make_mock_pool(conn)
+
+    notes = [
+        NoteStats(note_id="n1", account_id="acc-a", views=1),
+        NoteStats(note_id="shared", account_id="acc-a", views=1),  # exists for acc-a
+        NoteStats(note_id="shared", account_id="acc-b", views=1),  # NEW for acc-b
+        NoteStats(note_id="n2", account_id="acc-b", views=1),
+    ]
+
+    with (
+        patch("backend.db.creator_stats.is_pool_ready", return_value=True),
+        patch("backend.db.creator_stats.get_pool", return_value=pool),
+    ):
+        imported, updated = await upsert_notes(notes)
+
+    # One cross-account existence SELECT — not one per account.
+    assert cursor.execute.call_count == 1
+    assert cursor.executemany.call_count == 1
+    assert len(cursor.executemany.call_args[0][1]) == 4
+    # acc-a: n1 + shared updated (2); acc-b: shared + n2 imported (2).
+    assert (imported, updated) == (2, 2)
     """upsert_bundle batches the note upsert inside its existing transaction."""
     cursor = AsyncMock()
     cursor.fetchall.return_value = []
