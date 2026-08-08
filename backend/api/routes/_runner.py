@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     # type checkers need it, never at runtime.
     from langgraph.types import StateSnapshot
 
+    from backend.db.workflows import WorkflowRow
+
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
 from backend.state.machine import WorkflowStatus, derive_status
@@ -54,13 +56,19 @@ def _fields_differ(fields: dict[str, Any], existing: Any) -> bool:
     return False
 
 
-async def _db_upsert(thread_id: str, **fields: Any) -> None:
-    """Create or update a workflow row in DB. No-ops if DB is unavailable."""
+async def _db_upsert(thread_id: str, **fields: Any) -> WorkflowRow | None:
+    """Create or update a workflow row in DB. No-ops if DB is unavailable.
+
+    Returns the fetched/created WorkflowRow so callers needing the persisted
+    row (e.g. /status label resolution) can reuse it instead of a second
+    db_get round trip. ``None`` when the DB is unavailable or the upsert
+    raised (caller must treat the row as unknown).
+    """
     try:
         from backend.db.pool import is_pool_ready
 
         if not is_pool_ready():
-            return
+            return None
         from backend.db.workflows import (
             WorkflowRow,
         )
@@ -84,13 +92,19 @@ async def _db_upsert(thread_id: str, **fields: Any) -> None:
             # (start/resume/pause/cancel) always pass a differing field, so they
             # still write.
             if not _fields_differ(fields, existing):
-                return
+                return existing
             await db_update(thread_id, **fields)
+            # Label is only ever mutated when present in ``fields``; otherwise it
+            # is unchanged across the update, so the pre-write row's label is
+            # still authoritative for callers.
+            return existing
         else:
             row = WorkflowRow(thread_id=thread_id, **fields)
             await db_create(row)
+            return row
     except Exception:
         logger.exception("DB upsert failed for %s", thread_id)
+        return None
 
 
 def _emit_status_transition(
