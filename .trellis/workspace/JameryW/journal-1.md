@@ -625,3 +625,79 @@ Pre-push triple green: ruff format+check, mypy 165 files, full pytest 2124 passe
 ### Next Steps
 
 - Loop continues (cron 4f9aeee2). Next candidate: /status redundant db_get for label (workflow.py:799) — read-after-write dependency, fix = _db_upsert returns row it fetched at _runner.py:77; highest-frequency hit (5s poll). Then calibrate 3 serial blocks (fire-and-forget, lower priority).
+
+## 2026-08-08 — copywriter gather title+opening material deposits (#530)
+
+**Task**: gather 2 serial deposit_material calls in copywriter
+**Branch**: `perf/copywriter-gather-deposit-material`
+
+### Summary
+
+Loop iteration. Re-scanned for user-facing serial I/O (investigator pattern from #527). Triage of 14 grep candidate pairs: most already gathered or data-dependent (account_scope get_active→list_accounts is fallback-sequential; app.py get_active→get_cdp_endpoint dependent; workflow.py:1892 branch not dup; creator_stats.py:878 is no-pool fallback rare path). Found copywriter.py:192/206 — two serial `await cm.deposit_material(title_entry)` / `(opening_entry)`, independent durable writes, lone serial caller (analyze.py:420/435 already gather via coros list #523).
+
+Gathered both. deposit_material has internal try/except (swallow+log) → no _safe_* wrapper needed (unlike analyst #512 bare-aput). entry material_id mutated inside own coroutine, read after gather → used_material_ids still surfaces both. Generator filters None entries when only one of title/body present.
+
+Discriminator tests: peak in-flight probe (peak==2 both present, peak==1 title-only) + material_id surfaced. Bystander: test_execute_recalls_memory_concurrently was count-based (`len(gather_calls)==1`) → broke on 2nd gather → switched to content discriminator (the one 4-awaitable recall gather) per module-added-2nd-gather rule.
+
+### Main Changes
+
+- `backend/agents/copywriter.py`: 2 serial deposit_material → asyncio.gather over (title_entry, opening_entry) filtered non-None; ids read after gather
+- `tests/unit/agents/test_copywriter.py`: +2 discriminator tests (peak in-flight); bystander recall-gather test count→content discriminator
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `58b5f570` | perf(copywriter): gather title + opening material deposits |
+
+### Testing
+
+- [OK] ruff format+check clean
+- [OK] mypy backend 165 files no issues
+- [OK] full pytest 2126 passed (+2)
+
+### Status
+
+[OK] **PR #530 open**
+
+### Next Steps
+
+- Loop continues (cron c06703ff, 10m). Remaining serial candidates are low-impact: calibrate 3 blocks (fire-and-forget, no user latency), creator_stats.py:878 no-pool fallback (rare), publisher get_account+get_cdp_endpoint (single publish action, gather wastes 1 read on inactive-reject branch). Re-scan agents/services for next user-facing serial I/O; consider LLM-cost direction (PRD direction 2) if serial-I/O vein runs dry.
+
+## 2026-08-08 — calibrate gather 3 namespace blocks (#531)
+
+**Task**: gather style/play/material blocks in CreativeMemory.calibrate
+**Branch**: `perf/calibrate-gather-3-blocks`
+
+### Summary
+
+Loop iteration. Re-scanned for serial I/O: ripple_service healthz+pq (conditional/latency-baseline, skip), polish_copy always-LLM (deliberate #467 policy, skip), creator_stats no-pool fallback (rare, skip). Serial-IO vein thinning — picked the journal-flagged calibrate 3 blocks (fire-and-forget but real serial, frees pool connections sooner).
+
+Refactored calibrate: 3 serial blocks → 3 async helpers (_calibrate_style/_calibrate_play/_calibrate_materials) each returning stat count, asyncio.gather all three. Material block further gathers per-item read-then-write (N materials → N concurrent), matching deposit_from_analysis #523. Each helper keeps own try/except (swallow+log) → no _safe_* wrapper (internal-try/except gather rule per #530). Return contract {"styles":N,"plays":N,"materials":N} unchanged.
+
+Discriminator tests: peak in-flight cm_db.get_* probe (4× asyncio.sleep(0) yield for reliable observation) asserts peak==3 when all IDs present; partial-failure test asserts play+material stats populate when style raises. Existing calibrate tests assert aput call-counts per-namespace — gather doesn't change counts, pass unchanged.
+
+### Main Changes
+
+- `backend/memory/creative.py`: +asyncio import; calibrate → gather 3 helpers; +_calibrate_style/_calibrate_play/_calibrate_materials (material helper gathers per-item)
+- `tests/unit/memory/test_creative_memory.py`: +TestCalibrateConcurrency (2 tests: peak==3, partial-failure)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `56fdd65f` | perf(calibrate): gather 3 namespace blocks (style/play/material) |
+
+### Testing
+
+- [OK] ruff format+check clean
+- [OK] mypy backend 165 files no issues
+- [OK] full pytest 2126 passed (+2)
+
+### Status
+
+[OK] **PR #531 open**
+
+### Next Steps
+
+- Loop continues (cron c06703ff). Serial-IO vein now substantially exhausted across routes/agents/memory/db (16+ gather PRs #502-#531). Remaining: publisher get_account+get_cdp_endpoint (single publish, marginal). Pivot to PRD direction 2 (LLM cost) needs prod perf_log measurement, or direction 3 (reliability/coverage gaps). Re-scan for untested critical paths or races.
