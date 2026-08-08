@@ -625,3 +625,50 @@ Pre-push triple green: ruff format+check, mypy 165 files, full pytest 2124 passe
 ### Next Steps
 
 - Loop continues (cron 4f9aeee2). Next candidate: /status redundant db_get for label (workflow.py:799) — read-after-write dependency, fix = _db_upsert returns row it fetched at _runner.py:77; highest-frequency hit (5s poll). Then calibrate 3 serial blocks (fire-and-forget, lower priority).
+
+---
+
+## 2026-08-08 — /status redundant db_get for label → reuse _db_upsert row (#528)
+
+**Task**: reuse _db_upsert row to drop redundant db_get on label resolve
+**Branch**: `perf/status-redundant-dbget-label`
+
+### Summary
+
+Continued optimization loop. Picked the next candidate the prior iteration (#527 journal) flagged: /status label fallback at workflow.py:799 issued a second `db_get` whenever `update_fields` had no label (trend-only workflows, no brief_content/brand_name). `_db_upsert` already fetched that row internally (skip-unchanged guard at _runner.py:77) → redundant read on every 5s poll with no auto-generated label. Highest-frequency endpoint.
+
+Fix: `_db_upsert` returns `WorkflowRow | None` (the fetched/created row, or None on pool-unready/exception). `/status` reads label from that return value; redundant `db_get` deleted. All 14 call sites already ignored the return → widening None→WorkflowRow|None backwards compatible (grep-verified). Skip-unchanged returns fetched row (label authoritative); write path returns pre-write row — safe because label only mutates when in `update_fields`, and /status prefers `update_fields["label"]` over the row, so stale-row label only read when label did not change.
+
+Bystander ref-update trap: existing `test_status_account_id.py::test_live_status_includes_account_id` patched `_db_upsert` as bare `AsyncMock()` (returns Mock) → my new `_row.label or ""` read Mock.label → pydantic string validation failed. Fixed by setting `return_value=None` to match real pool-unready behavior (test already had `is_pool_ready→False`).
+
+Test: route-level discriminator (new test_status_label_reuse.py) — patch `_db_upsert` return_value=row + `db_get` as sentinel AsyncMock; assert label surfaced + `db_get` NOT awaited (proves redundant read gone). 3 tests: no-label→persisted label, None→empty label, generated label precedence.
+
+Pre-push triple green: ruff format+check (full repo), mypy 165 files, full pytest 2128 passed (+4). PR #528 open.
+
+### Main Changes
+
+- `backend/api/routes/_runner.py`: `_db_upsert` None→`WorkflowRow | None` returns fetched/created row (skip-write, write, create paths) + None on pool-unready/exception; TYPE_CHECKING import for WorkflowRow annotation
+- `backend/api/routes/workflow.py`: `/status` label resolve reuses `_db_upsert` return, deletes redundant `db_get`
+- `tests/unit/api/test_db_upsert_skip.py`: assert return values + `test_returns_none_on_exception`
+- `tests/unit/api/test_status_label_reuse.py`: +3 route-level tests (db_get-not-awaited discriminator)
+- `tests/unit/api/test_status_account_id.py`: bystander fix, `_db_upsert` return_value=None
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b05f1f01` | perf(status): reuse _db_upsert row to drop redundant db_get on label resolve (#528) |
+
+### Testing
+
+- [OK] ruff format --check + ruff check . (full repo) clean
+- [OK] mypy backend 165 files no issues
+- [OK] full pytest 2128 passed (+4 new)
+
+### Status
+
+[OK] **PR #528 open**
+
+### Next Steps
+
+- Loop continues (cron ab3983ce, 10m). Next candidates (lower priority — fire-and-forget, no user latency): calibrate 3 serial blocks. Also re-scan for other USER-FACING serial I/O (investigator pattern from #527).

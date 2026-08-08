@@ -1289,8 +1289,41 @@ async def get_evaluator_trend(
         str(user["id"]),
         request.query_params.get("account_id"),
     )
-    thresholds = await _score_thresholds(account_id)
-    if not is_pool_ready():
+    limit = int(request.query_params.get("limit", "100"))
+    pool_ready = is_pool_ready()
+
+    # ponytail: three independent DB reads keyed by account_id — thresholds
+    # (evaluator weights), workflow RQGM samples (evaluator_samples), and
+    # historical-note quality runs (quality_evaluation_runs). All resolved to
+    # the same account_id, none depends on another's return, merged below at
+    # `rows = ...`. Serial they cost 3 RTs; gathered they cost 1.
+    # Each fetch is wrapped to degrade to [] on pool-down / module-missing
+    # (older deploys), matching the prior swallow-exception contract. The
+    # pool-not-ready early return below ignores the fetched rows anyway.
+    async def _safe_workflow_rows() -> list[dict[str, Any]]:
+        if not pool_ready:
+            return []
+        try:
+            return await fetch_trend(account_id, limit=limit)
+        except Exception:
+            logger.exception("evaluator trend fetch failed; skipping workflow samples")
+            return []
+
+    async def _safe_note_rows() -> list[dict[str, Any]]:
+        try:
+            from backend.db import quality_evaluations as quality_db
+
+            return await quality_db.fetch_trend_points(account_id, limit=limit)
+        except Exception:
+            logger.exception("quality evaluation trend fetch failed; using workflow samples only")
+            return []
+
+    thresholds, workflow_rows, note_rows = await asyncio.gather(
+        _score_thresholds(account_id),
+        _safe_workflow_rows(),
+        _safe_note_rows(),
+    )
+    if not pool_ready:
         return success(
             data={
                 "db_ready": False,
@@ -1308,19 +1341,10 @@ async def get_evaluator_trend(
                 else "legacy_compatible",
             }
         )
-    limit = int(request.query_params.get("limit", "100"))
     # Workflow RQGM samples (evaluator_samples) + historical-note / durable
     # quality runs.  The UI "RQGM 内容评审趋势" must include both; previously
     # only training samples were plotted, so accounts that only evaluate
     # imported notes looked frozen at the last workflow run date.
-    workflow_rows = await fetch_trend(account_id, limit=limit)
-    try:
-        from backend.db import quality_evaluations as quality_db
-
-        note_rows = await quality_db.fetch_trend_points(account_id, limit=limit)
-    except Exception:
-        logger.exception("quality evaluation trend fetch failed; using workflow samples only")
-        note_rows = []
     rows = list(workflow_rows) + list(note_rows)
     rows.sort(key=lambda r: str(r.get("created_at") or ""))
     if len(rows) > limit:
