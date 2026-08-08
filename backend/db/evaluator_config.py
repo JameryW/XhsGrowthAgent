@@ -224,7 +224,7 @@ async def _fetch_overrides(account_id: str | None) -> dict[str, float]:
             for r in await cur.fetchall():
                 rows[r["weight_key"]] = float(r["weight_value"])
     except Exception as e:
-        logger.warning("load_weights DB fetch failed, using defaults: %s", e)
+        logger.warning("load_weights DB fetch failed, using defaults: %s: %s", type(e).__name__, e)
         return {}
     return rows
 
@@ -667,7 +667,7 @@ async def train_weights(account_id: str | None = None, *, apply: bool = False) -
     try:
         samples = await fetch_labeled_samples(account_id)
     except Exception as e:
-        logger.warning("train_weights: fetch failed, using defaults: %s", e)
+        logger.warning("train_weights: fetch failed, using defaults: %s: %s", type(e).__name__, e)
         samples = []
 
     report = fit_weights(samples)
@@ -689,8 +689,8 @@ async def train_weights(account_id: str | None = None, *, apply: bool = False) -
         await _set_weights_batch(items, account_id)
         report.applied = True
     except Exception as e:
-        logger.warning("train_weights: apply failed: %s", e)
-        report.note = report.note + f" (apply failed: {e})"
+        logger.warning("train_weights: apply failed: %s: %s", type(e).__name__, e)
+        report.note = report.note + f" (apply failed: {type(e).__name__}: {e})"
     return report
 
 
@@ -1012,7 +1012,7 @@ async def maybe_evolve(account_id: str | None) -> dict[str, Any]:
     except Exception as e:
         # ponytail: evolution must never block the publish path — swallow + log.
         report["action"] = "error"
-        report["reason"] = str(e)
-        logger.warning("maybe_evolve failed (non-blocking): %s", e)
+        report["reason"] = f"{type(e).__name__}: {e}"
+        logger.warning("maybe_evolve failed (non-blocking): %s: %s", type(e).__name__, e)
         _EVOLVING.discard(account_id)
     return report
