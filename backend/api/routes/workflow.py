@@ -789,15 +789,16 @@ async def get_workflow_status(
 
         if _lat:
             with _lat.segment("db"):
-                await _db_upsert(thread_id, **update_fields)
+                _row = await _db_upsert(thread_id, **update_fields)
         else:
-            await _db_upsert(thread_id, **update_fields)
+            _row = await _db_upsert(thread_id, **update_fields)
 
-        # Resolve label for response: prefer DB/persisted label, then auto-generated
+        # Resolve label for response: prefer the field we just persisted, then
+        # the row _db_upsert already fetched (reusing it avoids a second db_get
+        # round trip on every poll that has no auto-generated label).
         label = update_fields.get("label", "")
-        if not label:
-            row = await db_get(thread_id) if is_pool_ready() else None
-            label = row.label if row else ""
+        if not label and _row is not None:
+            label = _row.label or ""
 
         _serialize_seg = _lat.segment("serialize") if _lat else None
         if _serialize_seg:
