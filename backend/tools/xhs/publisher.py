@@ -80,7 +80,7 @@ async def xhs_publisher(
         }
 
     except Exception as e:
-        logger.error(f"发布失败: {e}")
+        logger.error(f"发布失败: {type(e).__name__}: {e}")
         return {"post_id": "", "status": "error", "error": str(e)}
 
     finally:

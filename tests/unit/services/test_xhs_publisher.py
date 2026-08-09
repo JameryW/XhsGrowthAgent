@@ -4,6 +4,7 @@ Covers the real publishing path that previously had no tests. Uses AsyncMock
 for the Playwright Page/Browser so tests run without the [browser] extra.
 """
 
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -180,6 +181,17 @@ class TestWaitForSuccess:
         assert result["post_url"] == ""
         assert result["error"] == "未绑定手机号"
         page.wait_for_selector.assert_not_awaited()
+
+    async def test_exception_fallback_logs_exception_type(self, publisher: XHSPublisher, caplog):
+        page = MagicMock()
+        page.url = None
+
+        with caplog.at_level(logging.WARNING, logger="xhs_growth.publisher"):
+            result = await publisher._wait_for_success(page)
+
+        assert result["status"] == "pending"
+        assert result["error"] == "发布状态未知，请手动确认"
+        assert any("TypeError:" in record.message for record in caplog.records)
 
 
 class TestPublishPageNavigation:

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Check exception type context, log levels, and traceback behavior."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check formatting, lint, typing, mocks, and regression-test quality."}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "Check that no browser or CDP safety boundary changed."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check publish error fallback and result-shape contracts remain unchanged."}

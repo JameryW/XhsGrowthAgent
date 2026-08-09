@@ -683,7 +683,7 @@ class XHSPublisher:
             }
 
         except Exception as e:
-            logger.warning(f"等待发布成功异常: {e}")
+            logger.warning(f"等待发布成功异常: {type(e).__name__}: {e}")
             return {
                 "post_id": "",
                 "status": "pending",

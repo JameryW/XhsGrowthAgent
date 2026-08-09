@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Follow warning/error exception-context and traceback conventions."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Follow backend formatting, linting, typing, and focused-test conventions."}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "Preserve CDP attachment, anti-risk, and sensitive-data boundaries while changing logs only."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Preserve publish failure fallback/result contracts and exception handling behavior."}
