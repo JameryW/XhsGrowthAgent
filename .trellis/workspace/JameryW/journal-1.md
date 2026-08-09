@@ -903,3 +903,36 @@ Added concrete exception types and original messages to four evaluator_config DB
 ### Next Steps
 
 - None - task complete
+
+
+## Session 115: creator stats pipeline exception log diagnostics
+
+**Date**: 2026-08-09
+**Task**: creator stats pipeline exception log diagnostics
+**Branch**: `main`
+
+### Summary
+
+Added concrete exception types and original messages to fixture-load and CreatorStatsFetchError warning logs without changing SyncResult, error classification, or client cleanup. Extended existing failure tests with caplog and aclose assertions. Validation: creator-stats tests 232 passed, full pytest 2141 passed, backend mypy 165 files passed, backend/tests ruff passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d949c5f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
