@@ -229,3 +229,46 @@
 
 所以本任务仍保持 `in_progress`：代码层已通过，但不能把“有测试”误写成“已完成可测量收益和
 部署后验证”。完成任务还需要在目标部署环境补采样并把结果写入对应 PR/任务记录。
+
+## 2026-08-10 只读生产采样与收尾复核
+
+本次没有启动真实工作流，也没有触发 LLM/provider 调用；只读取现有部署、数据库统计和已完成
+工作流，避免产生外部费用或污染生产数据。当前 `xhs-growth` 容器的关键运行配置为：
+
+- `XHS_LATENCY_LOG=1`
+- `RIPPLE_BACKGROUND=1`
+- `RIPPLE_DEFAULT_MAX_WAVES=3`
+- `RIPPLE_DEFAULT_SIMULATION_HORIZON=12h`
+- `RIPPLE_ENSEMBLE_RUNS=1`
+- `XHS_EMBED_MODEL=local:BAAI/bge-small-zh-v1.5`
+
+只读采样结果：
+
+- `scripts/collect_latency.py --container xhs-growth --since 30m`：`/list` n=12，p50=0.7ms，
+  p95=2.1ms，avg=3.2ms，DB p50=0.7ms，serialize p50=0.0ms；`/status` n=2，p50/p95=3.0ms，
+  `aget_state` p50=1.4ms，DB p50=0.5ms，serialize p50=0.2ms。
+- 对一个现有 completed workflow 做 50 次 service-token 只读状态轮询，全部返回 200；数据库
+  `pg_stat_user_tables` 中 `workflows` 的 `n_tup_upd,n_tup_hot_upd` 为 `0,0 → 0,0`。这证明
+  当前部署的 same-state polling 没有新增 UPDATE，但不是旧版本历史 before 基线，不能冒充完整
+  的 before/after 实验。
+- `/api/health` 为 `status=ok`；database、memory store、Ripple CAS、risk control、search
+  API 和 provider 配置检查均通过。health 只证明 provider 已配置/健康检查可用，不等同于真实
+  LLM 质量、token 或计费样本。
+- 当前数据库有 2 个 completed workflow、71 个 checkpoint；checkpoint 的实际
+  `channel_values.performance_log` 条目为 0，不能从现有数据补造 LLM token/时延或内容质量
+  before/after。
+
+本次同时补齐一个前端真实体验缺口：`WorkflowReplay` 的整个结果网格曾被 15% 交叉可见阈值的
+懒显动画遮住，移动端首屏只显示大网格的一小部分时会一直透明。现在主结果容器不再使用
+`v-reveal`，步骤详情失败也统一复用 `ErrorState`，并新增回归测试和双语文案。验证结果：
+
+- 前端全量：64 个文件 / 676 个测试通过，`type-check`、`i18n:check`、`build` 通过。
+- 真实公开案例经本地修复构建代理探针在 390×844 首屏直接显示步骤结果标题；截图见
+  `/tmp/public-ux-replay-probe.png`。
+- 本地完整公开矩阵记录 95 个页面、axe serious/critical=0；本地 Vite warm p75=968ms，
+  不作为生产性能结论。此前生产容器报告仍为 96 个组合、axe=0、warm p75=383.45ms、
+  `performance_budget_failure_count=0`。
+
+因此本任务仍保持 `in_progress`。代码和当前可做的只读证据已补齐，但方向 1 仍缺旧版本历史
+before 基线，方向 2 仍缺真实 LLM token/时延/质量对照和 provider 实调，方向 3/4 仍缺统一的
+生产可靠性/运行时基线；这些不能通过本地测试或当前健康检查伪造完成。

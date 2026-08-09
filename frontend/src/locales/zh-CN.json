@@ -1949,6 +1949,7 @@
     "publicLoadFailed": "回放暂时无法加载",
     "publicLoadFailedDesc": "请重试；案例列表和开始创作仍然可用。",
     "publicDetailFailed": "这一步详情暂时无法加载",
+    "publicDetailFailedDesc": "请重试；如果问题持续，请稍后再访问这个公开案例。",
     "publicShareCase": "复制案例链接",
     "publicShareStep": "复制当前步骤链接",
     "publicShareCaseText": "看看这个小红书内容创作案例：{title}",

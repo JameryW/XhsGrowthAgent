@@ -1949,6 +1949,7 @@
     "publicLoadFailed": "Replay is temporarily unavailable",
     "publicLoadFailedDesc": "Try again; the case list and start action are still available.",
     "publicDetailFailed": "This step is temporarily unavailable",
+    "publicDetailFailedDesc": "Try again; if the problem continues, revisit this public case later.",
     "publicShareCase": "Copy case link",
     "publicShareStep": "Copy current step link",
     "publicShareCaseText": "Check out this content creation case: {title}",
