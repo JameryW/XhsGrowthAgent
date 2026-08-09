@@ -771,3 +771,36 @@ Continued optimization loop: added exception types to six xhs_login WARNING logs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 111: xhs_publisher exception log diagnostics
+
+**Date**: 2026-08-09
+**Task**: xhs_publisher exception log diagnostics
+**Branch**: `main`
+
+### Summary
+
+Continued optimization loop: added exception types to the publish-tool error log and _wait_for_success pending fallback without changing publish behavior; added service/tool caplog regressions. Full pytest 2132 passed and mypy backend 165 files clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `916e44ae` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
