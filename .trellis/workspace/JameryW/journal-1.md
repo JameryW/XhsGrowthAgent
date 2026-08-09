@@ -738,3 +738,36 @@ Test safety: existing asserts are substrings ("db down" in reason → still pres
 ### Next Steps
 
 - Loop continues (cron c06703ff). Remaining bare-%s logs in xhs_login (6), chrome_launcher (3), xhs_publisher (2), accounts (2), pipeline (2), llm_enrichment (1), middleware (1) — same series, per-module PRs. Or pivot back to perf: LLM-cost direction needs prod perf_log measurement data.
+
+
+## Session 110: xhs_login exception log diagnostics
+
+**Date**: 2026-08-09
+**Task**: xhs_login exception log diagnostics
+**Branch**: `main`
+
+### Summary
+
+Continued optimization loop: added exception types to six xhs_login WARNING logs without changing fallback behavior; added six caplog regressions; updated logging spec. Full pytest 2130 passed and mypy backend 165 files clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `47695c6a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
