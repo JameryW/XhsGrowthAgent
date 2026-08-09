@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -342,15 +343,17 @@ async def test_body_text_survives_import_for_niche_infer():
 
 
 @pytest.mark.asyncio
-async def test_missing_fixture_returns_error_not_raise():
-    result = await sync_from_fixture(
-        "acc_missing_fx",
-        fixture_path="/tmp/grok-goal-6b5dc54ac2e1/implementer/does_not_exist.json",
-    )
+async def test_missing_fixture_returns_error_not_raise(caplog):
+    with caplog.at_level(logging.WARNING, logger="xhs_growth.creator_stats.pipeline"):
+        result = await sync_from_fixture(
+            "acc_missing_fx",
+            fixture_path="/tmp/grok-goal-6b5dc54ac2e1/implementer/does_not_exist.json",
+        )
     assert result.error is not None
     assert "fixture" in result.error.lower()
     assert result.notes_imported == 0
     assert await list_note_stats("acc_missing_fx") == []
+    assert "FileNotFoundError:" in caplog.text
 
 
 # ── performance API merges imported notes ───────────────────────────────────

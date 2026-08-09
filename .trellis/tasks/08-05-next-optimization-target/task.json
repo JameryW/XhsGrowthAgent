@@ -23,7 +23,8 @@
     "08-09-xhs-publisher-log-type-names",
     "08-09-chrome-launcher-log-type-names",
     "08-09-accounts-log-type-names",
-    "08-09-evaluator-config-log-type-names"
+    "08-09-evaluator-config-log-type-names",
+    "08-09-creator-stats-pipeline-log-type-names"
   ],
   "parent": null,
   "relatedFiles": [],

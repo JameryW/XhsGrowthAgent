@@ -568,7 +568,12 @@ async def sync_from_fixture(
         payload = load_fixture_payload(fixture_path)
     except (OSError, ValueError) as e:
         # FileNotFoundError ⊂ OSError; JSONDecodeError ⊂ ValueError
-        logger.warning("fixture load failed for %s: %s", account_id, e)
+        logger.warning(
+            "fixture load failed for %s: %s: %s",
+            account_id,
+            type(e).__name__,
+            e,
+        )
         return SyncResult(
             account_id=account_id,
             source="fixture",
@@ -678,7 +683,12 @@ async def sync_from_creator_center(
     try:
         bundle = await client.fetch_all(account_id, period=period, **fetch_kwargs)
     except CreatorStatsFetchError as e:
-        logger.warning("creator stats fetch failed for %s: %s", account_id, e)
+        logger.warning(
+            "creator stats fetch failed for %s: %s: %s",
+            account_id,
+            type(e).__name__,
+            e,
+        )
         return SyncResult(
             account_id=account_id,
             source="creator_statistics",

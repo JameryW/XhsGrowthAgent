@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -158,21 +159,25 @@ def test_audience_analysis_falls_back_to_per_note_breakdowns():
 
 
 @pytest.mark.asyncio
-async def test_client_auth_failure_does_not_persist():
+async def test_client_auth_failure_does_not_persist(caplog):
     class BadTransport:
         async def get(self, url, *, headers, params=None):
             return 401, {"success": False, "msg": "unauthorized"}
 
     client = CreatorStatsClient(cookie="bad", transport=BadTransport())
+    client.aclose = AsyncMock()
     with pytest.raises(CreatorStatsFetchError):
         await client.fetch_account_overview()
 
     # sync_from_creator_center should return error and leave store empty
-    result = await sync_from_creator_center("acct_fail", cookie="bad", client=client)
+    with caplog.at_level(logging.WARNING, logger="xhs_growth.creator_stats.pipeline"):
+        result = await sync_from_creator_center("acct_fail", cookie="bad", client=client)
     assert result.error is not None
     assert result.notes_imported == 0
     notes = await list_note_stats("acct_fail")
     assert notes == []
+    assert "CreatorStatsFetchError: creator stats auth failed" in caplog.text
+    client.aclose.assert_awaited_once()
 
 
 @pytest.mark.asyncio
