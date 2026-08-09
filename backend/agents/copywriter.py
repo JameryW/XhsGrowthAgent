@@ -181,32 +181,42 @@ class CopywriterAgent(BaseAgent):
 
         deposited_material_ids: list[str] = []
 
+        # 标题 + 开头素材并发沉淀（写-gather 变体 #512：deposit_material 内部
+        # try/except 吞异常，部分失败不中断其余；entry 各自独立 mutate material_id）
         selected_title = copy_content.get("selected_title", "")
-        if selected_title:
-            title_entry = MaterialEntry(
+        body_text = copy_content.get("body_text", "")
+        title_entry = (
+            MaterialEntry(
                 category="标题模板",
                 content=selected_title,
                 source_post_id="",
                 tags=["auto_deposit", "标题"],
             )
-            await cm.deposit_material(title_entry)
-            mid = title_entry.get("material_id", "")
-            if mid:
-                deposited_material_ids.append(mid)
-
-        body_text = copy_content.get("body_text", "")
-        if body_text:
-            opening = body_text[:100]
-            opening_entry = MaterialEntry(
+            if selected_title
+            else None
+        )
+        opening_entry = (
+            MaterialEntry(
                 category="文案片段",
-                content=opening,
+                content=body_text[:100],
                 source_post_id="",
                 tags=["auto_deposit", "开头"],
             )
-            await cm.deposit_material(opening_entry)
-            mid = opening_entry.get("material_id", "")
-            if mid:
-                deposited_material_ids.append(mid)
+            if body_text
+            else None
+        )
+        await asyncio.gather(
+            *(
+                cm.deposit_material(entry)
+                for entry in (title_entry, opening_entry)
+                if entry is not None
+            )
+        )
+        for entry in (title_entry, opening_entry):
+            if entry is not None:
+                mid = entry.get("material_id", "")
+                if mid:
+                    deposited_material_ids.append(mid)
 
         # Write material IDs back to copy_content for calibration chain
         if deposited_material_ids:

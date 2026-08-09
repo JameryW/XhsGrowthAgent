@@ -1,5 +1,6 @@
 """Unit tests for CopywriterAgent."""
 
+import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
@@ -175,8 +176,14 @@ class TestCopywriterAgent:
 
             await agent.execute(mock_state, store=mock_store)
 
-        assert len(gather_calls) == 1, "memory recalls must be gathered in one call"
-        awaitables, _ = gather_calls[0]
+        assert len(gather_calls) >= 1, "memory recalls must be gathered"
+        # The memory-recall gather is the one with 4 awaitables (recall_style +
+        # recall_materials + 2x _recall_memory). Other gathers (e.g. deposit
+        # material) may fire with a different arity — discriminate by content,
+        # not by total call count. See copywriter gather-deposit-material.
+        recall_gathers = [c for c in gather_calls if len(c[0]) == 4]
+        assert len(recall_gathers) == 1, "expected exactly one 4-awaitable recall gather"
+        awaitables, _ = recall_gathers[0]
         assert len(awaitables) == 4, "expected exactly 4 concurrent recalls"
 
     @pytest.mark.asyncio
@@ -278,6 +285,94 @@ class TestCopywriterAgent:
         assert copy["de_ai_method"] == "llm"
         assert copy["de_ai_changes"] == ["去套话"]
         mock_polish.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_deposit_material_gathered_concurrently(
+        self, agent, mock_state, mock_store, _mock_de_ai
+    ):
+        """Title + opening material deposits run concurrently (gather), not serially.
+
+        Discriminator: peak in-flight deposit_material calls must reach 2 when
+        both selected_title and body_text are present. Serial awaits would peak
+        at 1. Also asserts material_id is still surfaced to used_material_ids
+        despite the entries being mutated inside the gathered coroutines.
+        """
+        mock_response = MagicMock()
+        mock_response.content = """{
+          "selected_title": "标题A",
+          "title_candidates": ["标题A"],
+          "body_text": "开头正文内容",
+          "cta": "",
+          "tone": "口语"
+        }"""
+
+        in_flight = 0
+        peak = 0
+
+        async def _probe(self_cm, entry):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)  # yield so the sibling coroutine can start
+            entry["material_id"] = "mid_" + entry.get("category", "x")
+            in_flight -= 1
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch(
+                "backend.memory.creative.CreativeMemory.deposit_material",
+                new=_probe,
+            ),
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+            result = await agent.execute(mock_state, store=mock_store)
+
+        assert peak == 2, f"deposits not gathered concurrently (peak={peak})"
+        ids = result["copy_content"].get("used_material_ids", [])
+        assert ids == ["mid_标题模板", "mid_文案片段"], ids
+
+    @pytest.mark.asyncio
+    async def test_deposit_material_single_when_no_body(
+        self, agent, mock_state, mock_store, _mock_de_ai
+    ):
+        """Only title present (no body_text) → single deposit, peak stays 1."""
+        mock_response = MagicMock()
+        mock_response.content = """{
+          "selected_title": "标题A",
+          "title_candidates": ["标题A"],
+          "body_text": "",
+          "cta": "",
+          "tone": "口语"
+        }"""
+
+        in_flight = 0
+        peak = 0
+
+        async def _probe(self_cm, entry):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            entry["material_id"] = "mid_" + entry.get("category", "x")
+            in_flight -= 1
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch(
+                "backend.memory.creative.CreativeMemory.deposit_material",
+                new=_probe,
+            ),
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+            result = await agent.execute(mock_state, store=mock_store)
+
+        assert peak == 1, f"expected single deposit (peak={peak})"
+        ids = result["copy_content"].get("used_material_ids", [])
+        assert ids == ["mid_标题模板"], ids
 
     def test_agent_attributes(self, agent):
         """Verify agent class attributes."""
