@@ -278,7 +278,9 @@
     "title": "Workflow Dashboard",
     "tabBar": {
       "ariaLabel": "Workflow tabs",
-      "overflow": "More workflow tabs"
+      "overflow": "More workflow tabs",
+      "rename": "Rename workflow tab",
+      "renameEditing": "Editing workflow tab"
     },
     "crossAccountBanner": "This workflow belongs to “{view}”; workspace is “{workspace}”. Review/publish use the workflow’s account.",
     "openAccountHistory": "Open account history",
@@ -1438,6 +1440,9 @@
     "contentPublished": "Published",
     "copyCount": "Copy versions",
     "imageCount": "Generated images",
+    "viewPost": "View post",
+    "createAnother": "Create another",
+    "postUnavailable": "Post link unavailable",
     "workflowEnd": "Workflow Done",
     "backToDashboard": "Back to Dashboard"
   },
@@ -2432,6 +2437,8 @@
     "radarSummary": "{title}: average score {avg}, range {min}–{max}",
     "dimensionsTitle": "Dimension Details",
     "weightedScoreHint": "The RQGM content review score uses available dimensions; unavailable dimensions show —.",
+    "dimensionWeight": "Weight {value}",
+    "dimensionWeightHelp": "This dimension contributes {value} to the weighted score.",
     "radarScore": "Score",
     "radarRationale": "Why",
     "hintsTitle": "Revision Hints",

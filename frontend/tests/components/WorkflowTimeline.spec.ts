@@ -109,6 +109,13 @@ describe('WorkflowTimeline', () => {
     expect(subStepStatus(wrapper, 'visual_designer')).toBe('running')
   })
 
+  it('keeps total progress in the hero instead of rendering a duplicate fill', () => {
+    const wrapper = mountTimeline(baseState({ progress_percent: 73 }))
+
+    expect(wrapper.find('[data-testid="timeline-stage-line"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="timeline-progress-fill"]').exists()).toBe(false)
+  })
+
   it('shows a live duration for the active agent timeline entry', async () => {
     vi.useFakeTimers()
     try {

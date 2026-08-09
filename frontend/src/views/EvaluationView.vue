@@ -40,8 +40,10 @@ import {
   scoreTier as scoreTierOf,
   RADAR_EXCLUDED_DIMENSIONS,
   DIMENSION_LABEL_KEYS,
+  DEFAULT_DIMENSION_WEIGHTS,
 } from '@/constants/evaluation'
 import { hasSnapshotMismatch } from '@/constants/qualityConsistency'
+import { formatPercent } from '@/utils/format'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -617,6 +619,7 @@ const detailError = ref<string | null>(null)
 const ev = computed(() => result.value?.evaluation_result)
 const hasResult = computed(() => !!result.value && result.value.has_evaluation && !!ev.value)
 const scoreThresholds = computed(() => result.value?.thresholds ?? SCORE_THRESHOLDS)
+const scoreWeights = computed(() => result.value?.weights ?? DEFAULT_DIMENSION_WEIGHTS)
 const detailStatus = computed(() => {
   const status = result.value?.status || ev.value?.status
   if (result.value?.degraded || ev.value?.degraded) return 'degraded'
@@ -692,6 +695,22 @@ function dimLabel(dim: string): string {
 function dimDescription(dim: string): string {
   const key = `evaluation.dimHelp.${dim}`
   return t(key) === key ? t('evaluation.dimHelp.unknown') : t(key)
+}
+
+function dimensionWeight(dim: string): number | null {
+  const value = scoreWeights.value[dim]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function formatDimensionWeight(dim: string): string {
+  const value = dimensionWeight(dim)
+  return value === null ? '—' : formatPercent(value * 100, locale.value, 0)
+}
+
+function dimensionTooltip(dim: string): string {
+  const weight = dimensionWeight(dim)
+  if (weight === null) return dimDescription(dim)
+  return `${dimDescription(dim)} ${t('evaluation.dimensionWeightHelp', { value: formatDimensionWeight(dim) })}`
 }
 </script>
 
@@ -965,13 +984,18 @@ function dimDescription(dim: string): string {
             <div class="dim-head">
               <span class="dim-name">
                 {{ dimLabel(d.dimension) }}
-                <TooltipHelper :content="dimDescription(d.dimension)" position="top">
-                  <span class="dim-help" tabindex="0" role="button" :aria-label="dimDescription(d.dimension)">?</span>
+                <TooltipHelper :content="dimensionTooltip(d.dimension)" position="top">
+                  <span class="dim-help" tabindex="0" role="button" :aria-label="dimensionTooltip(d.dimension)">?</span>
                 </TooltipHelper>
                 <span v-if="d.is_blocking" class="blocking-tag">{{ t('evaluation.blocking') }}</span>
               </span>
-              <span class="dim-score" :class="d.available === false || d.score == null ? 'score-none' : scoreTierClass(d.score, scoreThresholds)">
-                {{ d.available === false || d.score == null ? '—' : d.score.toFixed(1) }}
+              <span class="flex shrink-0 items-center gap-2">
+                <span v-if="dimensionWeight(d.dimension) !== null" class="dim-weight" :title="t('evaluation.dimensionWeight', { value: formatDimensionWeight(d.dimension) })">
+                  {{ t('evaluation.dimensionWeight', { value: formatDimensionWeight(d.dimension) }) }}
+                </span>
+                <span class="dim-score" :class="d.available === false || d.score == null ? 'score-none' : scoreTierClass(d.score, scoreThresholds)">
+                  {{ d.available === false || d.score == null ? '—' : d.score.toFixed(1) }}
+                </span>
               </span>
             </div>
             <p v-if="d.rationale" class="dim-rationale">{{ d.rationale }}</p>
@@ -1084,7 +1108,7 @@ function dimDescription(dim: string): string {
 .source-imported { @apply bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300; }
 .source-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; @apply border-b border-slate-200 dark:border-slate-700; }
 .source-tab { display: inline-flex; align-items: center; gap: 0.45rem; border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-weight: 700; cursor: pointer; @apply text-slate-500 dark:text-slate-400; }
-.source-tab--active { border-color: #7c3aed; @apply text-violet-700 dark:text-violet-300; }
+.source-tab--active { @apply border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-300; }
 .source-tab-count { font-size: 0.68rem; font-weight: 600; @apply text-slate-400 dark:text-slate-500; }
 .item-right-note { flex-direction: row; align-items: center; gap: 0.5rem; }
 .note-metric { font-size: 0.75rem; white-space: nowrap; font-variant-numeric: tabular-nums; @apply text-slate-500 dark:text-slate-400; }
@@ -1115,7 +1139,7 @@ function dimDescription(dim: string): string {
   border-radius: 0.5rem; font-size: 0.875rem;
   @apply border border-slate-200 bg-white focus:border-rose-500 dark:border-slate-700 dark:bg-slate-900;
 }
-.thread-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(244,63,94,0.12); }
+.thread-input:focus { outline: none; @apply ring-2 ring-rose-500/20; }
 .result-count { font-size: 0.75rem; white-space: nowrap; @apply text-slate-400 dark:text-slate-500; }
 
 /* ── 列表项 ── */
@@ -1128,7 +1152,7 @@ function dimDescription(dim: string): string {
   @apply border border-slate-200 bg-white hover:border-rose-300 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-rose-400/60;
   @apply text-slate-800 dark:text-slate-100;
 }
-.eval-item:hover { box-shadow: 0 1px 4px rgba(244,63,94,0.08); }
+.eval-item:hover { @apply shadow-sm; }
 .item-main { flex: 1; min-width: 0; }
 .item-title {
   font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem;
@@ -1205,6 +1229,7 @@ function dimDescription(dim: string): string {
 .dim-name { font-size: 0.8125rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; @apply text-slate-700 dark:text-slate-200; }
 .blocking-tag { font-size: 0.625rem; padding: 0.1rem 0.4rem; border-radius: 4px; font-weight: 700; @apply bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300; }
 .dim-score { font-size: 0.9rem; font-weight: 700; }
+.dim-weight { font-size: 0.625rem; font-weight: 600; white-space: nowrap; @apply rounded-full bg-slate-100 px-1.5 py-0.5 text-slate-500 dark:bg-slate-800 dark:text-slate-400; }
 .dim-rationale { font-size: 0.75rem; margin: 0.25rem 0 0; @apply text-slate-500 dark:text-slate-400; }
 .dim-issues { margin: 0.375rem 0 0; padding-left: 1.1rem; }
 .dim-issues li { font-size: 0.75rem; margin-bottom: 0.2rem; @apply text-slate-600 dark:text-slate-300; }

@@ -98,9 +98,18 @@ function onTabClick(tabId: string) {
   emit('switch', tabId)
 }
 
-function onTabDblClick(tabId: string, currentLabel: string) {
+function startRename(tabId: string, currentLabel: string) {
   editingTabId.value = tabId
   editingLabel.value = currentLabel
+}
+
+function onTabDblClick(tabId: string, currentLabel: string) {
+  startRename(tabId, currentLabel)
+}
+
+function onRenameClick(tabId: string, currentLabel: string, e: MouseEvent) {
+  e.stopPropagation()
+  startRename(tabId, currentLabel)
 }
 
 function finishRename() {
@@ -187,6 +196,7 @@ watch(confirmCloseTabId, async (id) => {
           v-if="editingTabId === tab.threadId"
           v-model="editingLabel"
           class="tab-edit-input"
+          :aria-label="t('dashboard.tabBar.renameEditing')"
           @keydown.enter="finishRename"
           @keydown.escape="onCancelRename"
           @blur="finishRename"
@@ -219,8 +229,19 @@ watch(confirmCloseTabId, async (id) => {
         </button>
 
         <button
+          v-if="editingTabId !== tab.threadId"
           type="button"
-          class="tab-close"
+          class="tab-rename min-h-11 min-w-[44px]"
+          :title="t('dashboard.tabBar.rename')"
+          :aria-label="t('dashboard.tabBar.rename')"
+          @click="onRenameClick(tab.threadId, tab.label, $event)"
+        >
+          <AppIcon name="Pencil" size="xs" variant="muted" aria-hidden="true" />
+        </button>
+
+        <button
+          type="button"
+          class="tab-close min-h-11 min-w-[44px]"
           :title="t('workflow.closeTab')"
           :aria-label="t('workflow.closeTab')"
           @click="onCloseClick(tab.threadId, $event)"
@@ -252,7 +273,20 @@ watch(confirmCloseTabId, async (id) => {
         class="overflow-item"
         :class="{ active: isActive(tab.threadId) }"
       >
+        <div v-if="editingTabId === tab.threadId" class="overflow-edit">
+          <input
+            v-model="editingLabel"
+            class="tab-edit-input"
+            :aria-label="t('dashboard.tabBar.renameEditing')"
+            @keydown.enter="finishRename"
+            @keydown.escape="onCancelRename"
+            @blur="finishRename"
+            autofocus
+            @click.stop
+          />
+        </div>
         <button
+          v-else
           type="button"
           role="menuitem"
           class="overflow-main"
@@ -274,8 +308,18 @@ watch(confirmCloseTabId, async (id) => {
           />
         </button>
         <button
+          v-if="editingTabId !== tab.threadId"
           type="button"
-          class="tab-close"
+          class="tab-rename min-h-11 min-w-[44px]"
+          :title="t('dashboard.tabBar.rename')"
+          :aria-label="t('dashboard.tabBar.rename')"
+          @click="onRenameClick(tab.threadId, tab.label, $event)"
+        >
+          <AppIcon name="Pencil" size="xs" variant="muted" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="tab-close min-h-11 min-w-[44px]"
           :title="t('workflow.closeTab')"
           :aria-label="t('workflow.closeTab')"
           @click="onCloseClick(tab.threadId, $event)"
@@ -343,12 +387,20 @@ watch(confirmCloseTabId, async (id) => {
   @apply shrink-0;
 }
 
+.tab-rename {
+  @apply flex min-h-11 min-w-[44px] shrink-0 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200/80 hover:text-slate-600;
+}
+
+.tab-rename:focus-visible {
+  @apply outline-none ring-2 ring-teal-400;
+}
+
 .tab-label {
   @apply truncate text-xs;
 }
 
 .tab-edit-input {
-  @apply bg-slate-50 text-slate-800 text-xs px-1 py-0.5 rounded w-full outline-none ring-1 ring-rose-300;
+  @apply min-h-11 w-full rounded bg-slate-50 px-1 py-0.5 text-xs text-slate-800 outline-none ring-1 ring-rose-300;
 }
 
 .tab-close {
@@ -382,6 +434,10 @@ watch(confirmCloseTabId, async (id) => {
 
 .overflow-main {
   @apply flex items-center gap-1.5 min-w-0 flex-1 text-left rounded;
+}
+
+.overflow-edit {
+  @apply min-w-0 flex-1;
 }
 
 .overflow-main:focus-visible {

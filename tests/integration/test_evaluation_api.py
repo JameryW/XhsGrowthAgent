@@ -64,11 +64,17 @@ class TestEvaluationResultRoute:
             "overall_score": 82.0,
             "decision": ContentStatus.APPROVED,
         }
-        r = client.get("/api/evaluation/result/t1")
+        with patch(
+            "backend.api.routes.evaluation._score_config",
+            AsyncMock(return_value=({"pass": 82.0, "warn": 58.0}, {"copywriting": 0.25})),
+        ):
+            r = client.get("/api/evaluation/result/t1")
         assert r.status_code == 200
         data = r.json()["data"]
         assert data["has_evaluation"] is True
         assert data["evaluation_result"]["decision"] == "approved"
+        assert data["thresholds"] == {"pass": 82.0, "warn": 58.0}
+        assert data["weights"] == {"copywriting": 0.25}
 
     def test_get_result_no_evaluation(self, client, mock_graph, owned_thread):
         mock_graph.aget_state.return_value.values.pop("evaluation_result", None)

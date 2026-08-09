@@ -8,6 +8,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Dashboard from '@/views/Dashboard.vue'
 import ErrorState from '@/components/ErrorState.vue'
+import CelebrationModal from '@/components/CelebrationModal.vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useErrorStore } from '@/stores/error'
 import i18n from '@/locales'
@@ -77,6 +78,54 @@ describe('Dashboard view', () => {
       store.isReplayMode = true
       await wrapper.vm.$nextTick()
       expect((modal.vm as any).show).toBe(false)
+    })
+  })
+
+  describe('DB-10: celebration actions use live workflow data', () => {
+    it('passes artifact counts and the published post URL to CelebrationModal', async () => {
+      const store = useWorkflowStore()
+      store.workflowStates.set('celebrated', {
+        thread_id: 'celebrated',
+        phase: 'completed',
+        status: 'completed',
+        progress_percent: 100,
+        content_versions: [{ version_id: 'v1' }, { version_id: 'v2' }],
+        visual_plan: { image_paths: ['cover.png', 'detail.png'] },
+        publish_result: { post_url: 'https://www.xiaohongshu.com/explore/live-post' },
+      } as any)
+      store.activeThreadId = 'celebrated'
+
+      const { wrapper, router } = await mountDashboard({}, { threadId: 'celebrated' })
+      const modal = wrapper.findComponent(CelebrationModal)
+
+      expect(modal.props('copyCount')).toBe(2)
+      expect(modal.props('imageCount')).toBe(2)
+      expect(modal.props('postUrl')).toBe('https://www.xiaohongshu.com/explore/live-post')
+      expect(modal.props('canReplay')).toBe(true)
+
+      const pushSpy = vi.spyOn(router, 'push').mockResolvedValue(undefined)
+      await modal.vm.$emit('replay')
+      expect(pushSpy).toHaveBeenCalledWith('/start')
+    })
+
+    it('guards the replay callback when the Dashboard is in replay mode', async () => {
+      const store = useWorkflowStore()
+      store.workflowStates.set('replay-completed', {
+        thread_id: 'replay-completed',
+        phase: 'completed',
+        status: 'completed',
+        progress_percent: 100,
+      } as any)
+      store.activeThreadId = 'replay-completed'
+      store.isReplayMode = true
+
+      const { wrapper, router } = await mountDashboard({}, { threadId: 'replay-completed' })
+      const pushSpy = vi.spyOn(router, 'push')
+      const modal = wrapper.findComponent(CelebrationModal)
+
+      await modal.vm.$emit('replay')
+      expect(modal.props('canReplay')).toBe(false)
+      expect(pushSpy).not.toHaveBeenCalledWith('/start')
     })
   })
 

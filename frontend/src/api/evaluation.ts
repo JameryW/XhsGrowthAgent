@@ -52,6 +52,7 @@ export async function evaluateNote(
   note_id: string
   evaluation_result: EvaluationResultResponse['evaluation_result']
   thresholds?: EvaluationResultResponse['thresholds']
+  weights?: EvaluationResultResponse['weights']
   evaluation_id?: string | null
   status?: EvaluationResultResponse['status']
   degraded?: boolean
@@ -76,6 +77,7 @@ export async function evaluateNote(
     note_id: string
     evaluation_result: EvaluationResultResponse['evaluation_result']
     thresholds?: EvaluationResultResponse['thresholds']
+    weights?: EvaluationResultResponse['weights']
     evaluation_id?: string | null
     status?: EvaluationResultResponse['status']
     degraded?: boolean
@@ -102,6 +104,7 @@ export async function getLatestNoteEvaluation(
   note_id: string
   evaluation_result?: EvaluationResultResponse['evaluation_result'] | null
   thresholds?: EvaluationResultResponse['thresholds']
+  weights?: EvaluationResultResponse['weights']
   evaluation_id?: string | null
   status?: EvaluationResultResponse['status']
   degraded?: boolean
@@ -120,6 +123,7 @@ export async function getLatestNoteEvaluation(
     note_id: string
     evaluation_result?: EvaluationResultResponse['evaluation_result'] | null
     thresholds?: EvaluationResultResponse['thresholds']
+    weights?: EvaluationResultResponse['weights']
     evaluation_id?: string | null
     status?: EvaluationResultResponse['status']
     degraded?: boolean

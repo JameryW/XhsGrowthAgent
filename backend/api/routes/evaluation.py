@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     # (~0.3s) off the app cold-start import chain. NoteStats (creator_stats
     # types — dataclasses/inspect at module load) also annotation-only here.
     # EvaluatorWeights is annotation-only too — evaluator_config pulls psycopg
-    # at module load, which is deferred to the lazy import inside _score_thresholds.
+    # at module load, which is deferred to the lazy import inside _score_config.
     from backend.db.evaluator_config import EvaluatorWeights
     from backend.services.creator_stats.types import NoteStats
     from backend.state.schema import XHSGrowthState
@@ -119,6 +119,48 @@ def _thresholds_from_weights(weights: EvaluatorWeights) -> dict[str, float]:
     }
 
 
+def _dimension_weights_from_weights(weights: EvaluatorWeights) -> dict[str, float]:
+    """Expose the resolved non-bias dimension weights to score consumers."""
+    return {
+        str(dimension): float(value)
+        for dimension, value in weights.dimension_weights.items()
+    }
+
+
+async def _score_config(
+    account_id: str | None = None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Resolve thresholds and dimension weights in one optional DB lookup.
+
+    The evaluator already resolves both values as a single ``EvaluatorWeights``
+    object. Keeping the response contract on the same object prevents the UI
+    from displaying a weight panel that is out of sync with score tiers.
+    """
+    from backend.db.evaluator_config import (
+        DEFAULT_DIMENSION_WEIGHTS,
+        DEFAULT_PASS_THRESHOLD,
+        DEFAULT_REJECT_THRESHOLD,
+        load_weights,
+    )
+
+    default_thresholds = {
+        "pass": float(DEFAULT_PASS_THRESHOLD),
+        "warn": float(DEFAULT_REJECT_THRESHOLD),
+    }
+    default_weights = {
+        str(dimension): float(value)
+        for dimension, value in DEFAULT_DIMENSION_WEIGHTS.items()
+    }
+    if not is_pool_ready():
+        return default_thresholds, default_weights
+    try:
+        weights = await load_weights(account_id)
+    except Exception:
+        logger.exception("failed to resolve evaluator config for account=%s", account_id)
+        return default_thresholds, default_weights
+    return _thresholds_from_weights(weights), _dimension_weights_from_weights(weights)
+
+
 async def _score_thresholds(account_id: str | None = None) -> dict[str, float]:
     """Resolve the effective evaluator thresholds for API/UI consumers.
 
@@ -127,24 +169,8 @@ async def _score_thresholds(account_id: str | None = None) -> dict[str, float]:
     the decision that was actually produced. Database failures deliberately
     fall back to the evaluator defaults.
     """
-    from backend.db.evaluator_config import (
-        DEFAULT_PASS_THRESHOLD,
-        DEFAULT_REJECT_THRESHOLD,
-        load_weights,
-    )
-
-    defaults = {
-        "pass": float(DEFAULT_PASS_THRESHOLD),
-        "warn": float(DEFAULT_REJECT_THRESHOLD),
-    }
-    if not is_pool_ready():
-        return defaults
-    try:
-        weights = await load_weights(account_id)
-    except Exception:
-        logger.exception("failed to resolve evaluator thresholds for account=%s", account_id)
-        return defaults
-    return _thresholds_from_weights(weights)
+    thresholds, _ = await _score_config(account_id)
+    return thresholds
 
 
 @router.get("/list")
@@ -364,15 +390,16 @@ async def get_evaluation_result(
     evaluation = values.get("evaluation_result") or {}
     if _lat:
         with _lat.segment("db"):
-            thresholds = await _score_thresholds(owned_account_id)
+            thresholds, weights = await _score_config(owned_account_id)
     else:
-        thresholds = await _score_thresholds(owned_account_id)
+        thresholds, weights = await _score_config(owned_account_id)
     _resp = success(
         data={
             "thread_id": thread_id,
             "has_evaluation": bool(evaluation),
             "evaluation_result": evaluation,
             "thresholds": thresholds,
+            "weights": weights,
             "account_id": owned_account_id,
             "subject_type": "workflow_draft",
             "subject_id": thread_id,

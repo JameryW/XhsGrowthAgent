@@ -111,6 +111,30 @@ describe('WorkflowReplay public UX contract', () => {
     expect(wrapper.find('[data-phase-index="1"]').attributes('tabindex')).toBe('-1')
   })
 
+  it('keeps a phase available when a later step carries its business result', async () => {
+    const mixedPhaseSteps = [
+      { ...steps[0], has_result: false, result: null },
+      { ...steps[0], public_id: 'step-1b', step: 2, has_result: true, result: { topic: '后续洞察' } },
+      { ...steps[1], public_id: 'step-2', step: 3 },
+    ]
+    getManifestMock.mockResolvedValue(buildManifest(mixedPhaseSteps))
+
+    const wrapper = mount(WorkflowReplay, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<span />' },
+          PublicReplayResult: { template: '<div />' },
+          ThemeToggle: { template: '<button aria-label="theme" />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('[data-phase-index="0"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-phase-index="1"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('uses the shared error surface when a step detail cannot be loaded', async () => {
     const stepWithoutResult = { ...steps[0], result: null }
     getManifestMock.mockResolvedValue(buildManifest([stepWithoutResult]))

@@ -2,6 +2,7 @@
 // frontend/tests/composables/useAnimation.spec.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { animatedCounter } from '@/composables/useAnimation'
+import { prefersReducedMotion } from '@/composables/useReducedMotion'
 
 describe('useAnimation', () => {
   let mockPerformanceNow: ReturnType<typeof vi.fn>
@@ -9,6 +10,7 @@ describe('useAnimation', () => {
   let pendingCallbacks: Array<{ id: number; callback: FrameRequestCallback }>
 
   beforeEach(() => {
+    prefersReducedMotion.value = false
     mockPerformanceNow = vi.fn(() => 0)
     rafIdCounter = 0
     pendingCallbacks = []
@@ -140,6 +142,18 @@ describe('useAnimation', () => {
 
     expect(values.length).toBe(1)
     expect(values[0]).toBe(100)
+  })
+
+  it('jumps to the final value when reduced motion is enabled', async () => {
+    prefersReducedMotion.value = true
+    const values: number[] = []
+
+    await animatedCounter(0, 100, 500, (value) => {
+      values.push(value)
+    })
+
+    expect(values).toEqual([100])
+    expect(pendingCallbacks).toHaveLength(0)
   })
 
   it('handles negative to positive range', async () => {

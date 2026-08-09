@@ -71,6 +71,8 @@ export interface EvaluationResultResponse {
   evaluation_result: EvaluationResult
   /** Effective per-account score bands used by the evaluator. */
   thresholds?: ScoreThresholds
+  /** Effective per-account weighted dimensions, when returned by the API. */
+  weights?: Record<string, number>
   account_id?: string
   scope?: string
   subject_type?: 'workflow_draft' | string

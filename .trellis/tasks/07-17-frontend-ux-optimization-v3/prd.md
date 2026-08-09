@@ -384,7 +384,7 @@ serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导�
 小部分时整块保持透明。现在该容器立即可见；步骤详情错误态也改为共享 `ErrorState`，并补齐
 中英文文案与回归测试。
 
-当前门槛结果：前端 64 个 spec 文件 / 676 个测试通过，`type-check`、`i18n:check`、`build`
+当前门槛结果：前端 66 个 spec 文件 / 690 个测试通过，`type-check`、`i18n:check`、`build`
 通过；修复后真实公开案例代理探针已在 390×844 首屏看到步骤结果标题。完整本地公开矩阵有
 95 个页面记录、axe serious/critical=0；本地 warm p75 受 Vite 开发服务器影响而超过生产预算，
 不能替代部署性能数据。生产只读报告仍显示 96 个组合、axe=0、warm p75=383.45ms，且无预算
@@ -394,3 +394,25 @@ serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导�
 仍需发布方补齐的证据没有改变：真实部署 390/768/1440 明暗主题人工走查归档、严格 live 空态、
 真实漏斗埋点 owner/运营验收，以及 Lighthouse/截图归档。因此任务继续保持 `in_progress`，
 不能仅凭本地矩阵把 G1~G6 标成发布完成。
+
+## 21. P2 代码收尾复核（2026-08-10）
+
+本次补齐了此前记录为延期的 P2 代码项，并为每一项保留自动化证据：
+
+- Dashboard DB-10/11/12：庆祝弹窗改为真实文案/图片计数，提供帖子链接与“再来一篇”入口，
+  replay 模式禁止实时工作流 CTA；时间线不再重复渲染总进度填充；标签重命名增加触控入口、
+  44px 目标和键盘/溢出菜单路径。CelebrationModal、WorkflowTabBar、Dashboard 和
+  WorkflowTimeline 组件/视图测试覆盖这些分支。
+- Analytics AN-15、Evaluation EV-08/12/15/16、INF-05/11：MetricCard 保持非 live 数值，避免刷新时
+  朗读整组指标；AnimatedCounter/动画计数经 reduced-motion JS 层降级。评估结果显示有效维度权重并明确排除 bias，
+  `/evaluation/result` 返回账号解析后的 thresholds/weights；EvaluationView 的 scoped 颜色迁移
+  到 Tailwind dark 变体；RQGM 手动结果在面板会话内按账号+笔记保留；RQGM/动画均尊重
+  reduced-motion，TooltipHelper 用于维度与 Replay 阶段解释。旧 VersionCompare 分数标签和
+  双语文案已保持一致。
+- 回归门槛：66 个 spec 文件 / 690 个测试通过，`type-check`、`i18n:check`（2137 keys）、
+  `ruff check`（受影响后端文件）、后端 18 个相关测试和 `build` 全部通过；`git diff --check`
+  通过，构建仅保留既有动态/静态导入提示。
+
+上述是代码与本地自动化收尾，不改变发布总闸：真实部署三档明暗主题人工走查、严格 live
+empty-state、真实漏斗埋点 owner/运营验收以及发布方 Lighthouse/截图归档仍需外部执行。因此
+Trellis 任务继续保持 `in_progress`，不得把外部证据缺口写成已完成。

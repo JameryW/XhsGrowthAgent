@@ -99,14 +99,15 @@ const phaseGroups = computed(() => {
   return [...byPhase.values()]
 })
 const phasesWithoutData = computed(() => {
-  const seen = new Set<string>()
   const empty = new Set<string>()
+  const hasData = new Set<string>()
   for (const step of steps.value) {
-    if (!seen.has(step.phase)) {
-      seen.add(step.phase)
-      if (!step.has_result && !step.has_business_data) empty.add(step.phase)
-    }
+    if (step.has_result || step.has_business_data) hasData.add(step.phase)
+    else if (!hasData.has(step.phase)) empty.add(step.phase)
   }
+  // A phase is unavailable only when none of its steps carries business data;
+  // an empty first checkpoint must not disable a later useful checkpoint.
+  for (const phase of empty) if (hasData.has(phase)) empty.delete(phase)
   return empty
 })
 const canLoadMore = computed(() => Boolean(manifest.value?.has_more))
