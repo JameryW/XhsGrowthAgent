@@ -870,3 +870,36 @@ Updated three recoverable exception logs in backend/db/accounts.py to include co
 ### Next Steps
 
 - None - task complete
+
+
+## Session 114: evaluator config exception log diagnostics
+
+**Date**: 2026-08-09
+**Task**: evaluator config exception log diagnostics
+**Branch**: `main`
+
+### Summary
+
+Added concrete exception types and original messages to four evaluator_config DB fallback warning logs without changing fallback/report behavior; added caplog regressions for weight loading, training fetch/apply, and online evolution. Validation: evaluator tests 40 passed, full pytest 2141 passed, backend mypy 165 files passed, backend/tests ruff passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b4357f81` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
