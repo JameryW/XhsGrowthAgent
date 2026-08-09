@@ -410,8 +410,14 @@ serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导�
   reduced-motion，TooltipHelper 用于维度与 Replay 阶段解释。旧 VersionCompare 分数标签和
   双语文案已保持一致。
 - 回归门槛：66 个 spec 文件 / 690 个测试通过，`type-check`、`i18n:check`（2137 keys）、
-  `ruff check`（受影响后端文件）、后端 18 个相关测试和 `build` 全部通过；`git diff --check`
-  通过，构建仅保留既有动态/静态导入提示。
+  `ruff format --check backend tests`、`ruff check backend tests`、`mypy backend`、后端 27 个
+  相关测试和 `build` 全部通过；`git diff --check` 通过，构建仅保留既有动态/静态导入提示。
+- 曾尝试运行完整后端 `pytest -q`，输出 54 个测试进度后长时间无新增结果，为避免把挂起误报为
+  通过而中断；因此本记录不宣称完整后端套件通过，相关范围测试仍是 27/27 通过。
+- 2026-08-10 只读核对运行中的 `xhs-growth`：前端 `index-DMueUbgE.js`、
+  `Dashboard-CXy8coBo.js`、`EvaluationView-CV6bM7A3.js` 与本地最终构建逐字节同哈希，并含本轮
+  UX 标记；但运行容器的后端 `evaluation.py` 尚无当前提交新增的 `_score_config`/维度权重解析实现。
+  因此前端构建已部署不能等同于完整当前提交已部署，仍不能作为发布总闸证据。
 
 上述是代码与本地自动化收尾，不改变发布总闸：真实部署三档明暗主题人工走查、严格 live
 empty-state、真实漏斗埋点 owner/运营验收以及发布方 Lighthouse/截图归档仍需外部执行。因此
