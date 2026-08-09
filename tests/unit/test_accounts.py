@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -188,6 +189,29 @@ async def test_allocate_cdp_port_returns_zero_when_db_unavailable():
 
 
 @pytest.mark.asyncio
+async def test_allocate_cdp_port_logs_exception_type_on_list_failure(caplog):
+    """Account-list failures retain the zero-port fallback and identify their type."""
+    from backend.db.accounts import _allocate_cdp_port
+
+    settings = MagicMock()
+    settings.platform.cdp_base_port = 9222
+    with (
+        patch("backend.db.pool.is_pool_ready", return_value=True),
+        patch(
+            "backend.db.accounts.list_accounts",
+            new_callable=AsyncMock,
+            side_effect=ConnectionError("database unavailable"),
+        ),
+        caplog.at_level(logging.WARNING, logger="xhs_growth.db.accounts"),
+    ):
+        port = await _allocate_cdp_port(settings)
+
+    assert port == 0
+    assert "ConnectionError" in caplog.text
+    assert "database unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_ensure_tables_runs_alter_column_idempotently():
     """ensure_tables issues ALTER TABLE ADD COLUMN IF NOT EXISTS for both new columns.
 
@@ -204,6 +228,47 @@ async def test_ensure_tables_runs_alter_column_idempotently():
     executed_sql = [str(c.args[0]) if c.args else "" for c in conn.execute.call_args_list]
     assert any("ADD COLUMN IF NOT EXISTS chrome_profile_path" in sql for sql in executed_sql)
     assert any("ADD COLUMN IF NOT EXISTS cdp_port" in sql for sql in executed_sql)
+
+
+@pytest.mark.asyncio
+async def test_owner_migration_logs_exception_type_and_continues(caplog):
+    """A legacy-owner migration failure remains best-effort with diagnostic context."""
+    from backend.db.accounts import _migrate_unowned_accounts_to_first_console_user
+
+    with (
+        patch("backend.db.pool.is_pool_ready", return_value=True),
+        patch(
+            "backend.db.console_users.list_users",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("console users unavailable"),
+        ),
+        caplog.at_level(logging.WARNING, logger="xhs_growth.db.accounts"),
+    ):
+        await _migrate_unowned_accounts_to_first_console_user()
+
+    assert "RuntimeError" in caplog.text
+    assert "console users unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_account_cdp_endpoint_logs_exception_type_on_lookup_failure(caplog):
+    """Account lookup failures retain the global-CDP fallback and identify their type."""
+    from backend.db.accounts import get_account_cdp_endpoint
+
+    with (
+        patch("backend.db.pool.is_pool_ready", return_value=True),
+        patch(
+            "backend.db.accounts.get_account",
+            new_callable=AsyncMock,
+            side_effect=TimeoutError("account lookup timed out"),
+        ),
+        caplog.at_level(logging.WARNING, logger="xhs_growth.db.accounts"),
+    ):
+        endpoint = await get_account_cdp_endpoint("acc-1")
+
+    assert endpoint == ""
+    assert "TimeoutError" in caplog.text
+    assert "account lookup timed out" in caplog.text
 
 
 if __name__ == "__main__":

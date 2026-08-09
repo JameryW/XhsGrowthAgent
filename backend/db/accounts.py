@@ -146,7 +146,7 @@ async def _migrate_unowned_accounts_to_first_console_user() -> None:
             if n:
                 logger.info("migrated %s unowned account(s) to console user %s", n, owner_id)
     except Exception as exc:
-        logger.warning("owner_user_id migration skipped: %s", exc)
+        logger.warning("owner_user_id migration skipped: %s: %s", type(exc).__name__, exc)
 
 
 # ── Account CRUD ──
@@ -214,7 +214,11 @@ async def _allocate_cdp_port(settings: Any) -> int:
     try:
         accounts = await list_accounts()
     except Exception as e:
-        logger.warning("CDP port allocation: list_accounts failed, returning 0: %s", e)
+        logger.warning(
+            "CDP port allocation: list_accounts failed, returning 0: %s: %s",
+            type(e).__name__,
+            e,
+        )
         return 0
     used_ports = {a.cdp_port for a in accounts if a.cdp_port > 0}
     port = base_port + 1
@@ -493,7 +497,11 @@ async def get_account_cdp_endpoint(account_id: str) -> str:
     try:
         account = await get_account(account_id)
     except Exception as e:
-        logger.warning("get_account_cdp_endpoint: get_account failed: %s", e)
+        logger.warning(
+            "get_account_cdp_endpoint: get_account failed: %s: %s",
+            type(e).__name__,
+            e,
+        )
         return ""
     if account is None or account.cdp_port <= 0:
         return ""
