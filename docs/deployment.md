@@ -209,11 +209,12 @@ python scripts/acceptance/public_ux_audit.py \
 `performance_budget_failures` 观测值，但不会把 online 的 500/100ms 发布门槛套用到慢网样本；默认
 online 全矩阵仍会按 p75 门槛失败。
 
-2026-08-09 本地部署的最新证据保存在 `/tmp/public-ux-audit-final-evidence.json`：96 个页面组合的
-serious/critical axe 记录为 0，缓存步骤切换 p75 为 18.07ms；暖导航 p75 为 576.6ms，超过
-500ms 门槛，因此报告的 `passed` 仍为 false。暖导航和缓存切换均各采 3 次并取中位数，报告同时
-保留原始样本和超预算样本，计时使用浏览器 `performance.now()`；这组结果不能替代目标环境的
-发布方人工走查或 Lighthouse 归档。
+2026-08-09 当前部署的最新证据保存在 `/tmp/public-ux-audit-current.json`：96 个页面组合的
+serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导航 p75 为 383.45ms，
+`performance_budget_failure_count` 为 0，报告 `passed=true`。本次运行使用了已批准的 1 条
+公开案例（`live_empty_state_verified=false`），因此通过的是公开案例矩阵，不是严格空态门槛；
+暖导航和缓存切换均各采 3 次并取中位数，报告同时保留原始样本和超预算样本，计时使用浏览器
+`performance.now()`。该自动化结果仍不能替代目标环境的发布方人工走查、Lighthouse 或截图归档。
 
 ## Docker 部署
 

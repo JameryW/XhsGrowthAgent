@@ -80,8 +80,9 @@ Vite 的 ECharts 手动分包已按实际注册模块拆分，当前构建不再
 公开页浏览器验收仍分为两种证据：默认严格模式要求目标环境 live 列表为空；已有 owner 审批案例的
 环境使用 `--allow-existing-public`，该报告会单独记录 live 数量，不能替代空态安全门槛。
 
-最新全量报告（`/tmp/public-ux-audit-final-evidence.json`）覆盖 96 个 Showcase/Replay 组合，
-serious/critical axe 记录为 0，缓存步骤切换 p75 为 18.07ms；当前部署有 1 条 owner 已批准的
-public case，所以 `live_empty_state_verified=false`。暖导航 p75 为 576.6ms，超过 500ms
-门槛，发布性能闸门仍未通过。报告使用浏览器时钟、每项 3 次样本中位数并保留原始样本；390/768/1440
-的明暗主题人工走查、线上漏斗埋点 owner/运营验收和 Lighthouse/截图归档仍待发布方补齐。
+最新全量报告（`/tmp/public-ux-audit-current.json`）覆盖 96 个 Showcase/Replay 组合，
+serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导航 p75 为 383.45ms，
+`performance_budget_failure_count=0`，发布性能闸门已通过。当前部署有 1 条 owner 已批准的
+public case，所以 `live_empty_state_verified=false`；该报告不能替代严格空态安全门槛。报告使用
+浏览器时钟、每项 3 次样本中位数并保留原始样本；390/768/1440 的明暗主题人工走查、线上漏斗埋点
+owner/运营验收和 Lighthouse/截图归档仍待发布方补齐。

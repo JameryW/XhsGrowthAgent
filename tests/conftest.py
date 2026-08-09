@@ -21,6 +21,11 @@ os.environ.setdefault("XHS_USE_BROWSER", "false")
 # live DB connection (verified across the suite).
 os.environ.pop("POSTGRES_URI", None)
 os.environ.pop("REDIS_URI", None)
+# App lifespan compiles the development graph for TestClient-based integration
+# tests. Keep that hermetic: the production default local embedding model may
+# download/load hundreds of MB before the first request. Individual embedding
+# tests use clear=True patches when they need to exercise a real provider path.
+os.environ["XHS_EMBED_MODEL"] = "disabled"
 import dotenv as _dotenv
 
 _dotenv.load_dotenv = lambda *a, **kw: False  # type: ignore[assignment]
