@@ -479,7 +479,7 @@ watch(filteredCases, async () => {
       <div v-reveal class="marquee mt-12" aria-hidden="true">
         <div class="marquee-track">
           <div v-for="half in 2" :key="half" class="flex shrink-0 items-center gap-3 pr-3">
-            <span v-for="badge in marqueeBadges" :key="`${half}-${badge}`" class="dark-explicit flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/75 px-4 py-2 text-xs font-semibold text-slate-500 shadow-sm backdrop-blur-sm dark:border-slate-700/70 dark:bg-slate-900/60 dark:text-slate-300"><span class="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-rose-500 to-orange-400" />{{ t(`replay.${badge}`) }}</span>
+            <span v-for="badge in marqueeBadges" :key="`${half}-${badge}`" class="dark-explicit flex items-center gap-2 rounded-full border border-slate-200/80 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm dark:border-slate-700/70 dark:bg-slate-900 dark:text-slate-200"><span class="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-rose-500 to-orange-400" />{{ t(`replay.${badge}`) }}</span>
           </div>
         </div>
       </div>

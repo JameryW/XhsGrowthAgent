@@ -367,5 +367,11 @@
    `--allow-existing-public` 运行矩阵，报告会明确标记 `live_empty_state_verified=false`。
 3. 真实环境漏斗埋点的 owner/运营验收，以及由发布方提供的 Lighthouse/截图归档。
 
+自动化与只读线上快照（2026-08-09）：`/tmp/public-ux-audit-final-evidence.json` 覆盖 96 个组合，
+serious/critical axe 记录为 0，缓存步骤切换 p75 为 18.07ms；暖导航 p75 为 576.6ms，超过
+500ms 门槛，因此报告仍为 `passed=false`。生产数据库近 30 天已有 1101 条、30 种
+`public_ux_events` 记录，可用于后续漏斗验收；该快照没有 owner/运营签字，也不能替代发布方的
+Lighthouse、截图和人工走查证据。
+
 因此 G1~G6 的代码与自动化部分已复核，但发布总闸仍需上述外部证据后才能将任务改为
 `completed`。
