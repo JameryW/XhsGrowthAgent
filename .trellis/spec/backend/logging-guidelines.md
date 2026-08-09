@@ -195,6 +195,24 @@ logger.debug("Draft gate resumed with user decision: %s", decision.get("title", 
 codebase. The `%s` style is acceptable in the API layer where it is already
 established.
 
+### Exception diagnostics
+
+When a caught exception is handled by a recoverable fallback, include both its
+concrete type and message in the warning or error. The type distinguishes
+timeouts, connection failures, missing optional dependencies, and malformed
+responses when messages are otherwise similar:
+
+```python
+try:
+    await probe()
+except Exception as e:
+    logger.warning("login probe failed: %s: %s", type(e).__name__, e)
+```
+
+Do not include cookies, tokens, or full page text in the diagnostic. Use
+`logger.exception(...)` (or `exc_info=True`) when the traceback is needed for an
+unexpected failure.
+
 ### No JSON structured logging
 
 The project does not use structured/JSON logging. All messages are plain

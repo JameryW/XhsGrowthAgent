@@ -1065,7 +1065,7 @@ class XhsLoginSession:
         try:
             result = await self._page.evaluate(js, {"qr_id": self._qr_id, "code": self._qr_code})
         except Exception as e:
-            logger.warning("poll_status evaluate 失败: %s", e)
+            logger.warning("poll_status evaluate 失败: %s: %s", type(e).__name__, e)
             return
         if not isinstance(result, dict) or "body" not in result:
             return
@@ -1790,7 +1790,7 @@ class XhsLoginSession:
             # 拦截器异常不能冒泡到 playwright 事件循环（会断后续响应处理）。
             # _handle_* 内部已吞掉良性解析失败（bad JSON / 缺字段），能走到这里的是
             # 真正意外异常——按 spec 不静默，记 WARNING（DEBUG 在生产等于吞掉）。
-            logger.warning("qrcode 响应拦截异常: %s", e)
+            logger.warning("qrcode 响应拦截异常: %s: %s", type(e).__name__, e)
 
     async def _handle_qr_create(self, response: Any) -> None:
         """解析 qrcode/create 响应，取 data.{qr_id, url, code}."""
@@ -1861,7 +1861,9 @@ class XhsLoginSession:
             ).apply_stealth_async(context)
             logger.info("playwright-stealth 已应用 (login session)")
         except Exception as e:
-            logger.warning("playwright-stealth 不可用，fallback 手动隐藏: %s", e)
+            logger.warning(
+                "playwright-stealth 不可用，fallback 手动隐藏: %s: %s", type(e).__name__, e
+            )
             await context.add_init_script(
                 "Object.defineProperty(navigator, 'webdriver', { get: () => false });"
             )
@@ -2044,7 +2046,12 @@ async def _inspect_profile_login_status_raw(account_id: str, cdp_endpoint: str) 
             "signals": signals,
         }
     except Exception as e:
-        logger.warning("raw CDP 检查小红书登录状态失败 account=%s: %s", account_id, e)
+        logger.warning(
+            "raw CDP 检查小红书登录状态失败 account=%s: %s: %s",
+            account_id,
+            type(e).__name__,
+            e,
+        )
         reason = "cdp_port_down" if "ECONNREFUSED" in str(e) else "cdp_unreachable"
         return {
             "account_id": account_id,
@@ -2101,7 +2108,12 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
             connect_endpoint = await _resolve_cdp_connect_endpoint(cdp_endpoint)
             browser = await playwright.chromium.connect_over_cdp(connect_endpoint, timeout=5000)
         except Exception as e:
-            logger.warning("连接小红书登录状态 CDP 失败 account=%s: %s", account_id, e)
+            logger.warning(
+                "连接小红书登录状态 CDP 失败 account=%s: %s: %s",
+                account_id,
+                type(e).__name__,
+                e,
+            )
             reason = "cdp_port_down" if "ECONNREFUSED" in str(e) else "cdp_unreachable"
             return {
                 "account_id": account_id,
@@ -2145,7 +2157,12 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
             "signals": signals,
         }
     except Exception as e:
-        logger.warning("检查小红书登录状态失败 account=%s: %s", account_id, e)
+        logger.warning(
+            "检查小红书登录状态失败 account=%s: %s: %s",
+            account_id,
+            type(e).__name__,
+            e,
+        )
         return {
             "account_id": account_id,
             "status": "unknown",

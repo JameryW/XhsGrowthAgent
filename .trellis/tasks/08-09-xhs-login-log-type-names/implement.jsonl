@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Preserve the project's warning-level and exception-context logging conventions."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Follow the backend lint, typing, mocking, and focused-test requirements."}
+{"file": ".trellis/spec/backend/browser-auth-probes.md", "reason": "Keep read-only login-status probing and failure fallback behavior unchanged."}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "Ensure the logging-only change does not add browser actions or expose credentials."}

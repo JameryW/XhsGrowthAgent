@@ -9,6 +9,7 @@ feeding it synthetic XHR responses.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1136,6 +1137,107 @@ class TestResponseInterception:
             result = await session.get_status()
         assert result["status"] == "waiting"  # unchanged
         await session.stop()
+
+
+class TestExceptionLogDiagnostics:
+    """Recoverable login failures include their concrete exception type in logs."""
+
+    async def test_page_status_warning_includes_exception_type(self, tmp_path, caplog):
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "p"))
+        session._qr_id = "qr-1"
+        session._qr_code = "code-1"
+        session._page = MagicMock()
+        session._page.evaluate = AsyncMock(side_effect=TimeoutError("poll timed out"))
+
+        with caplog.at_level(logging.WARNING, logger="xhs_growth.login"):
+            await session._poll_status_via_page()
+
+        assert any("TimeoutError: poll timed out" in record.message for record in caplog.records)
+
+    async def test_response_interceptor_warning_includes_exception_type(self, tmp_path, caplog):
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "p"))
+        session._handle_qr_create = AsyncMock(side_effect=ValueError("bad envelope"))
+        response = _build_mock_response(
+            "https://edith.xiaohongshu.com/api/sns/web/v1/login/qrcode/create",
+            "POST",
+            {},
+        )
+
+        with caplog.at_level(logging.WARNING, logger="xhs_growth.login"):
+            await session._on_response(response)
+
+        assert any("ValueError: bad envelope" in record.message for record in caplog.records)
+
+    async def test_stealth_fallback_warning_includes_exception_type(self, tmp_path, caplog):
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "p"))
+        context = MagicMock()
+        context.add_init_script = AsyncMock()
+
+        with (
+            patch.dict(sys.modules, {"playwright_stealth": None}),
+            caplog.at_level(logging.WARNING, logger="xhs_growth.login"),
+        ):
+            await session._apply_stealth(context)
+
+        assert any("ModuleNotFoundError:" in record.message for record in caplog.records)
+        context.add_init_script.assert_awaited_once()
+
+    async def test_raw_cdp_warning_includes_exception_type(self, caplog):
+        from backend.services.xhs_login import XhsLoginSession, _inspect_profile_login_status_raw
+
+        with (
+            patch.object(
+                XhsLoginSession,
+                "_raw_connect",
+                AsyncMock(side_effect=ConnectionError("raw CDP down")),
+            ),
+            caplog.at_level(logging.WARNING, logger="xhs_growth.login"),
+        ):
+            result = await _inspect_profile_login_status_raw(
+                "acc-1", "http://host.containers.internal:9224"
+            )
+
+        assert result["status"] == "unavailable"
+        assert any("ConnectionError: raw CDP down" in record.message for record in caplog.records)
+
+    async def test_cdp_connection_warning_includes_exception_type(self, caplog):
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, _, _ = _wire_playwright_mock()
+        mock_pw = mock_module.async_playwright.return_value.start.return_value
+        mock_pw.chromium.connect_over_cdp.side_effect = TimeoutError("cdp timeout")
+
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            caplog.at_level(logging.WARNING, logger="xhs_growth.login"),
+        ):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
+
+        assert result["status"] == "unavailable"
+        assert any("TimeoutError: cdp timeout" in record.message for record in caplog.records)
+
+    async def test_status_probe_warning_includes_exception_type(self, caplog):
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, _, _ = _wire_playwright_mock()
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            patch(
+                "backend.services.xhs_login._playwright_creator_page_is_ready",
+                AsyncMock(side_effect=LookupError("page probe failed")),
+            ),
+            caplog.at_level(logging.WARNING, logger="xhs_growth.login"),
+        ):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
+
+        assert result["status"] == "unknown"
+        assert any("LookupError: page probe failed" in record.message for record in caplog.records)
 
 
 class TestStealthFallback:

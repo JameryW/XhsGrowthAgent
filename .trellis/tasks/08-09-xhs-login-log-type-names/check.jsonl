@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Check that exception type context and warning severity follow repository logging conventions."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check formatting, lint, typing, and regression-test expectations."}
+{"file": ".trellis/spec/backend/browser-auth-probes.md", "reason": "Check that login-status probe contracts and safe fallback behavior remain intact."}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "Check that no browser safety boundary or sensitive-data rule is changed."}
