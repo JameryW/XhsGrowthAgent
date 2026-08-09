@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Follow warning-level exception type/message diagnostics and sensitive-data rules."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Follow backend formatting, linting, typing, and mock-based test conventions."}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "Preserve profile locks, CDP lifecycle, fail-closed behavior, and browser safety boundaries."}

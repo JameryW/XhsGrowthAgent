@@ -8,6 +8,7 @@ helpers' filtering. All OS/subprocess surface is mocked — no real Chrome runs.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import signal
 from pathlib import Path
@@ -115,6 +116,24 @@ def test_list_cdp_targets_filters_malformed_values():
         targets = cl._list_cdp_targets(9223)
 
     assert targets == [cl.CdpTarget("blank", "page", "about:blank")]
+
+
+@pytest.mark.asyncio
+async def test_socat_start_oserror_log_includes_exception_type(tmp_path: Path, monkeypatch, caplog):
+    monkeypatch.setattr(cl, "_port_bound_inet", lambda port: False)
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl.shutil, "which", lambda name: "/usr/bin/socat")
+    monkeypatch.setattr(
+        cl.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(side_effect=OSError("exec denied")),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="xhs_growth.services.chrome_launcher"):
+        result = await cl._ensure_socat_forwarder(str(tmp_path), 9223)
+
+    assert result is None
+    assert any("OSError: exec denied" in record.message for record in caplog.records)
 
 
 def test_blank_page_candidates_retain_one_page():
@@ -247,6 +266,24 @@ def test_clear_stale_lock_unparseable_pid_clears(_profile_dir: Path, monkeypatch
     result = clear_stale_lock(str(_profile_dir))
     assert result is True
     assert not lock.exists()
+
+
+def test_clear_stale_lock_unlink_oserror_log_includes_exception_type(
+    _profile_dir: Path, monkeypatch, caplog
+):
+    lock = _profile_dir / "SingletonLock"
+    os.symlink("host-4242", lock)
+    monkeypatch.setattr(cl, "_pid_alive", lambda pid: False)
+
+    def _raise_unlink(_path: Path) -> None:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "unlink", _raise_unlink)
+    with caplog.at_level(logging.WARNING, logger="xhs_growth.services.chrome_launcher"):
+        result = clear_stale_lock(str(_profile_dir))
+
+    assert result is False
+    assert any("OSError: permission denied" in record.message for record in caplog.records)
 
 
 # ── _singleton_lock_pid ──
@@ -552,6 +589,38 @@ async def test_stop_chrome_fails_without_profile(monkeypatch):
     status = await stop_chrome(account)
     assert status.action == "failed"
     assert "no chrome_profile_path" in status.message
+
+
+@pytest.mark.asyncio
+async def test_cli_pool_init_failure_log_includes_exception_type(monkeypatch, caplog):
+    monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: False)
+    monkeypatch.setattr(
+        "backend.db.pool.init_pool",
+        AsyncMock(side_effect=ConnectionError("database unavailable")),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="xhs_growth.services.chrome_launcher"):
+        accounts = await cl._load_accounts()
+
+    assert accounts == []
+    assert any(
+        "ConnectionError: database unavailable" in record.message for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_cli_list_accounts_failure_log_includes_exception_type(monkeypatch, caplog):
+    monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
+    monkeypatch.setattr(
+        "backend.db.accounts.list_accounts",
+        AsyncMock(side_effect=TimeoutError("query timed out")),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="xhs_growth.services.chrome_launcher"):
+        accounts = await cl._load_accounts()
+
+    assert accounts == []
+    assert any("TimeoutError: query timed out" in record.message for record in caplog.records)
 
 
 # ── Bulk helpers ──

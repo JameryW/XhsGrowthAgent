@@ -422,7 +422,7 @@ async def _ensure_socat_forwarder(profile_path: str, port: int) -> int | None:
             start_new_session=True,
         )
     except OSError as e:
-        logger.warning("socat forwarder 启动失败 (port %d): %s", port, e)
+        logger.warning("socat forwarder 启动失败 (port %d): %s: %s", port, type(e).__name__, e)
         return None
     (Path(profile_path) / "socat.pid").write_text(str(proc.pid), encoding="utf-8")
     logger.info("socat forwarder up: 0.0.0.0:%d → 127.0.0.1:%d (pid %d)", port, internal, proc.pid)
@@ -571,7 +571,7 @@ def clear_stale_lock(profile_path: str) -> bool:
                 p.unlink()
                 removed_any = True
         except OSError as e:
-            logger.warning("Failed to remove %s: %s", p, e)
+            logger.warning("Failed to remove %s: %s: %s", p, type(e).__name__, e)
     if removed_any:
         logger.info("Cleared stale SingletonLock files in %s", profile_path)
     return removed_any
@@ -1759,7 +1759,7 @@ async def _load_accounts() -> list[AccountRow]:
         try:
             await init_pool()
         except Exception as e:  # noqa: BLE001 — degrade, don't crash the CLI
-            logger.warning("chrome-launcher CLI: DB pool init failed: %s", e)
+            logger.warning("chrome-launcher CLI: DB pool init failed: %s: %s", type(e).__name__, e)
             return []
 
     if not is_pool_ready():
@@ -1769,7 +1769,7 @@ async def _load_accounts() -> list[AccountRow]:
 
         return await list_accounts()
     except Exception as e:  # noqa: BLE001 — degrade, don't crash the CLI
-        logger.warning("chrome-launcher CLI: list_accounts failed: %s", e)
+        logger.warning("chrome-launcher CLI: list_accounts failed: %s: %s", type(e).__name__, e)
         return []
 
 
