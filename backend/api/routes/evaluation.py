@@ -121,10 +121,7 @@ def _thresholds_from_weights(weights: EvaluatorWeights) -> dict[str, float]:
 
 def _dimension_weights_from_weights(weights: EvaluatorWeights) -> dict[str, float]:
     """Expose the resolved non-bias dimension weights to score consumers."""
-    return {
-        str(dimension): float(value)
-        for dimension, value in weights.dimension_weights.items()
-    }
+    return {str(dimension): float(value) for dimension, value in weights.dimension_weights.items()}
 
 
 async def _score_config(
@@ -148,8 +145,7 @@ async def _score_config(
         "warn": float(DEFAULT_REJECT_THRESHOLD),
     }
     default_weights = {
-        str(dimension): float(value)
-        for dimension, value in DEFAULT_DIMENSION_WEIGHTS.items()
+        str(dimension): float(value) for dimension, value in DEFAULT_DIMENSION_WEIGHTS.items()
     }
     if not is_pool_ready():
         return default_thresholds, default_weights
