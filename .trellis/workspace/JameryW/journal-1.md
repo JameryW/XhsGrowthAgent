@@ -837,3 +837,36 @@ Continued optimization loop: added exception types to four chrome_launcher warni
 ### Next Steps
 
 - None - task complete
+
+
+## Session 113: accounts exception log diagnostics
+
+**Date**: 2026-08-09
+**Task**: accounts exception log diagnostics
+**Branch**: `main`
+
+### Summary
+
+Updated three recoverable exception logs in backend/db/accounts.py to include concrete exception types and messages; added fallback-preserving caplog tests. Validation: account tests 12 passed, full pytest 2139 passed, backend mypy 165 files passed, targeted ruff and git diff checks passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5abeebda` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
