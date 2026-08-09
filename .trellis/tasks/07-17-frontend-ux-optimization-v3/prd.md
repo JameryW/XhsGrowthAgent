@@ -344,3 +344,28 @@
 - `cd frontend && npm run test:run`：通过，47 个文件 / 573 个测试。
 - `cd frontend && npm run build`：通过；存在既有 AgentTUI、ECharts 大 chunk warning，无新增构建失败。
 - 未完成：390/768/1440 三档明暗主题人工走查、公开页 axe 扫描、部署后真实埋点与健康检查证据。因此本任务保持 `in_progress`，不能把 G1~G6 全部标记为发布完成。
+
+## 19. 收尾复核（2026-08-09）
+
+本次复核补齐了此前审计记录中的实现缺口，并以当前代码和门槛结果为准：
+
+- INF-01：五页均使用 `components/ErrorState.vue`；Dashboard 的 workflow/error store 仍通过
+  适配分支接入，公开页不绑定工作流 store。
+- INF-02：Showcase、WorkflowReplay、Analytics、Evaluation 均接入对应 skeleton；Dashboard
+  内容卡在长阶段加载时补充当前阶段说明。
+- DB-13：ContentCards 的草稿/版本表面改为主题 token，状态枚举兜底走 i18n；新增组件测试。
+- AN-18：Analytics view spec 覆盖加载、错误重试、周期切换、服务端 delta、原始数值排序、
+  行点击下钻和 stale 数据提示。
+- INF-09/INF-10：Vitest axe 关键态检查已进入前端测试；ECharts 手动分包改为实际注册模块，
+  当前 build 不再出现 500KB chunk 警告。
+- i18n：错误建议数组改用 `tm`，并兼容旧 `zh` locale；`i18n:check` 通过（2129 keys）。
+
+当前仍不能虚构为完成的发布证据：
+
+1. 真实部署的 390×844 / 768×1024 / 1440×900 明暗主题人工走查记录。
+2. 默认严格模式的 live 空态验收（现部署有 1 条已批准 public 案例）；该环境只能用
+   `--allow-existing-public` 运行矩阵，报告会明确标记 `live_empty_state_verified=false`。
+3. 真实环境漏斗埋点的 owner/运营验收，以及由发布方提供的 Lighthouse/截图归档。
+
+因此 G1~G6 的代码与自动化部分已复核，但发布总闸仍需上述外部证据后才能将任务改为
+`completed`。

@@ -181,6 +181,19 @@ python scripts/acceptance/public_ux_audit.py \
 320–1440px、中文/英文、明暗主题、正常/减弱动画、横向溢出、阶段键盘导航和 axe
 serious/critical；默认 online 只以完整矩阵的 p75 性能门槛判定结果，fixture 结果不能替代真实公开案例的
 owner 授权、Lighthouse 或人工视觉验收。
+
+如果目标环境已经有经过 owner 审批的公开案例，可显式使用
+`--allow-existing-public` 运行同一套矩阵；报告会保留 `live_public_case_count`，且不会把
+这次运行标记为已验证的真实空态。默认不带该参数仍会在出现任何 live 卡片时失败，适合发布前的
+空数据库/隔离环境安全门槛。
+
+```bash
+python scripts/acceptance/public_ux_audit.py \
+  --base-url http://127.0.0.1:8889 \
+  --allow-existing-public \
+  --max-combinations 4 \
+  --output /tmp/public-ux-audit-approved-public.json
+```
 需要做受限网络抽样时，可在小规模代表性组合上显式启用 Slow 4G 和 Save-Data：
 
 ```bash

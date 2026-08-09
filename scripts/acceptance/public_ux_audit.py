@@ -2,6 +2,9 @@
 """Acceptance audit for the public Showcase and workflow replay pages.
 
 The live pass verifies that the deployed public surface is private-by-default.
+Deployments with intentionally approved public cases can opt into the matrix
+with ``--allow-existing-public``; the report keeps that live empty-state check
+distinguishable from the synthetic fixture pass.
 The matrix pass uses a deliberately synthetic, non-sensitive case fixture so the
 visual, keyboard and accessibility gates can run before a real case is approved
 for publication.
@@ -393,6 +396,7 @@ def run_audit(
     max_combinations: int | None = None,
     network_profile: str = "online",
     save_data: bool = False,
+    allow_existing_public: bool = False,
 ) -> dict[str, Any]:
     browser_path = shutil.which("chromium-browser") or shutil.which("chromium")
     if not browser_path:
@@ -407,6 +411,7 @@ def run_audit(
     performance_outliers: list[dict[str, Any]] = []
     performance_budget_failures: list[dict[str, Any]] = []
     live_record: dict[str, Any] | None = None
+    live_public_case_count = 0
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -422,7 +427,8 @@ def run_audit(
         apply_network_profile(live_page, network_profile)
         live_page.goto(f"{base_url}/", wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
         live_page.locator("#cases h3").first.wait_for(state="visible")
-        if live_page.locator(".case-card").count() != 0:
+        live_public_case_count = live_page.locator(".case-card").count()
+        if live_public_case_count != 0 and not allow_existing_public:
             raise AssertionError("live public list is not private-by-default")
         live_record = audit_page(
             live_page,
@@ -434,8 +440,8 @@ def run_audit(
             axe_script=AXE_SCRIPT,
             screenshot=(screenshot_dir / "live-showcase-empty.png") if screenshot_dir else None,
         )
-        if live_page.locator(".case-card").count() != 0:
-            raise AssertionError("live public list is not private-by-default")
+        if live_page.locator(".case-card").count() != live_public_case_count:
+            raise AssertionError("live public list changed during the audit")
         records.append(live_record)
         live_context.close()
 
@@ -599,12 +605,15 @@ def run_audit(
         "base_url": base_url,
         "network_profile": network_profile,
         "save_data": save_data,
+        "allow_existing_public": allow_existing_public,
         "fixture": "synthetic-non-sensitive-case-demo",
         "viewports": list(VIEWPORTS),
         "locales": list(LOCALES),
         "themes": list(THEMES),
         "motions": list(MOTIONS),
-        "live_private_by_default": live_record is not None,
+        "live_public_case_count": live_public_case_count,
+        "live_private_by_default": live_record is not None and live_public_case_count == 0,
+        "live_empty_state_verified": live_public_case_count == 0,
         "matrix_page_count": len(records) - 1,
         "records": records,
         "metrics": metrics,
@@ -649,6 +658,14 @@ def main() -> int:
         action="store_true",
         help="expose navigator.connection.saveData=true during the audit",
     )
+    parser.add_argument(
+        "--allow-existing-public",
+        action="store_true",
+        help=(
+            "run the matrix when the deployment has owner-approved public cases; "
+            "does not certify an empty private-by-default state"
+        ),
+    )
     args = parser.parse_args()
 
     result = run_audit(
@@ -657,6 +674,7 @@ def main() -> int:
         args.max_combinations,
         args.network_profile,
         args.save_data,
+        args.allow_existing_public,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
@@ -666,6 +684,9 @@ def main() -> int:
                 "passed": result["passed"],
                 "network_profile": result["network_profile"],
                 "save_data": result["save_data"],
+                "allow_existing_public": result["allow_existing_public"],
+                "live_public_case_count": result["live_public_case_count"],
+                "live_empty_state_verified": result["live_empty_state_verified"],
                 "matrix_page_count": result["matrix_page_count"],
                 "axe_serious_critical_record_count": result["axe_serious_critical_record_count"],
                 "performance_outlier_count": len(result["performance_outliers"]),

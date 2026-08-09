@@ -1,12 +1,18 @@
 import { createI18n } from 'vue-i18n'
 import zhCN from './zh-CN.json'
 
+type SupportedLocale = 'zh-CN' | 'en'
+
+function normalizeLocale(value: string | null): SupportedLocale {
+  return value === 'en' ? 'en' : 'zh-CN'
+}
+
 // ponytail: 默认 locale 静态打入 entry（避免首屏异步闪烁）；非默认 locale 懒加载，从 entry chunk 剥离。
 // en.json (~48K) 不再阻塞首屏，切到 en 时按需拉取。
 // ponytail: guard DOM access so the module is importable in non-DOM contexts
 // (vitest `node` env for pure-logic specs, future SSR). Browser path unchanged.
 const storedLang = typeof localStorage !== 'undefined' ? localStorage.getItem('language') : null
-const initialLocale = storedLang || 'zh-CN'
+const initialLocale = normalizeLocale(storedLang)
 
 const i18n = createI18n({
   legacy: false,
@@ -15,6 +21,8 @@ const i18n = createI18n({
   // en 占位空对象（运行时由 loadLocaleMessages 懒加载填充），保留 locale 字面量联合类型。
   messages: {
     'zh-CN': zhCN,
+    // Keep the legacy short locale readable for old tabs or embedded clients.
+    zh: zhCN,
     'en': {},
   },
 })
@@ -38,7 +46,7 @@ if (typeof document !== 'undefined') {
 }
 if (initialLocale !== 'zh-CN') {
   loadLocaleMessages(initialLocale).then(() => {
-    i18n.global.locale.value = initialLocale as 'zh-CN' | 'en'
+    i18n.global.locale.value = initialLocale
   })
 }
 

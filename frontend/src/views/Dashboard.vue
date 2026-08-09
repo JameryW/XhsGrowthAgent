@@ -14,7 +14,6 @@ import BriefFileUpload from '@/components/BriefFileUpload.vue'
 import CelebrationModal from '@/components/CelebrationModal.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
-import ErrorCard from '@/components/ErrorCard.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import AccountViewNotice from '@/components/AccountViewNotice.vue'
 import { getDashboardHero } from '@/composables/dashboardHero'
@@ -285,7 +284,7 @@ const handleCloseCelebration = () => {
   showCelebration.value = false
 }
 
-// ErrorCard handlers
+// Shared ErrorState handlers — API and workflow failures use the same surface.
 const handleErrorRetry = () => {
   errorStore.clearError()
   if (workflowStore.activeThreadId) {
@@ -443,10 +442,11 @@ onUnmounted(() => {
     <div v-else class="space-y-3 md:space-y-5">
       <ErrorState v-if="hasError" />
 
-      <!-- ErrorCard for API errors -->
-      <ErrorCard
-        v-if="errorStore.hasError && errorStore.errorType"
-        :type="errorStore.errorType"
+      <!-- API errors use the same component in presentational mode. Keep one
+           primary error surface when workflow and request errors overlap. -->
+      <ErrorState
+        v-else-if="errorStore.hasError && errorStore.errorType"
+        :variant="errorStore.errorType"
         :message="errorStore.errorMessage"
         :retry-count="errorStore.retryCount"
         @retry="handleErrorRetry"

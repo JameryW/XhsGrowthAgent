@@ -208,3 +208,19 @@
 **实现：** model_name 用 `deepseek-v4-flash`（用户给的名）。provider 保持 DEEPSEEK。cost 沿用 deepseek-v4-flash 的单价（v4-flash 真实价未知，估测时沿用，部署后按实际调）。CLAUDE.md 路由表此前 PR#467/#468 已修正为 astron 全局 + POLISH/MOCK_GEN→deepseek-v4-flash；本 PR 改为 deepseek-v4-flash（含 VIRAL_MATCHING 若 2e 已合）。
 
 **风险：** deepseek-v4-flash 是否 DeepSeek 真实可调模型名未验证。部署后若 API 拒该 model_name 需回滚或改回 deepseek-v4-flash。pre-push triple 验证代码层，prod 实调验证模型名。
+
+## 2026-08-09 收尾复核
+
+当前 main 已包含本任务后续合入的可靠性、成本路由和数据库并发优化提交；全量质量门槛
+已重新执行：`pytest -q` 为 2153 passed，`ruff format --check`、`ruff check` 和
+`mypy backend` 均通过。此前仅记录到 PR #465 的进度已不能代表当前分支状态。
+
+仍未满足本任务 Definition of Done 的外部证据：
+
+- 方向 1 的代码和回归测试已有，当前环境没有可归档的生产轮询前后 DB 写入基线。
+- 方向 2 的轻模型路由和 fallback 测试已有，但缺少真实调用的 token/时延 before-after
+  样本与内容质量对照；`deepseek-v4-flash` 的真实 provider 可用性也必须由部署调用确认。
+- 方向 3/4 的代码变更和单测已随 main 持续合入，但尚未建立统一的生产可靠性/运行时基线报告。
+
+所以本任务仍保持 `in_progress`：代码层已通过，但不能把“有测试”误写成“已完成可测量收益和
+部署后验证”。完成任务还需要在目标部署环境补采样并把结果写入对应 PR/任务记录。

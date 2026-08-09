@@ -4,7 +4,8 @@ import { useI18n } from 'vue-i18n'
 import i18n, { loadLocaleMessages } from '@/locales'
 
 export const useLanguageStore = defineStore('language', () => {
-  const currentLocale = ref(localStorage.getItem('language') || 'zh-CN')
+  const persistedLocale = localStorage.getItem('language')
+  const currentLocale = ref<'zh-CN' | 'en'>(persistedLocale === 'en' ? 'en' : 'zh-CN')
   const { locale } = useI18n()
 
   async function setLanguage(lang: 'zh-CN' | 'en') {

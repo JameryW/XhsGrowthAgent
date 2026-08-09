@@ -32,6 +32,12 @@
 - Analytics 的互动图表在无数据时显示可见空态、提供双语屏幕阅读摘要；趋势点可见，表格 shares 与图表口径一致，并支持导出当前账号周期的 CSV。趋势图基于最近 ≤20 条已加载笔记计算，与互动图（服务端周期总量）口径不同，页面上必须注明这一差异，避免被读作同一指标。
 - Evaluation 雷达只展示加权维度，使用固定顺序和 rationale tooltip；无匹配筛选结果与真实空列表分开表达：筛选无结果提供一键清除筛选，真实空列表带下一步 CTA，窄屏雷达降低高度。
 
+当前五页的错误恢复统一使用 `components/ErrorState.vue`：公开页通过
+presentational props 保留各自重试语义，Dashboard 仍由 workflow/error store 适配；不要再新增
+独立错误卡。Dashboard 的内容骨架需要同时说明当前工作流阶段，草稿和版本卡使用主题表面而不是
+单一蓝色语义。Analytics 的周期摘要以服务端 delta 为准，表格排序使用原始数值，并通过行点击
+打开单篇详情；已有数据刷新失败时保留旧数据并明确标记为 stale。
+
 ## 状态与错误恢复
 
 - `realtimeStore.connectionStatus` 是实时连接状态的唯一来源。连接中/重连中显示轻量提示；已断开时由受控的离线恢复条提示，不再同时渲染浏览器离线条和连接卡片。
@@ -61,8 +67,15 @@
 ```bash
 cd frontend
 npm run type-check
+npm run i18n:check
 npm run test:run
 npm run build
 ```
 
 构建可能报告大 chunk 提示（AgentTUI 包含 xterm/WebGL 依赖），这不是构建失败；需要关注命令最终是否输出 `built`。
+
+2026-08-09 验收记录：前端全量为 64 个文件 / 675 个测试，后端全量为 2153 个测试；
+`type-check`、`i18n:check`、`ruff format --check`、`ruff check` 和 `mypy backend` 均通过。
+Vite 的 ECharts 手动分包已按实际注册模块拆分，当前构建不再产生 500KB chunk 警告。
+公开页浏览器验收仍分为两种证据：默认严格模式要求目标环境 live 列表为空；已有 owner 审批案例的
+环境使用 `--allow-existing-public`，该报告会单独记录 live 数量，不能替代空态安全门槛。

@@ -26,6 +26,7 @@ vi.mock('@/api/analytics', () => ({
   getGrowthReport: vi.fn().mockResolvedValue(null),
   getCosts: vi.fn().mockResolvedValue(null),
   getCreatorStats: vi.fn().mockResolvedValue({ account: null, notes: [] }),
+  getCreatorNotes: vi.fn(),
   getCreatorNote: vi.fn(),
   getCreatorNoteQuality: vi.fn(),
 }))
@@ -45,7 +46,8 @@ vi.mock('@/api/accounts', () => ({
   getQrLoginStatus: vi.fn(),
 }))
 
-async function mountAnalytics() {
+async function mountAnalytics(options: { settle?: boolean } = {}) {
+  const settle = options.settle ?? true
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/analytics', name: 'analytics', component: Analytics }],
@@ -62,9 +64,38 @@ async function mountAnalytics() {
       },
     },
   })
-  await flushPromises()
-  await flushPromises()
+  if (settle) {
+    await flushPromises()
+    await flushPromises()
+  }
   return wrapper
+}
+
+function makePost(title: string, views: number) {
+  return {
+    id: title,
+    title,
+    views,
+    likes: 10,
+    comments: 2,
+    collects: 3,
+    shares: 1,
+    engagement_rate: 0.05,
+    published_at: new Date().toISOString(),
+  }
+}
+
+function makeDashboard(posts = [makePost('post-1', 100)]) {
+  return {
+    report: null,
+    performance: { account_id: 'acct1', posts },
+    period_summary: {
+      period: 'weekly',
+      current: { posts: 4, views: 300, likes: 20, comments: 4, collects: 6, shares: 2, engagement: 32, avg_engagement_rate: 0.05 },
+      previous: { posts: 2, views: 200, likes: 10, comments: 2, collects: 3, shares: 1, engagement: 16, avg_engagement_rate: 0.04 },
+    },
+    costs: null,
+  }
 }
 
 describe('Analytics view', () => {
@@ -103,5 +134,86 @@ describe('Analytics view', () => {
     await flushPromises()
     // expand control present because 15 > 10
     expect(wrapper.text()).toContain(tt('analytics.showAll', { count: 15 }))
+  })
+
+  it('keeps the loading skeleton visible while the first request is pending', async () => {
+    const { useAnalyticsStore } = await import('@/stores')
+    const analyticsStore = useAnalyticsStore()
+    analyticsStore.isLoading = true
+
+    const wrapper = await mountAnalytics({ settle: false })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.skeleton-card').exists()).toBe(true)
+    analyticsStore.isLoading = false
+    wrapper.unmount()
+  })
+
+  it('renders the shared error state and retries the failed request', async () => {
+    const { getDashboard } = await import('@/api/analytics')
+    ;(getDashboard as any).mockRejectedValue(new Error('offline'))
+
+    const wrapper = await mountAnalytics()
+    expect(wrapper.text()).toContain(tt('analytics.error.title'))
+    const callsBeforeRetry = (getDashboard as any).mock.calls.length
+
+    const retry = wrapper.findAll('button').find(button => button.text().includes(tt('analytics.error.retry')))
+    expect(retry).toBeDefined()
+    await retry!.trigger('click')
+    await flushPromises()
+    expect((getDashboard as any).mock.calls.length).toBe(callsBeforeRetry + 1)
+  })
+
+  it('switches period and renders server-owned deltas (AN-18)', async () => {
+    const { getDashboard } = await import('@/api/analytics')
+    ;(getDashboard as any)
+      .mockResolvedValueOnce(makeDashboard())
+      .mockResolvedValueOnce({ ...makeDashboard(), period_summary: { ...makeDashboard().period_summary, period: 'monthly' } })
+
+    const wrapper = await mountAnalytics()
+    expect(wrapper.text()).toContain('↑ 50%')
+
+    const monthly = wrapper.findAll('[aria-pressed]').find(button => button.attributes('aria-label') === tt('analytics.thisMonth'))
+    expect(monthly).toBeDefined()
+    await monthly!.trigger('click')
+    await flushPromises()
+    expect((await import('@/stores')).useAnalyticsStore().period).toBe('monthly')
+    expect(getDashboard).toHaveBeenLastCalledWith('acct1', 'monthly', 20)
+  })
+
+  it('sorts table rows by numeric views and opens the drill-down drawer (AN-18)', async () => {
+    const { getDashboard } = await import('@/api/analytics')
+    ;(getDashboard as any).mockResolvedValue(makeDashboard([makePost('low', 100), makePost('high', 900)]))
+
+    const wrapper = await mountAnalytics()
+    const viewsHeader = wrapper.findAll('[role="columnheader"] button').find(button => button.text().includes(tt('analytics.table.views')))
+    expect(viewsHeader).toBeDefined()
+    await viewsHeader!.trigger('click')
+    let rows = wrapper.findAll('[role="row"]')
+    expect(rows[0].text()).toContain('high')
+
+    await viewsHeader!.trigger('click')
+    rows = wrapper.findAll('[role="row"]')
+    expect(rows[0].text()).toContain('low')
+
+    await rows[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.body.textContent).toContain('low')
+    wrapper.unmount()
+  })
+
+  it('keeps cached rows visible and surfaces a stale-data retry notice', async () => {
+    const { getDashboard } = await import('@/api/analytics')
+    ;(getDashboard as any)
+      .mockResolvedValueOnce(makeDashboard())
+      .mockRejectedValueOnce(new Error('temporary outage'))
+
+    const wrapper = await mountAnalytics()
+    const monthly = wrapper.findAll('[aria-pressed]').find(button => button.attributes('aria-label') === tt('analytics.thisMonth'))
+    expect(monthly).toBeDefined()
+    await monthly!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain(tt('analytics.staleNotice'))
+    expect(wrapper.text()).toContain('post-1')
   })
 })

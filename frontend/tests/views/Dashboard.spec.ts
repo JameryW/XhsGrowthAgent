@@ -7,6 +7,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Dashboard from '@/views/Dashboard.vue'
+import ErrorState from '@/components/ErrorState.vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useErrorStore } from '@/stores/error'
 import i18n from '@/locales'
@@ -27,8 +28,6 @@ const stubs = {
   BloggerSelectionPanel: { template: '<div />' },
   BriefFileUpload: { template: '<div />' },
   DashboardSkeleton: { template: '<div />' },
-  ErrorState: { template: '<div />' },
-  ErrorCard: { template: '<div />' },
 }
 
 function makeRouter(query: Record<string, string> = {}, params: Record<string, string> = {}) {
@@ -145,6 +144,16 @@ describe('Dashboard view', () => {
       const { wrapper } = await mountDashboard({}, { threadId: 't-stale' })
       expect(wrapper.text()).toContain(tt('dashboard.actionButtons.resume'))
     })
+  })
+
+  it('uses the shared ErrorState for API failures', async () => {
+    const errorStore = useErrorStore()
+    errorStore.setError('api', 'Network request failed')
+    const { wrapper } = await mountDashboard()
+
+    expect(wrapper.findComponent(ErrorState).exists()).toBe(true)
+    expect(wrapper.text()).toContain('Network request failed')
+    expect(wrapper.findComponent({ name: 'ErrorCard' }).exists()).toBe(false)
   })
 
   describe('DB-06: todo chips', () => {

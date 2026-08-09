@@ -43,7 +43,10 @@ export default defineConfig({
           'axios': ['axios'],
           // INF-10: split echarts into its own chunk so Analytics/Evaluation
           // route chunks don't each bundle the full chart lib.
-          echarts: ['echarts', 'vue-echarts'],
+          // Keep the chart wrapper and the explicitly registered ECharts
+          // modules in one lazy chunk; importing the package root here would
+          // pull unused chart types back into the bundle.
+          echarts: ['vue-echarts'],
         },
       },
     },

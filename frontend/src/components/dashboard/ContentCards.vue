@@ -7,7 +7,7 @@ import RipplePanel from '@/components/RipplePanel.vue'
 import { useWorkflowStore } from '@/stores'
 import { triggerAnalytics } from '@/api/workflow'
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 const workflowStore = useWorkflowStore()
 
 // Phase order for status lookup
@@ -28,6 +28,17 @@ const getNodeStatus = (phase: string) => {
 }
 
 const isIdle = computed(() => workflowStore.currentPhase === 'idle')
+
+// Keep the loading surface useful while a phase has not produced its first
+// artifact yet: users should see what the workflow is doing, not only pulses.
+const currentPhaseLabel = computed(() => {
+  const key = `dashboard.timeline.${workflowStore.currentPhase}`
+  return te(key) ? t(key) : t('dashboard.contentCards.loading')
+})
+const currentPhaseDescription = computed(() => {
+  const key = `dashboard.timeline.${workflowStore.currentPhase}Desc`
+  return te(key) ? t(key) : t('dashboard.contentCards.loading')
+})
 
 // Detect when content_strategist is actively running (for early progress display)
 const isStrategyRunning = computed(() =>
@@ -145,20 +156,18 @@ async function handleTriggerAnalytics() {
   }
 }
 
-// Raw enums never render directly — map through i18n with a raw-value
-// fallback for values the backend adds later.
+// Raw enums never render directly — map through i18n and use a localized
+// unknown value when the backend adds a value before the locale does.
 function severityLabel(severity?: string): string {
   if (!severity) return '—'
   const key = `dashboard.contentCards.severity.${severity}`
-  const translated = t(key)
-  return translated === key ? severity : translated
+  return te(key) ? t(key) : t('common.unknownError')
 }
 
 function publishStatusLabel(status?: string): string {
   if (!status) return '—'
   const key = `dashboard.publishResult.statusValues.${status}`
-  const translated = t(key)
-  return translated === key ? status : translated
+  return te(key) ? t(key) : t('common.unknownError')
 }
 </script>
 
@@ -173,19 +182,27 @@ function publishStatusLabel(status?: string): string {
   </div>
 
   <!-- Loading state with skeleton -->
-  <div v-else-if="!hasAnyContent" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status">
-    <div v-for="i in 3" :key="i" class="rounded-xl p-3 md:p-5 bg-white/90 border border-slate-200/50 dark-explicit dark:bg-slate-900/90 dark:border-slate-700/55">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
-        <div class="flex-1 space-y-2">
-          <div class="h-4 w-24 rounded bg-slate-200 animate-pulse" />
-          <div class="h-3 w-16 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
+  <div v-else-if="!hasAnyContent" class="grid grid-cols-1 gap-3" role="status" aria-live="polite">
+    <div class="rounded-xl border border-cyan-100/70 bg-cyan-50/70 px-3 py-3 dark-explicit dark:border-cyan-500/25 dark:bg-cyan-950/30">
+      <p class="text-sm font-semibold text-cyan-700 dark:text-cyan-200">{{ t('dashboard.contentCards.loading') }}</p>
+      <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-300">
+        {{ currentPhaseLabel }} · {{ currentPhaseDescription }}
+      </p>
+    </div>
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div v-for="i in 3" :key="i" class="rounded-xl p-3 md:p-5 bg-white/90 border border-slate-200/50 dark-explicit dark:bg-slate-900/90 dark:border-slate-700/55">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
+          <div class="flex-1 space-y-2">
+            <div class="h-4 w-24 rounded bg-slate-200 animate-pulse" />
+            <div class="h-3 w-16 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
+          </div>
         </div>
-      </div>
-      <div class="space-y-2.5">
-        <div class="h-3 w-full rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
-        <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
-        <div class="h-3 w-5/6 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
+        <div class="space-y-2.5">
+          <div class="h-3 w-full rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
+          <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
+          <div class="h-3 w-5/6 rounded bg-slate-100 animate-pulse dark-explicit dark:bg-slate-700" />
+        </div>
       </div>
     </div>
   </div>
@@ -419,12 +436,12 @@ function publishStatusLabel(status?: string): string {
       </div>
 
       <!-- Draft content (user-submitted draft) -->
-      <div v-if="draftContent.text" class="dark-explicit p-3 rounded-lg bg-blue-50 border border-blue-100 mb-3 dark:bg-blue-950/40 dark:border-blue-500/30">
-        <div class="text-[10px] text-blue-500 font-medium mb-1 dark:text-blue-300">{{ t('replay.draftContent') }}</div>
-        <div v-if="draftContent.title" class="text-xs font-semibold text-blue-700 mb-0.5 dark:text-blue-200">{{ draftContent.title }}</div>
-        <div class="text-xs text-blue-600 whitespace-pre-line line-clamp-6 dark:text-blue-300/90">{{ draftContent.text }}</div>
+      <div v-if="draftContent.text" class="dark-explicit liquid-glass-teal mb-3 rounded-lg p-3">
+        <div class="text-[10px] font-medium text-teal-600 mb-1 dark:text-teal-300">{{ t('replay.draftContent') }}</div>
+        <div v-if="draftContent.title" class="text-xs font-semibold text-teal-700 mb-0.5 dark:text-teal-200">{{ draftContent.title }}</div>
+        <div class="text-xs text-teal-700 whitespace-pre-line line-clamp-6 dark:text-teal-200/90">{{ draftContent.text }}</div>
         <div v-if="draftContent.hashtags?.length" class="flex flex-wrap gap-1 mt-1">
-          <span v-for="tag in draftContent.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300">#{{ tag }}</span>
+          <span v-for="tag in draftContent.hashtags" :key="tag" class="dark-explicit rounded bg-teal-100 px-1.5 py-0.5 text-[10px] text-teal-700 dark:bg-teal-900/50 dark:text-teal-200">#{{ tag }}</span>
         </div>
       </div>
 
@@ -467,11 +484,11 @@ function publishStatusLabel(status?: string): string {
       <div v-if="hasContentVersions">
         <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('replay.contentVersions') }} ({{ contentVersions.length }})</div>
         <div class="space-y-2">
-          <div v-for="(ver, i) in contentVersions" :key="ver.version_id || i" class="dark-explicit p-2.5 rounded-lg border" :class="ver.version_type === 'A' ? 'bg-rose-50 border-rose-100 dark:bg-rose-950/40 dark:border-rose-500/30' : ver.version_type === 'B' ? 'bg-blue-50 border-blue-100 dark:bg-blue-950/40 dark:border-blue-500/30' : 'bg-emerald-50 border-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-500/30'">
+          <div v-for="(ver, i) in contentVersions" :key="ver.version_id || i" class="dark-explicit rounded-lg p-2.5" :class="ver.version_type === 'A' ? 'liquid-glass-rose' : ver.version_type === 'B' ? 'liquid-glass-teal' : 'liquid-glass-violet'">
             <div class="flex items-center justify-between mb-1">
               <div class="flex items-center gap-1.5">
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-200 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200' : ver.version_type === 'B' ? 'bg-blue-200 text-blue-700 dark:bg-blue-900/60 dark:text-blue-200' : 'bg-emerald-200 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
-                <span class="text-xs font-semibold" :class="ver.version_type === 'A' ? 'text-rose-700 dark:text-rose-200' : ver.version_type === 'B' ? 'text-blue-700 dark:text-blue-200' : 'text-emerald-700 dark:text-emerald-200'">{{ ver.title }}</span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-200 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200' : ver.version_type === 'B' ? 'bg-teal-200 text-teal-700 dark:bg-teal-900/60 dark:text-teal-200' : 'bg-violet-200 text-violet-700 dark:bg-violet-900/60 dark:text-violet-200'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
+                <span class="text-xs font-semibold" :class="ver.version_type === 'A' ? 'text-rose-700 dark:text-rose-200' : ver.version_type === 'B' ? 'text-teal-700 dark:text-teal-200' : 'text-violet-700 dark:text-violet-200'">{{ ver.title }}</span>
               </div>
               <span v-if="ver.predicted_score" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark-explicit dark:bg-slate-800 dark:text-slate-400">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
             </div>
