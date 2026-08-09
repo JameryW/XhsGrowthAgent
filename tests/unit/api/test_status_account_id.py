@@ -72,7 +72,11 @@ class TestStatusEndpointAccountId:
                 return_value="acct-live",
             ),
             patch("backend.api.routes.workflow.is_pool_ready", return_value=False),
-            patch("backend.api.routes.workflow._db_upsert", new_callable=AsyncMock),
+            patch(
+                "backend.api.routes.workflow._db_upsert",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             resp = _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
 

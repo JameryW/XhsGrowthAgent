@@ -62,11 +62,14 @@ class TestDbUpsertSkipUnchanged:
             patch(_DB_UPDATE, AsyncMock()) as update_mock,
             patch(_DB_CREATE, AsyncMock()) as create_mock,
         ):
-            await runner_module._db_upsert(
+            ret = await runner_module._db_upsert(
                 "t1", phase="scouting", status="running", progress_percent=10
             )
         update_mock.assert_not_called()
         create_mock.assert_not_called()
+        # Returns the fetched row so /status can resolve label without a second
+        # db_get round trip.
+        assert ret is existing
 
     @pytest.mark.asyncio
     async def test_writes_when_field_differs(self):
@@ -76,8 +79,11 @@ class TestDbUpsertSkipUnchanged:
             patch(_DB_GET, AsyncMock(return_value=existing)),
             patch(_DB_UPDATE, AsyncMock()) as update_mock,
         ):
-            await runner_module._db_upsert("t1", progress_percent=20)
+            ret = await runner_module._db_upsert("t1", progress_percent=20)
         update_mock.assert_awaited_once_with("t1", progress_percent=20)
+        # Pre-write row returned; label unchanged across the update is still
+        # authoritative for callers.
+        assert ret is existing
 
     @pytest.mark.asyncio
     async def test_creates_when_no_existing_row(self):
@@ -85,11 +91,13 @@ class TestDbUpsertSkipUnchanged:
             patch(_POOL_READY, return_value=True),
             patch(_DB_GET, AsyncMock(return_value=None)),
             patch(_DB_UPDATE, AsyncMock()) as update_mock,
-            patch(_DB_CREATE, AsyncMock()) as create_mock,
+            patch(_DB_CREATE, AsyncMock(side_effect=lambda row: row)) as create_mock,
         ):
-            await runner_module._db_upsert("t1", phase="scouting", status="running")
+            ret = await runner_module._db_upsert("t1", phase="scouting", status="running")
         update_mock.assert_not_called()
         create_mock.assert_awaited_once()
+        assert isinstance(ret, WorkflowRow)
+        assert ret.thread_id == "t1"
 
     @pytest.mark.asyncio
     async def test_noop_when_pool_not_ready(self):
@@ -97,8 +105,18 @@ class TestDbUpsertSkipUnchanged:
             patch(_POOL_READY, return_value=False),
             patch(_DB_GET, AsyncMock()) as get_mock,
         ):
-            await runner_module._db_upsert("t1", phase="scouting")
+            ret = await runner_module._db_upsert("t1", phase="scouting")
         get_mock.assert_not_called()
+        assert ret is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_exception(self):
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, AsyncMock(side_effect=RuntimeError("boom"))),
+        ):
+            ret = await runner_module._db_upsert("t1", phase="scouting")
+        assert ret is None
 
 
 class TestSaveHistoryFileSkipUnchanged:
