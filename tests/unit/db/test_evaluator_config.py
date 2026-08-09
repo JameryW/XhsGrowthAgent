@@ -7,6 +7,7 @@ insert_sample, export_samples. No real PostgreSQL needed.
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -115,16 +116,73 @@ async def test_load_weights_scales_complete_legacy_panel_when_altruism_is_new():
 
 
 @pytest.mark.asyncio
-async def test_load_weights_falls_back_on_db_error():
+async def test_load_weights_falls_back_on_db_error(caplog):
     """DB exception → defaults, no raise (non-blocking contract)."""
     from backend.db.evaluator_config import EvaluatorWeights, load_weights
 
     pool = MagicMock()
     pool.connection = MagicMock(side_effect=RuntimeError("db down"))
-    with patch("backend.db.evaluator_config.get_pool", return_value=pool):
+    with (
+        patch("backend.db.evaluator_config.get_pool", return_value=pool),
+        caplog.at_level(logging.WARNING, logger="xhs_growth.db.evaluator_config"),
+    ):
         w = await load_weights("acct1")
     assert isinstance(w, EvaluatorWeights)
     assert w.pass_threshold == 70.0  # default
+    assert "RuntimeError: db down" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_train_weights_fetch_failure_logs_exception_type(caplog):
+    """Sample-fetch failures keep the training fallback and identify their type."""
+    from backend.db.evaluator_config import train_weights
+
+    with (
+        patch(
+            "backend.db.evaluator_config.fetch_labeled_samples",
+            AsyncMock(side_effect=ConnectionError("sample DB unavailable")),
+        ),
+        caplog.at_level(logging.WARNING, logger="xhs_growth.db.evaluator_config"),
+    ):
+        report = await train_weights("acct1")
+
+    assert report.n_samples == 0
+    assert "ConnectionError: sample DB unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_train_weights_apply_failure_logs_exception_type(caplog):
+    """Weight-write failures keep the report unapplied and identify their type."""
+    from backend.db.evaluator_config import DEFAULT_DIMENSION_WEIGHTS, train_weights
+
+    with (
+        patch(
+            "backend.db.evaluator_config.fetch_labeled_samples",
+            AsyncMock(return_value=[object()] * 20),
+        ),
+        patch(
+            "backend.db.evaluator_config.fit_weights",
+            return_value=MagicMock(
+                account_id=None,
+                n_samples=20,
+                fitted_weights=dict(DEFAULT_DIMENSION_WEIGHTS),
+                pass_threshold=72.0,
+                reject_threshold=48.0,
+                r_squared=0.5,
+                note="fitted",
+                applied=False,
+            ),
+        ),
+        patch(
+            "backend.db.evaluator_config._set_weights_batch",
+            AsyncMock(side_effect=TimeoutError("weight DB write timed out")),
+        ),
+        caplog.at_level(logging.WARNING, logger="xhs_growth.db.evaluator_config"),
+    ):
+        report = await train_weights("acct1", apply=True)
+
+    assert report.applied is False
+    assert "TimeoutError: weight DB write timed out" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -734,7 +792,7 @@ async def test_maybe_evolve_reentry_guard_skips_concurrent():
 
 
 @pytest.mark.asyncio
-async def test_maybe_evolve_degrades_on_failure():
+async def test_maybe_evolve_degrades_on_failure(caplog):
     """Any inner exception → action=error, guard released, no raise."""
     from backend.db.evaluator_config import maybe_evolve
 
@@ -744,10 +802,12 @@ async def test_maybe_evolve_degrades_on_failure():
             AsyncMock(side_effect=RuntimeError("db down")),
         ),
         patch("backend.db.evaluator_config.train_weights", AsyncMock()) as tw,
+        caplog.at_level(logging.WARNING, logger="xhs_growth.db.evaluator_config"),
     ):
         report = await maybe_evolve("acct1")
     assert report["action"] == "error"
     assert "db down" in report["reason"]
+    assert "RuntimeError: db down" in caplog.text
     tw.assert_not_awaited()
     # guard must be released so a later run can proceed
     from backend.db.evaluator_config import _EVOLVING
