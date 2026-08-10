@@ -305,7 +305,7 @@ XHS_CHROME_MEMORY_WARNING_MB=0
 # 默认关闭 crashpad helper 进程以减少每个 Chrome 的进程数；诊断时设为 1
 # XHS_CHROME_CRASH_REPORTING=1
 # Creator Center background import interval (hours; 0 disables the scheduler)
-CREATOR_STATS_SYNC_INTERVAL_HOURS=36
+CREATOR_STATS_SYNC_INTERVAL_HOURS=24
 # 可选：显式指定 Chrome binary 路径（默认自动探测 google-chrome > google-chrome-stable > chromium）
 # XHS_CHROME_BIN=/usr/bin/google-chrome
 ```

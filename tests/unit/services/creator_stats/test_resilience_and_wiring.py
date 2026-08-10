@@ -181,6 +181,15 @@ def test_normalize_bundle_keeps_agreeing_note_count():
     assert bundle.account.note_count == 1
 
 
+def test_normalize_bundle_empty_note_list_overrides_stale_overview_count():
+    bundle = normalize_bundle(
+        {"view_count": 5, "note_count": 14},
+        [],
+        "acc_note_count_empty",
+    )
+    assert bundle.account.note_count == 0
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 

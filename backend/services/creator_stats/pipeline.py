@@ -52,6 +52,30 @@ _ACTIVE_ACCOUNTS_SYNC_LOCK_KEY = "xhs_growth.creator_stats.active_accounts"
 _post_login_sync_once: set[str] = set()
 
 
+async def _close_client_safely(client: Any, account_id: str) -> None:
+    """Release a fetch client without masking the fetch result.
+
+    CDP cleanup is best effort. A browser disconnect during cleanup must not
+    turn an already completed fetch into a failed sync or hide the original
+    fetch exception from the caller.
+    """
+    close = getattr(client, "aclose", None)
+    if close is None:
+        return
+    try:
+        await close()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "creator stats client cleanup failed for %s: %s: %s",
+            account_id,
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
+
+
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
     if raw is None or str(raw).strip() == "":
@@ -670,13 +694,14 @@ async def sync_from_creator_center(
             )
         else:
             client = CreatorStatsClient(cookie=cookie)
-    prior_note_count = 0
+    prior_note_count: int | None = None
     try:
         from backend.db import creator_stats as stats_db
 
         prior = await stats_db.get_account_stats(account_id)
-        if prior is not None:
-            prior_note_count = max(0, int(getattr(prior, "note_count", 0) or 0))
+        prior_note_count = (
+            max(0, int(getattr(prior, "note_count", 0) or 0)) if prior is not None else 0
+        )
     except Exception:
         logger.debug("prior note_count lookup failed for %s", account_id, exc_info=True)
 
@@ -704,15 +729,36 @@ async def sync_from_creator_center(
             error_code=classify_sync_error(str(e)),
         )
     finally:
-        # CDP transport 连接需显式释放；httpx/fixture 的 aclose 是 no-op。
-        await client.aclose()
+        # CDP transport 连接需显式释放；cleanup must not mask fetch errors.
+        await _close_client_safely(client, account_id)
 
     # Only persist after successful fetch/normalize
+    if (prior_note_count is None or prior_note_count > 0) and not bundle.notes:
+        # A logged-in shell or partial Creator Center response can look like a
+        # valid empty snapshot. Do not delete the known-good local note set
+        # before the soft-risk gate gets a chance to classify that response.
+        logger.warning(
+            "creator stats empty-shell response for %s; preserving prior note snapshot",
+            account_id,
+        )
+        result = SyncResult(
+            account_id=account_id,
+            source="creator_statistics",
+            account_synced=True,
+            niche_resolution={"message": "创作者中心返回空笔记列表，已保留上次有效快照。"},
+        )
+        return _mark_empty_shell_soft_risk(
+            result,
+            # Unknown prior state is treated conservatively as an existing
+            # snapshot so a transient DB read failure cannot permit deletion.
+            prior_note_count=max(1, prior_note_count or 0),
+            fetched_note_count=0,
+        )
     result = await import_bundle(bundle, store=store, run_creative_analysis=run_creative_analysis)
     result.source = "creator_statistics"
     return _mark_empty_shell_soft_risk(
         result,
-        prior_note_count=prior_note_count,
+        prior_note_count=prior_note_count or 0,
         fetched_note_count=len(bundle.notes or []),
     )
 
@@ -789,7 +835,7 @@ async def sync_account_stats(
                 error_code=classify_sync_error(str(e)),
             )
         finally:
-            await client.aclose()
+            await _close_client_safely(client, account_id)
         result = await import_bundle(
             bundle, store=store, run_creative_analysis=run_creative_analysis
         )

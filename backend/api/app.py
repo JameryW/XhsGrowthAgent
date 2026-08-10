@@ -70,6 +70,12 @@ def _finite_float(value: Any, default: float) -> float:
     return parsed if math.isfinite(parsed) else default
 
 
+def _scheduler_retry_seconds(env_name: str, default_minutes: float) -> float:
+    """Return a bounded retry delay for non-crawl scheduler skips."""
+    minutes = max(1.0, _finite_float(os.environ.get(env_name), default_minutes))
+    return minutes * 60.0
+
+
 def _weekday_skip_factor(weekday: int) -> float:
     """返回该星期几对应的跳过概率权重；越界输入按 1.0 处理。"""
     if 0 <= weekday < len(_WEEKDAY_SKIP_FACTORS):
@@ -710,6 +716,7 @@ async def _creator_stats_scheduler(
         ran_crawl = False
         live_success = False
         soft_risk_hit = False
+        retry_after_seconds: float | None = None
         success_history = _prune_success_timestamps(success_history, now=started_at)
         risk_failures = _prune_success_timestamps(risk_failures, now=started_at, days=3)
         soft_risk_signals = _prune_success_timestamps(soft_risk_signals, now=started_at, days=3)
@@ -779,6 +786,7 @@ async def _creator_stats_scheduler(
             cdp_ready, cdp_reason = await _active_cdp_ready()
             page_ok, page_count, page_reason = await _active_page_budget_ok()
             if fresh:
+                retry_after_seconds = max(60.0, float(retry_s or 0))
                 state.update(
                     {
                         "status": "skipped",
@@ -794,6 +802,7 @@ async def _creator_stats_scheduler(
                     retry_s,
                 )
             elif auth_blocked:
+                retry_after_seconds = max(60.0, float(auth_retry or 0))
                 state.update(
                     {
                         "status": "skipped",
@@ -809,6 +818,9 @@ async def _creator_stats_scheduler(
             elif not cdp_ready:
                 # Infrastructure gap — do not open a doomed browser session and
                 # do not trip the risk circuit (CDP down ≠ platform ban).
+                retry_after_seconds = _scheduler_retry_seconds(
+                    "CREATOR_STATS_INFRA_RETRY_MINUTES", 30.0
+                )
                 state.update(
                     {
                         "status": "skipped",
@@ -823,6 +835,9 @@ async def _creator_stats_scheduler(
                 )
             elif not page_ok:
                 # Too many open tabs after hygiene — skip rather than pile on.
+                retry_after_seconds = _scheduler_retry_seconds(
+                    "CREATOR_STATS_PAGE_BUDGET_RETRY_MINUTES", 15.0
+                )
                 state.update(
                     {
                         "status": "skipped",
@@ -838,6 +853,9 @@ async def _creator_stats_scheduler(
                 )
             elif await _active_cdp_session_busy():
                 # Publisher/engagement/login already attached — do not queue a crawl.
+                retry_after_seconds = _scheduler_retry_seconds(
+                    "CREATOR_STATS_CDP_BUSY_RETRY_MINUTES", 10.0
+                )
                 holder = None
                 with contextlib.suppress(Exception):
                     from backend.db.accounts import get_account_cdp_endpoint, get_active_account
@@ -902,6 +920,7 @@ async def _creator_stats_scheduler(
                         "status": "running",
                         "last_started_at": datetime.now(UTC).isoformat(),
                         "last_error": None,
+                        "last_skip_reason": None,
                         "last_period": period,
                         "prefer_light": prefer_light,
                         "run_count": int(state.get("run_count") or 0) + 1,
@@ -1119,7 +1138,7 @@ async def _creator_stats_scheduler(
         # 2. 间隔按 0.65-1.75× 三角分布取值（峰值 1×，模拟人的习惯节律）；
         # active_window 再把落点限制在人类活动时段。
         # 周内已有成功爬取 / 风险压力时抬高 skip 概率。
-        if quiet_cycles_remaining <= 0:
+        if quiet_cycles_remaining <= 0 and retry_after_seconds is None:
             eff_skip = _pressure_skip_day_chance(
                 _effective_skip_day_chance(skip_day_chance, len(success_history)),
                 pressure,
@@ -1132,9 +1151,19 @@ async def _creator_stats_scheduler(
                     state["last_skip_armed_reason"] = "habit_skip"
                     await _persist_anti_risk()
         # Circuit pause: if open, sleep at least until pause_until.
-        candidate = datetime.now(UTC) + timedelta(
-            seconds=interval_seconds * random.triangular(0.65, 1.75, 1.0) * backoff
-        )
+        if retry_after_seconds is not None:
+            # Preflight skips do not open a browser, so retry the temporary
+            # infrastructure/session condition soon instead of sleeping for a
+            # full daily crawl interval. Keep a small jitter to avoid a fleet
+            # of workers probing on one exact minute.
+            retry_jitter = random.uniform(0.9, 1.15)
+            candidate = datetime.now(UTC) + timedelta(seconds=retry_after_seconds * retry_jitter)
+            state["next_run_reason"] = "preflight_retry"
+        else:
+            state.pop("next_run_reason", None)
+            candidate = datetime.now(UTC) + timedelta(
+                seconds=interval_seconds * random.triangular(0.65, 1.75, 1.0) * backoff
+            )
         if pause_until and _circuit_pause_active(pause_until):
             try:
                 pause_ts = datetime.fromisoformat(pause_until.replace("Z", "+00:00"))
