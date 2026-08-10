@@ -20,6 +20,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -314,15 +315,19 @@ def wait_for_motion_settle(page: Page) -> None:
     # Give IntersectionObserver and the first Vue paint one frame to enqueue
     # reveal transitions before checking the Web Animations timeline.
     page.wait_for_timeout(50)
-    page.wait_for_function(
-        """() => document.getAnimations().every(animation => {
-          const timing = animation.effect?.getComputedTiming?.();
-          return animation.playState === 'finished'
-            || animation.playState === 'idle'
-            || timing?.iterations === Infinity;
-        })""",
-        timeout=3_000,
-    )
+    # Animation settling is presentation-only. Under a busy headed browser the
+    # compositor can miss the finite-animation deadline; continue with the DOM,
+    # axe and interaction assertions instead of dropping the page.
+    with contextlib.suppress(PlaywrightTimeoutError):
+        page.wait_for_function(
+            """() => document.getAnimations().every(animation => {
+              const timing = animation.effect?.getComputedTiming?.();
+              return animation.playState === 'finished'
+                || animation.playState === 'idle'
+                || timing?.iterations === Infinity;
+            })""",
+            timeout=3_000,
+        )
 
 
 def ensure_step_list_visible(page: Page) -> None:
@@ -331,7 +336,15 @@ def ensure_step_list_visible(page: Page) -> None:
     content = page.locator("#replay-steps-content:visible").first
     if content.count() > 0:
         return
-    page.locator('button[aria-controls="replay-steps-content"]:visible').first.click()
+    toggle = page.locator('button[aria-controls="replay-steps-content"]:visible').first
+    try:
+        toggle.click()
+    except PlaywrightTimeoutError:
+        # Chromium can report a click timeout after dispatching the Vue update while
+        # the route-keyed mobile DOM is settling. Treat the resulting visible state
+        # as success; only force a second dispatch when the first event did not open it.
+        if page.locator("#replay-steps-content:visible").count() == 0:
+            toggle.click(force=True)
     page.locator("#replay-steps-content:visible").first.wait_for(state="visible")
     wait_for_motion_settle(page)
 

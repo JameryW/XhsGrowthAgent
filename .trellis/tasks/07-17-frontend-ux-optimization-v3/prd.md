@@ -418,6 +418,11 @@ serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导�
   `Dashboard-CXy8coBo.js`、`EvaluationView-CV6bM7A3.js` 与本地最终构建逐字节同哈希，并含本轮
   UX 标记；但运行容器的后端 `evaluation.py` 尚无当前提交新增的 `_score_config`/维度权重解析实现。
   因此前端构建已部署不能等同于完整当前提交已部署，仍不能作为发布总闸证据。
+- `scripts/acceptance/public_ux_audit.py` 增加了移动抽屉点击的状态确认重试，并将动画稳定等待
+  限定为非阻断的展示准备步骤。修正后在宿主网络/X server 上重跑全量公开页矩阵：96 个页面组合、
+  axe serious/critical=0、功能失败=0、性能预算失败=0，报告 `passed=true`；warm p75 为
+  428.95ms、缓存步骤切换 p75 为 22.45ms。该运行仍使用 `--allow-existing-public`，所以
+  `live_empty_state_verified=false`，不能替代严格空态验收。
 
 上述是代码与本地自动化收尾，不改变发布总闸：真实部署三档明暗主题人工走查、严格 live
 empty-state、真实漏斗埋点 owner/运营验收以及发布方 Lighthouse/截图归档仍需外部执行。因此
