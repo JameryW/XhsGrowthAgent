@@ -165,16 +165,9 @@ cmd_start() {
     podman network exists "$NET" 2>/dev/null || podman network create "$NET"
 
     # Chrome runs on the host while the backend runs in this bridge network.
-    # Make the documented host.containers.internal route explicit instead of
-    # allowing the backend to fall back to an unreachable 127.0.0.1 endpoint.
-    HOST_GATEWAY=$(podman network inspect "$NET" --format '{{range .Subnets}}{{.Gateway}}{{end}}')
-    HOST_GATEWAY_ARGS=()
-    if [[ -n "$HOST_GATEWAY" ]]; then
-        HOST_GATEWAY_ARGS=(--add-host "host.containers.internal:${HOST_GATEWAY}")
-        echo ">>> 配置宿主 Chrome 网关: host.containers.internal -> $HOST_GATEWAY"
-    else
-        echo "警告: 无法解析 $NET 网关，后端 CDP 连接可能不可用" >&2
-    fi
+    # Podman injects the reachable host.containers.internal mapping. Do not
+    # replace it with the bridge gateway: rootless Podman uses a separate host
+    # address, while the network gateway rejects host-bound CDP connections.
 
     # HF embedding model cache on the host — seeded from the image on first run,
     # then persists across rebuilds. (Image also bakes a seed copy as fallback.)
@@ -269,7 +262,6 @@ LLMEOF
         --network "$NET" \
         --restart always \
         -p 8889:8889 \
-        "${HOST_GATEWAY_ARGS[@]}" \
         --add-host "postgres-xhs:${POSTGRES_IP}" \
         --add-host "ripple-service:${RIPPLE_IP}" \
         -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
