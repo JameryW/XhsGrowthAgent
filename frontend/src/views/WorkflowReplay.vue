@@ -252,7 +252,7 @@ async function loadMoreSteps(): Promise<boolean> {
   } catch {
     if (!abortController.signal.aborted && requestToken === manifestRequestToken) {
       loadMoreError.value = true
-      trackInteraction('replay_load_more_error', { view: viewMode.value })
+      trackInteraction('replay_load_more_error', { source: 'replay', view: viewMode.value })
     }
     return false
   } finally {
@@ -327,6 +327,7 @@ async function loadStep(stepId: string | null) {
     selectedStep.value = cached
     detailLoading.value = false
     trackInteraction(firstResultTracked.value ? 'replay_select_to_render' : 'replay_first_result_visible', {
+      source: 'replay',
       view: viewMode.value,
       cached: true,
       duration_ms: 0,
@@ -341,6 +342,7 @@ async function loadStep(stepId: string | null) {
     writeCachedStep(stepId, technical, manifestStep)
     detailLoading.value = false
     trackInteraction(firstResultTracked.value ? 'replay_select_to_render' : 'replay_first_result_visible', {
+      source: 'replay',
       view: viewMode.value,
       cached: false,
       duration_ms: 0,
@@ -360,6 +362,7 @@ async function loadStep(stepId: string | null) {
     writeCachedStep(stepId, technical, nextStep)
     const duration = typeof performance !== 'undefined' ? Math.round(performance.now() - startedAt) : undefined
     trackInteraction(firstResultTracked.value ? 'replay_select_to_render' : 'replay_first_result_visible', {
+      source: 'replay',
       view: viewMode.value,
       duration_ms: duration,
     })
@@ -416,12 +419,19 @@ async function loadReplay() {
     }
     selectedStepId.value = first?.public_id || null
     if (first) await loadStep(first.public_id)
-    trackInteraction('replay_view', { view: viewMode.value, has_steps: Boolean(first) })
+    trackInteraction('replay_view', {
+      source: 'replay',
+      view: viewMode.value,
+      has_steps: Boolean(first),
+    })
   } catch (error: any) {
     if (abortController.signal.aborted || requestToken !== manifestRequestToken) return
     manifestError.value = true
     notFound.value = isNotFoundError(error)
-    trackInteraction('replay_load_error', { error_type: notFound.value ? 'not_found' : 'manifest' })
+    trackInteraction('replay_load_error', {
+      source: 'replay',
+      error_type: notFound.value ? 'not_found' : 'manifest',
+    })
   } finally {
     if (manifestAbortController === abortController) {
       manifestAbortController = null
@@ -442,8 +452,17 @@ async function retryReplay() {
 async function selectStep(step: PublicReplayStep, method: 'click' | 'keys' | 'prev' | 'next' = 'click') {
   if (step.public_id === selectedStepId.value && selectedStep.value) return
   selectedStepId.value = step.public_id
-  trackInteraction('replay_step_select', { view: viewMode.value, has_result: step.has_result })
-  trackInteraction('replay_step_navigate', { method, has_result: step.has_result })
+  trackInteraction('replay_step_select', {
+    source: 'replay',
+    view: viewMode.value,
+    has_result: step.has_result,
+  })
+  trackInteraction('replay_step_navigate', {
+    source: 'replay',
+    mode: caseMode.value,
+    method,
+    has_result: step.has_result,
+  })
   await loadStep(step.public_id)
   await nextTick()
   // RP-06: move focus to the result title so keyboard users hear/see the update.
@@ -464,7 +483,7 @@ async function toggleView(mode: 'key' | 'all') {
   }
   if (viewMode.value === mode) return
   viewMode.value = mode
-  trackInteraction('replay_view_mode_change', { view: mode })
+  trackInteraction('replay_view_mode_change', { source: 'replay', view: mode })
   await loadReplay()
 }
 
@@ -474,7 +493,12 @@ function goBack() {
 }
 
 function goCreate() {
-  trackInteraction('replay_cta_click', { auth_state: isAuthenticated.value ? 'authenticated' : 'guest', position: 'hero' })
+  trackInteraction('replay_cta_click', {
+    source: 'replay',
+    mode: caseMode.value,
+    auth_state: isAuthenticated.value ? 'authenticated' : 'guest',
+    position: 'hero',
+  })
   if (isAuthenticated.value) void router.push({ path: '/start', query: { source: 'replay', mode: caseMode.value } })
   else void router.push({ name: 'login', query: { redirect: `/start?source=replay&mode=${caseMode.value}` } })
 }
@@ -483,7 +507,12 @@ function goCreate() {
 // workspace rather than starting a new creation. Kept distinct from the main
 // /start CTA so the "回到工作台" label never points at /start (PRD D2).
 function goWorkspace() {
-  trackInteraction('replay_cta_click', { auth_state: isAuthenticated.value ? 'authenticated' : 'guest', position: 'nav' })
+  trackInteraction('replay_cta_click', {
+    source: 'replay',
+    mode: caseMode.value,
+    auth_state: isAuthenticated.value ? 'authenticated' : 'guest',
+    position: 'nav',
+  })
   if (isAuthenticated.value) void router.push({ name: 'dashboard' })
   else void router.push({ name: 'login', query: { redirect: '/dashboard' } })
 }
@@ -556,10 +585,11 @@ async function copyLink(step = false) {
       })
       state.value = 'success'
       trackInteraction(step ? 'replay_step_link_copy' : 'replay_case_link_copy', {
+        source: 'replay',
         has_step: step,
         method: 'share',
       })
-      trackInteraction('replay_share', { has_step: step, method: 'share' })
+      trackInteraction('replay_share', { source: 'replay', has_step: step, method: 'share' })
       shareResetTimer = setTimeout(() => {
         if (state.value === 'success') state.value = 'idle'
       }, 2200)
@@ -577,17 +607,18 @@ async function copyLink(step = false) {
       href.length > 72 ? `${href.slice(0, 72)}…` : href,
     )
     trackInteraction(step ? 'replay_step_link_copy' : 'replay_case_link_copy', {
+      source: 'replay',
       has_step: step,
       method: 'clipboard',
     })
-    trackInteraction('replay_share', { has_step: step, method: 'clipboard' })
+    trackInteraction('replay_share', { source: 'replay', has_step: step, method: 'clipboard' })
     shareResetTimer = setTimeout(() => {
       if (state.value === 'success') state.value = 'idle'
     }, 2200)
   } catch {
     state.value = 'error'
     toastStore.warning(t('replay.publicShareFailed'), href)
-    trackInteraction('replay_share_error', { has_step: step })
+    trackInteraction('replay_share_error', { source: 'replay', has_step: step })
     shareResetTimer = setTimeout(() => {
       if (state.value === 'error') state.value = 'idle'
     }, 2800)
@@ -604,7 +635,10 @@ function phaseImportance(phase: string | undefined): string {
 
 function toggleResultExpanded() {
   resultExpanded.value = !resultExpanded.value
-  trackInteraction('replay_result_expand', { has_result: Boolean(selectedStep.value?.has_result) })
+  trackInteraction('replay_result_expand', {
+    source: 'replay',
+    has_result: Boolean(selectedStep.value?.has_result),
+  })
 }
 
 async function copyResult() {
@@ -613,7 +647,7 @@ async function copyResult() {
   try {
     await navigator.clipboard.writeText(JSON.stringify(result, null, 2))
     copyState.value = 'success'
-    trackInteraction('replay_result_copy', { has_result: true })
+    trackInteraction('replay_result_copy', { source: 'replay', has_result: true })
     setTimeout(() => { copyState.value = 'idle' }, 2000)
   } catch {
     copyState.value = 'error'

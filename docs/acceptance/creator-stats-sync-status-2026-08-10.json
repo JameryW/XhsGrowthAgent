@@ -1,0 +1,40 @@
+{
+  "checked_at": "2026-08-10T16:16:38+00:00",
+  "scope": "production creator-stats scheduler and persisted snapshot",
+  "deployment": {
+    "database_mode": "postgres",
+    "memory_store_backend": "postgres",
+    "semantic_index": true,
+    "post_deploy_health": "degraded",
+    "health_degradation_reason": "creator_stats_scheduler has no completed run",
+    "post_deploy_database_check": "postgres",
+    "post_deploy_memory_store_check": "postgres"
+  },
+  "scheduler": {
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_count": 0,
+    "last_finished_at": null,
+    "last_succeeded": 0,
+    "last_failed": 0,
+    "last_skip_reason": null,
+    "next_run_at": "2026-08-11T05:28:55.318176+00:00",
+    "next_run_at_local": "2026-08-11T13:28:55.318176+08:00",
+    "observed_health_status": "warning",
+    "observed_health_message": "定时同步尚无完成记录"
+  },
+  "persisted_snapshot": {
+    "creator_account_stats_rows": 2,
+    "creator_note_stats_rows": 21,
+    "latest_synced_at": "2026-08-02T09:02:46.510969+00:00",
+    "age_hours_approx": 192.45
+  },
+  "preflight": {
+    "cdp_endpoint": "http://172.19.57.184:9224",
+    "probe_result": "ok",
+    "probe_method": "container probe_port with Chrome Host header compatibility",
+    "scheduler_behavior": "first scheduled run is pending; host Chrome is reachable"
+  },
+  "conclusion": "pending_first_scheduled_run",
+  "conclusion_zh": "Postgres、持久化和绑定账号 CDP 已恢复；首次调度尚未到达，当前仍没有成功同步完成记录。"
+}

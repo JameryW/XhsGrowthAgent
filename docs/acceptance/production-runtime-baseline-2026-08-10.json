@@ -1,0 +1,89 @@
+{
+  "date": "2026-08-10",
+  "target": "localhost/xhs-growth:latest",
+  "scope": "read-only production runtime probe for Directions 3/4",
+  "probe_window": "single active window on 2026-08-10",
+  "http_probe": {
+    "status": {
+      "path": "/api/workflow/status/{thread_id}",
+      "requests": 100,
+      "http_200": 100,
+      "p50_ms": 5.26,
+      "p95_ms": 6.89,
+      "avg_ms": 5.75
+    },
+    "list": {
+      "path": "/api/workflow/list?limit=20",
+      "requests": 50,
+      "http_200": 50,
+      "p50_ms": 2.88,
+      "p95_ms": 6.77,
+      "avg_ms": 4.0
+    },
+    "account_totals": {
+      "path": "/api/workflow/account-totals",
+      "requests": 50,
+      "http_200": 50,
+      "p50_ms": 2.39,
+      "p95_ms": 3.47,
+      "avg_ms": 2.61
+    },
+    "health": {
+      "path": "/api/system/health",
+      "requests": 50,
+      "http_200": 50,
+      "p50_ms": 1.67,
+      "p95_ms": 1.94,
+      "avg_ms": 2.59
+    }
+  },
+  "structured_latency_logs_last_30m": {
+    "/account-totals": {
+      "n": 50,
+      "p50_ms": 0.7,
+      "p95_ms": 1.4,
+      "avg_ms": 0.7,
+      "segments_p50_ms": {"db": 0.7}
+    },
+    "/list": {
+      "n": 50,
+      "p50_ms": 0.5,
+      "p95_ms": 0.9,
+      "avg_ms": 0.9,
+      "segments_p50_ms": {"db": 0.5, "serialize": 0.0}
+    },
+    "/status": {
+      "n": 21,
+      "p50_ms": 3.1,
+      "p95_ms": 14.8,
+      "avg_ms": 7.9,
+      "segments_p50_ms": {"aget_state": 1.6, "db": 0.6, "serialize": 0.2}
+    }
+  },
+  "health_snapshot": {
+    "status": "ok",
+    "database": "ok",
+    "memory_store": "ok",
+    "ripple_cas": "ok",
+    "risk_control": "ok",
+    "search_api": "ok",
+    "llm_providers": "ok"
+  },
+  "runtime_snapshot": {
+    "restart_count": 0,
+    "oom_killed": false,
+    "process_rss_kb": 28820,
+    "process_vsz_kb": 2059684,
+    "container_stats_note": "podman stats unavailable in rootless mode without cgroups v2"
+  },
+  "errors": {
+    "matching_log_lines_last_30m": 1,
+    "observed": "one transient Ripple ReadTimeout health-check log; the final health snapshot recovered to ok",
+    "probe_http_5xx": 0
+  },
+  "limitations": [
+    "This is a current single-window baseline, not a longitudinal SLO or historical failure-rate series.",
+    "The probe is read-only and does not prove workflow content quality or provider billing correctness.",
+    "Release owner acceptance is still required before treating this evidence as a formal production SLO baseline."
+  ]
+}

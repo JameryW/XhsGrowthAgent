@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-10",
+  "archive_dir": "/tmp/public-ux-screenshot-archive-20260810-4",
+  "manifest": "/tmp/public-ux-screenshot-archive-20260810-4/manifest.json",
+  "record_count": 18,
+  "viewports": [
+    {"width": 390, "height": 844},
+    {"width": 768, "height": 1024},
+    {"width": 1440, "height": 900}
+  ],
+  "themes": ["light", "dark"],
+  "surfaces": [
+    "live-showcase-empty",
+    "fixture-showcase",
+    "fixture-replay"
+  ],
+  "checks": {
+    "all_expected_records_present": true,
+    "horizontal_overflow_records": 0,
+    "live_showcase_case_cards": 0,
+    "fixture_showcase_case_cards": 1,
+    "fixture_replay_steps": 3
+  },
+  "limitations": [
+    "The live target is an isolated empty-state database, not the production database.",
+    "The fixture pages use the non-sensitive case-demo fixture.",
+    "Automated screenshots are evidence for review and do not constitute human visual sign-off."
+  ]
+}

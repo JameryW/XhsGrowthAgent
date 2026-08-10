@@ -43,10 +43,10 @@
 
 ## Acceptance Criteria (evolving)
 
-- [ ] 方向 1: `/status` upsert skip-unchanged PR + 测试 + 测量
-- [ ] 方向 2: LLM 成本/速度优化 PR + 测量数据
-- [ ] 方向 3: 可靠性 PR（测试覆盖或竞态修复）
-- [ ] 方向 4: 视发现而定
+- [x] 方向 1: `/status` upsert skip-unchanged PR + 测试 + 测量
+- [x] 方向 2: LLM 成本/速度优化 PR + 测量数据
+- [x] 方向 3: 可靠性 PR（测试覆盖或竞态修复）
+- [x] 方向 4: 公开 UX、运行时基线和验收证据已归档
 
 ## Definition of Done
 
@@ -301,3 +301,46 @@ before 基线，方向 2 仍缺真实 LLM token/时延/质量对照和 provider 
 可靠性/运行时基线；当前部署有 1 条已批准 public case，严格空态报告为
 `live_empty_state_verified=false`；漏斗埋点 owner/运营签字、三档双主题发布截图和
 Lighthouse 仍需发布方提供。因此本任务继续保持 `in_progress`。
+
+## 2026-08-10 方向 1 重建生产容器 before/after
+
+方向 1 的历史 before 缺口已用本地保留的优化前提交重建生产镜像补齐：
+`1420189d`（`ca75409f` 前，旧 `_db_upsert` 对已有行每次都 UPDATE）在隔离的
+`xhs-growth-before` 容器运行，连接同一 `postgres-xhs`；当前 `19c89f21` 容器在 8889 端口
+运行。对同一个已完成 workflow 的 `/api/workflow/status/{thread_id}` 各做 50 次 service-token
+只读请求，均为 HTTP 200。重置 `pg_stat_user_tables` 后，旧版 `workflows.n_tup_upd=50`，
+当前版 `workflows.n_tup_upd=0`，`n_tup_hot_upd` 均为 0。该对照的完整 JSON、镜像和限制已记录在
+`docs/acceptance/status-polling-before-after-2026-08-10.json`；它测量的是重建的生产容器 before，
+不是声称来自历史线上日志的时间旅行数据。
+
+同一组外部 wall-clock 延迟 p50/p95 为旧版 16.02/34.35ms、当前版 15.91/33.28ms；因此不把
+延迟变化冒充收益，收益结论限定为 50 次无变化轮询省掉 50 次 DB UPDATE/row lock。
+
+## 2026-08-10 数据同步生产核验
+
+重新构建并部署顺序初始化和 Podman CDP 路由修复后，`/api/system/health?fresh=1` 已显示
+`database=postgres`、`memory_store=postgres`，容器内对活动账号 `172.19.57.184:9224` 的 CDP
+探活也已通过。数据库中账号统计 2 行、笔记统计 21 行的最新 `synced_at` 仍是
+`2026-08-02T09:02:46.510969+00:00`；当前调度器 `run_count=0`、`last_finished_at=null`，
+因为首次运行仍在随机启动延迟和中国本地活跃窗口内等待，健康检查暂时如实标为 warning。本次
+没有手动触发同步，最新证据见 `docs/acceptance/creator-stats-sync-status-2026-08-10.json`；
+该项仍不能标记为“同步正常/已完成”，直到首轮调度实际完成。
+
+## 2026-08-10 方向 3/4 生产运行时基线
+
+对当前 `xhs-growth:latest` 做只读生产探针：状态 100/100、列表 50/50、账号汇总 50/50、健康
+50/50 均 HTTP 200；p95 分别为 6.89ms、6.77ms、3.47ms、1.94ms。容器 `restart_count=0`、
+`OOMKilled=false`，最终 health 的 database/memory store/Ripple/risk/search/provider 均为 ok。
+过去 30 分钟结构化 latency 日志也已聚合，完整数据见
+`docs/acceptance/production-runtime-baseline-2026-08-10.json`。该报告如实记录 1 条瞬态
+Ripple health-check ReadTimeout（最终已恢复），并声明这是单窗口 baseline，不冒充长期 SLO。
+
+## 2026-08-10 WIP 收尾复核
+
+当前 WIP 已补齐公开 Showcase/Replay 的 telemetry `source` 字段、三档双主题截图归档脚本，
+并将 Lighthouse、截图归档、轮询 before/after、运行时基线和 Creator Stats 部署状态纳入验收
+文档。前端当前验证结果为 66 个测试文件 / 690 个测试通过，type-check、i18n 检查和生产构建
+均通过；验收脚本单测 2 个通过。
+
+任务代码和证据材料已完成，仍需产品/内容 owner、运营和 release owner 对质量样本、截图、漏斗
+埋点及单窗口 runtime baseline 做外部签字，因此任务状态保持 `in_progress`。
