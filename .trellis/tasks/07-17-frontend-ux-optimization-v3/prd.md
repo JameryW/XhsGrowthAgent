@@ -416,8 +416,9 @@ serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导�
   通过而中断；因此本记录不宣称完整后端套件通过，相关范围测试仍是 27/27 通过。
 - 2026-08-10 只读核对运行中的 `xhs-growth`：前端 `index-DMueUbgE.js`、
   `Dashboard-CXy8coBo.js`、`EvaluationView-CV6bM7A3.js` 与本地最终构建逐字节同哈希，并含本轮
-  UX 标记；但运行容器的后端 `evaluation.py` 尚无当前提交新增的 `_score_config`/维度权重解析实现。
-  因此前端构建已部署不能等同于完整当前提交已部署，仍不能作为发布总闸证据。
+  UX 标记；部署后重新创建的运行容器已包含当前提交的 `_score_config`/维度权重解析实现，
+  并通过容器内 `/api/system/health` 复核 `database=postgres`、`memory_store=postgres`、
+  `ripple_cas=ok`。因此当前提交的前后端代码已实际载入运行容器；仍不能仅凭此替代发布总闸的外部证据。
 - `scripts/acceptance/public_ux_audit.py` 增加了移动抽屉点击的状态确认重试，并将动画稳定等待
   限定为非阻断的展示准备步骤。修正后在宿主网络/X server 上重跑全量公开页矩阵：96 个页面组合、
   axe serious/critical=0、功能失败=0、性能预算失败=0，报告 `passed=true`；warm p75 为
@@ -427,3 +428,16 @@ serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导�
 上述是代码与本地自动化收尾，不改变发布总闸：真实部署三档明暗主题人工走查、严格 live
 empty-state、真实漏斗埋点 owner/运营验收以及发布方 Lighthouse/截图归档仍需外部执行。因此
 Trellis 任务继续保持 `in_progress`，不得把外部证据缺口写成已完成。
+
+## 22. 部署后复核（2026-08-10）
+
+本次获得部署授权后，完成 PostgreSQL 备份、镜像构建、镜像导入和服务重建。部署后容器复核结果：
+
+- `./scripts/deploy.sh start` 成功启动 `postgres-xhs`、`ripple-service`、`xhs-growth`。
+- 容器内 `/api/system/health`：`database=postgres`、`memory_store=postgres`、`ripple_cas=ok`。
+- 容器内确认 `backend/api/routes/evaluation.py` 含 `_score_config`，前端 dist 使用当前构建产物。
+  运行使用 `--allow-existing-public`，所以 `live_empty_state_verified=false`。
+ 复跑报告为 `/tmp/public-ux-audit-live-20260810-postdeploy-rerun.json`，warm navigation p75=495.95ms、
+ 缓存步骤切换 p75=22.8ms；首次采样的 578.15ms 预算失败报告亦保留，未被覆盖。
+
+部署已完成，但真实三档明暗主题人工走查、严格 live 空态、漏斗埋点 owner/运营验收及 Lighthouse/截图归档仍需发布方补齐。

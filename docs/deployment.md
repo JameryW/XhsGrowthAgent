@@ -216,6 +216,16 @@ online 全矩阵仍会按 p75 门槛失败。
 暖导航和缓存切换均各采 3 次并取中位数，报告同时保留原始样本和超预算样本，计时使用浏览器
 `performance.now()`。该自动化结果仍不能替代目标环境的发布方人工走查、Lighthouse 或截图归档。
 
+2026-08-10 部署后复核：`postgres-xhs`、`ripple-service`、`xhs-growth` 均运行正常；
+`/api/system/health` 已确认 `database=postgres`、`memory_store=postgres`、`ripple_cas=ok`，
+Ripple 健康检查延迟约 154ms。部署脚本同时兼容无 DNSName CNI 插件的 rootless Podman，
+为 PostgreSQL/Ripple 动态注入容器 hosts 解析，避免启动时回退到 SQLite/MemorySaver。
+该运行证据证明当前镜像已完成部署，但仍不能替代目标环境的人工走查、Lighthouse 或截图归档。
+部署后复跑报告保存在 `/tmp/public-ux-audit-live-20260810-postdeploy-rerun.json`：同样为 96 个组合、
+axe serious/critical=0、功能失败=0、性能预算失败=0、`passed=true`；warm navigation p75 为
+495.95ms，缓存步骤切换 p75 为 22.8ms。首次部署后采样的 warm p75=578.15ms 未作为通过依据保留在
+`/tmp/public-ux-audit-live-20260810-postdeploy.json`，复跑用于确认宿主时序波动。
+
 ## Docker 部署
 
 ### docker-compose.yml

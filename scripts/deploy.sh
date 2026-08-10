@@ -224,6 +224,16 @@ _providers:
 LLMEOF
     echo "  Ripple LLM config written (credentials redacted)"
 
+    # Some rootless Podman hosts do not have the DNSName CNI plugin enabled.
+    # Resolve the service containers once and inject stable hosts entries so
+    # the backend can initialize Postgres/Ripple connections at startup.
+    POSTGRES_IP=$(podman inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' postgres-xhs)
+    RIPPLE_IP=$(podman inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ripple-service)
+    if [[ -z "$POSTGRES_IP" || -z "$RIPPLE_IP" ]]; then
+        echo "错误: 无法解析 PostgreSQL/Ripple 容器 IP" >&2
+        exit 1
+    fi
+
     echo ">>> 启动 XhsGrowthAgent 后端..."
     # Production defaults: Creator Center only, list-first, no public-note-page crawl.
     podman run -d \
@@ -231,6 +241,8 @@ LLMEOF
         --network "$NET" \
         --restart always \
         -p 8889:8889 \
+        --add-host "postgres-xhs:${POSTGRES_IP}" \
+        --add-host "ripple-service:${RIPPLE_IP}" \
         -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
         -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
         -e DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}" \
