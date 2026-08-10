@@ -441,3 +441,16 @@ Trellis 任务继续保持 `in_progress`，不得把外部证据缺口写成已�
  缓存步骤切换 p75=22.8ms；首次采样的 578.15ms 预算失败报告亦保留，未被覆盖。
 
 部署已完成，但真实三档明暗主题人工走查、严格 live 空态、漏斗埋点 owner/运营验收及 Lighthouse/截图归档仍需发布方补齐。
+
+## 23. 最终浏览器脚本复核（2026-08-10）
+
+修正验收脚本等待 Showcase 数据的方式后，使用宿主 X server 重跑部署矩阵：报告
+`/tmp/public-ux-audit-final.json` 的 `passed=true`，覆盖 8 个矩阵页面，axe
+serious/critical=0，性能预算失败=0。该次明确允许当前部署已有的 1 条批准 public case，故
+`live_empty_state_verified=false`；严格 private-by-default 仍需无批准案例的目标环境。
+
+真实轻模型路由采样与 token/时延汇总已记录在
+`docs/acceptance/llm-route-benchmark-2026-08-10.json`，不启动工作流，并由固定合成提示完成。
+这补齐了 provider 实调证据，但不替代内容 owner 对 POLISH、MOCK_GEN、VIRAL_MATCHING
+样本的人工质量复核。发布总闸仍只剩真实部署三档明暗主题人工归档、严格空态、漏斗埋点
+owner/运营验收及 Lighthouse/截图归档，任务保持 `in_progress`。

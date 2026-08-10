@@ -1,0 +1,88 @@
+{
+  "date": "2026-08-10",
+  "synthetic_input": true,
+  "workflow_started": false,
+  "samples_per_route": 2,
+  "live_provider_calls": 12,
+  "quality_proxy": "valid JSON with the expected top-level list field; not a human content review",
+  "cost_estimate": {
+    "basis": "reported token metadata multiplied by the current model registry rates",
+    "unit": "USD per call",
+    "invoice": false
+  },
+  "routes": {
+    "POLISH": {
+      "before": {
+        "model": "astron-code-latest",
+        "latency_ms_avg": 8968.1,
+        "input_tokens_avg": 111,
+        "output_tokens_avg": 149,
+        "total_tokens_avg": 260,
+        "valid_json": "2/2",
+        "estimated_cost_usd_avg": 0.0001116
+      },
+      "after": {
+        "model": "deepseek-v4-flash",
+        "latency_ms_avg": 5514.2,
+        "input_tokens_avg": 185,
+        "output_tokens_avg": 515.5,
+        "total_tokens_avg": 700.5,
+        "valid_json": "2/2",
+        "estimated_cost_usd_avg": 0.0001702
+      }
+    },
+    "MOCK_GEN": {
+      "before": {
+        "model": "astron-code-latest",
+        "latency_ms_avg": 9815.0,
+        "input_tokens_avg": 85,
+        "output_tokens_avg": 242.5,
+        "total_tokens_avg": 327.5,
+        "valid_json": "1/2",
+        "estimated_cost_usd_avg": 0.0001625
+      },
+      "after": {
+        "model": "deepseek-v4-flash",
+        "latency_ms_avg": 3933.5,
+        "input_tokens_avg": 169,
+        "output_tokens_avg": 460,
+        "total_tokens_avg": 629,
+        "valid_json": "2/2",
+        "estimated_cost_usd_avg": 0.0001525
+      }
+    },
+    "VIRAL_MATCHING": {
+      "before": {
+        "model": "astron-code-latest",
+        "latency_ms_avg": 14266.7,
+        "input_tokens_avg": 69,
+        "output_tokens_avg": 292,
+        "total_tokens_avg": 361,
+        "valid_json": "2/2",
+        "estimated_cost_usd_avg": 0.000189
+      },
+      "after": {
+        "model": "deepseek-v4-flash",
+        "latency_ms_avg": 3457.9,
+        "input_tokens_avg": 151,
+        "output_tokens_avg": 247.5,
+        "total_tokens_avg": 398.5,
+        "valid_json": "2/2",
+        "estimated_cost_usd_avg": 0.0000904
+      }
+    }
+  },
+  "conclusion": {
+    "latency_improvement_percent": {
+      "POLISH": 38.5,
+      "MOCK_GEN": 59.9,
+      "VIRAL_MATCHING": 75.8
+    },
+    "owner_review_required": true,
+    "notes": [
+      "The POLISH sample became longer and its estimated cost increased.",
+      "A content owner must review semantic quality before the route is treated as fully accepted.",
+      "The benchmark uses fixed synthetic prompts and does not prove end-to-end workflow quality."
+    ]
+  }
+}

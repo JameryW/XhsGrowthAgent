@@ -75,7 +75,7 @@ npm run build
 
 构建可能报告大 chunk 提示（AgentTUI 包含 xterm/WebGL 依赖），这不是构建失败；需要关注命令最终是否输出 `built`。
 
-2026-08-10 验收记录：前端全量为 66 个文件 / 690 个测试，后端全量为 2153 个测试；
+2026-08-10 验收记录：前端全量为 66 个文件 / 690 个测试，后端全量为 2157 个测试；
 `type-check`、`i18n:check`、`ruff format --check`、`ruff check` 和 `mypy backend` 均通过。
 Vite 的 ECharts 手动分包已按实际注册模块拆分，当前构建不再产生 500KB chunk 警告。
 公开页浏览器验收仍分为两种证据：默认严格模式要求目标环境 live 列表为空；已有 owner 审批案例的

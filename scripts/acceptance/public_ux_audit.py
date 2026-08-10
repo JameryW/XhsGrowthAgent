@@ -27,10 +27,18 @@ import shutil
 import statistics
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from playwright.sync_api import Page, Route, sync_playwright
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+if TYPE_CHECKING:
+    from playwright.sync_api import Page, Route
+
+
+class _PlaywrightImportError(Exception):
+    """Fallback exception used until the optional browser API is loaded."""
+
+
+PlaywrightError: type[Exception] = _PlaywrightImportError
+PlaywrightTimeoutError: type[Exception] = _PlaywrightImportError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BASE_URL = os.getenv("PUBLIC_UX_BASE_URL", "http://127.0.0.1:8889").rstrip("/")
@@ -278,6 +286,30 @@ def wait_for_page(page: Page, selector: str, *, settle_ms: int = 80) -> None:
         page.wait_for_timeout(settle_ms)
 
 
+def wait_for_showcase_data(page: Page) -> None:
+    """Wait for the public case list to leave its loading state.
+
+    Case cards use the presentation-only ``v-reveal`` directive. Their titles
+    can therefore be attached but intentionally transparent when they are
+    below the initial viewport. Waiting for a *visible* card title made the
+    live audit depend on scroll position instead of data readiness. The
+    section heading is the stable visible signal; the second wait observes
+    the actual loaded card/empty-state DOM and still fails when loading ends
+    in an unrendered error state.
+    """
+    wait_for_page(page, "#cases-heading")
+    page.wait_for_function(
+        """() => {
+          const section = document.querySelector('#cases');
+          if (!section) return false;
+          return Boolean(section.querySelector('.case-card, h3'));
+        }""",
+        timeout=8_000,
+    )
+    if page.locator("#cases .case-card").count() == 0 and page.locator("#cases h3").count() == 0:
+        raise AssertionError("showcase case list did not render a card or empty state")
+
+
 def wait_for_heading(page: Page, text: str) -> None:
     page.evaluate(
         """expected => new Promise((resolve, reject) => {
@@ -512,7 +544,7 @@ def measure_warm_navigation(page: Page, selector: str) -> dict[str, Any]:
                 reload_samples.append(reload_ms)
                 ready_wait_samples.append(ready_wait_ms)
                 break
-            except PlaywrightTimeoutError:
+            except (PlaywrightTimeoutError, PlaywrightError):
                 if attempt + 1 >= PAGE_READY_ATTEMPTS:
                     raise
 
@@ -543,7 +575,7 @@ def audit_page(
             page.goto(url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
             wait_for_page(page, ready_selector)
             break
-        except PlaywrightTimeoutError:
+        except (PlaywrightTimeoutError, PlaywrightError):
             if attempt + 1 >= PAGE_READY_ATTEMPTS:
                 raise
     wall_ms = round((time.perf_counter() - started_at) * 1000, 2)
@@ -622,6 +654,19 @@ def apply_network_profile(page: Page, network_profile: str) -> None:
     cdp.send("Network.emulateNetworkConditions", {"offline": False, **settings})
 
 
+def load_playwright_api() -> Any:
+    """Load optional Playwright dependencies only when browser audit runs."""
+    global PlaywrightError, PlaywrightTimeoutError
+
+    from playwright.sync_api import Error as _PlaywrightError
+    from playwright.sync_api import TimeoutError as _PlaywrightTimeoutError
+    from playwright.sync_api import sync_playwright
+
+    PlaywrightError = _PlaywrightError
+    PlaywrightTimeoutError = _PlaywrightTimeoutError
+    return sync_playwright
+
+
 def run_audit(
     base_url: str,
     screenshot_dir: Path | None,
@@ -646,6 +691,7 @@ def run_audit(
     live_record: dict[str, Any] | None = None
     live_public_case_count = 0
 
+    sync_playwright = load_playwright_api()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             executable_path=browser_path,
@@ -662,10 +708,17 @@ def run_audit(
         live_page.set_default_timeout(8000)
         apply_network_profile(live_page, network_profile)
         live_page.goto(f"{base_url}/", wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
-        live_page.locator("#cases h3").first.wait_for(state="visible")
+        wait_for_showcase_data(live_page)
         live_public_case_count = live_page.locator(".case-card").count()
         if live_public_case_count != 0 and not allow_existing_public:
-            raise AssertionError("live public list is not private-by-default")
+            # Keep the strict gate visible in the JSON report instead of
+            # aborting before the browser/a11y evidence is collected.
+            failures.append(
+                {
+                    "name": "live/showcase-empty",
+                    "error": "live public list is not private-by-default",
+                }
+            )
         live_record = audit_page(
             live_page,
             name="live/showcase-empty",

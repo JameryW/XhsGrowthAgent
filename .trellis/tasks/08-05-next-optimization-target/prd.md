@@ -272,3 +272,32 @@
 因此本任务仍保持 `in_progress`。代码和当前可做的只读证据已补齐，但方向 1 仍缺旧版本历史
 before 基线，方向 2 仍缺真实 LLM token/时延/质量对照和 provider 实调，方向 3/4 仍缺统一的
 生产可靠性/运行时基线；这些不能通过本地测试或当前健康检查伪造完成。
+
+## 2026-08-10 真实路由采样与验收脚本收尾
+
+新增 `scripts/benchmarks/llm_route_benchmark.py`，使用固定合成提示、`--live` 显式开关，
+不启动工作流；并完成 12 次真实 provider 调用（旧/新模型 × POLISH/MOCK_GEN/VIRAL_MATCHING
+× 2 样本）。结果摘要如下，延迟为两样本平均值，token 为两样本平均值：
+
+完整汇总（含成本估算、采样范围和限制）已落盘到
+`docs/acceptance/llm-route-benchmark-2026-08-10.json`；本节 supersede 前文“尚无真实调用”
+的状态描述。
+
+| task | 旧路由延迟 / 输出 token / 结构化有效 | 新路由延迟 / 输出 token / 结构化有效 |
+| --- | ---: | ---: |
+| POLISH | 8968ms / 149 / 2/2 | 5514ms / 516 / 2/2 |
+| MOCK_GEN | 9815ms / 243 / 1/2 | 3933ms / 460 / 2/2 |
+| VIRAL_MATCHING | 14267ms / 292 / 2/2 | 3458ms / 248 / 2/2 |
+
+这证明新路由在本次固定样本上的速度收益（约 38% / 60% / 76%）和 provider 可用性；
+结构化有效率也未下降。它不是人工内容质量评审，且 POLISH 因输出更长，按当前成本表的
+估算成本并未在该样本上下降，仍需产品/内容 owner 评审样本并决定是否进一步收紧输出预算。
+
+同时修正 `scripts/acceptance/public_ux_audit.py`：等待 Showcase 数据不再依赖首屏外
+`v-reveal` 卡片标题可见；严格空态失败会写入完整 JSON；Playwright 为可选依赖并在真实
+浏览器运行时懒加载。新增 `tests/unit/scripts/test_public_ux_audit.py` 覆盖 readiness 分支。
+
+当前仍未满足的外部条件没有改变：方向 1 缺历史旧版本生产写入基线，方向 3/4 缺统一生产
+可靠性/运行时基线；当前部署有 1 条已批准 public case，严格空态报告为
+`live_empty_state_verified=false`；漏斗埋点 owner/运营签字、三档双主题发布截图和
+Lighthouse 仍需发布方提供。因此本任务继续保持 `in_progress`。
