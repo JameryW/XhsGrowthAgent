@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -1227,8 +1227,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from backend.db.workflows import ensure_table
             from backend.graph.builder import compile_graph_prod
 
-            # ponytail: parallel ensure_tables + graph compile; bootstrap steps
-            # depend on system_config table existing so they run after ensure.
+            # Bootstrap tables before compiling the graph. Both graph resources
+            # run their own DDL migrations; doing that concurrently with the
+            # application table migrations can exhaust the shared Postgres
+            # connection budget and falsely trigger the in-memory fallback.
             ensure_coros = [
                 ensure_table(),
                 ensure_account_tables(),
@@ -1240,11 +1242,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ensure_creative_memory(),
                 ensure_public_telemetry(),
             ]
-            graph_task = compile_graph_prod(db_uri)
-            results = await asyncio.gather(*ensure_coros, graph_task)
-
-            gresult = cast("tuple[Any, Any]", results[-1])  # graph_task is last in gather
-            graph, result = gresult
+            await asyncio.gather(*ensure_coros)
+            graph, result = await compile_graph_prod(db_uri)
             if result is not None:
                 checkpointer, checkpoint_pool, store_context = result
                 app.state.checkpointer = checkpointer
