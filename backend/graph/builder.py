@@ -502,8 +502,6 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph[Any], Any]
     builder = build_graph()
 
     try:
-        import asyncio
-
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from langgraph.store.postgres.aio import AsyncPostgresStore
         from psycopg_pool import AsyncConnectionPool
@@ -519,7 +517,10 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph[Any], Any]
             "draft_gate",
         ]
 
-        # ponytail: open checkpointer pool + store pool in parallel
+        # Initialize the two LangGraph Postgres resources in sequence.  Opening
+        # both pools and running both migration sets concurrently during app
+        # startup can starve the shared DB pool and produce a misleading
+        # PoolTimeout, which makes the whole app fall back to in-memory state.
         async def _init_checkpointer() -> tuple[Any, Any]:
             nonlocal pool
             _pool = AsyncConnectionPool(
@@ -543,9 +544,8 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph[Any], Any]
             await _store.setup()
             return _ctx, _store
 
-        (pool, checkpointer), (store_context, store) = await asyncio.gather(
-            _init_checkpointer(), _init_store()
-        )
+        (pool, checkpointer) = await _init_checkpointer()
+        (store_context, store) = await _init_store()
         graph = builder.compile(
             checkpointer=checkpointer,
             store=store,
