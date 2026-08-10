@@ -112,6 +112,7 @@ function trackFirstCaseVisible(cached: boolean, startedAt: number) {
   if (firstCaseTracked.value || !cases.value.length) return
   firstCaseTracked.value = true
   trackInteraction('showcase_first_case_visible', {
+    source: 'showcase',
     cached,
     duration_ms: typeof performance !== 'undefined' ? Math.round(performance.now() - startedAt) : undefined,
   })
@@ -148,7 +149,11 @@ function queryState() {
 watch([statusFilter, modeFilter, sortKey, search], () => {
   if (!queryReady) return
   void router.replace({ query: queryState() })
-  trackInteraction('showcase_filter_change', { status: statusFilter.value, mode: modeFilter.value })
+  trackInteraction('showcase_filter_change', {
+    source: 'showcase',
+    status: statusFilter.value,
+    mode: modeFilter.value,
+  })
 })
 
 function readCache(): { cases: PublicCase[]; total: number } | null {
@@ -235,11 +240,15 @@ async function loadCases(useCache = true) {
     trackFirstCaseVisible(false, startedAt)
     // Only re-fetch featured for the full `result` body; grid cards already have preview.
     if (featuredCase.value) void loadCaseDetail(featuredCase.value.public_id)
-    trackInteraction('showcase_cases_loaded', { count: cases.value.length, cached: false })
+    trackInteraction('showcase_cases_loaded', {
+      source: 'showcase',
+      count: cases.value.length,
+      cached: false,
+    })
   } catch (error: any) {
     if (abortController.signal.aborted || requestToken !== listRequestToken) return
     if (!loaded.value) loadError.value = error?.message || t('showcase.casesLoadFailed')
-    trackInteraction('showcase_cases_error', { error_type: 'public_cases' })
+    trackInteraction('showcase_cases_error', { source: 'showcase', error_type: 'public_cases' })
   } finally {
     if (listAbortController === abortController) {
       listAbortController = null
@@ -296,11 +305,15 @@ function clearFilters() {
   statusFilter.value = 'all'
   modeFilter.value = 'all'
   sortKey.value = 'recent'
-  trackInteraction('showcase_filters_clear')
+  trackInteraction('showcase_filters_clear', { source: 'showcase' })
 }
 
 function goCreate(position: 'nav' | 'hero' | 'empty' = 'hero') {
-  trackInteraction('showcase_cta_click', { auth_state: isAuthenticated.value ? 'authenticated' : 'guest', position })
+  trackInteraction('showcase_cta_click', {
+    source: 'showcase',
+    auth_state: isAuthenticated.value ? 'authenticated' : 'guest',
+    position,
+  })
   if (isAuthenticated.value) {
     void router.push({ name: 'home', query: { source: 'showcase' } })
   } else {
@@ -310,7 +323,12 @@ function goCreate(position: 'nav' | 'hero' | 'empty' = 'hero') {
 
 function openReplay(publicId: string) {
   const caseItem = cases.value.find(item => item.public_id === publicId)
-  trackInteraction('showcase_case_open', { has_public_id: true, mode: caseItem?.workflow_mode || 'trend', status: caseItem?.status || 'completed' })
+  trackInteraction('showcase_case_open', {
+    source: 'showcase',
+    has_public_id: true,
+    mode: caseItem?.workflow_mode || 'trend',
+    status: caseItem?.status || 'completed',
+  })
   try { sessionStorage.setItem('showcase:last-card', publicId) } catch { /* public page must not block */ }
   const from = route.fullPath || '/'
   void router.push({ name: 'replay', params: { publicId }, query: { from } })
@@ -322,7 +340,7 @@ function replayHref(publicId: string): string {
 }
 
 function openFeaturedReplay(publicId: string) {
-  trackInteraction('showcase_featured_open', { has_public_id: true })
+  trackInteraction('showcase_featured_open', { source: 'showcase', has_public_id: true })
   void openReplay(publicId)
 }
 
@@ -331,7 +349,7 @@ function retryFeaturedDetail() {
   if (!publicId) return
   detailState.value = { ...detailState.value, [publicId]: 'idle' }
   detailCache.value.delete(publicId)
-  trackInteraction('showcase_detail_retry', { has_public_id: true })
+  trackInteraction('showcase_detail_retry', { source: 'showcase', has_public_id: true })
   void loadCaseDetail(publicId)
 }
 
@@ -370,7 +388,7 @@ function observeCaseCards() {
         const publicId = (entry.target as HTMLElement).dataset.casePublicId
         if (!publicId || impressionTracker.has(publicId)) continue
         impressionTracker.add(publicId)
-        trackInteraction('showcase_case_impression', {})
+        trackInteraction('showcase_case_impression', { source: 'showcase' })
       }
     }, { threshold: 0.5 })
   }
@@ -383,7 +401,7 @@ onMounted(async () => {
   restoreQuery()
   queryReady = true
   setPublicPageMeta({ title: t('showcase.seo.title'), description: t('showcase.seo.description') })
-  trackInteraction('showcase_view')
+  trackInteraction('showcase_view', { source: 'showcase' })
   await loadCases()
   await nextTick()
   observeCaseCards()

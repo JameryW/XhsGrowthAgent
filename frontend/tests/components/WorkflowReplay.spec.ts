@@ -202,6 +202,9 @@ describe('WorkflowReplay public UX contract', () => {
   })
 
   it('moves to the next key step and updates the deep link', async () => {
+    const interactions: Record<string, unknown>[] = []
+    const onInteraction = (event: Event) => interactions.push((event as CustomEvent).detail)
+    window.addEventListener('xhs:interaction', onInteraction)
     // Step without an embedded manifest result is fetched on demand.
     getManifestMock.mockResolvedValue(buildManifest([steps[0], { ...steps[1], result: null }]))
     const wrapper = mount(WorkflowReplay, {
@@ -225,6 +228,8 @@ describe('WorkflowReplay public UX contract', () => {
       expect(wrapper.find('[data-step-id="step-2"]').attributes('aria-current')).toBe('step')
       expect(routerMock.replace).toHaveBeenCalledWith({ query: { step: 'step-2' } })
     })
+    expect(interactions).toContainEqual(expect.objectContaining({ event: 'replay_step_navigate', source: 'replay', method: 'next' }))
+    window.removeEventListener('xhs:interaction', onInteraction)
   })
 
   it('renders the selected result before a slow URL update completes', async () => {

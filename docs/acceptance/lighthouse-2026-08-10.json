@@ -1,0 +1,56 @@
+{
+  "date": "2026-08-10",
+  "target": {
+    "url": "http://127.0.0.1:8891/",
+    "environment": "current deployed image with an isolated database containing no approved public cases",
+    "raw_report_paths": [
+      "/tmp/lighthouse-public-empty-mobile-20260810-v2.json",
+      "/tmp/lighthouse-public-empty-desktop-20260810.json"
+    ]
+  },
+  "tooling": {
+    "lighthouse": "12.6.0",
+    "chromium": "/usr/bin/chromium-browser",
+    "categories": ["performance", "accessibility", "best-practices"],
+    "audit_errors": 0
+  },
+  "runs": [
+    {
+      "preset": "mobile",
+      "scores": {
+        "performance": 0.86,
+        "accessibility": 1.0,
+        "best-practices": 1.0
+      },
+      "metrics_ms": {
+        "first_contentful_paint": 2401.78,
+        "largest_contentful_paint": 2778.17,
+        "total_blocking_time": 207.0,
+        "cumulative_layout_shift": 0.0,
+        "speed_index": 4674.1,
+        "interactive": 3301.78
+      }
+    },
+    {
+      "preset": "desktop",
+      "scores": {
+        "performance": 1.0,
+        "accessibility": 1.0,
+        "best-practices": 1.0
+      },
+      "metrics_ms": {
+        "first_contentful_paint": 445.72,
+        "largest_contentful_paint": 618.58,
+        "total_blocking_time": 20.0,
+        "cumulative_layout_shift": 0.0,
+        "speed_index": 607.95,
+        "interactive": 618.58
+      }
+    }
+  ],
+  "limitations": [
+    "This is a Lighthouse run against the isolated empty-state target, not a public production URL.",
+    "The raw JSON reports are retained at the paths above for this acceptance session.",
+    "The report does not replace product/operations sign-off or a human visual review."
+  ]
+}

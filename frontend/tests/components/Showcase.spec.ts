@@ -153,6 +153,9 @@ describe('Showcase public UX contract', () => {
   })
 
   it('redirects unauthenticated start-creating CTA to /start with source attribution', async () => {
+    const interactions: Record<string, unknown>[] = []
+    const onInteraction = (event: Event) => interactions.push((event as CustomEvent).detail)
+    window.addEventListener('xhs:interaction', onInteraction)
     const wrapper = mountShowcase()
     await flushPromises()
 
@@ -160,7 +163,9 @@ describe('Showcase public UX contract', () => {
     expect(startButtons.length).toBeGreaterThan(0)
     await startButtons[0].trigger('click')
     expect(routerMock.push).toHaveBeenCalledWith({ name: 'login', query: { redirect: '/start?source=showcase' } })
+    expect(interactions).toContainEqual(expect.objectContaining({ event: 'showcase_cta_click', source: 'showcase', auth_state: 'guest' }))
     wrapper.unmount()
+    window.removeEventListener('xhs:interaction', onInteraction)
   })
 
   it('sends authenticated start-creating CTA to /start with source attribution', async () => {

@@ -780,9 +780,8 @@ def run_audit(
                         replay_screenshot = None
                         if (
                             screenshot_dir
-                            and width in (390, 1440)
+                            and width in (390, 768, 1440)
                             and locale == "en"
-                            and theme == "dark"
                             and motion == "reduced"
                         ):
                             showcase_screenshot = (

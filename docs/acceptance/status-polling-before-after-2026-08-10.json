@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-10",
+  "measurement": "reconstructed production-container before/after",
+  "database": "postgres-xhs/xhs_growth",
+  "thread_id": "xhs_9eaec02e-e1a4-429b-bed2-ce33ce7fc9dd_7176d7ff",
+  "request": "GET /api/workflow/status/{thread_id}",
+  "samples": 50,
+  "auth": "service token (value omitted)",
+  "before": {
+    "commit": "1420189d",
+    "image": "localhost/xhs-growth:before-1420189d",
+    "implementation": "pre-ca75409f _db_upsert always updates an existing row",
+    "http_200": 50,
+    "workflows_n_tup_upd": 50,
+    "workflows_n_tup_hot_upd": 0,
+    "wall_latency_ms": {
+      "p50": 16.02,
+      "p95": 34.35,
+      "avg": 17.58
+    }
+  },
+  "after": {
+    "commit": "19c89f21",
+    "image": "localhost/xhs-growth:latest",
+    "implementation": "_db_upsert skips unchanged fields before UPDATE",
+    "http_200": 50,
+    "workflows_n_tup_upd": 0,
+    "workflows_n_tup_hot_upd": 0,
+    "wall_latency_ms": {
+      "p50": 15.91,
+      "p95": 33.28,
+      "avg": 18.44
+    }
+  },
+  "method_notes": [
+    "The before image was built from the pre-optimization commit and run as an isolated container on port 8890 against the same PostgreSQL service.",
+    "The after image was the deployed current container on port 8889.",
+    "pg_stat_single_table_counters was reset before each 50-request run and read after a two-second stats flush.",
+    "The probe reads an existing completed workflow; it does not start or mutate a workflow's content.",
+    "The before container intentionally updates updated_at on each poll; this is the production-like cost being measured."
+  ],
+  "result": {
+    "status_poll_db_updates_reduction": "50 to 0 for 50 unchanged polls",
+    "http_success_regression": false,
+    "latency_claim": "No material wall-clock latency improvement is claimed; the measured benefit is eliminated no-op DB writes and row locks."
+  }
+}
