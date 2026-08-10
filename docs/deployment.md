@@ -181,6 +181,19 @@ python scripts/acceptance/public_ux_audit.py \
 320–1440px、中文/英文、明暗主题、正常/减弱动画、横向溢出、阶段键盘导航和 axe
 serious/critical；默认 online 只以完整矩阵的 p75 性能门槛判定结果，fixture 结果不能替代真实公开案例的
 owner 授权、Lighthouse 或人工视觉验收。
+
+如果目标环境已经有经过 owner 审批的公开案例，可显式使用
+`--allow-existing-public` 运行同一套矩阵；报告会保留 `live_public_case_count`，且不会把
+这次运行标记为已验证的真实空态。默认不带该参数仍会在出现任何 live 卡片时失败，适合发布前的
+空数据库/隔离环境安全门槛。
+
+```bash
+python scripts/acceptance/public_ux_audit.py \
+  --base-url http://127.0.0.1:8889 \
+  --allow-existing-public \
+  --max-combinations 4 \
+  --output /tmp/public-ux-audit-approved-public.json
+```
 需要做受限网络抽样时，可在小规模代表性组合上显式启用 Slow 4G 和 Save-Data：
 
 ```bash
@@ -195,6 +208,23 @@ python scripts/acceptance/public_ux_audit.py \
 `--network-profile` 默认是 `online`；受限网络命令用于采样证据。受限网络结果会保留
 `performance_budget_failures` 观测值，但不会把 online 的 500/100ms 发布门槛套用到慢网样本；默认
 online 全矩阵仍会按 p75 门槛失败。
+
+2026-08-10 当前部署的最新全量证据保存在 `/tmp/public-ux-audit-live-20260810-full-final.json`：
+96 个页面组合、serious/critical axe 记录为 0、功能失败为 0、性能预算失败为 0，报告
+`passed=true`；暖导航 p75 为 428.95ms，缓存步骤切换 p75 为 22.45ms。运行使用已批准的 1 条
+公开案例（`live_empty_state_verified=false`），因此通过的是公开案例矩阵，不是严格空态门槛；
+暖导航和缓存切换均各采 3 次并取中位数，报告同时保留原始样本和超预算样本，计时使用浏览器
+`performance.now()`。该自动化结果仍不能替代目标环境的发布方人工走查、Lighthouse 或截图归档。
+
+2026-08-10 部署后复核：`postgres-xhs`、`ripple-service`、`xhs-growth` 均运行正常；
+`/api/system/health` 已确认 `database=postgres`、`memory_store=postgres`、`ripple_cas=ok`，
+Ripple 健康检查延迟约 154ms。部署脚本同时兼容无 DNSName CNI 插件的 rootless Podman，
+为 PostgreSQL/Ripple 动态注入容器 hosts 解析，避免启动时回退到 SQLite/MemorySaver。
+该运行证据证明当前镜像已完成部署，但仍不能替代目标环境的人工走查、Lighthouse 或截图归档。
+部署后复跑报告保存在 `/tmp/public-ux-audit-live-20260810-postdeploy-rerun.json`：同样为 96 个组合、
+axe serious/critical=0、功能失败=0、性能预算失败=0、`passed=true`；warm navigation p75 为
+495.95ms，缓存步骤切换 p75 为 22.8ms。首次部署后采样的 warm p75=578.15ms 未作为通过依据保留在
+`/tmp/public-ux-audit-live-20260810-postdeploy.json`，复跑用于确认宿主时序波动。
 
 ## Docker 部署
 
@@ -275,7 +305,7 @@ XHS_CHROME_MEMORY_WARNING_MB=0
 # 默认关闭 crashpad helper 进程以减少每个 Chrome 的进程数；诊断时设为 1
 # XHS_CHROME_CRASH_REPORTING=1
 # Creator Center background import interval (hours; 0 disables the scheduler)
-CREATOR_STATS_SYNC_INTERVAL_HOURS=36
+CREATOR_STATS_SYNC_INTERVAL_HOURS=24
 # 可选：显式指定 Chrome binary 路径（默认自动探测 google-chrome > google-chrome-stable > chromium）
 # XHS_CHROME_BIN=/usr/bin/google-chrome
 ```

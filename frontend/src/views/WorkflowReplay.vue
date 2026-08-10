@@ -99,14 +99,15 @@ const phaseGroups = computed(() => {
   return [...byPhase.values()]
 })
 const phasesWithoutData = computed(() => {
-  const seen = new Set<string>()
   const empty = new Set<string>()
+  const hasData = new Set<string>()
   for (const step of steps.value) {
-    if (!seen.has(step.phase)) {
-      seen.add(step.phase)
-      if (!step.has_result && !step.has_business_data) empty.add(step.phase)
-    }
+    if (step.has_result || step.has_business_data) hasData.add(step.phase)
+    else if (!hasData.has(step.phase)) empty.add(step.phase)
   }
+  // A phase is unavailable only when none of its steps carries business data;
+  // an empty first checkpoint must not disable a later useful checkpoint.
+  for (const phase of empty) if (hasData.has(phase)) empty.delete(phase)
   return empty
 })
 const canLoadMore = computed(() => Boolean(manifest.value?.has_more))
@@ -707,15 +708,28 @@ watch(locale, () => {
           </div>
         </section>
 
-        <div id="replay-results" v-reveal class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]" tabindex="-1">
+        <!-- Keep the primary evidence visible on mobile; the whole results grid is
+             taller than the viewport, so a 15% intersection threshold would
+             leave it transparent until the user scrolls. -->
+        <div id="replay-results" class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]" tabindex="-1">
           <section class="glass-panel min-w-0 rounded-3xl p-5 shadow-sm md:p-7" aria-labelledby="step-detail-heading">
-            <div :key="selectedStepId || 'none'" class="replay-swap">
+            <div class="replay-swap">
               <div v-if="selectedStep" class="dark-explicit flex flex-col justify-between gap-3 border-b border-slate-200/70 pb-5 sm:flex-row sm:items-start dark:border-slate-800"><div class="min-w-0"><p class="dark-explicit text-xs font-semibold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">{{ phaseLabel(selectedStep.phase) }}</p><h2 id="step-detail-heading" class="mt-2 text-xl font-bold md:text-2xl" tabindex="-1">{{ selectedStep.title || t('replay.publicStep', { step: selectedStep.step }) }}</h2><p class="dark-explicit mt-2 text-sm text-slate-500 dark:text-slate-400">{{ t('replay.publicStepOf', { current: currentStepNumber, total: steps.length }) }}<span v-if="selectedStep.created_at"> · {{ formatDate(selectedStep.created_at) }}</span></p></div><span class="dark-explicit rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ selectedStep.has_result ? t('showcase.resultEvidence') : t('replay.publicNoResult') }}</span></div>
               <p v-if="selectedStep?.summary" class="dark-explicit mt-4 text-sm leading-6 text-slate-600 dark:text-slate-300">{{ selectedStep.summary }}</p>
-              <p v-if="phaseImportance(selectedStep?.phase)" class="dark-explicit mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{{ phaseImportance(selectedStep?.phase) }}</p>
+              <p v-if="phaseImportance(selectedStep?.phase)" class="dark-explicit mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">{{ phaseImportance(selectedStep?.phase) }}</p>
               <div v-if="selectedStep?.result" class="mt-3 flex items-center gap-2"><button type="button" class="dark-explicit inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="toggleResultExpanded"><AppIcon :name="resultExpanded ? 'ChevronUp' : 'ChevronDown'" size="xs" aria-hidden="true" />{{ resultExpanded ? t('replay.resultCollapse') : t('replay.resultExpand') }}</button><button type="button" class="dark-explicit inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="copyResult">{{ copyState === 'success' ? t('replay.copied') : t('replay.copyResult') }}</button></div>
               <div v-if="detailLoading" class="mt-6 space-y-3" aria-busy="true"><div class="dark-explicit h-6 w-1/2 animate-pulse rounded bg-slate-200 dark:bg-slate-800" /><div class="dark-explicit h-24 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" /></div>
-              <div v-else-if="detailError" class="dark-explicit mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-400/20 dark:bg-rose-400/10" role="alert"><p class="text-sm font-medium">{{ t('replay.publicDetailFailed') }}</p><button type="button" class="mt-4 min-h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900" @click="loadStep(selectedStepId)">{{ t('common.retry') }}</button></div>
+              <ErrorState
+                v-else-if="detailError"
+                class="mt-6"
+                role="alert"
+                variant="api"
+                :title="t('replay.publicDetailFailed')"
+                :message="t('replay.publicDetailFailedDesc')"
+                :retry-label="t('common.retry')"
+                hide-dismiss
+                @retry="loadStep(selectedStepId)"
+              />
               <PublicReplayResult v-else-if="selectedStep" class="mt-6" :result="selectedStep.result || {}" />
               <div v-else class="dark-explicit mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">{{ t('replay.publicNoSteps') }}</div>
               <div v-if="selectedStep?.technical" class="dark-explicit mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-800/70 dark:text-slate-300"><p class="font-medium">{{ t('replay.publicAdvanced') }}</p><p class="mt-2">{{ t('replay.publicStep', { step: selectedStep.technical.step }) }} · {{ phaseLabel(selectedStep.technical.phase) }}</p></div>
@@ -764,7 +778,7 @@ watch(locale, () => {
   }
 }
 
-/* Step-detail swap — replays each time the keyed wrapper remounts. */
+/* Step-detail entrance — keep the cached selection path free of remount work. */
 .replay-swap {
   animation: replay-swap-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }

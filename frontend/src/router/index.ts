@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { pinia } from '@/stores/pinia'
+import Showcase from '@/views/Showcase.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -13,7 +14,10 @@ const router = createRouter({
     {
       path: '/',
       name: 'showcase',
-      component: () => import('@/views/Showcase.vue'),
+      // Showcase is the default public entry point. Keep the other routes
+      // lazy, but avoid making the first visit wait for RouterView to discover
+      // and fetch its own page chunk after the app has already booted.
+      component: Showcase,
       meta: { transition: 'fade-slide', public: true },
     },
     {

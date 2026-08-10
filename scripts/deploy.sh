@@ -21,9 +21,25 @@ BACKUP_DIR="$PROJECT_DIR/.backups"
 
 # ── Postgres 管理 ──
 
+wait_for_postgres() {
+    local timeout="${1:-60}"
+    echo ">>> 等待 PostgreSQL 就绪（最多 ${timeout}s）..."
+    for i in $(seq 1 "$timeout"); do
+        if podman exec postgres-xhs pg_isready -U "$PG_USER" -d "$PG_DB" >/dev/null 2>&1 \
+            && podman exec postgres-xhs psql -U "$PG_USER" -d "$PG_DB" -Atqc "SELECT 1" 2>/dev/null | grep -qx 1; then
+            echo "  PostgreSQL 已就绪 (${i}s)"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "  PostgreSQL 在 ${timeout}s 内未就绪 — 检查日志: podman logs postgres-xhs" >&2
+    return 1
+}
+
 cmd_ensure_postgres() {
     # 确保 Postgres 容器运行，带 pgvector 支持
     if podman ps --filter name=postgres-xhs --format '{{.Names}}' | grep -q postgres-xhs; then
+        wait_for_postgres
         return 0
     fi
 
@@ -31,7 +47,7 @@ cmd_ensure_postgres() {
     if podman ps -a --filter name=postgres-xhs --format '{{.Names}}' | grep -q postgres-xhs; then
         echo ">>> 启动已有 Postgres 容器..."
         podman start postgres-xhs
-        sleep 2
+        wait_for_postgres
         return 0
     fi
 
@@ -46,7 +62,7 @@ cmd_ensure_postgres() {
         -e POSTGRES_DB="$PG_DB" \
         -v "$PG_VOL:/var/lib/postgresql/data" \
         "$PG_IMG"
-    sleep 3
+    wait_for_postgres
 }
 
 # ── 备份与恢复 ──
@@ -148,6 +164,18 @@ cmd_start() {
     echo ">>> 确保 $NET 存在..."
     podman network exists "$NET" 2>/dev/null || podman network create "$NET"
 
+    # Chrome runs on the host while the backend runs in this bridge network.
+    # Make the documented host.containers.internal route explicit instead of
+    # allowing the backend to fall back to an unreachable 127.0.0.1 endpoint.
+    HOST_GATEWAY=$(podman network inspect "$NET" --format '{{range .Subnets}}{{.Gateway}}{{end}}')
+    HOST_GATEWAY_ARGS=()
+    if [[ -n "$HOST_GATEWAY" ]]; then
+        HOST_GATEWAY_ARGS=(--add-host "host.containers.internal:${HOST_GATEWAY}")
+        echo ">>> 配置宿主 Chrome 网关: host.containers.internal -> $HOST_GATEWAY"
+    else
+        echo "警告: 无法解析 $NET 网关，后端 CDP 连接可能不可用" >&2
+    fi
+
     # HF embedding model cache on the host — seeded from the image on first run,
     # then persists across rebuilds. (Image also bakes a seed copy as fallback.)
     mkdir -p "$PROJECT_DIR/.hf-cache"
@@ -224,6 +252,16 @@ _providers:
 LLMEOF
     echo "  Ripple LLM config written (credentials redacted)"
 
+    # Some rootless Podman hosts do not have the DNSName CNI plugin enabled.
+    # Resolve the service containers once and inject stable hosts entries so
+    # the backend can initialize Postgres/Ripple connections at startup.
+    POSTGRES_IP=$(podman inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' postgres-xhs)
+    RIPPLE_IP=$(podman inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ripple-service)
+    if [[ -z "$POSTGRES_IP" || -z "$RIPPLE_IP" ]]; then
+        echo "错误: 无法解析 PostgreSQL/Ripple 容器 IP" >&2
+        exit 1
+    fi
+
     echo ">>> 启动 XhsGrowthAgent 后端..."
     # Production defaults: Creator Center only, list-first, no public-note-page crawl.
     podman run -d \
@@ -231,6 +269,9 @@ LLMEOF
         --network "$NET" \
         --restart always \
         -p 8889:8889 \
+        "${HOST_GATEWAY_ARGS[@]}" \
+        --add-host "postgres-xhs:${POSTGRES_IP}" \
+        --add-host "ripple-service:${RIPPLE_IP}" \
         -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
         -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
         -e DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}" \
@@ -247,6 +288,7 @@ LLMEOF
         -e XHS_USE_BROWSER="${XHS_USE_BROWSER:-false}" \
         -e XHS_CHROME_PROFILES_DIR="${XHS_CHROME_PROFILES_DIR:-$PROJECT_DIR/.chrome-profiles}" \
         -e XHS_CDP_BASE_PORT="${XHS_CDP_BASE_PORT:-9222}" \
+        -e XHS_CDP_ENDPOINT="${XHS_CDP_ENDPOINT:-}" \
         -e XHS_ENGAGEMENT_COOLDOWN_SECONDS="${XHS_ENGAGEMENT_COOLDOWN_SECONDS:-5}" \
         -e CREATOR_STATS_SYNC_INTERVAL_HOURS="${CREATOR_STATS_SYNC_INTERVAL_HOURS:-24}" \
         -e CREATOR_STATS_SCHEDULED_FORCE_LIGHT="${CREATOR_STATS_SCHEDULED_FORCE_LIGHT:-1}" \
@@ -254,6 +296,9 @@ LLMEOF
         -e CREATOR_STATS_SAFE_MODE="${CREATOR_STATS_SAFE_MODE:-1}" \
         -e CREATOR_STATS_MAX_LIST_PAGES="${CREATOR_STATS_MAX_LIST_PAGES:-3}" \
         -e CREATOR_STATS_MAX_DETAIL_VISITS="${CREATOR_STATS_MAX_DETAIL_VISITS:-2}" \
+        -e CREATOR_STATS_MIN_REFRESH_HOURS="${CREATOR_STATS_MIN_REFRESH_HOURS:-18}" \
+        -e CREATOR_STATS_SYNC_COOLDOWN_MINUTES="${CREATOR_STATS_SYNC_COOLDOWN_MINUTES:-45}" \
+        -e CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES="${CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES:-120}" \
         -e CREATOR_STATS_SKIP_DAY_CHANCE="${CREATOR_STATS_SKIP_DAY_CHANCE:-0.25}" \
         -e CREATOR_STATS_STARTUP_DELAY_MIN_SECONDS="${CREATOR_STATS_STARTUP_DELAY_MIN_SECONDS:-600}" \
         -e CREATOR_STATS_STARTUP_DELAY_MAX_SECONDS="${CREATOR_STATS_STARTUP_DELAY_MAX_SECONDS:-2400}" \
@@ -263,6 +308,9 @@ LLMEOF
         -e CREATOR_STATS_POST_SUCCESS_LONG_BREAK_CHANCE="${CREATOR_STATS_POST_SUCCESS_LONG_BREAK_CHANCE:-0.18}" \
         -e CREATOR_STATS_RISK_SKIP_NEXT_CHANCE="${CREATOR_STATS_RISK_SKIP_NEXT_CHANCE:-0.85}" \
         -e CREATOR_STATS_MAX_SUCCESSFUL_CRAWLS_PER_WEEK="${CREATOR_STATS_MAX_SUCCESSFUL_CRAWLS_PER_WEEK:-3}" \
+        -e CREATOR_STATS_INFRA_RETRY_MINUTES="${CREATOR_STATS_INFRA_RETRY_MINUTES:-30}" \
+        -e CREATOR_STATS_PAGE_BUDGET_RETRY_MINUTES="${CREATOR_STATS_PAGE_BUDGET_RETRY_MINUTES:-15}" \
+        -e CREATOR_STATS_CDP_BUSY_RETRY_MINUTES="${CREATOR_STATS_CDP_BUSY_RETRY_MINUTES:-10}" \
         -e RIPPLE_BASE_URL=http://ripple-service:8080 \
         -e RIPPLE_API_TOKEN="${RIPPLE_API_TOKEN:-}" \
         -e RIPPLE_ENABLED=true \

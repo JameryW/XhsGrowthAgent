@@ -37,6 +37,14 @@ describe('ErrorState (presentational mode, INF-01)', () => {
     expect(wrapper.emitted('dismiss')).toHaveLength(1)
   })
 
+  it('preserves retry count in the shared presentational surface', () => {
+    const wrapper = mount(ErrorState, {
+      props: { ...baseProps, retryCount: 3 },
+    })
+    expect(wrapper.text()).toContain('已重试 3 次')
+    expect(wrapper.text()).toContain('重试 (3)')
+  })
+
   it('omits the retry button for retry_success variant', () => {
     const wrapper = mount(ErrorState, {
       props: { variant: 'retry_success' as const, title: '成功', message: 'ok' },

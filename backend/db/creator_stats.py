@@ -608,10 +608,9 @@ async def upsert_bundle(
         logger.warning("upsert_bundle skipped: empty account_id")
         return 0, 0, 0
     bundle_account.account_id = account_id
-    bundle_account.snapshot_id = build_creator_stats_snapshot_id(bundle_account, notes)
 
     keep_note_ids: set[str] = set()
-    valid_notes: list[NoteStats] = []
+    valid_notes_by_id: dict[str, NoteStats] = {}
     for note in notes:
         note_account_id = (note.account_id or "").strip() or account_id
         note_id = (note.note_id or "").strip()
@@ -629,12 +628,17 @@ async def upsert_bundle(
         note.account_id = account_id
         note.note_id = note_id
         keep_note_ids.add(note_id)
-        valid_notes.append(note)
+        # A page-boundary or API replay can expose the same note twice. Keep
+        # the last payload while making import counts and snapshot size stable.
+        valid_notes_by_id[note_id] = note
+    valid_notes = list(valid_notes_by_id.values())
 
     # Snapshot truth: account.note_count must equal the notes we persist, not a
     # misleading overview alias that can outrun Note Manager / list length.
-    if valid_notes:
-        bundle_account.note_count = len(valid_notes)
+    bundle_account.note_count = len(valid_notes)
+    # Build identity from the canonical snapshot, not a raw payload that may
+    # contain duplicate page-boundary rows.
+    bundle_account.snapshot_id = build_creator_stats_snapshot_id(bundle_account, valid_notes)
 
     if not is_pool_ready():
         await upsert_account_stats(bundle_account)

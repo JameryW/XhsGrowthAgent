@@ -750,9 +750,8 @@ def normalize_bundle(
     # note_count / note_number). Live Creator Center has been observed to report
     # inflated overview counts vs Note Manager (e.g. 14 vs 3). upsert_bundle
     # treats ``notes`` as the account-wide snapshot, so durable note_count must
-    # match that set whenever we have list rows.
-    if notes:
-        account.note_count = len(notes)
+    # always match that set, including a legitimate empty snapshot.
+    account.note_count = len(notes)
     # Fill account totals from notes when overview is empty
     if account.views == 0 and notes:
         account.views = sum(n.views for n in notes)

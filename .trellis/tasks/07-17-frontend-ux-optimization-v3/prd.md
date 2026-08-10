@@ -344,3 +344,113 @@
 - `cd frontend && npm run test:run`：通过，47 个文件 / 573 个测试。
 - `cd frontend && npm run build`：通过；存在既有 AgentTUI、ECharts 大 chunk warning，无新增构建失败。
 - 未完成：390/768/1440 三档明暗主题人工走查、公开页 axe 扫描、部署后真实埋点与健康检查证据。因此本任务保持 `in_progress`，不能把 G1~G6 全部标记为发布完成。
+
+## 19. 收尾复核（2026-08-09）
+
+本次复核补齐了此前审计记录中的实现缺口，并以当前代码和门槛结果为准：
+
+- INF-01：五页均使用 `components/ErrorState.vue`；Dashboard 的 workflow/error store 仍通过
+  适配分支接入，公开页不绑定工作流 store。
+- INF-02：Showcase、WorkflowReplay、Analytics、Evaluation 均接入对应 skeleton；Dashboard
+  内容卡在长阶段加载时补充当前阶段说明。
+- DB-13：ContentCards 的草稿/版本表面改为主题 token，状态枚举兜底走 i18n；新增组件测试。
+- AN-18：Analytics view spec 覆盖加载、错误重试、周期切换、服务端 delta、原始数值排序、
+  行点击下钻和 stale 数据提示。
+- INF-09/INF-10：Vitest axe 关键态检查已进入前端测试；ECharts 手动分包改为实际注册模块，
+  当前 build 不再出现 500KB chunk 警告。
+- i18n：错误建议数组改用 `tm`，并兼容旧 `zh` locale；`i18n:check` 通过（2129 keys）。
+
+当前仍不能虚构为完成的发布证据：
+
+1. 真实部署的 390×844 / 768×1024 / 1440×900 明暗主题人工走查记录。
+2. 默认严格模式的 live 空态验收（现部署有 1 条已批准 public 案例）；该环境只能用
+   `--allow-existing-public` 运行矩阵，报告会明确标记 `live_empty_state_verified=false`。
+3. 真实环境漏斗埋点的 owner/运营验收，以及由发布方提供的 Lighthouse/截图归档。
+
+自动化与只读线上快照（2026-08-09）：`/tmp/public-ux-audit-current.json` 覆盖 96 个组合，
+serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导航 p75 为 383.45ms，
+`performance_budget_failure_count=0`，报告 `passed=true`。本次运行使用已批准的 1 条公开案例，
+所以 `live_empty_state_verified=false`，不能替代严格空态验收。生产数据库近 30 天已有 1101 条、
+30 种 `public_ux_events` 记录，可用于后续漏斗验收；该快照没有 owner/运营签字，也不能替代发布方
+的 Lighthouse、截图和人工走查证据。
+
+因此 G1~G6 的代码与自动化部分已复核，但发布总闸仍需上述外部证据后才能将任务改为
+`completed`。
+
+## 20. 收尾复核（2026-08-10）
+
+本次复核修正了一个实际影响移动端首屏的 Replay 问题：`#replay-results` 是一个高度超过视口
+的主证据网格，不能套用 15% IntersectionObserver 阈值的整块懒显，否则 390×844 首屏只露出
+小部分时整块保持透明。现在该容器立即可见；步骤详情错误态也改为共享 `ErrorState`，并补齐
+中英文文案与回归测试。
+
+当前门槛结果：前端 66 个 spec 文件 / 690 个测试通过，`type-check`、`i18n:check`、`build`
+通过；修复后真实公开案例代理探针已在 390×844 首屏看到步骤结果标题。完整本地公开矩阵有
+95 个页面记录、axe serious/critical=0；本地 warm p75 受 Vite 开发服务器影响而超过生产预算，
+不能替代部署性能数据。生产只读报告仍显示 96 个组合、axe=0、warm p75=383.45ms，且无预算
+失败；另有一组修复后本地人工截图覆盖 Showcase/Replay × 390/768/1440 × light/dark，12
+张截图的 Replay 结果标题均可读。生产已有 1 条批准案例，所以严格 live empty-state 仍未验证。
+
+仍需发布方补齐的证据没有改变：真实部署 390/768/1440 明暗主题人工走查归档、严格 live 空态、
+真实漏斗埋点 owner/运营验收，以及 Lighthouse/截图归档。因此任务继续保持 `in_progress`，
+不能仅凭本地矩阵把 G1~G6 标成发布完成。
+
+## 21. P2 代码收尾复核（2026-08-10）
+
+本次补齐了此前记录为延期的 P2 代码项，并为每一项保留自动化证据：
+
+- Dashboard DB-10/11/12：庆祝弹窗改为真实文案/图片计数，提供帖子链接与“再来一篇”入口，
+  replay 模式禁止实时工作流 CTA；时间线不再重复渲染总进度填充；标签重命名增加触控入口、
+  44px 目标和键盘/溢出菜单路径。CelebrationModal、WorkflowTabBar、Dashboard 和
+  WorkflowTimeline 组件/视图测试覆盖这些分支。
+- Analytics AN-15、Evaluation EV-08/12/15/16、INF-05/11：MetricCard 保持非 live 数值，避免刷新时
+  朗读整组指标；AnimatedCounter/动画计数经 reduced-motion JS 层降级。评估结果显示有效维度权重并明确排除 bias，
+  `/evaluation/result` 返回账号解析后的 thresholds/weights；EvaluationView 的 scoped 颜色迁移
+  到 Tailwind dark 变体；RQGM 手动结果在面板会话内按账号+笔记保留；RQGM/动画均尊重
+  reduced-motion，TooltipHelper 用于维度与 Replay 阶段解释。旧 VersionCompare 分数标签和
+  双语文案已保持一致。
+- 回归门槛：66 个 spec 文件 / 690 个测试通过，`type-check`、`i18n:check`（2137 keys）、
+  `ruff format --check backend tests`、`ruff check backend tests`、`mypy backend`、后端 27 个
+  相关测试和 `build` 全部通过；`git diff --check` 通过，构建仅保留既有动态/静态导入提示。
+- 曾尝试运行完整后端 `pytest -q`，输出 54 个测试进度后长时间无新增结果，为避免把挂起误报为
+  通过而中断；因此本记录不宣称完整后端套件通过，相关范围测试仍是 27/27 通过。
+- 2026-08-10 只读核对运行中的 `xhs-growth`：前端 `index-DMueUbgE.js`、
+  `Dashboard-CXy8coBo.js`、`EvaluationView-CV6bM7A3.js` 与本地最终构建逐字节同哈希，并含本轮
+  UX 标记；部署后重新创建的运行容器已包含当前提交的 `_score_config`/维度权重解析实现，
+  并通过容器内 `/api/system/health` 复核 `database=postgres`、`memory_store=postgres`、
+  `ripple_cas=ok`。因此当前提交的前后端代码已实际载入运行容器；仍不能仅凭此替代发布总闸的外部证据。
+- `scripts/acceptance/public_ux_audit.py` 增加了移动抽屉点击的状态确认重试，并将动画稳定等待
+  限定为非阻断的展示准备步骤。修正后在宿主网络/X server 上重跑全量公开页矩阵：96 个页面组合、
+  axe serious/critical=0、功能失败=0、性能预算失败=0，报告 `passed=true`；warm p75 为
+  428.95ms、缓存步骤切换 p75 为 22.45ms。该运行仍使用 `--allow-existing-public`，所以
+  `live_empty_state_verified=false`，不能替代严格空态验收。
+
+上述是代码与本地自动化收尾，不改变发布总闸：真实部署三档明暗主题人工走查、严格 live
+empty-state、真实漏斗埋点 owner/运营验收以及发布方 Lighthouse/截图归档仍需外部执行。因此
+Trellis 任务继续保持 `in_progress`，不得把外部证据缺口写成已完成。
+
+## 22. 部署后复核（2026-08-10）
+
+本次获得部署授权后，完成 PostgreSQL 备份、镜像构建、镜像导入和服务重建。部署后容器复核结果：
+
+- `./scripts/deploy.sh start` 成功启动 `postgres-xhs`、`ripple-service`、`xhs-growth`。
+- 容器内 `/api/system/health`：`database=postgres`、`memory_store=postgres`、`ripple_cas=ok`。
+- 容器内确认 `backend/api/routes/evaluation.py` 含 `_score_config`，前端 dist 使用当前构建产物。
+  运行使用 `--allow-existing-public`，所以 `live_empty_state_verified=false`。
+ 复跑报告为 `/tmp/public-ux-audit-live-20260810-postdeploy-rerun.json`，warm navigation p75=495.95ms、
+ 缓存步骤切换 p75=22.8ms；首次采样的 578.15ms 预算失败报告亦保留，未被覆盖。
+
+部署已完成，但真实三档明暗主题人工走查、严格 live 空态、漏斗埋点 owner/运营验收及 Lighthouse/截图归档仍需发布方补齐。
+
+## 23. 最终浏览器脚本复核（2026-08-10）
+
+修正验收脚本等待 Showcase 数据的方式后，使用宿主 X server 重跑部署矩阵：报告
+`/tmp/public-ux-audit-final.json` 的 `passed=true`，覆盖 8 个矩阵页面，axe
+serious/critical=0，性能预算失败=0。该次明确允许当前部署已有的 1 条批准 public case，故
+`live_empty_state_verified=false`；严格 private-by-default 仍需无批准案例的目标环境。
+
+真实轻模型路由采样与 token/时延汇总已记录在
+`docs/acceptance/llm-route-benchmark-2026-08-10.json`，不启动工作流，并由固定合成提示完成。
+这补齐了 provider 实调证据，但不替代内容 owner 对 POLISH、MOCK_GEN、VIRAL_MATCHING
+样本的人工质量复核。发布总闸仍只剩真实部署三档明暗主题人工归档、严格空态、漏斗埋点
+owner/运营验收及 Lighthouse/截图归档，任务保持 `in_progress`。

@@ -48,6 +48,47 @@ async def test_system_health_omits_xhs_platform(monkeypatch):
     assert "ripple_cas" in checks
 
 
+def test_creator_stats_scheduler_health_does_not_call_unstarted_sync_normal():
+    from backend.api.routes.system import _creator_stats_scheduler_health
+
+    result = _creator_stats_scheduler_health(
+        {
+            "enabled": True,
+            "interval_hours": 24,
+            "status": "skipped",
+            "run_count": 0,
+            "last_finished_at": None,
+            "last_succeeded": 0,
+            "last_failed": 0,
+            "last_skip_reason": "armed",
+            "next_run_at": "2026-08-11T06:47:00+00:00",
+        }
+    )
+
+    assert result["status"] == "warning"
+    assert "跳过" in result["message"]
+    assert result["last_skip_reason"] == "armed"
+
+
+def test_creator_stats_scheduler_health_marks_completed_run_ok():
+    from backend.api.routes.system import _creator_stats_scheduler_health
+
+    result = _creator_stats_scheduler_health(
+        {
+            "enabled": True,
+            "interval_hours": 24,
+            "status": "completed",
+            "run_count": 1,
+            "last_finished_at": "2026-08-10T08:00:00+00:00",
+            "last_succeeded": 1,
+            "last_failed": 0,
+        }
+    )
+
+    assert result["status"] == "ok"
+    assert result["message"] == "定时同步最近一轮已完成"
+
+
 @pytest.mark.asyncio
 async def test_system_health_uses_short_ttl_cache(monkeypatch):
     """Second call within TTL reuses the first payload without rebuilding."""

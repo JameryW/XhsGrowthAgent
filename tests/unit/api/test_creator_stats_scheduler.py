@@ -776,6 +776,7 @@ async def test_scheduler_skips_when_auth_cooldown_active(monkeypatch):
     state = app.state.creator_stats_scheduler_status
     assert state["status"] == "skipped"
     assert state["last_skip_reason"] == "auth_cooldown"
+    assert 900.0 * 0.9 <= sleep_calls[0] <= 900.0 * 1.15
 
 
 @pytest.mark.asyncio
@@ -914,6 +915,10 @@ async def test_scheduler_skips_when_cdp_unavailable(monkeypatch):
     assert state["status"] == "skipped"
     assert state["last_skip_reason"] == "cdp_unavailable"
     assert not state.get("risk_failures")
+    # A down host Chrome is a temporary infrastructure condition. Retry the
+    # probe in minutes rather than waiting for the next daily crawl window.
+    assert 1800.0 * 0.9 <= sleep_calls[0] <= 1800.0 * 1.15
+    assert state["next_run_reason"] == "preflight_retry"
     # No pre-run settle — only the post-cycle interval sleep.
     assert len(sleep_calls) == 1
 

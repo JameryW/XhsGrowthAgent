@@ -115,7 +115,9 @@ export function animatedCounter(
   onUpdate: (currentValue: number) => void
 ): Promise<void> {
   return new Promise((resolve) => {
-    if (duration === 0) {
+    // Keep the standalone helper consistent with useAnimation(): callers
+    // outside a component must also respect the user's motion preference.
+    if (duration === 0 || prefersReducedMotion.value) {
       onUpdate(end)
       resolve()
       return

@@ -278,7 +278,9 @@
     "title": "工作流仪表盘",
     "tabBar": {
       "ariaLabel": "工作流标签页",
-      "overflow": "更多工作流标签页"
+      "overflow": "更多工作流标签页",
+      "rename": "重命名工作流标签",
+      "renameEditing": "正在重命名工作流标签"
     },
     "crossAccountBanner": "当前工作流属于「{view}」，工作区账号是「{workspace}」。审核/发布将按该工作流所属账号执行。",
     "openAccountHistory": "查看该账号历史",
@@ -1438,6 +1440,9 @@
     "contentPublished": "内容发布",
     "copyCount": "文案版本",
     "imageCount": "已生成图片",
+    "viewPost": "查看帖子",
+    "createAnother": "再来一篇",
+    "postUnavailable": "暂时没有帖子链接",
     "workflowEnd": "工作流结束",
     "backToDashboard": "返回仪表盘"
   },
@@ -1949,6 +1954,7 @@
     "publicLoadFailed": "回放暂时无法加载",
     "publicLoadFailedDesc": "请重试；案例列表和开始创作仍然可用。",
     "publicDetailFailed": "这一步详情暂时无法加载",
+    "publicDetailFailedDesc": "请重试；如果问题持续，请稍后再访问这个公开案例。",
     "publicShareCase": "复制案例链接",
     "publicShareStep": "复制当前步骤链接",
     "publicShareCaseText": "看看这个小红书内容创作案例：{title}",
@@ -2431,6 +2437,8 @@
     "radarSummary": "{title}：平均 {avg} 分，范围 {min}–{max}",
     "dimensionsTitle": "维度详情",
     "weightedScoreHint": "RQGM 内容评审分由下方可用维度加权计算；不可用维度显示为 —。",
+    "dimensionWeight": "权重 {value}",
+    "dimensionWeightHelp": "该维度占加权总分的 {value}。",
     "radarScore": "评分",
     "radarRationale": "依据",
     "hintsTitle": "修订建议",

@@ -32,7 +32,7 @@
 
 | 变量 | 必填 | 说明 | 默认值 |
 |------|------|------|--------|
-| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入基准间隔（实际执行间隔在 0.75–1.5× 间按三角分布取值，峰值 1×）；仅导入当前激活账号，设为 `0` 可关闭 | `36` |
+| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入基准间隔（实际执行间隔在 0.65–1.75× 间按三角分布取值，峰值 1×）；仅导入当前激活账号，设为 `0` 可关闭 | `24` |
 | `CREATOR_STATS_SKIP_DAY_CHANCE` | 否 | 反风控：每轮以该概率整天跳过同步（按星期加权）；`0` 从不跳过 | `0.25` |
 | `CREATOR_STATS_STARTUP_DELAY_MIN_SECONDS` / `CREATOR_STATS_STARTUP_DELAY_MAX_SECONDS` | 否 | 反风控：服务启动/重启后首次同步前的随机延迟（秒）；设为 `0` 恢复启动即跑 | `600` / `2400` |
 | `CREATOR_STATS_ACTIVE_WINDOW_START_HOUR` / `CREATOR_STATS_ACTIVE_WINDOW_END_HOUR` | 否 | 反风控：每日同步时刻限制在中国本地时间（UTC+8）窗口内，深夜不爬 | `9` / `22` |
@@ -58,6 +58,9 @@
 | `CREATOR_STATS_LONG_PAUSE_MIN_S` / `CREATOR_STATS_LONG_PAUSE_MAX_S` | 否 | 反风控：长停顿区间（秒） | `20` / `60` |
 | `CREATOR_STATS_SYNC_COOLDOWN_MINUTES` | 否 | 反风控：距上次成功同步不足该分钟数时跳过（含手动）；`0` 关闭 | `45` |
 | `CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES` | 否 | 反风控：鉴权失败后禁止再同步的分钟数；`0` 关闭 | `120` |
+| `CREATOR_STATS_INFRA_RETRY_MINUTES` | 否 | CDP 不可用时仅重试探活，不等待完整同步周期；不会打开浏览器页面 | `30` |
+| `CREATOR_STATS_PAGE_BUDGET_RETRY_MINUTES` | 否 | 打开页面过多时的短重试间隔；不会触发新的抓取 | `15` |
+| `CREATOR_STATS_CDP_BUSY_RETRY_MINUTES` | 否 | 其他 CDP 操作占用会话时的短重试间隔 | `10` |
 | `XHS_QR_LOGIN_COOLDOWN_SECONDS` | 否 | 反风控：同一账号两次扫码启动的最小间隔（秒）；短时间反复弹码易触发登录风控；`0` 关闭 | `900` |
 | `XHS_QR_RISK_BLOCK_SECONDS` | 否 | 反风控：检测到 300012/安全限制后禁止再次扫码的秒数；前端同步禁用按钮；`0` 关闭 | `3600` |
 

@@ -34,7 +34,10 @@ const transitionStyle = {
       :style="transitionStyle"
     >
       <Suspense timeout="0">
-        <component :is="Component" :key="route.fullPath" />
+        <!-- Query-only changes (for example Replay's ?step=) should update the
+             mounted view through its reactive route watcher, not remount the
+             whole page and replay its entrance animation. -->
+        <component :is="Component" :key="route.path" />
         <template #fallback>
           <div class="page-transition-loading" role="status" aria-busy="true" :aria-label="t('common.loadingPage')">
             <span class="dark-explicit h-8 w-8 rounded-full border-2 border-slate-200 border-t-teal-500 animate-spin dark:border-slate-700 dark:border-t-teal-400" aria-hidden="true" />

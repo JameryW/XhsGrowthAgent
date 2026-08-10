@@ -146,9 +146,6 @@ const workflowPhases = computed<PhaseNode[]>(() => {
   return phases
 })
 
-// Progress tracking — DB-03 unified displayProgress
-const workflowProgress = computed(() => workflowStore.displayProgress)
-
 const currentAgent = computed(() => {
   const status = workflowStore.currentStatus
   const nextNode = workflowStore.nextNodes[0]
@@ -425,19 +422,13 @@ onUnmounted(() => {
       <span class="text-sm text-rose-600">{{ errorMessage || t('dashboard.timeline.workflowError') }}</span>
     </div>
 
-    <!-- Progress line + phase nodes share one scroll container so the line
-         scrolls with the nodes below 360px. The line visually duplicates the
-         hero progressbar, so it is hidden from AT (single progressbar). -->
+    <!-- DB-11: the hero owns the numeric total-progress bar. This connector is
+         structural only; the phase nodes below carry stage-level status so
+         the timeline does not render the same progress value a second time. -->
     <div class="overflow-x-auto -mx-3 md:mx-0 scrollbar-thin">
       <div class="min-w-max md:min-w-0 px-1 md:px-4">
         <div class="relative py-4" aria-hidden="true">
-          <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full dark-explicit dark:bg-slate-700/70" aria-hidden="true" />
-          <div
-            class="absolute top-1/2 left-0 h-1 rounded-full transition-all duration-500"
-            :class="hasError ? 'bg-rose-400' : 'bg-gradient-to-r from-rose-400 to-teal-400'"
-            :style="{ width: `${workflowProgress}%` }"
-            aria-hidden="true"
-          />
+          <div data-testid="timeline-stage-line" class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full dark-explicit dark:bg-slate-700/70" aria-hidden="true" />
         </div>
 
         <!-- Main phase nodes -->

@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import ErrorState from '@/components/ErrorState.vue'
 import WorkflowReplay from '@/views/WorkflowReplay.vue'
 
 const routerMock = vi.hoisted(() => ({
@@ -103,9 +104,65 @@ describe('WorkflowReplay public UX contract', () => {
     expect(getCheckpointMock).not.toHaveBeenCalled()
     expect(wrapper.find('#replay-steps-heading').exists()).toBe(true)
     expect(wrapper.findAll('[data-step-id][aria-current="step"]')).toHaveLength(1)
+    expect(wrapper.find('#replay-results').classes()).not.toContain('reveal-base')
+    expect(wrapper.find('.public-result-stub').exists()).toBe(true)
     expect(wrapper.findAll('[data-phase-index]')).toHaveLength(2)
     expect(wrapper.find('[data-phase-index="0"]').attributes('tabindex')).toBe('0')
     expect(wrapper.find('[data-phase-index="1"]').attributes('tabindex')).toBe('-1')
+  })
+
+  it('keeps a phase available when a later step carries its business result', async () => {
+    const mixedPhaseSteps = [
+      { ...steps[0], has_result: false, result: null },
+      { ...steps[0], public_id: 'step-1b', step: 2, has_result: true, result: { topic: '后续洞察' } },
+      { ...steps[1], public_id: 'step-2', step: 3 },
+    ]
+    getManifestMock.mockResolvedValue(buildManifest(mixedPhaseSteps))
+
+    const wrapper = mount(WorkflowReplay, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<span />' },
+          PublicReplayResult: { template: '<div />' },
+          ThemeToggle: { template: '<button aria-label="theme" />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('[data-phase-index="0"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-phase-index="1"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('uses the shared error surface when a step detail cannot be loaded', async () => {
+    const stepWithoutResult = { ...steps[0], result: null }
+    getManifestMock.mockResolvedValue(buildManifest([stepWithoutResult]))
+    getCheckpointMock.mockRejectedValue(new Error('checkpoint unavailable'))
+
+    const wrapper = mount(WorkflowReplay, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<span />' },
+          PublicReplayResult: { template: '<div />' },
+          ThemeToggle: { template: '<button aria-label="theme" />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const errorState = wrapper.findComponent(ErrorState)
+    expect(getCheckpointMock).toHaveBeenCalledWith(
+      'case-1',
+      'step-1',
+      false,
+      expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }),
+    )
+    expect(errorState.exists()).toBe(true)
+    expect(errorState.props('variant')).toBe('api')
+    expect(errorState.attributes('role')).toBe('alert')
+    expect(errorState.text()).toContain('这一步详情暂时无法加载')
   })
 
   it('prefetches the next step during idle time', async () => {

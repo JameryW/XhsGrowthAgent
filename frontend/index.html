@@ -5,11 +5,8 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- ponytail: 字体改为非阻塞加载——media=print + onload 切回 all，避免首屏渲染等待 Google Fonts 网络往返。 -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"></noscript>
+    <!-- Keep public first paint independent of third-party font availability;
+         main.css provides an Inter/system fallback stack. -->
     <meta name="description" content="AI驱动的自动化小红书内容创作平台">
     <meta name="theme-color" content="#f43f5e">
     <title>小红书增长引擎</title>
@@ -48,7 +45,11 @@
         const schedule = window.requestIdleCallback
           ? (callback) => window.requestIdleCallback(callback, { timeout: 2000 })
           : (callback) => window.setTimeout(callback, 0)
-        window.addEventListener('load', () => schedule(loadAnalytics), { once: true })
+        // Keep optional third-party analytics out of the first navigation
+        // budget; product funnel telemetry is same-origin and starts in Vue.
+        window.addEventListener('load', () => {
+          window.setTimeout(() => schedule(loadAnalytics), 3000)
+        }, { once: true })
       })()
     </script>
   </head>

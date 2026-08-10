@@ -6,6 +6,7 @@ import {
   getCreatorNoteQuality,
   getCreatorStats,
 } from '@/api/analytics'
+import { evaluateNote, getLatestNoteEvaluation } from '@/api/evaluation'
 
 vi.mock('@/api/analytics', () => ({
   getCreatorStats: vi.fn(),
@@ -13,9 +14,16 @@ vi.mock('@/api/analytics', () => ({
   getCreatorNoteQuality: vi.fn(),
 }))
 
+vi.mock('@/api/evaluation', () => ({
+  evaluateNote: vi.fn(),
+  getLatestNoteEvaluation: vi.fn(),
+}))
+
 const mockedGetCreatorStats = vi.mocked(getCreatorStats)
 const mockedGetCreatorNote = vi.mocked(getCreatorNote)
 const mockedGetCreatorNoteQuality = vi.mocked(getCreatorNoteQuality)
+const mockedEvaluateNote = vi.mocked(evaluateNote)
+const mockedGetLatestNoteEvaluation = vi.mocked(getLatestNoteEvaluation)
 
 function note(noteId: string, title: string, bodyText: string) {
   return {
@@ -98,6 +106,11 @@ describe('CreatorNoteQualityPanel', () => {
       quality: quality(noteId),
       analyzed_at: '2026-07-13T00:00:00Z',
     }))
+    mockedGetLatestNoteEvaluation.mockResolvedValue({
+      account_id: 'account-1',
+      note_id: 'n1',
+      evaluation_result: null,
+    })
   })
 
   it('loads a note detail and quality report, then switches notes', async () => {
@@ -202,5 +215,55 @@ describe('CreatorNoteQualityPanel', () => {
     expect(wrapper.find('h3').exists()).toBe(true)
     expect(wrapper.text()).toContain('已导入笔记')
     expect(wrapper.find('h4').exists()).toBe(true)
+  })
+
+  it('keeps a completed RQGM result when switching notes in the same session', async () => {
+    mockedEvaluateNote.mockResolvedValue({
+      account_id: 'account-1',
+      note_id: 'n1',
+      evaluation_result: {
+        overall_score: 88,
+        dimensions: [],
+        decision: 'approved',
+        revision_hints: [],
+        bias_warning: '',
+        summary: 'RQGM 结果',
+      },
+      status: 'ready',
+      thresholds: { pass: 70, warn: 50 },
+    })
+
+    const wrapper = mount(CreatorNoteQualityPanel, {
+      props: { accountId: 'account-1' },
+      global: {
+        stubs: {
+          AppIcon: true,
+          NeonButton: { template: '<button><slot /></button>' },
+          EvaluationRadar: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const runButton = wrapper.findAll('button').find(button => button.text().includes('RQGM 评估'))
+    expect(runButton).toBeDefined()
+    await runButton!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('88.0')
+
+    const secondButton = wrapper.findAll('button').find(button => button.text().includes('第二篇效率清单'))
+    expect(secondButton).toBeDefined()
+    await secondButton!.trigger('click')
+    await flushPromises()
+
+    const firstButton = wrapper.findAll('button').find(button => button.text().includes('第一篇效率清单'))
+    expect(firstButton).toBeDefined()
+    await firstButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('第一篇正文')
+    expect(wrapper.text()).toContain('88.0')
+    expect(mockedEvaluateNote).toHaveBeenCalledTimes(1)
+    expect(mockedGetLatestNoteEvaluation).toHaveBeenCalled()
   })
 })

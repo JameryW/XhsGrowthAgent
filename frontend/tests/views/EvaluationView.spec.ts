@@ -204,6 +204,21 @@ describe('EvaluationView', () => {
     expect(score.classes()).not.toContain('score-pass')
   })
 
+  it('shows effective dimension weights and keeps bias outside the weighted panel', async () => {
+    const { getEvaluationResult, getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const result = JSON.parse(JSON.stringify(baseResult))
+    result.weights = { copywriting: 0.25 }
+    ;(getEvaluationResult as any).mockResolvedValue(result)
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+
+    const wrapper = await mountEval({ threadId: 't-weights' })
+
+    expect(wrapper.findAll('.dim-weight')).toHaveLength(1)
+    expect(wrapper.find('.dim-weight').text()).toBe('权重 25%')
+    expect(wrapper.find('.dim-help').attributes('aria-label')).toContain('25%')
+  })
+
   it('keeps loading more while the accumulated list is below total', async () => {
     const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
     const { listAccounts } = await import('@/api/accounts')

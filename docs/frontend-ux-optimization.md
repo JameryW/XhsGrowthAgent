@@ -21,7 +21,7 @@
 
 - `/start` 的欢迎 Hero 先回答“现在可以做什么”，右侧显示所选账号和绑定赛道；账号未选定时明确提示选择账号。配置表单以三步 cue 固定用户位置，三种模式卡片同时展示适用场景和当前选中状态。
 - 创作表单的主行动保持单一且占据卡片底部；模式、账号、主题等核心配置先展示，高级选项默认收起。模式卡片和快捷入口在窄屏使用可换行布局，按钮触控高度不低于 44px。
-- `/dashboard` 首屏先渲染状态 Hero 和进度条，再渲染下一步卡片、时间线与阶段产物：空闲引导开始创作，运行中展示实时进度，等待输入/审核突出用户行动，完成提供历史入口，错误提供恢复路径。回放模式使用历史快照层级，不把快照误标为已完成。状态来源仍是 `workflowStore.effectiveState`，不改变工作流 API 语义。首屏 CTA 保持层级唯一：nextAction 卡片是唯一主行动，状态 Hero 只展示状态与进度，不再重复放置 CTA。
+- `/dashboard` 首屏先渲染状态 Hero 和进度条，再渲染下一步卡片、时间线与阶段产物：空闲引导开始创作，运行中展示实时进度，等待输入/审核突出用户行动，完成提供历史入口，错误提供恢复路径。回放模式使用历史快照层级，不把快照误标为已完成。状态来源仍是 `workflowStore.effectiveState`，不改变工作流 API 语义。首屏 CTA 保持层级唯一：nextAction 卡片是唯一主行动，状态 Hero 只展示状态与进度，不再重复放置 CTA；完成弹窗的产物计数来自真实工作流状态，帖子链接缺失时明确显示不可用，回放快照不提供“再来一篇”。
 - 工作台运行中会在有 `agent_timeline` 起始时间时显示当前 agent 的累计时长；ETA 只有在已有完成 agent 样本时显示，并明确使用“约”语义。Ripple 高频进度按 job 保留最新事件、每 200ms 批量更新，避免整棵视图树随每条 WS 消息重渲染。
 - Hero 只使用颜色和图标增强信息层级，动效不是理解状态的必要条件；新增过渡遵循 `prefers-reduced-motion` 降级原则。
 
@@ -29,8 +29,15 @@
 
 - Showcase 列表按 20 条分页，加载更多沿用当前筛选上下文，并显示“已加载 X / 共 Y”与到底完成态（计数区域用 aria-live 播报）；Showcase/Replay 在路由进入时同步 `title`、description、OG 和 Twitter meta，语言切换时更新。
 - Replay 选择步骤后会在浏览器空闲时间预取下一步详情；预取失败不打断当前步骤，所有请求仍使用 AbortController 和缓存过期策略。
+- Replay 的主结果网格属于首要证据，不要给整个高度超过移动视口的网格套用按可见比例触发的 `v-reveal`；否则首屏只露出局部时可能整块保持透明。可对网格内的次级装饰或单个卡片做懒显，但结果标题、状态和首个结果必须立即可见。
 - Analytics 的互动图表在无数据时显示可见空态、提供双语屏幕阅读摘要；趋势点可见，表格 shares 与图表口径一致，并支持导出当前账号周期的 CSV。趋势图基于最近 ≤20 条已加载笔记计算，与互动图（服务端周期总量）口径不同，页面上必须注明这一差异，避免被读作同一指标。
-- Evaluation 雷达只展示加权维度，使用固定顺序和 rationale tooltip；无匹配筛选结果与真实空列表分开表达：筛选无结果提供一键清除筛选，真实空列表带下一步 CTA，窄屏雷达降低高度。
+- Evaluation 雷达只展示加权维度，使用固定顺序和 rationale/weight tooltip；无匹配筛选结果与真实空列表分开表达：筛选无结果提供一键清除筛选，真实空列表带下一步 CTA，窄屏雷达降低高度。
+
+当前五页的错误恢复统一使用 `components/ErrorState.vue`：公开页通过
+presentational props 保留各自重试语义，Dashboard 仍由 workflow/error store 适配；不要再新增
+独立错误卡。Dashboard 的内容骨架需要同时说明当前工作流阶段，草稿和版本卡使用主题表面而不是
+单一蓝色语义。Analytics 的周期摘要以服务端 delta 为准，表格排序使用原始数值，并通过行点击
+打开单篇详情；已有数据刷新失败时保留旧数据并明确标记为 stale。
 
 ## 状态与错误恢复
 
@@ -61,8 +68,22 @@
 ```bash
 cd frontend
 npm run type-check
+npm run i18n:check
 npm run test:run
 npm run build
 ```
 
 构建可能报告大 chunk 提示（AgentTUI 包含 xterm/WebGL 依赖），这不是构建失败；需要关注命令最终是否输出 `built`。
+
+2026-08-10 验收记录：前端全量为 66 个文件 / 690 个测试，后端全量为 2157 个测试；
+`type-check`、`i18n:check`、`ruff format --check`、`ruff check` 和 `mypy backend` 均通过。
+Vite 的 ECharts 手动分包已按实际注册模块拆分，当前构建不再产生 500KB chunk 警告。
+公开页浏览器验收仍分为两种证据：默认严格模式要求目标环境 live 列表为空；已有 owner 审批案例的
+环境使用 `--allow-existing-public`，该报告会单独记录 live 数量，不能替代空态安全门槛。
+
+最新全量报告（`/tmp/public-ux-audit-current.json`）覆盖 96 个 Showcase/Replay 组合，
+serious/critical axe 记录为 0，缓存步骤切换 p75 为 13.82ms，暖导航 p75 为 383.45ms，
+`performance_budget_failure_count=0`，发布性能闸门已通过。当前部署有 1 条 owner 已批准的
+public case，所以 `live_empty_state_verified=false`；该报告不能替代严格空态安全门槛。报告使用
+浏览器时钟、每项 3 次样本中位数并保留原始样本；390/768/1440 的明暗主题人工走查、线上漏斗埋点
+owner/运营验收和 Lighthouse/截图归档仍待发布方补齐。

@@ -56,6 +56,61 @@ const rqgmRunning = ref(false)
 const rqgmError = ref('')
 let rqgmGeneration = 0
 
+// EV-15: keep successful manual evaluations in this mounted panel session so
+// switching between notes does not throw away a result the user may want to
+// compare. The account+note key prevents a result from leaking across scopes;
+// the persisted endpoint remains the source of truth after a full reload.
+interface RqgmSessionSnapshot {
+  result: EvaluationResult | null
+  status: EvaluationStatus
+  coverage: EvaluationCoverage | null
+  evaluationId: string | null
+  dataAsOf: string | null
+  evaluatorFingerprint: string | null
+  snapshotId: string | null
+  thresholds: typeof SCORE_THRESHOLDS
+}
+
+const rqgmSession = new Map<string, RqgmSessionSnapshot>()
+
+function rqgmSessionKey(noteId: string): string {
+  return `${props.accountId}:${noteId}`
+}
+
+function applyRqgmSnapshot(snapshot: RqgmSessionSnapshot): void {
+  rqgmResult.value = snapshot.result
+    ? { ...snapshot.result, dimensions: [...snapshot.result.dimensions] }
+    : null
+  rqgmStatus.value = snapshot.status
+  rqgmCoverage.value = snapshot.coverage
+  rqgmEvaluationId.value = snapshot.evaluationId
+  rqgmDataAsOf.value = snapshot.dataAsOf
+  rqgmEvaluatorFingerprint.value = snapshot.evaluatorFingerprint
+  rqgmSnapshotId.value = snapshot.snapshotId
+  rqgmThresholds.value = snapshot.thresholds
+}
+
+function rememberRqgmSnapshot(noteId: string): void {
+  if (!noteId || !rqgmResult.value) return
+  rqgmSession.set(rqgmSessionKey(noteId), {
+    result: { ...rqgmResult.value, dimensions: [...rqgmResult.value.dimensions] },
+    status: rqgmStatus.value,
+    coverage: rqgmCoverage.value,
+    evaluationId: rqgmEvaluationId.value,
+    dataAsOf: rqgmDataAsOf.value,
+    evaluatorFingerprint: rqgmEvaluatorFingerprint.value,
+    snapshotId: rqgmSnapshotId.value,
+    thresholds: rqgmThresholds.value,
+  })
+}
+
+function restoreRqgmSnapshot(noteId: string): boolean {
+  const snapshot = rqgmSession.get(rqgmSessionKey(noteId))
+  if (!snapshot) return false
+  applyRqgmSnapshot(snapshot)
+  return true
+}
+
 const rqgmScoreLabel = computed(() => {
   const score = rqgmResult.value?.overall_score
   return score == null ? '—' : score.toFixed(1)
@@ -153,6 +208,7 @@ async function runRqgmEvaluation() {
           decision: (resp.degraded || ['degraded', 'failed', 'running', 'unavailable'].includes(rqgmStatus.value)) ? null : next.decision,
         }
       : null
+    rememberRqgmSnapshot(noteId)
   } catch (e: unknown) {
     if (gen !== rqgmGeneration) return
     rqgmError.value = e instanceof Error ? e.message : t('creatorNoteQuality.rqgm.error')
@@ -307,14 +363,17 @@ async function loadSelectedNote(generation = requestGeneration) {
   quality.value = null
   // Bump generation so any in-flight RQGM eval from the previous note no-op.
   rqgmGeneration += 1
-  rqgmResult.value = null
   rqgmError.value = ''
-  rqgmStatus.value = 'unavailable'
-  rqgmCoverage.value = null
-  rqgmEvaluationId.value = null
-  rqgmDataAsOf.value = null
-  rqgmEvaluatorFingerprint.value = null
-  rqgmSnapshotId.value = null
+  if (!restoreRqgmSnapshot(noteId)) {
+    rqgmResult.value = null
+    rqgmStatus.value = 'unavailable'
+    rqgmCoverage.value = null
+    rqgmEvaluationId.value = null
+    rqgmDataAsOf.value = null
+    rqgmEvaluatorFingerprint.value = null
+    rqgmSnapshotId.value = null
+    rqgmThresholds.value = SCORE_THRESHOLDS
+  }
   try {
     const [detail, report] = await Promise.all([
       analyticsApi.getCreatorNote(props.accountId, noteId),
@@ -344,6 +403,7 @@ async function restoreLatestEvaluation(generation: number, noteId: string) {
     const latest = await latestReader(props.accountId, noteId, { suppressToast: true })
     if (generation !== requestGeneration || !latest?.evaluation_result) return
     if (latest.stale) {
+      rqgmSession.delete(rqgmSessionKey(noteId))
       rqgmStatus.value = 'unavailable'
       rqgmResult.value = null
       rqgmCoverage.value = null
@@ -368,6 +428,7 @@ async function restoreLatestEvaluation(generation: number, noteId: string) {
       overall_score: unusable ? null : latestResult.overall_score,
       decision: unusable ? null : latestResult.decision,
     }
+    rememberRqgmSnapshot(noteId)
   } catch {
     // Legacy backend has no persisted run; keep the explicit empty state.
   }

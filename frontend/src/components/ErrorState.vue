@@ -6,7 +6,7 @@ import NeonButton from '@/components/NeonButton.vue'
 import { useWorkflowStore, useToastStore } from '@/stores'
 import type { ErrorType } from '@/types/error'
 
-const { t } = useI18n()
+const { t, tm } = useI18n()
 
 // Optional props enable presentational (store-free) mode for non-Dashboard callers.
 // When `variant` is set, the component renders from props and emits retry/dismiss
@@ -17,6 +17,7 @@ const props = defineProps<{
   title?: string
   message?: string
   retryLabel?: string
+  retryCount?: number
   dismissLabel?: string
   retrying?: boolean
   hideDismiss?: boolean
@@ -86,6 +87,13 @@ const presentationalTitle = computed(() => {
 })
 const presentationalMessage = computed(() => props.message || '')
 const showRetryButton = computed(() => props.variant !== 'retry_success')
+const presentationalRetryButtonText = computed(() => {
+  if (props.retryLabel) return props.retryLabel
+  if (props.retryCount && props.retryCount > 0) {
+    return t('common.retryCount', { count: props.retryCount })
+  }
+  return t('common.retry')
+})
 
 // --- Legacy store-bound mode (Dashboard zero-change) ---
 // ponytail: presentational mode (public pages) must not instantiate business
@@ -123,7 +131,9 @@ const recoverySuggestions = computed(() => {
     auth: 'errorState.authSuggestions',
     general: 'errorState.generalSuggestions',
   }[errorType.value] || 'errorState.generalSuggestions'
-  return t(key) as unknown as string[]
+  // Suggestions are locale arrays; `tm` avoids treating an array as a string
+  // translation and prevents false "missing key" warnings from vue-i18n.
+  return tm(key) as string[]
 })
 
 const retryAction = async () => {
@@ -162,6 +172,9 @@ const shouldRender = computed(() => (isPresentational.value ? true : hasError.va
       <div class="flex-1">
         <h3 class="text-lg font-semibold mb-1" :class="isPresentational ? ERROR_TITLE_CLASSES[props.variant!] : 'text-red-700'">{{ isPresentational ? presentationalTitle : t('errorState.workflowError') }}</h3>
         <p class="text-sm mb-2" :class="isPresentational ? ERROR_MESSAGE_CLASSES[props.variant!] : 'text-red-600'">{{ isPresentational ? presentationalMessage : workflowStore?.error }}</p>
+        <p v-if="isPresentational && props.retryCount && props.retryCount > 0" class="text-xs opacity-70" :class="ERROR_MESSAGE_CLASSES[props.variant!]">
+          {{ t('common.retriedTimes', { count: props.retryCount }) }}
+        </p>
         <p v-if="!isPresentational" class="text-red-500/70 text-xs mb-3">{{ t('errorState.currentPhase', { phase: currentPhase }) }}</p>
 
         <!-- Recovery suggestions (legacy mode only) -->
@@ -181,7 +194,7 @@ const shouldRender = computed(() => (isPresentational.value ? true : hasError.va
         <NeonButton v-if="isPresentational ? showRetryButton : true" variant="pink" size="sm" :loading="isPresentational ? props.retrying : Boolean(workflowStore?.isLoading)" @click="isPresentational ? emit('retry') : retryAction()">
           <span class="inline-flex items-center gap-2">
             <AppIcon name="RefreshCw" size="sm" variant="white" />
-            <span>{{ isPresentational ? (props.retryLabel || t('common.retry')) : t('errorState.retry') }}</span>
+            <span>{{ isPresentational ? presentationalRetryButtonText : t('errorState.retry') }}</span>
           </span>
         </NeonButton>
         <NeonButton v-if="!(isPresentational && props.hideDismiss)" variant="ghost" size="sm" :class="isPresentational ? ERROR_MESSAGE_CLASSES[props.variant!] : 'text-red-500 hover:bg-red-50'" @click="isPresentational ? emit('dismiss') : goBackAction()">

@@ -35,6 +35,72 @@ def clear_health_cache() -> None:
     _health_cache_at = 0.0
 
 
+def _creator_stats_scheduler_health(state: dict[str, Any]) -> dict[str, Any]:
+    """Translate scheduler state into an honest health check.
+
+    A scheduled task is not the same as a successful import: startup delay,
+    anti-risk quiet windows, and freshness gates can all leave the process
+    alive without writing new statistics. Keep those states visible so an
+    operator cannot mistake ``status=ok`` for fresh creator data.
+    """
+    enabled = bool(state.get("enabled"))
+    common = {
+        "interval_hours": state.get("interval_hours"),
+        "last_succeeded": state.get("last_succeeded"),
+        "last_finished_at": state.get("last_finished_at"),
+        "last_status": state.get("last_status"),
+        "last_active_accounts": state.get("last_active_accounts"),
+        "last_failed": state.get("last_failed"),
+        "last_error": state.get("last_error"),
+        "last_skip_reason": state.get("last_skip_reason"),
+        "next_run_at": state.get("next_run_at"),
+        "next_run_reason": state.get("next_run_reason"),
+        "run_count": state.get("run_count"),
+    }
+
+    if not enabled:
+        return {"status": "disabled", "message": "定时同步未启用", **common}
+
+    scheduler_status = str(state.get("status") or "scheduled")
+    last_failed = int(state.get("last_failed") or 0)
+    last_error = str(state.get("last_error") or "").strip()
+    if scheduler_status == "running":
+        return {
+            "status": "ok",
+            "message": "定时同步进行中",
+            "last_started_at": state.get("last_started_at"),
+            **common,
+        }
+
+    if last_failed > 0 or scheduler_status in {"failed", "soft_risk"}:
+        return {
+            "status": "warning",
+            "message": last_error or "最近一轮同步存在失败或风控信号",
+            **common,
+        }
+
+    last_finished_at = state.get("last_finished_at")
+    skip_reason = str(state.get("last_skip_reason") or "").strip()
+    if not last_finished_at:
+        message = "定时同步尚无完成记录"
+        if skip_reason:
+            message = f"定时同步本周期已跳过（{skip_reason}），尚无完成记录"
+        return {"status": "warning", "message": message, **common}
+
+    if scheduler_status == "skipped":
+        return {
+            "status": "warning",
+            "message": f"定时同步本周期按策略跳过（{skip_reason or '策略'}）",
+            **common,
+        }
+
+    return {
+        "status": "ok",
+        "message": "定时同步最近一轮已完成",
+        **common,
+    }
+
+
 def _check_env_var(name: str) -> dict[str, Any]:
     """Check if an environment variable is set."""
     value = os.environ.get(name)
@@ -321,43 +387,7 @@ async def _build_health_payload() -> dict[str, Any]:
 
         scheduler_state = getattr(fastapi_app.state, "creator_stats_scheduler_status", None)
         if isinstance(scheduler_state, dict):
-            enabled = bool(scheduler_state.get("enabled"))
-            status = str(scheduler_state.get("status") or "disabled")
-            last_failed = int(scheduler_state.get("last_failed") or 0)
-            last_error = scheduler_state.get("last_error")
-            if not enabled:
-                scheduler_check = {
-                    "status": "disabled",
-                    "message": "定时同步未启用",
-                    "interval_hours": scheduler_state.get("interval_hours"),
-                }
-            elif status == "running":
-                scheduler_check = {
-                    "status": "ok",
-                    "message": "定时同步进行中",
-                    "run_count": scheduler_state.get("run_count"),
-                    "last_started_at": scheduler_state.get("last_started_at"),
-                }
-            elif last_failed > 0 or status == "failed":
-                scheduler_check = {
-                    "status": "warning",
-                    "message": last_error or "最近一轮同步存在失败账号",
-                    "last_failed": last_failed,
-                    "last_succeeded": scheduler_state.get("last_succeeded"),
-                    "last_finished_at": scheduler_state.get("last_finished_at"),
-                    "next_run_at": scheduler_state.get("next_run_at"),
-                    "run_count": scheduler_state.get("run_count"),
-                }
-            else:
-                scheduler_check = {
-                    "status": "ok",
-                    "message": "定时同步正常",
-                    "last_succeeded": scheduler_state.get("last_succeeded"),
-                    "last_finished_at": scheduler_state.get("last_finished_at"),
-                    "next_run_at": scheduler_state.get("next_run_at"),
-                    "run_count": scheduler_state.get("run_count"),
-                    "interval_hours": scheduler_state.get("interval_hours"),
-                }
+            scheduler_check = _creator_stats_scheduler_health(scheduler_state)
     except Exception as exc:
         scheduler_check = {
             "status": "warning",

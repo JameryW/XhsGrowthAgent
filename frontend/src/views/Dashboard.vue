@@ -14,7 +14,6 @@ import BriefFileUpload from '@/components/BriefFileUpload.vue'
 import CelebrationModal from '@/components/CelebrationModal.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
-import ErrorCard from '@/components/ErrorCard.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import AccountViewNotice from '@/components/AccountViewNotice.vue'
 import { getDashboardHero } from '@/composables/dashboardHero'
@@ -251,7 +250,7 @@ const dashboardHero = computed(() => {
 const showCelebration = ref(false)
 const hasShownCelebration = ref(false)
 // DB-10: real artifact counts for the celebration modal.
-const celebrationCopyCount = computed(() => workflowStore.effectiveState?.content_versions?.length || 0)
+const celebrationCopyCount = computed(() => workflowStore.effectiveState?.content_versions?.length ?? null)
 const celebrationImageCount = computed(() => {
   const visualPlan = workflowStore.effectiveState?.visual_plan as {
     image_paths?: string[]
@@ -264,8 +263,13 @@ const celebrationImageCount = computed(() => {
   return visualPlan?.image_paths?.length
     ?? visualPlan?.generated_images?.length
     ?? visualPlan?.image_urls?.length
-    ?? 0
+    ?? null
 })
+const celebrationPostUrl = computed(() => {
+  const postUrl = workflowStore.effectiveState?.publish_result?.post_url
+  return typeof postUrl === 'string' && postUrl.trim() ? postUrl.trim() : null
+})
+const canReplayCelebration = computed(() => !workflowStore.isReplayMode)
 
 // Watch for workflow completion — replay snapshots must never trigger the
 // "completed" celebration (DB-02/D4: isReplay guards all completed semantics).
@@ -285,7 +289,20 @@ const handleCloseCelebration = () => {
   showCelebration.value = false
 }
 
-// ErrorCard handlers
+function handleViewCelebrationPost() {
+  // A replay snapshot must not turn a historical link into a live action.
+  if (workflowStore.isReplayMode || !celebrationPostUrl.value) return
+  showCelebration.value = false
+}
+
+function handleReplayCelebration() {
+  // Keep the replay guard at the Dashboard boundary as well as in the modal.
+  if (workflowStore.isReplayMode) return
+  showCelebration.value = false
+  navigateToStart(router)
+}
+
+// Shared ErrorState handlers — API and workflow failures use the same surface.
 const handleErrorRetry = () => {
   errorStore.clearError()
   if (workflowStore.activeThreadId) {
@@ -443,10 +460,11 @@ onUnmounted(() => {
     <div v-else class="space-y-3 md:space-y-5">
       <ErrorState v-if="hasError" />
 
-      <!-- ErrorCard for API errors -->
-      <ErrorCard
-        v-if="errorStore.hasError && errorStore.errorType"
-        :type="errorStore.errorType"
+      <!-- API errors use the same component in presentational mode. Keep one
+           primary error surface when workflow and request errors overlap. -->
+      <ErrorState
+        v-else-if="errorStore.hasError && errorStore.errorType"
+        :variant="errorStore.errorType"
         :message="errorStore.errorMessage"
         :retry-count="errorStore.retryCount"
         @retry="handleErrorRetry"
@@ -694,7 +712,11 @@ onUnmounted(() => {
       :show="showCelebration"
       :copy-count="celebrationCopyCount"
       :image-count="celebrationImageCount"
+      :post-url="celebrationPostUrl"
+      :can-replay="canReplayCelebration"
       @close="handleCloseCelebration"
+      @view-post="handleViewCelebrationPost"
+      @replay="handleReplayCelebration"
     />
   </div>
 </template>

@@ -11,6 +11,26 @@ export const SCORE_THRESHOLDS: ScoreThresholds = {
   warn: 50,
 }
 
+/**
+ * Default weighted dimensions used by the backend evaluator.
+ *
+ * The API may return account-specific overrides in `weights`; this map is the
+ * honest fallback for older responses and for surfaces that only have a
+ * historical evaluation payload. `bias_check` is deliberately absent because
+ * it is a separate penalty signal, not part of the weighted average.
+ */
+export const DEFAULT_DIMENSION_WEIGHTS: Readonly<Record<string, number>> = {
+  copywriting: 0.18,
+  visual: 0.13,
+  compliance: 0.14,
+  reach: 0.13,
+  audience: 0.13,
+  ai_taste: 0.08,
+  image_quality: 0.07,
+  commercial_tone: 0.05,
+  altruism: 0.09,
+}
+
 export type ScoreTier = 'pass' | 'warn' | 'fail' | 'none'
 
 export interface ScoreThresholds {

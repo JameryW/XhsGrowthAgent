@@ -91,6 +91,12 @@ path: compact context/filters, real workflow or checkpoint result, then
 decorative process explanation. Decorative animation must be secondary and
 must not push the primary evidence below the first mobile viewport.
 
+Do not apply a viewport-ratio IntersectionObserver reveal to a primary results
+container whose height is larger than the mobile viewport. The visible slice
+may never reach the observer threshold, leaving the entire evidence panel
+transparent on first paint. Reveal secondary cards individually, or render the
+primary result shell immediately.
+
 Use semantic `RouterLink` elements for workflow entry actions so keyboard
 users and browser new-tab behavior work without custom click handlers. When a
 route is opened from a filtered list, pass a safe return path plus a short

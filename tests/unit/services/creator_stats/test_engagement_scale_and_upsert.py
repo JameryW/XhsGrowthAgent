@@ -330,6 +330,28 @@ async def test_upsert_bundle_empty_snapshot_deletes_all_local_notes():
     imported, updated, deleted = await upsert_bundle(account, [])
     assert (imported, updated, deleted) == (0, 0, 1)
     assert await list_note_stats("empty_acc") == []
+    stored = await get_account_stats("empty_acc")
+    assert stored is not None
+    assert stored.note_count == 0
+
+
+@pytest.mark.asyncio
+async def test_upsert_bundle_deduplicates_note_ids_before_counting():
+    first = NoteStats(note_id="same", account_id="dedupe_acc", views=1)
+    last = NoteStats(note_id="same", account_id="dedupe_acc", views=9)
+
+    imported, updated, deleted = await upsert_bundle(
+        AccountStatsOverview(account_id="dedupe_acc", note_count=2),
+        [first, last],
+    )
+
+    assert (imported, updated, deleted) == (1, 0, 0)
+    notes = await list_note_stats("dedupe_acc")
+    assert len(notes) == 1
+    assert notes[0].views == 9
+    stored = await get_account_stats("dedupe_acc")
+    assert stored is not None
+    assert stored.note_count == 1
 
 
 @pytest.mark.asyncio
