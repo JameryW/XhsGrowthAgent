@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/08-11-fix-data-sync-failure/prd.md","reason":"本任务的根因调查、范围和验收标准。"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"同步快照必须使用持久化后端；启动降级不能留下可用性错误的 Postgres pool。"}
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Creator Stats 只能使用绑定的 headed Chrome/CDP，并且连接失败要 fail closed、释放资源。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"保留现有同步错误分类、可操作错误和不写入旧快照的失败语义。"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"新增启动/CDP诊断必须遵循结构化日志与脱敏约定。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"按项目要求完成 Ruff、mypy 和 pytest 回归。"}

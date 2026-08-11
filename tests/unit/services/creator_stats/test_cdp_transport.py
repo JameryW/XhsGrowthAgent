@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -398,6 +398,7 @@ class _FakeNotesPage:
 
     def __init__(self, note_count: int = 2) -> None:
         self._response_handler = None
+        self.trailing_slash = False
         self._notes = [_numbered_note(i + 1) for i in range(note_count)]
         self.detail_urls: list[str] = []
         self.body_urls: list[str] = []
@@ -413,6 +414,8 @@ class _FakeNotesPage:
         assert handler is self._response_handler
 
     async def _emit(self, path: str, body: dict, *, query: str = "") -> None:
+        if self.trailing_slash and not path.endswith("/"):
+            path = f"{path}/"
         response = SimpleNamespace(
             url=f"https://creator.xiaohongshu.com{path}{query}",
             status=200,
@@ -486,6 +489,71 @@ def _transport_with_page(page: _FakeNotesPage) -> CdpTransport:
     transport._mouse_move_pause = (0.0, 0.0)
     transport._mouse_wheel_pause = (0.0, 0.0)
     return transport
+
+
+async def test_cdp_page_index_accepts_all_known_query_names():
+    assert CdpTransport._page_index("https://creator.example/notes?page=0") == 0
+    assert CdpTransport._page_index("https://creator.example/notes?page=1") == 1
+    assert CdpTransport._page_index("https://creator.example/notes?page_num=2") == 2
+    assert CdpTransport._page_index("https://creator.example/notes?pageNo=3") == 3
+
+
+async def test_cdp_api_path_ignores_gateway_trailing_slash():
+    assert CdpTransport._api_path(f"{ACCOUNT_OVERVIEW_PATH}/") == ACCOUNT_OVERVIEW_PATH
+    assert CdpTransport._api_path(f"{NOTE_LIST_PATH}/?page_num=1") == NOTE_LIST_PATH
+
+
+async def test_cdp_capture_accepts_trailing_slash_responses():
+    page = _FakeNotesPage(note_count=1)
+    page.trailing_slash = True
+    transport = _transport_with_page(page)
+
+    _account, _profile, notes = await transport.fetch_creator_center(
+        max_pages=1,
+        force_light=True,
+    )
+
+    assert len(notes) == 1
+    assert CREATOR_STATS_PAGE in page.visited
+
+
+async def test_cdp_connect_passes_transport_timeout_to_playwright():
+    class FakeRuntime:
+        def __init__(self) -> None:
+            self.chromium = MagicMock()
+            self.chromium.connect_over_cdp = AsyncMock(side_effect=RuntimeError("cdp down"))
+            self.stop = AsyncMock()
+
+    runtime = FakeRuntime()
+    playwright_factory = MagicMock()
+    playwright_factory.return_value.start = AsyncMock(return_value=runtime)
+    transport = CdpTransport("http://127.0.0.1:9222", timeout=2.5)
+
+    with (
+        patch("playwright.async_api.async_playwright", playwright_factory),
+        pytest.raises(client_module.CreatorStatsFetchError, match="CDP connect failed"),
+    ):
+        await transport._ensure_browser()
+
+    runtime.chromium.connect_over_cdp.assert_awaited_once_with(
+        "http://127.0.0.1:9222",
+        timeout=2500,
+    )
+    runtime.stop.assert_awaited_once()
+
+
+async def test_cdp_cleanup_does_not_wait_forever_for_playwright_stop():
+    async def stalled_stop() -> None:
+        await asyncio.sleep(10)
+
+    transport = CdpTransport("http://127.0.0.1:9222", timeout=1)
+    transport._cleanup_timeout = 0.01
+    runtime = SimpleNamespace(stop=stalled_stop)
+    transport._playwright = runtime
+
+    await asyncio.wait_for(transport.aclose(), timeout=0.2)
+
+    assert transport._playwright is None
 
 
 async def test_cdp_incremental_filters_skip_unselected_notes():

@@ -76,6 +76,26 @@ def _scheduler_retry_seconds(env_name: str, default_minutes: float) -> float:
     return minutes * 60.0
 
 
+async def _reset_app_pool_after_postgres_failure() -> None:
+    """Close a partially initialized app pool before switching to SQLite.
+
+    Creator Stats and account tables use the app-level pool directly. Leaving
+    that pool marked ready after graph initialization failed would let the
+    scheduler enter a mixed SQLite/Postgres mode and report misleading sync
+    failures.
+    """
+    try:
+        from backend.db.pool import close_pool
+
+        await close_pool()
+    except Exception as exc:
+        logging.getLogger("xhs_growth").warning(
+            "failed to reset Postgres pool after startup fallback: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+
+
 def _weekday_skip_factor(weekday: int) -> float:
     """返回该星期几对应的跳过概率权重；越界输入按 1.0 处理。"""
     if 0 <= weekday < len(_WEEKDAY_SKIP_FACTORS):
@@ -1258,7 +1278,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             await activate_system_config()
         except Exception as e:
-            logging.getLogger("xhs_growth").warning(f"Postgres setup failed, using SQLite: {e}")
+            logging.getLogger("xhs_growth").warning(
+                "Postgres setup failed, using SQLite: %s: %s",
+                type(e).__name__,
+                e,
+            )
+            await _reset_app_pool_after_postgres_failure()
             graph = await compile_graph_dev()
             app.state.graph = graph
             app.state.checkpointer = graph.checkpointer

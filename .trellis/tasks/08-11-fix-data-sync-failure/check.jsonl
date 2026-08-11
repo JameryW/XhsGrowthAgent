@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/08-11-fix-data-sync-failure/prd.md","reason":"检查每项验收标准均有对应回归测试和验证命令。"}
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"确认不会新增 Cookie 注入、无头浏览器或公共笔记页访问。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"确认 CDP/数据库异常仍 fail closed 且不覆盖已有快照。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"执行定向测试、全量测试、Ruff、mypy 与 diff 检查。"}
