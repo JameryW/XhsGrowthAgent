@@ -202,6 +202,10 @@ class CdpTransport:
             self._risk_pressure = 0
         self._timeout = timeout
         self._detail_timeout = max(1.0, float(detail_timeout))
+        # A broken CDP transport can hang while Playwright disconnects. Bound
+        # cleanup separately so an already-classified sync failure is returned
+        # to the API instead of waiting on the browser driver indefinitely.
+        self._cleanup_timeout = max(0.5, min(5.0, float(timeout)))
         # Random pause between per-note page visits.  Back-to-back navigations
         # look like a bot to XHS risk control; jitter keeps the crawl human-paced.
         if request_delay is None:
@@ -395,7 +399,14 @@ class CdpTransport:
             ) from e
         self._playwright = await async_playwright().start()
         try:
-            self._browser = await self._playwright.chromium.connect_over_cdp(self.cdp_endpoint)
+            # A failed remote CDP handshake must not hold the HTTP sync request
+            # until Playwright's global launch timeout. Keep it bounded by the
+            # transport's caller-visible timeout.
+            connect_timeout_ms = max(1_000, int(self._timeout * 1000))
+            self._browser = await self._playwright.chromium.connect_over_cdp(
+                self.cdp_endpoint,
+                timeout=connect_timeout_ms,
+            )
         except Exception as e:
             await self._cleanup()
             raise CreatorStatsFetchError(
@@ -446,11 +457,23 @@ class CdpTransport:
     @staticmethod
     def _page_index(url: str) -> int:
         try:
-            # Creator Center has used both page=0 and page=1 as the first page.
-            raw = parse_qs(urlsplit(url).query).get("page", ["0"])[0]
+            # Creator Center has used both page=0 and page=1 as the first page,
+            # and newer builds use page_num/pageNo for the same request.
+            params = parse_qs(urlsplit(url).query)
+            raw = "0"
+            for key in ("page", "page_num", "pageNo"):
+                if key in params:
+                    raw = params[key][0]
+                    break
             return max(0, int(raw))
         except (TypeError, ValueError):
             return 0
+
+    @staticmethod
+    def _api_path(url: str) -> str:
+        """Return a stable API path while tolerating a gateway-added slash."""
+        path = urlsplit(url or "").path
+        return path.rstrip("/") or "/"
 
     @staticmethod
     def _validate_creator_response(
@@ -663,7 +686,7 @@ class CdpTransport:
 
         async def capture(response: Any) -> None:
             nonlocal account_response, profile_response, personal_info_response
-            path = urlsplit(response.url).path
+            path = self._api_path(response.url)
             note_id = _note_detail_id(response.url)
             if path not in (
                 ACCOUNT_OVERVIEW_PATH,
@@ -1160,7 +1183,7 @@ class CdpTransport:
         account_body, profile_body, notes = await self.fetch_creator_center(
             max_pages=1, period=period
         )
-        path = urlsplit(url).path
+        path = self._api_path(url)
         if path == ACCOUNT_OVERVIEW_PATH:
             return 200, account_body
         if path == CREATOR_PROFILE_PATH:
@@ -1170,14 +1193,34 @@ class CdpTransport:
         raise CreatorStatsFetchError(f"unsupported CDP creator endpoint: {path}")
 
     async def _cleanup(self) -> None:
-        if self._browser is not None:
-            with contextlib.suppress(Exception):
-                await self._browser.close()  # disconnect only; 宿主 Chrome 由 launcher 管
-            self._browser = None
-        if self._playwright is not None:
-            with contextlib.suppress(Exception):
-                await self._playwright.stop()
-            self._playwright = None
+        browser, self._browser = self._browser, None
+        if browser is not None:
+            await self._close_resource(browser, "close", "browser")
+        playwright, self._playwright = self._playwright, None
+        if playwright is not None:
+            await self._close_resource(playwright, "stop", "playwright")
+
+    async def _close_resource(self, resource: Any, method_name: str, label: str) -> None:
+        close = getattr(resource, method_name, None)
+        if close is None:
+            return
+        try:
+            await asyncio.wait_for(close(), timeout=self._cleanup_timeout)
+        except asyncio.CancelledError:
+            raise
+        except TimeoutError:
+            logger.warning(
+                "creator stats CDP %s cleanup timed out after %.1fs",
+                label,
+                self._cleanup_timeout,
+            )
+        except Exception as exc:
+            logger.warning(
+                "creator stats CDP %s cleanup failed: %s: %s",
+                label,
+                type(exc).__name__,
+                exc,
+            )
 
     async def aclose(self) -> None:
         await self._cleanup()
