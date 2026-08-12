@@ -1,134 +1,251 @@
 # XHS Growth Agent
 
-小红书增长引擎 — Multi-agent system for automating content growth on Xiaohongshu (Little Red Book).
+AI-assisted content operations for Xiaohongshu (小红书 / RedNote), built as a LangGraph multi-agent workflow with a human approval boundary.
 
-[English](#overview) | [中文说明](#中文说明)
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
----
+[![Live showcase](https://img.shields.io/badge/live-showcase-ff4f7b)](https://xhs.jameryw.dev/)
+[![License](https://img.shields.io/badge/license-MIT-22c55e)](./LICENSE)
 
-## Overview
+> From trend discovery to a reviewable, publish-ready note — with the evidence, decisions, and outputs kept visible.
 
-XHS Growth Agent is a LangGraph-based multi-agent workflow that automates the complete content lifecycle on Xiaohongshu:
+## Why it exists
 
-🌐 **Demo**: [https://xhs.jameryw.dev](https://xhs.jameryw.dev)
+XHS Growth Agent turns a growth brief into a repeatable content workflow. It combines research, positioning, copywriting, visual direction, quality checks, publishing, analytics, and engagement into one resumable run instead of a collection of disconnected prompts.
 
+The product is designed for creators, operators, and teams who need to:
+
+- turn a trend or brief into a clear content angle;
+- produce a complete note package — title, body, hashtags, and visual direction;
+- keep a person in control before anything is published;
+- compare workflow history and performance across accounts; and
+- reuse the same workflow from the web UI, CLI, API, or terminal extension.
+
+## Live product showcase
+
+The public deployment has two read-only surfaces for inspecting the product before signing in:
+
+- [Open the public Showcase](https://xhs.jameryw.dev/) — browse approved sample cases and their final outputs.
+- [Open the sample Workflow Replay](https://xhs.jameryw.dev/replay/case_c35a6559d23fd17cd832?from=%2F) — step through the evidence chain from trend discovery to content review.
+
+The `Start creating` entry point is an authenticated workspace. The public pages demonstrate the product and its outputs; creating, running, reviewing, or publishing your own workflow requires login and configured credentials.
+
+### Showcase landing page
+
+<p align="center">
+  <img src="docs/assets/readme/live-home.png" alt="Public XHS Growth Agent Showcase landing page" width="100%">
+</p>
+
+*Captured from the public deployment on 2026-08-12. The live sample is presented in the product's Chinese UI.*
+
+### Workflow Replay
+
+<p align="center">
+  <img src="docs/assets/readme/live-replay.png" alt="Public XHS Growth Agent Workflow Replay showing four key stages" width="100%">
+</p>
+
+*The replay keeps the key decisions and generated outputs inspectable instead of showing only a final text blob.*
+
+The public sample demonstrates:
+
+1. Trend discovery and audience insight.
+2. Strategy planning and topic positioning.
+3. Content creation with a title, long-form body, and visual direction.
+4. Content review with key takeaways, hashtags, image count, and a color palette.
+
+### Authenticated workspace tour
+
+After sign-in, the product expands from a public case viewer into an account-scoped operating workspace:
+
+| Surface | What you can do |
+| --- | --- |
+| Start Creating | Choose Trend Discovery, Commercial Brief, or Free Creation; select an account, topic, and vertical; open advanced options; and confirm the preflight readiness checklist. |
+| Dashboard | Follow a live workflow, inspect phase outputs, recover the next action, and resume an interrupted run. |
+| Review | Compare the generated note package, submit approval/rejection/revision feedback, and keep the publish boundary explicit. |
+| Analytics | Switch accounts, choose 24-hour/7-day/30-day windows, inspect KPI cards, growth insights, hot topics, charts, post-level tables, and export CSV. |
+| Evaluation | Review post-publish performance, RQGM content-review trends, sample confidence, quality dimensions, and evaluated workflows. |
+| History | Browse account-scoped workflow history, switch between accounts without changing workspace context, and resume or replay prior runs. |
+| Settings | Manage console users, XHS accounts, QR/browser login state, creator-center data binding, global model/Ripple/vector configuration, and public-page experience monitoring. |
+| Help Center | Read FAQs, open keyboard shortcuts, and submit product feedback. |
+
+The inventory above reflects the signed-in workspace observed on 2026-08-12. Account names, private metrics, and workflow records vary by deployment and are intentionally not checked into this repository; the screenshots above are from the public Showcase and Replay surfaces.
+
+## Product capabilities
+
+| Capability | What it does | Where it appears |
+| --- | --- | --- |
+| Trend scouting | Finds hot topics, keywords, audience signals, and competitor patterns. | Trend Scout, public Replay |
+| Content strategy | Converts a trend or brief into an angle, audience, timing, and growth hypothesis. | Content Strategist, Dashboard |
+| Copywriting | Generates titles, body copy, hashtags, CTAs, and revision variants. | Copywriter, Review |
+| Visual direction | Recommends cover concepts, layouts, palettes, styles, and image prompts from XHS patterns. | Visual Designer, Review |
+| Human review | Pauses at a review gate so a person can approve, reject, or request a revision. | Review workspace |
+| Quality evaluation | Adds an AI quality check after human approval and routes weak drafts back for revision. | Evaluation, workflow graph |
+| Publishing | Connects approved content to the XHS publisher, with A/B variant and scheduling hooks. | Publisher tools, API |
+| Analytics | Reads performance, costs, engagement, and content patterns to inform the next run. | Analytics, Analyst |
+| Engagement | Supports comment replies and direct-message workflows through the selected account session. | Engagement tools |
+| Account operations | Keeps account context, browser sessions, and history scoped to the selected creator account. | Settings, account controls |
+
+### The end-to-end workflow
+
+```text
+Trend / brief
+    ↓
+Trend Scout → Content Strategist → Copywriter + Visual Designer
+                                      ↓
+                              Review Gate (human)
+                                      ↓
+                              Quality Evaluation
+                              ↙               ↘
+                         Revise              Publish
+                                             ↓
+                                  Analytics + Engagement
 ```
-Trend Scouting → Content Strategy → Copywriting → Visual Design → Human Review → Publishing → Analytics → Engagement
-```
 
-**Key Features:**
-- 🔍 **Trend Scout**: Monitors hot topics, keywords, and competitor posts
-- 📋 **Content Strategist**: Plans content angles, timing, and target audience (with Ripple CAS prediction)
-- ✍️ **Copywriter**: Generates titles, body text, hashtags, and CTAs
-- 🎨 **Visual Designer**: Creates cover image prompts and layout recommendations
-- ✅ **Human Review Gate**: Interrupts for manual approval before publishing
-- 📤 **Publisher**: Posts content with A/B testing and scheduling
-- 📊 **Analyst**: Analyzes performance metrics and generates insights
-- 💬 **Engagement**: Handles comments and DMs automatically
+Runs are resumable and expose status, intermediate results, review decisions, and performance logs. The review gate is deliberate: the agent can prepare and evaluate content, but the publishing boundary remains visible and controllable.
 
----
+## Web workspace
+
+The Vue 3 frontend is organized around creation, review, growth, and account operations:
+
+| Surface | Route | Purpose |
+| --- | --- | --- |
+| Public Showcase | `/` | Browse approved cases and inspect final outputs without login. |
+| Public Workflow Replay | `/replay/:caseId` | Replay key decisions and evidence for a public case. |
+| Start Creating | `/start` | Choose Trend Discovery, Commercial Brief, or Free Creation; configure account/topic/vertical and run the readiness check. Requires login. |
+| Dashboard | `/dashboard/:threadId?` | Follow live status, progress, phase output, recovery, and the next action. |
+| Review | `/review/:threadId?` | Preview, approve, reject, or revise content before publishing. |
+| Analytics | `/analytics` | Review account-scoped KPIs, time windows, growth insights, hot topics, charts, post tables, and CSV export. |
+| Evaluation | `/evaluation` | Inspect post-publish performance, RQGM review trends, sample confidence, and workflow quality results. |
+| History | `/history` | Switch account scope, resume, inspect, and replay previous workflows. |
+| Settings | `/settings` | Manage console users, XHS accounts/browser login state, creator-center data, system configuration, and public-page monitoring. |
+| Help Center | `/help` | Find FAQs, keyboard shortcuts, onboarding help, and feedback entry points. |
+| Free Creation TUI | `/tui?mode=free` | Use a terminal-style creation workspace with draft and help shortcuts. |
+
+The public Showcase and Replay are safe-to-browse entry points. The private workspace, account sessions, provider keys, and publishing actions remain behind authentication and local configuration.
+
+## Architecture
+
+### Runtime
+
+- **Backend:** Python 3.11+, FastAPI, LangGraph, Pydantic, Typer, Uvicorn
+- **Frontend:** Vue 3, Vite, Pinia, Vue Router, Tailwind CSS, ECharts, xterm.js
+- **Persistence:** SQLite/in-memory checkpoints for development; PostgreSQL and Redis for production deployments
+- **Browser automation:** Playwright with per-account browser/CDP session support
+- **Optional prediction engine:** Ripple CAS, connected through an HTTP integration
+
+### Agent and tool layers
+
+| Agent | Representative tools | Output |
+| --- | --- | --- |
+| `trend_scout` | `xhs_trending`, `keyword_monitor`, `competitor_analyzer` | Trend and audience signals |
+| `content_strategist` | `topic_scorer`, `timing_optimizer`, `ripple_predict` | Angle, timing, and positioning |
+| `copywriter` | `hashtag_researcher`, `title_generator` | Note copy and variants |
+| `visual_designer` | `image_prompt_generator`, `layout_recommender` | Cover and visual plan |
+| `review_gate` | Human-in-the-loop interrupt | Approval or revision feedback |
+| `publisher` | `xhs_publisher`, `ab_test_manager`, `post_scheduler` | Publish request and experiment setup |
+| `analyst` | `analytics_reader`, `pattern_detector`, `report_generator` | Performance insights |
+| `engagement` | `comment_replier`, `dm_handler` | Account engagement actions |
+
+### Model routing
+
+Task-specific routing lets each stage use the provider best suited to the job. Providers are configured through environment variables and can be changed without rewriting the workflow.
+
+| Task | Default route in the project |
+| --- | --- |
+| Routing and scouting | DeepSeek |
+| Strategy and writing | Claude Sonnet 4 |
+| Visual planning and analysis | GPT-4o |
+| Publishing | Qwen Plus |
+| Engagement | DeepSeek |
 
 ## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/xhs-growth-agent.git
-cd xhs-growth-agent
+git clone https://github.com/JameryW/XhsGrowthAgent.git
+cd XhsGrowthAgent
 
-# Install dependencies
 pip install -e ".[dev,browser]"
-
-# For browser automation (optional)
 playwright install
 ```
 
----
-
-## Quick Start
-
-### CLI Usage
-
-```bash
-# Run the workflow (dry-run mode)
-xhs-growth run --dry-run
-
-# Run with specific account
-xhs-growth run --account-id my_account --phase scouting
-
-# Start API server
-xhs-growth serve --port 8000
-
-# Check workflow status
-xhs-growth status <thread_id>
-```
-
-### API Usage
-
-```python
-from xhs_growth import compile_graph_dev, XHSGrowthState
-
-# Compile the graph
-graph = compile_graph_dev()
-
-# Initialize state
-initial_state = {
-    "phase": "scouting",
-    "account_id": "my_account",
-    ...
-}
-
-# Run the workflow
-result = await graph.ainvoke(initial_state, {"configurable": {"thread_id": "xxx"}})
-```
-
----
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | 中文说明 | Required |
-|----------|-------------|---------|----------|
-| `ANTHROPIC_API_KEY` | Anthropic API key | Anthropic API密钥 | Yes* |
-| `OPENAI_API_KEY` | OpenAI API key | OpenAI API密钥 | Yes* |
-| `DEEPSEEK_API_KEY` | DeepSeek API key | DeepSeek API密钥 | Yes* |
-| `DASHSCOPE_API_KEY` | Alibaba Qwen API key | 通义千问API密钥 | Yes* |
-| `RIPPLE_BASE_URL` | Ripple CAS engine URL | Ripple引擎地址 | No |
-| `RIPPLE_API_TOKEN` | Ripple API token | Ripple API令牌 | No |
-| `POSTGRES_URI` | PostgreSQL connection | PostgreSQL连接串 | Prod only |
-| `REDIS_URI` | Redis connection | Redis连接串 | Prod only |
-
-*At least one LLM provider API key required.
-
-Copy `.env.example` to `.env` and fill in your values:
+Copy the example environment file and add at least one LLM provider key:
 
 ```bash
 cp .env.example .env
 ```
 
-### Ripple CAS Engine
+### Provider configuration
 
-> **重要：本项目依赖 Ripple CAS 引擎的 fork 版本（[JameryW/Ripple](https://github.com/JameryW/Ripple)），不是上游原版。**
+| Variable | Purpose | Required |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Anthropic models | At least one provider key |
+| `OPENAI_API_KEY` | OpenAI models | At least one provider key |
+| `DEEPSEEK_API_KEY` | DeepSeek routing and scouting | Optional if another route is configured |
+| `DASHSCOPE_API_KEY` | Alibaba/Qwen publishing route | Optional if another route is configured |
+| `RIPPLE_BASE_URL` | Ripple CAS service URL | Optional |
+| `RIPPLE_API_TOKEN` | Ripple CAS token | Optional |
+| `POSTGRES_URI` | Production checkpoint/database connection | Production |
+| `REDIS_URI` | Production cache and coordination | Production |
 
-Fork 版本相比上游新增了：
-- `providers/` 模块：HistoricalProvider、TopologyProvider 等数据源抽象
-- `provider_insights` 顶层输出字段（向后兼容）
-- Per-phase timeout 机制（`RIPPLE_PHASE_TIMEOUT_*` 环境变量）
-- `job.timed_out` 事件类型
+See [docs/configuration.md](./docs/configuration.md) for the full environment reference and [docs/security.md](./docs/security.md) for secret and account-session guidance.
 
-Ripple 提供以下 API：
-- 健康检查（`GET /healthz`，无需认证）
-- 心跳（`GET /v1/ping`）
-- 模拟任务提交（`POST /v1/simulations`）
-- 模拟状态查询（`GET /v1/simulations/{job_id}`）
-- 紧凑日志获取（`GET /v1/simulations/{job_id}/artifacts/compact-log`）
-- 模拟结果获取（`GET /v1/simulations/{job_id}/artifacts/output-json`）
-- 报告生成（`POST /v1/simulations/{job_id}/report`）
-- 事件流（`GET /v1/simulations/{job_id}/events`）
-- 取消请求（`POST /v1/simulations/{job_id}/cancel-request`）
-- 取消确认（`POST /v1/simulations/{job_id}/cancel-confirm`）
+## Quick start
 
-**启动 Ripple 服务（必须本地构建，fork 版本无预构建镜像）：**
+### Run the workflow from the CLI
+
+```bash
+# Validate the workflow without calling external APIs
+xhs-growth run --dry-run
+
+# Start with a specific account and phase
+xhs-growth run --account-id my_account --phase scouting
+
+# Inspect a workflow and resume an interrupted run
+xhs-growth status <thread_id>
+xhs-growth resume <thread_id>
+```
+
+### Start the web/API server
+
+```bash
+xhs-growth serve --port 8000
+```
+
+For frontend development:
+
+```bash
+cd frontend
+npm install
+npm run dev
+
+# Production build and checks
+npm run build
+npm run type-check
+npm run test:run
+npm run i18n:check
+```
+
+### Python API
+
+```python
+from backend.graph.builder import compile_graph_dev
+
+graph = await compile_graph_dev()
+config = {"configurable": {"thread_id": "demo-thread"}}
+
+result = await graph.ainvoke(
+    {"phase": "scouting", "account_id": "my_account"},
+    config,
+)
+```
+
+For HTTP endpoints, request and response examples, review submission, analytics, and health checks, see [docs/api-reference.md](./docs/api-reference.md).
+
+## Ripple CAS integration
+
+The project integrates with the forked [JameryW/Ripple](https://github.com/JameryW/Ripple) service for content-prediction signals. The fork adds provider abstractions, top-level `provider_insights`, per-phase timeouts, and `job.timed_out` events used by this project.
+
+Supported operations include health and ping checks, simulation submission/status, compact logs, output JSON, report generation, event streams, and cancellation.
 
 ```bash
 git clone https://github.com/JameryW/Ripple.git
@@ -139,329 +256,55 @@ podman run -d --name ripple-service \
   -e RIPPLE_API_TOKEN=your_token \
   localhost/ripple-service:local
 
-# 配置环境变量
 RIPPLE_BASE_URL=http://127.0.0.1:8080
 RIPPLE_API_TOKEN=your_token
 RIPPLE_ENABLED=true
 ```
 
----
+## oh-my-pi extension
 
-## Architecture
-
-### Workflow Graph
-
-The system is built as a LangGraph `StateGraph` with conditional routing:
-
-```
-START → orchestrator → [trend_scout | content_strategist | analyst | engagement | END]
-              ↓
-        trend_scout → [content_strategist | END]
-              ↓
-        content_strategist → copywriter → visual_designer → review_gate
-              ↓                                           ↓
-        review_gate → [publisher | revise_content → copywriter]
-              ↓
-        publisher → analyst → [orchestrator | END]
-              ↓
-        engagement → orchestrator
-```
-
-关键节点 (Key Nodes):
-- `orchestrator`: 编排器，决定下一步阶段
-- `review_gate`: 人工审核门，支持 human-in-the-loop
-
-### Model Routing
-
-不同任务类型路由到不同 LLM:
-
-| TaskType | Model | 中文说明 |
-|----------|-------|---------|
-| `routing` | DeepSeek | 编排路由 |
-| `scouting` | DeepSeek | 趋势侦察 |
-| `strategy` | Claude Sonnet 4 | 内容策略 |
-| `writing` | Claude Sonnet 4 | 文案创作 |
-| `visual` | GPT-4o | 视觉设计 |
-| `analysis` | GPT-4o | 数据分析 |
-| `publishing` | Qwen Plus | 发布执行 |
-| `engagement` | DeepSeek | 用户互动 |
-
-### Tool Registry
-
-每个 Agent 有专属工具集:
-
-| Agent | Tools | 中文说明 |
-|-------|-------|---------|
-| `trend_scout` | xhs_trending, keyword_monitor, competitor_analyzer | 趋势工具 |
-| `content_strategist` | topic_scorer, timing_optimizer, ripple_predict | 策略工具 |
-| `copywriter` | hashtag_researcher, title_generator | 文案工具 |
-| `visual_designer` | image_prompt_generator, layout_recommender | 设计工具 |
-| `analyst` | analytics_reader, pattern_detector, report_generator | 分析工具 |
-| `publisher` | xhs_publisher, ab_test_manager, post_scheduler | 发布工具 |
-| `engagement` | comment_replier, dm_handler | 互动工具 |
-
----
-
-## Frontend Web UI
-
-Vue 3 前端界面，赛博朋克风格，围绕创作、审核、增长和账号管理组织工作区：
-
-### Pages and interaction paths
-
-| 页面 | 路径 | 功能 |
-|------|------|------|
-| Start Creating | `/start` | 首屏欢迎 Hero、当前账号上下文、三步创作 cue，以及趋势/Brief/自由创作模式入口 |
-| Dashboard | `/dashboard/:threadId?` | 状态感知 Hero、进度和唯一下一步行动；支持阶段输出与深链恢复 |
-| Review | `/review/:threadId?` | 人机审核、内容预览、通过/修改/拒绝，展开卡片后固定操作栏 |
-| Analytics | `/analytics` | 按当前账号和周期查看数据、帖子表现、成本分析 |
-| Evaluation | `/evaluation` | 创作者质量与工作流评估，移动端从“更多”进入 |
-| History | `/history` | 工作流恢复、查看和回放 |
-| Settings | `/settings` | 控制台用户、小红书账号和系统配置；窄屏使用横向标签 |
-| Help Center | `/help` | FAQ、快捷键面板和反馈报告 |
-| Free Creation TUI | `/tui?mode=free` | 登录后进入终端式自由创作；保留命令行，同时提供建议/草稿/帮助快捷操作 |
-
-前端交互约定、导航层级、连接状态、错误恢复、响应式和无障碍规则见 [docs/frontend-ux-optimization.md](./docs/frontend-ux-optimization.md)。
-
-开始创作页会先展示“配置 → 确认 → 创作”的任务路径和当前账号，再进入模式配置；工作台首屏根据空闲、运行中、等待输入/审核、已完成或错误状态切换主标题、进度摘要和行动入口，减少用户扫描时间。
-
-### Tech Stack
-
-- Vue 3.4 + Vite 5.0
-- Tailwind CSS 3.4 (赛博朋克主题)
-- Element Plus 2.5
-- Pinia 2.1 状态管理
-- axios 1.6 API 客户端
-
-### Development
-
-```bash
-# 前端开发
-cd frontend
-npm install
-npm run dev  # http://localhost:3000
-
-# 构建
-npm run build  # 生成 dist/
-
-# 类型检查与前端回归测试
-npm run type-check
-npm run test:run
-
-# 后端托管
-xhs-growth serve --port 8000  # http://localhost:8000 同时托管前端
-```
-
-### Cyberpunk Design
-
-- 暗色渐变背景 (`#0a0a0a → #1a0a2e`)
-- 霓虹配色 (pink/cyan/purple)
-- 六边形流程节点
-- 毛玻璃卡片 (Glass-morphism)
-- 发光按钮和图标
-- Monospace 终端字体
-
----
-
-## 中文说明
-
-### 项目简介
-
-小红书增长引擎是一个基于 LangGraph 的多智能体系统，自动化小红书内容的全流程：
-
-- **趋势侦察**: 监控热门话题、关键词和竞品动态
-- **内容策划**: 制定内容角度、发布时间和目标受众
-- **文案创作**: 生成标题、正文、标签和行动号召
-- **视觉设计**: 设计封面图和排版方案
-- **人工审核**: 支持发布前人工确认
-- **自动发布**: 发布内容并支持A/B测试
-- **数据分析**: 分析内容表现并生成优化建议
-- **用户互动**: 自动回复评论和私信
-
-### 开发命令
-
-```bash
-# 运行测试
-pytest
-
-# 运行单个测试
-pytest tests/test_graph.py -v
-
-# 代码格式化
-ruff format .
-
-# 代码检查
-ruff check .
-
-# 类型检查
-mypy xhs_growth
-```
-
----
-
-## Development
-
-See [CLAUDE.md](./CLAUDE.md) for detailed development guidelines.
-
-### Adding a New Agent
-
-1. Create `agents/<name>.py` extending `BaseAgent`
-2. Add prompt YAML to `config/prompts/<name>.yaml`
-3. Import any needed tools via direct submodule imports inside `execute()` (no central registry)
-4. Add node + edges in `graph/builder.py`
-
-### Adding a New Tool
-
-1. Create tool file in `tools/<category>/<name>.py`
-2. Use `@tool` decorator from `langchain_core.tools`
-3. Export tool in `tools/<category>/__init__.py`
-4. Have the consuming agent import it via direct submodule import (no central registry)
-
-### Latency Instrumentation
-
-HTTP request + LLM call latency is env-gated and off by default (zero overhead when unset). Enable it to discover bottlenecks with prod data:
-
-```bash
-# 1. Enable on the backend container (restart required — gate is read once at import)
-XHS_LATENCY_LOG=1
-
-# 2. Drive traffic to an instrumented endpoint (/status /list /account-totals /evaluation/result),
-#    then aggregate:
-python scripts/collect_latency.py                 # live tail of backend-xhs
-python scripts/collect_latency.py --since 1h      # last hour
-python scripts/collect_latency.py --file logs.txt # a saved log file
-```
-
-Each sampled request emits one JSON line to the `xhs_growth.api.latency` logger:
-
-```json
-{"event":"http_latency","endpoint":"/status","thread_id":"...","phase":"completed",
- "total_ms":12.3,"aget_state_ms":4.1,"db_ms":1.2,"serialize_ms":3.0}
-```
-
-`/status` is sampled 1-in-10 (the 5s poller); other endpoints log every call. The aggregate script reports per-endpoint p50/p95/avg + per-segment p50 (aget_state / db / count / serialize) and a phase breakdown. LLM call timing (`ainvoke_ms` / `parse_ms`) is recorded onto the existing `performance_log` `kind:"llm"` entries.
-
----
-
-## oh-my-pi (omp) Extension
-
-Terminal-based AI coding agent integration via [oh-my-pi](https://github.com/can1357/oh-my-pi). Enables XHS content creation workflows from the terminal.
-
-### Setup
+The optional [oh-my-pi](https://github.com/can1357/oh-my-pi) extension exposes the workflow from a terminal agent:
 
 ```bash
 cd backend/omp/extensions/xhsagent-ext
 npm install
-
-# Configure API endpoint (defaults to http://localhost:8000)
 export XHS_AGENT_API_BASE=http://localhost:8000
-
-# Make sure the API server is running
-xhs-growth serve --port 8000
 ```
 
-### Available Tools
+Use `/xhs [topic]` to start a workflow and `/xhs-review` to review pending content. The extension also provides start, status, pause, resume, cancel, approve, and reject tools.
 
-| Tool | Description |
-|------|-------------|
-| `xhs_workflow_start` | Start a workflow with SSE real-time progress |
-| `xhs_workflow_status` | Query workflow status with full snapshot |
-| `xhs_workflow_pause` | Pause a running workflow |
-| `xhs_workflow_resume` | Resume a paused workflow |
-| `xhs_workflow_cancel` | Cancel a workflow |
-| `xhs_review_approve` | Approve content in review gate |
-| `xhs_review_reject` | Reject content with revision feedback |
+## Visual recommendation engine
 
-### Commands
+The visual layer is data-driven rather than a fixed prompt list. It extracts patterns from XHS posts, stores scene-level data with expiry, and recommends layouts and styles by content type, compatibility, popularity, palette, and trend score.
 
-- `/xhs [topic]` — Start a XHS content creation workflow
-- `/xhs-review` — Review pending content
+Supported scene families include food, travel, fashion, beauty, lifestyle, fitness, and home decor. The recommendation models live under `backend/tools/visual/` and are consumed by the visual designer workflow.
 
----
+## Testing and development
 
-## Visual Design Tools Enhancement
+```bash
+# Backend
+pytest
+ruff check .
+ruff format --check .
+mypy backend
 
-The visual design tools have been enhanced with a data-driven architecture that analyzes real XHS post patterns to generate intelligent recommendations.
-
-### Architecture Overview
-
-```
-XHS Platform Data
-       ↓
-VisualDataExtractor (AI-powered analysis)
-       ↓
-SceneDatabase (pattern storage with expiry)
-       ↓
-VisualAnalysisService (recommendation engine)
-       ↓
-layout_recommender / style_library (LangChain tools)
+# Frontend
+cd frontend
+npm run test:run
+npm run type-check
+npm run i18n:check
+npm run build
 ```
 
-### Key Components
+Further guides:
 
-| Component | Purpose | File |
-|-----------|---------|------|
-| `VisualDataExtractor` | AI-powered visual pattern extraction from posts | `tools/visual/extractor.py` |
-| `SceneDatabase` | Scene-based pattern storage with 7-day expiry | `tools/visual/database.py` |
-| `VisualAnalysisService` | Distribution analysis & recommendation generation | `tools/visual/service.py` |
-| `VisualTypes` | TypedDict models for all visual data structures | `tools/visual/types.py` |
-
-### Supported Scenes
-
-- `food` — Food photography and recipes
-- `travel` — Travel destinations and experiences
-- `fashion` — Fashion and outfit inspiration
-- `beauty` — Beauty and skincare products
-- `lifestyle` — Lifestyle and daily life content
-- `fitness` — Fitness and workout content
-- `home_decor` — Home decoration and interior design
-
-### Recommendation Features
-
-**Layout Recommendations:**
-- Content type filtering (single_image, carousel, video_cover)
-- Image count requirements (minimum/maximum)
-- Style compatibility matching
-- Popularity scoring based on analyzed posts
-
-**Style Recommendations:**
-- Color palette extraction (primary, secondary, accent colors)
-- Category filtering (minimalist, vibrant, warm, cool, editorial)
-- Trending style boosting
-- Pro/cons analysis for each style
-
-### Data Structures
-
-```python
-# Layout Option
-LayoutOption(
-    name="三图拼接",
-    description="Three images arranged horizontally",
-    pros=["视觉冲击力强", "信息量大"],
-    cons=["需要三张高质量图片"],
-    suitable_content_types=["carousel"],
-    min_images=3, max_images=3,
-    style_compatibility=["modern", "minimalist"],
-    popularity_score=0.85
-)
-
-# Style Option
-StyleOption(
-    name="清新简约",
-    description="Clean and minimalist aesthetic",
-    color_palette=ColorPalette(
-        primary="#F5F5F5",
-        secondary="#333333",
-        accent="#FF6B6B"
-    ),
-    pros=["干净利落", "易于模仿"],
-    cons=["可能显得单调"],
-    suitable_content_types=["single_image", "carousel"],
-    trending_score=0.92
-)
-```
-
----
+- [Frontend UX and interaction conventions](./docs/frontend-ux-optimization.md)
+- [Deployment](./docs/deployment.md)
+- [Configuration](./docs/configuration.md)
+- [API reference](./docs/api-reference.md)
+- [Security](./docs/security.md)
+- [Contributing](./CONTRIBUTING.md)
 
 ## License
 
-MIT License - See [LICENSE](./LICENSE) for details.
+MIT License — see [LICENSE](./LICENSE).
