@@ -53,6 +53,22 @@ The public sample demonstrates:
 3. Content creation with a title, long-form body, and visual direction.
 4. Content review with key takeaways, hashtags, image count, and a color palette.
 
+### Authenticated workspace snapshots
+
+The signed-in workspace adds account-scoped creation and growth operations on top of the public case viewer. These snapshots were captured from the deployed product on 2026-08-12; private account names, KPI values, and post/topic text are deliberately redacted.
+
+<p align="center">
+  <img src="docs/assets/readme/authenticated-create.png" alt="Redacted authenticated Start Creating workspace showing three creation modes, quick entries, topic input, and vertical selection" width="100%">
+</p>
+
+*Start Creating: choose Trend Discovery, Commercial Brief, or Free Creation, then continue through account-scoped setup and the preflight checklist.*
+
+<p align="center">
+  <img src="docs/assets/readme/authenticated-analytics.png" alt="Redacted authenticated Analytics workspace showing account switching, time filters, KPI cards, growth insights, and topic analysis" width="100%">
+</p>
+
+*Analytics: switch account scope, select a time window, inspect KPI cards and growth insights, and continue into topic, chart, post-level, and CSV-export views.*
+
 ### Authenticated workspace tour
 
 After sign-in, the product expands from a public case viewer into an account-scoped operating workspace:
@@ -68,7 +84,7 @@ After sign-in, the product expands from a public case viewer into an account-sco
 | Settings | Manage console users, XHS accounts, QR/browser login state, creator-center data binding, global model/Ripple/vector configuration, and public-page experience monitoring. |
 | Help Center | Read FAQs, open keyboard shortcuts, and submit product feedback. |
 
-The inventory above reflects the signed-in workspace observed on 2026-08-12. Account names, private metrics, and workflow records vary by deployment and are intentionally not checked into this repository; the screenshots above are from the public Showcase and Replay surfaces.
+The inventory above reflects the signed-in workspace observed on 2026-08-12. Account names, private metrics, post text, and workflow records vary by deployment and are intentionally not checked into this repository; the public Showcase/Replay images and the redacted workspace snapshots above are the shareable evidence assets.
 
 ## Product capabilities
 
