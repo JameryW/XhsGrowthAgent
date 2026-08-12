@@ -50,3 +50,12 @@ The authenticated Chrome workspace was inspected on 2026-08-12. The README shoul
 - Help Center includes FAQs, keyboard shortcuts, and feedback.
 
 Authenticated data remains intentionally out of repository screenshots; the public Showcase and Replay images are the shareable evidence assets.
+
+## Follow-up screenshot coverage
+
+Additional signed-in screenshots were captured from the deployed workspace on 2026-08-12:
+
+- `docs/assets/readme/authenticated-create.png` shows the three creation modes, quick entries, topic input, and vertical selection.
+- `docs/assets/readme/authenticated-analytics.png` shows account switching, time filters, KPI-card layout, growth insights, and topic analysis.
+
+The images use opaque redaction blocks for account identity, account-specific metrics, and post/topic text. The evaluation, history, settings, and help surfaces remain documented in text because the deployment became temporarily unreachable while this follow-up capture was in progress.
