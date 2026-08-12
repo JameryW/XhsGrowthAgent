@@ -53,6 +53,23 @@ The public sample demonstrates:
 3. Content creation with a title, long-form body, and visual direction.
 4. Content review with key takeaways, hashtags, image count, and a color palette.
 
+### Authenticated workspace tour
+
+After sign-in, the product expands from a public case viewer into an account-scoped operating workspace:
+
+| Surface | What you can do |
+| --- | --- |
+| Start Creating | Choose Trend Discovery, Commercial Brief, or Free Creation; select an account, topic, and vertical; open advanced options; and confirm the preflight readiness checklist. |
+| Dashboard | Follow a live workflow, inspect phase outputs, recover the next action, and resume an interrupted run. |
+| Review | Compare the generated note package, submit approval/rejection/revision feedback, and keep the publish boundary explicit. |
+| Analytics | Switch accounts, choose 24-hour/7-day/30-day windows, inspect KPI cards, growth insights, hot topics, charts, post-level tables, and export CSV. |
+| Evaluation | Review post-publish performance, RQGM content-review trends, sample confidence, quality dimensions, and evaluated workflows. |
+| History | Browse account-scoped workflow history, switch between accounts without changing workspace context, and resume or replay prior runs. |
+| Settings | Manage console users, XHS accounts, QR/browser login state, creator-center data binding, global model/Ripple/vector configuration, and public-page experience monitoring. |
+| Help Center | Read FAQs, open keyboard shortcuts, and submit product feedback. |
+
+The inventory above reflects the signed-in workspace observed on 2026-08-12. Account names, private metrics, and workflow records vary by deployment and are intentionally not checked into this repository; the screenshots above are from the public Showcase and Replay surfaces.
+
 ## Product capabilities
 
 | Capability | What it does | Where it appears |
@@ -94,14 +111,14 @@ The Vue 3 frontend is organized around creation, review, growth, and account ope
 | --- | --- | --- |
 | Public Showcase | `/` | Browse approved cases and inspect final outputs without login. |
 | Public Workflow Replay | `/replay/:caseId` | Replay key decisions and evidence for a public case. |
-| Start Creating | `/start` | Choose a trend, Brief, or free-creation workflow. Requires login. |
-| Dashboard | `/dashboard/:threadId?` | Follow status, progress, phase output, and the next action. |
+| Start Creating | `/start` | Choose Trend Discovery, Commercial Brief, or Free Creation; configure account/topic/vertical and run the readiness check. Requires login. |
+| Dashboard | `/dashboard/:threadId?` | Follow live status, progress, phase output, recovery, and the next action. |
 | Review | `/review/:threadId?` | Preview, approve, reject, or revise content before publishing. |
-| Analytics | `/analytics` | Review post performance, account-scoped metrics, and cost signals. |
-| Evaluation | `/evaluation` | Inspect creator quality and workflow evaluation results. |
-| History | `/history` | Resume, inspect, and replay previous workflows. |
-| Settings | `/settings` | Manage console users, XHS accounts, and system settings. |
-| Help Center | `/help` | Find FAQs, shortcuts, onboarding help, and feedback entry points. |
+| Analytics | `/analytics` | Review account-scoped KPIs, time windows, growth insights, hot topics, charts, post tables, and CSV export. |
+| Evaluation | `/evaluation` | Inspect post-publish performance, RQGM review trends, sample confidence, and workflow quality results. |
+| History | `/history` | Switch account scope, resume, inspect, and replay previous workflows. |
+| Settings | `/settings` | Manage console users, XHS accounts/browser login state, creator-center data, system configuration, and public-page monitoring. |
+| Help Center | `/help` | Find FAQs, keyboard shortcuts, onboarding help, and feedback entry points. |
 | Free Creation TUI | `/tui?mode=free` | Use a terminal-style creation workspace with draft and help shortcuts. |
 
 The public Showcase and Replay are safe-to-browse entry points. The private workspace, account sessions, provider keys, and publishing actions remain behind authentication and local configuration.

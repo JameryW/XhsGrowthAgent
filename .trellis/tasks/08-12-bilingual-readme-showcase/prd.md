@@ -36,3 +36,17 @@ Make the repository documentation English-first while preserving a complete Chin
 - Changing frontend behavior, backend behavior, authentication, or deployment.
 - Adding a hosted video pipeline or external media upload.
 - Claiming that public demo pages can start or publish a workflow without authentication.
+
+## Follow-up optimization
+
+The authenticated Chrome workspace was inspected on 2026-08-12. The README should also explain the real signed-in product tour without committing private account names, metrics, or workflow records:
+
+- Start Creating has three modes: trend discovery, commercial Brief, and free creation.
+- The creation form includes account scope, topic, vertical, advanced options, and a preflight readiness checklist.
+- Analytics supports account switching, 24-hour/7-day/30-day windows, KPI cards, growth insights, hot topics, charts, post tables, and CSV export.
+- Evaluation shows post-publish performance, RQGM review trends, sample confidence, and workflow evaluation results.
+- History is account-scoped and supports switching between accounts, resuming, and replaying workflows.
+- Settings groups console users, XHS accounts/browser login state, system configuration, and public-page experience monitoring.
+- Help Center includes FAQs, keyboard shortcuts, and feedback.
+
+Authenticated data remains intentionally out of repository screenshots; the public Showcase and Replay images are the shareable evidence assets.
