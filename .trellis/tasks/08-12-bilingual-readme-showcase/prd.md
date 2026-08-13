@@ -27,7 +27,7 @@ Make the repository documentation English-first while preserving a complete Chin
 1. `README.md` is fully English-first, links to `README.zh-CN.md`, and no longer contains a duplicated Chinese section.
 2. `README.zh-CN.md` is a complete Chinese counterpart and links back to `README.md`.
 3. Both READMEs describe the live product showcase, workflow stages, outputs, workspace pages, and access boundary accurately.
-4. Both READMEs embed the two local screenshots under `docs/assets/readme/` with meaningful alt text and captions.
+4. Both READMEs embed repository-local product-tour images under `docs/assets/readme/` with meaningful alt text and captions.
 5. Existing setup and development commands remain present and are not contradicted by the new product description.
 6. Markdown links and referenced screenshot files are verified locally; no credentials or private production data are added.
 
@@ -49,7 +49,7 @@ The authenticated Chrome workspace was inspected on 2026-08-12. The README shoul
 - Settings groups console users, XHS accounts/browser login state, system configuration, and public-page experience monitoring.
 - Help Center includes FAQs, keyboard shortcuts, and feedback.
 
-Authenticated data remains intentionally out of repository screenshots; the public Showcase and Replay images are the shareable evidence assets.
+Authenticated data remains redacted in repository screenshots; the public Showcase and Replay images plus the redacted workspace panels are the shareable evidence assets.
 
 ## Follow-up screenshot coverage
 
@@ -57,5 +57,6 @@ Additional signed-in screenshots were captured from the deployed workspace on 20
 
 - `docs/assets/readme/authenticated-create.png` shows the three creation modes, quick entries, topic input, and vertical selection.
 - `docs/assets/readme/authenticated-analytics.png` shows account switching, time filters, KPI-card layout, growth insights, and topic analysis.
+- `docs/assets/readme/product-tour-overview.png` provides a four-panel at-a-glance map of the public Showcase, Replay, Start Creating, and Analytics surfaces.
 
-The images use opaque redaction blocks for account identity, account-specific metrics, and post/topic text. The evaluation, history, settings, and help surfaces remain documented in text because the deployment became temporarily unreachable while this follow-up capture was in progress.
+The images use opaque redaction blocks for account identity, account-specific metrics, and post/topic text. A follow-up framing pass removes clipped page continuations: public Showcase, Replay, Start Creating, and Analytics images now present complete feature regions with explicit caption bars. The evaluation, history, settings, and help surfaces remain documented in text because the deployment became temporarily unreachable while this follow-up capture was in progress.
