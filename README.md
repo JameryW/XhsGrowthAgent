@@ -30,21 +30,36 @@ The public deployment has two read-only surfaces for inspecting the product befo
 
 The `Start creating` entry point is an authenticated workspace. The public pages demonstrate the product and its outputs; creating, running, reviewing, or publishing your own workflow requires login and configured credentials.
 
+### Product tour at a glance
+
+<p align="center">
+  <img src="docs/assets/readme/product-tour-overview.png" alt="Four-panel XHS Growth Agent product tour covering Showcase, Workflow Replay, Start Creating, and Analytics" width="100%">
+</p>
+
+| Area | Live entry | Access | Demonstrates |
+| --- | --- | --- | --- |
+| Public Showcase | [`/`](https://xhs.jameryw.dev/) | No login | Browse approved cases and inspect the final output. |
+| Workflow Replay | [`/replay/:caseId`](https://xhs.jameryw.dev/replay/case_c35a6559d23fd17cd832?from=%2F) | No login | Follow the evidence chain from trend discovery to review. |
+| Start Creating | `/start` | Login required | Choose Trend Discovery, Commercial Brief, or Free Creation. |
+| Analytics | `/analytics` | Login required | Switch account scope, filter time windows, and inspect growth insights. |
+
+Start with the overview, then use the detailed panels to inspect each surface. Every image uses a complete feature region with an explicit boundary, so the README stays readable at a glance.
+
 ### Showcase landing page
 
 <p align="center">
-  <img src="docs/assets/readme/live-home.png" alt="Public XHS Growth Agent Showcase landing page" width="100%">
+  <img src="docs/assets/readme/live-home.png" alt="Framed Public XHS Growth Agent Showcase hero panel" width="100%">
 </p>
 
-*Captured from the public deployment on 2026-08-12. The live sample is presented in the product's Chinese UI.*
+*Captured from the public deployment on 2026-08-12. This crop keeps the complete Showcase hero panel and removes partial cards or scroll continuation.*
 
 ### Workflow Replay
 
 <p align="center">
-  <img src="docs/assets/readme/live-replay.png" alt="Public XHS Growth Agent Workflow Replay showing four key stages" width="100%">
+  <img src="docs/assets/readme/live-replay.png" alt="Framed Public XHS Growth Agent Workflow Replay introduction panel" width="100%">
 </p>
 
-*The replay keeps the key decisions and generated outputs inspectable instead of showing only a final text blob.*
+*The replay keeps key decisions and generated outputs inspectable. This image ends at the complete stage-navigation panel.*
 
 The public sample demonstrates:
 
@@ -53,25 +68,25 @@ The public sample demonstrates:
 3. Content creation with a title, long-form body, and visual direction.
 4. Content review with key takeaways, hashtags, image count, and a color palette.
 
-### Authenticated workspace snapshots
+### Authenticated workspace feature panels
 
-The signed-in workspace adds account-scoped creation and growth operations on top of the public case viewer. These snapshots were captured from the deployed product on 2026-08-12; private account names, KPI values, and post/topic text are deliberately redacted.
+The signed-in workspace adds account-scoped creation and growth operations on top of the public case viewer. These feature panels were captured from the deployed product on 2026-08-12; private account names, KPI values, and post/topic text are deliberately redacted. Each image is composed from complete UI regions rather than a clipped long-page scroll.
 
 <p align="center">
-  <img src="docs/assets/readme/authenticated-create.png" alt="Redacted authenticated Start Creating workspace showing three creation modes, quick entries, topic input, and vertical selection" width="100%">
+  <img src="docs/assets/readme/authenticated-create.png" alt="Framed redacted authenticated Start Creating panel showing three creation modes and quick entry points" width="100%">
 </p>
 
 *Start Creating: choose Trend Discovery, Commercial Brief, or Free Creation, then continue through account-scoped setup and the preflight checklist.*
 
 <p align="center">
-  <img src="docs/assets/readme/authenticated-analytics.png" alt="Redacted authenticated Analytics workspace showing account switching, time filters, KPI cards, growth insights, and topic analysis" width="100%">
+  <img src="docs/assets/readme/authenticated-analytics.png" alt="Framed redacted authenticated Analytics panels showing account scope, time filters, KPI cards, and growth insights" width="100%">
 </p>
 
 *Analytics: switch account scope, select a time window, inspect KPI cards and growth insights, and continue into topic, chart, post-level, and CSV-export views.*
 
 ### Authenticated workspace tour
 
-After sign-in, the product expands from a public case viewer into an account-scoped operating workspace:
+After sign-in, the workspace is account-scoped and covers creation, review, analytics, and account operations:
 
 | Surface | What you can do |
 | --- | --- |
@@ -84,7 +99,20 @@ After sign-in, the product expands from a public case viewer into an account-sco
 | Settings | Manage console users, XHS accounts, QR/browser login state, creator-center data binding, global model/Ripple/vector configuration, and public-page experience monitoring. |
 | Help Center | Read FAQs, open keyboard shortcuts, and submit product feedback. |
 
-The inventory above reflects the signed-in workspace observed on 2026-08-12. Account names, private metrics, post text, and workflow records vary by deployment and are intentionally not checked into this repository; the public Showcase/Replay images and the redacted workspace snapshots above are the shareable evidence assets.
+The inventory above reflects the signed-in workspace observed on 2026-08-12. Account names, private metrics, post text, and workflow records vary by deployment and are intentionally not checked into this repository; the public Showcase/Replay images and the redacted workspace panels above are the shareable evidence assets.
+
+### From input to output
+
+With the relevant integrations enabled, a run moves from the following inputs through workspace steps to inspectable outputs:
+
+| Input or signal | Workspace step | Output to inspect |
+| --- | --- | --- |
+| Trend or growth brief | Start Creating | Account, topic, vertical, and readiness state |
+| Research signals | Trend Scout + Content Strategist | Evidence, audience insight, positioning, and timing |
+| Draft direction | Copywriter + Visual Designer | Title, body, hashtags, CTA, and visual plan |
+| Human decision | Review | Approval, rejection, or revision feedback before publishing |
+| Approved package | Quality Evaluation + Publisher | Quality result, publish request, and optional experiment/scheduling hooks |
+| Performance feedback | Analytics + Engagement | KPIs, topic patterns, post-level results, and signals for the next run |
 
 ## Product capabilities
 
@@ -291,7 +319,7 @@ Use `/xhs [topic]` to start a workflow and `/xhs-review` to review pending conte
 
 ## Visual recommendation engine
 
-The visual layer is data-driven rather than a fixed prompt list. It extracts patterns from XHS posts, stores scene-level data with expiry, and recommends layouts and styles by content type, compatibility, popularity, palette, and trend score.
+The visual layer uses data-driven recommendations. It extracts patterns from XHS posts, stores scene-level data with expiry, and recommends layouts and styles by content type, compatibility, popularity, palette, and trend score.
 
 Supported scene families include food, travel, fashion, beauty, lifestyle, fitness, and home decor. The recommendation models live under `backend/tools/visual/` and are consumed by the visual designer workflow.
 
