@@ -46,8 +46,10 @@ fi
 # container. The container reaches Postgres as postgres-xhs; the host reaches the
 # published DB port on localhost. Normalize only that deployment hostname and
 # leave explicit operator overrides untouched.
+# NOTE: deploy.sh publishes postgres on host port 45432 (5432 was taken by a
+# native PG16 when the stack was restored), so the host must use localhost:45432.
 if [[ "${POSTGRES_URI:-}" == *"@postgres-xhs:"* ]]; then
-    export POSTGRES_URI="${POSTGRES_URI/@postgres-xhs:/@localhost:}"
+    export POSTGRES_URI="${POSTGRES_URI/@postgres-xhs:5432/@localhost:45432}"
 fi
 
 # Host Chrome runs HEADED ONLY — headless Chrome is banned (XHS risk control
