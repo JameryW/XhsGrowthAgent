@@ -1435,7 +1435,23 @@ class XhsLoginSession:
 
         endpoint = await _resolve_cdp_connect_endpoint(self.cdp_endpoint)
         parsed = urlparse(self.cdp_endpoint)
-        headers = {"Host": f"127.0.0.1:{parsed.port}"} if parsed.port else {}
+        host = (parsed.hostname or "").strip()
+        headers: dict[str, str] = {}
+        # Chrome 144+ rejects the CDP WebSocket when the Host header is a
+        # non-IP hostname (e.g. host.containers.internal) — 500 "Host header is
+        # specified and is not an IP address or localhost". get_account_cdp_endpoint
+        # already resolves host.containers.internal to its IP, and when the host
+        # IS an IP/literal we must NOT override Host (the library sends the IP,
+        # which Chrome accepts). Only override Host for a genuinely non-IP
+        # hostname, and even then the lib's own netloc Host may still win on
+        # websockets>=14 — so the IP-resolved path is the one that works.
+        if parsed.port and host and host not in {"127.0.0.1", "localhost", "::1"}:
+            try:
+                import ipaddress
+
+                ipaddress.ip_address(host)
+            except ValueError:
+                headers = {"Host": f"127.0.0.1:{parsed.port}"}
         try:
             self._raw_ws = await websockets.connect(
                 endpoint,
