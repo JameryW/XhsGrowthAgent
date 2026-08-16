@@ -1544,6 +1544,26 @@ class XhsLoginSession:
                 "account_id": self.account_id,
             }
 
+        # www_only: 扫码确实写入了 www 登录态（web_session+id_token），但本环境
+        # Chrome CDP 模式从不 mint access-token-creator.* cookie（小红书改版 /
+        # persistent 差异）。此时以 creator 页面证据兜底判定：导航到 creator home，
+        # 若页面显示已登录 dashboard（发布笔记/数据看板/笔记管理等）即视为登录成功。
+        # 与 _inspect_profile_login_status_raw 的页面证据 fallback 一致。
+        if await self._raw_warm_creator_for_confirm():
+            self._confirmed = True
+            self._code_status = _CODE_CONFIRMED
+            logger.info(
+                "raw CDP creator 页面证据确认登录成功 account=%s", self.account_id
+            )
+            await self.stop(keep_page=True)
+            _detach_session_if_current(self)
+            return {
+                "status": "confirmed",
+                "qr_id": self._qr_id,
+                "url": "",
+                "account_id": self.account_id,
+            }
+
         page_state = await self._raw_login_page_state()
         if page_state.get("verification_required") or page_state.get("scanned"):
             self._code_status = _CODE_SCANNED
@@ -1607,6 +1627,32 @@ class XhsLoginSession:
         }
         is_logged_in, _signals, _reason = _cookie_names_mean_logged_in(names)
         return is_logged_in
+
+    async def _raw_warm_creator_for_confirm(self) -> bool:
+        """Best-effort: navigate current raw-CDP target to Creator home and check
+        whether the page shows a logged-in creator dashboard (page evidence).
+
+        Raw-CDP QR login writes the www session (web_session+id_token) but in this
+        deployment Chrome never mints an ``access-token-creator.*`` cookie, so the
+        cookie-only check in ``_raw_has_strong_cookie`` under-reports success. The
+        creator page itself is the authoritative signal (same as
+        ``_raw_creator_page_is_ready``). Never raises; returns True only when the
+        loaded creator page is verified logged-in.
+        """
+        try:
+            await self._raw_send("Page.navigate", {"url": _CREATOR_HOME_URL})
+            # Give the creator SPA a window to render + run its SSO/boot.
+            await asyncio.sleep(_CREATOR_WARMUP_SETTLE_S)
+            state = await self._raw_eval(_CREATOR_PAGE_STATUS_SCRIPT)
+            if _creator_page_state_is_ready(state):
+                return True
+            # SPA may still be booting; one more probe after a short settle.
+            await asyncio.sleep(_CREATOR_WARMUP_SETTLE_S)
+            state = await self._raw_eval(_CREATOR_PAGE_STATUS_SCRIPT)
+            return _creator_page_state_is_ready(state)
+        except Exception as e:
+            logger.debug("raw CDP creator 页面证据探测失败 account=%s: %s", self.account_id, e)
+            return False
 
     async def _raw_clear_partial_login_cookies(self) -> int:
         """Delete www/creator auth cookies via CDP so explore shows the QR shell.
