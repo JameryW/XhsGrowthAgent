@@ -101,4 +101,29 @@ describe('WorkflowStartForm account niche defaults', () => {
     expect((wrapper.vm as any).getConfig().workflowMode).toBe('free')
     expect(modeButtons[2].attributes('aria-checked')).toBe('true')
   })
+
+  it('turns Free Creation into a guided goal hand-off without submitting examples', async () => {
+    const wrapper = await mountWithAccounts([], null)
+    const freeMode = wrapper.findAll('button[role="radio"]')[2]
+
+    await freeMode.trigger('click')
+
+    expect(wrapper.find('#start-free-goal').exists()).toBe(true)
+    expect(wrapper.text()).toContain('自由创作路径')
+    expect(wrapper.text()).toContain('描述目标')
+    expect(wrapper.text()).toContain('生成内容')
+    expect(wrapper.text()).toContain('质量评估')
+    expect(wrapper.text()).toContain('审核发布')
+
+    const example = wrapper.findAll('button').find((button) => button.text().includes('写一篇笔记'))
+    expect(example).toBeDefined()
+    await example!.trigger('click')
+
+    expect((wrapper.find('#start-free-goal').element as HTMLTextAreaElement).value).toContain('京都三天亲子旅行')
+    expect((wrapper.vm as any).getConfig()).toMatchObject({
+      workflowMode: 'free',
+      topic: expect.stringContaining('京都三天亲子旅行'),
+    })
+    wrapper.unmount()
+  })
 })

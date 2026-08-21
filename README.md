@@ -40,7 +40,7 @@ The `Start creating` entry point is an authenticated workspace. The public pages
 | --- | --- | --- | --- |
 | Public Showcase | [`/`](https://xhs.jameryw.dev/) | No login | Browse approved cases and inspect the final output. |
 | Workflow Replay | [`/replay/:caseId`](https://xhs.jameryw.dev/replay/case_c35a6559d23fd17cd832?from=%2F) | No login | Follow the evidence chain from trend discovery to review. |
-| Start Creating | `/start` | Login required | Choose Trend Discovery, Commercial Brief, or Free Creation. |
+| Start Creating | `/start` | Login required | Choose a path, set the account and goal, then enter the matching workspace. |
 | Analytics | `/analytics` | Login required | Switch account scope, filter time windows, and inspect growth insights. |
 
 Start with the overview, then use the detailed panels to inspect each surface. Every image uses a complete feature region with an explicit boundary, so the README stays readable at a glance.
@@ -76,7 +76,7 @@ The signed-in workspace adds account-scoped creation and growth operations on to
   <img src="docs/assets/readme/authenticated-create.png" alt="Framed redacted authenticated Start Creating panel showing three creation modes and quick entry points" width="100%">
 </p>
 
-*Start Creating: choose Trend Discovery, Commercial Brief, or Free Creation, then continue through account-scoped setup and the preflight checklist.*
+*Start Creating: choose Trend Discovery, Commercial Brief, or Free Creation. Selecting Free Creation reveals the guided goal composer before entering the Agent workspace.*
 
 <p align="center">
   <img src="docs/assets/readme/authenticated-analytics.png" alt="Framed redacted authenticated Analytics panels showing account scope, time filters, KPI cards, and growth insights" width="100%">
@@ -84,13 +84,24 @@ The signed-in workspace adds account-scoped creation and growth operations on to
 
 *Analytics: switch account scope, select a time window, inspect KPI cards and growth insights, and continue into topic, chart, post-level, and CSV-export views.*
 
+### Free Creation path
+
+Free Creation now starts with a guided hand-off instead of dropping the user into an empty terminal:
+
+1. Choose the target XHS account on Start Creating.
+2. Describe a goal, rough idea, or existing draft, or fill the field from an example prompt.
+3. Enter the Agent workspace with that goal prefilled in the editable prompt. Nothing is sent until the user confirms.
+4. Continue the account-scoped loop through conversation, `/drafts`, `/evaluate`, `/analytics`, revision, and publishing.
+
+The goal and account selection travel together, so free-mode drafts and follow-up insights stay attached to the creator account the user chose.
+
 ### Authenticated workspace tour
 
 After sign-in, the workspace is account-scoped and covers creation, review, analytics, and account operations:
 
 | Surface | What you can do |
 | --- | --- |
-| Start Creating | Choose Trend Discovery, Commercial Brief, or Free Creation; select an account, topic, and vertical; open advanced options; and confirm the preflight readiness checklist. |
+| Start Creating | Choose Trend Discovery, Commercial Brief, or Free Creation; select an account; and, for Free Creation, carry an editable goal into the Agent workspace. |
 | Dashboard | Follow a live workflow, inspect phase outputs, recover the next action, and resume an interrupted run. |
 | Review | Compare the generated note package, submit approval/rejection/revision feedback, and keep the publish boundary explicit. |
 | Analytics | Switch accounts, choose 24-hour/7-day/30-day windows, inspect KPI cards, growth insights, hot topics, charts, post-level tables, and export CSV. |
@@ -107,6 +118,7 @@ With the relevant integrations enabled, a run moves from the following inputs th
 
 | Input or signal | Workspace step | Output to inspect |
 | --- | --- | --- |
+| Free Creation goal | Start Creating → Agent workspace | Editable prompt, selected account, and an explicit send decision |
 | Trend or growth brief | Start Creating | Account, topic, vertical, and readiness state |
 | Research signals | Trend Scout + Content Strategist | Evidence, audience insight, positioning, and timing |
 | Draft direction | Copywriter + Visual Designer | Title, body, hashtags, CTA, and visual plan |
@@ -155,7 +167,7 @@ The Vue 3 frontend is organized around creation, review, growth, and account ope
 | --- | --- | --- |
 | Public Showcase | `/` | Browse approved cases and inspect final outputs without login. |
 | Public Workflow Replay | `/replay/:caseId` | Replay key decisions and evidence for a public case. |
-| Start Creating | `/start` | Choose Trend Discovery, Commercial Brief, or Free Creation; configure account/topic/vertical and run the readiness check. Requires login. |
+| Start Creating | `/start` | Choose Trend Discovery, Commercial Brief, or Free Creation; configure account/topic/vertical, or carry a Free Creation goal into the Agent workspace. Requires login. |
 | Dashboard | `/dashboard/:threadId?` | Follow live status, progress, phase output, recovery, and the next action. |
 | Review | `/review/:threadId?` | Preview, approve, reject, or revise content before publishing. |
 | Analytics | `/analytics` | Review account-scoped KPIs, time windows, growth insights, hot topics, charts, post tables, and CSV export. |

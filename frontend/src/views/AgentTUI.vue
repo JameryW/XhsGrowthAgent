@@ -61,13 +61,27 @@ const isFreeCreationEntry = computed(() => route.query.mode === 'free')
 const freeCreationTopic = computed(() => (
   typeof route.query.topic === 'string' ? route.query.topic : ''
 ))
+const freeRouteAccountId = computed(() => (
+  typeof route.query.account_id === 'string' ? route.query.account_id.trim() : ''
+))
+const resolvedFreeAccountId = computed(() => {
+  if (!isFreeCreationEntry.value) return accountsStore.activeAccountId
+  const requested = freeRouteAccountId.value
+  const isOwned = requested && accountsStore.accounts.some((account) => account.id === requested)
+  return isOwned ? requested : accountsStore.activeAccountId
+})
 
 /** Resolve the selected XHS account, not the console user's UUID. */
 async function getCurrentAccountId(): Promise<string> {
-  if (!accountsStore.activeAccountId) {
+  const needsAccountRefresh = !accountsStore.accounts.length || (
+    isFreeCreationEntry.value
+    && Boolean(freeRouteAccountId.value)
+    && !accountsStore.accounts.some((account) => account.id === freeRouteAccountId.value)
+  )
+  if (needsAccountRefresh) {
     await accountsStore.fetchAccounts()
   }
-  return accountsStore.activeAccountId || 'default'
+  return resolvedFreeAccountId.value || accountsStore.activeAccountId || 'default'
 }
 
 /**
@@ -79,7 +93,7 @@ async function getCurrentAccountId(): Promise<string> {
  * Workflow handlers pass through (the guard is a free-mode-only gate).
  */
 function requireFreeAccount(): boolean {
-  if (!isFreeCreationEntry.value || accountsStore.activeAccountId) return true
+  if (!isFreeCreationEntry.value || resolvedFreeAccountId.value) return true
   writeEmptyState(writeLine, {
     width: cardWidth(termCols),
     icon: '🔗',
@@ -2283,7 +2297,7 @@ function renderFreeWelcome(accountFetchOk = false) {
   // account-scoped /drafts list can't see it — so a creation goal typed without
   // a bound account produces a draft the user can never manage in the TUI.
   // Surface that up front instead of letting them discover it the hard way.
-  if (accountFetchOk && !accountsStore.activeAccountId) {
+  if (accountFetchOk && !resolvedFreeAccountId.value) {
     writeLine('')
     for (const l of wrapDisplay(`⚠ ${t('tui.freeNoAccountBanner')}`, termCols - 4)) {
       writeLineColored(`  ${l}`, ANSI.YELLOW)
@@ -2368,6 +2382,7 @@ const mobileInputPlaceholder = computed(() => {
     : t('tui.commandPlaceholder')
 })
 const accountContextLabel = computed(() =>
+  accountsStore.accounts.find((account) => account.id === resolvedFreeAccountId.value)?.name ||
   accountsStore.activeAccount?.name ||
   (isFreeCreationEntry.value ? t('tui.freeAccountUnbound') : t('tui.defaultAccount')))
 
@@ -2550,6 +2565,12 @@ onMounted(async () => {
   }
 
   writePrompt()
+  // Carry the Start Creating goal into the same editable surface users use
+  // for normal free-mode messages. It stays local until the user confirms it
+  // with Enter or Send, so navigation never triggers an unintended agent turn.
+  if (isFreeCreationEntry.value && freeCreationTopic.value.trim()) {
+    prefillFreePrompt(freeCreationTopic.value.trim())
+  }
 })
 
 function handleDocumentClick(ev: MouseEvent) {

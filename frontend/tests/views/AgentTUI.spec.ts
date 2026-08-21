@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import AgentTUI from '@/views/AgentTUI.vue'
+import { getActiveAccount, listAccounts } from '@/api/accounts'
 
-const { FakeTerminal, FakeWebSocket } = vi.hoisted(() => {
+const { FakeTerminal, FakeWebSocket, routeQuery } = vi.hoisted(() => {
   class HoistedFakeTerminal {
     static instances: HoistedFakeTerminal[] = []
     cols = 80
@@ -76,11 +77,20 @@ const { FakeTerminal, FakeWebSocket } = vi.hoisted(() => {
   return {
     FakeTerminal: HoistedFakeTerminal,
     FakeWebSocket: HoistedFakeWebSocket,
+    routeQuery: { mode: 'free' } as Record<string, string>,
   }
 })
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: { mode: 'free' } }),
+  useRoute: () => ({ query: routeQuery }),
+}))
+
+vi.mock('@/api/accounts', () => ({
+  listAccounts: vi.fn().mockResolvedValue([]),
+  getActiveAccount: vi.fn().mockResolvedValue(null),
+  createAccount: vi.fn(),
+  updateAccount: vi.fn(),
+  deleteAccount: vi.fn(),
 }))
 
 vi.mock('@xterm/xterm', () => ({
@@ -128,6 +138,11 @@ describe('AgentTUI free creation interaction contract', () => {
     FakeTerminal.instances = []
     FakeWebSocket.instances = []
     sessionStorage.clear()
+    routeQuery.mode = 'free'
+    delete routeQuery.account_id
+    delete routeQuery.topic
+    vi.mocked(listAccounts).mockResolvedValue([])
+    vi.mocked(getActiveAccount).mockResolvedValue(null)
     vi.stubGlobal('WebSocket', FakeWebSocket)
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -272,6 +287,33 @@ describe('AgentTUI free creation interaction contract', () => {
     expect(socket.sent).toHaveLength(0)
     wrapper.unmount()
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth })
+  })
+
+  it('carries a Start Creating goal into the editable prompt without sending it', async () => {
+    routeQuery.topic = '写一篇京都三天亲子旅行笔记'
+    const { wrapper, terminal, socket } = await mountFreeTui()
+
+    expect(terminal.lines.join('\n')).toContain('写一篇京都三天亲子旅行笔记')
+    expect(socket.sent).toHaveLength(0)
+    expect(wrapper.find('.tui-mobile-input').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('uses the selected route account for the free workspace context', async () => {
+    routeQuery.account_id = 'selected-account'
+    vi.mocked(listAccounts).mockResolvedValue([{
+      id: 'selected-account',
+      name: 'Selected creator',
+      niche: 'travel',
+      is_active: false,
+      created_at: '2026-08-21T00:00:00Z',
+    }])
+    vi.mocked(getActiveAccount).mockResolvedValue(null)
+
+    const { wrapper } = await mountFreeTui()
+
+    expect(wrapper.find('.tui-account-context').text()).toContain('Selected creator')
+    wrapper.unmount()
   })
 
   it('renders exactly one prompt and one closing rule for a turn with empty message pairs', async () => {
