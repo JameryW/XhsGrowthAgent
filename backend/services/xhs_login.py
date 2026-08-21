@@ -1552,9 +1552,7 @@ class XhsLoginSession:
         if await self._raw_warm_creator_for_confirm():
             self._confirmed = True
             self._code_status = _CODE_CONFIRMED
-            logger.info(
-                "raw CDP creator 页面证据确认登录成功 account=%s", self.account_id
-            )
+            logger.info("raw CDP creator 页面证据确认登录成功 account=%s", self.account_id)
             await self.stop(keep_page=True)
             _detach_session_if_current(self)
             return {

@@ -227,6 +227,28 @@
       "workflowMode": "工作模式",
       "enterFree": "进入自由创作模式",
       "freeModeHelp": "进入 TUI，由智能体按对话自由创作、评估和发布",
+      "freeGoalLabel": "你想创作什么？",
+      "freeGoalHelp": "可以输入创作目标、粗略想法或已有草稿；进入自由创作工作区后，还能在发送前继续编辑。",
+      "freeGoalPlaceholder": "例如：写一篇京都三天亲子旅行的小红书笔记，语气温暖、实用，适合第一次带娃出行的家庭。",
+      "freeGoalCarryHint": "这段目标会带入当前选中的账号，并预填到自由创作输入框中，不会自动发送。",
+      "freePromptExamplesTitle": "从示例开始",
+      "freePromptExamples": {
+        "labels": {
+          "writeNote": "写一篇笔记",
+          "findTopics": "找选题灵感",
+          "improveDraft": "优化一篇草稿"
+        },
+        "writeNote": "帮我写一篇京都三天亲子旅行的小红书笔记，语气温暖实用，适合第一次带娃出行的家庭。",
+        "findTopics": "结合我的账号，给我 5 个小红书选题，并说明最值得先尝试哪一个。",
+        "improveDraft": "帮我检查这篇草稿的表达、结构和转化效果，再给出一版更好的修改稿。"
+      },
+      "freePathTitle": "自由创作路径",
+      "freePath": {
+        "describe": "描述目标",
+        "create": "生成内容",
+        "evaluate": "质量评估",
+        "publish": "审核发布"
+      },
       "niche": "垂类赛道",
       "nicheHelp": "选择内容垂类，影响趋势发现和内容策略",
       "nicheBound": "已自动使用账号绑定赛道：{niche}",

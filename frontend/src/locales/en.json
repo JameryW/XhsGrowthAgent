@@ -227,6 +227,28 @@
       "workflowMode": "Workflow Mode",
       "enterFree": "Enter Free Creation Mode",
       "freeModeHelp": "Enter TUI; the agent freely creates, evaluates, and publishes through conversation",
+      "freeGoalLabel": "What do you want to create?",
+      "freeGoalHelp": "Start with a goal, rough idea, or existing draft. You can edit it again in the Agent prompt before sending.",
+      "freeGoalPlaceholder": "Example: Write a Xiaohongshu note about a three-day family trip to Kyoto, with a warm and practical tone.",
+      "freeGoalCarryHint": "This goal is carried into the selected account's Free Creation workspace and is never sent automatically.",
+      "freePromptExamplesTitle": "Start with an example",
+      "freePromptExamples": {
+        "labels": {
+          "writeNote": "Write a note",
+          "findTopics": "Find topic ideas",
+          "improveDraft": "Improve a draft"
+        },
+        "writeNote": "Write a Xiaohongshu note about a three-day family trip to Kyoto with a warm, practical tone.",
+        "findTopics": "Give me five Xiaohongshu topic ideas for my account and explain which one to try first.",
+        "improveDraft": "Review this draft for clarity, structure, and conversion, then suggest a stronger version."
+      },
+      "freePathTitle": "Free Creation path",
+      "freePath": {
+        "describe": "Describe",
+        "create": "Create",
+        "evaluate": "Evaluate",
+        "publish": "Publish"
+      },
       "niche": "Content Track",
       "nicheHelp": "Select a vertical track, affects trend discovery and content strategy",
       "nicheBound": "Using this account's bound track: {niche}",

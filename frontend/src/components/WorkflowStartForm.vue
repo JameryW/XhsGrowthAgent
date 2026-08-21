@@ -224,6 +224,19 @@ const modes: { value: WorkflowMode; icon: string; labelKey: string }[] = [
   { value: 'free', icon: 'Terminal', labelKey: 'home.freeMode' },
 ]
 
+const freePromptExamples = [
+  { key: 'writeNote', icon: 'Pencil' },
+  { key: 'findTopics', icon: 'Lightbulb' },
+  { key: 'improveDraft', icon: 'Wand2' },
+] as const
+
+const freeCreationSteps = [
+  { key: 'describe', icon: 'MessageSquare' },
+  { key: 'create', icon: 'Pencil' },
+  { key: 'evaluate', icon: 'CheckCircle' },
+  { key: 'publish', icon: 'Send' },
+] as const
+
 const modeDescriptionKeys: Record<WorkflowMode, string> = {
   trend: 'home.modeDescriptions.trend',
   brief: 'home.modeDescriptions.brief',
@@ -259,6 +272,10 @@ function getConfig(): WorkflowConfig {
     workflowMode: workflowMode.value,
     briefText: workflowMode.value === 'brief' ? effectiveBriefText : undefined,
   }
+}
+
+function useFreePrompt(promptKey: (typeof freePromptExamples)[number]['key']) {
+  topic.value = t(`home.form.freePromptExamples.${promptKey}`)
 }
 
 defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
@@ -322,9 +339,56 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
     </div>
 
     <!-- Free mode help text (only in free mode) -->
-    <p v-if="workflowMode === 'free'" class="text-xs text-slate-400 pl-1 leading-5">
-      {{ t('home.form.freeModeHelp') }}
-    </p>
+    <div v-if="workflowMode === 'free'" class="space-y-4 rounded-2xl border border-violet-200/70 bg-gradient-to-br from-violet-50/80 via-white to-cyan-50/70 p-4 dark-explicit dark:border-violet-500/25 dark:from-violet-950/30 dark:via-slate-900/80 dark:to-cyan-950/25">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-cyan-400 shadow-sm">
+          <AppIcon name="MessageSquare" size="sm" variant="white" aria-hidden="true" />
+        </div>
+        <div class="min-w-0">
+          <label for="start-free-goal" class="text-sm font-semibold text-slate-700 dark:text-slate-200">{{ t('home.form.freeGoalLabel') }}</label>
+          <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{{ t('home.form.freeGoalHelp') }}</p>
+        </div>
+      </div>
+
+      <textarea
+        id="start-free-goal"
+        v-model="topic"
+        rows="4"
+        class="w-full resize-y rounded-xl border-2 border-violet-100 bg-white/85 px-4 py-3 text-sm font-medium text-slate-700 transition-all duration-300 ease-out placeholder:font-normal placeholder:text-slate-300 focus:border-violet-300 focus:bg-white focus:outline-none focus:shadow-[0_0_0_3px_rgba(167,139,250,.14)] dark:border-violet-500/25 dark:bg-slate-900/70 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-violet-400/60 dark:focus:bg-slate-900"
+        :placeholder="t('home.form.freeGoalPlaceholder')"
+        :aria-describedby="'start-free-goal-help'"
+      />
+      <p id="start-free-goal-help" class="-mt-2 text-[11px] leading-5 text-slate-400">{{ t('home.form.freeGoalCarryHint') }}</p>
+
+      <div>
+        <p class="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-violet-500 dark:text-violet-300">{{ t('home.form.freePromptExamplesTitle') }}</p>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="example in freePromptExamples"
+            :key="example.key"
+            type="button"
+            class="inline-flex min-h-11 items-center gap-2 rounded-full border border-violet-200/80 bg-white/80 px-3 text-xs font-semibold text-violet-700 transition hover:-translate-y-0.5 hover:border-violet-300 hover:bg-white dark:border-violet-500/30 dark:bg-slate-900/70 dark:text-violet-200 dark:hover:border-violet-400/60"
+            @click="useFreePrompt(example.key)"
+          >
+            <AppIcon :name="example.icon" size="xs" variant="purple" aria-hidden="true" />
+            {{ t(`home.form.freePromptExamples.labels.${example.key}`) }}
+          </button>
+        </div>
+      </div>
+
+      <div class="border-t border-violet-200/60 pt-3 dark:border-violet-500/20">
+        <p class="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{{ t('home.form.freePathTitle') }}</p>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" role="list" :aria-label="t('home.form.freePathTitle')">
+          <div v-for="(step, index) in freeCreationSteps" :key="step.key" class="flex min-w-0 items-center gap-2" role="listitem">
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-violet-600 ring-1 ring-violet-200 dark:bg-slate-900 dark:text-violet-300 dark:ring-violet-500/30">
+              <AppIcon :name="step.icon" size="xs" variant="purple" aria-hidden="true" />
+            </span>
+            <span class="min-w-0 truncate text-[11px] font-semibold text-slate-600 dark:text-slate-300">{{ t(`home.form.freePath.${step.key}`) }}</span>
+            <span v-if="index < freeCreationSteps.length - 1" class="hidden h-px min-w-2 flex-1 bg-violet-200 sm:block dark:bg-violet-500/25" aria-hidden="true" />
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Account ID -->
     <div class="group">

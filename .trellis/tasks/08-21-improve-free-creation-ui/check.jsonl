@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Review the completed Vue UI and i18n implementation against component, accessibility, mobile overflow, and TUI display conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify account context and route-driven state do not leak or override unrelated workspace state."}
+{"file":".trellis/spec/frontend/multi-account.md","reason":"Verify the selected route account remains the account scope for Free Creation commands and output."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Verify new motion, if any, is registered for reduced-motion behavior."}

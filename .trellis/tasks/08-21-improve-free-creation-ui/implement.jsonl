@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Vue component structure, localized strings, responsive touch targets, dark mode, and AgentTUI result-display conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Pinia and account/workspace state rules for preserving selected account context."}
+{"file":".trellis/spec/frontend/multi-account.md","reason":"Account-scoped UI and route hand-off rules for selected creator accounts."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Motion and reduced-motion rules for any new guided Free Creation UI."}
