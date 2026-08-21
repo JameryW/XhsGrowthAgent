@@ -95,6 +95,11 @@ _DEFAULT_FLAGS = (
     "--disable-dev-shm-usage",
     "--remote-debugging-address=0.0.0.0",
     "--remote-allow-origins=*",
+    # Ubuntu 23.10+ disables unprivileged user namespaces (apparmor_restrict_
+    # unprivileged_userns=1) → Chrome FATAL "No usable sandbox". This host is
+    # a headless automation worker (no untrusted web content), so --no-sandbox
+    # is required for Chrome to start at all. Same flag as xhs_login.py uses.
+    "--no-sandbox",
 )
 
 
