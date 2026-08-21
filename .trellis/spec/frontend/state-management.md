@@ -200,6 +200,12 @@ Public route shells should import only the store modules they use (for example,
 `stores/index` barrel. The barrel is convenient inside authenticated feature
 code, but it can pull unrelated workspace stores into the public entry chunk.
 
+Public showcase/replay shells may read `authStore.isAuthenticated` for CTA
+routing, but must not call `authStore.initialize()` from component lifecycle
+hooks. The router owns auth initialization for protected routes; keeping that
+boundary avoids an unnecessary validation request (and an authentication toast)
+on an anonymous public page.
+
 ## Scenario: Account-scoped paginated history with stale guards
 
 ### 1. Scope / Trigger

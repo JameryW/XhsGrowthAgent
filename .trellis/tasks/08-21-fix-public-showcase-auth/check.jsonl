@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Verify public route rendering, error handling, and API request conventions remain compliant."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify public pages do not pull authenticated initialization into their route shell and protected routes retain the guard-owned lifecycle."}

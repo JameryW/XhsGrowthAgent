@@ -675,7 +675,6 @@ onUnmounted(() => {
 })
 
 onMounted(() => {
-  if (!authStore.isInitialized) void authStore.initialize()
   setPublicPageMeta({ title: t('replay.seo.title'), description: t('replay.seo.description'), type: 'article' })
   void loadReplay()
 })
