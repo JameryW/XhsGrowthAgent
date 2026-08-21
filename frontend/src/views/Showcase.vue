@@ -397,7 +397,6 @@ function observeCaseCards() {
 }
 
 onMounted(async () => {
-  if (!authStore.isInitialized) void authStore.initialize()
   restoreQuery()
   queryReady = true
   setPublicPageMeta({ title: t('showcase.seo.title'), description: t('showcase.seo.description') })

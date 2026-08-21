@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Public showcase and replay route conventions, async error states, API-call rules, and component testing expectations."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Public evidence-page state rules and the boundary between public route shells and authenticated stores."}

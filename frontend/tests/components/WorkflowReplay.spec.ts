@@ -12,6 +12,7 @@ const routeMock = vi.hoisted(() => ({ params: { publicId: 'case-1' }, query: {} 
 const getManifestMock = vi.hoisted(() => vi.fn())
 const getCheckpointMock = vi.hoisted(() => vi.fn())
 const getSummaryMock = vi.hoisted(() => vi.fn())
+const initializeAuthMock = vi.hoisted(() => vi.fn())
 const authState = vi.hoisted(() => ({ isAuthenticated: false, isInitialized: true }))
 const toastMock = vi.hoisted(() => ({ warning: vi.fn(), info: vi.fn(), success: vi.fn(), error: vi.fn(), addToast: vi.fn(), removeToast: vi.fn(), clearAll: vi.fn() }))
 
@@ -25,10 +26,10 @@ vi.mock('@/api/publicShowcase', () => ({
   getPublicFinalSummary: getSummaryMock,
 }))
 vi.mock('@/stores', () => ({
-  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: vi.fn() }),
+  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: initializeAuthMock }),
 }))
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: vi.fn() }),
+  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: initializeAuthMock }),
 }))
 vi.mock('@/stores/toast', () => ({
   useToastStore: () => toastMock,
@@ -75,6 +76,7 @@ describe('WorkflowReplay public UX contract', () => {
     routeMock.query = {}
     authState.isAuthenticated = false
     authState.isInitialized = true
+    initializeAuthMock.mockReset()
     getManifestMock.mockResolvedValue(buildManifest(steps))
     getCheckpointMock.mockImplementation(async (_publicId: string, stepId: string) => steps.find(step => step.public_id === stepId))
     getSummaryMock.mockResolvedValue({ public_id: 'case-1', status: 'completed', result: { title: '最终标题' }, stable: true })
@@ -85,6 +87,23 @@ describe('WorkflowReplay public UX contract', () => {
     // Restore requestIdleCallback if a test nulled it (happy-dom defines it
     // on window; leaving it undefined could skew other idle-scheduling tests).
     delete (window as any).requestIdleCallback
+  })
+
+  it('does not initialize auth when mounted as a public guest page', async () => {
+    authState.isInitialized = false
+    const wrapper = mount(WorkflowReplay, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<span />' },
+          PublicReplayResult: { template: '<div />' },
+          ThemeToggle: { template: '<button aria-label="theme" />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(initializeAuthMock).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('loads the public manifest and first result together', async () => {

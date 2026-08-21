@@ -9,6 +9,7 @@ const routerMock = vi.hoisted(() => ({
 const routeMock = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 const listPublicCasesMock = vi.hoisted(() => vi.fn())
 const getPublicCaseMock = vi.hoisted(() => vi.fn())
+const initializeAuthMock = vi.hoisted(() => vi.fn())
 const authState = vi.hoisted(() => ({ isAuthenticated: false, isInitialized: true }))
 
 vi.mock('vue-router', () => ({
@@ -20,10 +21,10 @@ vi.mock('@/api/publicShowcase', () => ({
   getPublicCase: getPublicCaseMock,
 }))
 vi.mock('@/stores', () => ({
-  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: vi.fn() }),
+  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: initializeAuthMock }),
 }))
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: vi.fn() }),
+  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: initializeAuthMock }),
 }))
 
 function publicCase(public_id: string, title: string, featured = false) {
@@ -61,6 +62,7 @@ describe('Showcase public UX contract', () => {
     routeMock.query = {}
     authState.isAuthenticated = false
     authState.isInitialized = true
+    initializeAuthMock.mockReset()
     const featured = publicCase('case-featured', '真实案例标题', true)
     const other = publicCase('case-other', '第二个案例')
     listPublicCasesMock.mockResolvedValue({
@@ -77,6 +79,15 @@ describe('Showcase public UX contract', () => {
   })
 
   afterEach(() => sessionStorage.clear())
+
+  it('does not initialize auth when mounted as a public guest page', async () => {
+    authState.isInitialized = false
+    const wrapper = mountShowcase()
+    await flushPromises()
+
+    expect(initializeAuthMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 
   it('renders one featured case and keeps public replay navigation', async () => {
     const wrapper = mountShowcase()
