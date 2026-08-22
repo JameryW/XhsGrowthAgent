@@ -1398,6 +1398,18 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
         break
       }
+      case '/publish': {
+        const argStr = text.split(/\s+/).slice(1).join(' ').trim()
+        await handlePublish(argStr)
+        isProcessing.value = false; writePrompt()
+        break
+      }
+      case '/copy': {
+        const parts = text.split(/\s+/)
+        await handleCopy(parts.slice(1).join(' ').trim())
+        isProcessing.value = false; writePrompt()
+        break
+      }
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -1482,6 +1494,10 @@ async function processSlashCommand(cmd: string) {
       await handleDraft(arg); break
     case '/delete':
       await handleDelete(arg); break
+    case '/publish':
+      await handlePublish(arg); break
+    case '/copy':
+      await handleCopy(arg); break
     case '/mode':
       mode.value = 'agent'
       reconnectAttempts = 0
@@ -1865,6 +1881,13 @@ async function handleDraft(draftId: string) {
         const at = lp.at ? `  ${D}${fmtTs(lp.at)}${R}` : ''
         writeLine(boxLine(`${ANSI.RED}${t('tui.draftDetailLastPublishLabel')}${R}: ${ANSI.RED}${lp.status}${detail}${R}${at}`))
       }
+      // Follow-up actions close the create→publish loop where the user is
+      // looking: unpublished drafts name the exact confirm command; /copy is
+      // always offered as the manual-posting fallback.
+      if (!draft.published) {
+        writeLine(boxLine(`${Y}${t('tui.draftDetailPublishHint', { id: data.draft_id })}${R}`))
+      }
+      writeLine(boxLine(`${D}${t('tui.draftDetailCopyHint', { id: data.draft_id })}${R}`))
       if (draft.created_at) {
         writeLine(boxLine(`${D}${t('tui.draftDetailCreatedLabel')}${R}: ${fmtTs(draft.created_at)}`))
       }
@@ -1907,6 +1930,147 @@ async function handleDelete(draftId: string) {
     writeLineColored(t('tui.draftDeleted', { title }), ANSI.BRIGHT_GREEN)
   } catch (err: any) {
     writeError(writeLine, err.message || t('tui.draftDeleteFailed'))
+  }
+}
+
+// /publish <id> [confirm] — publish a free draft through the same real-publish
+// path workflows use (POST /free/publish: CDP resolution, XHS publish,
+// post_id/post_url persistence, failure tracking). Publishing is an
+// irreversible external action, so the first invocation only renders a preview
+// (title + verdict) and names the exact confirm command; the POST happens
+// solely when the literal `confirm` argument is present. Degraded verdicts are
+// fake-approvals — refused outright rather than sent to Xiaohongshu.
+async function handlePublish(argStr = '') {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  const parts = argStr.split(/\s+/).filter(Boolean)
+  const draftId = parts[0] || ''
+  const confirmed = parts.slice(1).includes('confirm')
+  if (!draftId) {
+    writeLineColored(t('tui.publishUsage'), ANSI.RED)
+    return
+  }
+  if (!requireFreeAccount()) return
+  const accountId = await getCurrentAccountId()
+  let draft: FreeDraftRecord = {}
+  try {
+    const resp = await client.get(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
+    const data = resp as unknown as { draft_id: string; draft: FreeDraftRecord }
+    draft = data.draft || {}
+  } catch {
+    writeError(writeLine, t('tui.draftNotFound'))
+    return
+  }
+  const le = draft.last_evaluation
+  const title = draft.title || t('tui.draftUntitled')
+  const pid = draft.post_id || ''
+  if (le?.degraded) {
+    writeLineColored(t('tui.publishDegradedBlocked', { id: draftId }), ANSI.BRIGHT_YELLOW)
+    return
+  }
+  // A real (non-mock) post already exists — publishing again would duplicate
+  // the note on Xiaohongshu. Mock ids from dry-run are safe to re-publish.
+  if (draft.published && pid && !pid.startsWith('mock_')) {
+    writeLineColored(t('tui.publishAlreadyPublished', { id: draftId }), ANSI.BRIGHT_YELLOW)
+    return
+  }
+  const G = ANSI.BRIGHT_GREEN, D = ANSI.DIM
+  const Y = ANSI.BRIGHT_YELLOW, R = ANSI.RESET
+  const w = cardWidth(termCols)
+  writeLine('')
+  writeBoxTitle(writeLine, t('tui.publishPreviewTitle'), { width: w })
+  writeLine(boxLine(kvLine(t('tui.draftDetailTitleLabel'), title, { valueColor: G })))
+  if (le && le.decision) {
+    const scoreStr = le.overall_score != null ? le.overall_score.toFixed(1) : '?'
+    const verdict = `${scoreStr} (${le.decision})`
+    writeLine(boxLine(kvLine(t('tui.draftDetailEvalLabel'), verdict, { valueColor: scoreColor(le.overall_score) })))
+  } else {
+    writeLine(boxLine(`${Y}${t('tui.publishUnevaluated')}${R}`))
+  }
+  const lp = draft.last_publish
+  if (lp && lp.status && lp.status !== 'published' && lp.status !== 'mock_published') {
+    writeLine(boxLine(`${ANSI.RED}${t('tui.draftDetailLastPublishLabel')}: ${lp.status}${R}`))
+  }
+  writeLine(boxBottom(w))
+  if (!confirmed) {
+    writeLineColored(t('tui.publishNeedsConfirm', { id: draftId }), ANSI.BRIGHT_YELLOW)
+    return
+  }
+  writeLineColored(t('tui.publishStarted', { title }), D)
+  try {
+    const resp = await client.post('/free/publish', {
+      account_id: accountId,
+      draft_id: draftId,
+    })
+    const data = resp as unknown as {
+      draft_id: string
+      publish_result?: {
+        status?: string
+        post_id?: string
+        post_url?: string
+        error?: string | null
+        error_type?: string | null
+      }
+    }
+    const pr = data.publish_result || {}
+    const status = pr.status || 'unknown'
+    if (status === 'published' || status === 'mock_published') {
+      writeLineColored(t('tui.publishSuccess', { title }), G)
+      if (pr.post_url) {
+        writeLineColored(`${t('tui.publishPostUrlLabel')}: ${pr.post_url}`, ANSI.BRIGHT_CYAN)
+      }
+      if (status === 'mock_published') {
+        writeLineColored(t('tui.publishMockHint'), Y)
+      } else {
+        writeLineColored(t('tui.publishAnalyticsHint', { id: draftId }), Y)
+      }
+    } else {
+      const etype = pr.error_type ? ` (${pr.error_type})` : ''
+      const detail = pr.error ? ` — ${pr.error}${etype}` : etype
+      writeLineColored(t('tui.publishFailed', { status: `${status}${detail}` }), ANSI.RED)
+      writeLineColored(t('tui.publishFailureRecorded', { id: draftId }), D)
+    }
+  } catch (err: any) {
+    writeError(writeLine, err.message || t('tui.publishRequestFailed'))
+  }
+}
+
+// /copy <id> — put title + body + hashtags on the clipboard as plain text.
+// The /draft card wraps the body to the terminal width, which makes mouse
+// selection error-prone; this gives manual publishing (CDP unavailable or
+// auth expired) a one-command fallback with clean text.
+async function handleCopy(draftId: string) {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  if (!draftId) {
+    writeLineColored(t('tui.copyUsage'), ANSI.RED)
+    return
+  }
+  if (!requireFreeAccount()) return
+  const accountId = await getCurrentAccountId()
+  let draft: FreeDraftRecord = {}
+  try {
+    const resp = await client.get(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
+    const data = resp as unknown as { draft_id: string; draft: FreeDraftRecord }
+    draft = data.draft || {}
+  } catch {
+    writeError(writeLine, t('tui.draftNotFound'))
+    return
+  }
+  const segments = [draft.title || t('tui.draftUntitled')]
+  if (draft.body) segments.push(draft.body)
+  if (draft.hashtags?.length) segments.push(draft.hashtags.join(' '))
+  const text = segments.join('\n\n')
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
+    await navigator.clipboard.writeText(text)
+    writeLineColored(t('tui.copySuccess', { count: text.length }), ANSI.BRIGHT_GREEN)
+  } catch {
+    writeLineColored(t('tui.copyFailed', { id: draftId }), ANSI.RED)
   }
 }
 
@@ -2194,6 +2358,8 @@ function showHelp() {
         { usage: '/analytics', args: '<id>', desc: t('tui.helpDescAnalytics') },
         { usage: '/evaluate', args: '<id>', desc: t('tui.helpDescEvaluate') },
         { usage: '/suggest', desc: t('tui.helpDescSuggest') },
+        { usage: '/publish', args: '<id> [confirm]', desc: t('tui.helpDescPublish') },
+        { usage: '/copy', args: '<id>', desc: t('tui.helpDescCopy') },
       ] })
     }
   } else if (isFreeCreationEntry.value) {
@@ -2206,6 +2372,8 @@ function showHelp() {
       { usage: '/analytics', args: '<id>', desc: t('tui.helpDescAnalytics') },
       { usage: '/evaluate', args: '<id>', desc: t('tui.helpDescEvaluate') },
       { usage: '/suggest', desc: t('tui.helpDescSuggest') },
+      { usage: '/publish', args: '<id> [confirm]', desc: t('tui.helpDescPublish') },
+      { usage: '/copy', args: '<id>', desc: t('tui.helpDescCopy') },
       { usage: '/mode', desc: t('tui.helpSwitchToAgent') },
     ] })
   } else {

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
-- **Last Active**: 2026-08-21
+- **Total Sessions**: 4
+- **Last Active**: 2026-08-22
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~106 | Active |
+| `journal-1.md` | ~139 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-08-22 | Add free draft publish and copy commands to the Agent TUI | `e7214eac` | `codex/free-tui-publish-copy` |
 | 3 | 2026-08-21 | Fix public showcase auth error | `68bdbba1` | `codex/fix-public-showcase-auth` |
 | 2 | 2026-08-21 | Improve free creation UI and README showcase | `175ece97` | `main` |
 | 1 | 2026-08-12 | Split bilingual README and showcase product capabilities | `a586ba1b` | `main` |

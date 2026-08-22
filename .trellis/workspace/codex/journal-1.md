@@ -104,3 +104,36 @@ Removed redundant auth initialization from public Showcase and WorkflowReplay mo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Add free draft publish and copy commands to the Agent TUI
+
+**Date**: 2026-08-22
+**Task**: Add free draft publish and copy commands to the Agent TUI
+**Branch**: `codex/free-tui-publish-copy`
+
+### Summary
+
+Added /publish <id> [confirm] with preview-first confirmation gate, degraded-eval and already-published refusals, and outcome rendering for success/mock/failure; added /copy <id> clipboard command with manual-selection fallback; wired help rows and /draft follow-up hints; bilingual locale strings; 8 new spec cases. type-check, i18n:check (2174 keys), 703/703 tests, and build pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e7214eac` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
