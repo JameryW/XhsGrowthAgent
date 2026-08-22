@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import AgentTUI from '@/views/AgentTUI.vue'
 import { getActiveAccount, listAccounts } from '@/api/accounts'
+import client from '@/api/client'
 
 const { FakeTerminal, FakeWebSocket, routeQuery } = vi.hoisted(() => {
   class HoistedFakeTerminal {
@@ -143,6 +144,8 @@ describe('AgentTUI free creation interaction contract', () => {
     delete routeQuery.topic
     vi.mocked(listAccounts).mockResolvedValue([])
     vi.mocked(getActiveAccount).mockResolvedValue(null)
+    vi.mocked(client.get).mockReset()
+    vi.mocked(client.post).mockReset()
     vi.stubGlobal('WebSocket', FakeWebSocket)
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -455,6 +458,189 @@ describe('AgentTUI free creation interaction contract', () => {
     send({ type: 'session_end' })
     await flushPromises()
     expect(wrapper.find('.tui-running-indicator').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  // ── /publish + /copy ─────────────────────────────────────────────────
+  function stubOwnedAccount() {
+    routeQuery.account_id = 'acct-1'
+    vi.mocked(listAccounts).mockResolvedValue([{
+      id: 'acct-1',
+      name: 'Owned creator',
+      niche: 'travel',
+      is_active: false,
+      created_at: '2026-08-21T00:00:00Z',
+    }])
+  }
+
+  function stubDraft(draft: Record<string, unknown>) {
+    vi.mocked(client.get).mockResolvedValue({ draft_id: 'd1', draft } as never)
+  }
+
+  it('previews a publish without confirm and never posts', async () => {
+    stubOwnedAccount()
+    stubDraft({
+      title: '京都亲子三日',
+      body: '正文',
+      hashtags: ['#旅行'],
+      last_evaluation: { overall_score: 88, decision: 'approved' },
+    })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/publish d1')
+    terminal.type('\r')
+    await flushPromises()
+
+    expect(client.post).not.toHaveBeenCalled()
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('发布预览')
+    expect(out).toContain('京都亲子三日')
+    expect(out).toContain('/publish d1 confirm')
+    wrapper.unmount()
+  })
+
+  it('refuses to publish on a degraded evaluation', async () => {
+    stubOwnedAccount()
+    stubDraft({
+      title: '降级草稿',
+      last_evaluation: { degraded: true, decision: 'approved', overall_score: 100 },
+    })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/publish d1 confirm')
+    terminal.type('\r')
+    await flushPromises()
+
+    expect(client.post).not.toHaveBeenCalled()
+    expect(terminal.lines.join('\n')).toContain('降级')
+    wrapper.unmount()
+  })
+
+  it('refuses to re-publish a draft that already has a real post', async () => {
+    stubOwnedAccount()
+    stubDraft({
+      title: '已发布草稿',
+      published: true,
+      post_id: 'post_9',
+      post_url: 'https://xhs.link/9',
+    })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/publish d1 confirm')
+    terminal.type('\r')
+    await flushPromises()
+
+    expect(client.post).not.toHaveBeenCalled()
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('已发布')
+    expect(out).toContain('/analytics d1')
+    wrapper.unmount()
+  })
+
+  it('publishes through the free endpoint once confirmed', async () => {
+    stubOwnedAccount()
+    stubDraft({
+      title: '确认发布草稿',
+      last_evaluation: { overall_score: 82, decision: 'approved' },
+    })
+    vi.mocked(client.post).mockResolvedValue({
+      draft_id: 'd1',
+      publish_result: {
+        status: 'published',
+        post_id: 'post_11',
+        post_url: 'https://xhs.link/11',
+      },
+    } as never)
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/publish d1 confirm')
+    terminal.type('\r')
+    await flushPromises()
+
+    expect(client.post).toHaveBeenCalledWith('/free/publish', {
+      account_id: 'acct-1',
+      draft_id: 'd1',
+    })
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('已发布：确认发布草稿')
+    expect(out).toContain('https://xhs.link/11')
+    wrapper.unmount()
+  })
+
+  it('renders a publish failure with its recorded cause', async () => {
+    stubOwnedAccount()
+    stubDraft({ title: '失败草稿' })
+    vi.mocked(client.post).mockResolvedValue({
+      draft_id: 'd1',
+      publish_result: {
+        status: 'auth_expired',
+        error: 'login required',
+        error_type: 'AuthExpired',
+      },
+    } as never)
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/publish d1 confirm')
+    terminal.type('\r')
+    await flushPromises()
+
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('发布失败')
+    expect(out).toContain('auth_expired')
+    expect(out).toContain('/draft d1')
+    wrapper.unmount()
+  })
+
+  it('copies title, body and hashtags to the clipboard', async () => {
+    stubOwnedAccount()
+    stubDraft({
+      title: '复制草稿',
+      body: '第一行\n第二行',
+      hashtags: ['#旅行', '#亲子'],
+    })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/copy d1')
+    terminal.type('\r')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledWith('复制草稿\n\n第一行\n第二行\n\n#旅行 #亲子')
+    expect(terminal.lines.join('\n')).toContain('已复制到剪贴板')
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
+  it('falls back to a manual-selection hint when the clipboard fails', async () => {
+    stubOwnedAccount()
+    stubDraft({ title: '剪贴板失败', body: '正文' })
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/copy d1')
+    terminal.type('\r')
+    await flushPromises()
+
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('剪贴板不可用')
+    expect(out).toContain('/draft d1')
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
+  it('rejects free-only commands outside free mode', async () => {
+    routeQuery.mode = 'trend'
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/publish d1 confirm')
+    terminal.type('\r')
+    await flushPromises()
+
+    expect(client.get).not.toHaveBeenCalled()
+    expect(client.post).not.toHaveBeenCalled()
+    expect(terminal.lines.join('\n')).toContain('自由创作模式与工作流完全隔离')
     wrapper.unmount()
   })
 })

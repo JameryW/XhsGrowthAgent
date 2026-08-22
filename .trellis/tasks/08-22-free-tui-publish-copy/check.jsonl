@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Verify new TUI commands follow component, account-scope, and i18n conventions."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify new TUI commands follow component, account-scope, and i18n conventions."}
+{"file": ".trellis/spec/frontend/multi-account.md", "reason": "Verify new TUI commands follow component, account-scope, and i18n conventions."}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "Verify new TUI commands follow component, account-scope, and i18n conventions."}
