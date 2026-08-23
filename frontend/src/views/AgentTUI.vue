@@ -58,9 +58,12 @@ const accountsStore = useAccountsStore()
 // Keep the free-mode boundary close to the route so every input surface can
 // make the same decision. Free mode is intentionally thread-less.
 const isFreeCreationEntry = computed(() => route.query.mode === 'free')
-const freeCreationTopic = computed(() => (
-  typeof route.query.topic === 'string' ? route.query.topic : ''
-))
+const freeCreationGoal = computed(() => {
+  const goal = typeof route.query.goal === 'string' ? route.query.goal.trim() : ''
+  if (goal) return goal
+  // Backward compatibility for links created before the goal/topic split.
+  return typeof route.query.topic === 'string' ? route.query.topic : ''
+})
 const freeRouteAccountId = computed(() => (
   typeof route.query.account_id === 'string' ? route.query.account_id.trim() : ''
 ))
@@ -2454,8 +2457,8 @@ function renderFreeWelcome(accountFetchOk = false) {
   writeLine(`${ANSI.BRIGHT_CYAN}╭─${R} ${ANSI.BRIGHT_WHITE}${name}${R} ${ANSI.BRIGHT_MAGENTA}${version}${R} ${ANSI.BRIGHT_CYAN}${'─'.repeat(trail)}╮${R}`)
   writeLine(boxLine(`${ANSI.DIM}${t('tui.bannerSubtitle')}${R}`))
   writeLine(boxLine(`${ANSI.BRIGHT_YELLOW}${t('tui.freeFlow')}${R}`))
-  if (freeCreationTopic.value) {
-    writeLine(boxLine(`${ANSI.BRIGHT_CYAN}${t('tui.freeTopic', { topic: freeCreationTopic.value })}${R}`))
+  if (freeCreationGoal.value) {
+    writeLine(boxLine(`${ANSI.BRIGHT_CYAN}${t('tui.freeGoal', { goal: freeCreationGoal.value })}${R}`))
   }
   writeLine(boxBottom(w))
   writeLine('')
@@ -2744,8 +2747,8 @@ onMounted(async () => {
     // existing free workspace. Reuse the canonical detail command so the
     // terminal renders exactly the same complete draft view as /draft <id>.
     await processCommand(`/draft ${freeRouteDraftId.value}`, { echo: true })
-  } else if (isFreeCreationEntry.value && freeCreationTopic.value.trim()) {
-    prefillFreePrompt(freeCreationTopic.value.trim())
+  } else if (isFreeCreationEntry.value && freeCreationGoal.value) {
+    prefillFreePrompt(freeCreationGoal.value)
   }
 })
 

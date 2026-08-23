@@ -104,9 +104,14 @@ const handleSubmit = async () => {
       // Ensure chunk is warm before navigation (no-op if already cached).
       prefetchAgentTuiChunk()
       const query: Record<string, string> = { mode: 'free' }
-      const topic = formConfig.value.topic || prefilledTopic.value || (route.query.topic as string)
+      // Free Creation is a goal hand-off, not a trend topic. Keep the legacy
+      // topic query as a read-only fallback so old bookmarks still work.
+      const goal = formConfig.value.goal
+        || prefilledTopic.value
+        || (route.query.goal as string)
+        || (route.query.topic as string)
       const niche = formConfig.value.niche || (route.query.niche as string)
-      if (topic) query.topic = topic
+      if (goal) query.goal = goal
       if (niche) query.niche = niche
       if (formConfig.value.accountId) query.account_id = formConfig.value.accountId
       await router.push({ name: 'tui', query })
