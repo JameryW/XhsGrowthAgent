@@ -9,6 +9,7 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import AccountScopeBar from '@/components/AccountScopeBar.vue'
 import AccountViewNotice from '@/components/AccountViewNotice.vue'
 import StatusFilterBar from '@/components/StatusFilterBar.vue'
+import FreeDraftHistoryPanel from '@/components/history/FreeDraftHistoryPanel.vue'
 import { listWorkflows, deleteWorkflow, getWorkflowAccountTotals } from '@/api/workflow'
 import {
   revokeShowcaseVisibility,
@@ -134,6 +135,41 @@ function statusFromQuery(): StatusFilter {
 const statusFilter = ref<StatusFilter>(statusFromQuery())
 let suppressStatusQueryWatch = false
 
+type HistoryTab = 'workflows' | 'free-drafts'
+const VALID_HISTORY_TABS = new Set<HistoryTab>(['workflows', 'free-drafts'])
+
+function historyTabFromQuery(): HistoryTab {
+  const raw = route.query.tab
+  const value = typeof raw === 'string' ? raw.trim() : Array.isArray(raw) ? String(raw[0] || '').trim() : ''
+  return VALID_HISTORY_TABS.has(value as HistoryTab) ? value as HistoryTab : 'workflows'
+}
+
+const activeHistoryTab = ref<HistoryTab>(historyTabFromQuery())
+let suppressHistoryTabQueryWatch = false
+
+function syncHistoryTabQuery(tab: HistoryTab) {
+  const current = typeof route.query.tab === 'string' ? route.query.tab : null
+  const nextValue = tab === 'free-drafts' ? tab : null
+  if ((nextValue || null) === (current || null)) return
+  const nextQuery: Record<string, string | string[]> = {
+    ...(route.query as Record<string, string | string[]>),
+  }
+  if (nextValue) nextQuery.tab = nextValue
+  else delete nextQuery.tab
+  suppressHistoryTabQueryWatch = true
+  // Tab changes are navigable state: keep an entry so browser back/forward
+  // restores the previous History section.
+  void router.push({ query: nextQuery }).finally(() => {
+    suppressHistoryTabQueryWatch = false
+  })
+}
+
+function setHistoryTab(tab: HistoryTab) {
+  if (activeHistoryTab.value === tab) return
+  activeHistoryTab.value = tab
+  syncHistoryTabQuery(tab)
+}
+
 function syncStatusQuery(status: StatusFilter) {
   const current = typeof route.query.status === 'string' ? route.query.status : null
   const nextVal = status === 'all' ? null : status
@@ -194,6 +230,9 @@ const showcaseSummary = ref('')
 const showcaseFeatured = ref(false)
 const showcaseFeaturedRank = ref(1)
 const isUpdatingShowcase = ref(false)
+const freeDraftPanelRef = ref<{ refresh: () => Promise<void> } | null>(null)
+const freeDraftCount = ref(0)
+const historyRecordCount = computed(() => activeHistoryTab.value === 'free-drafts' ? freeDraftCount.value : total.value)
 
 async function ensureAccountsLoaded() {
   if (accountsStore.accounts.length > 0 && accountsStore.activeAccount) return
@@ -499,6 +538,10 @@ async function promoteToWorkspaceAccount() {
 }
 
 function onRefreshClick() {
+  if (activeHistoryTab.value === 'free-drafts') {
+    void freeDraftPanelRef.value?.refresh()
+    return
+  }
   totalsProbeKey = ''
   const id = resolveHistoryAccountId()
   if (id) invalidateCachedList(id)
@@ -562,6 +605,16 @@ watch(
     if (suppressStatusQueryWatch) return
     const next = statusFromQuery()
     if (next !== statusFilter.value) statusFilter.value = next
+  },
+)
+
+// Browser back/forward for the History tab.
+watch(
+  () => route.query.tab,
+  () => {
+    if (suppressHistoryTabQueryWatch) return
+    const next = historyTabFromQuery()
+    if (next !== activeHistoryTab.value) activeHistoryTab.value = next
   },
 )
 
@@ -848,7 +901,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
       <template #meta>
         <span>{{ t('history.scopedTo', { name: viewAccountName }) }}</span>
         <span class="dark-explicit text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
-        <span>{{ t('history.records', { count: total }) }}</span>
+        <span>{{ t('history.records', { count: historyRecordCount }) }}</span>
       </template>
       <template #actions>
         <NeonButton variant="ghost" size="sm" class="min-h-11" @click="onRefreshClick" :loading="isBusy">
@@ -912,6 +965,33 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
         </NeonButton>
       </template>
     </AccountViewNotice>
+
+    <div class="dark-explicit flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 p-1 dark:border-slate-700 dark:bg-slate-900/60" role="tablist" :aria-label="t('history.tabsLabel')">
+      <button
+        type="button"
+        role="tab"
+        data-testid="history-tab-workflows"
+        class="dark-explicit min-h-11 shrink-0 rounded-lg px-4 text-sm font-medium transition-colors"
+        :class="activeHistoryTab === 'workflows' ? 'bg-white text-slate-800 shadow-sm dark:bg-slate-800 dark:text-slate-100' : 'text-slate-500 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800/60'"
+        :aria-selected="activeHistoryTab === 'workflows'"
+        @click="setHistoryTab('workflows')"
+      >
+        {{ t('history.workflowsTab') }}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        data-testid="history-tab-free-drafts"
+        class="dark-explicit min-h-11 shrink-0 rounded-lg px-4 text-sm font-medium transition-colors"
+        :class="activeHistoryTab === 'free-drafts' ? 'bg-white text-violet-700 shadow-sm dark:bg-slate-800 dark:text-violet-200' : 'text-slate-500 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800/60'"
+        :aria-selected="activeHistoryTab === 'free-drafts'"
+        @click="setHistoryTab('free-drafts')"
+      >
+        {{ t('history.freeDraftsTab') }}
+      </button>
+    </div>
+
+    <template v-if="activeHistoryTab === 'workflows'">
 
     <!-- Soft refresh / revalidate indicator -->
     <div
@@ -1300,5 +1380,15 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
         </div>
       </section>
     </div>
+
+    </template>
+
+    <template v-else>
+      <FreeDraftHistoryPanel
+        ref="freeDraftPanelRef"
+        :account-id="historyAccountId"
+        @count-change="freeDraftCount = $event"
+      />
+    </template>
   </div>
 </template>

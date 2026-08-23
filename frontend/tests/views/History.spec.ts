@@ -25,6 +25,11 @@ vi.mock('@/api/publicShowcase', () => ({
   updateShowcaseVisibility: vi.fn(),
 }))
 
+vi.mock('@/api/free', () => ({
+  listFreeDrafts: vi.fn(),
+  deleteFreeDraft: vi.fn(),
+}))
+
 vi.mock('@/api/accounts', () => ({
   KNOWN_NICHES: [],
   listAccounts: vi.fn().mockResolvedValue([
@@ -191,6 +196,50 @@ describe('History view', () => {
     )
     expect(wrapper.text()).toContain(tt('history.scopedTo', { name: '麦当劳不要可乐' }))
     expect(wrapper.text()).toContain(tt('history.workspaceBadge'))
+  })
+
+  it('opens the free drafts tab from its deep link and keeps the selected account scope', async () => {
+    const { listWorkflows } = await import('@/api/workflow')
+    const { listFreeDrafts } = await import('@/api/free')
+    ;(listWorkflows as any).mockImplementation(mockListByAccount())
+    ;(listFreeDrafts as any).mockResolvedValue({
+      account_id: 'acct-b',
+      drafts: [{
+        draft_id: 'draft-b',
+        title: '账号 B 的草稿',
+        hashtags: [],
+        created_at: '2026-08-22T00:00:00Z',
+        updated_at: '2026-08-22T00:00:00Z',
+        published: false,
+        last_evaluation: null,
+      }],
+      count: 1,
+    })
+
+    const { wrapper, router } = await mountHistory({ query: { account: 'acct-b', tab: 'free-drafts' } })
+
+    expect(wrapper.find('[data-testid="history-tab-free-drafts"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.text()).toContain('账号 B 的草稿')
+    expect(listFreeDrafts).toHaveBeenCalledWith('acct-b', { status: 'all' }, expect.objectContaining({ suppressToast: true }))
+
+    await wrapper.find('[data-testid="history-tab-workflows"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.tab).toBeUndefined()
+    expect(wrapper.text()).toContain('sibling-run')
+
+    await router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.query.tab).toBe('free-drafts')
+    expect(wrapper.find('[data-testid="history-tab-free-drafts"]').attributes('aria-selected')).toBe('true')
+
+    await router.forward()
+    await flushPromises()
+    expect(router.currentRoute.value.query.tab).toBeUndefined()
+    expect(wrapper.find('[data-testid="history-tab-workflows"]').attributes('aria-selected')).toBe('true')
+
+    await router.replace({ query: { account: 'acct-b', tab: 'free-drafts' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="history-tab-free-drafts"]').attributes('aria-selected')).toBe('true')
   })
 
   it('prefers ?account= query over the workspace active account', async () => {

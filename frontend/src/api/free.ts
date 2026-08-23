@@ -1,0 +1,96 @@
+import client from './client'
+
+export type FreeDraftStatus =
+  | 'all'
+  | 'published'
+  | 'unpublished'
+  | 'publish_failed'
+  | 'evaluated'
+  | 'unevaluated'
+
+export type FreeDraftRequestOptions = {
+  suppressToast?: boolean
+  signal?: AbortSignal
+}
+
+export interface FreeDraftEvaluation {
+  overall_score?: number | null
+  decision?: string | null
+  revision_hints?: string[]
+  degraded?: boolean
+  summary?: string | null
+}
+
+export interface FreeDraftSummary {
+  draft_id: string
+  title: string
+  hashtags: string[]
+  created_at?: string | null
+  updated_at?: string | null
+  last_evaluation?: FreeDraftEvaluation | null
+  published?: boolean | null
+}
+
+export interface FreeDraftListResponse {
+  account_id: string
+  drafts: FreeDraftSummary[]
+  count: number
+  truncated?: boolean
+  status?: FreeDraftStatus
+  q?: string
+}
+
+export interface FreeDraftRecord extends FreeDraftSummary {
+  account_id?: string
+  body?: string
+  image_paths?: string[]
+  niche?: string
+  content_angle?: string
+  target_audience?: string
+  last_publish?: {
+    status?: string
+    error?: string | null
+    error_type?: string | null
+    at?: string
+  } | null
+  post_id?: string
+  post_url?: string
+}
+
+export interface FreeDraftDetailResponse {
+  draft_id: string
+  draft: FreeDraftRecord
+}
+
+export async function listFreeDrafts(
+  accountId: string,
+  params: { status?: FreeDraftStatus; q?: string } = {},
+  options: FreeDraftRequestOptions = {},
+): Promise<FreeDraftListResponse> {
+  return client.get(`/free/drafts/${encodeURIComponent(accountId)}`, {
+    params,
+    ...options,
+  }) as unknown as FreeDraftListResponse
+}
+
+export async function getFreeDraft(
+  accountId: string,
+  draftId: string,
+  options: FreeDraftRequestOptions = {},
+): Promise<FreeDraftDetailResponse> {
+  return client.get(`/free/draft/${encodeURIComponent(draftId)}`, {
+    params: { account_id: accountId },
+    ...options,
+  }) as unknown as FreeDraftDetailResponse
+}
+
+export async function deleteFreeDraft(
+  accountId: string,
+  draftId: string,
+  options: FreeDraftRequestOptions = {},
+): Promise<{ draft_id: string; deleted: boolean }> {
+  return client.delete(`/free/draft/${encodeURIComponent(draftId)}`, {
+    params: { account_id: accountId },
+    ...options,
+  }) as unknown as { draft_id: string; deleted: boolean }
+}
