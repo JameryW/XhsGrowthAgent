@@ -141,6 +141,7 @@ describe('AgentTUI free creation interaction contract', () => {
     sessionStorage.clear()
     routeQuery.mode = 'free'
     delete routeQuery.account_id
+    delete routeQuery.draft_id
     delete routeQuery.topic
     vi.mocked(listAccounts).mockResolvedValue([])
     vi.mocked(getActiveAccount).mockResolvedValue(null)
@@ -476,6 +477,22 @@ describe('AgentTUI free creation interaction contract', () => {
   function stubDraft(draft: Record<string, unknown>) {
     vi.mocked(client.get).mockResolvedValue({ draft_id: 'd1', draft } as never)
   }
+
+  it('opens an existing free draft from the route deep link', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    stubDraft({
+      title: '深链打开的草稿',
+      body: '草稿正文',
+      hashtags: ['#自由创作'],
+    })
+
+    const { wrapper, terminal } = await mountFreeTui()
+
+    expect(client.get).toHaveBeenCalledWith('/free/draft/d1?account_id=acct-1')
+    expect(terminal.lines.join('\n')).toContain('深链打开的草稿')
+    wrapper.unmount()
+  })
 
   it('previews a publish without confirm and never posts', async () => {
     stubOwnedAccount()

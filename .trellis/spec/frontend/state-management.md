@@ -185,6 +185,25 @@ example, its bound content niche). Treat that as a default only:
 Keep the chosen value in the component's submitted configuration, not as a
 side-effectful mutation of a Pinia store.
 
+## Account-Scoped Local List Panels
+
+Authenticated views that embed a secondary account-owned list (for example,
+Free Creation drafts inside History) should keep that list's request state in
+the panel rather than adding a store for a single view. The panel receives the
+resolved local account ID from the parent, emits aggregate counts when the
+server response changes, and follows this lifecycle:
+
+- no account means no API request and a localized account-selection state;
+- account changes reset local filters and increment a request generation;
+- in-flight requests are aborted when possible, and a response commits only
+  when its generation and account still match;
+- page-level errors use `suppressToast` and retain a retry action;
+- mutation success updates the local rows and emitted count, while mutation
+  failures remain local to the panel and do not change the account scope.
+
+This keeps shared History account browsing authoritative while preventing a
+late response from one account from repainting a different account's panel.
+
 ---
 
 ## Common Mistakes

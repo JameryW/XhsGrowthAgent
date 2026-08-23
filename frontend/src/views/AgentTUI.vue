@@ -64,6 +64,9 @@ const freeCreationTopic = computed(() => (
 const freeRouteAccountId = computed(() => (
   typeof route.query.account_id === 'string' ? route.query.account_id.trim() : ''
 ))
+const freeRouteDraftId = computed(() => (
+  typeof route.query.draft_id === 'string' ? route.query.draft_id.trim() : ''
+))
 const resolvedFreeAccountId = computed(() => {
   if (!isFreeCreationEntry.value) return accountsStore.activeAccountId
   const requested = freeRouteAccountId.value
@@ -2736,7 +2739,12 @@ onMounted(async () => {
   // Carry the Start Creating goal into the same editable surface users use
   // for normal free-mode messages. It stays local until the user confirms it
   // with Enter or Send, so navigation never triggers an unintended agent turn.
-  if (isFreeCreationEntry.value && freeCreationTopic.value.trim()) {
+  if (isFreeCreationEntry.value && freeRouteDraftId.value) {
+    // History's Continue action carries the account and draft id into the
+    // existing free workspace. Reuse the canonical detail command so the
+    // terminal renders exactly the same complete draft view as /draft <id>.
+    await processCommand(`/draft ${freeRouteDraftId.value}`, { echo: true })
+  } else if (isFreeCreationEntry.value && freeCreationTopic.value.trim()) {
     prefillFreePrompt(freeCreationTopic.value.trim())
   }
 })
