@@ -22,7 +22,10 @@ export interface WorkflowConfig {
   phase: WorkflowPhase
   dryRun: boolean
   autoPublish: boolean
+  /** Trend/brief input. Free Creation uses the explicit `goal` field below. */
   topic?: string
+  /** Natural-language hand-off for the Free Creation workspace. */
+  goal?: string
   niche: string
   workflowMode: WorkflowMode
   briefText?: string
@@ -47,6 +50,7 @@ const dryRun = ref(false)
 const autoPublish = ref(false)
 const showAdvancedOptions = ref(false)
 const topic = ref(props.initialTopic || '')
+const freeGoal = ref(props.initialTopic || '')
 const niche = ref('母婴')
 const hasManualNiche = ref(false)
 const briefText = ref('')
@@ -131,6 +135,17 @@ watch(() => accountsStore.activeAccountId, (nextId, prevId) => {
   if (!nextId || !prevId || nextId === prevId) return
   accountId.value = nextId
   applyNicheDefault()
+})
+
+// Analytics and replay links can resolve after the child form has mounted.
+// Hydrate both mode-specific inputs only while they are still empty, so a
+// user's in-form edits always win over a late route update.
+watch(() => props.initialTopic, (nextTopic, previousTopic) => {
+  const next = nextTopic?.trim() || ''
+  const previous = previousTopic?.trim() || ''
+  if (!next) return
+  if (!topic.value || topic.value === previous) topic.value = next
+  if (!freeGoal.value || freeGoal.value === previous) freeGoal.value = next
 })
 
 async function onBriefPdfUpload(file: File) {
@@ -267,7 +282,8 @@ function getConfig(): WorkflowConfig {
     phase: phase.value,
     dryRun: dryRun.value,
     autoPublish: autoPublish.value,
-    topic: topic.value.trim() || undefined,
+    topic: workflowMode.value === 'free' ? undefined : (topic.value.trim() || undefined),
+    goal: workflowMode.value === 'free' ? (freeGoal.value.trim() || undefined) : undefined,
     niche: niche.value,
     workflowMode: workflowMode.value,
     briefText: workflowMode.value === 'brief' ? effectiveBriefText : undefined,
@@ -275,7 +291,7 @@ function getConfig(): WorkflowConfig {
 }
 
 function useFreePrompt(promptKey: (typeof freePromptExamples)[number]['key']) {
-  topic.value = t(`home.form.freePromptExamples.${promptKey}`)
+  freeGoal.value = t(`home.form.freePromptExamples.${promptKey}`)
 }
 
 defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
@@ -352,13 +368,29 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
 
       <textarea
         id="start-free-goal"
-        v-model="topic"
+        v-model="freeGoal"
         rows="4"
+        maxlength="2000"
         class="w-full resize-y rounded-xl border-2 border-violet-100 bg-white/85 px-4 py-3 text-sm font-medium text-slate-700 transition-all duration-300 ease-out placeholder:font-normal placeholder:text-slate-300 focus:border-violet-300 focus:bg-white focus:outline-none focus:shadow-[0_0_0_3px_rgba(167,139,250,.14)] dark:border-violet-500/25 dark:bg-slate-900/70 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-violet-400/60 dark:focus:bg-slate-900"
         :placeholder="t('home.form.freeGoalPlaceholder')"
         :aria-describedby="'start-free-goal-help'"
       />
-      <p id="start-free-goal-help" class="-mt-2 text-[11px] leading-5 text-slate-400">{{ t('home.form.freeGoalCarryHint') }}</p>
+      <div class="-mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] leading-5 text-slate-400">
+        <p id="start-free-goal-help">{{ t('home.form.freeGoalCarryHint') }}</p>
+        <span class="shrink-0 tabular-nums" aria-live="polite">{{ freeGoal.length }}/2000</span>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-200/60 bg-white/60 px-3 py-2 text-xs dark:border-violet-500/20 dark:bg-slate-900/55">
+        <div class="flex min-w-0 items-center gap-2">
+          <AppIcon name="UserCheck" size="xs" variant="cyan" aria-hidden="true" />
+          <span class="shrink-0 text-slate-400">{{ t('home.currentContext') }}</span>
+          <span class="truncate font-semibold text-slate-700 dark:text-slate-200">{{ selectedAccount?.name || t('home.accountPending') }}</span>
+        </div>
+        <span v-if="selectedAccount" class="shrink-0 rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-semibold text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-200">
+          {{ t('home.accountNiche', { niche: selectedAccount.niche || niche }) }}
+        </span>
+        <span v-else class="shrink-0 text-[10px] font-semibold text-amber-600 dark:text-amber-300">{{ t('home.noAccountSelected') }}</span>
+      </div>
 
       <div>
         <p class="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-violet-500 dark:text-violet-300">{{ t('home.form.freePromptExamplesTitle') }}</p>

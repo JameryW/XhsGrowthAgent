@@ -142,6 +142,7 @@ describe('AgentTUI free creation interaction contract', () => {
     routeQuery.mode = 'free'
     delete routeQuery.account_id
     delete routeQuery.draft_id
+    delete routeQuery.goal
     delete routeQuery.topic
     vi.mocked(listAccounts).mockResolvedValue([])
     vi.mocked(getActiveAccount).mockResolvedValue(null)
@@ -491,6 +492,17 @@ describe('AgentTUI free creation interaction contract', () => {
 
     expect(client.get).toHaveBeenCalledWith('/free/draft/d1?account_id=acct-1')
     expect(terminal.lines.join('\n')).toContain('深链打开的草稿')
+    wrapper.unmount()
+  })
+
+  it('prefers the explicit goal query over the legacy topic query', async () => {
+    routeQuery.goal = '为新手整理一份护肤入门清单'
+    routeQuery.topic = '旧链接里的主题'
+    const { wrapper, terminal, socket } = await mountFreeTui()
+
+    expect(terminal.lines.join('\n')).toContain('为新手整理一份护肤入门清单')
+    expect(terminal.lines.join('\n')).not.toContain('旧链接里的主题')
+    expect(socket.sent).toHaveLength(0)
     wrapper.unmount()
   })
 

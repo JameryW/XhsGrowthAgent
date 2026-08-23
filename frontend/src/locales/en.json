@@ -2259,7 +2259,7 @@
     "workflowFlow": "trend → strategy → copy → visual → publish",
     "freeFlow": "free creation orchestration → creation → evaluation → publish",
     "freeWelcomeHint": "Free creation mode is active: describe your creation goal and the agent will orchestrate creation, evaluation, and publishing.",
-    "freeTopic": "Topic: {topic}",
+    "freeGoal": "Goal: {goal}",
     "freeAgentUnavailable": "Free creation needs an Agent connection; this action was not run. Retry the connection and try again.",
     "freeMessageQueued": "The agent is not connected yet. Your message is queued and will be sent automatically.",
     "freeMessageQueueFull": "The pending message limit was reached; the oldest message was removed.",

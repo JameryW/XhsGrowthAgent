@@ -2259,7 +2259,7 @@
     "workflowFlow": "trend → strategy → copy → visual → publish",
     "freeFlow": "自由创作编排 → 创作 → 评估 → 发布",
     "freeWelcomeHint": "自由创作模式已开启：请直接描述你的创作目标，智能体会编排创作、评估与发布。",
-    "freeTopic": "带入主题：{topic}",
+    "freeGoal": "带入目标：{goal}",
     "freeAgentUnavailable": "自由创作需要 Agent 连接；当前操作未执行，请重试连接。",
     "freeMessageQueued": "智能体尚未连接，消息已暂存，连接成功后会自动发送。",
     "freeMessageQueueFull": "待发送消息已达到上限，已移除最早的一条消息。",

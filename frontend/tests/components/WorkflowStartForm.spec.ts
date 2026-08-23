@@ -109,6 +109,7 @@ describe('WorkflowStartForm account niche defaults', () => {
     await freeMode.trigger('click')
 
     expect(wrapper.find('#start-free-goal').exists()).toBe(true)
+    expect(wrapper.find('#start-free-goal').attributes('maxlength')).toBe('2000')
     expect(wrapper.text()).toContain('自由创作路径')
     expect(wrapper.text()).toContain('描述目标')
     expect(wrapper.text()).toContain('生成内容')
@@ -122,7 +123,21 @@ describe('WorkflowStartForm account niche defaults', () => {
     expect((wrapper.find('#start-free-goal').element as HTMLTextAreaElement).value).toContain('京都三天亲子旅行')
     expect((wrapper.vm as any).getConfig()).toMatchObject({
       workflowMode: 'free',
-      topic: expect.stringContaining('京都三天亲子旅行'),
+      goal: expect.stringContaining('京都三天亲子旅行'),
+    })
+    wrapper.unmount()
+  })
+
+  it('keeps the Free Creation goal separate from trend topics', async () => {
+    const wrapper = await mountWithAccounts([], null)
+
+    await wrapper.setProps({ initialTopic: '来自分析页的创作目标' })
+    await wrapper.findAll('button[role="radio"]')[2].trigger('click')
+
+    expect((wrapper.vm as any).getConfig()).toMatchObject({
+      workflowMode: 'free',
+      topic: undefined,
+      goal: '来自分析页的创作目标',
     })
     wrapper.unmount()
   })
