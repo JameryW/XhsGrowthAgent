@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Vue component structure, async states, accessibility, design-system usage, and i18n requirements for the new History panel."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Account-scoped request ownership, stale-response guards, and page-level error handling for History data."}
+{"file":".trellis/spec/frontend/multi-account.md","reason":"Existing History account browsing, URL/session scope, and workspace-account conventions that the new tab must preserve."}
+{"file":"docs/architecture-conventions.md","reason":"Frontend API and routing conventions used by the existing authenticated product surfaces."}
+{"file":"docs/testing-guide.md","reason":"Repository testing expectations and mock patterns for focused frontend coverage."}
