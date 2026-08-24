@@ -31,7 +31,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
-| GET | `/analytics/{draft_id}` | query `account_id` | `{draft_id, post_id, analytics}` (400 if not published / no post_id / no CDP endpoint / fetch failure) |
+| GET | `/analytics/{draft_id}` | query `account_id` | `{draft_id, post_id, analytics}` (400 if not published / no post_id / no CDP endpoint / fetch failure). On success ALSO persists a `last_analytics` snapshot onto the draft, backfills the ContentHistory record with raw counts, and writes one deterministic insight (see Draft Status Metadata) |
 | GET | `/suggestions/{account_id}` | — | `{account_id, mode: "free", suggestions: [{mode, category, title, advice, priority, evidence}], count, cold_start}` (atomic data fetch — delegates to `get_suggestions_for_mode`; carries NO orchestration cue; the omp agent decides what to do with the advice) |
 
 ### omp host tools (`backend/services/omp_bridge.py`)
@@ -421,6 +421,7 @@ after `model_dump()`, the same way `draft_id` is set.
 | `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. Failures do NOT flip `published` (they only record via `last_publish`). |
 | `post_id` | `str` | `publish_draft` (on success) | The XHS note id, from `publish_result.post_id`. Empty for mock-published. Used by `GET /free/analytics/{draft_id}` to fetch engagement. |
 | `post_url` | `str` | `publish_draft` (on success) | The XHS note URL, from `publish_result.post_url`. |
+| `last_analytics` | `{post_id, views, likes, collects, comments, shares, engagement_rate, fetched_at} \| None` | `get_analytics` (on every successful fetch; overwrites) | Engagement snapshot saved after a live fetch so `/drafts`, `/draft <id>` and the History tab show performance offline. `engagement_rate` is kept at the DISPLAY scale returned by `XHSAnalytics` (TUI renders it as %); fraction-typed consumers (ContentHistory backfill, insights) recompute from raw counts via `_engagement_fraction()` instead. Refreshes `updated_at`. NOT written on 400 paths (unpublished / mock post_id / no CDP / fetch failure). |
 
 ### Write-back behavior
 
@@ -432,11 +433,19 @@ after `model_dump()`, the same way `draft_id` is set.
   sets `draft["published"] = True` + refreshes `updated_at`. Failures (`status == "failed"`,
   `"auth_failed"`, etc.) do NOT mutate the draft.
 - **`update_draft`**: refreshes `updated_at` on the merged record; `created_at` is preserved.
+- **`get_analytics`**: on a successful live fetch, persists `last_analytics`
+  onto the draft (see Draft Status Metadata), then best-effort (never fails
+  the response): backfills the account's ContentHistory record for `post_id`
+  with raw counts + a FRACTION engagement_rate (same aget→mutate→aput pattern
+  as analyst.py; skipped when no record exists), and writes ONE deterministic
+  Chinese insight into the insights namespace (`source: free_analytics`,
+  threshold ≥3% fraction, skipped when views = 0). Creative-memory calibration
+  is deliberately NOT done here — free drafts carry no style_id/play_id.
 
 ### `list_drafts` surface + sort
 
-`list_drafts` returns `created_at`, `updated_at`, `last_evaluation`, `published`
-alongside the existing `draft_id` / `title` / `hashtags`. Drafts are sorted
+`list_drafts` returns `created_at`, `updated_at`, `last_evaluation`, `published`,
+`last_analytics` alongside the existing `draft_id` / `title` / `hashtags`. Drafts are sorted
 newest-first by `updated_at`:
 
 ```python

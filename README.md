@@ -95,6 +95,8 @@ Free Creation now starts with a guided hand-off instead of dropping the user int
 
 The goal and account selection travel together, so free-mode drafts and follow-up insights stay attached to the creator account the user chose.
 
+After publishing, `/analytics <id>` saves an engagement snapshot onto the draft — the latest views/likes/collects stay visible in `/draft <id>` and in the History page's Free drafts tab without re-fetching from XHS.
+
 ### Authenticated workspace tour
 
 After sign-in, the workspace is account-scoped and covers creation, review, analytics, and account operations:

@@ -583,6 +583,35 @@ class TestListDrafts:
         assert d["last_evaluation"] is None
         assert d["published"] is False
 
+    def test_list_includes_last_analytics_summary(self, client, mock_store):
+        mock_store._records["snap-1"] = {
+            "draft_id": "snap-1",
+            "title": "有快照",
+            "hashtags": [],
+            "body": "x",
+            "published": True,
+            "last_analytics": {
+                "post_id": "p1",
+                "views": 900,
+                "likes": 30,
+                "collects": 10,
+                "comments": 5,
+                "shares": 2,
+                "engagement_rate": 5.22,
+                "fetched_at": "2026-07-12T00:00:00",
+            },
+            "updated_at": "2026-07-12T00:00:01",
+        }
+        r = client.get("/api/free/drafts/acct1")
+        drafts = {d["draft_id"]: d for d in r.json()["data"]["drafts"]}
+        assert drafts["snap-1"]["last_analytics"]["views"] == 900
+        # legacy draft without snapshot degrades to None
+        client.post("/api/free/draft", json=DRAFT_BODY)
+        r = client.get("/api/free/drafts/acct1")
+        for d in r.json()["data"]["drafts"]:
+            if d["draft_id"] != "snap-1":
+                assert d["last_analytics"] is None
+
     def test_list_sorted_newest_first_by_updated_at(self, client, mock_store):
         # seed two drafts; second is newer (created after, so updated_at >= first)
         client.post("/api/free/draft", json={**DRAFT_BODY, "title": "old"})
@@ -1081,6 +1110,157 @@ class TestGetAnalytics:
             r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
         assert r.status_code == 400
         assert "analytics" in r.text.lower()
+
+
+class TestAnalyticsFeedbackLoop:
+    """Post-publish feedback loop: /analytics persists a snapshot onto the
+    draft, backfills ContentHistory with raw counts (fraction rate), and
+    writes one deterministic insight — task 08-24-free-post-feedback-loop."""
+
+    def _seed_published_draft(self, client, mock_store, post_id="real_note_1"):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        pub_result = {
+            "post_id": post_id,
+            "post_url": f"https://xhs/explore/{post_id}",
+            "status": "published",
+        }
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        return draft_id
+
+    def _fetch(self, client, draft_id, views=1500, likes=320, collects=80, comments=45, shares=12):
+        analytics_obj = XHSAnalytics(
+            post_id="real_note_1",
+            views=views,
+            likes=likes,
+            collects=collects,
+            comments=comments,
+            shares=shares,
+            engagement_rate=3.05,
+            fetched_at="2026-07-10 12:00:00",
+        )
+        with (
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value="http://localhost:9222"),
+            ),
+            patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
+            patch("backend.config.settings.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.platform.headless = True
+            instance = mock_client_cls.return_value
+            instance.get_post_analytics = AsyncMock(return_value=analytics_obj)
+            instance.close = AsyncMock()
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+        return r
+
+    def test_analytics_persists_last_analytics_snapshot(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        self._fetch(client, draft_id)
+        stored = mock_store._records[draft_id]
+        snap = stored["last_analytics"]
+        assert snap["post_id"] == "real_note_1"
+        assert snap["views"] == 1500
+        assert snap["likes"] == 320
+        assert snap["collects"] == 80
+        assert snap["comments"] == 45
+        assert snap["shares"] == 12
+        # display-scale value preserved as returned (NOT recomputed here)
+        assert snap["engagement_rate"] == 3.05
+        assert snap["fetched_at"]  # ISO timestamp set server-side
+        # snapshot write refreshes updated_at
+        assert stored["updated_at"] >= snap["fetched_at"]
+
+    def test_analytics_second_call_overwrites_snapshot(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        self._fetch(client, draft_id)
+        self._fetch(client, draft_id, views=3000, likes=100)
+        stored = mock_store._records[draft_id]
+        assert stored["last_analytics"]["views"] == 3000
+        assert stored["last_analytics"]["likes"] == 100
+
+    def test_analytics_unpublished_does_not_write_snapshot(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 400
+        assert "last_analytics" not in mock_store._records[draft_id]
+
+    def test_analytics_mock_post_id_does_not_write_snapshot(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store, post_id="mock_s0")
+        r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 400
+        assert "last_analytics" not in mock_store._records[draft_id]
+
+    def test_analytics_backfills_content_history_with_fraction_rate(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        # seed the ContentHistory record run_publish would have written
+        mock_store._records["real_note_1"] = {
+            "title": "夏日穿搭",
+            "topic": "OOTD",
+            "hashtags": ["穿搭"],
+            "status": "published",
+        }
+        self._fetch(client, draft_id)
+        record = mock_store._records["real_note_1"]
+        assert record["views"] == 1500
+        assert record["likes"] == 320
+        assert record["collects"] == 80
+        assert record["comments"] == 45
+        assert record["shares"] == 12
+        # FRACTION from counts: (320+80+45+12)/1500 = 0.3047 — not the 3.05 display value
+        assert record["engagement_rate"] == round((320 + 80 + 45 + 12) / 1500, 4)
+
+    def test_analytics_backfill_skips_when_no_history_record(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        aputs_before = mock_store.aput.await_count
+        self._fetch(client, draft_id)  # must not raise despite missing CH record
+        new_aputs = mock_store.aput.await_args_list[aputs_before:]
+        # only the draft-snapshot + (maybe) insight writes — no content_history write
+        ch_ns = ("accounts", "acct1", "content_history")
+        assert all(call.args[0] != ch_ns for call in new_aputs)
+
+    def test_analytics_writes_insight_above_threshold(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        aputs_before = mock_store.aput.await_count
+        self._fetch(client, draft_id)  # rate 30.47% ≥ 3%
+        new_aputs = mock_store.aput.await_args_list[aputs_before:]
+        insights_ns = ("accounts", "acct1", "performance_insights")
+        insight_calls = [call for call in new_aputs if call.args[0] == insights_ns]
+        assert len(insight_calls) == 1
+        value = insight_calls[0].kwargs["value"]
+        assert value["source"] == "free_analytics"
+        assert value["post_id"] == "real_note_1"
+        assert value["draft_id"] == draft_id
+        assert "夏日穿搭" in value["insight"]
+        assert "30.5%" in value["insight"]
+        assert "值得复用" in value["insight"]
+
+    def test_analytics_writes_below_threshold_insight(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        # total=13/1500 ≈ 0.87% < 3%
+        self._fetch(client, draft_id, views=1500, likes=5, collects=4, comments=3, shares=1)
+        insights_ns = ("accounts", "acct1", "performance_insights")
+        insight_calls = [
+            call for call in mock_store.aput.await_args_list if call.args[0] == insights_ns
+        ]
+        assert len(insight_calls) == 1
+        assert "低于 3% 基准" in insight_calls[0].kwargs["value"]["insight"]
+
+    def test_analytics_no_insight_when_zero_views(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        aputs_before = mock_store.aput.await_count
+        self._fetch(client, draft_id, views=0, likes=0, collects=0, comments=0, shares=0)
+        new_aputs = mock_store.aput.await_args_list[aputs_before:]
+        insights_ns = ("accounts", "acct1", "performance_insights")
+        assert all(call.args[0] != insights_ns for call in new_aputs)
+        # snapshot still persisted (a zero-engagement observation is valid)
+        assert mock_store._records[draft_id]["last_analytics"]["views"] == 0
 
 
 class TestGetSuggestions:

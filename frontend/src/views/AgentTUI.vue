@@ -1763,6 +1763,8 @@ interface FreeDraftRecord {
   published?: boolean
   post_id?: string
   post_url?: string
+  /** Persisted engagement snapshot saved by the last successful /analytics fetch. */
+  last_analytics?: { views?: number; likes?: number; collects?: number; comments?: number; shares?: number; engagement_rate?: number; fetched_at?: string } | null
 }
 
 async function handleDraft(draftId: string) {
@@ -1875,6 +1877,21 @@ async function handleDraft(draftId: string) {
         writeLine(boxLine(`${Y}${t('tui.draftDetailMockPublishedHint')}${R}`))
       } else if (pid) {
         writeLine(boxLine(`${Y}${t('tui.draftDetailAnalyticsHint', { id: data.draft_id })}${R}`))
+      }
+      // Persisted engagement snapshot — shows the latest known performance
+      // without re-fetching via CDP (saved by the last successful /analytics).
+      const la = draft.last_analytics
+      if (la && la.fetched_at) {
+        writeLine(
+          boxLine(
+            `${C}${t('tui.draftDetailEngagementLine', {
+              views: la.views ?? 0,
+              likes: la.likes ?? 0,
+              collects: la.collects ?? 0,
+              time: fmtTs(la.fetched_at),
+            })}${R}`,
+          ),
+        )
       }
       // Last publish outcome — on a failure, surface the durable cause + when
       // (#239 only surfaces it for the single publish turn; this persists it).
@@ -2133,6 +2150,9 @@ async function handleAnalytics(draftId: string) {
       writeLine(boxLine(kvLine(t('tui.analyticsFetchedAtLabel'), fmtTs(a.fetched_at), { labelWidth: metricLw, valueColor: '' })))
     }
     writeLine(boxBottom(w))
+    // The route persists this fetch as the draft's last_analytics snapshot —
+    // tell the user it is saved and where to see it again (offline-safe).
+    writeLine(`${ANSI.DIM}${t('tui.analyticsSnapshotSaved')}${ANSI.RESET}`)
     writeLine('')
   } catch (err: any) {
     writeError(writeLine, err.message || t('tui.analyticsFetchFailed'), t('tui.analyticsNotPublished'))

@@ -21,6 +21,20 @@ export interface FreeDraftEvaluation {
   summary?: string | null
 }
 
+/** Persisted post-publish engagement snapshot (`last_analytics`, server-set).
+ *  `engagement_rate` is the display-scale value as returned by XHSAnalytics
+ *  (rendered as %); fraction-typed consumers recompute from raw counts. */
+export interface FreeDraftAnalytics {
+  post_id?: string
+  views?: number
+  likes?: number
+  collects?: number
+  comments?: number
+  shares?: number
+  engagement_rate?: number
+  fetched_at?: string
+}
+
 export interface FreeDraftSummary {
   draft_id: string
   title: string
@@ -29,6 +43,7 @@ export interface FreeDraftSummary {
   updated_at?: string | null
   last_evaluation?: FreeDraftEvaluation | null
   published?: boolean | null
+  last_analytics?: FreeDraftAnalytics | null
 }
 
 export interface FreeDraftListResponse {
