@@ -1,4 +1,0 @@
-{"file":".trellis/spec/frontend/component-patterns.md","reason":"Review the panel for component boundaries, stable async shells, accessible controls, dark-mode classes, and locale coverage."}
-{"file":".trellis/spec/frontend/state-management.md","reason":"Verify account-switch reset, abort/generation guards, and that no stale draft rows leak across account scopes."}
-{"file":".trellis/spec/frontend/multi-account.md","reason":"Verify History tab deep links and local account browsing do not change the workspace account unexpectedly."}
-{"file":"docs/testing-guide.md","reason":"Run and assess the focused component/API tests plus required type-check, i18n parity, and build validation."}
