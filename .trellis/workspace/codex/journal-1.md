@@ -170,3 +170,36 @@ Added /publish <id> [confirm] with preview-first confirmation gate, degraded-eva
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Free-mode RQGM samples feed evaluator evolution
+
+**Date**: 2026-08-25
+**Task**: Free-mode RQGM samples feed evaluator evolution
+**Branch**: `codex/free-creation-polish`
+
+### Summary
+
+evaluate_draft now inserts an evaluator training sample under synthetic thread key free:{draft_id} (mirrors _collect_sample guards: degraded/scoreless/non-ready status and pool-down all skip); /free/analytics backfills the weak engagement label onto that sample with raw counts. 85 focused route tests + 103 omp-bridge tests green, ruff clean, free-creation spec updated. Zero schema migration.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `33742760` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
