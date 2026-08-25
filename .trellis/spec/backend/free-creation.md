@@ -24,14 +24,14 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 
 | Method | Path | Body / Query | Response (`data`) |
 |--------|------|--------------|-------------------|
-| POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience) | `{draft_id, draft}` |
-| POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}` |
+| POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience, style_id?, play_id?) | `{draft_id, draft}`. `style_id`/`play_id` are optional creative-memory anchors — the agent echoes the `id=` shown in the create response's creative context when the draft builds on a recalled Style DNA / Conversion Play; publish threads them into the ContentHistory calibration chain and analytics calibrates that record after engagement lands |
+| POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}`. On a consumable verdict (not degraded/scoreless/non-ready status + Postgres pool up) ALSO inserts an evaluator training sample under the synthetic thread key `free:{draft_id}` — see Write-back behavior |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
 | GET | `/drafts/{account_id}` | query `status` (optional: all\|published\|unpublished\|publish_failed\|evaluated\|unevaluated), `q` (optional title substring) | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, last_publish, published}], count, truncated, status, q}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata; `count`/`truncated` reflect filtered/total respectively — see Status filter + title search) |
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
-| GET | `/analytics/{draft_id}` | query `account_id` | `{draft_id, post_id, analytics}` (400 if not published / no post_id / no CDP endpoint / fetch failure) |
+| GET | `/analytics/{draft_id}` | query `account_id` | `{draft_id, post_id, analytics}` (400 if not published / no post_id / no CDP endpoint / fetch failure). On success ALSO persists a `last_analytics` snapshot onto the draft, backfills the ContentHistory record with raw counts, and writes one deterministic insight (see Draft Status Metadata) |
 | GET | `/suggestions/{account_id}` | — | `{account_id, mode: "free", suggestions: [{mode, category, title, advice, priority, evidence}], count, cold_start}` (atomic data fetch — delegates to `get_suggestions_for_mode`; carries NO orchestration cue; the omp agent decides what to do with the advice) |
 
 ### omp host tools (`backend/services/omp_bridge.py`)
@@ -421,6 +421,7 @@ after `model_dump()`, the same way `draft_id` is set.
 | `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. Failures do NOT flip `published` (they only record via `last_publish`). |
 | `post_id` | `str` | `publish_draft` (on success) | The XHS note id, from `publish_result.post_id`. Empty for mock-published. Used by `GET /free/analytics/{draft_id}` to fetch engagement. |
 | `post_url` | `str` | `publish_draft` (on success) | The XHS note URL, from `publish_result.post_url`. |
+| `last_analytics` | `{post_id, views, likes, collects, comments, shares, engagement_rate, fetched_at} \| None` | `get_analytics` (on every successful fetch; overwrites) | Engagement snapshot saved after a live fetch so `/drafts`, `/draft <id>` and the History tab show performance offline. `engagement_rate` is kept at the DISPLAY scale returned by `XHSAnalytics` (TUI renders it as %); fraction-typed consumers (ContentHistory backfill, insights) recompute from raw counts via `_engagement_fraction()` instead. Refreshes `updated_at`. NOT written on 400 paths (unpublished / mock post_id / no CDP / fetch failure). |
 
 ### Write-back behavior
 
@@ -432,11 +433,39 @@ after `model_dump()`, the same way `draft_id` is set.
   sets `draft["published"] = True` + refreshes `updated_at`. Failures (`status == "failed"`,
   `"auth_failed"`, etc.) do NOT mutate the draft.
 - **`update_draft`**: refreshes `updated_at` on the merged record; `created_at` is preserved.
+- **`get_analytics`**: on a successful live fetch, persists `last_analytics`
+  onto the draft (see Draft Status Metadata), then best-effort (never fails
+  the response): backfills the account's ContentHistory record for `post_id`
+  with raw counts + a FRACTION engagement_rate (same aget→mutate→aput pattern
+  as analyst.py; skipped when no record exists), and writes ONE deterministic
+  Chinese insight into the insights namespace (`source: free_analytics`,
+  threshold ≥3% fraction, skipped when views = 0), and best-effort backfills
+  the weak engagement label onto the draft's evaluator sample via
+  `backfill_engagement(f"free:{draft_id}", raw_counts)` when the Postgres pool
+  is up. Creative-memory calibration is triggered ONLY when the draft carries
+  an anchor (`style_id` or `play_id`) AND views > 0: the analyst's exact
+  `build_calibration_payload` runs over a synthesized state (anchors mapped
+  into visual_plan.style_id / content_plan.play_id — the same fields
+  run_publish threads into the ContentHistory record), then
+  `schedule_calibration` fires fire-and-forget. Zero-view fetches never
+  calibrate (no impressions = no signal about the style/play). Creative-memory
+  calibration without anchors remains deliberately NOT done.
+- **`evaluate_draft` (sample chain)**: after persisting `last_evaluation`,
+  mirrors `_collect_sample` (agents/nodes/evaluator.py) with a synthetic
+  `thread_id = f"free:{draft_id}"` — `evaluator_samples.thread_id` is plain
+  TEXT, so insert/backfill/evolve are reused unchanged with NO schema
+  migration. Skips when: status ∈ {degraded, failed, running, unavailable},
+  `degraded` flag truthy (LLM-timeout fake-approved), or `overall_score` is
+  None; also when the Postgres pool is not ready. Content snapshot is
+  free-shaped (title / body[:2000] / hashtags / niche / content_angle /
+  target_audience). Entirely non-blocking — sample failures never affect the
+  evaluate response. maybe_evolve is NOT triggered from free routes; samples
+  accrue until the next workflow analyst run fits weights (recorded boundary).
 
 ### `list_drafts` surface + sort
 
-`list_drafts` returns `created_at`, `updated_at`, `last_evaluation`, `published`
-alongside the existing `draft_id` / `title` / `hashtags`. Drafts are sorted
+`list_drafts` returns `created_at`, `updated_at`, `last_evaluation`, `published`,
+`last_analytics` alongside the existing `draft_id` / `title` / `hashtags`. Drafts are sorted
 newest-first by `updated_at`:
 
 ```python

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "Free-mode route conventions: thread-less endpoints, draft persistence shape, account scoping, mock-publish edge cases."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "ValidationError/ApiError conventions for the analytics endpoint changes."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Logger naming and structured log conventions for new write-back paths."}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "AgentTUI boxed-card rendering and History panel card conventions for the new engagement display."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "API adapter typing and account-scoped request rules for FreeDraftRecord changes."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Change spans backend route + frontend TUI/GUI; keep field naming consistent across layers."}

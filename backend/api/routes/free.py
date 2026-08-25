@@ -30,6 +30,8 @@ from pydantic import BaseModel, Field, field_validator
 if TYPE_CHECKING:
     # Annotation-only; deferring state.schema keeps langgraph.graph.message
     # (~0.3s) off the app cold-start import chain.
+    from langgraph.store.base import BaseStore
+
     from backend.state.schema import XHSGrowthState
 
 from backend.agents.evaluator import EvaluatorAgent
@@ -63,6 +65,11 @@ class FreeDraft(BaseModel):
     )
     content_angle: str = Field(default="", description="内容角度（评估用）")
     target_audience: str = Field(default="", description="目标受众（评估用）")
+    # Creative-memory anchors (task 08-25-free-style-anchors): when the draft
+    # builds on a recalled Style DNA / Conversion Play, the agent echoes its id
+    # back so post-publish engagement can calibrate that record's effectiveness.
+    style_id: str = Field(default="", description="锚定的 Style DNA ID（可选，用于效果校准）")
+    play_id: str = Field(default="", description="锚定的 Conversion Play ID（可选，用于效果校准）")
 
     @field_validator("niche", mode="before")
     @classmethod
@@ -96,6 +103,8 @@ class FreeDraftUpdate(BaseModel):
     niche: str | None = None
     content_angle: str | None = None
     target_audience: str | None = None
+    style_id: str | None = None
+    play_id: str | None = None
 
     @field_validator("niche", mode="before")
     @classmethod
@@ -174,9 +183,14 @@ def _build_publish_state(draft: dict[str, Any]) -> XHSGrowthState:
             "content_plan": {
                 "selected_topic": draft.get("title", ""),
                 "content_angle": draft.get("content_angle", ""),
+                # Creative-memory anchor (task 08-25-free-style-anchors):
+                # run_publish's ContentHistory record reads play_id from here.
+                "play_id": str(draft.get("play_id", "") or ""),
             },
             "visual_plan": {
                 "image_paths": draft.get("image_paths", []),
+                # Same anchor chain — style_id lands in the ContentHistory record.
+                "style_id": str(draft.get("style_id", "") or ""),
             },
             "publish_options": {"account_id": account_id},
         },
@@ -339,6 +353,9 @@ async def evaluate_draft(
         await store.aput(_draft_ns(account_id), key=ref.draft_id, value=draft)
 
     logger.info("free draft evaluated: account=%s draft=%s", account_id, ref.draft_id)
+    # Feed the RQGM verdict into the evaluator training pool under the synthetic
+    # thread key `free:{draft_id}` — degraded verdicts never enter (see helper).
+    await _collect_free_evaluator_sample(account_id, ref.draft_id, draft, evaluation)
     return success(
         data={
             "draft_id": ref.draft_id,
@@ -513,6 +530,7 @@ async def list_drafts(
                     "updated_at": value.get("updated_at"),
                     "last_evaluation": last_eval,
                     "published": value.get("published", False),
+                    "last_analytics": value.get("last_analytics"),
                 }
             )
     except Exception:
@@ -654,6 +672,142 @@ async def _resolve_free_cdp_endpoint(account_id: str) -> str:
     return cdp_endpoint
 
 
+def _engagement_fraction(snapshot: dict[str, Any]) -> float:
+    """Interaction rate as a 0–1 fraction computed from raw counts.
+
+    Mirrors analyst.py's ContentHistory convention (round(total/views, 4)) and
+    the evaluator-config weak-label rate. Deliberately NOT the display-scale
+    `engagement_rate` returned by XHSAnalytics — that one is rendered as a
+    percentage in the TUI, so it must never leak into fraction-typed fields.
+    """
+    views = int(snapshot.get("views", 0) or 0)
+    if views <= 0:
+        return 0.0
+    total = (
+        int(snapshot.get("likes", 0) or 0)
+        + int(snapshot.get("collects", 0) or 0)
+        + int(snapshot.get("comments", 0) or 0)
+        + int(snapshot.get("shares", 0) or 0)
+    )
+    return round(total / views, 4)
+
+
+async def _backfill_content_history(
+    store: BaseStore, account_id: str, post_id: str, snapshot: dict[str, Any]
+) -> None:
+    """Attach real engagement onto the draft's ContentHistory record.
+
+    Same aget→mutate→aput pattern as backend/agents/analyst.py — free posts
+    enter the same content-history memory the fixed workflow writes. Skips
+    silently when no record exists for the post_id (the record is created by
+    run_publish at publish time; its absence means nothing to label).
+    """
+    from backend.memory.store import MemoryManager
+
+    mm = MemoryManager(account_id)
+    existing = await store.aget(mm.content_history_ns, key=post_id)
+    if existing is None or not isinstance(existing.value, dict):
+        return
+    record = dict(existing.value)
+    record["views"] = int(snapshot.get("views", 0) or 0)
+    record["likes"] = int(snapshot.get("likes", 0) or 0)
+    record["collects"] = int(snapshot.get("collects", 0) or 0)
+    record["comments"] = int(snapshot.get("comments", 0) or 0)
+    record["shares"] = int(snapshot.get("shares", 0) or 0)
+    record["engagement_rate"] = _engagement_fraction(snapshot)
+    await store.aput(mm.content_history_ns, key=post_id, value=record)
+
+
+async def _store_free_performance_insight(
+    store: BaseStore, account_id: str, draft_id: str, title: str, snapshot: dict[str, Any]
+) -> None:
+    """Deterministic performance insight (no LLM) into the insights namespace.
+
+    Closes G3 of the free-mode feedback loop: without this, free-mode outcomes
+    never reach memory recall. Threshold matches calibrator's play_success
+    (engagement fraction >= 0.03). Skipped when there is no signal (no views).
+    """
+    views = int(snapshot.get("views", 0) or 0)
+    rate = _engagement_fraction(snapshot)
+    if views <= 0 or rate <= 0:
+        return
+    likes = int(snapshot.get("likes", 0) or 0)
+    collects = int(snapshot.get("collects", 0) or 0)
+    comments = int(snapshot.get("comments", 0) or 0)
+    shares = int(snapshot.get("shares", 0) or 0)
+    verdict = (
+        "表现达到基准(≥3%)，该模式值得复用"
+        if rate >= 0.03
+        else "低于 3% 基准，标题/封面/受众匹配可再优化"
+    )
+    insight = (
+        f"自由创作《{title}》互动率 {rate:.1%}"
+        f"（浏览 {views}，赞 {likes}，藏 {collects}，评 {comments}，转发 {shares}）——{verdict}"
+    )
+    from backend.memory.store import MemoryManager
+
+    mm = MemoryManager(account_id)
+    await mm.store_insight(
+        store,
+        insight,
+        {"source": "free_analytics", "post_id": snapshot.get("post_id", ""), "draft_id": draft_id},
+    )
+
+
+# Body cap — same bound as the workflow's evaluator content snapshot (keeps
+# sample rows bounded ~1-3KB for finetune data volume).
+_FREE_SAMPLE_BODY_TRUNCATE = 2000
+
+
+async def _collect_free_evaluator_sample(
+    account_id: str, draft_id: str, draft: dict[str, Any], evaluation: dict[str, Any]
+) -> None:
+    """Feed the free-mode RQGM verdict into the evaluator training sample pool.
+
+    Mirrors backend/agents/nodes/evaluator.py::_collect_sample using a synthetic
+    thread key: evaluator_samples.thread_id is plain TEXT, so `free:{draft_id}`
+    reuses insert_sample / backfill_engagement / maybe_evolve unchanged (no
+    schema migration). Degraded / scoreless results are NEVER recorded — a fake
+    100/approved fallback would contaminate pass-rate aggregates and weight
+    training. Best-effort: every failure is swallowed so the evaluate response
+    is unaffected.
+    """
+    status = str(evaluation.get("status") or "ready").lower()
+    score = evaluation.get("overall_score")
+    if (
+        status in {"degraded", "failed", "running", "unavailable"}
+        or evaluation.get("degraded")
+        or score is None
+    ):
+        return
+    try:
+        from backend.db.evaluator_config import EvaluatorSample, insert_sample
+        from backend.db.pool import is_pool_ready
+
+        if not is_pool_ready():
+            return
+        await insert_sample(
+            EvaluatorSample(
+                account_id=account_id,
+                thread_id=f"free:{draft_id}",
+                dimensions=evaluation.get("dimensions") or [],
+                overall_score=float(score),
+                decision=str(evaluation.get("decision") or ""),
+                label_source="evaluator",
+                content_snapshot={
+                    "title": str(draft.get("title", "") or ""),
+                    "body": str(draft.get("body", "") or "")[:_FREE_SAMPLE_BODY_TRUNCATE],
+                    "hashtags": list(draft.get("hashtags") or []),
+                    "niche": str(draft.get("niche", "") or ""),
+                    "content_angle": str(draft.get("content_angle", "") or ""),
+                    "target_audience": str(draft.get("target_audience") or ""),
+                },
+            )
+        )
+    except Exception as e:
+        logger.debug("free evaluator sample collection failed (non-blocking): %s", e)
+
+
 @router.get("/analytics/{draft_id}")
 async def get_analytics(
     draft_id: str,
@@ -668,6 +822,14 @@ async def get_analytics(
     the fixed workflow's analyst uses. Returns views/likes/collects/comments/
     shares/engagement_rate. Raises ValidationError → 400 if the draft hasn't
     been published (no post_id) or no CDP endpoint is available.
+
+    On success the metrics are also persisted back onto the draft as
+    `last_analytics` (server-set metadata, same pattern as last_publish), the
+    draft's ContentHistory record is backfilled with the raw counts, and a
+    deterministic performance insight is written to the insights namespace —
+    closing the free-mode publish→feedback loop (memory calibration is NOT
+    done here: free drafts carry no style_id/play_id, see task
+    08-24-free-post-feedback-loop).
     """
     account_id = await resolve_required_account_id(str(user["id"]), account_id)
     draft = await _load_draft(request, account_id, draft_id)
@@ -722,6 +884,107 @@ async def get_analytics(
     logger.info(
         "free analytics fetched: account=%s draft=%s post=%s", account_id, draft_id, post_id
     )
+
+    # ── Post-publish feedback loop (task 08-24-free-post-feedback-loop) ──
+    # The live fetch is worthless once the CDP browser closes — persist the
+    # snapshot so /drafts, /draft <id> and the GUI History tab can show the
+    # engagement offline. store is guaranteed non-None here (_load_draft
+    # raises ValidationError when the graph has no store).
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None)
+    fetched_at = _now_iso()
+    snapshot: dict[str, Any] = {
+        "post_id": post_id,
+        "views": int(analytics.get("views", 0) or 0),
+        "likes": int(analytics.get("likes", 0) or 0),
+        "collects": int(analytics.get("collects", 0) or 0),
+        "comments": int(analytics.get("comments", 0) or 0),
+        "shares": int(analytics.get("shares", 0) or 0),
+        # Display scale as returned by XHSAnalytics (TUI renders it as %);
+        # fraction-typed consumers recompute from counts via
+        # _engagement_fraction instead of reusing this value.
+        "engagement_rate": float(analytics.get("engagement_rate", 0.0) or 0.0),
+        "fetched_at": fetched_at,
+    }
+    draft["last_analytics"] = snapshot
+    draft["updated_at"] = fetched_at
+    try:
+        await store.aput(_draft_ns(account_id), key=draft_id, value=draft)
+    except Exception:
+        logger.warning(
+            "free analytics snapshot persist failed: account=%s draft=%s",
+            account_id,
+            draft_id,
+            exc_info=True,
+        )
+    title = str(draft.get("title", "") or "")
+    try:
+        await _backfill_content_history(store, account_id, post_id, snapshot)
+    except Exception:
+        logger.warning(
+            "free analytics content-history backfill failed: account=%s post=%s",
+            account_id,
+            post_id,
+            exc_info=True,
+        )
+    try:
+        await _store_free_performance_insight(store, account_id, draft_id, title, snapshot)
+    except Exception:
+        logger.warning(
+            "free analytics insight write failed: account=%s draft=%s",
+            account_id,
+            draft_id,
+            exc_info=True,
+        )
+    # Weak-label backfill onto this draft's latest evaluator sample (thread key
+    # `free:{draft_id}`, written by evaluate_draft) — raw counts only; the rate
+    # is computed inside backfill_engagement. Non-blocking on DB absence.
+    try:
+        from backend.db.evaluator_config import backfill_engagement
+        from backend.db.pool import is_pool_ready
+
+        if is_pool_ready():
+            engagement = {
+                key: snapshot[key]
+                for key in ("views", "likes", "collects", "comments", "shares")
+            }
+            await backfill_engagement(f"free:{draft_id}", engagement)
+    except Exception:
+        logger.warning(
+            "free analytics engagement backfill failed: account=%s draft=%s",
+            account_id,
+            draft_id,
+            exc_info=True,
+        )
+    # Creative-memory calibration (task 08-25-free-style-anchors): when the
+    # draft anchors a recalled Style DNA / Conversion Play, feed the real
+    # engagement back so that record's effectiveness stats learn. Reuses the
+    # workflow analyst's exact payload builder + fire-and-forget scheduler —
+    # play_success (≥3% fraction) is decided inside build_calibration_payload.
+    style_id = str(draft.get("style_id", "") or "")
+    play_id = str(draft.get("play_id", "") or "")
+    views = int(snapshot["views"])
+    if (style_id or play_id) and store is not None and views > 0:
+        try:
+            from backend.memory.calibrator import build_calibration_payload, schedule_calibration
+
+            cal_state = dict(_build_publish_state(draft))
+            cal_state["publish_result"] = {"post_id": post_id}
+            save_rate = round(int(snapshot["collects"]) / views, 4)
+            payload = build_calibration_payload(
+                cal_state,
+                _engagement_fraction(snapshot),
+                save_rate,
+            )
+            await schedule_calibration(store, payload)
+        except Exception:
+            logger.warning(
+                "free analytics calibration schedule failed: account=%s draft=%s",
+                account_id,
+                draft_id,
+                exc_info=True,
+            )
+
     return success(
         data={
             "draft_id": draft_id,

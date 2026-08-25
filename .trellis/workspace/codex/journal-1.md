@@ -137,3 +137,102 @@ Added /publish <id> [confirm] with preview-first confirmation gate, degraded-eva
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Free Creation post-publish feedback loop
+
+**Date**: 2026-08-25
+**Task**: Free Creation post-publish feedback loop
+**Branch**: `codex/free-creation-polish`
+
+### Summary
+
+/free/analytics now persists a last_analytics snapshot onto the draft, backfills ContentHistory with raw counts (fraction rate), and writes one deterministic insight; TUI /analytics notes the saved snapshot, /draft shows latest engagement; History free-drafts tab renders view/like/collect badges. Backend 77 focused tests, ruff clean; frontend 720 tests, type-check/i18n/build green; bilingual README + free-creation spec updated.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fbec9ef9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 6: Free-mode RQGM samples feed evaluator evolution
+
+**Date**: 2026-08-25
+**Task**: Free-mode RQGM samples feed evaluator evolution
+**Branch**: `codex/free-creation-polish`
+
+### Summary
+
+evaluate_draft now inserts an evaluator training sample under synthetic thread key free:{draft_id} (mirrors _collect_sample guards: degraded/scoreless/non-ready status and pool-down all skip); /free/analytics backfills the weak engagement label onto that sample with raw counts. 85 focused route tests + 103 omp-bridge tests green, ruff clean, free-creation spec updated. Zero schema migration.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `33742760` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 7: Free drafts anchor creative memory calibration
+
+**Date**: 2026-08-25
+**Task**: Free drafts anchor creative memory calibration
+**Branch**: `codex/free-creation-polish`
+
+### Summary
+
+FreeDraft gained optional style_id/play_id anchors (create+PATCH); build_creative_context now exposes record ids so the agent can anchor; publish threads anchors into the ContentHistory chain via _build_publish_state; /free/analytics triggers schedule_calibration with the analyst's payload builder when anchored and views>0. omp tool schema/usage updated. 236 tests across free routes + creative memory + omp bridge, ruff clean, spec updated.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0423531` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -303,6 +303,20 @@ defineExpose({ refresh })
                 {{ t('history.freeDrafts.evaluationDegraded') }}
               </span>
               <span v-else class="dark-explicit mt-3 inline-flex rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('history.freeDrafts.evaluationUnavailable') }}</span>
+              <!-- Persisted engagement snapshot (server-set last_analytics):
+                   offline-visible performance for published drafts. -->
+              <div
+                v-if="draft.published && draft.last_analytics"
+                class="dark-explicit mt-3 inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-cyan-200 bg-cyan-50 px-2.5 py-1.5 text-xs text-cyan-700 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-200"
+                data-testid="free-draft-engagement"
+                :title="t('history.freeDrafts.engagementCapturedAt', { date: formatDate(draft.last_analytics?.fetched_at) })"
+              >
+                <span>{{ t('history.freeDrafts.engagementViews', { value: draft.last_analytics?.views ?? 0 }) }}</span>
+                <span aria-hidden="true">·</span>
+                <span>{{ t('history.freeDrafts.engagementLikes', { value: draft.last_analytics?.likes ?? 0 }) }}</span>
+                <span aria-hidden="true">·</span>
+                <span>{{ t('history.freeDrafts.engagementCollects', { value: draft.last_analytics?.collects ?? 0 }) }}</span>
+              </div>
             </div>
 
             <div class="flex shrink-0 items-center gap-2">

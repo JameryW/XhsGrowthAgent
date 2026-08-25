@@ -625,7 +625,9 @@ class CreativeMemory:
                 visual = s.get("visual_style", "")
                 rate = s.get("engagement_rate", "N/A")
                 n = s.get("sample_count", 0)
-                parts.append(f"  文风={tone} 视觉={visual} 互动率={rate} 采样={n}")
+                sid = s.get("style_id", "") or s.get("id", "")
+                id_part = f" id={sid} " if sid else " "
+                parts.append(f" {id_part}文风={tone} 视觉={visual} 互动率={rate} 采样={n}")
                 if s.get("voice_patterns"):
                     parts.append(f"  常用句式: {', '.join(s['voice_patterns'][:3])}")
                 if s.get("color_palette"):
@@ -634,8 +636,10 @@ class CreativeMemory:
         if plays:
             parts.append("转化策略：")
             for p in plays[:2]:
+                pid = p.get("play_id", "") or p.get("id", "")
+                pid_part = f" id={pid} " if pid else " "
                 parts.append(
-                    f"  场景={p.get('trigger_condition', '')} "
+                    f"{pid_part} 场景={p.get('trigger_condition', '')} "
                     f"标题公式={p.get('title_formula', '')} "
                     f"验证={p.get('proven_count', 0)}次 "
                     f"互动率={p.get('avg_engagement_rate', 'N/A')}"

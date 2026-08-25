@@ -107,6 +107,42 @@ describe('FreeDraftHistoryPanel', () => {
     expect(card.text()).not.toContain('通过')
   })
 
+  it('shows the persisted engagement snapshot only on published drafts that have one', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [
+        draft({
+          draft_id: 'pub-snap',
+          title: '已发布有快照',
+          published: true,
+          last_analytics: {
+            post_id: 'p1',
+            views: 900,
+            likes: 30,
+            collects: 10,
+            comments: 5,
+            shares: 2,
+            engagement_rate: 5.22,
+            fetched_at: '2026-08-24T08:00:00Z',
+          },
+        }),
+        draft({ draft_id: 'unpub', title: '未发布草稿' }),
+        draft({ draft_id: 'pub-no-snap', title: '已发布无快照', published: true }),
+      ],
+      count: 3,
+    })
+
+    const wrapper = await mountPanel()
+    const badges = wrapper.findAll('[data-testid="free-draft-engagement"]')
+    expect(badges).toHaveLength(1)
+    expect(badges[0].text()).toContain('900')
+    expect(badges[0].text()).toContain('30')
+    expect(badges[0].text()).toContain('10')
+    // captured-at context travels as the badge tooltip
+    expect(badges[0].attributes('title')).toBeTruthy()
+  })
+
   it('renders a retry state, opens Continue deep links, and guards deletion', async () => {
     const api = await import('@/api/free')
     let attempts = 0

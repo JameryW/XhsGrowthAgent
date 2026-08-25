@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "Verify contract consistency after the evaluate/analytics extensions."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar for the new DB-touching paths."}
