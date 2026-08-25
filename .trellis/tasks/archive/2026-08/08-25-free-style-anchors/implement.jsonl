@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "Free-mode contract being extended: draft model fields, publish state mapping, analytics calibration trigger."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Non-blocking best-effort conventions for the calibration trigger path."}
+{"file": ".trellis/tasks/archive/2026-08/08-24-free-post-feedback-loop/prd.md", "reason": "Prior round context: why calibration was deferred and the snapshot/fraction conventions to reuse."}
