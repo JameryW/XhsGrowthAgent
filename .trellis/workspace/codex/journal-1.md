@@ -203,3 +203,36 @@ evaluate_draft now inserts an evaluator training sample under synthetic thread k
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Free drafts anchor creative memory calibration
+
+**Date**: 2026-08-25
+**Task**: Free drafts anchor creative memory calibration
+**Branch**: `codex/free-creation-polish`
+
+### Summary
+
+FreeDraft gained optional style_id/play_id anchors (create+PATCH); build_creative_context now exposes record ids so the agent can anchor; publish threads anchors into the ContentHistory chain via _build_publish_state; /free/analytics triggers schedule_calibration with the analyst's payload builder when anchored and views>0. omp tool schema/usage updated. 236 tests across free routes + creative memory + omp bridge, ruff clean, spec updated.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0423531` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
