@@ -25,7 +25,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | Method | Path | Body / Query | Response (`data`) |
 |--------|------|--------------|-------------------|
 | POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience) | `{draft_id, draft}` |
-| POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}` |
+| POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}`. On a consumable verdict (not degraded/scoreless/non-ready status + Postgres pool up) ALSO inserts an evaluator training sample under the synthetic thread key `free:{draft_id}` — see Write-back behavior |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
 | GET | `/drafts/{account_id}` | query `status` (optional: all\|published\|unpublished\|publish_failed\|evaluated\|unevaluated), `q` (optional title substring) | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, last_publish, published}], count, truncated, status, q}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata; `count`/`truncated` reflect filtered/total respectively — see Status filter + title search) |
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
@@ -439,8 +439,22 @@ after `model_dump()`, the same way `draft_id` is set.
   with raw counts + a FRACTION engagement_rate (same aget→mutate→aput pattern
   as analyst.py; skipped when no record exists), and writes ONE deterministic
   Chinese insight into the insights namespace (`source: free_analytics`,
-  threshold ≥3% fraction, skipped when views = 0). Creative-memory calibration
+  threshold ≥3% fraction, skipped when views = 0), and best-effort backfills
+  the weak engagement label onto the draft's evaluator sample via
+  `backfill_engagement(f"free:{draft_id}", raw_counts)` when the Postgres pool
+  is up. Creative-memory calibration
   is deliberately NOT done here — free drafts carry no style_id/play_id.
+- **`evaluate_draft` (sample chain)**: after persisting `last_evaluation`,
+  mirrors `_collect_sample` (agents/nodes/evaluator.py) with a synthetic
+  `thread_id = f"free:{draft_id}"` — `evaluator_samples.thread_id` is plain
+  TEXT, so insert/backfill/evolve are reused unchanged with NO schema
+  migration. Skips when: status ∈ {degraded, failed, running, unavailable},
+  `degraded` flag truthy (LLM-timeout fake-approved), or `overall_score` is
+  None; also when the Postgres pool is not ready. Content snapshot is
+  free-shaped (title / body[:2000] / hashtags / niche / content_angle /
+  target_audience). Entirely non-blocking — sample failures never affect the
+  evaluate response. maybe_evolve is NOT triggered from free routes; samples
+  accrue until the next workflow analyst run fits weights (recorded boundary).
 
 ### `list_drafts` surface + sort
 

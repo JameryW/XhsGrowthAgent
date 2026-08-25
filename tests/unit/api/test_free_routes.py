@@ -1263,6 +1263,199 @@ class TestAnalyticsFeedbackLoop:
         assert mock_store._records[draft_id]["last_analytics"]["views"] == 0
 
 
+class TestEvaluatorSampleChain:
+    """Free-mode RQGM evaluations feed the evaluator training pool under the
+    synthetic thread key `free:{draft_id}`; /analytics backfills the weak
+    engagement label onto that sample (task 08-25-free-evaluator-samples)."""
+
+    def _eval_result(self, **overrides):
+        result = {
+            "overall_score": 88.0,
+            "decision": "approved",
+            "revision_hints": [],
+            "dimensions": [{"dimension": "copywriting", "score": 90.0}],
+        }
+        result.update(overrides)
+        return result
+
+    def _evaluate(self, client, draft_id, eval_result):
+        with (
+            patch(
+                "backend.api.routes.free._evaluator.execute",
+                AsyncMock(return_value={"evaluation_result": eval_result}),
+            ),
+            patch(
+                "backend.db.evaluator_config.insert_sample",
+                new_callable=AsyncMock,
+            ) as mock_insert,
+            patch(
+                "backend.db.pool.is_pool_ready",
+                return_value=True,
+            ),
+        ):
+            r = client.post(
+                "/api/free/evaluate", json={"account_id": "acct1", "draft_id": draft_id}
+            )
+        assert r.status_code == 200, r.text
+        return mock_insert
+
+    def test_evaluate_inserts_sample_under_synthetic_thread_key(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        mock_insert = self._evaluate(client, draft_id, self._eval_result())
+        mock_insert.assert_awaited_once()
+        sample = mock_insert.await_args.args[0]
+        assert sample.thread_id == f"free:{draft_id}"
+        assert sample.account_id == "acct1"
+        assert sample.label_source == "evaluator"
+        assert sample.overall_score == 88.0
+        assert sample.decision == "approved"
+        assert sample.dimensions == [{"dimension": "copywriting", "score": 90.0}]
+        # free-shaped content snapshot carries the evaluation context
+        assert sample.content_snapshot["title"] == "夏日穿搭"
+        assert sample.content_snapshot["body"] == "三套夏日 OOTD"
+        assert sample.content_snapshot["hashtags"] == ["穿搭", "OOTD"]
+        assert sample.content_snapshot["niche"] == "fashion"
+
+    def test_evaluate_degraded_never_enters_sample_pool(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        # degraded flag (LLM timeout fake-approved) — must NOT be recorded
+        mock_insert = self._evaluate(
+            client, draft_id, self._eval_result(degraded=True, summary="timeout")
+        )
+        mock_insert.assert_not_awaited()
+
+    def test_evaluate_non_consumable_status_skips_sample(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        mock_insert = self._evaluate(
+            client, draft_id, self._eval_result(status="unavailable")
+        )
+        mock_insert.assert_not_awaited()
+
+    def test_evaluate_scoreless_skips_sample(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        mock_insert = self._evaluate(client, draft_id, self._eval_result(overall_score=None))
+        mock_insert.assert_not_awaited()
+
+    def test_evaluate_without_db_pool_skips_sample_silently(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        with (
+            patch(
+                "backend.api.routes.free._evaluator.execute",
+                AsyncMock(return_value={"evaluation_result": self._eval_result()}),
+            ),
+            patch(
+                "backend.db.evaluator_config.insert_sample",
+                new_callable=AsyncMock,
+            ) as mock_insert,
+            patch(
+                "backend.db.pool.is_pool_ready",
+                return_value=False,
+            ),
+        ):
+            r = client.post(
+                "/api/free/evaluate", json={"account_id": "acct1", "draft_id": draft_id}
+            )
+        assert r.status_code == 200
+        mock_insert.assert_not_awaited()
+
+    def _seed_published_draft(self, client, mock_store, post_id="real_note_1"):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        pub_result = {"post_id": post_id, "status": "published"}
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        return draft_id
+
+    def _fetch_analytics(self, client, draft_id):
+        analytics_obj = XHSAnalytics(
+            post_id="real_note_1",
+            views=1500,
+            likes=320,
+            collects=80,
+            comments=45,
+            shares=12,
+            engagement_rate=30.47,
+            fetched_at="2026-08-25 09:00:00",
+        )
+        with (
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value="http://localhost:9222"),
+            ),
+            patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
+            patch("backend.config.settings.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.platform.headless = True
+            instance = mock_client_cls.return_value
+            instance.get_post_analytics = AsyncMock(return_value=analytics_obj)
+            instance.close = AsyncMock()
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+        return r
+
+    def test_analytics_backfills_engagement_onto_free_thread(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        with (
+            patch(
+                "backend.db.evaluator_config.backfill_engagement",
+                new_callable=AsyncMock,
+            ) as mock_backfill,
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+        ):
+            r = self._fetch_analytics(client, draft_id)
+        assert r.status_code == 200
+        mock_backfill.assert_awaited_once()
+        args = mock_backfill.await_args.args
+        assert args[0] == f"free:{draft_id}"
+        # raw counts only — the fraction is computed inside backfill_engagement
+        assert args[1] == {
+            "views": 1500,
+            "likes": 320,
+            "collects": 80,
+            "comments": 45,
+            "shares": 12,
+        }
+
+    def test_analytics_backfill_skipped_without_db_pool(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        with (
+            patch(
+                "backend.db.evaluator_config.backfill_engagement",
+                new_callable=AsyncMock,
+            ) as mock_backfill,
+            patch("backend.db.pool.is_pool_ready", return_value=False),
+        ):
+            self._fetch_analytics(client, draft_id)
+        mock_backfill.assert_not_awaited()
+
+    def test_analytics_backfill_failure_does_not_break_response(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        with (
+            patch(
+                "backend.db.evaluator_config.backfill_engagement",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("db down"),
+            ),
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+        ):
+            r = self._fetch_analytics(client, draft_id)
+        assert r.status_code == 200
+        assert r.json()["data"]["analytics"]["views"] == 1500
+
+
 class TestGetSuggestions:
     """GET /free/suggestions/{account_id} — thread-less creative suggestions.
 

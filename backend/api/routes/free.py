@@ -341,6 +341,9 @@ async def evaluate_draft(
         await store.aput(_draft_ns(account_id), key=ref.draft_id, value=draft)
 
     logger.info("free draft evaluated: account=%s draft=%s", account_id, ref.draft_id)
+    # Feed the RQGM verdict into the evaluator training pool under the synthetic
+    # thread key `free:{draft_id}` — degraded verdicts never enter (see helper).
+    await _collect_free_evaluator_sample(account_id, ref.draft_id, draft, evaluation)
     return success(
         data={
             "draft_id": ref.draft_id,
@@ -739,6 +742,60 @@ async def _store_free_performance_insight(
     )
 
 
+# Body cap — same bound as the workflow's evaluator content snapshot (keeps
+# sample rows bounded ~1-3KB for finetune data volume).
+_FREE_SAMPLE_BODY_TRUNCATE = 2000
+
+
+async def _collect_free_evaluator_sample(
+    account_id: str, draft_id: str, draft: dict[str, Any], evaluation: dict[str, Any]
+) -> None:
+    """Feed the free-mode RQGM verdict into the evaluator training sample pool.
+
+    Mirrors backend/agents/nodes/evaluator.py::_collect_sample using a synthetic
+    thread key: evaluator_samples.thread_id is plain TEXT, so `free:{draft_id}`
+    reuses insert_sample / backfill_engagement / maybe_evolve unchanged (no
+    schema migration). Degraded / scoreless results are NEVER recorded — a fake
+    100/approved fallback would contaminate pass-rate aggregates and weight
+    training. Best-effort: every failure is swallowed so the evaluate response
+    is unaffected.
+    """
+    status = str(evaluation.get("status") or "ready").lower()
+    score = evaluation.get("overall_score")
+    if (
+        status in {"degraded", "failed", "running", "unavailable"}
+        or evaluation.get("degraded")
+        or score is None
+    ):
+        return
+    try:
+        from backend.db.evaluator_config import EvaluatorSample, insert_sample
+        from backend.db.pool import is_pool_ready
+
+        if not is_pool_ready():
+            return
+        await insert_sample(
+            EvaluatorSample(
+                account_id=account_id,
+                thread_id=f"free:{draft_id}",
+                dimensions=evaluation.get("dimensions") or [],
+                overall_score=float(score),
+                decision=str(evaluation.get("decision") or ""),
+                label_source="evaluator",
+                content_snapshot={
+                    "title": str(draft.get("title", "") or ""),
+                    "body": str(draft.get("body", "") or "")[:_FREE_SAMPLE_BODY_TRUNCATE],
+                    "hashtags": list(draft.get("hashtags") or []),
+                    "niche": str(draft.get("niche", "") or ""),
+                    "content_angle": str(draft.get("content_angle", "") or ""),
+                    "target_audience": str(draft.get("target_audience") or ""),
+                },
+            )
+        )
+    except Exception as e:
+        logger.debug("free evaluator sample collection failed (non-blocking): %s", e)
+
+
 @router.get("/analytics/{draft_id}")
 async def get_analytics(
     draft_id: str,
@@ -863,6 +920,26 @@ async def get_analytics(
     except Exception:
         logger.warning(
             "free analytics insight write failed: account=%s draft=%s",
+            account_id,
+            draft_id,
+            exc_info=True,
+        )
+    # Weak-label backfill onto this draft's latest evaluator sample (thread key
+    # `free:{draft_id}`, written by evaluate_draft) — raw counts only; the rate
+    # is computed inside backfill_engagement. Non-blocking on DB absence.
+    try:
+        from backend.db.evaluator_config import backfill_engagement
+        from backend.db.pool import is_pool_ready
+
+        if is_pool_ready():
+            engagement = {
+                key: snapshot[key]
+                for key in ("views", "likes", "collects", "comments", "shares")
+            }
+            await backfill_engagement(f"free:{draft_id}", engagement)
+    except Exception:
+        logger.warning(
+            "free analytics engagement backfill failed: account=%s draft=%s",
             account_id,
             draft_id,
             exc_info=True,
