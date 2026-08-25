@@ -620,6 +620,73 @@ describe('AgentTUI free creation interaction contract', () => {
     wrapper.unmount()
   })
 
+  // ── post-publish feedback loop: persisted engagement snapshot ─────────
+  it('notes the saved snapshot after a successful /analytics fetch', async () => {
+    stubOwnedAccount()
+    vi.mocked(client.get).mockResolvedValue({
+      draft_id: 'd1',
+      post_id: 'post_9',
+      analytics: {
+        views: 1200,
+        likes: 88,
+        collects: 21,
+        comments: 9,
+        shares: 3,
+        engagement_rate: 5.2,
+        fetched_at: '2026-08-24 10:00:00',
+      },
+    } as never)
+    const { wrapper, terminal } = await mountFreeTui()
+
+    terminal.type('/analytics d1')
+    terminal.type('\r')
+    await flushPromises()
+
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('1200')
+    expect(out).toContain('快照已保存到草稿')
+    wrapper.unmount()
+  })
+
+  it('shows the persisted engagement snapshot inside the draft detail card', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    stubDraft({
+      title: '有表现的草稿',
+      published: true,
+      post_id: 'post_9',
+      post_url: 'https://xhs.link/9',
+      last_analytics: {
+        post_id: 'post_9',
+        views: 1500,
+        likes: 320,
+        collects: 80,
+        comments: 45,
+        shares: 12,
+        engagement_rate: 30.47,
+        fetched_at: '2026-08-24T09:30:00+00:00',
+      },
+    })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('最近表现')
+    expect(out).toContain('1500')
+    expect(out).toContain('320')
+    expect(out).toContain('80')
+    wrapper.unmount()
+  })
+
+  it('omits the engagement line when the draft has no snapshot yet', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    stubDraft({ title: '无快照草稿', published: true, post_id: 'post_8' })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    expect(terminal.lines.join('\n')).not.toContain('最近表现')
+    wrapper.unmount()
+  })
+
   it('copies title, body and hashtags to the clipboard', async () => {
     stubOwnedAccount()
     stubDraft({

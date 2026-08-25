@@ -48,4 +48,45 @@ describe('free draft API adapters', () => {
       suppressToast: true,
     })
   })
+
+  it('surfaces the persisted engagement snapshot on draft summaries', async () => {
+    // last_analytics is server-set (task 08-24-free-post-feedback-loop); the
+    // adapter must pass it through untouched for History panel rendering.
+    const snapshot = {
+      post_id: 'note_9',
+      views: 900,
+      likes: 30,
+      collects: 10,
+      comments: 5,
+      shares: 2,
+      engagement_rate: 5.22,
+      fetched_at: '2026-08-24T08:00:00+00:00',
+    }
+    const response = {
+      account_id: 'acct-a',
+      drafts: [
+        {
+          draft_id: 'draft-1',
+          title: '夏日穿搭',
+          hashtags: [],
+          published: true,
+          last_analytics: snapshot,
+        },
+        {
+          draft_id: 'draft-2',
+          title: 'legacy',
+          hashtags: [],
+          published: false,
+          last_analytics: null,
+        },
+      ],
+      count: 2,
+      truncated: false,
+    }
+    mockClient.get.mockResolvedValue(response)
+
+    const result = await listFreeDrafts('acct-a')
+    expect(result.drafts[0].last_analytics).toEqual(snapshot)
+    expect(result.drafts[1].last_analytics).toBeNull()
+  })
 })
