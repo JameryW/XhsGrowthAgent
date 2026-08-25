@@ -418,6 +418,8 @@ class TestBuildCreativeContext:
         assert "风格指纹" in ctx
         assert "治愈" in ctx
         assert "温暖治愈" in ctx
+        # ids exposed so the free-mode agent can anchor a draft (calibration loop)
+        assert "id=style_治愈" in ctx
 
     def test_plays_rendered(self):
         cm = CreativeMemory("test_acct")
@@ -432,6 +434,15 @@ class TestBuildCreativeContext:
         ctx = cm.build_creative_context([], plays, [])
         assert "转化策略" in ctx
         assert "新品首发" in ctx
+        assert "id=p1" in ctx
+
+    def test_context_without_ids_still_renders(self):
+        cm = CreativeMemory("test_acct")
+        style = _sample_style()
+        legacy = {k: v for k, v in style.items() if k != "style_id"}
+        ctx = cm.build_creative_context([legacy], [], [])
+        assert "风格指纹" in ctx
+        assert "id=" not in ctx.split("文风")[0]
 
     def test_materials_rendered(self):
         cm = CreativeMemory("test_acct")

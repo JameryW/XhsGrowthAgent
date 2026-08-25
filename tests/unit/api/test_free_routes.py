@@ -1456,6 +1456,119 @@ class TestEvaluatorSampleChain:
         assert r.json()["data"]["analytics"]["views"] == 1500
 
 
+class TestStyleAnchors:
+    """Creative-memory anchoring (task 08-25-free-style-anchors): drafts may
+    carry style_id/play_id; publish threads them into the ContentHistory
+    chain via the synthesized state, and analytics triggers calibration."""
+
+    def test_create_persists_style_and_play_anchors(self, client, mock_store):
+        body = {**DRAFT_BODY, "style_id": "style_治愈", "play_id": "p_9"}
+        r = client.post("/api/free/draft", json=body)
+        assert r.status_code == 200, r.text
+        draft_id = r.json()["data"]["draft_id"]
+        assert mock_store._records[draft_id]["style_id"] == "style_治愈"
+        assert mock_store._records[draft_id]["play_id"] == "p_9"
+
+    def test_create_defaults_to_empty_anchors(self, client, mock_store):
+        r = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = r.json()["data"]["draft_id"]
+        assert mock_store._records[draft_id]["style_id"] == ""
+        assert mock_store._records[draft_id]["play_id"] == ""
+
+    def test_patch_updates_anchors(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        r = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"style_id": "s_late", "play_id": "p_late"},
+        )
+        assert r.status_code == 200, r.text
+        assert mock_store._records[draft_id]["style_id"] == "s_late"
+        assert mock_store._records[draft_id]["play_id"] == "p_late"
+
+    def test_publish_threads_anchors_into_run_publish_state(self, client, mock_store):
+        body = {**DRAFT_BODY, "style_id": "style_治愈", "play_id": "p_9"}
+        create = client.post("/api/free/draft", json=body)
+        draft_id = create.json()["data"]["draft_id"]
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": {"post_id": "n1", "status": "published"}}),
+        ) as mock_pub:
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        state = mock_pub.await_args.args[0]
+        assert state["visual_plan"]["style_id"] == "style_治愈"
+        assert state["content_plan"]["play_id"] == "p_9"
+
+    def _anchored_draft(self, client, mock_store) -> str:
+        body = {**DRAFT_BODY, "style_id": "style_治愈", "play_id": "p_9"}
+        create = client.post("/api/free/draft", json=body)
+        return create.json()["data"]["draft_id"]
+
+    def _fetch_analytics(self, client, draft_id, **metric_overrides):
+        metrics = {"views": 1500, "likes": 320, "collects": 80, "comments": 45, "shares": 12}
+        metrics.update(metric_overrides)
+        with (
+            patch(
+                "backend.api.routes.free.run_publish",
+                AsyncMock(return_value={"publish_result": {"post_id": "real_note_1", "status": "published"}}),
+            ),
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value="http://localhost:9222"),
+            ),
+            patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
+            patch("backend.config.settings.Settings") as mock_settings,
+            patch(
+                "backend.memory.calibrator.schedule_calibration",
+                new_callable=AsyncMock,
+            ) as mock_sched,
+        ):
+            mock_settings.return_value.platform.headless = True
+            instance = mock_client_cls.return_value
+            instance.get_post_analytics = AsyncMock(
+                return_value=XHSAnalytics(post_id="real_note_1", engagement_rate=30.47, **metrics)
+            )
+            instance.close = AsyncMock()
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+        return mock_sched
+
+    def _publish(self, client, draft_id):
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": {"post_id": "real_note_1", "status": "published"}}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+
+    def test_analytics_triggers_calibration_when_anchored(self, client, mock_store):
+        draft_id = self._anchored_draft(client, mock_store)
+        self._publish(client, draft_id)
+        mock_sched = self._fetch_analytics(client, draft_id)
+        mock_sched.assert_awaited_once()
+        payload = mock_sched.await_args.args[1]
+        assert payload["account_id"] == "acct1"
+        assert payload["style_id"] == "style_治愈"
+        assert payload["play_id"] == "p_9"
+        assert payload["post_id"] == "real_note_1"
+        # fraction from counts: 457/1500 = 0.3047 → play_success inside builder
+        assert payload["actual_engagement_rate"] == round(457 / 1500, 4)
+        assert payload["actual_save_rate"] == round(80 / 1500, 4)
+        assert payload["play_success"] is True
+
+    def test_analytics_skips_calibration_without_anchors(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        self._publish(client, draft_id)
+        mock_sched = self._fetch_analytics(client, draft_id)
+        mock_sched.assert_not_awaited()
+
+    def test_analytics_skips_calibration_on_zero_views(self, client, mock_store):
+        draft_id = self._anchored_draft(client, mock_store)
+        self._publish(client, draft_id)
+        mock_sched = self._fetch_analytics(client, draft_id, views=0, likes=0, collects=0, comments=0, shares=0)
+        mock_sched.assert_not_awaited()
+
+
 class TestGetSuggestions:
     """GET /free/suggestions/{account_id} — thread-less creative suggestions.
 

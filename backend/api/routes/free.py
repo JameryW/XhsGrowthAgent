@@ -65,6 +65,11 @@ class FreeDraft(BaseModel):
     )
     content_angle: str = Field(default="", description="内容角度（评估用）")
     target_audience: str = Field(default="", description="目标受众（评估用）")
+    # Creative-memory anchors (task 08-25-free-style-anchors): when the draft
+    # builds on a recalled Style DNA / Conversion Play, the agent echoes its id
+    # back so post-publish engagement can calibrate that record's effectiveness.
+    style_id: str = Field(default="", description="锚定的 Style DNA ID（可选，用于效果校准）")
+    play_id: str = Field(default="", description="锚定的 Conversion Play ID（可选，用于效果校准）")
 
     @field_validator("niche", mode="before")
     @classmethod
@@ -98,6 +103,8 @@ class FreeDraftUpdate(BaseModel):
     niche: str | None = None
     content_angle: str | None = None
     target_audience: str | None = None
+    style_id: str | None = None
+    play_id: str | None = None
 
     @field_validator("niche", mode="before")
     @classmethod
@@ -176,9 +183,14 @@ def _build_publish_state(draft: dict[str, Any]) -> XHSGrowthState:
             "content_plan": {
                 "selected_topic": draft.get("title", ""),
                 "content_angle": draft.get("content_angle", ""),
+                # Creative-memory anchor (task 08-25-free-style-anchors):
+                # run_publish's ContentHistory record reads play_id from here.
+                "play_id": str(draft.get("play_id", "") or ""),
             },
             "visual_plan": {
                 "image_paths": draft.get("image_paths", []),
+                # Same anchor chain — style_id lands in the ContentHistory record.
+                "style_id": str(draft.get("style_id", "") or ""),
             },
             "publish_options": {"account_id": account_id},
         },
@@ -944,6 +956,34 @@ async def get_analytics(
             draft_id,
             exc_info=True,
         )
+    # Creative-memory calibration (task 08-25-free-style-anchors): when the
+    # draft anchors a recalled Style DNA / Conversion Play, feed the real
+    # engagement back so that record's effectiveness stats learn. Reuses the
+    # workflow analyst's exact payload builder + fire-and-forget scheduler —
+    # play_success (≥3% fraction) is decided inside build_calibration_payload.
+    style_id = str(draft.get("style_id", "") or "")
+    play_id = str(draft.get("play_id", "") or "")
+    views = int(snapshot["views"])
+    if (style_id or play_id) and store is not None and views > 0:
+        try:
+            from backend.memory.calibrator import build_calibration_payload, schedule_calibration
+
+            cal_state = dict(_build_publish_state(draft))
+            cal_state["publish_result"] = {"post_id": post_id}
+            save_rate = round(int(snapshot["collects"]) / views, 4)
+            payload = build_calibration_payload(
+                cal_state,
+                _engagement_fraction(snapshot),
+                save_rate,
+            )
+            await schedule_calibration(store, payload)
+        except Exception:
+            logger.warning(
+                "free analytics calibration schedule failed: account=%s draft=%s",
+                account_id,
+                draft_id,
+                exc_info=True,
+            )
 
     return success(
         data={

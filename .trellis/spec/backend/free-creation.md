@@ -24,7 +24,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 
 | Method | Path | Body / Query | Response (`data`) |
 |--------|------|--------------|-------------------|
-| POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience) | `{draft_id, draft}` |
+| POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience, style_id?, play_id?) | `{draft_id, draft}`. `style_id`/`play_id` are optional creative-memory anchors — the agent echoes the `id=` shown in the create response's creative context when the draft builds on a recalled Style DNA / Conversion Play; publish threads them into the ContentHistory calibration chain and analytics calibrates that record after engagement lands |
 | POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}`. On a consumable verdict (not degraded/scoreless/non-ready status + Postgres pool up) ALSO inserts an evaluator training sample under the synthetic thread key `free:{draft_id}` — see Write-back behavior |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
 | GET | `/drafts/{account_id}` | query `status` (optional: all\|published\|unpublished\|publish_failed\|evaluated\|unevaluated), `q` (optional title substring) | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, last_publish, published}], count, truncated, status, q}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata; `count`/`truncated` reflect filtered/total respectively — see Status filter + title search) |
@@ -442,8 +442,14 @@ after `model_dump()`, the same way `draft_id` is set.
   threshold ≥3% fraction, skipped when views = 0), and best-effort backfills
   the weak engagement label onto the draft's evaluator sample via
   `backfill_engagement(f"free:{draft_id}", raw_counts)` when the Postgres pool
-  is up. Creative-memory calibration
-  is deliberately NOT done here — free drafts carry no style_id/play_id.
+  is up. Creative-memory calibration is triggered ONLY when the draft carries
+  an anchor (`style_id` or `play_id`) AND views > 0: the analyst's exact
+  `build_calibration_payload` runs over a synthesized state (anchors mapped
+  into visual_plan.style_id / content_plan.play_id — the same fields
+  run_publish threads into the ContentHistory record), then
+  `schedule_calibration` fires fire-and-forget. Zero-view fetches never
+  calibrate (no impressions = no signal about the style/play). Creative-memory
+  calibration without anchors remains deliberately NOT done.
 - **`evaluate_draft` (sample chain)**: after persisting `last_evaluation`,
   mirrors `_collect_sample` (agents/nodes/evaluator.py) with a synthetic
   `thread_id = f"free:{draft_id}"` — `evaluator_samples.thread_id` is plain
