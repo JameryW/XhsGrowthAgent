@@ -137,3 +137,36 @@ Added /publish <id> [confirm] with preview-first confirmation gate, degraded-eva
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Free Creation post-publish feedback loop
+
+**Date**: 2026-08-25
+**Task**: Free Creation post-publish feedback loop
+**Branch**: `codex/free-creation-polish`
+
+### Summary
+
+/free/analytics now persists a last_analytics snapshot onto the draft, backfills ContentHistory with raw counts (fraction rate), and writes one deterministic insight; TUI /analytics notes the saved snapshot, /draft shows latest engagement; History free-drafts tab renders view/like/collect badges. Backend 77 focused tests, ruff clean; frontend 720 tests, type-check/i18n/build green; bilingual README + free-creation spec updated.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fbec9ef9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
