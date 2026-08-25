@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "Verify free-route conventions respected (no thread, account scope, mock-publish guard)."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend test and quality bar for the new persistence/write-back logic."}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Check TUI/History rendering, i18n keys, accessibility of new badges."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer consistency check for last_analytics field shape end to end."}
