@@ -70,6 +70,10 @@ class FreeDraft(BaseModel):
     # back so post-publish engagement can calibrate that record's effectiveness.
     style_id: str = Field(default="", description="锚定的 Style DNA ID（可选，用于效果校准）")
     play_id: str = Field(default="", description="锚定的 Conversion Play ID（可选，用于效果校准）")
+    material_ids: list[str] = Field(
+        default_factory=list,
+        description="引用的素材库条目 ID 列表（可选，用于效果校准）",
+    )
 
     @field_validator("niche", mode="before")
     @classmethod
@@ -105,6 +109,7 @@ class FreeDraftUpdate(BaseModel):
     target_audience: str | None = None
     style_id: str | None = None
     play_id: str | None = None
+    material_ids: list[str] | None = None
 
     @field_validator("niche", mode="before")
     @classmethod
@@ -142,6 +147,9 @@ def _to_copy_content(draft: dict[str, Any]) -> dict[str, Any]:
         "selected_title": draft.get("title", ""),
         "body_text": draft.get("body", ""),
         "hashtags": draft.get("hashtags", []),
+        # Material anchors (task 08-26-free-material-anchors): feeds
+        # build_calibration_payload's used_material_ids extraction.
+        "used_material_ids": [str(m) for m in (draft.get("material_ids") or []) if m],
     }
 
 

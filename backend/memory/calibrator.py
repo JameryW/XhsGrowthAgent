@@ -115,6 +115,18 @@ def build_calibration_payload(
     material_ids = copy_content.get("used_material_ids", [])
     material_effectiveness = copy_content.get("material_effectiveness", {})
 
+    # Effectiveness synthesis (task 08-26-free-material-anchors): the analyst
+    # never computes per-material effectiveness today, which left
+    # _calibrate_materials dormant. When ids are anchored but no explicit map
+    # was provided, derive one from the same ≥3% engagement signal that gates
+    # play_success — 0.9 reinforces the vault entry, 0.25 (below
+    # EFFECTIVENESS_THRESHOLD=0.3) triggers its weight downgrade. An explicitly
+    # provided map always wins.
+    if material_ids and not material_effectiveness:
+        material_effectiveness = {
+            str(mid): (0.9 if play_success else 0.25) for mid in material_ids
+        }
+
     # Log missing IDs for observability
     missing = []
     if not style_id:

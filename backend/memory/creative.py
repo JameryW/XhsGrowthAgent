@@ -650,8 +650,10 @@ class CreativeMemory:
         if materials:
             parts.append("优质素材：")
             for m in materials[:3]:
+                mid = m.get("material_id", "") or m.get("id", "")
+                id_part = f" id={mid} " if mid else " "
                 parts.append(
-                    f"  [{m.get('category', '')}] {m.get('content', '')[:50]} "
+                    f"{id_part} [{m.get('category', '')}] {m.get('content', '')[:50]} "
                     f"效果={m.get('effectiveness', 'N/A')}"
                 )
 
