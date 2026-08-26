@@ -808,6 +808,28 @@ async def _collect_free_evaluator_sample(
         logger.debug("free evaluator sample collection failed (non-blocking): %s", e)
 
 
+async def _safe_free_evolve(account_id: str) -> None:
+    """Fire-and-forget evaluator evolution check (mirror of analyst._safe_evolve).
+
+    maybe_evolve is re-entry-guarded per account and non-blocking internally;
+    this wrapper additionally guarantees no stray traceback escapes the task.
+    """
+    try:
+        from backend.db.evaluator_config import maybe_evolve
+
+        await maybe_evolve(account_id)
+    except Exception as e:
+        logger.debug("free evaluator evolve failed (non-blocking): %s", e)
+
+
+def _schedule_free_evolve(account_id: str) -> None:
+    """Schedule the evolution check as a background task (test seam)."""
+    asyncio.create_task(
+        _safe_free_evolve(account_id),
+        name=f"free_evolve_{account_id}",
+    )
+
+
 @router.get("/analytics/{draft_id}")
 async def get_analytics(
     draft_id: str,
@@ -949,6 +971,10 @@ async def get_analytics(
                 for key in ("views", "likes", "collects", "comments", "shares")
             }
             await backfill_engagement(f"free:{draft_id}", engagement)
+            # New weak label arrived → fire-and-forget an evolution check so
+            # free-mode samples alone can cross the fit threshold without
+            # waiting for a workflow analyst run (mirrors analyst.py:211).
+            _schedule_free_evolve(account_id)
     except Exception:
         logger.warning(
             "free analytics engagement backfill failed: account=%s draft=%s",
