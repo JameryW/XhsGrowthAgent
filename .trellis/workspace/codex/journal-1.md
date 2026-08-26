@@ -302,3 +302,36 @@ Repeated /analytics fetches now build a capped trend series (analytics_snapshots
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Material vault anchors activate calibration
+
+**Date**: 2026-08-26
+**Task**: Material vault anchors activate calibration
+**Branch**: `main`
+
+### Summary
+
+FreeDraft gained optional material_ids; _to_copy_content threads used_material_ids and build_calibration_payload synthesizes per-material effectiveness (0.9/0.25 by the >=3% signal) when the analyst provides none - activating the dormant _calibrate_materials path for both free mode and the fixed workflow. Creative context materials now expose id=. +10 tests (259 across four suites), ruff clean, spec updated. Merged via PR #553.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c0f4ff54` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
