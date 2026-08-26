@@ -1605,6 +1605,82 @@ class TestStyleAnchors:
         mock_sched.assert_not_awaited()
 
 
+class TestSnapshotTrend:
+    """Trend series persistence + list trend computation
+    (task 08-26-free-snapshot-trend): repeated /analytics fetches keep the
+    last 10 captures; list summaries expose a server-computed views delta."""
+
+    def _published(self, client) -> str:
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": {"post_id": "note_t1", "status": "published"}}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        return draft_id
+
+    def _fetch(self, client, draft_id: str, views: int) -> None:
+        with (
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value="http://localhost:9222"),
+            ),
+            patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
+            patch("backend.config.settings.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.platform.headless = True
+            instance = mock_client_cls.return_value
+            instance.get_post_analytics = AsyncMock(
+                return_value=XHSAnalytics(
+                    post_id="note_t1",
+                    engagement_rate=12.0,
+                    views=views,
+                    likes=max(views // 5, 0),
+                    collects=max(views // 20, 0),
+                    comments=max(views // 30, 0),
+                    shares=0,
+                )
+            )
+            instance.close = AsyncMock()
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+
+    def test_series_appends_and_last_stays_latest(self, client, mock_store):
+        draft_id = self._published(client)
+        self._fetch(client, draft_id, views=100)
+        self._fetch(client, draft_id, views=300)
+        record = mock_store._records[draft_id]
+        snaps = record["analytics_snapshots"]
+        assert [s["views"] for s in snaps] == [100, 300]
+        assert snaps[-1]["views"] == record["last_analytics"]["views"]
+
+    def test_series_capped_at_ten(self, client, mock_store):
+        draft_id = self._published(client)
+        for v in range(1, 12):  # 11 captures → cap keeps the newest 10
+            self._fetch(client, draft_id, views=v * 10)
+        snaps = mock_store._records[draft_id]["analytics_snapshots"]
+        assert len(snaps) == 10
+        assert snaps[0]["views"] == 20  # oldest capture (views=10) fell off
+        assert snaps[-1]["views"] == 110
+
+    def test_list_engagement_trend_computed_after_two_captures(self, client, mock_store):
+        draft_id = self._published(client)
+        self._fetch(client, draft_id, views=100)
+        r = client.get("/api/free/drafts/acct1")
+        assert r.json()["data"]["drafts"][0]["engagement_trend"] is None
+        self._fetch(client, draft_id, views=350)
+        r = client.get("/api/free/drafts/acct1")
+        trend = r.json()["data"]["drafts"][0]["engagement_trend"]
+        assert trend["views"] == 350
+        assert trend["delta_views"] == 250
+
+    def test_list_engagement_trend_none_without_snapshots(self, client, mock_store):
+        self._published(client)
+        r = client.get("/api/free/drafts/acct1")
+        assert r.json()["data"]["drafts"][0]["engagement_trend"] is None
+
+
 class TestGetSuggestions:
     """GET /free/suggestions/{account_id} — thread-less creative suggestions.
 
