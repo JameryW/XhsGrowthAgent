@@ -269,3 +269,36 @@ get_analytics now fire-and-forgets maybe_evolve after a successful weak-label ba
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Engagement snapshot trend series
+
+**Date**: 2026-08-26
+**Task**: Engagement snapshot trend series
+**Branch**: `main`
+
+### Summary
+
+Repeated /analytics fetches now build a capped trend series (analytics_snapshots, last 10) alongside the latest-pointer last_analytics; list summaries carry a server-computed engagement_trend views delta; TUI detail card renders a colored +/- delta line and the History GUI badge row gains an up/down indicator once two captures exist. Bilingual i18n +3 keys, README en/zh, spec contract updated. Backend 243 passed, frontend 725 passed, type-check/i18n/build green. Merged via PR #552.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8aef8bc4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
