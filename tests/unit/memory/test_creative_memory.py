@@ -457,6 +457,8 @@ class TestBuildCreativeContext:
         ctx = cm.build_creative_context([], [], materials)
         assert "优质素材" in ctx
         assert "标题模板" in ctx
+        # ids exposed so the free-mode agent can anchor materials (calibration loop)
+        assert "id=m1" in ctx
 
     def test_benchmark_rendered(self):
         cm = CreativeMemory("test_acct")

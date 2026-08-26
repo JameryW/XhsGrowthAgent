@@ -1681,6 +1681,82 @@ class TestSnapshotTrend:
         assert r.json()["data"]["drafts"][0]["engagement_trend"] is None
 
 
+class TestMaterialAnchors:
+    """Material-vault anchoring (task 08-26-free-material-anchors): drafts may
+    reference vault entries; publish threads them into copy_content.used_material_ids
+    so the calibration payload can carry synthesized effectiveness."""
+
+    def test_create_persists_material_ids(self, client, mock_store):
+        body = {**DRAFT_BODY, "material_ids": ["m1", "m2"]}
+        r = client.post("/api/free/draft", json=body)
+        draft_id = r.json()["data"]["draft_id"]
+        assert mock_store._records[draft_id]["material_ids"] == ["m1", "m2"]
+
+    def test_create_defaults_to_empty_material_ids(self, client, mock_store):
+        r = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = r.json()["data"]["draft_id"]
+        assert mock_store._records[draft_id]["material_ids"] == []
+
+    def test_patch_updates_material_ids(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        r = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"material_ids": ["m_late"]},
+        )
+        assert r.status_code == 200, r.text
+        assert mock_store._records[draft_id]["material_ids"] == ["m_late"]
+
+    def test_publish_threads_used_material_ids_into_copy_content(self, client, mock_store):
+        body = {**DRAFT_BODY, "material_ids": ["m1"]}
+        create = client.post("/api/free/draft", json=body)
+        draft_id = create.json()["data"]["draft_id"]
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": {"post_id": "n1", "status": "published"}}),
+        ) as mock_pub:
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        state = mock_pub.await_args.args[0]
+        assert state["copy_content"]["used_material_ids"] == ["m1"]
+
+    def test_analytics_calibration_payload_carries_material_effectiveness(self, client, mock_store):
+        body = {
+            **DRAFT_BODY,
+            "style_id": "s1",
+            "play_id": "p_9",
+            "material_ids": ["m1", "m2"],
+        }
+        create = client.post("/api/free/draft", json=body)
+        draft_id = create.json()["data"]["draft_id"]
+        with (
+            patch(
+                "backend.api.routes.free.run_publish",
+                AsyncMock(return_value={"publish_result": {"post_id": "real_note_2", "status": "published"}}),
+            ),
+            patch("backend.db.accounts.get_account_cdp_endpoint", AsyncMock(return_value="http://localhost:9222")),
+            patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
+            patch("backend.config.settings.Settings") as mock_settings,
+            patch("backend.memory.calibrator.schedule_calibration", new_callable=AsyncMock) as mock_sched,
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+            mock_settings.return_value.platform.headless = True
+            instance = mock_client_cls.return_value
+            instance.get_post_analytics = AsyncMock(
+                return_value=XHSAnalytics(
+                    post_id="real_note_2", engagement_rate=30.0,
+                    views=1500, likes=320, collects=80, comments=45, shares=12,
+                )
+            )
+            instance.close = AsyncMock()
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+        mock_sched.assert_awaited_once()
+        payload = mock_sched.await_args.args[1]
+        assert payload["material_ids"] == ["m1", "m2"]
+        # 457/1500 ≈ 30% ≥ 3% → reinforcing score for both entries
+        assert payload["material_effectiveness"] == {"m1": 0.9, "m2": 0.9}
+
+
 class TestGetSuggestions:
     """GET /free/suggestions/{account_id} — thread-less creative suggestions.
 

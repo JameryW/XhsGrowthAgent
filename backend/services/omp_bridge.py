@@ -660,6 +660,15 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
                         "calibration for that play."
                     ),
                 },
+                "material_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Material vault entry ids referenced by this draft "
+                        "(creative context's 优质素材 id= fields). Enables "
+                        "post-publish effectiveness calibration for those entries."
+                    ),
+                },
             },
             "required": [],
         },
@@ -1016,8 +1025,9 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "\n"
             "Thread-less tools available in free creation mode:\n"
             "- xhs_free_draft_create (title, body, hashtags, image_paths, niche, "
-            "style_id?, play_id?) — pass style_id/play_id when the draft builds "
-            "on a recalled style/play from the creative context\n"
+            "style_id?, play_id?, material_ids?) — pass style_id/play_id when the "
+            "draft builds on a recalled style/play from the creative context; pass "
+            "material_ids for vault entries the copy references\n"
             "- xhs_free_evaluate (draft_id)\n"
             "- xhs_free_publish (draft_id)\n"
             "- xhs_free_analytics (draft_id)\n"

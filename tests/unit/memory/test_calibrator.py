@@ -54,6 +54,34 @@ class TestBuildCalibrationPayload:
         assert payload["style_id"] == ""
         assert payload["play_id"] == ""
 
+    # ── material effectiveness synthesis (task 08-26-free-material-anchors) ──
+
+    def test_synthesizes_effectiveness_when_ids_present_but_map_missing(self):
+        state = _sample_state()  # used_material_ids=["m1"], no map
+        payload = build_calibration_payload(state, actual_engagement_rate=0.05, actual_save_rate=0.03)
+        assert payload["material_ids"] == ["m1"]
+        # 0.05 >= 0.03 → play_success → reinforcing score
+        assert payload["material_effectiveness"] == {"m1": 0.9}
+
+    def test_synthesized_low_engagement_scores_below_downgrade_threshold(self):
+        state = _sample_state()
+        payload = build_calibration_payload(state, actual_engagement_rate=0.01, actual_save_rate=0.0)
+        # 0.01 < 0.03 → 0.25 < EFFECTIVENESS_THRESHOLD(0.3) → weight downgrade in vault
+        assert payload["material_effectiveness"] == {"m1": 0.25}
+
+    def test_explicit_material_effectiveness_is_never_overwritten(self):
+        state = _sample_state()
+        state["copy_content"]["material_effectiveness"] = {"m1": 0.7}
+        payload = build_calibration_payload(state, actual_engagement_rate=0.05, actual_save_rate=0.03)
+        assert payload["material_effectiveness"] == {"m1": 0.7}
+
+    def test_empty_ids_stay_empty_without_synthesis(self):
+        state = _sample_state()
+        state["copy_content"]["used_material_ids"] = []
+        payload = build_calibration_payload(state, actual_engagement_rate=0.05, actual_save_rate=0.03)
+        assert payload["material_ids"] == []
+        assert payload["material_effectiveness"] == {}
+
 
 class TestCalibrateCreativeMemory:
     @pytest.mark.asyncio
