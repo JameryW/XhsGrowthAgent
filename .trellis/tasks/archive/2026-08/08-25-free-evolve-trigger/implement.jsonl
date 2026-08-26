@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "Contract being extended: analytics write-back gains evolution scheduling."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Fire-and-forget error-swallowing conventions mirrored from analyst."}
