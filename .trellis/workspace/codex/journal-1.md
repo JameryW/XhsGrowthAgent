@@ -236,3 +236,36 @@ FreeDraft gained optional style_id/play_id anchors (create+PATCH); build_creativ
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Free analytics triggers evaluator evolution
+
+**Date**: 2026-08-26
+**Task**: Free analytics triggers evaluator evolution
+**Branch**: `main`
+
+### Summary
+
+get_analytics now fire-and-forgets maybe_evolve after a successful weak-label backfill (mirrors analyst._safe_evolve; testable _schedule_free_evolve seam). Free-mode samples can cross the fit threshold autonomously. +3 tests (95 free-route total), omp-bridge 103 green, ruff clean, spec boundary removed. Merged via PR #551.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `80593cc1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
