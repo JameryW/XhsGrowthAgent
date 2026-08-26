@@ -1455,6 +1455,42 @@ class TestEvaluatorSampleChain:
         assert r.status_code == 200
         assert r.json()["data"]["analytics"]["views"] == 1500
 
+    def test_analytics_schedules_evolve_after_backfill(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        with (
+            patch("backend.api.routes.free._schedule_free_evolve") as mock_sched,
+            patch(
+                "backend.db.evaluator_config.backfill_engagement",
+                new_callable=AsyncMock,
+            ),
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+        ):
+            self._fetch_analytics(client, draft_id)
+        mock_sched.assert_called_once_with("acct1")
+
+    def test_analytics_skips_evolve_without_db_pool(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        with (
+            patch("backend.api.routes.free._schedule_free_evolve") as mock_sched,
+            patch("backend.db.pool.is_pool_ready", return_value=False),
+        ):
+            self._fetch_analytics(client, draft_id)
+        mock_sched.assert_not_called()
+
+    def test_analytics_skips_evolve_when_backfill_fails(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        with (
+            patch("backend.api.routes.free._schedule_free_evolve") as mock_sched,
+            patch(
+                "backend.db.evaluator_config.backfill_engagement",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("db down"),
+            ),
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+        ):
+            self._fetch_analytics(client, draft_id)
+        mock_sched.assert_not_called()
+
 
 class TestStyleAnchors:
     """Creative-memory anchoring (task 08-25-free-style-anchors): drafts may

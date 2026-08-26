@@ -459,8 +459,10 @@ after `model_dump()`, the same way `draft_id` is set.
   None; also when the Postgres pool is not ready. Content snapshot is
   free-shaped (title / body[:2000] / hashtags / niche / content_angle /
   target_audience). Entirely non-blocking — sample failures never affect the
-  evaluate response. maybe_evolve is NOT triggered from free routes; samples
-  accrue until the next workflow analyst run fits weights (recorded boundary).
+  evaluate response. When the analytics weak-label backfill succeeds,
+  `_schedule_free_evolve(account_id)` fire-and-forgets a `maybe_evolve` check
+  (re-entry-guarded per account) so free-mode samples can cross the fit
+  threshold without waiting for a workflow analyst run.
 
 ### `list_drafts` surface + sort
 
