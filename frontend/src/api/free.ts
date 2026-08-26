@@ -35,6 +35,12 @@ export interface FreeDraftAnalytics {
   fetched_at?: string
 }
 
+export interface FreeDraftTrend {
+  views: number
+  delta_views: number
+  captured_at?: string | null
+}
+
 export interface FreeDraftSummary {
   draft_id: string
   title: string
@@ -44,6 +50,9 @@ export interface FreeDraftSummary {
   last_evaluation?: FreeDraftEvaluation | null
   published?: boolean | null
   last_analytics?: FreeDraftAnalytics | null
+  /** Server-computed views movement between the last two captures (task
+   *  08-26-free-snapshot-trend); null before two snapshots exist. */
+  engagement_trend?: FreeDraftTrend | null
 }
 
 export interface FreeDraftListResponse {

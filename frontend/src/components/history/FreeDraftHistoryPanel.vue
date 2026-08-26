@@ -316,6 +316,16 @@ defineExpose({ refresh })
                 <span>{{ t('history.freeDrafts.engagementLikes', { value: draft.last_analytics?.likes ?? 0 }) }}</span>
                 <span aria-hidden="true">·</span>
                 <span>{{ t('history.freeDrafts.engagementCollects', { value: draft.last_analytics?.collects ?? 0 }) }}</span>
+                <!-- Views movement vs previous capture (server-computed trend,
+                     null before two snapshots — task 08-26-free-snapshot-trend). -->
+                <template v-if="draft.engagement_trend && draft.engagement_trend.delta_views !== 0">
+                  <span aria-hidden="true">·</span>
+                  <span
+                    class="font-semibold"
+                    :class="draft.engagement_trend.delta_views > 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'"
+                    data-testid="free-draft-trend"
+                  >{{ t(draft.engagement_trend.delta_views > 0 ? 'history.freeDrafts.trendUp' : 'history.freeDrafts.trendDown', { value: Math.abs(draft.engagement_trend.delta_views) }) }}</span>
+                </template>
               </div>
             </div>
 

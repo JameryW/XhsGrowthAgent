@@ -531,6 +531,9 @@ async def list_drafts(
                     "last_evaluation": last_eval,
                     "published": value.get("published", False),
                     "last_analytics": value.get("last_analytics"),
+                    # Server-computed views movement (None before 2 captures) —
+                    # keeps the trend logic in one place and list payloads tiny.
+                    "engagement_trend": _views_trend(_valid_snapshots(value)),
                 }
             )
     except Exception:
@@ -690,6 +693,31 @@ def _engagement_fraction(snapshot: dict[str, Any]) -> float:
         + int(snapshot.get("shares", 0) or 0)
     )
     return round(total / views, 4)
+
+
+# Trend series cap (task 08-26-free-snapshot-trend): the draft keeps its last
+# 10 captures; older entries fall off. Bounds record size for finetune/archive
+# volume while covering a meaningful observation window.
+_SNAPSHOT_SERIES_CAP = 10
+
+
+def _valid_snapshots(draft: dict[str, Any]) -> list[dict[str, Any]]:
+    """Type-checked analytics_snapshots list (corrupt entries dropped)."""
+    return [s for s in (draft.get("analytics_snapshots") or []) if isinstance(s, dict)]
+
+
+def _views_trend(snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Views movement between the last two captures, None before 2 points."""
+    if len(snapshots) < 2:
+        return None
+    latest, prev = snapshots[-1], snapshots[-2]
+    latest_views = int(latest.get("views", 0) or 0)
+    prev_views = int(prev.get("views", 0) or 0)
+    return {
+        "views": latest_views,
+        "delta_views": latest_views - prev_views,
+        "captured_at": latest.get("fetched_at"),
+    }
 
 
 async def _backfill_content_history(
@@ -929,6 +957,11 @@ async def get_analytics(
         "fetched_at": fetched_at,
     }
     draft["last_analytics"] = snapshot
+    # Trend series: keep the last N captures so /draft <id> and the History
+    # tab can show movement over time; oldest entries fall off the cap.
+    snapshots = _valid_snapshots(draft)
+    snapshots.append(snapshot)
+    draft["analytics_snapshots"] = snapshots[-_SNAPSHOT_SERIES_CAP:]
     draft["updated_at"] = fetched_at
     try:
         await store.aput(_draft_ns(account_id), key=draft_id, value=draft)

@@ -1765,6 +1765,8 @@ interface FreeDraftRecord {
   post_url?: string
   /** Persisted engagement snapshot saved by the last successful /analytics fetch. */
   last_analytics?: { views?: number; likes?: number; collects?: number; comments?: number; shares?: number; engagement_rate?: number; fetched_at?: string } | null
+  /** Trend series — last N captures, oldest falls off (cap enforced server-side). */
+  analytics_snapshots?: { views?: number }[] | null
 }
 
 async function handleDraft(draftId: string) {
@@ -1892,6 +1894,20 @@ async function handleDraft(draftId: string) {
             })}${R}`,
           ),
         )
+        // Views movement between the last two captures (trend series, task
+        // 08-26-free-snapshot-trend). Color carries the direction; the signed
+        // number is formatted here so i18n never handles '+'/'-'.
+        const snaps = (draft.analytics_snapshots || []).filter(
+          (s): s is { views?: number } => Boolean(s && typeof s === 'object'),
+        )
+        if (snaps.length >= 2) {
+          const delta = (snaps[snaps.length - 1].views ?? 0) - (snaps[snaps.length - 2].views ?? 0)
+          if (delta !== 0) {
+            const trendColor = delta > 0 ? ANSI.BRIGHT_GREEN : ANSI.BRIGHT_RED
+            const change = delta > 0 ? `+${delta}` : `${delta}`
+            writeLine(boxLine(`${trendColor}${t('tui.draftDetailEngagementDelta', { change })}${R}`))
+          }
+        }
       }
       // Last publish outcome — on a failure, surface the durable cause + when
       // (#239 only surfaces it for the single publish turn; this persists it).
