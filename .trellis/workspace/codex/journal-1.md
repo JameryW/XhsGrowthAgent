@@ -335,3 +335,36 @@ FreeDraft gained optional material_ids; _to_copy_content threads used_material_i
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Display creative memory anchors on drafts
+
+**Date**: 2026-08-27
+**Task**: Display creative memory anchors on drafts
+**Branch**: `codex/free-anchor-display`
+
+### Summary
+
+Finished the in-progress anchor-display task: list_drafts carries style_id/play_id/material_ids, TUI /draft renders an anchors line, History free-drafts panel shows an anchor badge with id tooltip; fixed the self-defeating omit-test fixture and removed a debug console.log. Backend 105 focused tests, frontend 729/729 + type-check + i18n (2234 keys) + build green; local ruff/mypy noise verified pre-existing on main.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `30521fda` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

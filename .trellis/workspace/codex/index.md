@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
-- **Last Active**: 2026-08-26
+- **Total Sessions**: 11
+- **Last Active**: 2026-08-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~337 | Active |
+| `journal-1.md` | ~370 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-08-27 | Display creative memory anchors on drafts | `30521fda` | `codex/free-anchor-display` |
 | 10 | 2026-08-26 | Material vault anchors activate calibration | `c0f4ff54` | `main` |
 | 9 | 2026-08-26 | Engagement snapshot trend series | `8aef8bc4` | `main` |
 | 8 | 2026-08-26 | Free analytics triggers evaluator evolution | `80593cc1` | `main` |
