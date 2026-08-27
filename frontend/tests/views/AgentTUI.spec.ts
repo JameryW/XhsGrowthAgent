@@ -687,6 +687,120 @@ describe('AgentTUI free creation interaction contract', () => {
     wrapper.unmount()
   })
 
+  // ── snapshot trend series: views movement between captures ────────────
+  it('shows the views trend inside the detail card once two snapshots exist', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    stubDraft({
+      title: '有走势的草稿',
+      published: true,
+      post_id: 'post_9',
+      last_analytics: {
+        post_id: 'post_9',
+        views: 350,
+        likes: 70,
+        collects: 17,
+        comments: 11,
+        shares: 2,
+        engagement_rate: 28.57,
+        fetched_at: '2026-08-25T09:30:00+00:00',
+      },
+      analytics_snapshots: [
+        { views: 150 },
+        { views: 350 },
+      ],
+    })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('走势')
+    expect(out).toContain('+200')
+    expect(out).not.toContain('-0 浏览')
+    wrapper.unmount()
+  })
+
+  it('shows a negative trend with the minus sign and no trend line below two snapshots', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    stubDraft({
+      title: '下滑草稿',
+      published: true,
+      post_id: 'post_9',
+      last_analytics: {
+        post_id: 'post_9',
+        views: 90,
+        likes: 18,
+        collects: 4,
+        comments: 3,
+        shares: 0,
+        engagement_rate: 27.78,
+        fetched_at: '2026-08-25T09:30:00+00:00',
+      },
+      analytics_snapshots: [{ views: 400 }, { views: 90 }],
+    })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('-310')
+    wrapper.unmount()
+  })
+
+  it('omits the trend line when fewer than two snapshots exist', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    stubDraft({
+      title: '单点快照草稿',
+      published: true,
+      post_id: 'post_9',
+      last_analytics: {
+        post_id: 'post_9',
+        views: 500,
+        likes: 100,
+        collects: 25,
+        comments: 16,
+        shares: 5,
+        engagement_rate: 29.2,
+        fetched_at: '2026-08-25T09:30:00+00:00',
+      },
+      analytics_snapshots: [{ views: 500 }],
+    })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    expect(terminal.lines.join('\n')).toContain('最近表现')
+    expect(terminal.lines.join('\n')).not.toContain('走势')
+    wrapper.unmount()
+  })
+
+  // ── creative-memory anchors display ───────────────────────────────────
+  it('shows the anchors line with style, play and material count', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    stubDraft({
+      title: '锚定草稿',
+      style_id: 'style_治愈',
+      play_id: 'p_9',
+      material_ids: ['m1', 'm2'],
+    })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('锚定')
+    expect(out).toContain('风格 style_治愈')
+    expect(out).toContain('打法 p_9')
+    expect(out).toContain('素材 ×2')
+    wrapper.unmount()
+  })
+
+  it('omits the anchors line when the draft has no anchors', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    stubDraft({ title: '普通草稿' })
+    const { wrapper, terminal } = await mountFreeTui()
+
+    expect(terminal.lines.join('\n')).not.toContain('锚定：')
+    wrapper.unmount()
+  })
+
   it('copies title, body and hashtags to the clipboard', async () => {
     stubOwnedAccount()
     stubDraft({

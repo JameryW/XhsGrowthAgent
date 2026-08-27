@@ -1767,6 +1767,10 @@ interface FreeDraftRecord {
   last_analytics?: { views?: number; likes?: number; collects?: number; comments?: number; shares?: number; engagement_rate?: number; fetched_at?: string } | null
   /** Trend series — last N captures, oldest falls off (cap enforced server-side). */
   analytics_snapshots?: { views?: number }[] | null
+  /** Creative-memory anchors (task 08-26-free-anchor-display). */
+  style_id?: string
+  play_id?: string
+  material_ids?: string[]
 }
 
 async function handleDraft(draftId: string) {
@@ -1823,6 +1827,20 @@ async function handleDraft(draftId: string) {
         for (const bodyLine of wrapDisplay(draft.body, w - 4, { hangingIndent: 2 })) {
           writeLine(boxLine(bodyLine ? `  ${bodyLine}` : ''))
         }
+      }
+    }
+    // Creative-memory anchors (task 08-26-free-anchor-display): show what the
+    // draft was built on so post-publish calibration is legible. Missing
+    // anchors are skipped; materials render as a count only. Rendered outside
+    // the hasStatus guard so legacy drafts without timestamps still show it.
+    {
+      const anchorParts: string[] = []
+      if (draft.style_id) anchorParts.push(t('tui.anchorStyle', { id: draft.style_id }))
+      if (draft.play_id) anchorParts.push(t('tui.anchorPlay', { id: draft.play_id }))
+      const materialCount = (draft.material_ids || []).length
+      if (materialCount > 0) anchorParts.push(t('tui.anchorMaterials', { count: materialCount }))
+      if (anchorParts.length > 0) {
+        writeLine(boxLine(`${D}${t('tui.draftDetailAnchors', { items: anchorParts.join(' · ') })}${R}`))
       }
     }
     // Status fields — render only if present (graceful for pre-#216 drafts)

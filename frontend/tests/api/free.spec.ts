@@ -89,4 +89,53 @@ describe('free draft API adapters', () => {
     expect(result.drafts[0].last_analytics).toEqual(snapshot)
     expect(result.drafts[1].last_analytics).toBeNull()
   })
+
+  it('surfaces the server-computed engagement trend on draft summaries', async () => {
+    // engagement_trend is server-computed (task 08-26-free-snapshot-trend);
+    // the adapter must pass it through untouched for History panel rendering.
+    const trend = { views: 350, delta_views: 200, captured_at: '2026-08-25T09:30:00Z' }
+    const response = {
+      account_id: 'acct-a',
+      drafts: [
+        { draft_id: 'draft-1', title: '夏日穿搭', hashtags: [], published: true, engagement_trend: trend },
+        { draft_id: 'draft-2', title: 'legacy', hashtags: [], published: true, engagement_trend: null },
+      ],
+      count: 2,
+      truncated: false,
+    }
+    mockClient.get.mockResolvedValue(response)
+
+    const result = await listFreeDrafts('acct-a')
+    expect(result.drafts[0].engagement_trend).toEqual(trend)
+    expect(result.drafts[1].engagement_trend).toBeNull()
+  })
+
+  it('surfaces creative-memory anchors on draft summaries', async () => {
+    // style/play/material anchors are server-set on records (task
+    // 08-26-free-anchor-display); the adapter passes them through untouched.
+    const response = {
+      account_id: 'acct-a',
+      drafts: [
+        {
+          draft_id: 'draft-1',
+          title: '夏日穿搭',
+          hashtags: [],
+          style_id: 'style_heal',
+          play_id: 'p_9',
+          material_ids: ['m1', 'm2'],
+        },
+        { draft_id: 'draft-2', title: 'legacy', hashtags: [], style_id: '', play_id: '', material_ids: [] },
+      ],
+      count: 2,
+      truncated: false,
+    }
+    mockClient.get.mockResolvedValue(response)
+
+    const result = await listFreeDrafts('acct-a')
+    expect(result.drafts[0].style_id).toBe('style_heal')
+    expect(result.drafts[0].play_id).toBe('p_9')
+    expect(result.drafts[0].material_ids).toEqual(['m1', 'm2'])
+    expect(result.drafts[1].style_id).toBe('')
+    expect(result.drafts[1].material_ids).toEqual([])
+  })
 })

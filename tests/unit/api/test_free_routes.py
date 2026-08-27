@@ -1756,6 +1756,22 @@ class TestMaterialAnchors:
         # 457/1500 ≈ 30% ≥ 3% → reinforcing score for both entries
         assert payload["material_effectiveness"] == {"m1": 0.9, "m2": 0.9}
 
+    def test_list_summary_carries_anchors(self, client, mock_store):
+        anchored = client.post(
+            "/api/free/draft",
+            json={**DRAFT_BODY, "style_id": "s1", "play_id": "p_9", "material_ids": ["m1"]},
+        ).json()["data"]["draft_id"]
+        plain = client.post("/api/free/draft", json=DRAFT_BODY).json()["data"]["draft_id"]
+        r = client.get("/api/free/drafts/acct1")
+        by_id = {d["draft_id"]: d for d in r.json()["data"]["drafts"]}
+        assert by_id[anchored]["style_id"] == "s1"
+        assert by_id[anchored]["play_id"] == "p_9"
+        assert by_id[anchored]["material_ids"] == ["m1"]
+        # unanchored drafts surface empty defaults, never missing keys
+        assert by_id[plain]["style_id"] == ""
+        assert by_id[plain]["play_id"] == ""
+        assert by_id[plain]["material_ids"] == []
+
 
 class TestGetSuggestions:
     """GET /free/suggestions/{account_id} — thread-less creative suggestions.

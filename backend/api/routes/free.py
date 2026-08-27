@@ -542,6 +542,11 @@ async def list_drafts(
                     # Server-computed views movement (None before 2 captures) —
                     # keeps the trend logic in one place and list payloads tiny.
                     "engagement_trend": _views_trend(_valid_snapshots(value)),
+                    # Creative-memory anchors (task 08-26-free-anchor-display):
+                    # surfaced so TUI/GUI can show what the draft was built on.
+                    "style_id": str(value.get("style_id", "") or ""),
+                    "play_id": str(value.get("play_id", "") or ""),
+                    "material_ids": [str(m) for m in (value.get("material_ids") or []) if m],
                 }
             )
     except Exception:
