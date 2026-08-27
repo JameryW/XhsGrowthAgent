@@ -123,9 +123,7 @@ def build_calibration_payload(
     # EFFECTIVENESS_THRESHOLD=0.3) triggers its weight downgrade. An explicitly
     # provided map always wins.
     if material_ids and not material_effectiveness:
-        material_effectiveness = {
-            str(mid): (0.9 if play_success else 0.25) for mid in material_ids
-        }
+        material_effectiveness = {str(mid): (0.9 if play_success else 0.25) for mid in material_ids}
 
     # Log missing IDs for observability
     missing = []

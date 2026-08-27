@@ -107,6 +107,22 @@ function hasUsableEvaluation(evaluation?: FreeDraftSummary['last_evaluation'] | 
   )
 }
 
+/** Number of creative-memory anchors on a draft (style/play/materials). */
+function anchorCount(draft: FreeDraftSummary): number {
+  return (draft.style_id ? 1 : 0)
+    + (draft.play_id ? 1 : 0)
+    + (draft.material_ids?.length ?? 0)
+}
+
+/** Tooltip listing the anchored ids (task 08-26-free-anchor-display). */
+function anchorTooltip(draft: FreeDraftSummary): string {
+  const parts: string[] = []
+  if (draft.style_id) parts.push(t('history.freeDrafts.anchorStyle', { id: draft.style_id }))
+  if (draft.play_id) parts.push(t('history.freeDrafts.anchorPlay', { id: draft.play_id }))
+  for (const mid of draft.material_ids ?? []) parts.push(t('history.freeDrafts.anchorMaterial', { id: mid }))
+  return parts.join(' · ')
+}
+
 function isAbortError(err: unknown) {
   if (!err || typeof err !== 'object') return false
   const candidate = err as { code?: string; name?: string }
@@ -303,6 +319,14 @@ defineExpose({ refresh })
                 {{ t('history.freeDrafts.evaluationDegraded') }}
               </span>
               <span v-else class="dark-explicit mt-3 inline-flex rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('history.freeDrafts.evaluationUnavailable') }}</span>
+              <!-- Creative-memory anchors (task 08-26-free-anchor-display):
+                   what the draft was built on; tooltip lists the ids. -->
+              <span
+                v-if="draft.style_id || draft.play_id || (draft.material_ids?.length ?? 0) > 0"
+                class="dark-explicit mt-3 inline-flex rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-200"
+                data-testid="free-draft-anchors"
+                :title="anchorTooltip(draft)"
+              >{{ t('history.freeDrafts.anchorBadge', { count: anchorCount(draft) }) }}</span>
               <!-- Persisted engagement snapshot (server-set last_analytics):
                    offline-visible performance for published drafts. -->
               <div

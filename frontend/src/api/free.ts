@@ -53,6 +53,11 @@ export interface FreeDraftSummary {
   /** Server-computed views movement between the last two captures (task
    *  08-26-free-snapshot-trend); null before two snapshots exist. */
   engagement_trend?: FreeDraftTrend | null
+  /** Creative-memory anchors (task 08-26-free-anchor-display): what the draft
+   *  was built on; empty string/array = not anchored. */
+  style_id?: string
+  play_id?: string
+  material_ids?: string[]
 }
 
 export interface FreeDraftListResponse {

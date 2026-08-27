@@ -1332,9 +1332,7 @@ class TestEvaluatorSampleChain:
         create = client.post("/api/free/draft", json=DRAFT_BODY)
         draft_id = create.json()["data"]["draft_id"]
 
-        mock_insert = self._evaluate(
-            client, draft_id, self._eval_result(status="unavailable")
-        )
+        mock_insert = self._evaluate(client, draft_id, self._eval_result(status="unavailable"))
         mock_insert.assert_not_awaited()
 
     def test_evaluate_scoreless_skips_sample(self, client, mock_store):
@@ -1546,7 +1544,11 @@ class TestStyleAnchors:
         with (
             patch(
                 "backend.api.routes.free.run_publish",
-                AsyncMock(return_value={"publish_result": {"post_id": "real_note_1", "status": "published"}}),
+                AsyncMock(
+                    return_value={
+                        "publish_result": {"post_id": "real_note_1", "status": "published"}
+                    }
+                ),
             ),
             patch(
                 "backend.db.accounts.get_account_cdp_endpoint",
@@ -1572,7 +1574,9 @@ class TestStyleAnchors:
     def _publish(self, client, draft_id):
         with patch(
             "backend.api.routes.free.run_publish",
-            AsyncMock(return_value={"publish_result": {"post_id": "real_note_1", "status": "published"}}),
+            AsyncMock(
+                return_value={"publish_result": {"post_id": "real_note_1", "status": "published"}}
+            ),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
 
@@ -1601,7 +1605,9 @@ class TestStyleAnchors:
     def test_analytics_skips_calibration_on_zero_views(self, client, mock_store):
         draft_id = self._anchored_draft(client, mock_store)
         self._publish(client, draft_id)
-        mock_sched = self._fetch_analytics(client, draft_id, views=0, likes=0, collects=0, comments=0, shares=0)
+        mock_sched = self._fetch_analytics(
+            client, draft_id, views=0, likes=0, collects=0, comments=0, shares=0
+        )
         mock_sched.assert_not_awaited()
 
 
@@ -1615,7 +1621,9 @@ class TestSnapshotTrend:
         draft_id = create.json()["data"]["draft_id"]
         with patch(
             "backend.api.routes.free.run_publish",
-            AsyncMock(return_value={"publish_result": {"post_id": "note_t1", "status": "published"}}),
+            AsyncMock(
+                return_value={"publish_result": {"post_id": "note_t1", "status": "published"}}
+            ),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
         return draft_id
@@ -1731,20 +1739,34 @@ class TestMaterialAnchors:
         with (
             patch(
                 "backend.api.routes.free.run_publish",
-                AsyncMock(return_value={"publish_result": {"post_id": "real_note_2", "status": "published"}}),
+                AsyncMock(
+                    return_value={
+                        "publish_result": {"post_id": "real_note_2", "status": "published"}
+                    }
+                ),
             ),
-            patch("backend.db.accounts.get_account_cdp_endpoint", AsyncMock(return_value="http://localhost:9222")),
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value="http://localhost:9222"),
+            ),
             patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
             patch("backend.config.settings.Settings") as mock_settings,
-            patch("backend.memory.calibrator.schedule_calibration", new_callable=AsyncMock) as mock_sched,
+            patch(
+                "backend.memory.calibrator.schedule_calibration", new_callable=AsyncMock
+            ) as mock_sched,
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
             mock_settings.return_value.platform.headless = True
             instance = mock_client_cls.return_value
             instance.get_post_analytics = AsyncMock(
                 return_value=XHSAnalytics(
-                    post_id="real_note_2", engagement_rate=30.0,
-                    views=1500, likes=320, collects=80, comments=45, shares=12,
+                    post_id="real_note_2",
+                    engagement_rate=30.0,
+                    views=1500,
+                    likes=320,
+                    collects=80,
+                    comments=45,
+                    shares=12,
                 )
             )
             instance.close = AsyncMock()
@@ -1755,6 +1777,22 @@ class TestMaterialAnchors:
         assert payload["material_ids"] == ["m1", "m2"]
         # 457/1500 ≈ 30% ≥ 3% → reinforcing score for both entries
         assert payload["material_effectiveness"] == {"m1": 0.9, "m2": 0.9}
+
+    def test_list_summary_carries_anchors(self, client, mock_store):
+        anchored = client.post(
+            "/api/free/draft",
+            json={**DRAFT_BODY, "style_id": "s1", "play_id": "p_9", "material_ids": ["m1"]},
+        ).json()["data"]["draft_id"]
+        plain = client.post("/api/free/draft", json=DRAFT_BODY).json()["data"]["draft_id"]
+        r = client.get("/api/free/drafts/acct1")
+        by_id = {d["draft_id"]: d for d in r.json()["data"]["drafts"]}
+        assert by_id[anchored]["style_id"] == "s1"
+        assert by_id[anchored]["play_id"] == "p_9"
+        assert by_id[anchored]["material_ids"] == ["m1"]
+        # unanchored drafts surface empty defaults, never missing keys
+        assert by_id[plain]["style_id"] == ""
+        assert by_id[plain]["play_id"] == ""
+        assert by_id[plain]["material_ids"] == []
 
 
 class TestGetSuggestions:

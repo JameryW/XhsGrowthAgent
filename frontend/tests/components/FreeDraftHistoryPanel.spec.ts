@@ -143,6 +143,78 @@ describe('FreeDraftHistoryPanel', () => {
     expect(badges[0].attributes('title')).toBeTruthy()
   })
 
+  it('renders the views trend badge only when the server-computed trend exists', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [
+        draft({
+          draft_id: 'trend-up',
+          title: '上涨笔记',
+          published: true,
+          last_analytics: {
+            post_id: 'p1', views: 350, likes: 70, collects: 17, comments: 11, shares: 2,
+            engagement_rate: 28.57, fetched_at: '2026-08-25T09:30:00Z',
+          },
+          engagement_trend: { views: 350, delta_views: 200, captured_at: '2026-08-25T09:30:00Z' },
+        }),
+        draft({
+          draft_id: 'trend-down',
+          title: '下滑笔记',
+          published: true,
+          last_analytics: {
+            post_id: 'p2', views: 90, likes: 18, collects: 4, comments: 3, shares: 0,
+            engagement_rate: 27.78, fetched_at: '2026-08-25T09:30:00Z',
+          },
+          engagement_trend: { views: 90, delta_views: -310, captured_at: '2026-08-25T09:30:00Z' },
+        }),
+        draft({
+          draft_id: 'no-trend',
+          title: '单点快照',
+          published: true,
+          last_analytics: {
+            post_id: 'p3', views: 500, likes: 100, collects: 25, comments: 16, shares: 5,
+            engagement_rate: 29.2, fetched_at: '2026-08-25T09:30:00Z',
+          },
+        }),
+      ],
+      count: 3,
+    })
+
+    const wrapper = await mountPanel()
+    const trends = wrapper.findAll('[data-testid="free-draft-trend"]')
+    expect(trends).toHaveLength(2)
+    expect(trends[0].text()).toContain('+200')
+    expect(trends[1].text()).toContain('-310')
+  })
+
+  it('renders the anchor badge only for drafts with creative-memory anchors', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [
+        draft({
+          draft_id: 'anchored',
+          title: '有锚定',
+          style_id: 'style_治愈',
+          play_id: 'p_9',
+          material_ids: ['m1'],
+        }),
+        draft({ draft_id: 'plain', title: '无锚定' }),
+      ],
+      count: 2,
+    })
+
+    const wrapper = await mountPanel()
+    const badges = wrapper.findAll('[data-testid="free-draft-anchors"]')
+    expect(badges).toHaveLength(1)
+    expect(badges[0].text()).toContain('3')
+    // tooltip lists the anchored ids
+    expect(badges[0].attributes('title')).toContain('style_治愈')
+    expect(badges[0].attributes('title')).toContain('p_9')
+    expect(badges[0].attributes('title')).toContain('m1')
+  })
+
   it('renders a retry state, opens Continue deep links, and guards deletion', async () => {
     const api = await import('@/api/free')
     let attempts = 0
