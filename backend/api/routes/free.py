@@ -951,10 +951,13 @@ async def get_analytics(
     # ── Post-publish feedback loop (task 08-24-free-post-feedback-loop) ──
     # The live fetch is worthless once the CDP browser closes — persist the
     # snapshot so /drafts, /draft <id> and the GUI History tab can show the
-    # engagement offline. store is guaranteed non-None here (_load_draft
-    # raises ValidationError when the graph has no store).
+    # engagement offline. _load_draft above already raises when the graph has
+    # no store; the explicit check keeps that invariant enforced (and visible
+    # to mypy) instead of assumed for the persist/backfill/insight writes.
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None)
+    if store is None:
+        raise ValidationError("store", "Memory store unavailable; cannot persist analytics")
     fetched_at = _now_iso()
     snapshot: dict[str, Any] = {
         "post_id": post_id,
@@ -1013,8 +1016,7 @@ async def get_analytics(
 
         if is_pool_ready():
             engagement = {
-                key: snapshot[key]
-                for key in ("views", "likes", "collects", "comments", "shares")
+                key: snapshot[key] for key in ("views", "likes", "collects", "comments", "shares")
             }
             await backfill_engagement(f"free:{draft_id}", engagement)
             # New weak label arrived → fire-and-forget an evolution check so
