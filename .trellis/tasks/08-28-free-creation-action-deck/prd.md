@@ -36,11 +36,14 @@ account.
 - Add a small account-scoped overview row for visible drafts: total shown,
   published, and needs attention. The row must not imply a true total when the
   server reports that the 100-item cap was reached.
+- Make the needs-attention summary actionable with a one-tap local filter so
+  users can move from the overview to the work queue without rediscovering the
+  relevant statuses.
 - Change the primary card action label by state: start/continue writing for
   ordinary unpublished drafts, review/revise for evaluated drafts that are not
-  approved, fix and retry for publish failures, and open draft for published
-  drafts. All actions keep the existing `mode=free`, `account_id`, and
-  `draft_id` deep link.
+  approved, review/publish for evaluated drafts that are approved, fix and
+  retry for publish failures, and open draft for published drafts. All actions
+  keep the existing `mode=free`, `account_id`, and `draft_id` deep link.
 - Add a “New draft” action in the account-scoped header and empty state. It
   navigates to Free Creation with the selected account and never submits a
   prompt automatically.

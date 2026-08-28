@@ -26,7 +26,8 @@ const isRefreshing = ref(false)
 const error = ref<string | null>(null)
 const responseTruncated = ref(false)
 const searchQuery = ref('')
-const statusFilter = ref<FreeDraftStatus>('all')
+type HistoryFilter = FreeDraftStatus | 'needs_attention'
+const statusFilter = ref<HistoryFilter>('all')
 const deleteTarget = ref<FreeDraftSummary | null>(null)
 const isDeleting = ref(false)
 
@@ -34,9 +35,10 @@ let requestGeneration = 0
 let listAbort: AbortController | null = null
 
 const statusOptions = computed(() => {
-  const countFor = (status: FreeDraftStatus) => drafts.value.filter(draftMatchesStatus(status)).length
+  const countFor = (status: HistoryFilter) => drafts.value.filter(draftMatchesStatus(status)).length
   return [
     { value: 'all', label: t('history.freeDrafts.filterAll'), count: drafts.value.length },
+    { value: 'needs_attention', label: t('history.freeDrafts.filterNeedsAttention'), count: countFor('needs_attention') },
     { value: 'unpublished', label: t('history.freeDrafts.filterUnpublished'), count: countFor('unpublished') },
     { value: 'published', label: t('history.freeDrafts.filterPublished'), count: countFor('published') },
     { value: 'publish_failed', label: t('history.freeDrafts.filterPublishFailed'), count: countFor('publish_failed') },
@@ -46,9 +48,9 @@ const statusOptions = computed(() => {
 })
 
 const overviewStats = computed(() => [
-  { label: t('history.freeDrafts.overviewShown'), value: drafts.value.length },
-  { label: t('history.freeDrafts.overviewPublished'), value: drafts.value.filter(draft => Boolean(draft.published)).length },
-  { label: t('history.freeDrafts.overviewAttention'), value: drafts.value.filter(needsAttention).length },
+  { key: 'shown', label: t('history.freeDrafts.overviewShown'), value: drafts.value.length },
+  { key: 'published', label: t('history.freeDrafts.overviewPublished'), value: drafts.value.filter(draft => Boolean(draft.published)).length },
+  { key: 'attention', label: t('history.freeDrafts.overviewAttention'), value: drafts.value.filter(needsAttention).length },
 ])
 
 const filteredDrafts = computed(() => {
@@ -61,9 +63,10 @@ const filteredDrafts = computed(() => {
 
 const hasActiveFilter = computed(() => Boolean(searchQuery.value.trim()) || statusFilter.value !== 'all')
 
-function draftMatchesStatus(status: FreeDraftStatus) {
+function draftMatchesStatus(status: HistoryFilter) {
   return (draft: FreeDraftSummary) => {
     if (status === 'all') return true
+    if (status === 'needs_attention') return needsAttention(draft)
     if (status === 'published') return Boolean(draft.published)
     if (status === 'unpublished') return !draft.published
     if (status === 'publish_failed') return publishFailed(draft)
@@ -97,6 +100,9 @@ function actionLabel(draft: FreeDraftSummary) {
   if (draft.published) return t('history.freeDrafts.openDraft')
   if (draft.last_evaluation && !draft.last_evaluation.degraded && draft.last_evaluation.decision !== 'approved') {
     return t('history.freeDrafts.reviewDraft')
+  }
+  if (hasUsableEvaluation(draft.last_evaluation) && draft.last_evaluation?.decision === 'approved') {
+    return t('history.freeDrafts.reviewAndPublish')
   }
   return t('history.freeDrafts.continueWriting')
 }
@@ -298,7 +304,16 @@ defineExpose({ refresh })
       <div v-if="drafts.length" class="grid grid-cols-1 gap-2 sm:grid-cols-3" data-testid="free-draft-overview" :aria-label="t('history.freeDrafts.overviewLabel')">
         <div v-for="stat in overviewStats" :key="stat.label" class="dark-explicit rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/60">
           <p class="dark-explicit text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{{ stat.label }}</p>
-          <p class="dark-explicit mt-1 text-lg font-semibold tabular-nums text-slate-800 dark:text-slate-100">{{ stat.value }}</p>
+          <div class="mt-1 flex items-baseline justify-between gap-2">
+            <p class="dark-explicit text-lg font-semibold tabular-nums text-slate-800 dark:text-slate-100">{{ stat.value }}</p>
+            <button
+              v-if="stat.key === 'attention' && stat.value > 0"
+              type="button"
+              class="dark-explicit min-h-8 rounded-md px-2 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40 dark:text-rose-300 dark:hover:bg-rose-950/30"
+              :aria-pressed="statusFilter === 'needs_attention'"
+              @click="statusFilter = 'needs_attention'"
+            >{{ t('history.freeDrafts.overviewReview') }}</button>
+          </div>
         </div>
         <p v-if="responseTruncated" class="dark-explicit col-span-full text-[11px] text-slate-400">{{ t('history.freeDrafts.overviewCapped') }}</p>
       </div>
@@ -320,7 +335,7 @@ defineExpose({ refresh })
         :label="t('history.freeDrafts.filterLabel')"
         :options="statusOptions"
         :model-value="statusFilter"
-        @update:model-value="statusFilter = $event as FreeDraftStatus"
+        @update:model-value="statusFilter = $event as HistoryFilter"
       />
 
       <div v-if="isLoading" class="space-y-3" data-testid="free-drafts-loading" aria-busy="true">

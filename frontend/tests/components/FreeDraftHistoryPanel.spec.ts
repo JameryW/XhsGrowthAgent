@@ -230,10 +230,15 @@ describe('FreeDraftHistoryPanel', () => {
           title: '待修订内容',
           last_evaluation: { overall_score: 62, decision: 'needs_revision' },
         }),
+        draft({
+          draft_id: 'ready',
+          title: '待发布内容',
+          last_evaluation: { overall_score: 91, decision: 'approved' },
+        }),
         draft({ draft_id: 'published', title: '已发布内容', published: true }),
         draft({ draft_id: 'plain', title: '普通草稿' }),
       ],
-      count: 4,
+      count: 5,
     })
 
     const wrapper = await mountPanel()
@@ -245,8 +250,14 @@ describe('FreeDraftHistoryPanel', () => {
     expect(wrapper.text()).toMatch(/Open the draft to fix and retry|打开草稿修复后重试/)
     expect(wrapper.text()).toMatch(/Fix & retry|修复并重试/)
     expect(wrapper.text()).toMatch(/Review & revise|检查并修订/)
+    expect(wrapper.text()).toMatch(/Review & publish|检查并发布/)
     expect(wrapper.text()).toMatch(/Open draft|打开草稿/)
     expect(wrapper.text()).toMatch(/Continue writing|继续写作/)
+
+    const reviewAttentionButton = wrapper.find('[data-testid="free-draft-overview"] button')
+    expect(reviewAttentionButton.exists()).toBe(true)
+    await reviewAttentionButton.trigger('click')
+    expect(wrapper.findAll('article')).toHaveLength(3)
 
     const failedFilter = wrapper.findAll('button').find(button => /Publish failed|发布失败/.test(button.text()))
     expect(failedFilter).toBeTruthy()
