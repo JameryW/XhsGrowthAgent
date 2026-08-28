@@ -417,7 +417,7 @@ after `model_dump()`, the same way `draft_id` is set.
 | `created_at` | ISO 8601 UTC str | `create_draft` | Set once; never changed by update. |
 | `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` | Refreshed on every write-back — including failed publish attempts (a publish attempt is a meaningful update). |
 | `last_evaluation` | `{overall_score, decision, revision_hints, degraded?, summary?} \| None` | `evaluate_draft` | The {overall_score, decision, revision_hints} triple + `degraded` + `summary` are persisted; the full `evaluation_result` (dimensions, bias_warning) is still returned to the agent but not stored on the draft. `degraded: True` marks a pass-through fallback (LLM timeout) — the 100/approved is fake, not a real score; `summary` carries the cause so `/draft <id>` + `/drafts` + the agent render can surface the degradation instead of showing a misleading "100 approved". |
-| `last_publish` | `{status, error?, error_type?, at} \| None` | `publish_draft` (every attempt) | Persisted on **every** publish attempt — success writes `status` (`published`/`mock_published`) with error fields `None`; failure writes `status` (`failed`/`auth_expired`/...) + `error` + `error_type`. `at` is the attempt timestamp. Lets `/draft <id>` and the agent list render surface a failed publish's cause after the turn ends (#239 only surfaces it for the single tool call). A later success overwrites it. |
+| `last_publish` | `{status, error?, error_type?, at} \| None` | `publish_draft` (every attempt) | Persisted on **every** publish attempt — success writes `status` (`published`/`mock_published`) with error fields `None`; failure writes `status` (`failed`/`auth_expired`/...) + `error` + `error_type`. `at` is the attempt timestamp. Full detail is available from `/draft <id>`; the `/drafts` list exposes only `{status, error_type, at}` (never the raw `error`) so GUI status cards can explain the next action without leaking provider text. A later success overwrites it. |
 | `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. Failures do NOT flip `published` (they only record via `last_publish`). |
 | `post_id` | `str` | `publish_draft` (on success) | The XHS note id, from `publish_result.post_id`. Empty for mock-published. Used by `GET /free/analytics/{draft_id}` to fetch engagement. |
 | `post_url` | `str` | `publish_draft` (on success) | The XHS note URL, from `publish_result.post_url`. |
@@ -469,8 +469,10 @@ after `model_dump()`, the same way `draft_id` is set.
 
 ### `list_drafts` surface + sort
 
-`list_drafts` returns `created_at`, `updated_at`, `last_evaluation`, `published`,
-`last_analytics` alongside the existing `draft_id` / `title` / `hashtags`. Drafts are sorted
+`list_drafts` returns `created_at`, `updated_at`, `last_evaluation`, `last_publish`,
+`published`, `last_analytics` alongside the existing `draft_id` / `title` / `hashtags`.
+`last_publish` is a safe summary containing only `status`, `error_type`, and `at`;
+the raw provider error is detail-only. Drafts are sorted
 newest-first by `updated_at`:
 
 ```python
@@ -523,8 +525,9 @@ request.
 ### Graceful degradation
 
 Existing stored drafts lack these fields. All reads use `value.get(field, default)`:
-missing `last_evaluation` → `None` (no badge), missing `published` → `False` (no badge),
-missing `updated_at` → sorts last. No migration is needed; fields are optional.
+missing `last_evaluation` → `None` (no badge), missing `last_publish` → `None`
+(no publish-failure badge), missing `published` → `False` (no badge), missing
+`updated_at` → sorts last. No migration is needed; fields are optional.
 
 ### TUI display
 

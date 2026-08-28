@@ -583,6 +583,32 @@ class TestListDrafts:
         assert d["last_evaluation"] is None
         assert d["published"] is False
 
+    def test_list_exposes_safe_last_publish_summary(self, client, mock_store):
+        mock_store._records["failed-summary"] = {
+            "draft_id": "failed-summary",
+            "title": "发布失败摘要",
+            "hashtags": [],
+            "body": "x",
+            "published": False,
+            "last_publish": {
+                "status": "failed",
+                "error": "provider secret must never reach list summaries",
+                "error_type": "account_inactive",
+                "at": "2026-07-12T00:00:01Z",
+            },
+            "updated_at": "2026-07-12T00:00:01Z",
+        }
+
+        r = client.get("/api/free/drafts/acct1")
+        assert r.status_code == 200, r.text
+        summary = r.json()["data"]["drafts"][0]["last_publish"]
+        assert summary == {
+            "status": "failed",
+            "error_type": "account_inactive",
+            "at": "2026-07-12T00:00:01Z",
+        }
+        assert "error" not in summary
+
     def test_list_includes_last_analytics_summary(self, client, mock_store):
         mock_store._records["snap-1"] = {
             "draft_id": "snap-1",

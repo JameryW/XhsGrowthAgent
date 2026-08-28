@@ -41,6 +41,16 @@ export interface FreeDraftTrend {
   captured_at?: string | null
 }
 
+export interface FreeDraftPublishSummary {
+  status?: string
+  error_type?: string | null
+  at?: string | null
+}
+
+export interface FreeDraftPublishAttempt extends FreeDraftPublishSummary {
+  error?: string | null
+}
+
 export interface FreeDraftSummary {
   draft_id: string
   title: string
@@ -48,6 +58,8 @@ export interface FreeDraftSummary {
   created_at?: string | null
   updated_at?: string | null
   last_evaluation?: FreeDraftEvaluation | null
+  /** Safe publish-attempt metadata returned by the list endpoint. */
+  last_publish?: FreeDraftPublishSummary | null
   published?: boolean | null
   last_analytics?: FreeDraftAnalytics | null
   /** Server-computed views movement between the last two captures (task
@@ -76,12 +88,7 @@ export interface FreeDraftRecord extends FreeDraftSummary {
   niche?: string
   content_angle?: string
   target_audience?: string
-  last_publish?: {
-    status?: string
-    error?: string | null
-    error_type?: string | null
-    at?: string
-  } | null
+  last_publish?: FreeDraftPublishAttempt | null
   post_id?: string
   post_url?: string
 }

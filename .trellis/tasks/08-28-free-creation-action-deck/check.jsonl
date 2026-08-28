@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/free-creation.md","reason":"Check the updated list response and failed-publish semantics against the documented free-mode contract."}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Check the panel's action deck, status badges, touch targets, and bilingual accessibility states."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check account switching, local request ownership, retry, and mutation behavior."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check that API types, backend output, UI state, tests, and localization stay aligned."}

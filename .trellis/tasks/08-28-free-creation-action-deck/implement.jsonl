@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/free-creation.md","reason":"Defines the account-scoped free-draft route contract, summary fields, status filters, and compatibility rules."}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Defines shared component, accessibility, responsive, dark-mode, and localization conventions for the History panel."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Defines account-scoped local list lifecycle, stale-response guards, retry behavior, and when not to add a store."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Guides keeping the backend summary contract, frontend adapter, UI state, and tests consistent across layers."}
