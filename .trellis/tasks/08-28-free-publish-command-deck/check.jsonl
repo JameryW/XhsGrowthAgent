@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Use the frontend component and responsive layout rules as the review checklist for the command-grid presentation change."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Review that the command-grid addition preserves the existing state-management boundaries and command side-effect behavior."}

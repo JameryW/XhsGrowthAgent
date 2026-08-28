@@ -371,6 +371,15 @@ describe('AgentTUI free creation interaction contract', () => {
     wrapper.unmount()
   })
 
+  it('keeps publishing and manual-copy controls visible in the free command grid', async () => {
+    const { wrapper, terminal } = await mountFreeTui()
+    const output = terminal.lines.join('\n')
+
+    expect(output).toContain('/publish <id> [confirm]')
+    expect(output).toContain('/copy <id>')
+    wrapper.unmount()
+  })
+
   it('replies pong to an application-level ping', async () => {
     const { wrapper, socket } = await mountFreeTui()
     socket.open()
