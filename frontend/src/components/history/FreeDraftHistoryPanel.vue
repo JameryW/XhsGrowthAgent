@@ -39,10 +39,17 @@ const statusOptions = computed(() => {
     { value: 'all', label: t('history.freeDrafts.filterAll'), count: drafts.value.length },
     { value: 'unpublished', label: t('history.freeDrafts.filterUnpublished'), count: countFor('unpublished') },
     { value: 'published', label: t('history.freeDrafts.filterPublished'), count: countFor('published') },
+    { value: 'publish_failed', label: t('history.freeDrafts.filterPublishFailed'), count: countFor('publish_failed') },
     { value: 'evaluated', label: t('history.freeDrafts.filterEvaluated'), count: countFor('evaluated') },
     { value: 'unevaluated', label: t('history.freeDrafts.filterUnevaluated'), count: countFor('unevaluated') },
   ]
 })
+
+const overviewStats = computed(() => [
+  { label: t('history.freeDrafts.overviewShown'), value: drafts.value.length },
+  { label: t('history.freeDrafts.overviewPublished'), value: drafts.value.filter(draft => Boolean(draft.published)).length },
+  { label: t('history.freeDrafts.overviewAttention'), value: drafts.value.filter(needsAttention).length },
+])
 
 const filteredDrafts = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase(locale.value || 'en')
@@ -59,10 +66,39 @@ function draftMatchesStatus(status: FreeDraftStatus) {
     if (status === 'all') return true
     if (status === 'published') return Boolean(draft.published)
     if (status === 'unpublished') return !draft.published
+    if (status === 'publish_failed') return publishFailed(draft)
     if (status === 'evaluated') return Boolean(draft.last_evaluation)
     if (status === 'unevaluated') return !draft.last_evaluation
     return true
   }
+}
+
+const PUBLISH_SUCCESS_STATUSES = new Set(['published', 'mock_published'])
+
+function publishFailed(draft: FreeDraftSummary) {
+  const status = draft.last_publish?.status?.trim()
+  return Boolean(status && !PUBLISH_SUCCESS_STATUSES.has(status))
+}
+
+function needsAttention(draft: FreeDraftSummary) {
+  if (publishFailed(draft)) return true
+  if (draft.published) return false
+  const evaluation = draft.last_evaluation
+  if (!evaluation || evaluation.degraded) return true
+  return evaluation.decision !== 'approved'
+}
+
+function publishFailureReason(draft: FreeDraftSummary) {
+  return draft.last_publish?.error_type || draft.last_publish?.status || t('history.freeDrafts.publishFailed')
+}
+
+function actionLabel(draft: FreeDraftSummary) {
+  if (publishFailed(draft)) return t('history.freeDrafts.retryPublish')
+  if (draft.published) return t('history.freeDrafts.openDraft')
+  if (draft.last_evaluation && !draft.last_evaluation.degraded && draft.last_evaluation.decision !== 'approved') {
+    return t('history.freeDrafts.reviewDraft')
+  }
+  return t('history.freeDrafts.continueWriting')
 }
 
 function formatDate(iso?: string | null) {
@@ -185,6 +221,14 @@ function continueDraft(draftId: string) {
   })
 }
 
+function newDraft() {
+  if (!props.accountId) return
+  void router.push({
+    name: 'tui',
+    query: { mode: 'free', account_id: props.accountId },
+  })
+}
+
 function requestDelete(draft: FreeDraftSummary) {
   deleteTarget.value = draft
 }
@@ -232,10 +276,16 @@ defineExpose({ refresh })
         <h2 id="free-drafts-heading" class="dark-explicit mt-1 text-lg font-semibold text-slate-800 dark:text-slate-100">{{ t('history.freeDrafts.title') }}</h2>
         <p class="dark-explicit mt-1 text-xs text-slate-500 dark:text-slate-400">{{ t('history.freeDrafts.subtitle') }}</p>
       </div>
-      <NeonButton variant="ghost" size="sm" class="min-h-11" :loading="isLoading || isRefreshing" @click="refresh">
-        <AppIcon name="RefreshCw" size="sm" variant="cyan" />
-        <span>{{ t('history.freeDrafts.refresh') }}</span>
-      </NeonButton>
+      <div class="flex flex-wrap items-center gap-2">
+        <NeonButton v-if="accountId" variant="cyan" size="sm" class="min-h-11" @click="newDraft">
+          <AppIcon name="Plus" size="sm" variant="cyan" />
+          <span>{{ t('history.freeDrafts.newDraft') }}</span>
+        </NeonButton>
+        <NeonButton variant="ghost" size="sm" class="min-h-11" :loading="isLoading || isRefreshing" @click="refresh">
+          <AppIcon name="RefreshCw" size="sm" variant="cyan" />
+          <span>{{ t('history.freeDrafts.refresh') }}</span>
+        </NeonButton>
+      </div>
     </div>
 
     <div v-if="!accountId" class="dark-explicit rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center dark:border-slate-700 dark:bg-slate-900/40" data-testid="free-drafts-no-account">
@@ -245,6 +295,14 @@ defineExpose({ refresh })
     </div>
 
     <template v-else>
+      <div v-if="drafts.length" class="grid grid-cols-1 gap-2 sm:grid-cols-3" data-testid="free-draft-overview" :aria-label="t('history.freeDrafts.overviewLabel')">
+        <div v-for="stat in overviewStats" :key="stat.label" class="dark-explicit rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/60">
+          <p class="dark-explicit text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{{ stat.label }}</p>
+          <p class="dark-explicit mt-1 text-lg font-semibold tabular-nums text-slate-800 dark:text-slate-100">{{ stat.value }}</p>
+        </div>
+        <p v-if="responseTruncated" class="dark-explicit col-span-full text-[11px] text-slate-400">{{ t('history.freeDrafts.overviewCapped') }}</p>
+      </div>
+
       <div class="flex flex-col gap-3 md:flex-row md:items-center">
         <label class="relative min-w-0 flex-1">
           <span class="sr-only">{{ t('history.freeDrafts.searchLabel') }}</span>
@@ -279,6 +337,10 @@ defineExpose({ refresh })
         <AppIcon name="FileText" size="xl" variant="cyan" />
         <h3 class="dark-explicit mt-3 text-base font-semibold text-slate-700 dark:text-slate-200">{{ t('history.freeDrafts.emptyTitle') }}</h3>
         <p class="dark-explicit mx-auto mt-1 max-w-md text-sm text-slate-500 dark:text-slate-400">{{ t('history.freeDrafts.emptyDescription') }}</p>
+        <NeonButton variant="cyan" size="sm" class="mt-4 min-h-11" @click="newDraft">
+          <AppIcon name="Plus" size="sm" variant="cyan" />
+          <span>{{ t('history.freeDrafts.emptyAction') }}</span>
+        </NeonButton>
       </div>
 
       <div v-else-if="filteredDrafts.length === 0" class="dark-explicit rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-8 text-center dark:border-slate-700 dark:bg-slate-900/40" data-testid="free-drafts-filter-empty">
@@ -301,6 +363,9 @@ defineExpose({ refresh })
                 <span class="dark-explicit rounded-full border px-2 py-0.5 text-[10px] font-medium" :class="draft.published ? 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-500/30 dark:bg-teal-950/40 dark:text-teal-200' : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'">
                   {{ draft.published ? t('history.freeDrafts.published') : t('history.freeDrafts.unpublished') }}
                 </span>
+                <span v-if="publishFailed(draft)" class="dark-explicit rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 dark:border-rose-500/30 dark:bg-rose-950/40 dark:text-rose-200" data-testid="free-draft-publish-failure">
+                  {{ t('history.freeDrafts.publishFailed') }}
+                </span>
               </div>
               <p class="dark-explicit mt-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">{{ excerpt(draft) }}</p>
               <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
@@ -319,6 +384,10 @@ defineExpose({ refresh })
                 {{ t('history.freeDrafts.evaluationDegraded') }}
               </span>
               <span v-else class="dark-explicit mt-3 inline-flex rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('history.freeDrafts.evaluationUnavailable') }}</span>
+              <div v-if="publishFailed(draft)" class="dark-explicit mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-950/40 dark:text-rose-200">
+                <span class="font-semibold">{{ t('history.freeDrafts.publishFailedType', { reason: publishFailureReason(draft) }) }}</span>
+                <span>{{ t('history.freeDrafts.publishFailedHint') }}</span>
+              </div>
               <!-- Creative-memory anchors (task 08-26-free-anchor-display):
                    what the draft was built on; tooltip lists the ids. -->
               <span
@@ -354,7 +423,7 @@ defineExpose({ refresh })
             </div>
 
             <div class="flex shrink-0 items-center gap-2">
-              <NeonButton variant="cyan" size="sm" class="min-h-11" @click="continueDraft(draft.draft_id)">{{ t('history.freeDrafts.continue') }}</NeonButton>
+              <NeonButton variant="cyan" size="sm" class="min-h-11" @click="continueDraft(draft.draft_id)">{{ actionLabel(draft) }}</NeonButton>
               <button type="button" class="dark-explicit min-h-11 min-w-11 rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/30" :aria-label="t('history.freeDrafts.delete')" @click="requestDelete(draft)">
                 <AppIcon name="Trash2" size="sm" variant="pink" aria-hidden="true" />
               </button>

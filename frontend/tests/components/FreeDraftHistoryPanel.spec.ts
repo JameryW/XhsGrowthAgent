@@ -215,6 +215,61 @@ describe('FreeDraftHistoryPanel', () => {
     expect(badges[0].attributes('title')).toContain('m1')
   })
 
+  it('surfaces publish failures, contextual actions, and the account overview', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [
+        draft({
+          draft_id: 'failed',
+          title: '待修复发布',
+          last_publish: { status: 'failed', error_type: 'account_inactive', at: '2026-08-25T09:30:00Z' },
+        }),
+        draft({
+          draft_id: 'revision',
+          title: '待修订内容',
+          last_evaluation: { overall_score: 62, decision: 'needs_revision' },
+        }),
+        draft({ draft_id: 'published', title: '已发布内容', published: true }),
+        draft({ draft_id: 'plain', title: '普通草稿' }),
+      ],
+      count: 4,
+    })
+
+    const wrapper = await mountPanel()
+    const overviewText = wrapper.find('[data-testid="free-draft-overview"]').text()
+    expect(overviewText).toMatch(/Shown|显示篇数/)
+    expect(overviewText).toMatch(/Need attention|待处理篇数/)
+    expect(wrapper.findAll('[data-testid="free-draft-publish-failure"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('account_inactive')
+    expect(wrapper.text()).toMatch(/Open the draft to fix and retry|打开草稿修复后重试/)
+    expect(wrapper.text()).toMatch(/Fix & retry|修复并重试/)
+    expect(wrapper.text()).toMatch(/Review & revise|检查并修订/)
+    expect(wrapper.text()).toMatch(/Open draft|打开草稿/)
+    expect(wrapper.text()).toMatch(/Continue writing|继续写作/)
+
+    const failedFilter = wrapper.findAll('button').find(button => /Publish failed|发布失败/.test(button.text()))
+    expect(failedFilter).toBeTruthy()
+    await failedFilter!.trigger('click')
+    expect(wrapper.findAll('article')).toHaveLength(1)
+    expect(wrapper.find('article').text()).toContain('待修复发布')
+  })
+
+  it('starts a new free draft from the empty state', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({ account_id: 'acct-a', drafts: [], count: 0 })
+
+    const wrapper = await mountPanel()
+    expect(wrapper.find('[data-testid="free-drafts-empty"]').exists()).toBe(true)
+    const newDraftButton = wrapper.findAll('button').find(button => /New draft|新建草稿/.test(button.text()))
+    expect(newDraftButton).toBeTruthy()
+    await newDraftButton!.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'tui',
+      query: { mode: 'free', account_id: 'acct-a' },
+    })
+  })
+
   it('renders a retry state, opens Continue deep links, and guards deletion', async () => {
     const api = await import('@/api/free')
     let attempts = 0

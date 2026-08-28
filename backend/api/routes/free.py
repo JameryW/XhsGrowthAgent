@@ -141,6 +141,28 @@ def _now_iso() -> str:
 _PUBLISH_SUCCESS_STATUSES = frozenset({"published", "mock_published"})
 
 
+def _publish_summary(draft: dict[str, Any]) -> dict[str, Any] | None:
+    """Project the safe publish-attempt fields exposed by the list route.
+
+    Draft detail keeps the full persisted error for the account owner, but a
+    list response only needs enough metadata for status badges and filters.
+    In particular, never copy the raw publisher error into a summary payload.
+    """
+    raw = draft.get("last_publish")
+    if not isinstance(raw, dict):
+        return None
+    status = str(raw.get("status") or "").strip()
+    if not status:
+        return None
+    error_type = raw.get("error_type")
+    at = raw.get("at")
+    return {
+        "status": status,
+        "error_type": str(error_type) if error_type else None,
+        "at": str(at) if at else None,
+    }
+
+
 def _to_copy_content(draft: dict[str, Any]) -> dict[str, Any]:
     """Map a free draft to the copy_content shape EvaluatorAgent/publisher read."""
     return {
@@ -483,8 +505,9 @@ async def list_drafts(
 ) -> ApiResponse[Any]:
     """List free-mode drafts for an owned account (thread-less).
 
-    Returns a summary list (draft_id + title + hashtags) — no full body, to
-    keep payloads small. Uses BaseStore.asearch with an empty query (returns
+    Returns a summary list (draft_id + title + hashtags + safe publish
+    metadata) — no full body or raw publish error, to keep payloads small.
+    Uses BaseStore.asearch with an empty query (returns
     all items in the namespace). asearch is on BaseStore; alist is NOT (only
     on some concrete stores), so asearch is the correct portable call.
     Wrapped in try/except — degrades to empty list if the store lacks a
@@ -537,6 +560,7 @@ async def list_drafts(
                     "created_at": value.get("created_at"),
                     "updated_at": value.get("updated_at"),
                     "last_evaluation": last_eval,
+                    "last_publish": _publish_summary(value),
                     "published": value.get("published", False),
                     "last_analytics": value.get("last_analytics"),
                     # Server-computed views movement (None before 2 captures) —

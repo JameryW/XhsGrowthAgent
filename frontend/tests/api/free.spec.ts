@@ -138,4 +138,26 @@ describe('free draft API adapters', () => {
     expect(result.drafts[1].style_id).toBe('')
     expect(result.drafts[1].material_ids).toEqual([])
   })
+
+  it('surfaces safe publish-attempt metadata on draft summaries', async () => {
+    const publishSummary = {
+      status: 'failed',
+      error_type: 'account_inactive',
+      at: '2026-08-25T09:30:00Z',
+    }
+    const response = {
+      account_id: 'acct-a',
+      drafts: [
+        { draft_id: 'draft-1', title: '发布失败', hashtags: [], published: false, last_publish: publishSummary },
+        { draft_id: 'draft-2', title: 'legacy', hashtags: [], published: false, last_publish: null },
+      ],
+      count: 2,
+      truncated: false,
+    }
+    mockClient.get.mockResolvedValue(response)
+
+    const result = await listFreeDrafts('acct-a')
+    expect(result.drafts[0].last_publish).toEqual(publishSummary)
+    expect(result.drafts[1].last_publish).toBeNull()
+  })
 })
