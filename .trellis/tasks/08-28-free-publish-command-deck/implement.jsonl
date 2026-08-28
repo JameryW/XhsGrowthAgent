@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Defines the frontend component, styling, accessibility, and presentation conventions for extending AgentTUI's command grid."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Confirms that this discoverability-only UI change should not introduce new state or store mutations and documents the existing state boundaries."}

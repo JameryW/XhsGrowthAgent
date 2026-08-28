@@ -2533,7 +2533,7 @@ function renderFreeWelcome(accountFetchOk = false) {
   }
 }
 
-/** Free-mode command grid — Session / Drafts / Insights groups, two aligned
+/** Free-mode command grid — Session / Drafts / Insights / Publishing groups, two aligned
  *  columns per row. Replaces the old 9-line all-dim command dump. */
 function renderFreeCommandGrid() {
   const R = ANSI.RESET, D = ANSI.DIM, C = ANSI.BRIGHT_CYAN, Y = ANSI.BRIGHT_YELLOW
@@ -2552,6 +2552,10 @@ function renderFreeCommandGrid() {
       ['/analytics', t('tui.freeDescAnalytics')],
       ['/evaluate', t('tui.freeDescEvaluate')],
       ['/suggest', t('tui.freeDescSuggest')],
+    ] },
+    { label: t('tui.freeGroupPublishing'), cmds: [
+      ['/publish <id> [confirm]', t('tui.freeDescPublish')],
+      ['/copy <id>', t('tui.freeDescCopy')],
     ] },
   ]
   const groupW = Math.max(...groups.map((g) => getStringWidth(g.label)))
