@@ -266,6 +266,91 @@ describe('FreeDraftHistoryPanel', () => {
     expect(wrapper.find('article').text()).toContain('待修复发布')
   })
 
+  it('maps safe next-step actions while keeping ordinary draft links unchanged', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [
+        draft({
+          draft_id: 'approved',
+          title: '待发布',
+          last_evaluation: { overall_score: 91, decision: 'approved' },
+        }),
+        draft({
+          draft_id: 'failed',
+          title: '发布失败',
+          last_publish: { status: 'failed' },
+        }),
+        draft({
+          draft_id: 'real-post',
+          title: '真实帖子',
+          published: true,
+          post_id: 'note_123',
+        }),
+        draft({
+          draft_id: 'mock-post',
+          title: '模拟帖子',
+          published: true,
+          post_id: 'mock_dry_run',
+        }),
+        draft({
+          draft_id: 'snapshot-post',
+          title: '旧响应真实帖子',
+          published: true,
+          last_analytics: { post_id: 'note_from_snapshot' },
+        }),
+        draft({
+          draft_id: 'status-post',
+          title: '旧响应已发布',
+          published: true,
+          last_publish: { status: 'published' },
+        }),
+        draft({
+          draft_id: 'mock-status',
+          title: '旧响应模拟发布',
+          published: true,
+          last_publish: { status: 'mock_published' },
+        }),
+        draft({
+          draft_id: 'revision',
+          title: '待修订',
+          last_evaluation: { overall_score: 62, decision: 'needs_revision' },
+        }),
+        draft({ draft_id: 'plain', title: '普通草稿' }),
+      ],
+      count: 9,
+    })
+
+    const wrapper = await mountPanel()
+    const expectedActions = [
+      { draftId: 'approved', action: 'publish' },
+      { draftId: 'failed', action: 'publish' },
+      { draftId: 'real-post', action: 'analytics' },
+      { draftId: 'mock-post' },
+      { draftId: 'snapshot-post', action: 'analytics' },
+      { draftId: 'status-post', action: 'analytics' },
+      { draftId: 'mock-status' },
+      { draftId: 'revision' },
+      { draftId: 'plain' },
+    ]
+
+    for (const expected of expectedActions) {
+      routerPush.mockClear()
+      const article = wrapper.findAll('article').find(item => item.attributes('aria-labelledby') === `free-draft-${expected.draftId}`)
+      expect(article).toBeTruthy()
+      await article!.findAll('button')[0].trigger('click')
+      expect(routerPush).toHaveBeenCalledWith({
+        name: 'tui',
+        query: {
+          mode: 'free',
+          account_id: 'acct-a',
+          draft_id: expected.draftId,
+          ...(expected.action ? { action: expected.action } : {}),
+        },
+      })
+    }
+  })
+
   it('starts a new free draft from the empty state', async () => {
     const api = await import('@/api/free')
     vi.mocked(api.listFreeDrafts).mockResolvedValue({ account_id: 'acct-a', drafts: [], count: 0 })

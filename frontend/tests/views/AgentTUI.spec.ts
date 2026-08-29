@@ -142,6 +142,7 @@ describe('AgentTUI free creation interaction contract', () => {
     routeQuery.mode = 'free'
     delete routeQuery.account_id
     delete routeQuery.draft_id
+    delete routeQuery.action
     delete routeQuery.goal
     delete routeQuery.topic
     vi.mocked(listAccounts).mockResolvedValue([])
@@ -501,6 +502,70 @@ describe('AgentTUI free creation interaction contract', () => {
 
     expect(client.get).toHaveBeenCalledWith('/free/draft/d1?account_id=acct-1')
     expect(terminal.lines.join('\n')).toContain('深链打开的草稿')
+    wrapper.unmount()
+  })
+
+  it('opens a publish preview after a publish action deep link without posting', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    routeQuery.action = 'publish'
+    stubDraft({
+      title: '深链待发布',
+      last_evaluation: { overall_score: 88, decision: 'approved' },
+    })
+
+    const { wrapper, terminal } = await mountFreeTui()
+
+    expect(client.get).toHaveBeenCalledTimes(2)
+    expect(client.get).toHaveBeenNthCalledWith(1, '/free/draft/d1?account_id=acct-1')
+    expect(client.get).toHaveBeenNthCalledWith(2, '/free/draft/d1?account_id=acct-1')
+    expect(client.post).not.toHaveBeenCalled()
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('深链待发布')
+    expect(out).toContain('发布预览')
+    expect(out).toContain('/publish d1 confirm')
+    wrapper.unmount()
+  })
+
+  it('runs analytics after a real-post deep link while preserving the account', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    routeQuery.action = 'analytics'
+    vi.mocked(client.get)
+      .mockResolvedValueOnce({
+        draft_id: 'd1',
+        draft: { title: '深链真实帖子', published: true, post_id: 'post_9' },
+      } as never)
+      .mockResolvedValueOnce({
+        draft_id: 'd1',
+        post_id: 'post_9',
+        analytics: { views: 1200, likes: 88, collects: 21, engagement_rate: 5.2 },
+      } as never)
+
+    const { wrapper, terminal } = await mountFreeTui()
+
+    expect(client.get).toHaveBeenNthCalledWith(1, '/free/draft/d1?account_id=acct-1')
+    expect(client.get).toHaveBeenNthCalledWith(2, '/free/analytics/d1?account_id=acct-1')
+    expect(client.post).not.toHaveBeenCalled()
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('深链真实帖子')
+    expect(out).toContain('草稿数据分析')
+    expect(out).toContain('1200')
+    wrapper.unmount()
+  })
+
+  it('treats unknown and unsafe deep-link actions as ordinary draft links', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    routeQuery.action = 'delete'
+    stubDraft({ title: '未知动作草稿', published: true, post_id: 'mock_dry_run' })
+
+    const { wrapper, terminal } = await mountFreeTui()
+
+    expect(client.get).toHaveBeenCalledTimes(1)
+    expect(client.post).not.toHaveBeenCalled()
+    expect(terminal.lines.join('\n')).toContain('未知动作草稿')
+    expect(terminal.lines.join('\n')).toContain('模拟发布')
     wrapper.unmount()
   })
 
