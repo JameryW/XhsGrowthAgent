@@ -107,6 +107,32 @@ function actionLabel(draft: FreeDraftSummary) {
   return t('history.freeDrafts.continueWriting')
 }
 
+type FreeDraftHistoryAction = 'publish' | 'analytics'
+
+/**
+ * Keep the action query conservative: History may suggest a publish preview
+ * for unpublished drafts, but analytics is reserved for a real post. Older
+ * list responses may only expose the post id through the saved snapshot, so
+ * accept that equivalent identity as a compatibility fallback.
+ */
+function historyAction(draft: FreeDraftSummary): FreeDraftHistoryAction | null {
+  if (!draft.published) {
+    if (publishFailed(draft)) return 'publish'
+    if (hasUsableEvaluation(draft.last_evaluation) && draft.last_evaluation?.decision === 'approved') {
+      return 'publish'
+    }
+    return null
+  }
+
+  const postId = draft.post_id?.trim() || draft.last_analytics?.post_id?.trim() || ''
+  if (postId) return postId.startsWith('mock_') ? null : 'analytics'
+
+  // Older list summaries do not include post_id or last_analytics. A
+  // successful real publish is still distinguishable from a dry-run by the
+  // durable publish status; mock_published must never unlock analytics.
+  return draft.last_publish?.status?.trim() === 'published' ? 'analytics' : null
+}
+
 function formatDate(iso?: string | null) {
   if (!iso) return t('history.freeDrafts.unavailable')
   const date = new Date(iso)
@@ -215,14 +241,16 @@ async function refresh() {
   }
 }
 
-function continueDraft(draftId: string) {
+function continueDraft(draft: FreeDraftSummary) {
   if (!props.accountId) return
+  const action = historyAction(draft)
   void router.push({
     name: 'tui',
     query: {
       mode: 'free',
       account_id: props.accountId,
-      draft_id: draftId,
+      draft_id: draft.draft_id,
+      ...(action ? { action } : {}),
     },
   })
 }
@@ -438,7 +466,7 @@ defineExpose({ refresh })
             </div>
 
             <div class="flex shrink-0 items-center gap-2">
-              <NeonButton variant="cyan" size="sm" class="min-h-11" @click="continueDraft(draft.draft_id)">{{ actionLabel(draft) }}</NeonButton>
+              <NeonButton variant="cyan" size="sm" class="min-h-11" @click="continueDraft(draft)">{{ actionLabel(draft) }}</NeonButton>
               <button type="button" class="dark-explicit min-h-11 min-w-11 rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/30" :aria-label="t('history.freeDrafts.delete')" @click="requestDelete(draft)">
                 <AppIcon name="Trash2" size="sm" variant="pink" aria-hidden="true" />
               </button>

@@ -70,6 +70,14 @@ const freeRouteAccountId = computed(() => (
 const freeRouteDraftId = computed(() => (
   typeof route.query.draft_id === 'string' ? route.query.draft_id.trim() : ''
 ))
+type FreeDraftDeepLinkAction = 'publish' | 'analytics'
+const FREE_DRAFT_DEEP_LINK_ACTIONS = new Set<FreeDraftDeepLinkAction>(['publish', 'analytics'])
+const freeRouteAction = computed<FreeDraftDeepLinkAction | null>(() => {
+  const raw = typeof route.query.action === 'string' ? route.query.action.trim() : ''
+  return FREE_DRAFT_DEEP_LINK_ACTIONS.has(raw as FreeDraftDeepLinkAction)
+    ? raw as FreeDraftDeepLinkAction
+    : null
+})
 const resolvedFreeAccountId = computed(() => {
   if (!isFreeCreationEntry.value) return accountsStore.activeAccountId
   const requested = freeRouteAccountId.value
@@ -1296,7 +1304,7 @@ async function processCommand(text: string, opts: { echo?: boolean } = {}) {
   }
 
   if (mode.value === 'agent') {
-    await processAgentCommand(trimmed)
+    return processAgentCommand(trimmed)
   } else {
     await processCommandMode(trimmed)
   }
@@ -1369,9 +1377,9 @@ async function processAgentCommand(text: string) {
       case '/draft': {
         const parts = text.split(/\s+/)
         const draftId = parts.slice(1).join(' ').trim()
-        await handleDraft(draftId)
+        const loaded = await handleDraft(draftId)
         isProcessing.value = false; writePrompt()
-        break
+        return loaded
       }
       case '/delete': {
         const parts = text.split(/\s+/)
@@ -1773,21 +1781,30 @@ interface FreeDraftRecord {
   material_ids?: string[]
 }
 
-async function handleDraft(draftId: string) {
+let lastDraftDetail: FreeDraftRecord | null = null
+
+function hasRealPost(draft: FreeDraftRecord | null): boolean {
+  const postId = draft?.post_id?.trim() || ''
+  return Boolean(draft?.published && postId && !postId.startsWith('mock_'))
+}
+
+async function handleDraft(draftId: string): Promise<boolean> {
+  lastDraftDetail = null
   if (!isFreeCreationEntry.value) {
     writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
-    return
+    return false
   }
   if (!draftId) {
     writeLineColored(t('tui.draftDetailMissing'), ANSI.RED)
-    return
+    return false
   }
-  if (!requireFreeAccount()) return
+  if (!requireFreeAccount()) return false
   const accountId = await getCurrentAccountId()
   try {
     const resp = await client.get(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
     const data = resp as unknown as { draft_id: string; draft: FreeDraftRecord }
     const draft = data.draft || {}
+    lastDraftDetail = draft
     const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM
     const Y = ANSI.BRIGHT_YELLOW, R = ANSI.RESET
     const w = cardWidth(termCols)
@@ -1954,8 +1971,10 @@ async function handleDraft(draftId: string) {
     }
     writeLine(boxBottom(w))
     writeLine('')
+    return true
   } catch (err: any) {
     writeError(writeLine, err.message || t('tui.draftDetailFetchFailed'))
+    return false
   }
 }
 
@@ -2804,7 +2823,16 @@ onMounted(async () => {
     // History's Continue action carries the account and draft id into the
     // existing free workspace. Reuse the canonical detail command so the
     // terminal renders exactly the same complete draft view as /draft <id>.
-    await processCommand(`/draft ${freeRouteDraftId.value}`, { echo: true })
+    const draftId = freeRouteDraftId.value
+    const detailLoaded = await processCommand(`/draft ${draftId}`, { echo: true })
+    const action = freeRouteAction.value
+    // Action values are whitelisted above. Analytics gets one more local
+    // guard from the rendered detail so a forged link cannot ask for data on
+    // a mock/dry-run post or an unpublished draft. Publish remains preview-
+    // only because the follow-up command intentionally omits `confirm`.
+    if (detailLoaded && action && (action !== 'analytics' || hasRealPost(lastDraftDetail))) {
+      await processCommand(`/${action} ${draftId}`, { echo: true })
+    }
   } else if (isFreeCreationEntry.value && freeCreationGoal.value) {
     prefillFreePrompt(freeCreationGoal.value)
   }

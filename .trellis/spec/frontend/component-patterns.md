@@ -378,6 +378,14 @@ Keep frontend types in sync with backend `substates.py`.
   the card is expanded. Creation forms should keep advanced options collapsed
   by default and expose the current account context near the action surface.
 
+Free Creation History deep links preserve `mode=free`, the selected
+`account_id`, and `draft_id`. A primary action may add only the whitelisted
+`action=publish` or `action=analytics` query value: publish actions must open
+the existing `/publish <id>` preview without `confirm`, while analytics actions
+are reserved for `published` drafts with a real `post_id` (never `mock_*`).
+AgentTUI renders the draft detail first, then runs the safe follow-up command;
+missing or unknown actions keep the ordinary draft-detail behavior.
+
 ---
 
 ## AgentTUI tool_result Display
