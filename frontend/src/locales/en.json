@@ -2311,6 +2311,7 @@
     "freeNoAccountHint": "Free creation needs a bound Xiaohongshu account — open \"Account\" on the left to add and log in, then come back to create.",
     "freeNoAccountBanner": "No Xiaohongshu account is bound: if you type a creation goal now, the draft the agent generates can't be managed via /drafts. Add and log in to an account in \"Account\" on the left first.",
     "accountContext": "Account: {account}",
+    "returnToDraftReview": "Back to draft review",
     "quickActions": "Quick actions",
     "quickNewSession": "New session",
     "quickSuggest": "Get suggestions",

@@ -1,21 +1,39 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useRoute } from 'vue-router'
 import FreeDraftDetailDrawer from '@/components/history/FreeDraftDetailDrawer.vue'
 import FreeDraftHistoryPanel from '@/components/history/FreeDraftHistoryPanel.vue'
 import type { FreeDraftDetailResponse, FreeDraftRecord, FreeDraftSummary } from '@/api/free'
+import {
+  buildFreeDraftHistoryLocation,
+  parseFreeDraftHistoryContext,
+  parseFreeDraftTuiSourceContext,
+  type FreeDraftReviewFilter,
+} from '@/utils/freeDraftReviewContext'
 
-const routerPush = vi.fn()
-
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: routerPush }),
+const { routeQuery, routerPush, routerReplace } = vi.hoisted(() => ({
+  routeQuery: {} as Record<string, unknown>,
+  routerPush: vi.fn(),
+  routerReplace: vi.fn(),
 }))
+
+vi.mock('vue-router', async () => {
+  const { reactive } = await import('vue')
+  const route = reactive({ query: routeQuery })
+  return {
+    useRoute: () => route,
+    useRouter: () => ({ push: routerPush, replace: routerReplace }),
+  }
+})
 
 vi.mock('@/api/free', () => ({
   listFreeDrafts: vi.fn(),
   getFreeDraft: vi.fn(),
   deleteFreeDraft: vi.fn(),
 }))
+
+enableAutoUnmount(afterEach)
 
 const draft = (overrides: Partial<FreeDraftSummary> = {}): FreeDraftSummary => ({
   draft_id: 'draft-1',
@@ -51,10 +69,49 @@ async function mountPanel(accountId: string | null = 'acct-a') {
   return wrapper
 }
 
+function setRouteQuery(query: Record<string, unknown>) {
+  ;(useRoute() as unknown as { query: Record<string, unknown> }).query = { ...query }
+}
+
+function expectLastTuiNavigation(options: {
+  draftId?: string
+  action?: 'publish' | 'analytics'
+  status?: FreeDraftReviewFilter
+  search?: string
+}) {
+  const location = routerPush.mock.calls.at(-1)?.[0]
+  expect(location).toEqual(expect.objectContaining({
+    name: 'tui',
+    query: expect.objectContaining({
+      mode: 'free',
+      account_id: 'acct-a',
+      ...(options.draftId ? { draft_id: options.draftId } : {}),
+      ...(options.action ? { action: options.action } : {}),
+    }),
+  }))
+  if (!options.draftId) expect(location.query).not.toHaveProperty('draft_id')
+  if (!options.action) expect(location.query).not.toHaveProperty('action')
+  expect(parseFreeDraftTuiSourceContext(location.query)).toEqual({
+    accountId: 'acct-a',
+    status: options.status ?? 'all',
+    search: options.search ?? '',
+    draftId: options.draftId ?? null,
+  })
+}
+
 describe('FreeDraftHistoryPanel', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   beforeEach(async () => {
     setActivePinia(createPinia())
+    setRouteQuery({})
     routerPush.mockReset()
+    routerReplace.mockReset()
+    routerReplace.mockImplementation(async (location: { query?: Record<string, unknown> }) => {
+      if (location.query) setRouteQuery(location.query)
+    })
     const api = await import('@/api/free')
     vi.mocked(api.listFreeDrafts).mockReset()
     vi.mocked(api.getFreeDraft).mockReset()
@@ -93,6 +150,162 @@ describe('FreeDraftHistoryPanel', () => {
     await wrapper.findAll('button').find(button => button.text().includes('Published'))?.trigger('click')
     expect(wrapper.findAll('article')).toHaveLength(1)
     expect(api.listFreeDrafts).toHaveBeenCalledWith('acct-a', { status: 'all' }, expect.anything())
+  })
+
+  it('restores normalized filters and a matching pending preview after the scoped list loads', async () => {
+    const api = await import('@/api/free')
+    const target = draft({ draft_id: 'saved-draft', title: '目标草稿', published: true })
+    setRouteQuery(buildFreeDraftHistoryLocation({
+      accountId: 'acct-a',
+      status: 'published',
+      search: '目标',
+      draftId: target.draft_id,
+    }, 'acct-a')!.query)
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [draft({ draft_id: 'other', title: '其他草稿' }), target],
+      count: 2,
+    })
+    vi.mocked(api.getFreeDraft).mockResolvedValue({
+      draft_id: target.draft_id,
+      draft: { ...target, account_id: 'acct-a', body: '恢复后的完整正文' },
+    })
+
+    const wrapper = await mountPanel()
+
+    expect((wrapper.find('input[type="search"]').element as HTMLInputElement).value).toBe('目标')
+    expect(wrapper.findAll('article')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="free-draft-detail-content"]').text()).toContain('恢复后的完整正文')
+    expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
+    expect(api.deleteFreeDraft).not.toHaveBeenCalled()
+    expect(routerPush).not.toHaveBeenCalled()
+  })
+
+  it('debounces search mirroring and carries current refs into New Draft and next-step links', async () => {
+    const api = await import('@/api/free')
+    const target = draft({ draft_id: 'published-draft', title: 'Beta target', published: true })
+    setRouteQuery({
+      ...buildFreeDraftHistoryLocation({
+        accountId: 'acct-a', status: 'all', search: '', draftId: null,
+      }, 'acct-a')!.query,
+      status: 'completed',
+    })
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [draft({ draft_id: 'alpha', title: 'Alpha draft' }), target],
+      count: 2,
+    })
+    vi.mocked(api.getFreeDraft).mockResolvedValue({
+      draft_id: target.draft_id,
+      draft: { ...target, account_id: 'acct-a', body: 'Beta body' },
+    })
+    const wrapper = await mountPanel()
+    routerReplace.mockClear()
+    vi.useFakeTimers()
+
+    await wrapper.find('input[type="search"]').setValue('Beta')
+    expect(routerReplace).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(170)
+    await Promise.resolve()
+    expect(parseFreeDraftHistoryContext(routerReplace.mock.calls.at(-1)?.[0].query)).toMatchObject({
+      search: 'Beta',
+      status: 'all',
+      draftId: null,
+    })
+    expect(routerReplace.mock.calls.at(-1)?.[0].query.status).toBe('completed')
+    vi.useRealTimers()
+
+    const publishedFilter = wrapper.findAll('button').find(button => /Published|已发布/.test(button.text()))
+    await publishedFilter!.trigger('click')
+    await flushPromises()
+    expect(parseFreeDraftHistoryContext(routerReplace.mock.calls.at(-1)?.[0].query)?.status).toBe('published')
+
+    const newDraftButton = wrapper.findAll('button').find(button => /New draft|新建草稿/.test(button.text()))
+    await newDraftButton!.trigger('click')
+    expectLastTuiNavigation({ status: 'published', search: 'Beta' })
+    routerPush.mockClear()
+
+    const previewButton = wrapper.find('article').findAll('button').find(button => /Preview|预览/.test(button.text()))
+    await previewButton!.trigger('click')
+    await flushPromises()
+    expect(parseFreeDraftHistoryContext(routerReplace.mock.calls.at(-1)?.[0].query)?.draftId).toBe(target.draft_id)
+
+    const footerButtons = wrapper.findAll('[data-testid="free-draft-detail-drawer"] footer button')
+    await footerButtons[footerButtons.length - 1].trigger('click')
+    await flushPromises()
+    expectLastTuiNavigation({ draftId: target.draft_id, status: 'published', search: 'Beta' })
+    expect(api.deleteFreeDraft).not.toHaveBeenCalled()
+  })
+
+  it('clears a missing or filtered-out pending target without reading or writing it', async () => {
+    const api = await import('@/api/free')
+    const unpublished = draft({ draft_id: 'unpublished-target', title: 'Unpublished target' })
+    setRouteQuery(buildFreeDraftHistoryLocation({
+      accountId: 'acct-a',
+      status: 'published',
+      search: '',
+      draftId: unpublished.draft_id,
+    }, 'acct-a')!.query)
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [unpublished, draft({ draft_id: 'published-row', title: 'Published row', published: true })],
+      count: 2,
+    })
+
+    const wrapper = await mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(false)
+    expect(parseFreeDraftHistoryContext((useRoute() as unknown as { query: Record<string, unknown> }).query)?.draftId).toBeNull()
+    expect(api.getFreeDraft).not.toHaveBeenCalled()
+
+    setRouteQuery(buildFreeDraftHistoryLocation({
+      accountId: 'acct-a',
+      status: 'all',
+      search: '',
+      draftId: 'missing-target',
+    }, 'acct-a')!.query)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(false)
+    expect(parseFreeDraftHistoryContext((useRoute() as unknown as { query: Record<string, unknown> }).query)?.draftId).toBeNull()
+    expect(api.getFreeDraft).not.toHaveBeenCalled()
+    expect(api.deleteFreeDraft).not.toHaveBeenCalled()
+    expect(routerPush).not.toHaveBeenCalled()
+  })
+
+  it('re-applies external route context without reloading or issuing writes', async () => {
+    const api = await import('@/api/free')
+    const alpha = draft({ draft_id: 'alpha', title: 'Alpha draft' })
+    const beta = draft({ draft_id: 'beta', title: 'Beta draft', published: true })
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [alpha, beta],
+      count: 2,
+    })
+    vi.mocked(api.getFreeDraft).mockResolvedValue({
+      draft_id: beta.draft_id,
+      draft: { ...beta, account_id: 'acct-a', body: 'External route body' },
+    })
+    const wrapper = await mountPanel()
+
+    setRouteQuery(buildFreeDraftHistoryLocation({
+      accountId: 'acct-a',
+      status: 'published',
+      search: 'Beta',
+      draftId: beta.draft_id,
+    }, 'acct-a')!.query)
+    await flushPromises()
+    expect((wrapper.find('input[type="search"]').element as HTMLInputElement).value).toBe('Beta')
+    expect(wrapper.find('[data-testid="free-draft-detail-content"]').text()).toContain('External route body')
+
+    setRouteQuery({ tab: 'free-drafts', account: 'acct-a' })
+    await flushPromises()
+    expect((wrapper.find('input[type="search"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.findAll('article')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(false)
+    expect(api.listFreeDrafts).toHaveBeenCalledTimes(1)
+    expect(api.deleteFreeDraft).not.toHaveBeenCalled()
+    expect(routerPush).not.toHaveBeenCalled()
   })
 
   it('does not present degraded evaluation scores or decisions as valid', async () => {
@@ -333,7 +546,7 @@ describe('FreeDraftHistoryPanel', () => {
     }))
 
     const wrapper = await mountPanel()
-    const expectedActions = [
+    const expectedActions: Array<{ draftId: string; action?: 'publish' | 'analytics' }> = [
       { draftId: 'approved', action: 'publish' },
       { draftId: 'failed', action: 'publish' },
       { draftId: 'real-post', action: 'analytics' },
@@ -351,15 +564,7 @@ describe('FreeDraftHistoryPanel', () => {
       expect(article).toBeTruthy()
       await article!.findAll('button')[0].trigger('click')
       await flushPromises()
-      expect(routerPush).toHaveBeenCalledWith({
-        name: 'tui',
-        query: {
-          mode: 'free',
-          account_id: 'acct-a',
-          draft_id: expected.draftId,
-          ...(expected.action ? { action: expected.action } : {}),
-        },
-      })
+      expectLastTuiNavigation(expected)
     }
     expect(api.getFreeDraft).toHaveBeenCalledWith('acct-a', 'real-post', { suppressToast: true })
     expect(api.getFreeDraft).toHaveBeenCalledWith('acct-a', 'mock-post', { suppressToast: true })
@@ -410,15 +615,7 @@ describe('FreeDraftHistoryPanel', () => {
     await footerButtons[footerButtons.length - 1].trigger('click')
     await flushPromises()
     expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
-    expect(routerPush).toHaveBeenCalledWith({
-      name: 'tui',
-      query: {
-        mode: 'free',
-        account_id: 'acct-a',
-        draft_id: 'real-post',
-        action: 'analytics',
-      },
-    })
+    expectLastTuiNavigation({ draftId: 'real-post', action: 'analytics', search: '真实' })
   })
 
   it('reviews only the filtered queue, drops stale detail, and continues the current draft safely', async () => {
@@ -495,15 +692,7 @@ describe('FreeDraftHistoryPanel', () => {
     await flushPromises()
     expect(api.getFreeDraft).toHaveBeenCalledTimes(4)
     expect(api.deleteFreeDraft).not.toHaveBeenCalled()
-    expect(routerPush).toHaveBeenCalledWith({
-      name: 'tui',
-      query: {
-        mode: 'free',
-        account_id: 'acct-a',
-        draft_id: 'match-b',
-        action: 'analytics',
-      },
-    })
+    expectLastTuiNavigation({ draftId: 'match-b', action: 'analytics', search: '匹配' })
   })
 
   it('closes the queue when a filter removes the current draft', async () => {
@@ -569,13 +758,10 @@ describe('FreeDraftHistoryPanel', () => {
   it('closes and aborts the open detail when the account changes', async () => {
     const api = await import('@/api/free')
     const draftA = draft({ draft_id: 'account-a-draft', title: 'Account A draft' })
+    let resolveAccountB!: (value: Awaited<ReturnType<typeof api.listFreeDrafts>>) => void
     vi.mocked(api.listFreeDrafts)
       .mockResolvedValueOnce({ account_id: 'acct-a', drafts: [draftA], count: 1 })
-      .mockResolvedValueOnce({
-        account_id: 'acct-b',
-        drafts: [draft({ draft_id: 'account-b-draft', title: 'Account B draft' })],
-        count: 1,
-      })
+      .mockReturnValueOnce(new Promise(resolve => { resolveAccountB = resolve }))
     vi.mocked(api.getFreeDraft).mockReturnValue(new Promise(() => {}))
 
     const wrapper = await mountPanel('acct-a')
@@ -585,10 +771,25 @@ describe('FreeDraftHistoryPanel', () => {
     const signal = vi.mocked(api.getFreeDraft).mock.calls[0][2]?.signal
 
     await wrapper.setProps({ accountId: 'acct-b' })
+    expect(wrapper.findAll('article')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('Account A draft')
     await flushPromises()
     expect(signal?.aborted).toBe(true)
     expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(false)
+
+    resolveAccountB({
+      account_id: 'acct-b',
+      drafts: [draft({ draft_id: 'account-b-draft', title: 'Account B draft' })],
+      count: 1,
+    })
+    await flushPromises()
     expect(wrapper.text()).toContain('Account B draft')
+    expect(parseFreeDraftHistoryContext((useRoute() as unknown as { query: Record<string, unknown> }).query)).toEqual({
+      accountId: 'acct-b',
+      status: 'all',
+      search: '',
+      draftId: null,
+    })
     expect(routerPush).not.toHaveBeenCalled()
     expect(api.deleteFreeDraft).not.toHaveBeenCalled()
   })
@@ -626,15 +827,7 @@ describe('FreeDraftHistoryPanel', () => {
     await flushPromises()
 
     expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
-    expect(routerPush).toHaveBeenCalledWith({
-      name: 'tui',
-      query: {
-        mode: 'free',
-        account_id: 'acct-a',
-        draft_id: 'approved-preview',
-        action: 'publish',
-      },
-    })
+    expectLastTuiNavigation({ draftId: 'approved-preview', action: 'publish' })
   })
 
   it('trusts the loaded current post id over a stale analytics snapshot', async () => {
@@ -663,14 +856,7 @@ describe('FreeDraftHistoryPanel', () => {
     await flushPromises()
 
     expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
-    expect(routerPush).toHaveBeenCalledWith({
-      name: 'tui',
-      query: {
-        mode: 'free',
-        account_id: 'acct-a',
-        draft_id: 'mock-current',
-      },
-    })
+    expectLastTuiNavigation({ draftId: 'mock-current' })
   })
 
   it('starts a new free draft from the empty state', async () => {
@@ -682,10 +868,7 @@ describe('FreeDraftHistoryPanel', () => {
     const newDraftButton = wrapper.findAll('button').find(button => /New draft|新建草稿/.test(button.text()))
     expect(newDraftButton).toBeTruthy()
     await newDraftButton!.trigger('click')
-    expect(routerPush).toHaveBeenCalledWith({
-      name: 'tui',
-      query: { mode: 'free', account_id: 'acct-a' },
-    })
+    expectLastTuiNavigation({})
   })
 
   it('renders a retry state, opens Continue deep links, and guards deletion', async () => {
@@ -707,10 +890,7 @@ describe('FreeDraftHistoryPanel', () => {
     const continueButton = wrapper.find('article button')
     expect(continueButton.text()).not.toBe('')
     await continueButton.trigger('click')
-    expect(routerPush).toHaveBeenCalledWith({
-      name: 'tui',
-      query: { mode: 'free', account_id: 'acct-a', draft_id: 'draft-1' },
-    })
+    expectLastTuiNavigation({ draftId: 'draft-1' })
 
     const deleteButton = wrapper.find('article button[aria-label]')
     await deleteButton.trigger('click')

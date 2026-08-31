@@ -194,7 +194,10 @@ resolved local account ID from the parent, emits aggregate counts when the
 server response changes, and follows this lifecycle:
 
 - no account means no API request and a localized account-selection state;
-- account changes reset local filters and increment a request generation;
+- account changes synchronously clear old rows, emitted counts, preview/delete
+  targets, and response metadata before resetting/restoring local filters and
+  incrementing a request generation; old rows must not remain actionable under
+  the new account prop while its request is pending;
 - in-flight requests are aborted when possible, and a response commits only
   when its generation and account still match;
 - page-level errors use `suppressToast` and retain a retry action;

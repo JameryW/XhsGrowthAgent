@@ -13,7 +13,7 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -35,6 +35,10 @@ import { submitReview } from '@/api/review'
 import client from '@/api/client'
 import { markdownToAnsi, ANSI } from '@/utils/markdownToAnsi'
 import {
+  buildFreeDraftHistoryLocation,
+  parseFreeDraftTuiSourceContext,
+} from '@/utils/freeDraftReviewContext'
+import {
   getStringWidth,
   padEndDisplay,
   truncateDisplay,
@@ -52,6 +56,7 @@ import {
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const workflowStore = useWorkflowStore()
 const accountsStore = useAccountsStore()
 
@@ -84,6 +89,35 @@ const resolvedFreeAccountId = computed(() => {
   const isOwned = requested && accountsStore.accounts.some((account) => account.id === requested)
   return isOwned ? requested : accountsStore.activeAccountId
 })
+const freeDraftReviewSource = computed(() => (
+  isFreeCreationEntry.value ? parseFreeDraftTuiSourceContext(route.query) : null
+))
+const resolvedOwnedReviewAccountId = computed(() => {
+  const accountId = resolvedFreeAccountId.value
+  return accountId && accountsStore.accounts.some(account => account.id === accountId)
+    ? accountId
+    : null
+})
+const freeDraftReviewReturnLocation = computed(() => {
+  const context = freeDraftReviewSource.value
+  const accountId = resolvedOwnedReviewAccountId.value
+  const draftId = freeRouteDraftId.value || null
+  // A generated History deep link carries the same account in both the TUI
+  // operation and its review source, and carries either the same draft or no
+  // draft on both sides for New Draft. Reject mismatches instead of aliasing
+  // a source identity onto different operational route state.
+  return context
+    && accountId
+    && context.accountId === accountId
+    && context.draftId === draftId
+    ? buildFreeDraftHistoryLocation(context, accountId)
+    : null
+})
+
+function returnToFreeDraftReview() {
+  const location = freeDraftReviewReturnLocation.value
+  if (location) void router.push(location)
+}
 
 /** Resolve the selected XHS account, not the console user's UUID. */
 async function getCurrentAccountId(): Promise<string> {
@@ -2893,6 +2927,13 @@ onUnmounted(() => {
     <div v-if="isFreeCreationEntry" class="tui-action-deck shrink-0">
       <div class="tui-quick-actions flex flex-wrap items-center gap-2 px-3 py-2">
         <span class="tui-account-context">{{ t('tui.accountContext', { account: accountContextLabel }) }}</span>
+        <button
+          v-if="freeDraftReviewReturnLocation"
+          type="button"
+          class="tui-quick-btn tui-return-review-btn"
+          data-testid="tui-return-free-draft-review"
+          @click.stop="returnToFreeDraftReview"
+        >{{ t('tui.returnToDraftReview') }}</button>
         <span class="tui-quick-label">{{ t('tui.quickActions') }}</span>
         <button v-if="agentTurnProcessing" class="tui-quick-btn tui-quick-btn-stop" @click.stop="requestAgentAbort()">{{ t('tui.quickStop') }}</button>
         <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/start')">{{ t('tui.quickNewSession') }}</button>
@@ -3158,7 +3199,12 @@ onUnmounted(() => {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px #7aa2f730;
 }
+.tui-quick-btn:focus-visible {
+  outline: 2px solid #7dcfff;
+  outline-offset: 2px;
+}
 .tui-quick-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.tui-return-review-btn { color: #7dcfff; border-color: #7dcfff80; }
 .tui-quick-btn-retry { color: #e0af68; border-color: #e0af6860; }
 .tui-quick-btn-stop { color: #f7768e; border-color: #f7768e80; }
 .tui-quick-btn-stop:hover:not(:disabled) { color: #ff9eaf; border-color: #f7768e; }
