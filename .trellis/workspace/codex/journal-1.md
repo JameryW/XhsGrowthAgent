@@ -437,3 +437,37 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 实现自由草稿连续审阅队列
+
+**Date**: 2026-08-31
+**Task**: 实现自由草稿连续审阅队列
+**Branch**: `codex/free-draft-preview-review-queue`
+
+### Summary
+
+在自由草稿预览抽屉内新增当前过滤队列的位置、上一条/下一条和 Alt+方向键导航；按 draft_id 实时派生位置，支持刷新重排、目标移除、账号切换与迟到详情防护；不循环、不预取、不写数据。75 项聚焦测试、类型检查、i18n 和生产构建通过，任务已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3b152b36` | (see git log) |
+| `afa46e6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
