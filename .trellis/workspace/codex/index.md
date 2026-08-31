@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
+- **Total Sessions**: 13
 - **Last Active**: 2026-08-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~405 | Active |
+| `journal-1.md` | ~439 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-08-31 | 实现自由草稿快速预览抽屉 | `91a17386`, `03b8fe3d` | `codex/free-draft-preview-drawer` |
 | 12 | 2026-08-31 | 完成自由草稿下一步深链 | `05c47b39`, `a6d0a43d`, `0b7b23ea` | `codex/free-creation-next-step-actions` |
 | 11 | 2026-08-27 | Display creative memory anchors on drafts | `30521fda` | `codex/free-anchor-display` |
 | 10 | 2026-08-26 | Material vault anchors activate calibration | `c0f4ff54` | `main` |

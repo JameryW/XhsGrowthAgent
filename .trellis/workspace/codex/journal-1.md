@@ -403,3 +403,37 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 实现自由草稿快速预览抽屉
+
+**Date**: 2026-08-31
+**Task**: 实现自由草稿快速预览抽屉
+**Branch**: `codex/free-draft-preview-drawer`
+
+### Summary
+
+新增账号隔离、只读、响应式的自由草稿详情抽屉；展示正文、创作上下文、评估、锚点、发布与表现数据；复用完整详情生成安全 TUI 下一步；补齐迟到响应、焦点恢复与真实帖子身份测试。68 项聚焦测试、类型检查、i18n 和生产构建通过，任务已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `91a17386` | (see git log) |
+| `03b8fe3d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
