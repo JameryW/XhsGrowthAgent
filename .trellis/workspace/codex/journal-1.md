@@ -368,3 +368,106 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 完成自由草稿下一步深链
+
+**Date**: 2026-08-31
+**Task**: 完成自由草稿下一步深链
+**Branch**: `codex/free-creation-next-step-actions`
+
+### Summary
+
+完成自由草稿 History 到 TUI 的发布预览与表现采集深链；修正摘要缺少 post_id 时的真实帖子身份校验；聚焦测试、类型检查、i18n 与生产构建通过；任务已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `05c47b39` | (see git log) |
+| `a6d0a43d` | (see git log) |
+| `0b7b23ea` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 13: 实现自由草稿快速预览抽屉
+
+**Date**: 2026-08-31
+**Task**: 实现自由草稿快速预览抽屉
+**Branch**: `codex/free-draft-preview-drawer`
+
+### Summary
+
+新增账号隔离、只读、响应式的自由草稿详情抽屉；展示正文、创作上下文、评估、锚点、发布与表现数据；复用完整详情生成安全 TUI 下一步；补齐迟到响应、焦点恢复与真实帖子身份测试。68 项聚焦测试、类型检查、i18n 和生产构建通过，任务已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `91a17386` | (see git log) |
+| `03b8fe3d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 14: 实现自由草稿连续审阅队列
+
+**Date**: 2026-08-31
+**Task**: 实现自由草稿连续审阅队列
+**Branch**: `codex/free-draft-preview-review-queue`
+
+### Summary
+
+在自由草稿预览抽屉内新增当前过滤队列的位置、上一条/下一条和 Alt+方向键导航；按 draft_id 实时派生位置，支持刷新重排、目标移除、账号切换与迟到详情防护；不循环、不预取、不写数据。75 项聚焦测试、类型检查、i18n 和生产构建通过，任务已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3b152b36` | (see git log) |
+| `afa46e6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

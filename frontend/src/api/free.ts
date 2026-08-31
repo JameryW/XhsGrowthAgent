@@ -61,8 +61,6 @@ export interface FreeDraftSummary {
   /** Safe publish-attempt metadata returned by the list endpoint. */
   last_publish?: FreeDraftPublishSummary | null
   published?: boolean | null
-  /** Real or mock post id when the list payload exposes publish identity. */
-  post_id?: string
   last_analytics?: FreeDraftAnalytics | null
   /** Server-computed views movement between the last two captures (task
    *  08-26-free-snapshot-trend); null before two snapshots exist. */
@@ -93,6 +91,9 @@ export interface FreeDraftRecord extends FreeDraftSummary {
   last_publish?: FreeDraftPublishAttempt | null
   post_id?: string
   post_url?: string
+  /** Persisted capture series returned by the full-record endpoint. The list
+   *  endpoint exposes only the server-computed `engagement_trend` summary. */
+  analytics_snapshots?: FreeDraftAnalytics[]
 }
 
 export interface FreeDraftDetailResponse {

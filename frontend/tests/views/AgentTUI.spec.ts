@@ -554,6 +554,24 @@ describe('AgentTUI free creation interaction contract', () => {
     wrapper.unmount()
   })
 
+  it('does not run analytics when a valid analytics action targets a mock post', async () => {
+    stubOwnedAccount()
+    routeQuery.draft_id = 'd1'
+    routeQuery.action = 'analytics'
+    stubDraft({ title: '模拟发布草稿', published: true, post_id: 'mock_dry_run' })
+
+    const { wrapper, terminal } = await mountFreeTui()
+
+    expect(client.get).toHaveBeenCalledTimes(1)
+    expect(client.get).toHaveBeenCalledWith('/free/draft/d1?account_id=acct-1')
+    expect(client.post).not.toHaveBeenCalled()
+    const out = terminal.lines.join('\n')
+    expect(out).toContain('模拟发布草稿')
+    expect(out).toContain('模拟发布')
+    expect(out).not.toContain('/analytics d1')
+    wrapper.unmount()
+  })
+
   it('treats unknown and unsafe deep-link actions as ordinary draft links', async () => {
     stubOwnedAccount()
     routeQuery.draft_id = 'd1'

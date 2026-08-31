@@ -4,9 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import FreeDraftDetailDrawer from '@/components/history/FreeDraftDetailDrawer.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import StatusFilterBar from '@/components/StatusFilterBar.vue'
-import { deleteFreeDraft, listFreeDrafts, type FreeDraftStatus, type FreeDraftSummary } from '@/api/free'
+import { deleteFreeDraft, getFreeDraft, listFreeDrafts, type FreeDraftRecord, type FreeDraftStatus, type FreeDraftSummary } from '@/api/free'
 import { useToastStore } from '@/stores'
 
 const props = defineProps<{
@@ -30,6 +31,7 @@ type HistoryFilter = FreeDraftStatus | 'needs_attention'
 const statusFilter = ref<HistoryFilter>('all')
 const deleteTarget = ref<FreeDraftSummary | null>(null)
 const isDeleting = ref(false)
+const previewTarget = ref<FreeDraftSummary | null>(null)
 
 let requestGeneration = 0
 let listAbort: AbortController | null = null
@@ -60,6 +62,24 @@ const filteredDrafts = computed(() => {
     return !query || draft.title.toLocaleLowerCase(locale.value || 'en').includes(query)
   })
 })
+
+// The visible, filtered rows are the review queue. Derive position by durable
+// draft identity on every recomputation so refresh/filter changes cannot leave
+// a stale array index pointing at a different draft.
+const filteredDraftIds = computed(() => filteredDrafts.value.map(draft => draft.draft_id))
+const previewIndex = computed(() => {
+  const draftId = previewTarget.value?.draft_id
+  return draftId ? filteredDraftIds.value.indexOf(draftId) : -1
+})
+const currentPreviewDraft = computed(() => (
+  previewIndex.value >= 0 ? filteredDrafts.value[previewIndex.value] : null
+))
+const previewPosition = computed(() => previewIndex.value >= 0 ? previewIndex.value + 1 : 0)
+const previewTotal = computed(() => filteredDrafts.value.length)
+const canPreviewPrevious = computed(() => previewIndex.value > 0)
+const canPreviewNext = computed(() => (
+  previewIndex.value >= 0 && previewIndex.value < previewTotal.value - 1
+))
 
 const hasActiveFilter = computed(() => Boolean(searchQuery.value.trim()) || statusFilter.value !== 'all')
 
@@ -108,14 +128,19 @@ function actionLabel(draft: FreeDraftSummary) {
 }
 
 type FreeDraftHistoryAction = 'publish' | 'analytics'
+type NavigableFreeDraft = FreeDraftSummary | FreeDraftRecord
+
+function recordPostId(draft: NavigableFreeDraft) {
+  return 'post_id' in draft ? draft.post_id?.trim() || '' : ''
+}
 
 /**
  * Keep the action query conservative: History may suggest a publish preview
- * for unpublished drafts, but analytics is reserved for a real post. Older
- * list responses may only expose the post id through the saved snapshot, so
- * accept that equivalent identity as a compatibility fallback.
+ * for unpublished drafts, but analytics is reserved for a real post. The
+ * list response only exposes a post id after an analytics snapshot exists;
+ * published summaries without one are resolved from detail on click below.
  */
-function historyAction(draft: FreeDraftSummary): FreeDraftHistoryAction | null {
+function historyAction(draft: NavigableFreeDraft, detailIsLoaded = false): FreeDraftHistoryAction | null {
   if (!draft.published) {
     if (publishFailed(draft)) return 'publish'
     if (hasUsableEvaluation(draft.last_evaluation) && draft.last_evaluation?.decision === 'approved') {
@@ -124,13 +149,14 @@ function historyAction(draft: FreeDraftSummary): FreeDraftHistoryAction | null {
     return null
   }
 
-  const postId = draft.post_id?.trim() || draft.last_analytics?.post_id?.trim() || ''
+  // A loaded detail record is authoritative. Its current post_id must not be
+  // replaced by an older analytics snapshot identity. Compact summaries may
+  // still use last_analytics as their only safe proof of a real post.
+  const postId = detailIsLoaded
+    ? recordPostId(draft)
+    : draft.last_analytics?.post_id?.trim() || recordPostId(draft)
   if (postId) return postId.startsWith('mock_') ? null : 'analytics'
-
-  // Older list summaries do not include post_id or last_analytics. A
-  // successful real publish is still distinguishable from a dry-run by the
-  // durable publish status; mock_published must never unlock analytics.
-  return draft.last_publish?.status?.trim() === 'published' ? 'analytics' : null
+  return null
 }
 
 function formatDate(iso?: string | null) {
@@ -241,18 +267,67 @@ async function refresh() {
   }
 }
 
-function continueDraft(draft: FreeDraftSummary) {
-  if (!props.accountId) return
-  const action = historyAction(draft)
+async function continueDraft(draft: NavigableFreeDraft, detailIsLoaded = false) {
+  const accountId = props.accountId
+  if (!accountId) return
+  let action = historyAction(draft, detailIsLoaded)
+
+  // The compact list contract deliberately omits post_id. Resolve published
+  // rows without an analytics snapshot through the existing detail endpoint
+  // before adding an analytics action. A failed lookup degrades to the
+  // ordinary detail deep link, and an account switch invalidates the click.
+  const verifiedPostId = draft.last_analytics?.post_id?.trim() || recordPostId(draft)
+  const isKnownMockPublish = draft.last_publish?.status?.trim() === 'mock_published'
+  if (draft.published && !verifiedPostId && !isKnownMockPublish && !detailIsLoaded) {
+    try {
+      const response = await getFreeDraft(accountId, draft.draft_id, { suppressToast: true })
+      if (props.accountId !== accountId) return
+      const detail = response.draft
+      const postId = detail.post_id?.trim() || ''
+      if (detail.published && postId && !postId.startsWith('mock_')) action = 'analytics'
+    } catch {
+      if (props.accountId !== accountId) return
+    }
+  }
+
   void router.push({
     name: 'tui',
     query: {
       mode: 'free',
-      account_id: props.accountId,
+      account_id: accountId,
       draft_id: draft.draft_id,
       ...(action ? { action } : {}),
     },
   })
+}
+
+function openPreview(draft: FreeDraftSummary) {
+  previewTarget.value = draft
+}
+
+function closePreview() {
+  previewTarget.value = null
+}
+
+function previewPrevious() {
+  if (!canPreviewPrevious.value) return
+  previewTarget.value = filteredDrafts.value[previewIndex.value - 1]
+}
+
+function previewNext() {
+  if (!canPreviewNext.value) return
+  previewTarget.value = filteredDrafts.value[previewIndex.value + 1]
+}
+
+function continueFromPreview(detail: FreeDraftRecord) {
+  const currentDraft = currentPreviewDraft.value
+  if (
+    !currentDraft
+    || detail.draft_id !== currentDraft.draft_id
+    || (detail.account_id != null && detail.account_id !== props.accountId)
+  ) return
+  previewTarget.value = null
+  void continueDraft(detail, true)
 }
 
 function newDraft() {
@@ -289,10 +364,18 @@ async function confirmDelete() {
 }
 
 watch(() => props.accountId, () => {
+  previewTarget.value = null
   statusFilter.value = 'all'
   searchQuery.value = ''
   void refresh()
 }, { immediate: true })
+
+watch(filteredDraftIds, (draftIds) => {
+  const selectedDraftId = previewTarget.value?.draft_id
+  if (selectedDraftId && !draftIds.includes(selectedDraftId)) {
+    previewTarget.value = null
+  }
+}, { flush: 'sync' })
 
 onUnmounted(() => {
   requestGeneration++
@@ -465,8 +548,12 @@ defineExpose({ refresh })
               </div>
             </div>
 
-            <div class="flex shrink-0 items-center gap-2">
+            <div class="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:justify-end">
               <NeonButton variant="cyan" size="sm" class="min-h-11" @click="continueDraft(draft)">{{ actionLabel(draft) }}</NeonButton>
+              <NeonButton variant="ghost" size="sm" class="min-h-11" @click="openPreview(draft)">
+                <AppIcon name="Eye" size="sm" variant="cyan" aria-hidden="true" />
+                <span>{{ t('history.freeDrafts.preview.action') }}</span>
+              </NeonButton>
               <button type="button" class="dark-explicit min-h-11 min-w-11 rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/30" :aria-label="t('history.freeDrafts.delete')" @click="requestDelete(draft)">
                 <AppIcon name="Trash2" size="sm" variant="pink" aria-hidden="true" />
               </button>
@@ -486,6 +573,21 @@ defineExpose({ refresh })
       variant="danger"
       @confirm="confirmDelete"
       @cancel="deleteTarget = null"
+    />
+
+    <FreeDraftDetailDrawer
+      :is-open="Boolean(currentPreviewDraft)"
+      :account-id="accountId"
+      :draft-id="currentPreviewDraft?.draft_id ?? null"
+      :next-step-label="currentPreviewDraft ? actionLabel(currentPreviewDraft) : undefined"
+      :queue-position="previewPosition"
+      :queue-total="previewTotal"
+      :can-go-previous="canPreviewPrevious"
+      :can-go-next="canPreviewNext"
+      @close="closePreview"
+      @continue="continueFromPreview"
+      @previous="previewPrevious"
+      @next="previewNext"
     />
   </section>
 </template>

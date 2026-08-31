@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Verify navigation controls, focus, responsive layout, i18n, and current-detail next-step safety."}
+{"file": ".trellis/spec/frontend/multi-account.md", "reason": "Verify no cross-account queue traversal and account switches close the drawer."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify ID-derived position, filtered queue changes, stale response guards, and local state ownership."}

@@ -378,13 +378,220 @@ Keep frontend types in sync with backend `substates.py`.
   the card is expanded. Creation forms should keep advanced options collapsed
   by default and expose the current account context near the action surface.
 
-Free Creation History deep links preserve `mode=free`, the selected
-`account_id`, and `draft_id`. A primary action may add only the whitelisted
-`action=publish` or `action=analytics` query value: publish actions must open
-the existing `/publish <id>` preview without `confirm`, while analytics actions
-are reserved for `published` drafts with a real `post_id` (never `mock_*`).
-AgentTUI renders the draft detail first, then runs the safe follow-up command;
-missing or unknown actions keep the ordinary draft-detail behavior.
+### Scenario: Free Creation History action deep links
+
+#### 1. Scope / Trigger
+
+- Trigger: a Free Creation History card opens a draft and may suggest the next
+  safe TUI command after the detail renders.
+
+#### 2. Signatures
+
+- `GET /api/free/drafts/{account_id}` returns compact `FreeDraftSummary` rows;
+  it does **not** promise a top-level `post_id`.
+- `GET /api/free/draft/{draft_id}?account_id={account_id}` returns the full
+  `FreeDraftRecord`, including `published` and `post_id` when present.
+- The TUI deep link preserves `mode=free`, `account_id`, and `draft_id`, with an
+  optional whitelisted `action=publish|analytics` query value.
+
+#### 3. Contracts
+
+- `action=publish` opens the existing `/publish <id>` preview without
+  `confirm`; route construction must never publish automatically.
+- `action=analytics` requires `published=true` and a non-empty, non-`mock_*`
+  `post_id`. A list row may prove this through `last_analytics.post_id`;
+  otherwise the click handler must read detail before adding the action.
+- AgentTUI renders `/draft <id>` first and only then runs the safe follow-up
+  command. Missing or unknown actions retain ordinary draft-detail behavior.
+
+#### 4. Validation & Error Matrix
+
+- Missing/unknown `action` -> detail only.
+- Approved or failed unpublished draft -> publish preview only; no publish POST.
+- Published row with real detail `post_id` -> analytics follow-up.
+- `mock_*`, empty, or missing detail `post_id` -> detail only.
+- Detail lookup failure or account switch during lookup -> detail-only fallback
+  for the original account, or cancel navigation when the account changed.
+
+#### 5. Good / Base / Bad Cases
+
+- Good: a published summary without a snapshot is resolved through detail and
+  receives `action=analytics` only after a real post identity is verified.
+- Base: an ordinary draft keeps the original three query values and opens only
+  its detail.
+- Bad: treating `last_publish.status === 'published'` as proof of a real post,
+  because the compact list contract omits `post_id`.
+
+#### 6. Tests Required
+
+- History component tests cover approved, failed, real published, mock,
+  snapshot-backed, detail-without-id, lookup-failure, and account-switch cases.
+- AgentTUI tests assert detail-first sequencing, publish preview without
+  confirmation, real analytics, mock rejection, and unsafe action rejection.
+- Run focused tests, type-check, i18n parity check, and production build.
+
+#### 7. Wrong vs Correct
+
+```ts
+// Wrong: publish status is not durable proof that analytics can run.
+const action = draft.last_publish?.status === 'published' ? 'analytics' : null
+
+// Correct: use snapshot identity or verify the full detail record first.
+const postId = draft.last_analytics?.post_id || detail.post_id
+const action = detail.published && postId && !postId.startsWith('mock_')
+  ? 'analytics'
+  : null
+```
+
+### Scenario: Account-scoped Free Draft detail drawers
+
+#### 1. Scope / Trigger
+
+- Trigger: a Free Creation History card opens its read-only detail preview and
+  may continue to the existing TUI flow after the detail has loaded.
+
+#### 2. Signatures
+
+- The History panel owns the selected summary/draft ID; the dedicated drawer
+  receives `isOpen`, `accountId`, and `draftId` and emits `close` or
+  `continue(FreeDraftRecord)`.
+- The drawer reads only through `getFreeDraft(accountId, draftId, { signal,
+  suppressToast: true })`; it must not call update, evaluate, publish,
+  analytics, or delete endpoints.
+
+#### 3. Contracts
+
+- Keep loading, unavailable, error/retry, content, and footer states inside one
+  stable dialog shell. Use the shared `useFocusTrap`, semantic `z-modal`, Esc
+  and backdrop closing, focus restoration, and 44px controls.
+- Treat account and draft IDs as one request identity. Abort on either change,
+  increment a request generation, and commit only when generation, account,
+  draft, and open state still match. An account switch closes the old drawer.
+- Long body text, audience values, anchor IDs, and URLs use `min-w-0` plus
+  wrapping; mobile is full-width/full-height and desktop uses a bounded right
+  drawer so 320px viewports never gain page-level horizontal overflow.
+- A loaded `FreeDraftRecord` is authoritative for the drawer's next-step click.
+  Pass that record back to History and build the TUI query from it directly;
+  do not issue a second detail read. Publish remains preview-only, and
+  analytics still requires `published=true` plus a non-empty, non-`mock_*`
+  post ID.
+
+#### 4. Validation & Error Matrix
+
+- Missing account/draft or an empty/mismatched detail response -> localized
+  unavailable state; no navigation.
+- Read failure -> local error with retry; closing does not navigate.
+- Late response after account/draft/close -> discard without repainting.
+- Degraded evaluation -> show the degraded state and diagnostic summary, but
+  never present its fallback score/decision as a real RQGM verdict.
+- Missing performance fields remain unavailable; never synthesize zero counts.
+
+#### 5. Good / Base / Bad Cases
+
+- Good: a loaded real published detail emits one `continue(detail)` event and
+  History builds `action=analytics` from that current `post_id` without a
+  second read.
+- Base: an unpublished draft with partial metadata still shows its body and
+  unavailable labels while keeping the ordinary detail-only TUI route.
+- Bad: trusting a stale `last_analytics.post_id` after loaded detail says the
+  current `post_id` is empty or `mock_*`, or accepting a response whose inner
+  `draft_id` differs from the requested draft.
+
+#### 6. Tests Required
+
+- Drawer tests cover loading, complete and missing fields, error/retry,
+  draft/account switches, stale responses, Esc/backdrop/close, focus restore,
+  and the loaded-detail `continue` event.
+- History integration asserts preview preserves list filters/context and the
+  returned detail generates one safe TUI deep link without another API read.
+
+#### 7. Wrong vs Correct
+
+```ts
+// Wrong: a stale snapshot can override the current loaded record.
+const postId = detail.last_analytics?.post_id || detail.post_id
+
+// Correct: once detail is loaded, its current identity is authoritative.
+const postId = detail.post_id?.trim() || ''
+const action = detail.published && postId && !postId.startsWith('mock_')
+  ? 'analytics'
+  : null
+```
+
+### Scenario: Filter-owned Free Draft review queues
+
+#### 1. Scope / Trigger
+
+- Trigger: an open Free Draft detail drawer moves to the previous or next row
+  without leaving the current History account, search, or status filter.
+
+#### 2. Signatures
+
+- `FreeDraftHistoryPanel` owns the queue as its current `filteredDrafts` and
+  passes `queuePosition`, `queueTotal`, `canGoPrevious`, and `canGoNext` to the
+  drawer.
+- `FreeDraftDetailDrawer` emits navigation intent only through `previous` and
+  `next`; it does not own, copy, prefetch, or mutate the queue.
+
+#### 3. Contracts
+
+- Derive the selected position on every recomputation by finding
+  `previewTarget.draft_id` in `filteredDrafts`. Never persist an array index:
+  filter or refresh changes could make it identify a different draft.
+- Navigation replaces the selected summary with the adjacent filtered row and
+  never wraps at the first or last item. A single-row queue reports `1 / 1`
+  semantics with both controls disabled.
+- If refresh/filter changes remove the selected ID, close the drawer. If the
+  same ID merely moves, keep the drawer open and recompute its position without
+  another detail read. Account changes still close and abort immediately.
+- Drawer navigation keeps its stable shell and delegates draft changes to the
+  existing abort/generation/account/draft guards. Controls remain 44px, wrap at
+  320px, use explicit dark variants, and support guarded
+  `Alt+ArrowLeft/ArrowRight`; input, textarea, select, and contenteditable
+  events are never intercepted.
+- Accept `continue(detail)` only when `detail.draft_id` still equals the
+  current filtered selection. Generate the action from that current loaded
+  detail without a second read; navigation itself remains read-only.
+
+#### 4. Validation & Error Matrix
+
+- Previous at index 0 / next at final index -> disabled and no emit; no wrap.
+- Target removed by search, filter, refresh, or account switch -> close; no
+  navigation, mutation, or TUI route.
+- Rapid A -> B with late A response -> B remains selected and rendered.
+- Stale A `continue` after selecting B -> ignore; only loaded B may route.
+- Alt+Arrow from an editable target or with extra modifiers -> preserve the
+  editing/browser shortcut and do nothing.
+
+#### 5. Good / Base / Bad Cases
+
+- Good: refreshing `[A, B, C]` into `[B, A, C]` while B is open changes its
+  position from `2 / 3` to `1 / 3`, keeps the loaded B detail, and performs no
+  extra detail read.
+- Base: a single visible draft renders `1 / 1`; both controls are disabled and
+  guarded Alt+Arrow prevents browser-history escape without emitting.
+- Bad: storing `previewIndex = 1`, then treating the second row after filtering
+  or refresh as the same draft, or accepting `continue(A)` after B is selected.
+
+#### 6. Tests Required
+
+- Drawer tests assert localized count, single-item boundaries, click and
+  Alt+Arrow navigation, editable-target guards, and zero adjacent API reads.
+- History integration asserts filtered ordering, forward/back boundaries,
+  stale-detail discard, refresh reorder/removal, account close/abort, current
+  detail routing, and no mutation calls.
+
+#### 7. Wrong vs Correct
+
+```ts
+// Wrong: the saved index drifts when the visible queue changes.
+const previewIndex = ref(1)
+
+// Correct: the filtered parent owns the queue and position follows identity.
+const previewIndex = computed(() => filteredDrafts.value.findIndex(
+  draft => draft.draft_id === previewTarget.value?.draft_id,
+))
+```
 
 ---
 
