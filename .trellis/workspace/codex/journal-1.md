@@ -471,3 +471,37 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 保存自由草稿审阅返回上下文
+
+**Date**: 2026-08-31
+**Task**: 保存自由草稿审阅返回上下文
+**Branch**: `codex/free-draft-review-return-context`
+
+### Summary
+
+新增白名单路由上下文深模块，支持 History 筛选与草稿预览在 TUI 往返恢复；收紧账号与草稿身份一致性、重定向参数清理和账号切换同步清场。101 项聚焦测试、类型检查、i18n 与生产构建通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `45b72dcc` | (see git log) |
+| `61d5073a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
