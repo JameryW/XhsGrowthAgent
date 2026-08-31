@@ -518,6 +518,81 @@ const action = detail.published && postId && !postId.startsWith('mock_')
   : null
 ```
 
+### Scenario: Filter-owned Free Draft review queues
+
+#### 1. Scope / Trigger
+
+- Trigger: an open Free Draft detail drawer moves to the previous or next row
+  without leaving the current History account, search, or status filter.
+
+#### 2. Signatures
+
+- `FreeDraftHistoryPanel` owns the queue as its current `filteredDrafts` and
+  passes `queuePosition`, `queueTotal`, `canGoPrevious`, and `canGoNext` to the
+  drawer.
+- `FreeDraftDetailDrawer` emits navigation intent only through `previous` and
+  `next`; it does not own, copy, prefetch, or mutate the queue.
+
+#### 3. Contracts
+
+- Derive the selected position on every recomputation by finding
+  `previewTarget.draft_id` in `filteredDrafts`. Never persist an array index:
+  filter or refresh changes could make it identify a different draft.
+- Navigation replaces the selected summary with the adjacent filtered row and
+  never wraps at the first or last item. A single-row queue reports `1 / 1`
+  semantics with both controls disabled.
+- If refresh/filter changes remove the selected ID, close the drawer. If the
+  same ID merely moves, keep the drawer open and recompute its position without
+  another detail read. Account changes still close and abort immediately.
+- Drawer navigation keeps its stable shell and delegates draft changes to the
+  existing abort/generation/account/draft guards. Controls remain 44px, wrap at
+  320px, use explicit dark variants, and support guarded
+  `Alt+ArrowLeft/ArrowRight`; input, textarea, select, and contenteditable
+  events are never intercepted.
+- Accept `continue(detail)` only when `detail.draft_id` still equals the
+  current filtered selection. Generate the action from that current loaded
+  detail without a second read; navigation itself remains read-only.
+
+#### 4. Validation & Error Matrix
+
+- Previous at index 0 / next at final index -> disabled and no emit; no wrap.
+- Target removed by search, filter, refresh, or account switch -> close; no
+  navigation, mutation, or TUI route.
+- Rapid A -> B with late A response -> B remains selected and rendered.
+- Stale A `continue` after selecting B -> ignore; only loaded B may route.
+- Alt+Arrow from an editable target or with extra modifiers -> preserve the
+  editing/browser shortcut and do nothing.
+
+#### 5. Good / Base / Bad Cases
+
+- Good: refreshing `[A, B, C]` into `[B, A, C]` while B is open changes its
+  position from `2 / 3` to `1 / 3`, keeps the loaded B detail, and performs no
+  extra detail read.
+- Base: a single visible draft renders `1 / 1`; both controls are disabled and
+  guarded Alt+Arrow prevents browser-history escape without emitting.
+- Bad: storing `previewIndex = 1`, then treating the second row after filtering
+  or refresh as the same draft, or accepting `continue(A)` after B is selected.
+
+#### 6. Tests Required
+
+- Drawer tests assert localized count, single-item boundaries, click and
+  Alt+Arrow navigation, editable-target guards, and zero adjacent API reads.
+- History integration asserts filtered ordering, forward/back boundaries,
+  stale-detail discard, refresh reorder/removal, account close/abort, current
+  detail routing, and no mutation calls.
+
+#### 7. Wrong vs Correct
+
+```ts
+// Wrong: the saved index drifts when the visible queue changes.
+const previewIndex = ref(1)
+
+// Correct: the filtered parent owns the queue and position follows identity.
+const previewIndex = computed(() => filteredDrafts.value.findIndex(
+  draft => draft.draft_id === previewTarget.value?.draft_id,
+))
+```
+
 ---
 
 ## AgentTUI tool_result Display

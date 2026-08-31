@@ -1,8 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import FreeDraftDetailDrawer from '@/components/history/FreeDraftDetailDrawer.vue'
 import FreeDraftHistoryPanel from '@/components/history/FreeDraftHistoryPanel.vue'
-import type { FreeDraftSummary } from '@/api/free'
+import type { FreeDraftDetailResponse, FreeDraftRecord, FreeDraftSummary } from '@/api/free'
 
 const routerPush = vi.fn()
 
@@ -405,6 +406,7 @@ describe('FreeDraftHistoryPanel', () => {
     }))
 
     const footerButtons = wrapper.findAll('[data-testid="free-draft-detail-drawer"] footer button')
+    expect(footerButtons[footerButtons.length - 1].text()).toMatch(/Open draft|打开草稿/)
     await footerButtons[footerButtons.length - 1].trigger('click')
     await flushPromises()
     expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
@@ -417,6 +419,178 @@ describe('FreeDraftHistoryPanel', () => {
         action: 'analytics',
       },
     })
+  })
+
+  it('reviews only the filtered queue, drops stale detail, and continues the current draft safely', async () => {
+    const api = await import('@/api/free')
+    const matchA = draft({ draft_id: 'match-a', title: '匹配 A' })
+    const matchB = draft({ draft_id: 'match-b', title: '匹配 B', published: true })
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [draft({ draft_id: 'hidden', title: '筛选外草稿' }), matchA, matchB],
+      count: 3,
+    })
+    let resolveA!: (response: FreeDraftDetailResponse) => void
+    const detailA = new Promise<FreeDraftDetailResponse>(resolve => { resolveA = resolve })
+    vi.mocked(api.getFreeDraft).mockImplementation(async (_accountId, draftId) => {
+      if (draftId === 'match-a') return detailA
+      return {
+        draft_id: 'match-b',
+        draft: {
+          ...matchB,
+          account_id: 'acct-a',
+          body: '当前 B 正文',
+          post_id: 'note_current_b',
+        },
+      }
+    })
+
+    const wrapper = await mountPanel()
+    await wrapper.find('input[type="search"]').setValue('匹配')
+    expect(wrapper.findAll('article')).toHaveLength(2)
+    const firstPreview = wrapper.findAll('article')[0].findAll('button').find(button => /Preview|预览/.test(button.text()))
+    await firstPreview!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="free-draft-queue-position"]').text()).toMatch(/第 1 条，共 2 条|Draft 1 of 2/)
+    expect((wrapper.find('[data-testid="free-draft-queue-previous"]').element as HTMLButtonElement).disabled).toBe(true)
+    const firstSignal = vi.mocked(api.getFreeDraft).mock.calls[0][2]?.signal
+    await wrapper.find('[data-testid="free-draft-queue-next"]').trigger('click')
+    await flushPromises()
+
+    expect(firstSignal?.aborted).toBe(true)
+    expect(wrapper.find('[data-testid="free-draft-queue-position"]').text()).toMatch(/第 2 条，共 2 条|Draft 2 of 2/)
+    expect(wrapper.find('[data-testid="free-draft-detail-content"]').text()).toContain('当前 B 正文')
+    expect((wrapper.find('[data-testid="free-draft-queue-next"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect((wrapper.find('input[type="search"]').element as HTMLInputElement).value).toBe('匹配')
+    expect(routerPush).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="free-draft-queue-previous"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="free-draft-queue-position"]').text()).toMatch(/第 1 条，共 2 条|Draft 1 of 2/)
+    await wrapper.find('[data-testid="free-draft-queue-next"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="free-draft-queue-position"]').text()).toMatch(/第 2 条，共 2 条|Draft 2 of 2/)
+    expect(wrapper.find('[data-testid="free-draft-detail-content"]').text()).toContain('当前 B 正文')
+
+    resolveA({
+      draft_id: 'match-a',
+      draft: { ...matchA, account_id: 'acct-a', body: '迟到 A 正文' },
+    })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('迟到 A 正文')
+
+    const drawer = wrapper.findComponent(FreeDraftDetailDrawer)
+    drawer.vm.$emit('continue', {
+      ...matchA,
+      account_id: 'acct-a',
+      body: '过期 A 详情',
+    } satisfies FreeDraftRecord)
+    await flushPromises()
+    expect(routerPush).not.toHaveBeenCalled()
+
+    const footerButtons = wrapper.findAll('[data-testid="free-draft-detail-drawer"] footer button')
+    expect(footerButtons[footerButtons.length - 1].text()).toMatch(/Open draft|打开草稿/)
+    await footerButtons[footerButtons.length - 1].trigger('click')
+    await flushPromises()
+    expect(api.getFreeDraft).toHaveBeenCalledTimes(4)
+    expect(api.deleteFreeDraft).not.toHaveBeenCalled()
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'tui',
+      query: {
+        mode: 'free',
+        account_id: 'acct-a',
+        draft_id: 'match-b',
+        action: 'analytics',
+      },
+    })
+  })
+
+  it('closes the queue when a filter removes the current draft', async () => {
+    const api = await import('@/api/free')
+    const draftA = draft({ draft_id: 'only-a', title: 'Only A' })
+    const draftB = draft({ draft_id: 'only-b', title: 'Only B' })
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [draftA, draftB],
+      count: 2,
+    })
+    vi.mocked(api.getFreeDraft).mockResolvedValue({
+      draft_id: 'only-b',
+      draft: { ...draftB, account_id: 'acct-a', body: 'B body' },
+    })
+
+    const wrapper = await mountPanel()
+    const secondPreview = wrapper.findAll('article')[1].findAll('button').find(button => /Preview|预览/.test(button.text()))
+    await secondPreview!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(true)
+
+    await wrapper.find('input[type="search"]').setValue('Only A')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(false)
+    expect(routerPush).not.toHaveBeenCalled()
+    expect(api.deleteFreeDraft).not.toHaveBeenCalled()
+  })
+
+  it('re-derives queue position after refresh and closes when refresh removes the target', async () => {
+    const api = await import('@/api/free')
+    const draftA = draft({ draft_id: 'queue-a', title: 'Queue A' })
+    const draftB = draft({ draft_id: 'queue-b', title: 'Queue B' })
+    const draftC = draft({ draft_id: 'queue-c', title: 'Queue C' })
+    vi.mocked(api.listFreeDrafts)
+      .mockResolvedValueOnce({ account_id: 'acct-a', drafts: [draftA, draftB, draftC], count: 3 })
+      .mockResolvedValueOnce({ account_id: 'acct-a', drafts: [draftB, draftA, draftC], count: 3 })
+      .mockResolvedValueOnce({ account_id: 'acct-a', drafts: [draftA, draftC], count: 2 })
+    vi.mocked(api.getFreeDraft).mockResolvedValue({
+      draft_id: 'queue-b',
+      draft: { ...draftB, account_id: 'acct-a', body: 'Queue B body' },
+    })
+
+    const wrapper = await mountPanel()
+    const secondPreview = wrapper.findAll('article')[1].findAll('button').find(button => /Preview|预览/.test(button.text()))
+    await secondPreview!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="free-draft-queue-position"]').text()).toMatch(/第 2 条，共 3 条|Draft 2 of 3/)
+
+    await (wrapper.vm as unknown as { refresh: () => Promise<void> }).refresh()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="free-draft-queue-position"]').text()).toMatch(/第 1 条，共 3 条|Draft 1 of 3/)
+    expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
+
+    await (wrapper.vm as unknown as { refresh: () => Promise<void> }).refresh()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(false)
+    expect(routerPush).not.toHaveBeenCalled()
+    expect(api.deleteFreeDraft).not.toHaveBeenCalled()
+  })
+
+  it('closes and aborts the open detail when the account changes', async () => {
+    const api = await import('@/api/free')
+    const draftA = draft({ draft_id: 'account-a-draft', title: 'Account A draft' })
+    vi.mocked(api.listFreeDrafts)
+      .mockResolvedValueOnce({ account_id: 'acct-a', drafts: [draftA], count: 1 })
+      .mockResolvedValueOnce({
+        account_id: 'acct-b',
+        drafts: [draft({ draft_id: 'account-b-draft', title: 'Account B draft' })],
+        count: 1,
+      })
+    vi.mocked(api.getFreeDraft).mockReturnValue(new Promise(() => {}))
+
+    const wrapper = await mountPanel('acct-a')
+    const preview = wrapper.find('article').findAll('button').find(button => /Preview|预览/.test(button.text()))
+    await preview!.trigger('click')
+    await flushPromises()
+    const signal = vi.mocked(api.getFreeDraft).mock.calls[0][2]?.signal
+
+    await wrapper.setProps({ accountId: 'acct-b' })
+    await flushPromises()
+    expect(signal?.aborted).toBe(true)
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Account B draft')
+    expect(routerPush).not.toHaveBeenCalled()
+    expect(api.deleteFreeDraft).not.toHaveBeenCalled()
   })
 
   it('opens the publish preview deep link from loaded detail without another read', async () => {

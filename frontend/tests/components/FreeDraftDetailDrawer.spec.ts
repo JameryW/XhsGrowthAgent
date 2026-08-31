@@ -63,6 +63,10 @@ function mountDrawer(props: Partial<{
   draftId: string | null
   isOpen: boolean
   nextStepLabel: string
+  queuePosition: number
+  queueTotal: number
+  canGoPrevious: boolean
+  canGoNext: boolean
 }> = {}, stubTeleport = true) {
   const wrapper = mount(FreeDraftDetailDrawer, {
     attachTo: document.body,
@@ -71,6 +75,10 @@ function mountDrawer(props: Partial<{
       draftId: 'draft-a',
       isOpen: true,
       nextStepLabel: '打开草稿',
+      queuePosition: 1,
+      queueTotal: 1,
+      canGoPrevious: false,
+      canGoNext: false,
       ...props,
     },
     global: {
@@ -145,6 +153,93 @@ describe('FreeDraftDetailDrawer', () => {
     expect(wrapper.find('header').exists()).toBe(true)
     expect(wrapper.find('footer').exists()).toBe(true)
     expect(wrapper.findAll('footer button').at(-1)?.attributes('disabled')).toBeDefined()
+  })
+
+  it('shows a non-wrapping queue position and disables both directions for one draft', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.getFreeDraft).mockResolvedValue(responseFor(completeDetail()))
+    const wrapper = mountDrawer()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="free-draft-queue-position"]').text()).toMatch(/第 1 条，共 1 条|Draft 1 of 1/)
+    const previous = wrapper.find<HTMLButtonElement>('[data-testid="free-draft-queue-previous"]')
+    const next = wrapper.find<HTMLButtonElement>('[data-testid="free-draft-queue-next"]')
+    expect(previous.element.disabled).toBe(true)
+    expect(next.element.disabled).toBe(true)
+    await previous.trigger('click')
+    await next.trigger('click')
+    expect(wrapper.emitted('previous')).toBeUndefined()
+    expect(wrapper.emitted('next')).toBeUndefined()
+  })
+
+  it('emits bounded previous and next navigation intents without reading adjacent drafts', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.getFreeDraft).mockResolvedValue(responseFor(completeDetail()))
+    const wrapper = mountDrawer({
+      queuePosition: 2,
+      queueTotal: 3,
+      canGoPrevious: true,
+      canGoNext: true,
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="free-draft-queue-previous"]').trigger('click')
+    await wrapper.find('[data-testid="free-draft-queue-next"]').trigger('click')
+    expect(wrapper.emitted('previous')).toHaveLength(1)
+    expect(wrapper.emitted('next')).toHaveLength(1)
+    expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ queuePosition: 1, canGoPrevious: false })
+    await wrapper.find('[data-testid="free-draft-queue-previous"]').trigger('click')
+    expect(wrapper.emitted('previous')).toHaveLength(1)
+    await wrapper.setProps({ queuePosition: 3, canGoNext: false })
+    await wrapper.find('[data-testid="free-draft-queue-next"]').trigger('click')
+    expect(wrapper.emitted('next')).toHaveLength(1)
+  })
+
+  it('supports guarded Alt+Arrow navigation without hijacking editable targets or boundaries', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.getFreeDraft).mockResolvedValue(responseFor(completeDetail()))
+    const wrapper = mountDrawer({
+      queuePosition: 2,
+      queueTotal: 3,
+      canGoPrevious: true,
+      canGoNext: true,
+    })
+    await flushPromises()
+    const dialog = wrapper.find('[data-testid="free-draft-detail-drawer"]').element
+
+    const previousEvent = new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true, cancelable: true })
+    dialog.dispatchEvent(previousEvent)
+    const nextEvent = new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true, cancelable: true })
+    dialog.dispatchEvent(nextEvent)
+    expect(previousEvent.defaultPrevented).toBe(true)
+    expect(nextEvent.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('previous')).toHaveLength(1)
+    expect(wrapper.emitted('next')).toHaveLength(1)
+
+    const input = document.createElement('input')
+    dialog.appendChild(input)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true, cancelable: true }))
+    const textarea = document.createElement('textarea')
+    dialog.appendChild(textarea)
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true, cancelable: true }))
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    dialog.appendChild(editable)
+    editable.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true, cancelable: true }))
+    expect(wrapper.emitted('previous')).toHaveLength(1)
+    expect(wrapper.emitted('next')).toHaveLength(1)
+
+    await wrapper.setProps({ canGoPrevious: false, canGoNext: false })
+    const boundaryPrevious = new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true, cancelable: true })
+    const boundaryNext = new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true, cancelable: true })
+    dialog.dispatchEvent(boundaryPrevious)
+    dialog.dispatchEvent(boundaryNext)
+    expect(boundaryPrevious.defaultPrevented).toBe(true)
+    expect(boundaryNext.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('previous')).toHaveLength(1)
+    expect(wrapper.emitted('next')).toHaveLength(1)
   })
 
   it('shows a local error and retries without closing or navigating', async () => {

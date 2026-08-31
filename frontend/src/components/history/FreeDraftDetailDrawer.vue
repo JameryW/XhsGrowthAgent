@@ -11,11 +11,17 @@ const props = defineProps<{
   draftId: string | null
   isOpen: boolean
   nextStepLabel?: string
+  queuePosition: number
+  queueTotal: number
+  canGoPrevious: boolean
+  canGoNext: boolean
 }>()
 
 const emit = defineEmits<{
   (event: 'close'): void
   (event: 'continue', detail: FreeDraftRecord): void
+  (event: 'previous'): void
+  (event: 'next'): void
 }>()
 
 const { t, locale } = useI18n()
@@ -156,7 +162,34 @@ function close() {
 }
 
 function continueDraft() {
-  if (detail.value) emit('continue', detail.value)
+  if (detail.value && detail.value.draft_id === props.draftId) {
+    emit('continue', detail.value)
+  }
+}
+
+function goPrevious() {
+  if (props.canGoPrevious) emit('previous')
+}
+
+function goNext() {
+  if (props.canGoNext) emit('next')
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  return target.matches('input, textarea, select')
+    || target.isContentEditable
+    || Boolean(target.closest('[contenteditable]:not([contenteditable="false"])'))
+}
+
+function handleNavigationKeydown(event: KeyboardEvent) {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || isEditableTarget(event.target)) return
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  // Consume the browser's Alt+Left/Right history shortcut even at a disabled
+  // queue boundary: "no action" must not accidentally leave History.
+  event.preventDefault()
+  if (event.key === 'ArrowLeft') goPrevious()
+  else goNext()
 }
 
 function formatDate(iso?: string | null) {
@@ -260,6 +293,7 @@ onBeforeUnmount(() => {
       :aria-labelledby="dialogTitleId"
       data-testid="free-draft-detail-drawer"
       @keydown.esc.stop.prevent="close"
+      @keydown="handleNavigationKeydown"
     >
       <div
         class="absolute inset-0 bg-black/45"
@@ -290,6 +324,38 @@ onBeforeUnmount(() => {
             >
               <AppIcon name="X" size="sm" variant="muted" aria-hidden="true" />
             </button>
+          </div>
+          <div class="dark-explicit mt-3 flex min-w-0 flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
+            <div class="min-w-0">
+              <p class="dark-explicit text-xs font-semibold text-slate-700 dark:text-slate-200" data-testid="free-draft-queue-position" role="status" aria-live="polite">
+                {{ t('history.freeDrafts.preview.queuePosition', { current: queuePosition, total: queueTotal }) }}
+              </p>
+              <p class="dark-explicit mt-1 break-words text-[11px] text-slate-500 dark:text-slate-400">{{ t('history.freeDrafts.preview.queueShortcutHint') }}</p>
+            </div>
+            <div class="grid w-full min-w-0 grid-cols-2 gap-2 sm:w-auto" role="group" :aria-label="t('history.freeDrafts.preview.queueNavigation')">
+              <button
+                type="button"
+                class="dark-explicit inline-flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                data-testid="free-draft-queue-previous"
+                :disabled="!canGoPrevious"
+                :title="t('history.freeDrafts.preview.previousShortcut')"
+                @click="goPrevious"
+              >
+                <AppIcon name="ArrowLeft" size="sm" variant="muted" aria-hidden="true" />
+                <span class="min-w-0 truncate">{{ t('history.freeDrafts.preview.previous') }}</span>
+              </button>
+              <button
+                type="button"
+                class="dark-explicit inline-flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                data-testid="free-draft-queue-next"
+                :disabled="!canGoNext"
+                :title="t('history.freeDrafts.preview.nextShortcut')"
+                @click="goNext"
+              >
+                <span class="min-w-0 truncate">{{ t('history.freeDrafts.preview.next') }}</span>
+                <AppIcon name="ArrowRight" size="sm" variant="muted" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </header>
 

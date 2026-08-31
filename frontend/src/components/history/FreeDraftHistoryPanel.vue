@@ -63,6 +63,24 @@ const filteredDrafts = computed(() => {
   })
 })
 
+// The visible, filtered rows are the review queue. Derive position by durable
+// draft identity on every recomputation so refresh/filter changes cannot leave
+// a stale array index pointing at a different draft.
+const filteredDraftIds = computed(() => filteredDrafts.value.map(draft => draft.draft_id))
+const previewIndex = computed(() => {
+  const draftId = previewTarget.value?.draft_id
+  return draftId ? filteredDraftIds.value.indexOf(draftId) : -1
+})
+const currentPreviewDraft = computed(() => (
+  previewIndex.value >= 0 ? filteredDrafts.value[previewIndex.value] : null
+))
+const previewPosition = computed(() => previewIndex.value >= 0 ? previewIndex.value + 1 : 0)
+const previewTotal = computed(() => filteredDrafts.value.length)
+const canPreviewPrevious = computed(() => previewIndex.value > 0)
+const canPreviewNext = computed(() => (
+  previewIndex.value >= 0 && previewIndex.value < previewTotal.value - 1
+))
+
 const hasActiveFilter = computed(() => Boolean(searchQuery.value.trim()) || statusFilter.value !== 'all')
 
 function draftMatchesStatus(status: HistoryFilter) {
@@ -291,7 +309,23 @@ function closePreview() {
   previewTarget.value = null
 }
 
+function previewPrevious() {
+  if (!canPreviewPrevious.value) return
+  previewTarget.value = filteredDrafts.value[previewIndex.value - 1]
+}
+
+function previewNext() {
+  if (!canPreviewNext.value) return
+  previewTarget.value = filteredDrafts.value[previewIndex.value + 1]
+}
+
 function continueFromPreview(detail: FreeDraftRecord) {
+  const currentDraft = currentPreviewDraft.value
+  if (
+    !currentDraft
+    || detail.draft_id !== currentDraft.draft_id
+    || (detail.account_id != null && detail.account_id !== props.accountId)
+  ) return
   previewTarget.value = null
   void continueDraft(detail, true)
 }
@@ -335,6 +369,13 @@ watch(() => props.accountId, () => {
   searchQuery.value = ''
   void refresh()
 }, { immediate: true })
+
+watch(filteredDraftIds, (draftIds) => {
+  const selectedDraftId = previewTarget.value?.draft_id
+  if (selectedDraftId && !draftIds.includes(selectedDraftId)) {
+    previewTarget.value = null
+  }
+}, { flush: 'sync' })
 
 onUnmounted(() => {
   requestGeneration++
@@ -535,12 +576,18 @@ defineExpose({ refresh })
     />
 
     <FreeDraftDetailDrawer
-      :is-open="Boolean(previewTarget)"
+      :is-open="Boolean(currentPreviewDraft)"
       :account-id="accountId"
-      :draft-id="previewTarget?.draft_id ?? null"
-      :next-step-label="previewTarget ? actionLabel(previewTarget) : undefined"
+      :draft-id="currentPreviewDraft?.draft_id ?? null"
+      :next-step-label="currentPreviewDraft ? actionLabel(currentPreviewDraft) : undefined"
+      :queue-position="previewPosition"
+      :queue-total="previewTotal"
+      :can-go-previous="canPreviewPrevious"
+      :can-go-next="canPreviewNext"
       @close="closePreview"
       @continue="continueFromPreview"
+      @previous="previewPrevious"
+      @next="previewNext"
     />
   </section>
 </template>
