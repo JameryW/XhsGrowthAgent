@@ -368,3 +368,38 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 完成自由草稿下一步深链
+
+**Date**: 2026-08-31
+**Task**: 完成自由草稿下一步深链
+**Branch**: `codex/free-creation-next-step-actions`
+
+### Summary
+
+完成自由草稿 History 到 TUI 的发布预览与表现采集深链；修正摘要缺少 post_id 时的真实帖子身份校验；聚焦测试、类型检查、i18n 与生产构建通过；任务已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `05c47b39` | (see git log) |
+| `a6d0a43d` | (see git log) |
+| `0b7b23ea` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
