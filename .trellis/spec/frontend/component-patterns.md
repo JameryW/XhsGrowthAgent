@@ -378,13 +378,70 @@ Keep frontend types in sync with backend `substates.py`.
   the card is expanded. Creation forms should keep advanced options collapsed
   by default and expose the current account context near the action surface.
 
-Free Creation History deep links preserve `mode=free`, the selected
-`account_id`, and `draft_id`. A primary action may add only the whitelisted
-`action=publish` or `action=analytics` query value: publish actions must open
-the existing `/publish <id>` preview without `confirm`, while analytics actions
-are reserved for `published` drafts with a real `post_id` (never `mock_*`).
-AgentTUI renders the draft detail first, then runs the safe follow-up command;
-missing or unknown actions keep the ordinary draft-detail behavior.
+### Scenario: Free Creation History action deep links
+
+#### 1. Scope / Trigger
+
+- Trigger: a Free Creation History card opens a draft and may suggest the next
+  safe TUI command after the detail renders.
+
+#### 2. Signatures
+
+- `GET /api/free/drafts/{account_id}` returns compact `FreeDraftSummary` rows;
+  it does **not** promise a top-level `post_id`.
+- `GET /api/free/draft/{draft_id}?account_id={account_id}` returns the full
+  `FreeDraftRecord`, including `published` and `post_id` when present.
+- The TUI deep link preserves `mode=free`, `account_id`, and `draft_id`, with an
+  optional whitelisted `action=publish|analytics` query value.
+
+#### 3. Contracts
+
+- `action=publish` opens the existing `/publish <id>` preview without
+  `confirm`; route construction must never publish automatically.
+- `action=analytics` requires `published=true` and a non-empty, non-`mock_*`
+  `post_id`. A list row may prove this through `last_analytics.post_id`;
+  otherwise the click handler must read detail before adding the action.
+- AgentTUI renders `/draft <id>` first and only then runs the safe follow-up
+  command. Missing or unknown actions retain ordinary draft-detail behavior.
+
+#### 4. Validation & Error Matrix
+
+- Missing/unknown `action` -> detail only.
+- Approved or failed unpublished draft -> publish preview only; no publish POST.
+- Published row with real detail `post_id` -> analytics follow-up.
+- `mock_*`, empty, or missing detail `post_id` -> detail only.
+- Detail lookup failure or account switch during lookup -> detail-only fallback
+  for the original account, or cancel navigation when the account changed.
+
+#### 5. Good / Base / Bad Cases
+
+- Good: a published summary without a snapshot is resolved through detail and
+  receives `action=analytics` only after a real post identity is verified.
+- Base: an ordinary draft keeps the original three query values and opens only
+  its detail.
+- Bad: treating `last_publish.status === 'published'` as proof of a real post,
+  because the compact list contract omits `post_id`.
+
+#### 6. Tests Required
+
+- History component tests cover approved, failed, real published, mock,
+  snapshot-backed, detail-without-id, lookup-failure, and account-switch cases.
+- AgentTUI tests assert detail-first sequencing, publish preview without
+  confirmation, real analytics, mock rejection, and unsafe action rejection.
+- Run focused tests, type-check, i18n parity check, and production build.
+
+#### 7. Wrong vs Correct
+
+```ts
+// Wrong: publish status is not durable proof that analytics can run.
+const action = draft.last_publish?.status === 'published' ? 'analytics' : null
+
+// Correct: use snapshot identity or verify the full detail record first.
+const postId = draft.last_analytics?.post_id || detail.post_id
+const action = detail.published && postId && !postId.startsWith('mock_')
+  ? 'analytics'
+  : null
+```
 
 ---
 

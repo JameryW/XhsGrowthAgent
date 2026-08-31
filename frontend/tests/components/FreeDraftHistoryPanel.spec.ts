@@ -12,6 +12,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/api/free', () => ({
   listFreeDrafts: vi.fn(),
+  getFreeDraft: vi.fn(),
   deleteFreeDraft: vi.fn(),
 }))
 
@@ -53,6 +54,7 @@ describe('FreeDraftHistoryPanel', () => {
     routerPush.mockReset()
     const api = await import('@/api/free')
     vi.mocked(api.listFreeDrafts).mockReset()
+    vi.mocked(api.getFreeDraft).mockReset()
     vi.mocked(api.deleteFreeDraft).mockReset()
   })
 
@@ -285,13 +287,11 @@ describe('FreeDraftHistoryPanel', () => {
           draft_id: 'real-post',
           title: '真实帖子',
           published: true,
-          post_id: 'note_123',
         }),
         draft({
           draft_id: 'mock-post',
           title: '模拟帖子',
           published: true,
-          post_id: 'mock_dry_run',
         }),
         draft({
           draft_id: 'snapshot-post',
@@ -320,6 +320,14 @@ describe('FreeDraftHistoryPanel', () => {
       ],
       count: 9,
     })
+    vi.mocked(api.getFreeDraft).mockImplementation(async (_accountId, draftId) => ({
+      draft_id: draftId,
+      draft: draftId === 'real-post'
+        ? { ...draft({ draft_id: draftId, published: true }), post_id: 'note_123' }
+        : draftId === 'mock-post'
+          ? { ...draft({ draft_id: draftId, published: true }), post_id: 'mock_dry_run' }
+          : { ...draft({ draft_id: draftId, published: true }), post_id: '' },
+    }))
 
     const wrapper = await mountPanel()
     const expectedActions = [
@@ -328,7 +336,7 @@ describe('FreeDraftHistoryPanel', () => {
       { draftId: 'real-post', action: 'analytics' },
       { draftId: 'mock-post' },
       { draftId: 'snapshot-post', action: 'analytics' },
-      { draftId: 'status-post', action: 'analytics' },
+      { draftId: 'status-post' },
       { draftId: 'mock-status' },
       { draftId: 'revision' },
       { draftId: 'plain' },
@@ -339,6 +347,7 @@ describe('FreeDraftHistoryPanel', () => {
       const article = wrapper.findAll('article').find(item => item.attributes('aria-labelledby') === `free-draft-${expected.draftId}`)
       expect(article).toBeTruthy()
       await article!.findAll('button')[0].trigger('click')
+      await flushPromises()
       expect(routerPush).toHaveBeenCalledWith({
         name: 'tui',
         query: {
@@ -349,6 +358,10 @@ describe('FreeDraftHistoryPanel', () => {
         },
       })
     }
+    expect(api.getFreeDraft).toHaveBeenCalledWith('acct-a', 'real-post', { suppressToast: true })
+    expect(api.getFreeDraft).toHaveBeenCalledWith('acct-a', 'mock-post', { suppressToast: true })
+    expect(api.getFreeDraft).toHaveBeenCalledWith('acct-a', 'status-post', { suppressToast: true })
+    expect(api.getFreeDraft).not.toHaveBeenCalledWith('acct-a', 'mock-status', expect.anything())
   })
 
   it('starts a new free draft from the empty state', async () => {

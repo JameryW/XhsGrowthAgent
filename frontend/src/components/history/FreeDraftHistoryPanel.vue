@@ -6,7 +6,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import StatusFilterBar from '@/components/StatusFilterBar.vue'
-import { deleteFreeDraft, listFreeDrafts, type FreeDraftStatus, type FreeDraftSummary } from '@/api/free'
+import { deleteFreeDraft, getFreeDraft, listFreeDrafts, type FreeDraftStatus, type FreeDraftSummary } from '@/api/free'
 import { useToastStore } from '@/stores'
 
 const props = defineProps<{
@@ -111,9 +111,9 @@ type FreeDraftHistoryAction = 'publish' | 'analytics'
 
 /**
  * Keep the action query conservative: History may suggest a publish preview
- * for unpublished drafts, but analytics is reserved for a real post. Older
- * list responses may only expose the post id through the saved snapshot, so
- * accept that equivalent identity as a compatibility fallback.
+ * for unpublished drafts, but analytics is reserved for a real post. The
+ * list response only exposes a post id after an analytics snapshot exists;
+ * published summaries without one are resolved from detail on click below.
  */
 function historyAction(draft: FreeDraftSummary): FreeDraftHistoryAction | null {
   if (!draft.published) {
@@ -124,13 +124,9 @@ function historyAction(draft: FreeDraftSummary): FreeDraftHistoryAction | null {
     return null
   }
 
-  const postId = draft.post_id?.trim() || draft.last_analytics?.post_id?.trim() || ''
+  const postId = draft.last_analytics?.post_id?.trim() || ''
   if (postId) return postId.startsWith('mock_') ? null : 'analytics'
-
-  // Older list summaries do not include post_id or last_analytics. A
-  // successful real publish is still distinguishable from a dry-run by the
-  // durable publish status; mock_published must never unlock analytics.
-  return draft.last_publish?.status?.trim() === 'published' ? 'analytics' : null
+  return null
 }
 
 function formatDate(iso?: string | null) {
@@ -241,14 +237,34 @@ async function refresh() {
   }
 }
 
-function continueDraft(draft: FreeDraftSummary) {
-  if (!props.accountId) return
-  const action = historyAction(draft)
+async function continueDraft(draft: FreeDraftSummary) {
+  const accountId = props.accountId
+  if (!accountId) return
+  let action = historyAction(draft)
+
+  // The compact list contract deliberately omits post_id. Resolve published
+  // rows without an analytics snapshot through the existing detail endpoint
+  // before adding an analytics action. A failed lookup degrades to the
+  // ordinary detail deep link, and an account switch invalidates the click.
+  const snapshotPostId = draft.last_analytics?.post_id?.trim() || ''
+  const isKnownMockPublish = draft.last_publish?.status?.trim() === 'mock_published'
+  if (draft.published && !snapshotPostId && !isKnownMockPublish) {
+    try {
+      const response = await getFreeDraft(accountId, draft.draft_id, { suppressToast: true })
+      if (props.accountId !== accountId) return
+      const detail = response.draft
+      const postId = detail.post_id?.trim() || ''
+      if (detail.published && postId && !postId.startsWith('mock_')) action = 'analytics'
+    } catch {
+      if (props.accountId !== accountId) return
+    }
+  }
+
   void router.push({
     name: 'tui',
     query: {
       mode: 'free',
-      account_id: props.accountId,
+      account_id: accountId,
       draft_id: draft.draft_id,
       ...(action ? { action } : {}),
     },
