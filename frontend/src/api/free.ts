@@ -91,6 +91,9 @@ export interface FreeDraftRecord extends FreeDraftSummary {
   last_publish?: FreeDraftPublishAttempt | null
   post_id?: string
   post_url?: string
+  /** Persisted capture series returned by the full-record endpoint. The list
+   *  endpoint exposes only the server-computed `engagement_trend` summary. */
+  analytics_snapshots?: FreeDraftAnalytics[]
 }
 
 export interface FreeDraftDetailResponse {

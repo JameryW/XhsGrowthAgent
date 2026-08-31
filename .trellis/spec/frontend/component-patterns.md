@@ -443,6 +443,81 @@ const action = detail.published && postId && !postId.startsWith('mock_')
   : null
 ```
 
+### Scenario: Account-scoped Free Draft detail drawers
+
+#### 1. Scope / Trigger
+
+- Trigger: a Free Creation History card opens its read-only detail preview and
+  may continue to the existing TUI flow after the detail has loaded.
+
+#### 2. Signatures
+
+- The History panel owns the selected summary/draft ID; the dedicated drawer
+  receives `isOpen`, `accountId`, and `draftId` and emits `close` or
+  `continue(FreeDraftRecord)`.
+- The drawer reads only through `getFreeDraft(accountId, draftId, { signal,
+  suppressToast: true })`; it must not call update, evaluate, publish,
+  analytics, or delete endpoints.
+
+#### 3. Contracts
+
+- Keep loading, unavailable, error/retry, content, and footer states inside one
+  stable dialog shell. Use the shared `useFocusTrap`, semantic `z-modal`, Esc
+  and backdrop closing, focus restoration, and 44px controls.
+- Treat account and draft IDs as one request identity. Abort on either change,
+  increment a request generation, and commit only when generation, account,
+  draft, and open state still match. An account switch closes the old drawer.
+- Long body text, audience values, anchor IDs, and URLs use `min-w-0` plus
+  wrapping; mobile is full-width/full-height and desktop uses a bounded right
+  drawer so 320px viewports never gain page-level horizontal overflow.
+- A loaded `FreeDraftRecord` is authoritative for the drawer's next-step click.
+  Pass that record back to History and build the TUI query from it directly;
+  do not issue a second detail read. Publish remains preview-only, and
+  analytics still requires `published=true` plus a non-empty, non-`mock_*`
+  post ID.
+
+#### 4. Validation & Error Matrix
+
+- Missing account/draft or an empty/mismatched detail response -> localized
+  unavailable state; no navigation.
+- Read failure -> local error with retry; closing does not navigate.
+- Late response after account/draft/close -> discard without repainting.
+- Degraded evaluation -> show the degraded state and diagnostic summary, but
+  never present its fallback score/decision as a real RQGM verdict.
+- Missing performance fields remain unavailable; never synthesize zero counts.
+
+#### 5. Good / Base / Bad Cases
+
+- Good: a loaded real published detail emits one `continue(detail)` event and
+  History builds `action=analytics` from that current `post_id` without a
+  second read.
+- Base: an unpublished draft with partial metadata still shows its body and
+  unavailable labels while keeping the ordinary detail-only TUI route.
+- Bad: trusting a stale `last_analytics.post_id` after loaded detail says the
+  current `post_id` is empty or `mock_*`, or accepting a response whose inner
+  `draft_id` differs from the requested draft.
+
+#### 6. Tests Required
+
+- Drawer tests cover loading, complete and missing fields, error/retry,
+  draft/account switches, stale responses, Esc/backdrop/close, focus restore,
+  and the loaded-detail `continue` event.
+- History integration asserts preview preserves list filters/context and the
+  returned detail generates one safe TUI deep link without another API read.
+
+#### 7. Wrong vs Correct
+
+```ts
+// Wrong: a stale snapshot can override the current loaded record.
+const postId = detail.last_analytics?.post_id || detail.post_id
+
+// Correct: once detail is loaded, its current identity is authoritative.
+const postId = detail.post_id?.trim() || ''
+const action = detail.published && postId && !postId.startsWith('mock_')
+  ? 'analytics'
+  : null
+```
+
 ---
 
 ## AgentTUI tool_result Display

@@ -32,9 +32,11 @@ async function mountPanel(accountId: string | null = 'acct-a') {
     props: { accountId },
     global: {
       stubs: {
+        Teleport: { template: '<div><slot /></div>' },
         AppIcon: true,
         NeonButton: {
           props: ['loading', 'variant', 'size'],
+          emits: ['click'],
           template: '<button type="button" @click="$emit(\'click\')"><slot /></button>',
         },
         ConfirmModal: {
@@ -362,6 +364,139 @@ describe('FreeDraftHistoryPanel', () => {
     expect(api.getFreeDraft).toHaveBeenCalledWith('acct-a', 'mock-post', { suppressToast: true })
     expect(api.getFreeDraft).toHaveBeenCalledWith('acct-a', 'status-post', { suppressToast: true })
     expect(api.getFreeDraft).not.toHaveBeenCalledWith('acct-a', 'mock-status', expect.anything())
+  })
+
+  it('previews in place and reuses the loaded detail for the safe TUI next step', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [draft({
+        draft_id: 'real-post',
+        title: '真实帖子草稿',
+        published: true,
+      })],
+      count: 1,
+    })
+    vi.mocked(api.getFreeDraft).mockResolvedValue({
+      draft_id: 'real-post',
+      draft: {
+        ...draft({ draft_id: 'real-post', title: '真实帖子草稿', published: true }),
+        account_id: 'acct-a',
+        body: '完整正文',
+        post_id: 'note_real_9',
+      },
+    })
+
+    const wrapper = await mountPanel()
+    await wrapper.find('input[type="search"]').setValue('真实')
+    const previewButton = wrapper.findAll('article button').find(button => /Preview|预览/.test(button.text()))
+    expect(previewButton).toBeTruthy()
+    await previewButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="free-draft-detail-drawer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="free-draft-detail-content"]').text()).toContain('完整正文')
+    expect((wrapper.find('input[type="search"]').element as HTMLInputElement).value).toBe('真实')
+    expect(routerPush).not.toHaveBeenCalled()
+    expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
+    expect(api.getFreeDraft).toHaveBeenCalledWith('acct-a', 'real-post', expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      suppressToast: true,
+    }))
+
+    const footerButtons = wrapper.findAll('[data-testid="free-draft-detail-drawer"] footer button')
+    await footerButtons[footerButtons.length - 1].trigger('click')
+    await flushPromises()
+    expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'tui',
+      query: {
+        mode: 'free',
+        account_id: 'acct-a',
+        draft_id: 'real-post',
+        action: 'analytics',
+      },
+    })
+  })
+
+  it('opens the publish preview deep link from loaded detail without another read', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [draft({
+        draft_id: 'approved-preview',
+        title: '通过待发布',
+        last_evaluation: { overall_score: 92, decision: 'approved' },
+      })],
+      count: 1,
+    })
+    vi.mocked(api.getFreeDraft).mockResolvedValue({
+      draft_id: 'approved-preview',
+      draft: {
+        ...draft({
+          draft_id: 'approved-preview',
+          title: '通过待发布',
+          last_evaluation: { overall_score: 92, decision: 'approved' },
+        }),
+        account_id: 'acct-a',
+        body: '完整待发布正文',
+      },
+    })
+
+    const wrapper = await mountPanel()
+    const previewButton = wrapper.findAll('article button').find(button => /Preview|预览/.test(button.text()))
+    await previewButton!.trigger('click')
+    await flushPromises()
+    const footerButtons = wrapper.findAll('[data-testid="free-draft-detail-drawer"] footer button')
+    await footerButtons[footerButtons.length - 1].trigger('click')
+    await flushPromises()
+
+    expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'tui',
+      query: {
+        mode: 'free',
+        account_id: 'acct-a',
+        draft_id: 'approved-preview',
+        action: 'publish',
+      },
+    })
+  })
+
+  it('trusts the loaded current post id over a stale analytics snapshot', async () => {
+    const api = await import('@/api/free')
+    vi.mocked(api.listFreeDrafts).mockResolvedValue({
+      account_id: 'acct-a',
+      drafts: [draft({ draft_id: 'mock-current', title: '当前试运行草稿', published: true })],
+      count: 1,
+    })
+    vi.mocked(api.getFreeDraft).mockResolvedValue({
+      draft_id: 'mock-current',
+      draft: {
+        ...draft({ draft_id: 'mock-current', title: '当前试运行草稿', published: true }),
+        account_id: 'acct-a',
+        post_id: 'mock_current',
+        last_analytics: { post_id: 'note_stale_real' },
+      },
+    })
+
+    const wrapper = await mountPanel()
+    const previewButton = wrapper.findAll('article button').find(button => /Preview|预览/.test(button.text()))
+    await previewButton!.trigger('click')
+    await flushPromises()
+    const footerButtons = wrapper.findAll('[data-testid="free-draft-detail-drawer"] footer button')
+    await footerButtons[footerButtons.length - 1].trigger('click')
+    await flushPromises()
+
+    expect(api.getFreeDraft).toHaveBeenCalledTimes(1)
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'tui',
+      query: {
+        mode: 'free',
+        account_id: 'acct-a',
+        draft_id: 'mock-current',
+      },
+    })
   })
 
   it('starts a new free draft from the empty state', async () => {
