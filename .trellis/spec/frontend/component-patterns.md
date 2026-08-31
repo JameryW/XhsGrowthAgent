@@ -593,6 +593,85 @@ const previewIndex = computed(() => filteredDrafts.value.findIndex(
 ))
 ```
 
+### Scenario: Safe route-backed Free Draft review returns
+
+#### 1. Scope / Trigger
+
+- Trigger: History sends a user from an account-scoped Free Draft filter or
+  preview into the Free Creation TUI, then offers a way back to the same review
+  context.
+
+#### 2. Signatures
+
+- One pure route-context module owns the accepted filter values, namespaced
+  query keys, normalization limits, History/TUI parsing, fixed History return
+  location, and History-internal mirror location.
+- History and TUI consume that small interface; neither hand-builds return
+  fields or accepts a caller-provided route/path/URL.
+
+#### 3. Contracts
+
+- Persist only the local-view account, status filter, capped search text, and
+  optional draft ID. Repeated/array values are rejected; overlong identity
+  fields are rejected rather than truncated so they cannot alias a resource.
+- TUI shows a return control only in free mode when the source account equals
+  the runtime account after owned-account resolution. Never remap a source
+  draft ID onto a fallback active account.
+- The TUI return builder always produces `name=history`, `tab=free-drafts`, and
+  the resolved owned account. It accepts no arbitrary destination or base
+  query, and clicking it performs navigation only: no command, prompt, API
+  call, publish, or workspace-account mutation.
+- History may mirror review-owned fields with `router.replace` while
+  preserving parent-owned query state. The mirror module hides controlled key
+  names and removes redirect/return/callback/route/path/URL-like fields.
+- Restore a pending draft only after the current account's list commits and
+  only when that ID remains in the current filtered queue. Missing or filtered
+  targets are removed from the mirrored context without a detail read.
+- On a normal account transition, synchronously clear old summaries, counts,
+  preview/delete targets, and request ownership before loading the new list.
+  A late response or visible old card must never be actionable with the new
+  account prop.
+
+#### 4. Validation & Error Matrix
+
+- Missing/array/blank source account -> no return control.
+- Source account differs from the resolved owned account -> reject the source;
+  do not rewrite its draft identity.
+- Pending draft absent from the loaded filtered list -> close/keep closed,
+  clear the pending ID, and issue no detail or mutation request.
+- Browser route update for the same account -> reapply normalized filter and
+  preview context without reloading the list.
+- Search debounce has not flushed before leaving -> build the TUI source from
+  current reactive values so the final input is not lost.
+- Component unmount -> clear debounce timers and ignore queued microtasks.
+
+#### 5. Tests Required
+
+- Pure module tests cover legal round trips, strict single-string parsing,
+  filter fallback, identity rejection, search cap, field collision isolation,
+  fixed History destination, safe parent-query mirroring, and redirect-key
+  variants.
+- History tests cover return restoration, missing/filtered targets, external
+  route updates, debounce, account switches with the next response still
+  pending, old mutation-target cleanup, and no extra writes.
+- TUI tests cover hidden/visible states, source/runtime identity equality,
+  fixed navigation, 44px keyboard-reachable control, and zero command/API/
+  WebSocket/workspace-account side effects.
+
+#### 6. Wrong vs Correct
+
+```ts
+// Wrong: an untrusted URL controls the destination and source identity is
+// silently moved to whichever account the TUI falls back to.
+router.push(route.query.return_to as string)
+buildHistoryLocation(source, resolvedAccountId)
+
+// Correct: require identity continuity and let one deep module fix the target.
+if (source.accountId === resolvedOwnedAccountId) {
+  router.push(buildFreeDraftHistoryLocation(source, resolvedOwnedAccountId))
+}
+```
+
 ---
 
 ## AgentTUI tool_result Display

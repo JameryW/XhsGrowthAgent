@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Verify route restoration, accessibility, 320px/mobile behavior, localization and component structure."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify local state ownership, account changes, stale guards and absence of an unnecessary store."}
+{"file":".trellis/spec/frontend/multi-account.md","reason":"Verify returned context cannot cross accounts or change the workspace account."}
+{"file":".trellis/tasks/08-31-free-draft-review-return-context/research/route-context-design.md","reason":"Check the implementation through the intended deep-module interface and fixed safe destination."}

@@ -4,8 +4,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import AgentTUI from '@/views/AgentTUI.vue'
 import { getActiveAccount, listAccounts } from '@/api/accounts'
 import client from '@/api/client'
+import { useAccountsStore } from '@/stores/accounts'
+import {
+  buildFreeDraftTuiSourceQuery,
+  parseFreeDraftHistoryContext,
+  type FreeDraftReviewContext,
+} from '@/utils/freeDraftReviewContext'
 
-const { FakeTerminal, FakeWebSocket, routeQuery } = vi.hoisted(() => {
+const { FakeTerminal, FakeWebSocket, routeQuery, routerPush } = vi.hoisted(() => {
   class HoistedFakeTerminal {
     static instances: HoistedFakeTerminal[] = []
     cols = 80
@@ -79,11 +85,13 @@ const { FakeTerminal, FakeWebSocket, routeQuery } = vi.hoisted(() => {
     FakeTerminal: HoistedFakeTerminal,
     FakeWebSocket: HoistedFakeWebSocket,
     routeQuery: { mode: 'free' } as Record<string, string>,
+    routerPush: vi.fn(),
   }
 })
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: routeQuery }),
+  useRouter: () => ({ push: routerPush }),
 }))
 
 vi.mock('@/api/accounts', () => ({
@@ -139,16 +147,15 @@ describe('AgentTUI free creation interaction contract', () => {
     FakeTerminal.instances = []
     FakeWebSocket.instances = []
     sessionStorage.clear()
+    for (const key of Object.keys(routeQuery)) delete routeQuery[key]
     routeQuery.mode = 'free'
-    delete routeQuery.account_id
-    delete routeQuery.draft_id
-    delete routeQuery.action
-    delete routeQuery.goal
-    delete routeQuery.topic
+    routerPush.mockReset()
     vi.mocked(listAccounts).mockResolvedValue([])
     vi.mocked(getActiveAccount).mockResolvedValue(null)
     vi.mocked(client.get).mockReset()
     vi.mocked(client.post).mockReset()
+    vi.mocked(client.patch).mockReset()
+    vi.mocked(client.delete).mockReset()
     vi.stubGlobal('WebSocket', FakeWebSocket)
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -160,6 +167,16 @@ describe('AgentTUI free creation interaction contract', () => {
     const wrapper = mount(AgentTUI)
     await flushPromises()
     return { wrapper, terminal: FakeTerminal.instances[0], socket: FakeWebSocket.instances[0] }
+  }
+
+  function addReviewSource(overrides: Partial<FreeDraftReviewContext> = {}) {
+    Object.assign(routeQuery, buildFreeDraftTuiSourceQuery({
+      accountId: 'source-account',
+      status: 'needs_attention',
+      search: '京都亲子',
+      draftId: 'source-draft',
+      ...overrides,
+    }))
   }
 
   it('dispatches /start from the default Agent mode as a new free session', async () => {
@@ -319,6 +336,195 @@ describe('AgentTUI free creation interaction contract', () => {
     const { wrapper } = await mountFreeTui()
 
     expect(wrapper.find('.tui-account-context').text()).toContain('Selected creator')
+    wrapper.unmount()
+  })
+
+  it('hides the draft-review return entry without a valid source context', async () => {
+    routeQuery.account_id = 'selected-account'
+    vi.mocked(listAccounts).mockResolvedValue([{
+      id: 'selected-account', name: 'Selected creator', niche: 'travel', is_active: true,
+      created_at: '2026-08-21T00:00:00Z',
+    }])
+    vi.mocked(getActiveAccount).mockResolvedValue(null)
+
+    const { wrapper } = await mountFreeTui()
+
+    expect(wrapper.find('[data-testid="tui-return-free-draft-review"]').exists()).toBe(false)
+    expect(routerPush).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not parse or show a review return entry outside free mode', async () => {
+    routeQuery.mode = 'command'
+    addReviewSource()
+    vi.mocked(listAccounts).mockResolvedValue([{
+      id: 'source-account', name: 'Source creator', niche: 'travel', is_active: true,
+      created_at: '2026-08-21T00:00:00Z',
+    }])
+
+    const wrapper = mount(AgentTUI)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="tui-return-free-draft-review"]').exists()).toBe(false)
+    expect(routerPush).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('hides the return entry when no source account resolves to an owned account', async () => {
+    addReviewSource()
+    vi.mocked(listAccounts).mockResolvedValue([])
+    vi.mocked(getActiveAccount).mockResolvedValue(null)
+
+    const { wrapper } = await mountFreeTui()
+
+    expect(wrapper.find('[data-testid="tui-return-free-draft-review"]').exists()).toBe(false)
+    expect(routerPush).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('returns to the fixed History queue with the resolved owned account and no side effects', async () => {
+    const activeAccount = {
+      id: 'acct-active',
+      name: 'Owned active creator',
+      niche: 'travel',
+      is_active: true,
+      created_at: '2026-08-21T00:00:00Z',
+    }
+    routeQuery.account_id = 'acct-active'
+    routeQuery.draft_id = 'source-draft'
+    routeQuery.return_to = 'https://evil.example/redirect'
+    addReviewSource({ accountId: 'acct-active' })
+    vi.mocked(listAccounts).mockResolvedValue([activeAccount])
+    vi.mocked(getActiveAccount).mockResolvedValue(activeAccount)
+    vi.mocked(client.get).mockResolvedValue({
+      draft_id: 'source-draft',
+      draft: {
+        account_id: 'acct-active',
+        draft_id: 'source-draft',
+        title: 'Source draft',
+        body: 'Source body',
+        hashtags: [],
+        published: false,
+      },
+    } as never)
+
+    const { wrapper, socket } = await mountFreeTui()
+    const accountsStore = useAccountsStore()
+    const setActiveAccount = vi.spyOn(accountsStore, 'setActiveAccount')
+    const button = wrapper.find('[data-testid="tui-return-free-draft-review"]')
+
+    expect(button.exists()).toBe(true)
+    expect(button.text()).toMatch(/返回草稿审阅|Back to draft review/)
+    expect(button.attributes('type')).toBe('button')
+    expect(button.classes()).toContain('tui-quick-btn')
+    const draftReadCount = vi.mocked(client.get).mock.calls.length
+    const accountReadCounts = {
+      list: vi.mocked(listAccounts).mock.calls.length,
+      active: vi.mocked(getActiveAccount).mock.calls.length,
+    }
+
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(routerPush).toHaveBeenCalledTimes(1)
+    const location = routerPush.mock.calls[0][0]
+    expect(location).toMatchObject({
+      name: 'history',
+      query: { tab: 'free-drafts', account: 'acct-active' },
+    })
+    expect(location.query).not.toHaveProperty('return_to')
+    expect(parseFreeDraftHistoryContext(location.query)).toEqual({
+      accountId: 'acct-active',
+      status: 'needs_attention',
+      search: '京都亲子',
+      draftId: 'source-draft',
+    })
+    expect(socket.sent).toHaveLength(0)
+    expect(client.get).toHaveBeenCalledTimes(draftReadCount)
+    expect(client.post).not.toHaveBeenCalled()
+    expect(client.patch).not.toHaveBeenCalled()
+    expect(client.delete).not.toHaveBeenCalled()
+    expect(listAccounts).toHaveBeenCalledTimes(accountReadCounts.list)
+    expect(getActiveAccount).toHaveBeenCalledTimes(accountReadCounts.active)
+    expect(setActiveAccount).not.toHaveBeenCalled()
+    expect(accountsStore.activeAccountId).toBe('acct-active')
+    wrapper.unmount()
+  })
+
+  it('returns a New Draft source to the review list without inventing a selection', async () => {
+    const activeAccount = {
+      id: 'acct-active',
+      name: 'Owned active creator',
+      niche: 'travel',
+      is_active: true,
+      created_at: '2026-08-21T00:00:00Z',
+    }
+    routeQuery.account_id = 'acct-active'
+    addReviewSource({ accountId: 'acct-active', draftId: null })
+    vi.mocked(listAccounts).mockResolvedValue([activeAccount])
+    vi.mocked(getActiveAccount).mockResolvedValue(activeAccount)
+
+    const { wrapper } = await mountFreeTui()
+    const button = wrapper.find('[data-testid="tui-return-free-draft-review"]')
+
+    expect(button.exists()).toBe(true)
+    await button.trigger('click')
+    const location = routerPush.mock.calls[0][0]
+    expect(parseFreeDraftHistoryContext(location.query)?.draftId).toBeNull()
+    expect(client.get).not.toHaveBeenCalled()
+    expect(client.post).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('rejects review source identity aliasing onto a different resolved account', async () => {
+    const activeAccount = {
+      id: 'acct-active',
+      name: 'Owned active creator',
+      niche: 'travel',
+      is_active: true,
+      created_at: '2026-08-21T00:00:00Z',
+    }
+    routeQuery.account_id = 'not-owned'
+    addReviewSource({ accountId: 'raw-source-account' })
+    vi.mocked(listAccounts).mockResolvedValue([activeAccount])
+    vi.mocked(getActiveAccount).mockResolvedValue(activeAccount)
+
+    const { wrapper } = await mountFreeTui()
+
+    expect(wrapper.find('[data-testid="tui-return-free-draft-review"]').exists()).toBe(false)
+    expect(routerPush).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('rejects a source draft that aliases different operational TUI state', async () => {
+    const activeAccount = {
+      id: 'acct-active',
+      name: 'Owned active creator',
+      niche: 'travel',
+      is_active: true,
+      created_at: '2026-08-21T00:00:00Z',
+    }
+    routeQuery.account_id = 'acct-active'
+    routeQuery.draft_id = 'runtime-draft'
+    addReviewSource({ accountId: 'acct-active', draftId: 'source-draft' })
+    vi.mocked(listAccounts).mockResolvedValue([activeAccount])
+    vi.mocked(getActiveAccount).mockResolvedValue(activeAccount)
+    vi.mocked(client.get).mockResolvedValue({
+      draft_id: 'runtime-draft',
+      draft: {
+        account_id: 'acct-active',
+        draft_id: 'runtime-draft',
+        title: 'Runtime draft',
+        body: 'Runtime body',
+        hashtags: [],
+        published: false,
+      },
+    } as never)
+
+    const { wrapper } = await mountFreeTui()
+
+    expect(wrapper.find('[data-testid="tui-return-free-draft-review"]').exists()).toBe(false)
+    expect(routerPush).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

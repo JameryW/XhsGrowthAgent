@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import FreeDraftDetailDrawer from '@/components/history/FreeDraftDetailDrawer.vue'
@@ -9,12 +9,19 @@ import NeonButton from '@/components/NeonButton.vue'
 import StatusFilterBar from '@/components/StatusFilterBar.vue'
 import { deleteFreeDraft, getFreeDraft, listFreeDrafts, type FreeDraftRecord, type FreeDraftStatus, type FreeDraftSummary } from '@/api/free'
 import { useToastStore } from '@/stores'
+import {
+  buildFreeDraftHistoryMirrorLocation,
+  buildFreeDraftTuiSourceQuery,
+  parseFreeDraftHistoryContext,
+  type FreeDraftReviewContext,
+} from '@/utils/freeDraftReviewContext'
 
 const props = defineProps<{
   accountId: string | null
 }>()
 
 const { t, locale } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const toastStore = useToastStore()
 const emit = defineEmits<{
@@ -32,9 +39,15 @@ const statusFilter = ref<HistoryFilter>('all')
 const deleteTarget = ref<FreeDraftSummary | null>(null)
 const isDeleting = ref(false)
 const previewTarget = ref<FreeDraftSummary | null>(null)
+const pendingPreviewId = ref<string | null>(null)
+const loadedAccountId = ref<string | null>(null)
 
 let requestGeneration = 0
 let listAbort: AbortController | null = null
+let applyingRouteContext = false
+let routeSyncQueued = false
+let searchSyncTimer: ReturnType<typeof setTimeout> | null = null
+let isUnmounted = false
 
 const statusOptions = computed(() => {
   const countFor = (status: HistoryFilter) => drafts.value.filter(draftMatchesStatus(status)).length
@@ -82,6 +95,88 @@ const canPreviewNext = computed(() => (
 ))
 
 const hasActiveFilter = computed(() => Boolean(searchQuery.value.trim()) || statusFilter.value !== 'all')
+
+function currentReviewContext(draftId: string | null): FreeDraftReviewContext | null {
+  const accountId = props.accountId
+  if (!accountId) return null
+  return {
+    accountId,
+    status: statusFilter.value,
+    search: searchQuery.value,
+    draftId,
+  }
+}
+
+function currentRouteQueryMatches(nextQuery: Record<string, string | string[]>) {
+  const currentKeys = Object.keys(route.query)
+  const nextKeys = Object.keys(nextQuery)
+  return currentKeys.length === nextKeys.length
+    && nextKeys.every((key) => {
+      const current = route.query[key]
+      const next = nextQuery[key]
+      if (typeof next === 'string') return current === next
+      return Array.isArray(current)
+        && current.length === next.length
+        && current.every((item, index) => item === next[index])
+    })
+}
+
+function syncReviewQuery() {
+  if (applyingRouteContext) return
+  const context = currentReviewContext(
+    previewTarget.value?.draft_id ?? pendingPreviewId.value,
+  )
+  const accountId = props.accountId
+  if (!context || !accountId) return
+  const location = buildFreeDraftHistoryMirrorLocation(context, accountId, route.query)
+  if (!location || currentRouteQueryMatches(location.query)) return
+  void router.replace(location)
+}
+
+function queueReviewQuerySync() {
+  if (applyingRouteContext || routeSyncQueued) return
+  routeSyncQueued = true
+  queueMicrotask(() => {
+    routeSyncQueued = false
+    if (isUnmounted) return
+    syncReviewQuery()
+  })
+}
+
+function scheduleSearchQuerySync() {
+  if (searchSyncTimer) clearTimeout(searchSyncTimer)
+  searchSyncTimer = setTimeout(() => {
+    searchSyncTimer = null
+    queueReviewQuerySync()
+  }, 160)
+}
+
+function tuiSourceQuery(draftId: string | null) {
+  const context = currentReviewContext(draftId)
+  return context ? buildFreeDraftTuiSourceQuery(context) : {}
+}
+
+function resolvePendingPreview(): 'pending' | 'found' | 'missing' | 'none' {
+  const draftId = pendingPreviewId.value
+  if (!draftId) return 'none'
+  if (loadedAccountId.value !== props.accountId) return 'pending'
+  const match = filteredDrafts.value.find(draft => draft.draft_id === draftId) ?? null
+  pendingPreviewId.value = null
+  previewTarget.value = match
+  return match ? 'found' : 'missing'
+}
+
+function applyRouteContext(context: FreeDraftReviewContext | null) {
+  applyingRouteContext = true
+  statusFilter.value = context?.status ?? 'all'
+  searchQuery.value = context?.search ?? ''
+  const draftId = context?.draftId ?? null
+  if (previewTarget.value?.draft_id !== draftId) previewTarget.value = null
+  pendingPreviewId.value = draftId
+  const resolution = resolvePendingPreview()
+  applyingRouteContext = false
+  if (resolution === 'missing') queueReviewQuerySync()
+}
 
 function draftMatchesStatus(status: HistoryFilter) {
   return (draft: FreeDraftSummary) => {
@@ -231,6 +326,7 @@ async function refresh() {
   const accountId = props.accountId
   if (!accountId) {
     drafts.value = []
+    loadedAccountId.value = null
     responseTruncated.value = false
     error.value = null
     isLoading.value = false
@@ -253,8 +349,11 @@ async function refresh() {
     })
     if (generation !== requestGeneration || props.accountId !== accountId) return
     drafts.value = response.drafts ?? []
+    loadedAccountId.value = accountId
     responseTruncated.value = Boolean(response.truncated)
     emit('count-change', response.count ?? drafts.value.length)
+    const resolution = resolvePendingPreview()
+    if (resolution === 'missing') queueReviewQuerySync()
   } catch (err: unknown) {
     if (generation !== requestGeneration || isAbortError(err)) return
     error.value = err instanceof Error ? err.message : t('history.freeDrafts.loadError')
@@ -297,15 +396,18 @@ async function continueDraft(draft: NavigableFreeDraft, detailIsLoaded = false) 
       account_id: accountId,
       draft_id: draft.draft_id,
       ...(action ? { action } : {}),
+      ...tuiSourceQuery(draft.draft_id),
     },
   })
 }
 
 function openPreview(draft: FreeDraftSummary) {
+  pendingPreviewId.value = null
   previewTarget.value = draft
 }
 
 function closePreview() {
+  pendingPreviewId.value = null
   previewTarget.value = null
 }
 
@@ -334,7 +436,11 @@ function newDraft() {
   if (!props.accountId) return
   void router.push({
     name: 'tui',
-    query: { mode: 'free', account_id: props.accountId },
+    query: {
+      mode: 'free',
+      account_id: props.accountId,
+      ...tuiSourceQuery(null),
+    },
   })
 }
 
@@ -363,10 +469,19 @@ async function confirmDelete() {
   }
 }
 
-watch(() => props.accountId, () => {
-  previewTarget.value = null
-  statusFilter.value = 'all'
-  searchQuery.value = ''
+watch(() => props.accountId, (accountId, previousAccountId) => {
+  if (accountId !== previousAccountId) {
+    // Summaries do not carry account_id, so retaining them during a local
+    // account transition would expose old draft actions under the new prop.
+    drafts.value = []
+    responseTruncated.value = false
+    deleteTarget.value = null
+    emit('count-change', 0)
+  }
+  loadedAccountId.value = null
+  const context = parseFreeDraftHistoryContext(route.query)
+  applyRouteContext(context?.accountId === accountId ? context : null)
+  if (accountId) queueReviewQuerySync()
   void refresh()
 }, { immediate: true })
 
@@ -375,11 +490,50 @@ watch(filteredDraftIds, (draftIds) => {
   if (selectedDraftId && !draftIds.includes(selectedDraftId)) {
     previewTarget.value = null
   }
+  const resolution = resolvePendingPreview()
+  if (resolution === 'missing') queueReviewQuerySync()
 }, { flush: 'sync' })
 
+watch(statusFilter, () => {
+  if (!applyingRouteContext) queueReviewQuerySync()
+}, { flush: 'sync' })
+
+watch(searchQuery, () => {
+  if (!applyingRouteContext) scheduleSearchQuerySync()
+}, { flush: 'sync' })
+
+watch(() => previewTarget.value?.draft_id ?? null, () => {
+  if (!applyingRouteContext) queueReviewQuerySync()
+}, { flush: 'sync' })
+
+watch(
+  () => route.query,
+  () => {
+    const accountId = props.accountId
+    if (!accountId) return
+    const context = parseFreeDraftHistoryContext(route.query)
+    if (context?.accountId === accountId) {
+      applyRouteContext(context)
+      queueReviewQuerySync()
+      return
+    }
+    const routeAccount = typeof route.query.account === 'string'
+      ? route.query.account.trim()
+      : ''
+    // History owns cross-account routing; wait for the prop before applying a
+    // context that explicitly targets a different account.
+    if (routeAccount && routeAccount !== accountId) return
+    applyRouteContext(null)
+    queueReviewQuerySync()
+  },
+  { deep: true },
+)
+
 onUnmounted(() => {
+  isUnmounted = true
   requestGeneration++
   listAbort?.abort()
+  if (searchSyncTimer) clearTimeout(searchSyncTimer)
 })
 
 defineExpose({ refresh })

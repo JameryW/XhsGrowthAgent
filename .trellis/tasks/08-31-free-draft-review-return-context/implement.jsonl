@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Follow Vue composition, route-state, accessibility, responsive touch-target and explicit dark-mode conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep account-scoped draft state local, avoid a new store, and preserve stale-request lifecycle rules."}
+{"file":".trellis/spec/frontend/multi-account.md","reason":"Preserve local-view account precedence without mutating the workspace active account."}
+{"file":".trellis/tasks/08-31-free-draft-review-return-context/research/route-context-design.md","reason":"Implement the selected deep-module seam, fixed-destination safety model and interface-level test surface."}
