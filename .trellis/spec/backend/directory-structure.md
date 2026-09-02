@@ -490,3 +490,28 @@ class XHSGrowthState(TypedDict, total=False):
     content_versions: Annotated[list[ContentVersion], _append_list]
     brief_content: Annotated[BriefContent, _merge_dict]
 ```
+
+---
+
+## Creator Agent Decision Core
+
+Creator Agent is a bounded domain module rather than another workflow node. Its
+pure domain decisions live in `backend/creator_agent/`; persistence stays in
+`backend/db/`, and HTTP translation stays in `backend/api/routes/`.
+
+```
+backend/
+├── creator_agent/                        # Creator judgement and decision domain
+│   ├── models.py                         # Pydantic domain contracts and enums
+│   ├── repository.py                     # Persistence protocol and domain errors
+│   ├── model_store.py                    # Creator Model read/write boundary
+│   └── advisor.py                        # Deterministic, evidence-backed ranking
+├── db/
+│   └── creator_agent.py                  # Postgres adapter + test/dev fallback
+└── api/routes/
+    └── creator_agent.py                  # Authenticated Creator Agent API
+```
+
+The domain package must not import FastAPI, request objects, or database
+drivers. Routes resolve the canonical owned account before invoking the domain;
+the adapter is the only layer that knows table names or transaction details.

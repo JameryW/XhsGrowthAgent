@@ -14,6 +14,7 @@ from typing import Any
 _LAZY_EXPORTS = {
     "analytics_router": ("backend.api.routes.analytics", "router"),
     "blogger_router": ("backend.api.routes.blogger", "router"),
+    "creator_agent_router": ("backend.api.routes.creator_agent", "router"),
     "evaluation_router": ("backend.api.routes.evaluation", "router"),
     "free_router": ("backend.api.routes.free", "router"),
     "public_showcase_router": ("backend.api.routes.public_showcase", "router"),
@@ -27,6 +28,7 @@ __all__ = [
     "review_router",
     "analytics_router",
     "blogger_router",
+    "creator_agent_router",
     "evaluation_router",
     "free_router",
     "public_showcase_router",

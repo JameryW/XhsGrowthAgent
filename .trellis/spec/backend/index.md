@@ -14,8 +14,8 @@ This directory contains guidelines for backend development. Fill in each file wi
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
+| [Directory Structure](./directory-structure.md) | Module organization and file layout | Active |
+| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | Active |
 | [Error Handling](./error-handling.md) | Error types, retry, cancel/pause | Active |
 | [Workflow State](./workflow-state.md) | Status derivation, interrupts, event emission | Active |
 | [OMP Integration](./omp-integration.md) | Cross-layer API contracts for omp extension + Web TUI | Active |

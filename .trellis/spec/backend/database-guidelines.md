@@ -18,6 +18,39 @@ Both pools are initialized in `app.py` lifespan and closed on shutdown.
 
 ---
 
+## Scenario: Creator Agent judgement and decision persistence
+
+The Creator Agent adapter (`backend/db/creator_agent.py`) stores creator
+judgement separately from derived Creative Memory. It supports PostgreSQL in
+production and a process-memory fallback for tests/dev when no pool is ready.
+
+### Contracts
+
+- `creator_agent_models` is keyed by the independent `creator_id`; each write
+  replaces the complete immutable model definition and increments `revision`.
+- Writes accept `expected_revision` and must fail with a revision-conflict
+  error when another writer has advanced the model. Never silently merge
+  normative judgement.
+- `creator_agent_decisions` stores the exact model revision, request context,
+  ranked candidates, exclusions, evidence IDs, confidence, and status. A
+  decision is an audit record, not a recomputation from the current model.
+- `creator_agent_relationships` is scoped by `(account_id, audience_id)` and
+  stores interaction count, accepted/rejected candidate IDs, latest correction,
+  and last interaction time.
+- Feedback is append-only and idempotent by `feedback_id`; it may update
+  relationship memory and create a learning signal, but it must not mutate the
+  Creator Model without an explicit creator-approved revision.
+- All adapter operations are account-scoped at the route boundary and use
+  parameterized SQL plus explicit transactions for Postgres writes.
+
+### Initialization and fallback
+
+`ensure_tables()` is called during the Postgres app lifespan. If no ready pool
+exists, the in-memory repository remains usable and is reset only by the test
+helper `_reset_memory_store()`; production code must not depend on that helper.
+
+---
+
 ## Scenario: Workflow Metadata Persistence
 
 ### 1. Scope / Trigger

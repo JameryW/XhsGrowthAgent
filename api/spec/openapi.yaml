@@ -19,6 +19,8 @@ tags:
     description: Human-in-the-loop review operations
   - name: analytics
     description: Performance analytics and cost tracking
+  - name: creator-agent
+    description: Creator-owned identity, evidence-backed decisions, and relationship memory
 
 paths:
   /workflow/start:
@@ -534,6 +536,183 @@ paths:
               schema:
                 $ref: '#/components/schemas/InternalError'
 
+  /creator-agent/model:
+    get:
+      tags:
+        - creator-agent
+      summary: Get the current Creator Model
+      description: Returns the account-scoped, revisioned creator judgement model.
+      operationId: getCreatorModel
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Creator Model retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_CreatorModel'
+        '404':
+          description: Creator Model not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    put:
+      tags:
+        - creator-agent
+      summary: Create or revise a Creator Model
+      description: Uses optimistic concurrency; expected_revision 0 creates revision 1.
+      operationId: saveCreatorModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatorModelSaveRequest'
+      responses:
+        '200':
+          description: Creator Model saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_CreatorModel'
+        '409':
+          description: Stale Creator Model revision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conflict'
+
+  /creator-agent/decisions:
+    post:
+      tags:
+        - creator-agent
+      summary: Create an evidence-backed decision
+      description: Evaluates candidates with the exact Creator Model revision and persists an audit record.
+      operationId: createCreatorDecision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      responses:
+        '200':
+          description: Decision record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_DecisionRecord'
+        '404':
+          description: Creator Model not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+
+  /creator-agent/decisions/{decision_id}:
+    get:
+      tags:
+        - creator-agent
+      summary: Get a persisted decision record
+      operationId: getCreatorDecision
+      parameters:
+        - name: decision_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Decision record retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_DecisionRecord'
+        '404':
+          description: Decision record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+
+  /creator-agent/decisions/{decision_id}/feedback:
+    post:
+      tags:
+        - creator-agent
+      summary: Record feedback on a decision
+      description: Appends feedback and updates relationship memory without mutating the Creator Model.
+      operationId: recordCreatorFeedback
+      parameters:
+        - name: decision_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordFeedbackRequest'
+      responses:
+        '200':
+          description: Feedback recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_FeedbackResult'
+        '400':
+          description: Feedback audience does not match the decision audience
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '404':
+          description: Decision record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+
+  /creator-agent/relationships/{audience_id}:
+    get:
+      tags:
+        - creator-agent
+      summary: Get relationship memory for an audience member
+      operationId: getCreatorRelationship
+      parameters:
+        - name: audience_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Relationship memory retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_RelationshipMemory'
+
 components:
   schemas:
     # ============ Unified Response Wrapper ============
@@ -650,6 +829,38 @@ components:
             data:
               $ref: '#/components/schemas/CostReport'
 
+    ApiResponse_CreatorModel:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/CreatorModel'
+
+    ApiResponse_DecisionRecord:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/DecisionRecord'
+
+    ApiResponse_FeedbackResult:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/FeedbackResult'
+
+    ApiResponse_RelationshipMemory:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RelationshipMemory'
+
     # ============ Enums (CRITICAL - must match backend exactly) ============
     WorkflowPhase:
       type: string
@@ -723,6 +934,26 @@ components:
         - rejected
       description: Human review decision for content
 
+    EvidenceSource:
+      type: string
+      enum: [creator_statement, creator_content, product_fact, external_fact, user_feedback]
+
+    PreferenceStance:
+      type: string
+      enum: [prefer, avoid, require]
+
+    DecisionStatus:
+      type: string
+      enum: [recommended, insufficient_evidence, no_eligible_candidate]
+
+    FeedbackOutcome:
+      type: string
+      enum: [considered, accepted, purchased, satisfied, rejected, dissatisfied]
+
+    LearningStatus:
+      type: string
+      enum: [observed, pending_creator_review]
+
     # ============ Request Models ============
     WorkflowStartRequest:
       type: object
@@ -786,6 +1017,226 @@ components:
           nullable: true
           default: null
           description: Publish as this account; null falls back to the global active account
+
+    CreatorModelSaveRequest:
+      type: object
+      required: [account_id, model]
+      properties:
+        account_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        expected_revision:
+          type: integer
+          minimum: 0
+          default: 0
+        model:
+          $ref: '#/components/schemas/CreatorModelDefinition'
+
+    RecordFeedbackRequest:
+      type: object
+      required: [account_id, feedback]
+      properties:
+        account_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        feedback:
+          $ref: '#/components/schemas/FeedbackInput'
+
+    Evidence:
+      type: object
+      required: [evidence_id, source_kind, source_ref, claim]
+      properties:
+        evidence_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        source_kind:
+          $ref: '#/components/schemas/EvidenceSource'
+        source_ref:
+          type: string
+          minLength: 1
+          maxLength: 500
+        claim:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        observed_at:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 1
+
+    Preference:
+      type: object
+      required: [preference_id, label, evidence_ids]
+      properties:
+        preference_id: {type: string, minLength: 1, maxLength: 128}
+        label: {type: string, minLength: 1, maxLength: 300}
+        stance: {$ref: '#/components/schemas/PreferenceStance'}
+        tags: {type: array, items: {type: string}, maxItems: 50}
+        applies_when: {type: object, additionalProperties: {type: string}}
+        strength: {type: number, minimum: 0, maximum: 1, default: 0.5}
+        rationale: {type: string, maxLength: 2000, default: ""}
+        evidence_ids: {type: array, minItems: 1, maxItems: 50, items: {type: string}}
+
+    KnowledgeClaim:
+      type: object
+      required: [claim_id, statement, evidence_ids]
+      properties:
+        claim_id: {type: string, minLength: 1, maxLength: 128}
+        statement: {type: string, minLength: 1, maxLength: 2000}
+        confidence: {type: number, minimum: 0, maximum: 1, default: 1}
+        evidence_ids: {type: array, minItems: 1, maxItems: 50, items: {type: string}}
+
+    DecisionPolicy:
+      type: object
+      required: [policy_id, label, rationale, evidence_ids]
+      properties:
+        policy_id: {type: string, minLength: 1, maxLength: 128}
+        label: {type: string, minLength: 1, maxLength: 300}
+        applies_when: {type: object, additionalProperties: {type: string}}
+        signal_weights: {type: object, additionalProperties: {type: number, minimum: -1, maximum: 1}}
+        preferred_tags: {type: array, items: {type: string}, maxItems: 50}
+        excluded_tags: {type: array, items: {type: string}, maxItems: 50}
+        rationale: {type: string, minLength: 1, maxLength: 2000}
+        evidence_ids: {type: array, minItems: 1, maxItems: 50, items: {type: string}}
+
+    CreatorModelDefinition:
+      type: object
+      required: [identity_summary]
+      properties:
+        identity_summary: {type: string, minLength: 1, maxLength: 2000}
+        domains: {type: array, items: {type: string}, maxItems: 50}
+        preferences: {type: array, items: {$ref: '#/components/schemas/Preference'}, maxItems: 200}
+        knowledge: {type: array, items: {$ref: '#/components/schemas/KnowledgeClaim'}, maxItems: 500}
+        policies: {type: array, items: {$ref: '#/components/schemas/DecisionPolicy'}, maxItems: 200}
+        evidence: {type: array, items: {$ref: '#/components/schemas/Evidence'}, maxItems: 1000}
+
+    CreatorModel:
+      allOf:
+        - $ref: '#/components/schemas/CreatorModelDefinition'
+        - type: object
+          required: [account_id, creator_id, revision, created_at, updated_at]
+          properties:
+            account_id: {type: string, minLength: 1, maxLength: 128}
+            creator_id: {type: string, minLength: 1, maxLength: 128}
+            revision: {type: integer, minimum: 1}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
+
+    HardConstraint:
+      type: object
+      required: [field, value]
+      properties:
+        field: {type: string, minLength: 1, maxLength: 128}
+        value: {}
+
+    DecisionCandidate:
+      type: object
+      required: [candidate_id, label]
+      properties:
+        candidate_id: {type: string, minLength: 1, maxLength: 128}
+        label: {type: string, minLength: 1, maxLength: 300}
+        attributes: {type: object, additionalProperties: true}
+        signals: {type: object, additionalProperties: {type: number, minimum: 0, maximum: 1}}
+        tags: {type: array, items: {type: string}, maxItems: 100}
+        evidence: {type: array, items: {$ref: '#/components/schemas/Evidence'}, maxItems: 100}
+
+    DecisionRequest:
+      type: object
+      required: [account_id, audience_id, goal, candidates]
+      properties:
+        account_id: {type: string, minLength: 1, maxLength: 128}
+        audience_id: {type: string, minLength: 1, maxLength: 128}
+        goal: {type: string, minLength: 1, maxLength: 2000}
+        context: {type: object, additionalProperties: {type: string}}
+        hard_constraints: {type: array, items: {$ref: '#/components/schemas/HardConstraint'}, maxItems: 50}
+        candidates: {type: array, minItems: 2, maxItems: 100, items: {$ref: '#/components/schemas/DecisionCandidate'}}
+
+    RankedCandidate:
+      type: object
+      required: [candidate_id, label, score, rationale, evidence_ids]
+      properties:
+        candidate_id: {type: string}
+        label: {type: string}
+        score: {type: number}
+        rationale: {type: array, items: {type: string}}
+        evidence_ids: {type: array, items: {type: string}}
+
+    ExcludedCandidate:
+      type: object
+      required: [candidate_id, label, reasons]
+      properties:
+        candidate_id: {type: string}
+        label: {type: string}
+        reasons: {type: array, items: {type: string}}
+
+    FeedbackInput:
+      type: object
+      required: [audience_id, outcome]
+      properties:
+        feedback_id: {type: string, maxLength: 128, default: ""}
+        audience_id: {type: string, minLength: 1, maxLength: 128}
+        outcome: {$ref: '#/components/schemas/FeedbackOutcome'}
+        selected_candidate_id: {type: string, maxLength: 128, default: ""}
+        note: {type: string, maxLength: 2000, default: ""}
+        correction: {type: string, maxLength: 2000, default: ""}
+
+    UserFeedback:
+      allOf:
+        - $ref: '#/components/schemas/FeedbackInput'
+        - type: object
+          required: [feedback_id, created_at]
+          properties:
+            feedback_id: {type: string, minLength: 1, maxLength: 128}
+            created_at: {type: string, format: date-time}
+
+    DecisionRecord:
+      type: object
+      required: [decision_id, account_id, audience_id, creator_id, model_revision, goal, status, created_at, updated_at]
+      properties:
+        decision_id: {type: string}
+        account_id: {type: string}
+        audience_id: {type: string}
+        creator_id: {type: string}
+        model_revision: {type: integer, minimum: 1}
+        goal: {type: string}
+        context: {type: object, additionalProperties: {type: string}}
+        status: {$ref: '#/components/schemas/DecisionStatus'}
+        matched_policy_ids: {type: array, items: {type: string}}
+        recommendations: {type: array, items: {$ref: '#/components/schemas/RankedCandidate'}}
+        excluded_candidates: {type: array, items: {$ref: '#/components/schemas/ExcludedCandidate'}}
+        evidence: {type: array, items: {$ref: '#/components/schemas/Evidence'}}
+        evidence_coverage: {type: number, minimum: 0, maximum: 1}
+        confidence: {type: number, minimum: 0, maximum: 1}
+        feedback: {type: array, items: {$ref: '#/components/schemas/UserFeedback'}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+
+    RelationshipMemory:
+      type: object
+      required: [account_id, audience_id]
+      properties:
+        account_id: {type: string}
+        audience_id: {type: string}
+        interaction_count: {type: integer, minimum: 0}
+        accepted_candidate_ids: {type: array, items: {type: string}}
+        rejected_candidate_ids: {type: array, items: {type: string}}
+        latest_correction: {type: string}
+        last_interaction_at: {type: string}
+
+    FeedbackResult:
+      type: object
+      required: [decision, relationship, learning_status, created]
+      properties:
+        decision: {$ref: '#/components/schemas/DecisionRecord'}
+        relationship: {$ref: '#/components/schemas/RelationshipMemory'}
+        learning_status: {$ref: '#/components/schemas/LearningStatus'}
+        created: {type: boolean}
 
     # ============ Response Models ============
     WorkflowResponse:
@@ -1318,7 +1769,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [BAD_REQUEST, VALIDATION_ERROR]
+                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH]
                 message:
                   type: string
           example:
@@ -1346,7 +1797,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [NOT_FOUND]
+                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND]
                 message:
                   type: string
           example:
@@ -1359,6 +1810,34 @@ components:
                 thread_id: "thread_invalid"
             timestamp: "2026-05-25T10:00:00Z"
             request_id: "req_error_002"
+
+    Conflict:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            success:
+              type: boolean
+              enum: [false]
+            error:
+              type: object
+              properties:
+                code:
+                  type: string
+                  enum: [ERROR_CREATOR_MODEL_REVISION_CONFLICT]
+                message:
+                  type: string
+          example:
+            success: false
+            data: null
+            error:
+              code: "ERROR_CREATOR_MODEL_REVISION_CONFLICT"
+              message: "Creator Model revision is stale"
+              details:
+                expected_revision: 1
+                actual_revision: 2
+            timestamp: "2026-09-02T10:00:00Z"
+            request_id: "req_error_004"
 
     InternalError:
       allOf:

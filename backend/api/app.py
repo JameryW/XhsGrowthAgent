@@ -1227,6 +1227,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ensure_tables as ensure_console_users,
             )
             from backend.db.creative_memory import ensure_tables as ensure_creative_memory
+            from backend.db.creator_agent import ensure_tables as ensure_creator_agent
             from backend.db.creator_stats import ensure_tables as ensure_creator_stats
 
             # risk gate durable cool-downs hydrate after creator_stats tables exist
@@ -1260,6 +1261,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ensure_quality_evaluations(),
                 ensure_creator_stats(),
                 ensure_creative_memory(),
+                ensure_creator_agent(),
                 ensure_public_telemetry(),
             ]
             await asyncio.gather(*ensure_coros)
@@ -1471,6 +1473,7 @@ from backend.api.routes import (  # noqa: E402
     analytics,
     auth,
     blogger,
+    creator_agent,
     evaluation,
     free,
     inbox,
@@ -1496,6 +1499,7 @@ app.include_router(public_telemetry.router, prefix="/api/public", tags=["public-
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(evaluation.router, prefix="/api/evaluation", tags=["evaluation"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(creator_agent.router, prefix="/api/creator-agent", tags=["creator-agent"])
 app.include_router(system_router, prefix="/api/system", tags=["system"])
 app.include_router(realtime.router, tags=["realtime"])  # WebSocket 不需要 /api 前缀
 app.include_router(agent_router, tags=["agent"])  # WebSocket at /api/agent/ws

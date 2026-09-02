@@ -128,6 +128,19 @@ class TestOpenAPIRequiredEndpoints:
         """Verify /analytics/costs endpoint exists."""
         assert "/analytics/costs" in paths, "Missing /analytics/costs endpoint"
 
+    def test_creator_agent_endpoints_exist(self, paths):
+        """Creator Agent routes must be represented in the checked-in contract."""
+        expected = {
+            "/creator-agent/model": {"get", "put"},
+            "/creator-agent/decisions": {"post"},
+            "/creator-agent/decisions/{decision_id}": {"get"},
+            "/creator-agent/decisions/{decision_id}/feedback": {"post"},
+            "/creator-agent/relationships/{audience_id}": {"get"},
+        }
+        for path, methods in expected.items():
+            assert path in paths, f"Missing {path} endpoint"
+            assert methods <= set(paths[path]), f"Missing methods for {path}"
+
 
 class TestOpenAPIUnifiedResponse:
     """Tests for unified ApiResponse wrapper."""
