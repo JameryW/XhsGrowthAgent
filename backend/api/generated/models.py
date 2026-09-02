@@ -140,6 +140,17 @@ class LearningStatus(Enum):
     PENDING_CREATOR_REVIEW = "pending_creator_review"
 
 
+class LearningSignalStatus(Enum):
+    PENDING_CREATOR_REVIEW = "pending_creator_review"
+    APPROVED = "approved"
+    DISMISSED = "dismissed"
+
+
+class CreatorReviewDisposition(Enum):
+    APPROVED = "approved"
+    DISMISSED = "dismissed"
+
+
 class WorkflowStartRequest(BaseModel):
     account_id: Annotated[
         StrictStr,
@@ -320,11 +331,43 @@ class RelationshipMemory(BaseModel):
     last_interaction_at: StrictStr | None = None
 
 
+class LearningSignal(BaseModel):
+    signal_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    account_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    creator_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    audience_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    decision_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    feedback_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    summary: Annotated[StrictStr, Field(max_length=2000, min_length=1)]
+    correction: Annotated[StrictStr | None, Field(max_length=2000)] = ""
+    evidence_ids: Annotated[list[StrictStr] | None, Field(max_length=1000)] = None
+    status: LearningSignalStatus = LearningSignalStatus.PENDING_CREATOR_REVIEW
+    review_note: Annotated[StrictStr | None, Field(max_length=2000)] = ""
+    reviewed_at: AwareDatetime | None = None
+    applied_model_revision: Annotated[StrictInt | None, Field(ge=1)] = None
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
 class FeedbackResult(BaseModel):
     decision: DecisionRecord
     relationship: RelationshipMemory
     learning_status: LearningStatus
     created: StrictBool
+    learning_signal: LearningSignal | None = None
+
+
+class LearningSignalReviewRequest(BaseModel):
+    account_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    disposition: CreatorReviewDisposition
+    review_note: Annotated[StrictStr | None, Field(max_length=2000)] = ""
+    expected_revision: Annotated[StrictInt | None, Field(ge=0)] = None
+    model: CreatorModelDefinition | None = None
+
+
+class LearningSignalReviewResult(BaseModel):
+    signal: LearningSignal
+    model: CreatorModel | None = None
 
 
 class WorkflowResponse(BaseModel):
@@ -605,6 +648,7 @@ class Code(Enum):
     BAD_REQUEST = "BAD_REQUEST"
     VALIDATION_ERROR = "VALIDATION_ERROR"
     ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH = "ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH"
+    ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
 
 
 class Error(BaseModel):
@@ -629,6 +673,7 @@ class Code1(Enum):
     NOT_FOUND = "NOT_FOUND"
     ERROR_CREATOR_MODEL_NOT_FOUND = "ERROR_CREATOR_MODEL_NOT_FOUND"
     ERROR_CREATOR_DECISION_NOT_FOUND = "ERROR_CREATOR_DECISION_NOT_FOUND"
+    ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
 
 
 class Error1(BaseModel):
@@ -653,6 +698,7 @@ class Error1(BaseModel):
 
 class Code2(Enum):
     ERROR_CREATOR_MODEL_REVISION_CONFLICT = "ERROR_CREATOR_MODEL_REVISION_CONFLICT"
+    ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
 
 
 class Error2(BaseModel):
@@ -747,6 +793,14 @@ class ApiResponseFeedbackResult(ApiResponse):
 
 class ApiResponseRelationshipMemory(ApiResponse):
     data: RelationshipMemory | None = None
+
+
+class ApiResponseLearningSignalList(ApiResponse):
+    data: list[LearningSignal] | None = None
+
+
+class ApiResponseLearningSignalReviewResult(ApiResponse):
+    data: LearningSignalReviewResult | None = None
 
 
 class ReviewDecisionRequest(BaseModel):

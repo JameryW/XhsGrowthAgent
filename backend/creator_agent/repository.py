@@ -7,7 +7,11 @@ from typing import Protocol
 from backend.creator_agent.models import (
     CreatorModel,
     CreatorModelDefinition,
+    CreatorReviewDisposition,
     DecisionRecord,
+    LearningSignal,
+    LearningSignalReview,
+    LearningSignalStatus,
     RelationshipMemory,
     UserFeedback,
 )
@@ -39,6 +43,32 @@ class FeedbackAudienceMismatchError(Exception):
         super().__init__(f"feedback audience mismatch: expected {expected!r}, actual {actual!r}")
 
 
+class LearningSignalMissingError(Exception):
+    def __init__(self, signal_id: str) -> None:
+        self.signal_id = signal_id
+        super().__init__(f"learning signal {signal_id!r} not found")
+
+
+class LearningSignalReviewConflictError(Exception):
+    def __init__(
+        self,
+        signal_id: str,
+        existing_status: LearningSignalStatus,
+        requested_disposition: CreatorReviewDisposition,
+    ) -> None:
+        self.signal_id = signal_id
+        self.existing_status = existing_status
+        self.requested_disposition = requested_disposition
+        super().__init__(
+            f"learning signal {signal_id!r} already has status {existing_status.value!r}"
+        )
+
+
+class CreatorReviewModelRequiredError(Exception):
+    def __init__(self) -> None:
+        super().__init__("approved creator review requires model and expected_revision")
+
+
 class CreatorAgentRepository(Protocol):
     async def get_model(self, account_id: str) -> CreatorModel | None: ...
 
@@ -65,6 +95,25 @@ class CreatorAgentRepository(Protocol):
         self, account_id: str, audience_id: str
     ) -> RelationshipMemory | None: ...
 
+    async def get_learning_signal(
+        self, account_id: str, signal_id: str
+    ) -> LearningSignal | None: ...
+
+    async def get_learning_signal_by_feedback(
+        self, account_id: str, feedback_id: str
+    ) -> LearningSignal | None: ...
+
+    async def list_learning_signals(
+        self, account_id: str, status: LearningSignalStatus | None = None
+    ) -> list[LearningSignal]: ...
+
+    async def review_learning_signal(
+        self,
+        account_id: str,
+        signal_id: str,
+        review: LearningSignalReview,
+    ) -> tuple[LearningSignal, CreatorModel | None]: ...
+
 
 __all__ = [
     "CreatorAgentRepository",
@@ -72,4 +121,7 @@ __all__ = [
     "CreatorModelRevisionConflictError",
     "DecisionRecordMissingError",
     "FeedbackAudienceMismatchError",
+    "LearningSignalMissingError",
+    "LearningSignalReviewConflictError",
+    "CreatorReviewModelRequiredError",
 ]

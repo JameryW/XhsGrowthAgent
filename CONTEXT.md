@@ -57,8 +57,16 @@ An append-only observation about whether an Audience Member considered, accepted
 _Avoid_: Rating, analytics event
 
 **Learning Signal**:
-User Feedback that may justify a future Creator Model revision after creator review. It never mutates the Creator Model automatically.
+An explicit, reviewable observation derived from User Feedback that may justify a future Creator Model revision. It remains pending until the creator decides whether and how to change the model; it never mutates the Creator Model automatically.
 _Avoid_: Model update, training example
+
+**Creator Review**:
+The creator's explicit disposition of a Learning Signal, including whether it is accepted or dismissed and, when accepted, which new Creator Model revision embodies the decision.
+_Avoid_: Automatic learning, moderation
+
+**Model Revision**:
+One complete, creator-approved version of a Creator Model. A revision is immutable once it has been used by a Decision Record.
+_Avoid_: Prompt version, chat turn
 
 ## Existing adjacent concepts
 

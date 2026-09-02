@@ -10,18 +10,29 @@ from typing import Any
 from backend.creator_agent.models import (
     CreatorModel,
     CreatorModelDefinition,
+    CreatorReviewDisposition,
     DecisionRecord,
     FeedbackOutcome,
+    LearningSignal,
+    LearningSignalReview,
+    LearningSignalStatus,
     RelationshipMemory,
     UserFeedback,
     utc_now_iso,
 )
-from backend.creator_agent.repository import CreatorModelRevisionConflictError
+from backend.creator_agent.repository import (
+    CreatorModelRevisionConflictError,
+    CreatorReviewModelRequiredError,
+    LearningSignalMissingError,
+    LearningSignalReviewConflictError,
+)
 from backend.db.pool import get_pool, is_pool_ready
 
 _mem_models: dict[str, CreatorModel] = {}
 _mem_decisions: dict[tuple[str, str], DecisionRecord] = {}
 _mem_relationships: dict[tuple[str, str], RelationshipMemory] = {}
+_mem_learning_signals: dict[tuple[str, str], LearningSignal] = {}
+_mem_feedback_signals: dict[tuple[str, str], str] = {}
 _mem_lock = asyncio.Lock()
 
 _CREATE_MODELS_SQL = """
@@ -60,11 +71,27 @@ CREATE TABLE IF NOT EXISTS creator_agent_relationships (
 );
 """
 
+_CREATE_LEARNING_SIGNALS_SQL = """
+CREATE TABLE IF NOT EXISTS creator_agent_learning_signals (
+    account_id   TEXT NOT NULL,
+    signal_id    TEXT NOT NULL,
+    feedback_id  TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    PRIMARY KEY (account_id, signal_id),
+    UNIQUE (account_id, feedback_id)
+);
+"""
+
 _CREATE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_creator_agent_decisions_audience
     ON creator_agent_decisions (account_id, audience_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_creator_agent_relationships_updated
     ON creator_agent_relationships (account_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_creator_agent_learning_signals_status
+    ON creator_agent_learning_signals (account_id, status, created_at DESC);
 """
 
 
@@ -73,6 +100,8 @@ def _reset_memory_store() -> None:
     _mem_models.clear()
     _mem_decisions.clear()
     _mem_relationships.clear()
+    _mem_learning_signals.clear()
+    _mem_feedback_signals.clear()
 
 
 async def ensure_tables() -> None:
@@ -83,10 +112,13 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_MODELS_SQL)
         await conn.execute(_CREATE_DECISIONS_SQL)
         await conn.execute(_CREATE_RELATIONSHIPS_SQL)
+        await conn.execute(_CREATE_LEARNING_SIGNALS_SQL)
         await conn.execute(_CREATE_INDEX_SQL)
 
 
-def _dumps(model: CreatorModel | DecisionRecord | RelationshipMemory) -> str:
+def _dumps(
+    model: CreatorModel | DecisionRecord | RelationshipMemory | LearningSignal,
+) -> str:
     return json.dumps(model.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
 
 
@@ -110,6 +142,10 @@ def _decision_from_row(row: Any) -> DecisionRecord:
 
 def _relationship_from_row(row: Any) -> RelationshipMemory:
     return RelationshipMemory.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
+
+
+def _learning_signal_from_row(row: Any) -> LearningSignal:
+    return LearningSignal.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
 
 
 def _updated_relationship(
@@ -144,6 +180,30 @@ def _updated_relationship(
         updated.latest_correction = feedback.correction
     updated.last_interaction_at = feedback.created_at
     return updated
+
+
+def _feedback_creates_signal(feedback: UserFeedback) -> bool:
+    return bool(feedback.correction.strip()) or feedback.outcome is FeedbackOutcome.DISSATISFIED
+
+
+def _new_learning_signal(decision: DecisionRecord, feedback: UserFeedback) -> LearningSignal:
+    correction = feedback.correction.strip()
+    summary = correction or f"Audience feedback outcome: {feedback.outcome.value}"
+    now = feedback.created_at or utc_now_iso()
+    return LearningSignal(
+        signal_id=str(uuid.uuid4()),
+        account_id=decision.account_id,
+        creator_id=decision.creator_id,
+        audience_id=decision.audience_id,
+        decision_id=decision.decision_id,
+        feedback_id=feedback.feedback_id,
+        summary=summary,
+        correction=correction,
+        evidence_ids=[item.evidence_id for item in decision.evidence],
+        status=LearningSignalStatus.PENDING_CREATOR_REVIEW,
+        created_at=now,
+        updated_at=now,
+    )
 
 
 class DurableCreatorAgentRepository:
@@ -317,13 +377,40 @@ class DurableCreatorAgentRepository:
                     account_id=account_id,
                     audience_id=decision.audience_id,
                 )
-                if any(item.feedback_id == feedback.feedback_id for item in decision.feedback):
+                existing_feedback = next(
+                    (
+                        item
+                        for item in decision.feedback
+                        if item.feedback_id == feedback.feedback_id
+                    ),
+                    None,
+                )
+                if existing_feedback is not None:
+                    if (
+                        _feedback_creates_signal(existing_feedback)
+                        and (
+                            account_id,
+                            feedback.feedback_id,
+                        )
+                        not in _mem_feedback_signals
+                    ):
+                        signal = _new_learning_signal(decision, existing_feedback)
+                        _mem_learning_signals[(account_id, signal.signal_id)] = signal.model_copy(
+                            deep=True
+                        )
+                        _mem_feedback_signals[(account_id, feedback.feedback_id)] = signal.signal_id
                     return decision, relationship.model_copy(deep=True), False
                 decision.feedback.append(feedback)
                 decision.updated_at = feedback.created_at
                 relationship = _updated_relationship(relationship, feedback)
                 _mem_decisions[key] = decision.model_copy(deep=True)
                 _mem_relationships[relationship_key] = relationship.model_copy(deep=True)
+                if _feedback_creates_signal(feedback):
+                    signal = _new_learning_signal(decision, feedback)
+                    _mem_learning_signals[(account_id, signal.signal_id)] = signal.model_copy(
+                        deep=True
+                    )
+                    _mem_feedback_signals[(account_id, feedback.feedback_id)] = signal.signal_id
                 return decision, relationship, True
 
         pool = get_pool()
@@ -342,7 +429,13 @@ class DurableCreatorAgentRepository:
             relationship = await self._get_relationship_on_cursor(
                 cur, account_id, decision.audience_id, lock=True
             ) or RelationshipMemory(account_id=account_id, audience_id=decision.audience_id)
-            if any(item.feedback_id == feedback.feedback_id for item in decision.feedback):
+            existing_feedback = next(
+                (item for item in decision.feedback if item.feedback_id == feedback.feedback_id),
+                None,
+            )
+            if existing_feedback is not None:
+                if _feedback_creates_signal(existing_feedback):
+                    await self._ensure_learning_signal_on_cursor(cur, decision, existing_feedback)
                 return decision, relationship, False
 
             decision.feedback.append(feedback)
@@ -357,6 +450,26 @@ class DurableCreatorAgentRepository:
                 (_dumps(decision), decision.updated_at, account_id, decision_id),
             )
             await self._upsert_relationship_on_cursor(cur, relationship)
+            if _feedback_creates_signal(feedback):
+                signal = _new_learning_signal(decision, feedback)
+                await cur.execute(
+                    """
+                    INSERT INTO creator_agent_learning_signals (
+                        account_id, signal_id, feedback_id, status, payload_json,
+                        created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (account_id, feedback_id) DO NOTHING
+                    """,
+                    (
+                        account_id,
+                        signal.signal_id,
+                        signal.feedback_id,
+                        signal.status.value,
+                        _dumps(signal),
+                        signal.created_at,
+                        signal.updated_at,
+                    ),
+                )
         return decision, relationship, True
 
     async def get_relationship(
@@ -368,6 +481,234 @@ class DurableCreatorAgentRepository:
         pool = get_pool()
         async with pool.connection() as conn, conn.cursor() as cur:
             return await self._get_relationship_on_cursor(cur, account_id, audience_id)
+
+    async def get_learning_signal(self, account_id: str, signal_id: str) -> LearningSignal | None:
+        if not is_pool_ready():
+            signal = _mem_learning_signals.get((account_id, signal_id))
+            return signal.model_copy(deep=True) if signal else None
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_learning_signals
+                WHERE account_id = %s AND signal_id = %s
+                """,
+                (account_id, signal_id),
+            )
+            row = await cur.fetchone()
+        return _learning_signal_from_row(row) if row else None
+
+    async def get_learning_signal_by_feedback(
+        self, account_id: str, feedback_id: str
+    ) -> LearningSignal | None:
+        if not is_pool_ready():
+            signal_id = _mem_feedback_signals.get((account_id, feedback_id))
+            if signal_id is None:
+                return None
+            return await self.get_learning_signal(account_id, signal_id)
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_learning_signals
+                WHERE account_id = %s AND feedback_id = %s
+                """,
+                (account_id, feedback_id),
+            )
+            row = await cur.fetchone()
+        return _learning_signal_from_row(row) if row else None
+
+    async def list_learning_signals(
+        self, account_id: str, status: LearningSignalStatus | None = None
+    ) -> list[LearningSignal]:
+        if not is_pool_ready():
+            signals = [
+                signal
+                for (stored_account, _), signal in _mem_learning_signals.items()
+                if stored_account == account_id and (status is None or signal.status is status)
+            ]
+            signals.sort(key=lambda item: (item.created_at, item.signal_id), reverse=True)
+            return [signal.model_copy(deep=True) for signal in signals]
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            if status is None:
+                await cur.execute(
+                    """
+                    SELECT payload_json FROM creator_agent_learning_signals
+                    WHERE account_id = %s
+                    ORDER BY created_at DESC, signal_id DESC
+                    """,
+                    (account_id,),
+                )
+            else:
+                await cur.execute(
+                    """
+                    SELECT payload_json FROM creator_agent_learning_signals
+                    WHERE account_id = %s AND status = %s
+                    ORDER BY created_at DESC, signal_id DESC
+                    """,
+                    (account_id, status.value),
+                )
+            rows = await cur.fetchall()
+        return [_learning_signal_from_row(row) for row in rows]
+
+    async def review_learning_signal(
+        self,
+        account_id: str,
+        signal_id: str,
+        review: LearningSignalReview,
+    ) -> tuple[LearningSignal, CreatorModel | None]:
+        if not is_pool_ready():
+            async with _mem_lock:
+                signal = _mem_learning_signals.get((account_id, signal_id))
+                if signal is None:
+                    raise LearningSignalMissingError(signal_id)
+                signal = signal.model_copy(deep=True)
+                if signal.status is not LearningSignalStatus.PENDING_CREATOR_REVIEW:
+                    if signal.status.value != review.disposition.value:
+                        raise LearningSignalReviewConflictError(
+                            signal_id, signal.status, review.disposition
+                        )
+                    model = _mem_models.get(account_id)
+                    if (
+                        model is not None
+                        and signal.applied_model_revision is not None
+                        and model.revision != signal.applied_model_revision
+                    ):
+                        model = None
+                    return signal, model.model_copy(deep=True) if model else None
+                if review.disposition is CreatorReviewDisposition.APPROVED:
+                    if review.model is None or review.expected_revision is None:
+                        raise CreatorReviewModelRequiredError()
+                    current = _mem_models.get(account_id)
+                    actual_revision = current.revision if current else 0
+                    if actual_revision != review.expected_revision:
+                        raise CreatorModelRevisionConflictError(
+                            review.expected_revision, actual_revision
+                        )
+                    model = self._next_model(account_id, review.model, current)
+                    _mem_models[account_id] = model.model_copy(deep=True)
+                    signal.applied_model_revision = model.revision
+                else:
+                    model = None
+                now = utc_now_iso()
+                signal.status = LearningSignalStatus(review.disposition.value)
+                signal.review_note = review.review_note
+                signal.reviewed_at = now
+                signal.updated_at = now
+                _mem_learning_signals[(account_id, signal_id)] = signal.model_copy(deep=True)
+                return signal, model
+
+        if review.disposition is CreatorReviewDisposition.APPROVED and (
+            review.model is None or review.expected_revision is None
+        ):
+            raise CreatorReviewModelRequiredError()
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_learning_signals
+                WHERE account_id = %s AND signal_id = %s FOR UPDATE
+                """,
+                (account_id, signal_id),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise LearningSignalMissingError(signal_id)
+            signal = _learning_signal_from_row(row)
+            if signal.status is not LearningSignalStatus.PENDING_CREATOR_REVIEW:
+                if signal.status.value != review.disposition.value:
+                    raise LearningSignalReviewConflictError(
+                        signal_id, signal.status, review.disposition
+                    )
+                model = await self._model_for_applied_revision(cur, account_id, signal)
+                return signal, model
+
+            if review.disposition is CreatorReviewDisposition.DISMISSED:
+                model = None
+            else:
+                assert review.model is not None
+                assert review.expected_revision is not None
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (account_id,),
+                )
+                await cur.execute(
+                    """
+                    SELECT payload_json FROM creator_agent_models
+                    WHERE account_id = %s FOR UPDATE
+                    """,
+                    (account_id,),
+                )
+                model_row = await cur.fetchone()
+                current = _model_from_row(model_row) if model_row else None
+                actual_revision = current.revision if current else 0
+                if actual_revision != review.expected_revision:
+                    raise CreatorModelRevisionConflictError(
+                        review.expected_revision, actual_revision
+                    )
+                model = self._next_model(account_id, review.model, current)
+                await cur.execute(
+                    """
+                    INSERT INTO creator_agent_models (
+                        account_id, creator_id, revision, payload_json, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (account_id) DO UPDATE SET
+                        creator_id = EXCLUDED.creator_id,
+                        revision = EXCLUDED.revision,
+                        payload_json = EXCLUDED.payload_json,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    (
+                        account_id,
+                        model.creator_id,
+                        model.revision,
+                        _dumps(model),
+                        model.created_at,
+                        model.updated_at,
+                    ),
+                )
+
+            now = utc_now_iso()
+            signal.status = LearningSignalStatus(review.disposition.value)
+            signal.review_note = review.review_note
+            signal.reviewed_at = now
+            signal.updated_at = now
+            if model is not None:
+                signal.applied_model_revision = model.revision
+            await cur.execute(
+                """
+                UPDATE creator_agent_learning_signals
+                SET status = %s, payload_json = %s, updated_at = %s
+                WHERE account_id = %s AND signal_id = %s
+                """,
+                (
+                    signal.status.value,
+                    _dumps(signal),
+                    signal.updated_at,
+                    account_id,
+                    signal_id,
+                ),
+            )
+        return signal, model
+
+    @staticmethod
+    async def _model_for_applied_revision(
+        cur: Any, account_id: str, signal: LearningSignal
+    ) -> CreatorModel | None:
+        if signal.applied_model_revision is None:
+            return None
+        await cur.execute(
+            "SELECT payload_json FROM creator_agent_models WHERE account_id = %s",
+            (account_id,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        model = _model_from_row(row)
+        return model if model.revision == signal.applied_model_revision else None
 
     @staticmethod
     async def _get_relationship_on_cursor(
@@ -407,6 +748,41 @@ class DurableCreatorAgentRepository:
                 relationship.last_interaction_at,
             ),
         )
+
+    @staticmethod
+    async def _ensure_learning_signal_on_cursor(
+        cur: Any, decision: DecisionRecord, feedback: UserFeedback
+    ) -> LearningSignal:
+        await cur.execute(
+            """
+            SELECT payload_json FROM creator_agent_learning_signals
+            WHERE account_id = %s AND feedback_id = %s
+            """,
+            (decision.account_id, feedback.feedback_id),
+        )
+        row = await cur.fetchone()
+        if row:
+            return _learning_signal_from_row(row)
+        signal = _new_learning_signal(decision, feedback)
+        await cur.execute(
+            """
+            INSERT INTO creator_agent_learning_signals (
+                account_id, signal_id, feedback_id, status, payload_json,
+                created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (account_id, feedback_id) DO NOTHING
+            """,
+            (
+                decision.account_id,
+                signal.signal_id,
+                signal.feedback_id,
+                signal.status.value,
+                _dumps(signal),
+                signal.created_at,
+                signal.updated_at,
+            ),
+        )
+        return signal
 
 
 _repository = DurableCreatorAgentRepository()
