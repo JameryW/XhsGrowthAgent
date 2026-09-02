@@ -142,6 +142,7 @@ With the relevant integrations enabled, a run moves from the following inputs th
 | Analytics | Reads performance, costs, engagement, and content patterns to inform the next run. | Analytics, Analyst |
 | Engagement | Supports comment replies and direct-message workflows through the selected account session. | Engagement tools |
 | Account operations | Keeps account context, browser sessions, and history scoped to the selected creator account. | Settings, account controls |
+| Creator Agent decision core | Turns creator identity, judgement policies, and evidence into reproducible personalized decisions, relationship memory, and reviewable learning signals. | `/api/creator-agent`, [design notes](docs/creator-agent.md) |
 
 ### The end-to-end workflow
 

@@ -1,0 +1,9 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend spec entry point and required quality checklist."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Placement and dependency direction for the new domain, persistence, and HTTP adapter modules."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Repository conventions for Postgres DDL, memory fallback, concurrency, and persistence tests."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Typed API error and middleware conventions for revision conflicts and missing decisions."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend typing, validation, async, import, and testing requirements."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Logging requirements for persistence fallback and domain failures."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Keeps the domain interface, database adapter, API envelope, startup wiring, and contract tests synchronized."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Guides reuse of account scope, response, and persistence conventions without coupling Creator Model to Creative Memory."}
+{"file":".trellis/tasks/09-02-creator-agent-decision-core/research/codebase-fit.md","reason":"Documents existing memory assets, the product gap, proposed deep module seam, integration points, and explicit risks."}

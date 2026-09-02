@@ -17,6 +17,10 @@ class ErrorCode(StrEnum):
     REVIEW_DECISION_INVALID = "ERROR_REVIEW_DECISION_INVALID"
     ACCOUNT_NOT_FOUND = "ERROR_ACCOUNT_NOT_FOUND"
     CREATOR_NOTE_NOT_FOUND = "ERROR_CREATOR_NOTE_NOT_FOUND"
+    CREATOR_MODEL_NOT_FOUND = "ERROR_CREATOR_MODEL_NOT_FOUND"
+    CREATOR_MODEL_REVISION_CONFLICT = "ERROR_CREATOR_MODEL_REVISION_CONFLICT"
+    CREATOR_DECISION_NOT_FOUND = "ERROR_CREATOR_DECISION_NOT_FOUND"
+    CREATOR_FEEDBACK_AUDIENCE_MISMATCH = "ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -81,6 +85,53 @@ class CreatorNoteNotFoundError(APIError):
             message=f"Creator note '{note_id}' not found for account '{account_id}'",
             details={"account_id": account_id, "note_id": note_id},
             status_code=404,
+        )
+
+
+class CreatorModelNotFoundError(APIError):
+    """No Creator Model has been initialized for an account."""
+
+    def __init__(self, account_id: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_MODEL_NOT_FOUND,
+            message=f"Creator Model not found for account '{account_id}'",
+            details={"account_id": account_id},
+            status_code=404,
+        )
+
+
+class CreatorModelRevisionConflictError(APIError):
+    """The caller attempted to overwrite a newer Creator Model revision."""
+
+    def __init__(self, expected: int, actual: int):
+        super().__init__(
+            code=ErrorCode.CREATOR_MODEL_REVISION_CONFLICT,
+            message="Creator Model revision is stale",
+            details={"expected_revision": expected, "actual_revision": actual},
+            status_code=409,
+        )
+
+
+class CreatorDecisionNotFoundError(APIError):
+    """Decision record is missing or not visible to the account owner."""
+
+    def __init__(self, decision_id: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_DECISION_NOT_FOUND,
+            message=f"Creator decision '{decision_id}' not found",
+            details={"decision_id": decision_id},
+            status_code=404,
+        )
+
+
+class CreatorFeedbackAudienceMismatchError(APIError):
+    """Feedback cannot be attached to another audience member's decision."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=ErrorCode.CREATOR_FEEDBACK_AUDIENCE_MISMATCH,
+            message="Feedback audience does not match the decision audience",
+            status_code=400,
         )
 
 

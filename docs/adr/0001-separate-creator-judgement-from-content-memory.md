@@ -1,0 +1,3 @@
+# Separate creator judgement from content memory
+
+The Creator Model is a revisioned, creator-approved source of normative judgement, while Creative Memory remains a derived record of content patterns and performance. Imported posts and performance can contribute Evidence and Learning Signals, but neither content analysis nor User Feedback mutates the Creator Model automatically; a creator-approved revision is required. This preserves provenance and prevents engagement metrics or a vocal audience segment from silently redefining the creator's judgement, at the cost of an explicit review step before learning becomes policy.

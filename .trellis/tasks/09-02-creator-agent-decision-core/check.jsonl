@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend quality checklist entry point."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Verify dependency direction and module placement."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify persistence, concurrency, DDL, and fallback behavior."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify typed failures and response envelope behavior."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify typing, validation, async correctness, and tests."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Verify failures are logged at the correct seam without exposing data."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify contracts across domain, database, API, startup, and tests."}
+{"file":".trellis/tasks/09-02-creator-agent-decision-core/research/codebase-fit.md","reason":"Verify implementation against the audited gap, module shape, and listed risks."}

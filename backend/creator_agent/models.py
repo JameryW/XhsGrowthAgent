@@ -1,0 +1,271 @@
+"""Domain models for creator-owned, evidence-backed decisions."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def utc_now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+class EvidenceSource(StrEnum):
+    CREATOR_STATEMENT = "creator_statement"
+    CREATOR_CONTENT = "creator_content"
+    PRODUCT_FACT = "product_fact"
+    EXTERNAL_FACT = "external_fact"
+    USER_FEEDBACK = "user_feedback"
+
+
+class PreferenceStance(StrEnum):
+    PREFER = "prefer"
+    AVOID = "avoid"
+    REQUIRE = "require"
+
+
+class DecisionStatus(StrEnum):
+    RECOMMENDED = "recommended"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    NO_ELIGIBLE_CANDIDATE = "no_eligible_candidate"
+
+
+class FeedbackOutcome(StrEnum):
+    CONSIDERED = "considered"
+    ACCEPTED = "accepted"
+    PURCHASED = "purchased"
+    SATISFIED = "satisfied"
+    REJECTED = "rejected"
+    DISSATISFIED = "dissatisfied"
+
+
+class LearningStatus(StrEnum):
+    OBSERVED = "observed"
+    PENDING_CREATOR_REVIEW = "pending_creator_review"
+
+
+class Evidence(BaseModel):
+    evidence_id: str = Field(min_length=1, max_length=128)
+    source_kind: EvidenceSource
+    source_ref: str = Field(min_length=1, max_length=500)
+    claim: str = Field(min_length=1, max_length=2000)
+    observed_at: str = ""
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class Preference(BaseModel):
+    preference_id: str = Field(min_length=1, max_length=128)
+    label: str = Field(min_length=1, max_length=300)
+    stance: PreferenceStance = PreferenceStance.PREFER
+    tags: list[str] = Field(default_factory=list, max_length=50)
+    applies_when: dict[str, str] = Field(default_factory=dict)
+    strength: float = Field(default=0.5, ge=0.0, le=1.0)
+    rationale: str = Field(default="", max_length=2000)
+    evidence_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class KnowledgeClaim(BaseModel):
+    claim_id: str = Field(min_length=1, max_length=128)
+    statement: str = Field(min_length=1, max_length=2000)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    evidence_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class DecisionPolicy(BaseModel):
+    policy_id: str = Field(min_length=1, max_length=128)
+    label: str = Field(min_length=1, max_length=300)
+    applies_when: dict[str, str] = Field(default_factory=dict)
+    signal_weights: dict[str, float] = Field(default_factory=dict)
+    preferred_tags: list[str] = Field(default_factory=list, max_length=50)
+    excluded_tags: list[str] = Field(default_factory=list, max_length=50)
+    rationale: str = Field(min_length=1, max_length=2000)
+    evidence_ids: list[str] = Field(min_length=1, max_length=50)
+
+    @field_validator("signal_weights")
+    @classmethod
+    def validate_signal_weights(cls, value: dict[str, float]) -> dict[str, float]:
+        for key, weight in value.items():
+            if not key.strip():
+                raise ValueError("signal weight names cannot be empty")
+            if not -1.0 <= weight <= 1.0:
+                raise ValueError("signal weights must be between -1 and 1")
+        return value
+
+
+class CreatorModelDefinition(BaseModel):
+    identity_summary: str = Field(min_length=1, max_length=2000)
+    domains: list[str] = Field(default_factory=list, max_length=50)
+    preferences: list[Preference] = Field(default_factory=list, max_length=200)
+    knowledge: list[KnowledgeClaim] = Field(default_factory=list, max_length=500)
+    policies: list[DecisionPolicy] = Field(default_factory=list, max_length=200)
+    evidence: list[Evidence] = Field(default_factory=list, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_identity_and_evidence(self) -> CreatorModelDefinition:
+        collections = (
+            ("preference", [item.preference_id for item in self.preferences]),
+            ("knowledge claim", [item.claim_id for item in self.knowledge]),
+            ("decision policy", [item.policy_id for item in self.policies]),
+            ("evidence", [item.evidence_id for item in self.evidence]),
+        )
+        for label, identifiers in collections:
+            if len(identifiers) != len(set(identifiers)):
+                raise ValueError(f"duplicate {label} id")
+
+        known_evidence = {item.evidence_id for item in self.evidence}
+        references = [
+            ("preference", item.preference_id, item.evidence_ids) for item in self.preferences
+        ]
+        references.extend(
+            ("knowledge claim", item.claim_id, item.evidence_ids) for item in self.knowledge
+        )
+        references.extend(
+            ("decision policy", item.policy_id, item.evidence_ids) for item in self.policies
+        )
+        for kind, item_id, evidence_ids in references:
+            unknown = sorted(set(evidence_ids) - known_evidence)
+            if unknown:
+                raise ValueError(f"{kind} {item_id!r} references unknown evidence: {unknown}")
+        return self
+
+
+class CreatorModel(CreatorModelDefinition):
+    account_id: str = Field(min_length=1, max_length=128)
+    creator_id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=1)
+    created_at: str
+    updated_at: str
+
+
+class HardConstraint(BaseModel):
+    field: str = Field(min_length=1, max_length=128)
+    value: Any
+
+
+class DecisionCandidate(BaseModel):
+    candidate_id: str = Field(min_length=1, max_length=128)
+    label: str = Field(min_length=1, max_length=300)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    signals: dict[str, float] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list, max_length=100)
+    evidence: list[Evidence] = Field(default_factory=list, max_length=100)
+
+    @field_validator("signals")
+    @classmethod
+    def validate_signals(cls, value: dict[str, float]) -> dict[str, float]:
+        for key, signal in value.items():
+            if not key.strip():
+                raise ValueError("signal names cannot be empty")
+            if not 0.0 <= signal <= 1.0:
+                raise ValueError("candidate signals must be between 0 and 1")
+        return value
+
+
+class DecisionRequest(BaseModel):
+    account_id: str = Field(min_length=1, max_length=128)
+    audience_id: str = Field(min_length=1, max_length=128)
+    goal: str = Field(min_length=1, max_length=2000)
+    context: dict[str, str] = Field(default_factory=dict)
+    hard_constraints: list[HardConstraint] = Field(default_factory=list, max_length=50)
+    candidates: list[DecisionCandidate] = Field(min_length=2, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_candidate_ids(self) -> DecisionRequest:
+        candidate_ids = [candidate.candidate_id for candidate in self.candidates]
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("duplicate candidate id")
+        return self
+
+
+class RankedCandidate(BaseModel):
+    candidate_id: str
+    label: str
+    score: float
+    rationale: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ExcludedCandidate(BaseModel):
+    candidate_id: str
+    label: str
+    reasons: list[str]
+
+
+class FeedbackInput(BaseModel):
+    feedback_id: str = Field(default="", max_length=128)
+    audience_id: str = Field(min_length=1, max_length=128)
+    outcome: FeedbackOutcome
+    selected_candidate_id: str = Field(default="", max_length=128)
+    note: str = Field(default="", max_length=2000)
+    correction: str = Field(default="", max_length=2000)
+
+
+class UserFeedback(FeedbackInput):
+    feedback_id: str = Field(min_length=1, max_length=128)
+    created_at: str
+
+
+class DecisionRecord(BaseModel):
+    decision_id: str
+    account_id: str
+    audience_id: str
+    creator_id: str
+    model_revision: int
+    goal: str
+    context: dict[str, str] = Field(default_factory=dict)
+    status: DecisionStatus
+    matched_policy_ids: list[str] = Field(default_factory=list)
+    recommendations: list[RankedCandidate] = Field(default_factory=list)
+    excluded_candidates: list[ExcludedCandidate] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+    evidence_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    feedback: list[UserFeedback] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class RelationshipMemory(BaseModel):
+    account_id: str
+    audience_id: str
+    interaction_count: int = Field(default=0, ge=0)
+    accepted_candidate_ids: list[str] = Field(default_factory=list)
+    rejected_candidate_ids: list[str] = Field(default_factory=list)
+    latest_correction: str = ""
+    last_interaction_at: str = ""
+
+
+class FeedbackResult(BaseModel):
+    decision: DecisionRecord
+    relationship: RelationshipMemory
+    learning_status: LearningStatus
+    created: bool
+
+
+__all__ = [
+    "CreatorModel",
+    "CreatorModelDefinition",
+    "DecisionCandidate",
+    "DecisionPolicy",
+    "DecisionRecord",
+    "DecisionRequest",
+    "DecisionStatus",
+    "Evidence",
+    "EvidenceSource",
+    "ExcludedCandidate",
+    "FeedbackInput",
+    "FeedbackOutcome",
+    "FeedbackResult",
+    "HardConstraint",
+    "KnowledgeClaim",
+    "LearningStatus",
+    "Preference",
+    "PreferenceStance",
+    "RankedCandidate",
+    "RelationshipMemory",
+    "UserFeedback",
+    "utc_now_iso",
+]
