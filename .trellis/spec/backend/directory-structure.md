@@ -515,3 +515,14 @@ backend/
 The domain package must not import FastAPI, request objects, or database
 drivers. Routes resolve the canonical owned account before invoking the domain;
 the adapter is the only layer that knows table names or transaction details.
+
+Learning review remains inside the same deep module:
+
+- `backend/creator_agent/models.py` owns `LearningSignal`, review dispositions,
+  and the review result contract.
+- `backend/creator_agent/advisor.py` exposes signal listing and explicit review
+  operations without making persistence or HTTP decisions.
+- `backend/db/creator_agent.py` creates signals alongside feedback and applies
+  model approval plus signal disposition atomically.
+- `backend/api/routes/creator_agent.py` owns authentication, account scope,
+  typed error translation, and the two learning-signal endpoints.

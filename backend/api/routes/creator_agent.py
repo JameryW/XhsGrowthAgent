@@ -12,7 +12,10 @@ from backend.api.deps import get_current_user
 from backend.api.errors import (
     CreatorDecisionNotFoundError,
     CreatorFeedbackAudienceMismatchError,
+    CreatorLearningSignalConflictError,
+    CreatorLearningSignalNotFoundError,
     CreatorModelNotFoundError,
+    ValidationError,
 )
 from backend.api.errors import (
     CreatorModelRevisionConflictError as ApiModelRevisionConflictError,
@@ -22,15 +25,21 @@ from backend.creator_agent import (
     CreatorAdvisor,
     CreatorModelDefinition,
     CreatorModelStore,
+    CreatorReviewDisposition,
     DecisionRequest,
     FeedbackInput,
+    LearningSignalReview,
+    LearningSignalStatus,
     RelationshipMemory,
 )
 from backend.creator_agent.repository import (
     CreatorModelMissingError,
     CreatorModelRevisionConflictError,
+    CreatorReviewModelRequiredError,
     DecisionRecordMissingError,
     FeedbackAudienceMismatchError,
+    LearningSignalMissingError,
+    LearningSignalReviewConflictError,
 )
 from backend.db.creator_agent import get_repository
 
@@ -46,6 +55,14 @@ class SaveCreatorModelRequest(BaseModel):
 class RecordFeedbackRequest(BaseModel):
     account_id: str = Field(min_length=1, max_length=128)
     feedback: FeedbackInput
+
+
+class ReviewLearningSignalRequest(BaseModel):
+    account_id: str = Field(min_length=1, max_length=128)
+    disposition: CreatorReviewDisposition
+    review_note: str = Field(default="", max_length=2000)
+    expected_revision: int | None = Field(default=None, ge=0)
+    model: CreatorModelDefinition | None = None
 
 
 def _advisor() -> CreatorAdvisor:
@@ -141,3 +158,42 @@ async def get_creator_relationship(
     await require_owned_account(str(user["id"]), account_id)
     relationship = await _advisor().get_relationship(account_id.strip(), audience_id.strip())
     return success(data=relationship.model_dump(mode="json"))
+
+
+@router.get("/learning-signals")
+async def list_creator_learning_signals(
+    account_id: str = Query(..., min_length=1),
+    status: LearningSignalStatus | None = Query(default=None),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[list[dict[str, Any]]]:
+    account_id = account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    signals = await _advisor().list_learning_signals(account_id, status)
+    return success(data=[signal.model_dump(mode="json") for signal in signals])
+
+
+@router.post("/learning-signals/{signal_id}/review")
+async def review_creator_learning_signal(
+    signal_id: str,
+    request: ReviewLearningSignalRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    account_id = request.account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    review = LearningSignalReview(
+        disposition=request.disposition,
+        review_note=request.review_note,
+        expected_revision=request.expected_revision,
+        model=request.model,
+    )
+    try:
+        result = await _advisor().review_learning_signal(account_id, signal_id.strip(), review)
+    except LearningSignalMissingError as exc:
+        raise CreatorLearningSignalNotFoundError(exc.signal_id) from exc
+    except LearningSignalReviewConflictError as exc:
+        raise CreatorLearningSignalConflictError(exc.signal_id, exc.existing_status.value) from exc
+    except CreatorModelRevisionConflictError as exc:
+        raise ApiModelRevisionConflictError(exc.expected, exc.actual) from exc
+    except CreatorReviewModelRequiredError as exc:
+        raise ValidationError("model", str(exc)) from exc
+    return success(data=result.model_dump(mode="json"))

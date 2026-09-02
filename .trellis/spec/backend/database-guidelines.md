@@ -51,6 +51,26 @@ helper `_reset_memory_store()`; production code must not depend on that helper.
 
 ---
 
+## Scenario: Creator Agent learning-signal review
+
+Feedback-derived learning is durable and creator-controlled. The adapter keeps
+`creator_agent_learning_signals` account-scoped with a primary key on
+`(account_id, signal_id)` and a unique `(account_id, feedback_id)` constraint.
+
+- `apply_feedback` appends feedback, updates Relationship Memory, and creates a
+  signal in one transaction when the outcome is `dissatisfied` or a correction
+  is supplied. Retrying the same feedback ID returns the original signal and
+  never reinterprets the retry payload.
+- `list_learning_signals` filters by account and optional lifecycle status and
+  returns a stable newest-first ordering.
+- `review_learning_signal` locks the signal and, for approval, the Creator
+  Model row in the same transaction. Approval requires a complete model
+  definition and `expected_revision`; stale revisions roll back both writes.
+- Dismissal changes only the signal. Repeating the same disposition is
+  idempotent; a different disposition after review is a typed conflict.
+- The process-memory adapter mirrors the same invariants under its shared
+  asyncio lock and is test/dev-only.
+
 ## Scenario: Workflow Metadata Persistence
 
 ### 1. Scope / Trigger

@@ -15,6 +15,10 @@ from backend.creator_agent.models import (
     FeedbackInput,
     FeedbackOutcome,
     FeedbackResult,
+    LearningSignal,
+    LearningSignalReview,
+    LearningSignalReviewResult,
+    LearningSignalStatus,
     LearningStatus,
     Preference,
     PreferenceStance,
@@ -242,15 +246,39 @@ class CreatorAdvisor:
         )
         learning_status = (
             LearningStatus.PENDING_CREATOR_REVIEW
-            if persisted.correction or persisted.outcome is FeedbackOutcome.DISSATISFIED
+            if persisted.correction.strip() or persisted.outcome is FeedbackOutcome.DISSATISFIED
             else LearningStatus.OBSERVED
         )
+        learning_signal = await self._repository.get_learning_signal_by_feedback(
+            account_id, stored.feedback_id
+        )
+        if learning_signal is not None:
+            learning_status = LearningStatus.PENDING_CREATOR_REVIEW
         return FeedbackResult(
             decision=updated,
             relationship=relationship,
             learning_status=learning_status,
             created=created,
+            learning_signal=learning_signal,
         )
+
+    async def list_learning_signals(
+        self, account_id: str, status: LearningSignalStatus | None = None
+    ) -> list[LearningSignal]:
+        """List account-scoped feedback signals, optionally by lifecycle status."""
+        return await self._repository.list_learning_signals(account_id.strip(), status)
+
+    async def review_learning_signal(
+        self,
+        account_id: str,
+        signal_id: str,
+        review: LearningSignalReview,
+    ) -> LearningSignalReviewResult:
+        """Apply an explicit creator disposition to a pending signal."""
+        signal, model = await self._repository.review_learning_signal(
+            account_id.strip(), signal_id.strip(), review
+        )
+        return LearningSignalReviewResult(signal=signal, model=model)
 
     async def get_decision(self, account_id: str, decision_id: str) -> DecisionRecord:
         decision = await self._repository.get_decision(account_id, decision_id)

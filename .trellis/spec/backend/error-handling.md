@@ -324,3 +324,18 @@ Tests must cover fresh/empty/failed batches, account-scoped auth gates,
 non-finite configuration, and the scheduler's finite-delay fallback. Browser
 fetch failures return machine-readable `error_code` values and never persist a
 partial bundle.
+
+## Scenario: Creator Agent learning review conflicts
+
+Learning review routes translate domain exceptions into typed API errors:
+
+- a missing or cross-account signal is `CreatorLearningSignalNotFoundError`
+  (`404`);
+- a different disposition after a signal is already reviewed is
+  `CreatorLearningSignalConflictError` (`409`);
+- an approved review without both a complete model and `expected_revision` is a
+  `ValidationError` (`400`);
+- a stale model revision reuses `CreatorModelRevisionConflictError` (`409`).
+
+The adapter must raise before committing when a revision or disposition check
+fails. Routes must not catch these failures and return a successful envelope.

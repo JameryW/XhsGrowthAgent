@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec entry point and required checks."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Placement and dependency direction for Creator Agent learning modules."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Postgres transaction, fallback, and idempotency conventions."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Typed API errors and middleware response conventions."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Typing, validation, and test requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Persistence and review failure logging conventions."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer consistency checks."}
+{"file": ".trellis/tasks/09-02-creator-agent-learning-review/research/codebase-fit.md", "reason": "Current Creator Agent seam and learning-loop risks."}

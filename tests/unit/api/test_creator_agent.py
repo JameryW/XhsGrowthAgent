@@ -124,3 +124,54 @@ def test_feedback_route_is_scoped_to_decision_audience(client, monkeypatch):
     )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "ERROR_CREATOR_DECISION_NOT_FOUND"
+
+
+def test_learning_signal_routes_list_and_review(client, monkeypatch):
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+    decision = client.post(
+        "/api/creator-agent/decisions",
+        json={
+            "account_id": "account-a",
+            "audience_id": "audience-a",
+            "goal": "选耐用品",
+            "candidates": [
+                {"candidate_id": "a", "label": "A", "signals": {"durability": 0.9}},
+                {"candidate_id": "b", "label": "B", "signals": {"durability": 0.2}},
+            ],
+        },
+    ).json()["data"]
+
+    feedback = client.post(
+        f"/api/creator-agent/decisions/{decision['decision_id']}/feedback",
+        json={
+            "account_id": "account-a",
+            "feedback": {
+                "feedback_id": "feedback-route-1",
+                "audience_id": "audience-a",
+                "outcome": "dissatisfied",
+                "correction": "希望更轻便",
+            },
+        },
+    )
+    signal = feedback.json()["data"]["learning_signal"]
+    assert feedback.status_code == 200
+    assert signal["status"] == "pending_creator_review"
+
+    listed = client.get("/api/creator-agent/learning-signals?account_id=account-a")
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["signal_id"] == signal["signal_id"]
+
+    reviewed = client.post(
+        f"/api/creator-agent/learning-signals/{signal['signal_id']}/review",
+        json={
+            "account_id": "account-a",
+            "disposition": "dismissed",
+            "review_note": "保留为一次性反馈",
+        },
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.json()["data"]["signal"]["status"] == "dismissed"

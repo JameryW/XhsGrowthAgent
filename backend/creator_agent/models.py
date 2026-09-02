@@ -47,6 +47,21 @@ class LearningStatus(StrEnum):
     PENDING_CREATOR_REVIEW = "pending_creator_review"
 
 
+class LearningSignalStatus(StrEnum):
+    """Lifecycle of a feedback-derived signal awaiting creator judgement."""
+
+    PENDING_CREATOR_REVIEW = "pending_creator_review"
+    APPROVED = "approved"
+    DISMISSED = "dismissed"
+
+
+class CreatorReviewDisposition(StrEnum):
+    """Explicit creator decision on a Learning Signal."""
+
+    APPROVED = "approved"
+    DISMISSED = "dismissed"
+
+
 class Evidence(BaseModel):
     evidence_id: str = Field(min_length=1, max_length=128)
     source_kind: EvidenceSource
@@ -243,6 +258,43 @@ class FeedbackResult(BaseModel):
     relationship: RelationshipMemory
     learning_status: LearningStatus
     created: bool
+    learning_signal: LearningSignal | None = None
+
+
+class LearningSignal(BaseModel):
+    """Auditable, reviewable observation derived from one User Feedback."""
+
+    signal_id: str = Field(min_length=1, max_length=128)
+    account_id: str = Field(min_length=1, max_length=128)
+    creator_id: str = Field(min_length=1, max_length=128)
+    audience_id: str = Field(min_length=1, max_length=128)
+    decision_id: str = Field(min_length=1, max_length=128)
+    feedback_id: str = Field(min_length=1, max_length=128)
+    summary: str = Field(min_length=1, max_length=2000)
+    correction: str = Field(default="", max_length=2000)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=1000)
+    status: LearningSignalStatus = LearningSignalStatus.PENDING_CREATOR_REVIEW
+    review_note: str = Field(default="", max_length=2000)
+    reviewed_at: str | None = None
+    applied_model_revision: int | None = Field(default=None, ge=1)
+    created_at: str
+    updated_at: str
+
+
+class LearningSignalReview(BaseModel):
+    """Request to explicitly dismiss or apply a Learning Signal."""
+
+    disposition: CreatorReviewDisposition
+    review_note: str = Field(default="", max_length=2000)
+    expected_revision: int | None = Field(default=None, ge=0)
+    model: CreatorModelDefinition | None = None
+
+
+class LearningSignalReviewResult(BaseModel):
+    """Signal disposition and the model revision produced by approval."""
+
+    signal: LearningSignal
+    model: CreatorModel | None = None
 
 
 __all__ = [
@@ -259,9 +311,14 @@ __all__ = [
     "FeedbackInput",
     "FeedbackOutcome",
     "FeedbackResult",
+    "CreatorReviewDisposition",
     "HardConstraint",
     "KnowledgeClaim",
     "LearningStatus",
+    "LearningSignal",
+    "LearningSignalReview",
+    "LearningSignalReviewResult",
+    "LearningSignalStatus",
     "Preference",
     "PreferenceStance",
     "RankedCandidate",

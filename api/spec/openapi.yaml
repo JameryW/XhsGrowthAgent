@@ -713,6 +713,72 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_RelationshipMemory'
 
+  /creator-agent/learning-signals:
+    get:
+      tags:
+        - creator-agent
+      summary: List Creator Agent learning signals
+      description: Returns account-scoped feedback-derived signals for creator review.
+      operationId: listCreatorLearningSignals
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/LearningSignalStatus'
+      responses:
+        '200':
+          description: Learning signals retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_LearningSignalList'
+
+  /creator-agent/learning-signals/{signal_id}/review:
+    post:
+      tags:
+        - creator-agent
+      summary: Review a Creator Agent learning signal
+      description: Explicitly dismisses a signal or applies a complete next Creator Model revision.
+      operationId: reviewCreatorLearningSignal
+      parameters:
+        - name: signal_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningSignalReviewRequest'
+      responses:
+        '200':
+          description: Learning signal review recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_LearningSignalReviewResult'
+        '404':
+          description: Learning signal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '409':
+          description: Stale model revision or conflicting re-review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conflict'
+
 components:
   schemas:
     # ============ Unified Response Wrapper ============
@@ -861,6 +927,24 @@ components:
             data:
               $ref: '#/components/schemas/RelationshipMemory'
 
+    ApiResponse_LearningSignalList:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/LearningSignal'
+
+    ApiResponse_LearningSignalReviewResult:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LearningSignalReviewResult'
+
     # ============ Enums (CRITICAL - must match backend exactly) ============
     WorkflowPhase:
       type: string
@@ -953,6 +1037,14 @@ components:
     LearningStatus:
       type: string
       enum: [observed, pending_creator_review]
+
+    LearningSignalStatus:
+      type: string
+      enum: [pending_creator_review, approved, dismissed]
+
+    CreatorReviewDisposition:
+      type: string
+      enum: [approved, dismissed]
 
     # ============ Request Models ============
     WorkflowStartRequest:
@@ -1237,6 +1329,60 @@ components:
         relationship: {$ref: '#/components/schemas/RelationshipMemory'}
         learning_status: {$ref: '#/components/schemas/LearningStatus'}
         created: {type: boolean}
+        learning_signal: {$ref: '#/components/schemas/LearningSignal'}
+
+    LearningSignal:
+      type: object
+      required:
+        - signal_id
+        - account_id
+        - creator_id
+        - audience_id
+        - decision_id
+        - feedback_id
+        - summary
+        - status
+        - created_at
+        - updated_at
+      properties:
+        signal_id: {type: string, minLength: 1, maxLength: 128}
+        account_id: {type: string, minLength: 1, maxLength: 128}
+        creator_id: {type: string, minLength: 1, maxLength: 128}
+        audience_id: {type: string, minLength: 1, maxLength: 128}
+        decision_id: {type: string, minLength: 1, maxLength: 128}
+        feedback_id: {type: string, minLength: 1, maxLength: 128}
+        summary: {type: string, minLength: 1, maxLength: 2000}
+        correction: {type: string, maxLength: 2000, default: ""}
+        evidence_ids: {type: array, items: {type: string}, maxItems: 1000}
+        status: {$ref: '#/components/schemas/LearningSignalStatus'}
+        review_note: {type: string, maxLength: 2000, default: ""}
+        reviewed_at: {type: string, format: date-time, nullable: true}
+        applied_model_revision: {type: integer, minimum: 1, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+
+    LearningSignalReviewRequest:
+      type: object
+      required: [account_id, disposition]
+      properties:
+        account_id: {type: string, minLength: 1, maxLength: 128}
+        disposition: {$ref: '#/components/schemas/CreatorReviewDisposition'}
+        review_note: {type: string, maxLength: 2000, default: ""}
+        expected_revision: {type: integer, minimum: 0, nullable: true}
+        model:
+          allOf:
+            - $ref: '#/components/schemas/CreatorModelDefinition'
+          nullable: true
+
+    LearningSignalReviewResult:
+      type: object
+      required: [signal]
+      properties:
+        signal: {$ref: '#/components/schemas/LearningSignal'}
+        model:
+          allOf:
+            - $ref: '#/components/schemas/CreatorModel'
+          nullable: true
 
     # ============ Response Models ============
     WorkflowResponse:
@@ -1769,7 +1915,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH]
+                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT]
                 message:
                   type: string
           example:
@@ -1797,7 +1943,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND]
+                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND]
                 message:
                   type: string
           example:
@@ -1824,7 +1970,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [ERROR_CREATOR_MODEL_REVISION_CONFLICT]
+                  enum: [ERROR_CREATOR_MODEL_REVISION_CONFLICT, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT]
                 message:
                   type: string
           example:
