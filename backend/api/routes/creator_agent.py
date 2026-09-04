@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 from backend.api.account_scope import require_owned_account
 from backend.api.deps import get_current_user
 from backend.api.errors import (
+    CreatorActionConflictError,
+    CreatorActionNotFoundError,
     CreatorDecisionNotFoundError,
     CreatorEvidenceNotFoundError,
     CreatorFeedbackAudienceMismatchError,
@@ -23,6 +25,10 @@ from backend.api.errors import (
 )
 from backend.api.responses import ApiResponse, success
 from backend.creator_agent import (
+    ActionIntentRequest,
+    ActionResolution,
+    ActionResolutionDisposition,
+    ActionStatus,
     CreatorAdvisor,
     CreatorModelDefinition,
     CreatorModelStore,
@@ -38,6 +44,9 @@ from backend.creator_agent import (
     RelationshipMemory,
 )
 from backend.creator_agent.repository import (
+    ActionIntentMissingError,
+    ActionResolutionConflictError,
+    ActionValidationError,
     CreatorModelMissingError,
     CreatorModelRevisionConflictError,
     CreatorReviewModelRequiredError,
@@ -60,6 +69,11 @@ class SaveCreatorModelRequest(BaseModel):
 class RecordFeedbackRequest(BaseModel):
     account_id: str = Field(min_length=1, max_length=128)
     feedback: FeedbackInput
+
+
+class ResolveActionRequest(BaseModel):
+    account_id: str = Field(min_length=1, max_length=128)
+    disposition: ActionResolutionDisposition
 
 
 class ReviewLearningSignalRequest(BaseModel):
@@ -163,6 +177,56 @@ async def get_creator_relationship(
     await require_owned_account(str(user["id"]), account_id)
     relationship = await _advisor().get_relationship(account_id.strip(), audience_id.strip())
     return success(data=relationship.model_dump(mode="json"))
+
+
+@router.post("/actions")
+async def plan_creator_action(
+    request: ActionIntentRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Create a pending Action Intent; no external capability is invoked."""
+    account_id = request.account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    request.account_id = account_id
+    try:
+        action = await _advisor().plan_action(request)
+    except DecisionRecordMissingError as exc:
+        raise CreatorDecisionNotFoundError(exc.decision_id) from exc
+    except ActionValidationError as exc:
+        raise ValidationError(exc.field, exc.reason) from exc
+    return success(data=action.model_dump(mode="json"))
+
+
+@router.get("/actions")
+async def list_creator_actions(
+    account_id: str = Query(..., min_length=1),
+    status: ActionStatus | None = Query(default=None),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    account_id = account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    actions = await _advisor().list_actions(account_id, status)
+    return success(data=[action.model_dump(mode="json") for action in actions])
+
+
+@router.post("/actions/{action_id}/resolve")
+async def resolve_creator_action(
+    action_id: str,
+    request: ResolveActionRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Resolve an intent without executing it or contacting an external system."""
+    account_id = request.account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    try:
+        action = await _advisor().resolve_action(
+            account_id, action_id.strip(), ActionResolution(disposition=request.disposition)
+        )
+    except ActionIntentMissingError as exc:
+        raise CreatorActionNotFoundError(exc.action_id) from exc
+    except ActionResolutionConflictError as exc:
+        raise CreatorActionConflictError(exc.action_id, exc.existing_status.value) from exc
+    return success(data=action.model_dump(mode="json"))
 
 
 @router.get("/learning-signals")

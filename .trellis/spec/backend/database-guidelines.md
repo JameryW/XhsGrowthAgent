@@ -487,3 +487,12 @@ notes = await list_note_stats(account_id, limit=100)
 page = await list_note_stats_page(account_id, cursor=cursor, limit=50)
 all_notes = await list_all_note_stats(account_id)
 ```
+
+## Scenario: Creator Agent Action Intent lifecycle
+
+Action Intents use a unique `(account_id, idempotency_key)` in
+`creator_agent_actions`. The memory adapter mirrors that constraint under its
+existing lock. Creation returns the original payload on retry and never
+overwrites candidate IDs or action kind. Resolution locks the intent, permits
+only one transition from `pending_confirmation`, and stores `confirmed` or
+`cancelled` without invoking an external executor.

@@ -8,6 +8,7 @@ from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
 from backend.api.routes.creator_agent import router
 from backend.creator_agent import (
+    ActionCapability,
     CreatorModelDefinition,
     DecisionCandidate,
     DecisionPolicy,
@@ -176,6 +177,56 @@ def test_learning_signal_routes_list_and_review(client, monkeypatch):
     )
     assert reviewed.status_code == 200
     assert reviewed.json()["data"]["signal"]["status"] == "dismissed"
+
+
+def test_action_routes_require_resolution_and_remain_account_scoped(client, monkeypatch):
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+    decision = client.post(
+        "/api/creator-agent/decisions",
+        json={
+            "account_id": "account-a",
+            "audience_id": "audience-a",
+            "goal": "选耐用品",
+            "candidates": [
+                {"candidate_id": "a", "label": "A", "signals": {"durability": 0.9}},
+                {"candidate_id": "b", "label": "B", "signals": {"durability": 0.2}},
+            ],
+        },
+    ).json()["data"]
+    request = {
+        "account_id": "account-a",
+        "decision_id": decision["decision_id"],
+        "action_kind": ActionCapability.COMPARE_OPTIONS.value,
+        "candidate_ids": ["a", "b"],
+        "idempotency_key": "api-action-1",
+    }
+    created = client.post("/api/creator-agent/actions", json=request)
+    assert created.status_code == 200
+    action = created.json()["data"]
+    assert action["status"] == "pending_confirmation"
+
+    listed = client.get(
+        "/api/creator-agent/actions?account_id=account-a&status=pending_confirmation"
+    )
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["action_id"] == action["action_id"]
+
+    resolved = client.post(
+        f"/api/creator-agent/actions/{action['action_id']}/resolve",
+        json={"account_id": "account-a", "disposition": "confirmed"},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["data"]["status"] == "confirmed"
+    conflict = client.post(
+        f"/api/creator-agent/actions/{action['action_id']}/resolve",
+        json={"account_id": "account-a", "disposition": "cancelled"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "ERROR_CREATOR_ACTION_CONFLICT"
 
 
 def test_evidence_graph_routes_filter_and_scope_missing(client, monkeypatch):

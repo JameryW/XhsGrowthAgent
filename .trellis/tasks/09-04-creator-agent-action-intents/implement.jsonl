@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec entry point and required checks."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Placement and dependency direction for Creator Agent actions."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Postgres transaction, idempotency, and memory-lock conventions."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Typed validation, not-found, and conflict error conventions."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Typing, validation, and test requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Action planning and adapter failure logging conventions."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Synchronize domain, repository, routes, schemas, docs, and tests."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse account scope, response, and lifecycle patterns."}
+{"file": ".trellis/tasks/09-04-creator-agent-action-intents/research/codebase-fit.md", "reason": "Action seam, confirmation gate, and idempotency risks."}

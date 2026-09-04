@@ -3,6 +3,12 @@
 from backend.creator_agent.advisor import CreatorAdvisor
 from backend.creator_agent.model_store import CreatorModelStore
 from backend.creator_agent.models import (
+    ActionCapability,
+    ActionIntent,
+    ActionIntentRequest,
+    ActionResolution,
+    ActionResolutionDisposition,
+    ActionStatus,
     CreatorModel,
     CreatorModelDefinition,
     CreatorReviewDisposition,
@@ -33,6 +39,12 @@ from backend.creator_agent.models import (
 
 __all__ = [
     "CreatorAdvisor",
+    "ActionCapability",
+    "ActionIntent",
+    "ActionIntentRequest",
+    "ActionResolution",
+    "ActionResolutionDisposition",
+    "ActionStatus",
     "CreatorModel",
     "CreatorModelDefinition",
     "CreatorModelStore",

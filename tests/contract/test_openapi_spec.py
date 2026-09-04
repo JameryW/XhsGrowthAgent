@@ -140,6 +140,8 @@ class TestOpenAPIRequiredEndpoints:
             "/creator-agent/learning-signals/{signal_id}/review": {"post"},
             "/creator-agent/evidence": {"get"},
             "/creator-agent/evidence/{evidence_id}": {"get"},
+            "/creator-agent/actions": {"get", "post"},
+            "/creator-agent/actions/{action_id}/resolve": {"post"},
         }
         for path, methods in expected.items():
             assert path in paths, f"Missing {path} endpoint"

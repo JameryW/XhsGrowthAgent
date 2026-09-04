@@ -45,6 +45,29 @@ class DecisionStatus(StrEnum):
     NO_ELIGIBLE_CANDIDATE = "no_eligible_candidate"
 
 
+class ActionCapability(StrEnum):
+    """Non-transactional capabilities a future action executor may support."""
+
+    COMPARE_OPTIONS = "compare_options"
+    SAVE_SHORTLIST = "save_shortlist"
+    REQUEST_MORE_EVIDENCE = "request_more_evidence"
+
+
+class ActionStatus(StrEnum):
+    """Lifecycle state of a durable Action Intent."""
+
+    PENDING_CONFIRMATION = "pending_confirmation"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+
+
+class ActionResolutionDisposition(StrEnum):
+    """Explicit user disposition; neither disposition executes an action."""
+
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+
+
 class FeedbackOutcome(StrEnum):
     CONSIDERED = "considered"
     ACCEPTED = "accepted"
@@ -270,6 +293,57 @@ class DecisionRecord(BaseModel):
     updated_at: str
 
 
+class ActionIntentRequest(BaseModel):
+    """Request to create an account-scoped, confirmation-gated action."""
+
+    account_id: str = Field(min_length=1, max_length=128)
+    decision_id: str = Field(min_length=1, max_length=128)
+    action_kind: ActionCapability
+    candidate_ids: list[str] = Field(default_factory=list, max_length=100)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+    @field_validator("account_id", "decision_id", "idempotency_key")
+    @classmethod
+    def validate_non_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("value cannot be blank")
+        return value
+
+    @field_validator("candidate_ids")
+    @classmethod
+    def validate_candidate_ids(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("candidate IDs cannot be blank")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("candidate IDs must be unique")
+        return normalized
+
+
+class ActionResolution(BaseModel):
+    """Explicit confirmation/cancellation; resolution has no side effects."""
+
+    disposition: ActionResolutionDisposition
+
+
+class ActionIntent(BaseModel):
+    """Durable hand-off between a Decision Record and a future executor."""
+
+    action_id: str = Field(min_length=1, max_length=128)
+    account_id: str = Field(min_length=1, max_length=128)
+    creator_id: str = Field(min_length=1, max_length=128)
+    audience_id: str = Field(min_length=1, max_length=128)
+    decision_id: str = Field(min_length=1, max_length=128)
+    action_kind: ActionCapability
+    candidate_ids: list[str] = Field(default_factory=list, max_length=100)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+    status: ActionStatus = ActionStatus.PENDING_CONFIRMATION
+    resolved_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
 class RelationshipMemory(BaseModel):
     account_id: str
     audience_id: str
@@ -332,6 +406,12 @@ __all__ = [
     "DecisionRecord",
     "DecisionRequest",
     "DecisionStatus",
+    "ActionCapability",
+    "ActionIntent",
+    "ActionIntentRequest",
+    "ActionResolution",
+    "ActionResolutionDisposition",
+    "ActionStatus",
     "Evidence",
     "EvidenceGraphEntry",
     "EvidenceReference",
