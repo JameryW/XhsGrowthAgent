@@ -713,6 +713,104 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_RelationshipMemory'
 
+  /creator-agent/actions:
+    post:
+      tags:
+        - creator-agent
+      summary: Plan a confirmation-gated Creator Agent action
+      description: Validates and persists a non-transactional Action Intent without invoking an external system.
+      operationId: planCreatorAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionIntentRequest'
+      responses:
+        '200':
+          description: Action Intent created or returned from an idempotent retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ActionIntent'
+        '400':
+          description: Action does not match the Decision Record or candidate set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '404':
+          description: Decision record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+    get:
+      tags:
+        - creator-agent
+      summary: List Creator Agent Action Intents
+      description: Returns account-scoped intents ordered newest first, optionally filtered by status.
+      operationId: listCreatorActions
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ActionStatus'
+      responses:
+        '200':
+          description: Action Intents retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ActionIntentList'
+
+  /creator-agent/actions/{action_id}/resolve:
+    post:
+      tags:
+        - creator-agent
+      summary: Confirm or cancel a Creator Agent Action Intent
+      description: Records an explicit resolution; confirmed is not executed in this increment.
+      operationId: resolveCreatorAction
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionResolutionRequest'
+      responses:
+        '200':
+          description: Action Intent resolved without external side effects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ActionIntent'
+        '404':
+          description: Action Intent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '409':
+          description: Conflicting resolution for an already resolved Action Intent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conflict'
+
   /creator-agent/learning-signals:
     get:
       tags:
@@ -1011,6 +1109,24 @@ components:
             data:
               $ref: '#/components/schemas/LearningSignalReviewResult'
 
+    ApiResponse_ActionIntent:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ActionIntent'
+
+    ApiResponse_ActionIntentList:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/ActionIntent'
+
     ApiResponse_EvidenceGraphList:
       allOf:
         - $ref: '#/components/schemas/ApiResponse'
@@ -1130,6 +1246,18 @@ components:
       type: string
       enum: [approved, dismissed]
 
+    ActionCapability:
+      type: string
+      enum: [compare_options, save_shortlist, request_more_evidence]
+
+    ActionStatus:
+      type: string
+      enum: [pending_confirmation, confirmed, cancelled]
+
+    ActionResolutionDisposition:
+      type: string
+      enum: [confirmed, cancelled]
+
     EvidenceReferenceType:
       type: string
       enum: [model, preference, knowledge_claim, decision_policy, decision, candidate, learning_signal]
@@ -1223,6 +1351,23 @@ components:
           maxLength: 128
         feedback:
           $ref: '#/components/schemas/FeedbackInput'
+
+    ActionIntentRequest:
+      type: object
+      required: [account_id, decision_id, action_kind, idempotency_key]
+      properties:
+        account_id: {type: string, minLength: 1, maxLength: 128}
+        decision_id: {type: string, minLength: 1, maxLength: 128}
+        action_kind: {$ref: '#/components/schemas/ActionCapability'}
+        candidate_ids: {type: array, maxItems: 100, items: {type: string, minLength: 1, maxLength: 128}}
+        idempotency_key: {type: string, minLength: 1, maxLength: 256}
+
+    ActionResolutionRequest:
+      type: object
+      required: [account_id, disposition]
+      properties:
+        account_id: {type: string, minLength: 1, maxLength: 128}
+        disposition: {$ref: '#/components/schemas/ActionResolutionDisposition'}
 
     Evidence:
       type: object
@@ -1489,6 +1634,34 @@ components:
           allOf:
             - $ref: '#/components/schemas/CreatorModel'
           nullable: true
+
+    ActionIntent:
+      type: object
+      required:
+        - action_id
+        - account_id
+        - creator_id
+        - audience_id
+        - decision_id
+        - action_kind
+        - candidate_ids
+        - idempotency_key
+        - status
+        - created_at
+        - updated_at
+      properties:
+        action_id: {type: string, minLength: 1, maxLength: 128}
+        account_id: {type: string, minLength: 1, maxLength: 128}
+        creator_id: {type: string, minLength: 1, maxLength: 128}
+        audience_id: {type: string, minLength: 1, maxLength: 128}
+        decision_id: {type: string, minLength: 1, maxLength: 128}
+        action_kind: {$ref: '#/components/schemas/ActionCapability'}
+        candidate_ids: {type: array, maxItems: 100, items: {type: string, minLength: 1, maxLength: 128}}
+        idempotency_key: {type: string, minLength: 1, maxLength: 256}
+        status: {$ref: '#/components/schemas/ActionStatus'}
+        resolved_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
 
     # ============ Response Models ============
     WorkflowResponse:
@@ -2021,7 +2194,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT]
+                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT, ERROR_CREATOR_ACTION_CONFLICT]
                 message:
                   type: string
           example:
@@ -2049,7 +2222,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND, ERROR_CREATOR_EVIDENCE_NOT_FOUND]
+                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND, ERROR_CREATOR_EVIDENCE_NOT_FOUND, ERROR_CREATOR_ACTION_NOT_FOUND]
                 message:
                   type: string
           example:
@@ -2076,7 +2249,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [ERROR_CREATOR_MODEL_REVISION_CONFLICT, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT]
+                  enum: [ERROR_CREATOR_MODEL_REVISION_CONFLICT, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT, ERROR_CREATOR_ACTION_CONFLICT]
                 message:
                   type: string
           example:

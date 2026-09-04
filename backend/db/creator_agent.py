@@ -8,6 +8,9 @@ import uuid
 from typing import Any
 
 from backend.creator_agent.models import (
+    ActionIntent,
+    ActionResolution,
+    ActionStatus,
     CreatorModel,
     CreatorModelDefinition,
     CreatorReviewDisposition,
@@ -26,6 +29,8 @@ from backend.creator_agent.models import (
     utc_now_iso,
 )
 from backend.creator_agent.repository import (
+    ActionIntentMissingError,
+    ActionResolutionConflictError,
     CreatorModelRevisionConflictError,
     CreatorReviewModelRequiredError,
     LearningSignalMissingError,
@@ -38,6 +43,8 @@ _mem_decisions: dict[tuple[str, str], DecisionRecord] = {}
 _mem_relationships: dict[tuple[str, str], RelationshipMemory] = {}
 _mem_learning_signals: dict[tuple[str, str], LearningSignal] = {}
 _mem_feedback_signals: dict[tuple[str, str], str] = {}
+_mem_actions: dict[tuple[str, str], ActionIntent] = {}
+_mem_action_idempotency: dict[tuple[str, str], str] = {}
 _mem_lock = asyncio.Lock()
 
 _CREATE_MODELS_SQL = """
@@ -90,6 +97,20 @@ CREATE TABLE IF NOT EXISTS creator_agent_learning_signals (
 );
 """
 
+_CREATE_ACTIONS_SQL = """
+CREATE TABLE IF NOT EXISTS creator_agent_actions (
+    account_id       TEXT NOT NULL,
+    action_id        TEXT NOT NULL,
+    idempotency_key  TEXT NOT NULL,
+    status           TEXT NOT NULL,
+    payload_json     TEXT NOT NULL,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    PRIMARY KEY (account_id, action_id),
+    UNIQUE (account_id, idempotency_key)
+);
+"""
+
 _CREATE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_creator_agent_decisions_audience
     ON creator_agent_decisions (account_id, audience_id, created_at DESC);
@@ -97,6 +118,8 @@ CREATE INDEX IF NOT EXISTS idx_creator_agent_relationships_updated
     ON creator_agent_relationships (account_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_creator_agent_learning_signals_status
     ON creator_agent_learning_signals (account_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_creator_agent_actions_status
+    ON creator_agent_actions (account_id, status, created_at DESC, action_id DESC);
 """
 
 
@@ -107,6 +130,8 @@ def _reset_memory_store() -> None:
     _mem_relationships.clear()
     _mem_learning_signals.clear()
     _mem_feedback_signals.clear()
+    _mem_actions.clear()
+    _mem_action_idempotency.clear()
 
 
 async def ensure_tables() -> None:
@@ -118,11 +143,12 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_DECISIONS_SQL)
         await conn.execute(_CREATE_RELATIONSHIPS_SQL)
         await conn.execute(_CREATE_LEARNING_SIGNALS_SQL)
+        await conn.execute(_CREATE_ACTIONS_SQL)
         await conn.execute(_CREATE_INDEX_SQL)
 
 
 def _dumps(
-    model: CreatorModel | DecisionRecord | RelationshipMemory | LearningSignal,
+    model: CreatorModel | DecisionRecord | RelationshipMemory | LearningSignal | ActionIntent,
 ) -> str:
     return json.dumps(model.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
 
@@ -151,6 +177,10 @@ def _relationship_from_row(row: Any) -> RelationshipMemory:
 
 def _learning_signal_from_row(row: Any) -> LearningSignal:
     return LearningSignal.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
+
+
+def _action_from_row(row: Any) -> ActionIntent:
+    return ActionIntent.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
 
 
 def _updated_relationship(
@@ -500,6 +530,183 @@ class DurableCreatorAgentRepository:
             )
             row = await cur.fetchone()
         return _decision_from_row(row) if row else None
+
+    async def get_action_by_idempotency_key(
+        self, account_id: str, idempotency_key: str
+    ) -> ActionIntent | None:
+        if not is_pool_ready():
+            action_id = _mem_action_idempotency.get((account_id, idempotency_key))
+            if action_id is None:
+                return None
+            action = _mem_actions.get((account_id, action_id))
+            return action.model_copy(deep=True) if action else None
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_actions
+                WHERE account_id = %s AND idempotency_key = %s
+                """,
+                (account_id, idempotency_key),
+            )
+            row = await cur.fetchone()
+        return _action_from_row(row) if row else None
+
+    async def create_action(self, action: ActionIntent) -> ActionIntent:
+        """Persist an intent, returning the original row for idempotent retries."""
+        if not is_pool_ready():
+            async with _mem_lock:
+                key = (action.account_id, action.idempotency_key)
+                existing_id = _mem_action_idempotency.get(key)
+                if existing_id is not None:
+                    existing = _mem_actions[(action.account_id, existing_id)]
+                    return existing.model_copy(deep=True)
+                stored = action.model_copy(deep=True)
+                _mem_actions[(action.account_id, action.action_id)] = stored
+                _mem_action_idempotency[key] = action.action_id
+                return stored.model_copy(deep=True)
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(
+                """
+                INSERT INTO creator_agent_actions (
+                    account_id, action_id, idempotency_key, status, payload_json,
+                    created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (account_id, idempotency_key) DO NOTHING
+                """,
+                (
+                    action.account_id,
+                    action.action_id,
+                    action.idempotency_key,
+                    action.status.value,
+                    _dumps(action),
+                    action.created_at,
+                    action.updated_at,
+                ),
+            )
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_actions
+                WHERE account_id = %s AND idempotency_key = %s
+                """,
+                (action.account_id, action.idempotency_key),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise RuntimeError("action intent insert did not return a durable row")
+        return _action_from_row(row)
+
+    async def get_action(self, account_id: str, action_id: str) -> ActionIntent | None:
+        if not is_pool_ready():
+            action = _mem_actions.get((account_id, action_id))
+            return action.model_copy(deep=True) if action else None
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_actions
+                WHERE account_id = %s AND action_id = %s
+                """,
+                (account_id, action_id),
+            )
+            row = await cur.fetchone()
+        return _action_from_row(row) if row else None
+
+    async def list_actions(
+        self, account_id: str, status: ActionStatus | None = None
+    ) -> list[ActionIntent]:
+        if not is_pool_ready():
+            actions = [
+                action
+                for (stored_account, _), action in _mem_actions.items()
+                if stored_account == account_id and (status is None or action.status is status)
+            ]
+            actions.sort(key=lambda item: (item.created_at, item.action_id), reverse=True)
+            return [action.model_copy(deep=True) for action in actions]
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            if status is None:
+                await cur.execute(
+                    """
+                    SELECT payload_json FROM creator_agent_actions
+                    WHERE account_id = %s
+                    ORDER BY created_at DESC, action_id DESC
+                    """,
+                    (account_id,),
+                )
+            else:
+                await cur.execute(
+                    """
+                    SELECT payload_json FROM creator_agent_actions
+                    WHERE account_id = %s AND status = %s
+                    ORDER BY created_at DESC, action_id DESC
+                    """,
+                    (account_id, status.value),
+                )
+            rows = await cur.fetchall()
+        return [_action_from_row(row) for row in rows]
+
+    async def resolve_action(
+        self, account_id: str, action_id: str, resolution: ActionResolution
+    ) -> ActionIntent:
+        if not is_pool_ready():
+            async with _mem_lock:
+                action = _mem_actions.get((account_id, action_id))
+                if action is None:
+                    raise ActionIntentMissingError(action_id)
+                action = action.model_copy(deep=True)
+                if action.status is not ActionStatus.PENDING_CONFIRMATION:
+                    if action.status.value != resolution.disposition.value:
+                        raise ActionResolutionConflictError(
+                            action_id, action.status, resolution.disposition
+                        )
+                    return action
+                action.status = ActionStatus(resolution.disposition.value)
+                action.resolved_at = utc_now_iso()
+                action.updated_at = action.resolved_at
+                _mem_actions[(account_id, action_id)] = action.model_copy(deep=True)
+                return action
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_actions
+                WHERE account_id = %s AND action_id = %s FOR UPDATE
+                """,
+                (account_id, action_id),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise ActionIntentMissingError(action_id)
+            action = _action_from_row(row)
+            if action.status is not ActionStatus.PENDING_CONFIRMATION:
+                if action.status.value != resolution.disposition.value:
+                    raise ActionResolutionConflictError(
+                        action_id, action.status, resolution.disposition
+                    )
+                return action
+            action.status = ActionStatus(resolution.disposition.value)
+            action.resolved_at = utc_now_iso()
+            action.updated_at = action.resolved_at
+            await cur.execute(
+                """
+                UPDATE creator_agent_actions
+                SET status = %s, payload_json = %s, updated_at = %s
+                WHERE account_id = %s AND action_id = %s
+                """,
+                (
+                    action.status.value,
+                    _dumps(action),
+                    action.updated_at,
+                    account_id,
+                    action_id,
+                ),
+            )
+        return action
 
     async def apply_feedback(
         self,

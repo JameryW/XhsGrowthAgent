@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Protocol
 
 from backend.creator_agent.models import (
+    ActionIntent,
+    ActionResolution,
+    ActionResolutionDisposition,
+    ActionStatus,
     CreatorModel,
     CreatorModelDefinition,
     CreatorReviewDisposition,
@@ -44,6 +48,34 @@ class FeedbackAudienceMismatchError(Exception):
         self.expected = expected
         self.actual = actual
         super().__init__(f"feedback audience mismatch: expected {expected!r}, actual {actual!r}")
+
+
+class ActionIntentMissingError(Exception):
+    def __init__(self, action_id: str) -> None:
+        self.action_id = action_id
+        super().__init__(f"action intent {action_id!r} not found")
+
+
+class ActionResolutionConflictError(Exception):
+    def __init__(
+        self,
+        action_id: str,
+        existing_status: ActionStatus,
+        requested_disposition: ActionResolutionDisposition,
+    ) -> None:
+        self.action_id = action_id
+        self.existing_status = existing_status
+        self.requested_disposition = requested_disposition
+        super().__init__(
+            f"action intent {action_id!r} already has status {existing_status.value!r}"
+        )
+
+
+class ActionValidationError(Exception):
+    def __init__(self, reason: str, field: str = "action") -> None:
+        self.reason = reason
+        self.field = field
+        super().__init__(reason)
 
 
 class LearningSignalMissingError(Exception):
@@ -86,6 +118,22 @@ class CreatorAgentRepository(Protocol):
     async def create_decision(self, decision: DecisionRecord) -> None: ...
 
     async def get_decision(self, account_id: str, decision_id: str) -> DecisionRecord | None: ...
+
+    async def get_action_by_idempotency_key(
+        self, account_id: str, idempotency_key: str
+    ) -> ActionIntent | None: ...
+
+    async def create_action(self, action: ActionIntent) -> ActionIntent: ...
+
+    async def get_action(self, account_id: str, action_id: str) -> ActionIntent | None: ...
+
+    async def list_actions(
+        self, account_id: str, status: ActionStatus | None = None
+    ) -> list[ActionIntent]: ...
+
+    async def resolve_action(
+        self, account_id: str, action_id: str, resolution: ActionResolution
+    ) -> ActionIntent: ...
 
     async def apply_feedback(
         self,
@@ -131,6 +179,9 @@ class CreatorAgentRepository(Protocol):
 
 __all__ = [
     "CreatorAgentRepository",
+    "ActionIntentMissingError",
+    "ActionResolutionConflictError",
+    "ActionValidationError",
     "CreatorModelMissingError",
     "CreatorModelRevisionConflictError",
     "DecisionRecordMissingError",

@@ -136,6 +136,23 @@ class DecisionStatus(Enum):
     NO_ELIGIBLE_CANDIDATE = "no_eligible_candidate"
 
 
+class ActionCapability(Enum):
+    COMPARE_OPTIONS = "compare_options"
+    SAVE_SHORTLIST = "save_shortlist"
+    REQUEST_MORE_EVIDENCE = "request_more_evidence"
+
+
+class ActionStatus(Enum):
+    PENDING_CONFIRMATION = "pending_confirmation"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+
+
+class ActionResolutionDisposition(Enum):
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+
+
 class FeedbackOutcome(Enum):
     CONSIDERED = "considered"
     ACCEPTED = "accepted"
@@ -294,6 +311,19 @@ class DecisionRequest(BaseModel):
     candidates: Annotated[list[DecisionCandidate], Field(max_length=100, min_length=2)]
 
 
+class ActionIntentRequest(BaseModel):
+    account_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    decision_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    action_kind: ActionCapability
+    candidate_ids: Annotated[list[StrictStr] | None, Field(max_length=100)] = None
+    idempotency_key: Annotated[StrictStr, Field(max_length=256, min_length=1)]
+
+
+class ActionResolutionRequest(BaseModel):
+    account_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    disposition: ActionResolutionDisposition
+
+
 class RankedCandidate(BaseModel):
     candidate_id: StrictStr
     label: StrictStr
@@ -389,6 +419,21 @@ class LearningSignalReviewRequest(BaseModel):
 class LearningSignalReviewResult(BaseModel):
     signal: LearningSignal
     model: CreatorModel | None = None
+
+
+class ActionIntent(BaseModel):
+    action_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    account_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    creator_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    audience_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    decision_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    action_kind: ActionCapability
+    candidate_ids: Annotated[list[StrictStr], Field(max_length=100)]
+    idempotency_key: Annotated[StrictStr, Field(max_length=256, min_length=1)]
+    status: ActionStatus = ActionStatus.PENDING_CONFIRMATION
+    resolved_at: AwareDatetime | None = None
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
 
 
 class WorkflowResponse(BaseModel):
@@ -670,6 +715,7 @@ class Code(Enum):
     VALIDATION_ERROR = "VALIDATION_ERROR"
     ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH = "ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH"
     ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
+    ERROR_CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
 
 
 class Error(BaseModel):
@@ -696,6 +742,7 @@ class Code1(Enum):
     ERROR_CREATOR_DECISION_NOT_FOUND = "ERROR_CREATOR_DECISION_NOT_FOUND"
     ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
     ERROR_CREATOR_EVIDENCE_NOT_FOUND = "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
+    ERROR_CREATOR_ACTION_NOT_FOUND = "ERROR_CREATOR_ACTION_NOT_FOUND"
 
 
 class Error1(BaseModel):
@@ -721,6 +768,7 @@ class Error1(BaseModel):
 class Code2(Enum):
     ERROR_CREATOR_MODEL_REVISION_CONFLICT = "ERROR_CREATOR_MODEL_REVISION_CONFLICT"
     ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
+    ERROR_CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
 
 
 class Error2(BaseModel):
@@ -823,6 +871,14 @@ class ApiResponseLearningSignalList(ApiResponse):
 
 class ApiResponseLearningSignalReviewResult(ApiResponse):
     data: LearningSignalReviewResult | None = None
+
+
+class ApiResponseActionIntent(ApiResponse):
+    data: ActionIntent | None = None
+
+
+class ApiResponseActionIntentList(ApiResponse):
+    data: list[ActionIntent] | None = None
 
 
 class ApiResponseEvidenceGraphList(ApiResponse):

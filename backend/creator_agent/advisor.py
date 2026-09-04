@@ -6,6 +6,11 @@ import uuid
 from dataclasses import dataclass, field
 
 from backend.creator_agent.models import (
+    ActionCapability,
+    ActionIntent,
+    ActionIntentRequest,
+    ActionResolution,
+    ActionStatus,
     DecisionCandidate,
     DecisionRecord,
     DecisionRequest,
@@ -31,6 +36,7 @@ from backend.creator_agent.models import (
     utc_now_iso,
 )
 from backend.creator_agent.repository import (
+    ActionValidationError,
     CreatorAgentRepository,
     CreatorModelMissingError,
     DecisionRecordMissingError,
@@ -222,6 +228,74 @@ class CreatorAdvisor:
         )
         await self._repository.create_decision(decision)
         return decision
+
+    async def plan_action(self, request: ActionIntentRequest) -> ActionIntent:
+        """Validate and persist a confirmation-gated action hand-off."""
+        account_id = request.account_id.strip()
+        idempotency_key = request.idempotency_key.strip()
+        existing = await self._repository.get_action_by_idempotency_key(account_id, idempotency_key)
+        if existing is not None:
+            # Idempotency intentionally precedes payload validation: a retry
+            # must return the original intent and never overwrite its targets.
+            return existing
+
+        decision = await self._repository.get_decision(account_id, request.decision_id.strip())
+        if decision is None:
+            raise DecisionRecordMissingError(request.decision_id.strip())
+
+        candidate_ids = list(request.candidate_ids)
+        recommendations = {item.candidate_id for item in decision.recommendations}
+        if request.action_kind is ActionCapability.REQUEST_MORE_EVIDENCE:
+            if candidate_ids:
+                raise ActionValidationError(
+                    "request_more_evidence does not accept candidate IDs", "candidate_ids"
+                )
+        else:
+            if decision.status is not DecisionStatus.RECOMMENDED:
+                raise ActionValidationError(
+                    "candidate actions require a recommended decision", "decision_id"
+                )
+            minimum = 2 if request.action_kind is ActionCapability.COMPARE_OPTIONS else 1
+            if len(candidate_ids) < minimum:
+                raise ActionValidationError(
+                    f"{request.action_kind.value} requires at least {minimum} candidate IDs",
+                    "candidate_ids",
+                )
+            missing = sorted(set(candidate_ids) - recommendations)
+            if missing:
+                raise ActionValidationError(
+                    f"candidate IDs are not recommendations: {missing}", "candidate_ids"
+                )
+
+        now = utc_now_iso()
+        action = ActionIntent(
+            action_id=str(uuid.uuid4()),
+            account_id=account_id,
+            creator_id=decision.creator_id,
+            audience_id=decision.audience_id,
+            decision_id=decision.decision_id,
+            action_kind=request.action_kind,
+            candidate_ids=candidate_ids,
+            idempotency_key=idempotency_key,
+            status=ActionStatus.PENDING_CONFIRMATION,
+            created_at=now,
+            updated_at=now,
+        )
+        return await self._repository.create_action(action)
+
+    async def list_actions(
+        self, account_id: str, status: ActionStatus | None = None
+    ) -> list[ActionIntent]:
+        """List account-scoped intents, optionally filtered by lifecycle status."""
+        return await self._repository.list_actions(account_id.strip(), status)
+
+    async def resolve_action(
+        self, account_id: str, action_id: str, resolution: ActionResolution
+    ) -> ActionIntent:
+        """Record confirmation/cancellation without executing external work."""
+        return await self._repository.resolve_action(
+            account_id.strip(), action_id.strip(), resolution
+        )
 
     async def record_feedback(
         self, account_id: str, decision_id: str, feedback: FeedbackInput

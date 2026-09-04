@@ -1,7 +1,15 @@
 """Auto-generated Pydantic models from OpenAPI spec."""
 
 from backend.api.generated.models import (
+    ActionCapability,
+    ActionIntent,
+    ActionIntentRequest,
+    ActionResolutionDisposition,
+    ActionResolutionRequest,
+    ActionStatus,
     ApiResponse,
+    ApiResponseActionIntent,
+    ApiResponseActionIntentList,
     ApiResponseCreatorModel,
     ApiResponseDecisionRecord,
     ApiResponseEvidenceGraphEntry,
@@ -53,6 +61,8 @@ from backend.api.generated.models import (
 
 __all__ = [
     "ApiResponse",
+    "ApiResponseActionIntent",
+    "ApiResponseActionIntentList",
     "ApiResponseCreatorModel",
     "ApiResponseDecisionRecord",
     "ApiResponseEvidenceGraphEntry",
@@ -61,6 +71,12 @@ __all__ = [
     "ApiResponseLearningSignalList",
     "ApiResponseLearningSignalReviewResult",
     "ApiResponseRelationshipMemory",
+    "ActionCapability",
+    "ActionIntent",
+    "ActionIntentRequest",
+    "ActionResolutionDisposition",
+    "ActionResolutionRequest",
+    "ActionStatus",
     "Conflict",
     "ContentStatus",
     "CreatorModel",

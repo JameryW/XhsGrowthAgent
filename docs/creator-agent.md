@@ -141,6 +141,39 @@ Learning Signal 则从它指向的原始 Decision Record 读取 Evidence payload
 字段稳定排序，未知节点只在所属 account 内查找，返回
 `ERROR_CREATOR_EVIDENCE_NOT_FOUND`。
 
+### 创建和解析 Action Intent
+
+Action Intent 是 Decision Record 到未来执行器之间的安全交接层。当前只支持
+`compare_options`、`save_shortlist` 和 `request_more_evidence` 三种非交易能力，
+创建后永远先处于 `pending_confirmation`：
+
+```http
+POST /api/creator-agent/actions
+```
+
+```json
+{
+  "account_id": "xhs-account-1",
+  "decision_id": "decision-1",
+  "action_kind": "save_shortlist",
+  "candidate_ids": ["candidate-a"],
+  "idempotency_key": "handoff-2026-09-04-1"
+}
+```
+
+候选动作只能引用该 Decision Record 的推荐候选；`request_more_evidence` 不允许
+候选目标，且可以用于证据不足的 Decision Record。相同账号重试同一个
+`idempotency_key` 会返回原始 intent，不会替换候选或 action kind。
+
+```http
+GET /api/creator-agent/actions?account_id=xhs-account-1&status=pending_confirmation
+POST /api/creator-agent/actions/{action_id}/resolve
+```
+
+解析请求必须明确选择 `confirmed` 或 `cancelled`。`confirmed` 只表示未来执行器
+可以接收该 intent，本期不会搜索、购买、预约、发消息或调用任何外部系统；变更
+已解析 intent 的 disposition 会返回 `ERROR_CREATOR_ACTION_CONFLICT`。
+
 ## 与现有能力的关系
 
 - XHS Account 仍是平台操作和权限范围；Creator ID 才是可迁移的创作者身份。

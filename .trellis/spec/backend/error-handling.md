@@ -347,3 +347,14 @@ Evidence Graph detail routes translate a missing or cross-account node into
 `ERROR_CREATOR_EVIDENCE_NOT_FOUND`). List queries return an empty successful
 envelope when filters match no Evidence; they must not reveal whether another
 account owns a node.
+
+## Scenario: Creator Agent Action Intent confirmation gate
+
+Action planning rejects candidate targets that are not present in the
+Decision Record's recommendations, and rejects candidate actions for
+non-recommended decisions. `request_more_evidence` is the only capability that
+may target an insufficient-evidence decision, and it must carry no candidates.
+Resolution is side-effect free: `confirmed` authorizes only a future executor,
+while `cancelled` permanently prevents execution. Missing or cross-account
+intents are `CreatorActionNotFoundError` (`404`); changing the disposition of a
+resolved intent is `CreatorActionConflictError` (`409`).

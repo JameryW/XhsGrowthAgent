@@ -76,6 +76,16 @@ _Avoid_: Automatic learning, moderation
 One complete, creator-approved version of a Creator Model. A revision is immutable once it has been used by a Decision Record.
 _Avoid_: Prompt version, chat turn
 
+## Action and execution
+
+**Action Intent**:
+A durable, scoped request to perform one declared non-transactional action for an Audience Member using one Decision Record.
+_Avoid_: Command, transaction
+
+**Action Resolution**:
+The explicit confirmation or cancellation of an Action Intent; confirmation authorizes a future executor but does not itself perform an external side effect.
+_Avoid_: Execution, approval
+
 ## Existing adjacent concepts
 
 **XHS Account**:

@@ -24,6 +24,8 @@ class ErrorCode(StrEnum):
     CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
     CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
     CREATOR_EVIDENCE_NOT_FOUND = "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
+    CREATOR_ACTION_NOT_FOUND = "ERROR_CREATOR_ACTION_NOT_FOUND"
+    CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -171,6 +173,30 @@ class CreatorEvidenceNotFoundError(APIError):
             message=f"Creator evidence '{evidence_id}' not found",
             details={"evidence_id": evidence_id},
             status_code=404,
+        )
+
+
+class CreatorActionNotFoundError(APIError):
+    """Action intent is missing or not visible to the account owner."""
+
+    def __init__(self, action_id: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_NOT_FOUND,
+            message=f"Creator action '{action_id}' not found",
+            details={"action_id": action_id},
+            status_code=404,
+        )
+
+
+class CreatorActionConflictError(APIError):
+    """A resolved action cannot be assigned a different disposition."""
+
+    def __init__(self, action_id: str, status: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_CONFLICT,
+            message="Creator action has already been resolved",
+            details={"action_id": action_id, "status": status},
+            status_code=409,
         )
 
 
