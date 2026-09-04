@@ -526,3 +526,14 @@ Learning review remains inside the same deep module:
   model approval plus signal disposition atomically.
 - `backend/api/routes/creator_agent.py` owns authentication, account scope,
   typed error translation, and the two learning-signal endpoints.
+
+Evidence Graph remains a read-only projection in the same bounded context:
+
+- `backend/creator_agent/models.py` owns `EvidenceReferenceType`,
+  `EvidenceReference`, and `EvidenceGraphEntry` contracts.
+- `backend/db/creator_agent.py` assembles the projection from durable model,
+  decision, and learning-signal snapshots; it must not add a second Evidence
+  write model.
+- `backend/creator_agent/advisor.py` is the domain seam for list/detail graph
+  queries, and `backend/api/routes/creator_agent.py` owns the authenticated
+  `/evidence` endpoints.

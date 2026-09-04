@@ -779,6 +779,72 @@ paths:
               schema:
                 $ref: '#/components/schemas/Conflict'
 
+  /creator-agent/evidence:
+    get:
+      tags:
+        - creator-agent
+      summary: List the Creator Agent Evidence Graph
+      description: Returns a deterministic, account-scoped read projection of Evidence and its typed references.
+      operationId: listCreatorEvidence
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: source_kind
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/EvidenceSource'
+        - name: reference_type
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/EvidenceReferenceType'
+      responses:
+        '200':
+          description: Evidence Graph retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_EvidenceGraphList'
+
+  /creator-agent/evidence/{evidence_id}:
+    get:
+      tags:
+        - creator-agent
+      summary: Get one Creator Agent Evidence node
+      description: Returns one account-scoped Evidence node and all of its typed references.
+      operationId: getCreatorEvidence
+      parameters:
+        - name: evidence_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Evidence Graph node retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_EvidenceGraphEntry'
+        '404':
+          description: Creator Evidence not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+
 components:
   schemas:
     # ============ Unified Response Wrapper ============
@@ -945,6 +1011,24 @@ components:
             data:
               $ref: '#/components/schemas/LearningSignalReviewResult'
 
+    ApiResponse_EvidenceGraphList:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/EvidenceGraphEntry'
+
+    ApiResponse_EvidenceGraphEntry:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/EvidenceGraphEntry'
+
     # ============ Enums (CRITICAL - must match backend exactly) ============
     WorkflowPhase:
       type: string
@@ -1045,6 +1129,10 @@ components:
     CreatorReviewDisposition:
       type: string
       enum: [approved, dismissed]
+
+    EvidenceReferenceType:
+      type: string
+      enum: [model, preference, knowledge_claim, decision_policy, decision, candidate, learning_signal]
 
     # ============ Request Models ============
     WorkflowStartRequest:
@@ -1161,6 +1249,24 @@ components:
           minimum: 0
           maximum: 1
           default: 1
+
+    EvidenceReference:
+      type: object
+      required: [reference_type, target_id]
+      properties:
+        reference_type: {$ref: '#/components/schemas/EvidenceReferenceType'}
+        target_id: {type: string, minLength: 1, maxLength: 300}
+        model_revision: {type: integer, minimum: 1, nullable: true}
+
+    EvidenceGraphEntry:
+      type: object
+      required: [evidence, references]
+      properties:
+        evidence: {$ref: '#/components/schemas/Evidence'}
+        references:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/EvidenceReference'}
 
     Preference:
       type: object
@@ -1943,7 +2049,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND]
+                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND, ERROR_CREATOR_EVIDENCE_NOT_FOUND]
                 message:
                   type: string
           example:

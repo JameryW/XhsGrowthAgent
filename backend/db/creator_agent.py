@@ -12,6 +12,11 @@ from backend.creator_agent.models import (
     CreatorModelDefinition,
     CreatorReviewDisposition,
     DecisionRecord,
+    Evidence,
+    EvidenceGraphEntry,
+    EvidenceReference,
+    EvidenceReferenceType,
+    EvidenceSource,
     FeedbackOutcome,
     LearningSignal,
     LearningSignalReview,
@@ -204,6 +209,143 @@ def _new_learning_signal(decision: DecisionRecord, feedback: UserFeedback) -> Le
         created_at=now,
         updated_at=now,
     )
+
+
+def _build_evidence_graph(
+    model: CreatorModel | None,
+    decisions: list[DecisionRecord],
+    signals: list[LearningSignal],
+    *,
+    source_kind: EvidenceSource | None = None,
+    reference_type: EvidenceReferenceType | None = None,
+) -> list[EvidenceGraphEntry]:
+    """Build the deterministic read projection shared by both storage paths."""
+
+    evidence_by_id: dict[str, Evidence] = {}
+    references_by_evidence: dict[
+        str, dict[tuple[EvidenceReferenceType, str, int | None], EvidenceReference]
+    ] = {}
+
+    def add_evidence(item: Evidence) -> None:
+        # Evidence IDs are logical identities. Keep the first durable snapshot
+        # encountered so a later model revision cannot rewrite a decision's
+        # historical payload under the same ID.
+        evidence_by_id.setdefault(item.evidence_id, item.model_copy(deep=True))
+        references_by_evidence.setdefault(item.evidence_id, {})
+
+    def add_reference(
+        evidence_id: str,
+        kind: EvidenceReferenceType,
+        target_id: str,
+        revision: int | None,
+    ) -> None:
+        if evidence_id not in evidence_by_id:
+            return
+        reference = EvidenceReference(
+            reference_type=kind,
+            target_id=target_id,
+            model_revision=revision,
+        )
+        key = (kind, target_id, revision)
+        references_by_evidence.setdefault(evidence_id, {})[key] = reference
+
+    decisions_by_id = {decision.decision_id: decision for decision in decisions}
+    # Seed immutable decision snapshots first. This preserves historical
+    # provenance if a later model revision happens to reuse an evidence ID.
+    for decision in sorted(decisions, key=lambda item: item.decision_id):
+        for item in decision.evidence:
+            add_evidence(item)
+
+    for signal in sorted(signals, key=lambda item: item.signal_id):
+        matched_decision = decisions_by_id.get(signal.decision_id)
+        if matched_decision is None:
+            continue
+        decision_evidence = {
+            evidence.evidence_id: evidence for evidence in matched_decision.evidence
+        }
+        for evidence_id in signal.evidence_ids:
+            signal_evidence = decision_evidence.get(evidence_id)
+            if signal_evidence is None:
+                continue
+            add_evidence(signal_evidence)
+            add_reference(
+                evidence_id,
+                EvidenceReferenceType.LEARNING_SIGNAL,
+                signal.signal_id,
+                matched_decision.model_revision,
+            )
+
+    if model is not None:
+        for item in model.evidence:
+            add_evidence(item)
+            add_reference(
+                item.evidence_id,
+                EvidenceReferenceType.MODEL,
+                model.creator_id,
+                model.revision,
+            )
+        for preference in model.preferences:
+            for evidence_id in preference.evidence_ids:
+                add_reference(
+                    evidence_id,
+                    EvidenceReferenceType.PREFERENCE,
+                    preference.preference_id,
+                    model.revision,
+                )
+        for claim in model.knowledge:
+            for evidence_id in claim.evidence_ids:
+                add_reference(
+                    evidence_id,
+                    EvidenceReferenceType.KNOWLEDGE_CLAIM,
+                    claim.claim_id,
+                    model.revision,
+                )
+        for policy in model.policies:
+            for evidence_id in policy.evidence_ids:
+                add_reference(
+                    evidence_id,
+                    EvidenceReferenceType.DECISION_POLICY,
+                    policy.policy_id,
+                    model.revision,
+                )
+
+    for decision in sorted(decisions, key=lambda item: item.decision_id):
+        for item in decision.evidence:
+            add_reference(
+                item.evidence_id,
+                EvidenceReferenceType.DECISION,
+                decision.decision_id,
+                decision.model_revision,
+            )
+        for candidate in decision.recommendations:
+            candidate_ref = f"{decision.decision_id}:{candidate.candidate_id}"
+            for evidence_id in candidate.evidence_ids:
+                add_reference(
+                    evidence_id,
+                    EvidenceReferenceType.CANDIDATE,
+                    candidate_ref,
+                    decision.model_revision,
+                )
+
+    entries: list[EvidenceGraphEntry] = []
+    for evidence_id in sorted(evidence_by_id):
+        evidence = evidence_by_id[evidence_id]
+        references = sorted(
+            references_by_evidence.get(evidence_id, {}).values(),
+            key=lambda item: (
+                item.reference_type.value,
+                item.target_id,
+                item.model_revision if item.model_revision is not None else 0,
+            ),
+        )
+        if source_kind is not None and evidence.source_kind != source_kind:
+            continue
+        if reference_type is not None and not any(
+            item.reference_type == reference_type for item in references
+        ):
+            continue
+        entries.append(EvidenceGraphEntry(evidence=evidence, references=references))
+    return entries
 
 
 class DurableCreatorAgentRepository:
@@ -517,6 +659,78 @@ class DurableCreatorAgentRepository:
             )
             row = await cur.fetchone()
         return _learning_signal_from_row(row) if row else None
+
+    async def list_evidence(
+        self,
+        account_id: str,
+        source_kind: EvidenceSource | None = None,
+        reference_type: EvidenceReferenceType | None = None,
+    ) -> list[EvidenceGraphEntry]:
+        """Return an account-scoped, deterministic Evidence Graph projection."""
+        if not is_pool_ready():
+            async with _mem_lock:
+                model = _mem_models.get(account_id)
+                decisions = [
+                    decision
+                    for (stored_account, _), decision in _mem_decisions.items()
+                    if stored_account == account_id
+                ]
+                signals = [
+                    signal
+                    for (stored_account, _), signal in _mem_learning_signals.items()
+                    if stored_account == account_id
+                ]
+                model_snapshot = model.model_copy(deep=True) if model else None
+                decision_snapshots = [item.model_copy(deep=True) for item in decisions]
+                signal_snapshots = [item.model_copy(deep=True) for item in signals]
+            return _build_evidence_graph(
+                model_snapshot,
+                decision_snapshots,
+                signal_snapshots,
+                source_kind=source_kind,
+                reference_type=reference_type,
+            )
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_models
+                WHERE account_id = %s
+                """,
+                (account_id,),
+            )
+            model_row = await cur.fetchone()
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_decisions
+                WHERE account_id = %s
+                ORDER BY decision_id ASC
+                """,
+                (account_id,),
+            )
+            decision_rows = await cur.fetchall()
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_learning_signals
+                WHERE account_id = %s
+                ORDER BY signal_id ASC
+                """,
+                (account_id,),
+            )
+            signal_rows = await cur.fetchall()
+        return _build_evidence_graph(
+            _model_from_row(model_row) if model_row else None,
+            [_decision_from_row(row) for row in decision_rows],
+            [_learning_signal_from_row(row) for row in signal_rows],
+            source_kind=source_kind,
+            reference_type=reference_type,
+        )
+
+    async def get_evidence(self, account_id: str, evidence_id: str) -> EvidenceGraphEntry | None:
+        """Return one graph node without crossing the account boundary."""
+        entries = await self.list_evidence(account_id)
+        return next((entry for entry in entries if entry.evidence.evidence_id == evidence_id), None)
 
     async def list_learning_signals(
         self, account_id: str, status: LearningSignalStatus | None = None

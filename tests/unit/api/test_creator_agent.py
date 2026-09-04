@@ -13,6 +13,7 @@ from backend.creator_agent import (
     DecisionPolicy,
     DecisionRequest,
     Evidence,
+    EvidenceReferenceType,
     EvidenceSource,
     FeedbackInput,
     FeedbackOutcome,
@@ -175,3 +176,65 @@ def test_learning_signal_routes_list_and_review(client, monkeypatch):
     )
     assert reviewed.status_code == 200
     assert reviewed.json()["data"]["signal"]["status"] == "dismissed"
+
+
+def test_evidence_graph_routes_filter_and_scope_missing(client, monkeypatch):
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+    decision = client.post(
+        "/api/creator-agent/decisions",
+        json={
+            "account_id": "account-a",
+            "audience_id": "audience-a",
+            "goal": "选耐用品",
+            "candidates": [
+                {
+                    "candidate_id": "a",
+                    "label": "A",
+                    "signals": {"durability": 0.9},
+                    "evidence": [
+                        {
+                            "evidence_id": "candidate-e1",
+                            "source_kind": "product_fact",
+                            "source_ref": "product://a",
+                            "claim": "产品 A 更耐用",
+                        }
+                    ],
+                },
+                {"candidate_id": "b", "label": "B", "signals": {"durability": 0.2}},
+            ],
+        },
+    ).json()["data"]
+
+    listed = client.get(
+        "/api/creator-agent/evidence",
+        params={"account_id": "account-a", "source_kind": "product_fact"},
+    )
+    assert listed.status_code == 200
+    assert [entry["evidence"]["evidence_id"] for entry in listed.json()["data"]] == ["candidate-e1"]
+
+    detail = client.get(
+        "/api/creator-agent/evidence/candidate-e1",
+        params={"account_id": "account-a"},
+    )
+    assert detail.status_code == 200
+    assert detail.json()["data"]["evidence"]["evidence_id"] == "candidate-e1"
+
+    missing = client.get(
+        "/api/creator-agent/evidence/missing",
+        params={"account_id": "account-a"},
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
+    assert decision["account_id"] == "account-a"
+
+
+def test_evidence_reference_type_matches_dynamic_http_enum():
+    from backend.api.app import app
+
+    values = app.openapi()["components"]["schemas"]["EvidenceReferenceType"]["enum"]
+    assert values == [item.value for item in EvidenceReferenceType]
+    assert len(values) == len(set(values))

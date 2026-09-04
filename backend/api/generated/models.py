@@ -114,6 +114,16 @@ class EvidenceSource(Enum):
     USER_FEEDBACK = "user_feedback"
 
 
+class EvidenceReferenceType(Enum):
+    MODEL = "model"
+    PREFERENCE = "preference"
+    KNOWLEDGE_CLAIM = "knowledge_claim"
+    DECISION_POLICY = "decision_policy"
+    DECISION = "decision"
+    CANDIDATE = "candidate"
+    LEARNING_SIGNAL = "learning_signal"
+
+
 class PreferenceStance(Enum):
     PREFER = "prefer"
     AVOID = "avoid"
@@ -192,6 +202,17 @@ class Evidence(BaseModel):
     claim: Annotated[StrictStr, Field(max_length=2000, min_length=1)]
     observed_at: StrictStr | None = None
     confidence: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = 1
+
+
+class EvidenceReference(BaseModel):
+    reference_type: EvidenceReferenceType
+    target_id: Annotated[StrictStr, Field(max_length=300, min_length=1)]
+    model_revision: Annotated[StrictInt | None, Field(ge=1)] = None
+
+
+class EvidenceGraphEntry(BaseModel):
+    evidence: Evidence
+    references: Annotated[list[EvidenceReference], Field(max_length=1000)]
 
 
 class Preference(BaseModel):
@@ -674,6 +695,7 @@ class Code1(Enum):
     ERROR_CREATOR_MODEL_NOT_FOUND = "ERROR_CREATOR_MODEL_NOT_FOUND"
     ERROR_CREATOR_DECISION_NOT_FOUND = "ERROR_CREATOR_DECISION_NOT_FOUND"
     ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
+    ERROR_CREATOR_EVIDENCE_NOT_FOUND = "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
 
 
 class Error1(BaseModel):
@@ -801,6 +823,14 @@ class ApiResponseLearningSignalList(ApiResponse):
 
 class ApiResponseLearningSignalReviewResult(ApiResponse):
     data: LearningSignalReviewResult | None = None
+
+
+class ApiResponseEvidenceGraphList(ApiResponse):
+    data: list[EvidenceGraphEntry] | None = None
+
+
+class ApiResponseEvidenceGraphEntry(ApiResponse):
+    data: EvidenceGraphEntry | None = None
 
 
 class ReviewDecisionRequest(BaseModel):

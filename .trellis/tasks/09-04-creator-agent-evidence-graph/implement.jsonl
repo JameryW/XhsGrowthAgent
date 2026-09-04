@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec entry point and required checks."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Placement and dependency direction for Creator Agent evidence projection."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Postgres read transactions and memory fallback conventions."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Typed API not-found errors and response conventions."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Typing, validation, and test requirements."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Read projection and adapter failure logging conventions."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Keep domain, repository, routes, schemas, docs, and tests synchronized."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing account scope, response, and snapshot reader patterns."}
+{"file": ".trellis/tasks/09-04-creator-agent-evidence-graph/research/codebase-fit.md", "reason": "Evidence Graph seam, projection semantics, and verification risks."}

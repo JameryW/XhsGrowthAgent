@@ -30,6 +30,14 @@ _Avoid_: Prompt, heuristic
 A traceable observation supporting a Preference, Knowledge Claim, Decision Policy, or candidate. It always names its source kind and source reference.
 _Avoid_: Context, citation text
 
+**Evidence Graph**:
+A creator-scoped provenance map of Evidence nodes and the Creator Model items, decisions, candidates, and Learning Signals that cite them.
+_Avoid_: Vector index, citation list
+
+**Evidence Reference**:
+A typed edge from one Evidence node to the durable Creator Agent object that cites it, including the relevant Model Revision when one exists.
+_Avoid_: Link, foreign key
+
 **Decision Request**:
 One Audience Member's goal, context, constraints, and candidate choices submitted to a Creator Agent.
 _Avoid_: Prompt, brief

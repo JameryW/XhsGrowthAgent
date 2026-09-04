@@ -339,3 +339,11 @@ Learning review routes translate domain exceptions into typed API errors:
 
 The adapter must raise before committing when a revision or disposition check
 fails. Routes must not catch these failures and return a successful envelope.
+
+## Scenario: Creator Agent Evidence Graph lookup
+
+Evidence Graph detail routes translate a missing or cross-account node into
+`CreatorEvidenceNotFoundError` (`404`, code
+`ERROR_CREATOR_EVIDENCE_NOT_FOUND`). List queries return an empty successful
+envelope when filters match no Evidence; they must not reveal whether another
+account owns a node.
