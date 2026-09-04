@@ -11,6 +11,7 @@ from backend.api.account_scope import require_owned_account
 from backend.api.deps import get_current_user
 from backend.api.errors import (
     CreatorDecisionNotFoundError,
+    CreatorEvidenceNotFoundError,
     CreatorFeedbackAudienceMismatchError,
     CreatorLearningSignalConflictError,
     CreatorLearningSignalNotFoundError,
@@ -27,7 +28,11 @@ from backend.creator_agent import (
     CreatorModelStore,
     CreatorReviewDisposition,
     DecisionRequest,
+    EvidenceGraphEntry,
+    EvidenceReferenceType,
+    EvidenceSource,
     FeedbackInput,
+    LearningSignal,
     LearningSignalReview,
     LearningSignalStatus,
     RelationshipMemory,
@@ -165,7 +170,7 @@ async def list_creator_learning_signals(
     account_id: str = Query(..., min_length=1),
     status: LearningSignalStatus | None = Query(default=None),
     user: dict[str, Any] = Depends(get_current_user),
-) -> ApiResponse[list[dict[str, Any]]]:
+) -> ApiResponse[list[LearningSignal]]:
     account_id = account_id.strip()
     await require_owned_account(str(user["id"]), account_id)
     signals = await _advisor().list_learning_signals(account_id, status)
@@ -197,3 +202,33 @@ async def review_creator_learning_signal(
     except CreatorReviewModelRequiredError as exc:
         raise ValidationError("model", str(exc)) from exc
     return success(data=result.model_dump(mode="json"))
+
+
+@router.get("/evidence")
+async def list_creator_evidence(
+    account_id: str = Query(..., min_length=1),
+    source_kind: EvidenceSource | None = Query(default=None),
+    reference_type: EvidenceReferenceType | None = Query(default=None),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[list[EvidenceGraphEntry]]:
+    """List the account-scoped, read-only Evidence Graph projection."""
+    account_id = account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    entries = await _advisor().list_evidence(account_id, source_kind, reference_type)
+    return success(data=[entry.model_dump(mode="json") for entry in entries])
+
+
+@router.get("/evidence/{evidence_id}")
+async def get_creator_evidence(
+    evidence_id: str,
+    account_id: str = Query(..., min_length=1),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[EvidenceGraphEntry]:
+    """Get one account-scoped Evidence Graph node and its typed references."""
+    account_id = account_id.strip()
+    evidence_id = evidence_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    entry = await _advisor().get_evidence(account_id, evidence_id)
+    if entry is None:
+        raise CreatorEvidenceNotFoundError(evidence_id)
+    return success(data=entry.model_dump(mode="json"))

@@ -11,6 +11,9 @@ from backend.creator_agent.models import (
     DecisionRequest,
     DecisionStatus,
     Evidence,
+    EvidenceGraphEntry,
+    EvidenceReferenceType,
+    EvidenceSource,
     ExcludedCandidate,
     FeedbackInput,
     FeedbackOutcome,
@@ -279,6 +282,19 @@ class CreatorAdvisor:
             account_id.strip(), signal_id.strip(), review
         )
         return LearningSignalReviewResult(signal=signal, model=model)
+
+    async def list_evidence(
+        self,
+        account_id: str,
+        source_kind: EvidenceSource | None = None,
+        reference_type: EvidenceReferenceType | None = None,
+    ) -> list[EvidenceGraphEntry]:
+        """List the account-scoped read-only Evidence Graph projection."""
+        return await self._repository.list_evidence(account_id.strip(), source_kind, reference_type)
+
+    async def get_evidence(self, account_id: str, evidence_id: str) -> EvidenceGraphEntry | None:
+        """Look up one Evidence Graph node within the account scope."""
+        return await self._repository.get_evidence(account_id.strip(), evidence_id.strip())
 
     async def get_decision(self, account_id: str, decision_id: str) -> DecisionRecord:
         decision = await self._repository.get_decision(account_id, decision_id)

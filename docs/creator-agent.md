@@ -122,6 +122,25 @@ POST /api/creator-agent/learning-signals/{signal_id}/review
 revision 返回 `409` 且不会留下部分写入；重复反馈和重复审核保持幂等，改变
 已审核信号的 disposition 会返回冲突。
 
+### 查询 Evidence Graph
+
+Evidence Graph 是从当前 Creator Model、Decision Record 和 Learning Signal
+快照组装的只读投影，不引入第二套 Evidence 写入模型。每个节点按稳定的
+`evidence_id` 返回，并带有去重后的 typed references：
+
+```http
+GET /api/creator-agent/evidence?account_id=xhs-account-1&source_kind=creator_statement&reference_type=decision
+GET /api/creator-agent/evidence/creator-statement-1?account_id=xhs-account-1
+```
+
+Reference 类型包括 `model`、`preference`、`knowledge_claim`、
+`decision_policy`、`decision`、`candidate` 和 `learning_signal`。候选引用的
+`target_id` 使用 `decision_id:candidate_id`，并携带实际使用的模型 revision；
+Learning Signal 则从它指向的原始 Decision Record 读取 Evidence payload，避免
+后续模型 revision 改写历史 provenance。列表按 `evidence_id` 和 reference
+字段稳定排序，未知节点只在所属 account 内查找，返回
+`ERROR_CREATOR_EVIDENCE_NOT_FOUND`。
+
 ## 与现有能力的关系
 
 - XHS Account 仍是平台操作和权限范围；Creator ID 才是可迁移的创作者身份。

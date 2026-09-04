@@ -9,6 +9,9 @@ from backend.creator_agent.models import (
     CreatorModelDefinition,
     CreatorReviewDisposition,
     DecisionRecord,
+    EvidenceGraphEntry,
+    EvidenceReferenceType,
+    EvidenceSource,
     LearningSignal,
     LearningSignalReview,
     LearningSignalStatus,
@@ -113,6 +116,17 @@ class CreatorAgentRepository(Protocol):
         signal_id: str,
         review: LearningSignalReview,
     ) -> tuple[LearningSignal, CreatorModel | None]: ...
+
+    async def list_evidence(
+        self,
+        account_id: str,
+        source_kind: EvidenceSource | None = None,
+        reference_type: EvidenceReferenceType | None = None,
+    ) -> list[EvidenceGraphEntry]: ...
+
+    async def get_evidence(
+        self, account_id: str, evidence_id: str
+    ) -> EvidenceGraphEntry | None: ...
 
 
 __all__ = [

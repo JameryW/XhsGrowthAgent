@@ -23,6 +23,7 @@ class ErrorCode(StrEnum):
     CREATOR_FEEDBACK_AUDIENCE_MISMATCH = "ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH"
     CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
     CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
+    CREATOR_EVIDENCE_NOT_FOUND = "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -158,6 +159,18 @@ class CreatorLearningSignalConflictError(APIError):
             message="Creator learning signal has already been reviewed",
             details={"signal_id": signal_id, "status": status},
             status_code=409,
+        )
+
+
+class CreatorEvidenceNotFoundError(APIError):
+    """Evidence is missing or not visible to the account owner."""
+
+    def __init__(self, evidence_id: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_EVIDENCE_NOT_FOUND,
+            message=f"Creator evidence '{evidence_id}' not found",
+            details={"evidence_id": evidence_id},
+            status_code=404,
         )
 
 

@@ -71,6 +71,24 @@ Feedback-derived learning is durable and creator-controlled. The adapter keeps
 - The process-memory adapter mirrors the same invariants under its shared
   asyncio lock and is test/dev-only.
 
+## Scenario: Creator Agent Evidence Graph projection
+
+Evidence Graph is a read projection over the current Creator Model and the
+account's immutable Decision Record and Learning Signal snapshots. It does not
+introduce an Evidence write table or mutate any source snapshot.
+
+- `list_evidence` reads all three snapshot families inside one Postgres read
+  transaction; the memory fallback copies its maps under `_mem_lock` before
+  assembling the graph.
+- The same pure projection helper is used after either read path. Nodes are
+  deduplicated by `evidence_id`, references by `(reference_type, target_id,
+  model_revision)`, and both node and reference ordering is deterministic.
+- Learning Signal references resolve payloads through their original Decision
+  Record evidence snapshot. The current model cannot rewrite that provenance.
+- Both methods are account-scoped: `get_evidence` returns `None` for a missing
+  node or a node owned by another account, while list filters are exact enum
+  matches.
+
 ## Scenario: Workflow Metadata Persistence
 
 ### 1. Scope / Trigger

@@ -21,6 +21,18 @@ class EvidenceSource(StrEnum):
     USER_FEEDBACK = "user_feedback"
 
 
+class EvidenceReferenceType(StrEnum):
+    """Durable Creator Agent object types that can cite Evidence."""
+
+    MODEL = "model"
+    PREFERENCE = "preference"
+    KNOWLEDGE_CLAIM = "knowledge_claim"
+    DECISION_POLICY = "decision_policy"
+    DECISION = "decision"
+    CANDIDATE = "candidate"
+    LEARNING_SIGNAL = "learning_signal"
+
+
 class PreferenceStance(StrEnum):
     PREFER = "prefer"
     AVOID = "avoid"
@@ -69,6 +81,21 @@ class Evidence(BaseModel):
     claim: str = Field(min_length=1, max_length=2000)
     observed_at: str = ""
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class EvidenceReference(BaseModel):
+    """A typed, account-scoped edge from Evidence to a durable object."""
+
+    reference_type: EvidenceReferenceType
+    target_id: str = Field(min_length=1, max_length=300)
+    model_revision: int | None = Field(default=None, ge=1)
+
+
+class EvidenceGraphEntry(BaseModel):
+    """One Evidence node and its deduplicated provenance references."""
+
+    evidence: Evidence
+    references: list[EvidenceReference] = Field(default_factory=list, max_length=1000)
 
 
 class Preference(BaseModel):
@@ -306,6 +333,9 @@ __all__ = [
     "DecisionRequest",
     "DecisionStatus",
     "Evidence",
+    "EvidenceGraphEntry",
+    "EvidenceReference",
+    "EvidenceReferenceType",
     "EvidenceSource",
     "ExcludedCandidate",
     "FeedbackInput",
