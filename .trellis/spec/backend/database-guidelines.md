@@ -516,3 +516,24 @@ The Decision Dataset is a read-only projection over the immutable
   `decision_id`; signal payloads are not joined into the entry.
 - Malformed cursors and limits outside `1..100` are validation failures. A
   cursor never silently restarts at page one.
+
+## Scenario: Creator Agent Action Execution Receipts
+
+Action execution is a separate, explicit transition after Action Intent
+confirmation. `creator_agent_action_executions` is keyed by
+`(account_id, action_id)` and has a unique `execution_id`; its complete receipt
+payload is immutable JSON with indexed status and timestamps.
+
+- The memory adapter checks for an existing receipt and then, under `_mem_lock`,
+  rechecks that the Action Intent is `confirmed` and its source Decision Record
+  exists before storing a deep copy.
+- The Postgres adapter locks the Action Intent row with `FOR UPDATE`, reads the
+  source Decision Record in the same transaction, and inserts with
+  `ON CONFLICT (account_id, action_id) DO NOTHING` before selecting the durable
+  payload. Concurrent execution therefore returns one byte-for-byte receipt.
+- Pending and cancelled actions produce no receipt. Missing or cross-account
+  actions are indistinguishable from absent rows at the API boundary.
+- Built-in results are deterministic and local: comparison returns selected
+  Ranked Candidate snapshots, shortlist returns selected IDs, and evidence
+  requests return decision status/coverage/confidence. No external tool or
+  transaction is invoked by this adapter.

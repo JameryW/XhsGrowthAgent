@@ -94,6 +94,10 @@ _Avoid_: Command, transaction
 The explicit confirmation or cancellation of an Action Intent; confirmation authorizes a future executor but does not itself perform an external side effect.
 _Avoid_: Execution, approval
 
+**Action Execution Receipt**:
+An immutable, account-scoped result emitted by a deterministic local executor for one confirmed Action Intent. It preserves the source action, Decision Record, Creator Model revision, executor version, status, result payload, and timestamps.
+_Avoid_: Purchase receipt, transaction record
+
 ## Existing adjacent concepts
 
 **XHS Account**:

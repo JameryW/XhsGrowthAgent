@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 from backend.creator_agent.models import (
     ActionCapability,
+    ActionExecution,
+    ActionExecutionStatus,
     ActionIntent,
     ActionIntentRequest,
     ActionResolution,
@@ -37,6 +39,8 @@ from backend.creator_agent.models import (
     utc_now_iso,
 )
 from backend.creator_agent.repository import (
+    ActionExecutionNotAllowedError,
+    ActionIntentMissingError,
     ActionValidationError,
     CreatorAgentRepository,
     CreatorModelMissingError,
@@ -76,6 +80,8 @@ def _preference_applies(preference: Preference, candidate: DecisionCandidate) ->
 
 class CreatorAdvisor:
     """Use one exact Creator Model revision to decide, then retain outcomes."""
+
+    EXECUTOR_VERSION = "local-v1"
 
     def __init__(self, repository: CreatorAgentRepository):
         self._repository = repository
@@ -297,6 +303,81 @@ class CreatorAdvisor:
         return await self._repository.resolve_action(
             account_id.strip(), action_id.strip(), resolution
         )
+
+    async def execute_action(self, account_id: str, action_id: str) -> ActionExecution:
+        """Execute one confirmed intent with a deterministic local executor.
+
+        The receipt is built from the immutable Decision Record snapshot and is
+        persisted by the repository.  The repository repeats the confirmation
+        and source-existence checks while holding its adapter lock/transaction,
+        so a concurrent cancellation cannot slip through between these reads.
+        """
+        normalized_account_id = account_id.strip()
+        normalized_action_id = action_id.strip()
+        existing = await self._repository.get_action_execution(
+            normalized_account_id, normalized_action_id
+        )
+        if existing is not None:
+            return existing
+
+        action = await self._repository.get_action(normalized_account_id, normalized_action_id)
+        if action is None:
+            # The repository's existing Action Intent error is deliberately
+            # raised here rather than exposing account ownership details.
+            raise ActionIntentMissingError(normalized_action_id)
+        if action.status is not ActionStatus.CONFIRMED:
+            raise ActionExecutionNotAllowedError(normalized_action_id, action.status)
+
+        decision = await self._repository.get_decision(normalized_account_id, action.decision_id)
+        if decision is None:
+            raise DecisionRecordMissingError(action.decision_id)
+
+        recommendations = {item.candidate_id: item for item in decision.recommendations}
+        if action.action_kind is ActionCapability.COMPARE_OPTIONS:
+            result: dict[str, object] = {
+                "decision_id": decision.decision_id,
+                "candidate_ids": list(action.candidate_ids),
+                "candidates": [
+                    recommendations[candidate_id].model_dump(mode="json")
+                    for candidate_id in action.candidate_ids
+                ],
+            }
+        elif action.action_kind is ActionCapability.SAVE_SHORTLIST:
+            result = {
+                "decision_id": decision.decision_id,
+                "candidate_ids": list(action.candidate_ids),
+                "saved": True,
+            }
+        else:
+            result = {
+                "decision_id": decision.decision_id,
+                "decision_status": decision.status.value,
+                "status": decision.status.value,
+                "evidence_coverage": decision.evidence_coverage,
+                "confidence": decision.confidence,
+            }
+
+        now = utc_now_iso()
+        execution = ActionExecution(
+            execution_id=str(uuid.uuid4()),
+            account_id=normalized_account_id,
+            action_id=action.action_id,
+            decision_id=decision.decision_id,
+            creator_id=decision.creator_id,
+            audience_id=decision.audience_id,
+            action_kind=action.action_kind,
+            model_revision=decision.model_revision,
+            executor_version=self.EXECUTOR_VERSION,
+            status=ActionExecutionStatus.SUCCEEDED,
+            result=result,
+            created_at=now,
+            updated_at=now,
+        )
+        return await self._repository.create_action_execution(execution)
+
+    async def get_action_execution(self, account_id: str, action_id: str) -> ActionExecution | None:
+        """Read one immutable receipt within the account scope."""
+        return await self._repository.get_action_execution(account_id.strip(), action_id.strip())
 
     async def record_feedback(
         self, account_id: str, decision_id: str, feedback: FeedbackInput

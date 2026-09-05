@@ -26,6 +26,8 @@ class ErrorCode(StrEnum):
     CREATOR_EVIDENCE_NOT_FOUND = "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
     CREATOR_ACTION_NOT_FOUND = "ERROR_CREATOR_ACTION_NOT_FOUND"
     CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
+    CREATOR_ACTION_EXECUTION_NOT_FOUND = "ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND"
+    CREATOR_ACTION_EXECUTION_NOT_ALLOWED = "ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -195,6 +197,30 @@ class CreatorActionConflictError(APIError):
         super().__init__(
             code=ErrorCode.CREATOR_ACTION_CONFLICT,
             message="Creator action has already been resolved",
+            details={"action_id": action_id, "status": status},
+            status_code=409,
+        )
+
+
+class CreatorActionExecutionNotFoundError(APIError):
+    """Execution receipt is missing or not visible to the account owner."""
+
+    def __init__(self, action_id: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_EXECUTION_NOT_FOUND,
+            message=f"Creator action execution for '{action_id}' not found",
+            details={"action_id": action_id},
+            status_code=404,
+        )
+
+
+class CreatorActionExecutionNotAllowedError(APIError):
+    """Action Intent has not been confirmed and cannot be executed."""
+
+    def __init__(self, action_id: str, status: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_EXECUTION_NOT_ALLOWED,
+            message="Creator action must be confirmed before execution",
             details={"action_id": action_id, "status": status},
             status_code=409,
         )

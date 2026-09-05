@@ -143,6 +143,8 @@ class TestOpenAPIRequiredEndpoints:
             "/creator-agent/evidence/{evidence_id}": {"get"},
             "/creator-agent/actions": {"get", "post"},
             "/creator-agent/actions/{action_id}/resolve": {"post"},
+            "/creator-agent/actions/{action_id}/execute": {"post"},
+            "/creator-agent/actions/{action_id}/execution": {"get"},
         }
         for path, methods in expected.items():
             assert path in paths, f"Missing {path} endpoint"
@@ -231,6 +233,10 @@ class TestOpenAPITypedResponseWrappers:
         """Verify ApiResponse_CostReport wrapper exists."""
         assert "ApiResponse_CostReport" in schemas, "Missing ApiResponse_CostReport"
 
+    def test_action_execution_wrapper_exists(self, schemas):
+        """Execution receipts must use the unified response envelope."""
+        assert "ApiResponse_ActionExecution" in schemas
+
 
 class TestOpenAPIEnums:
     """Tests for enum definitions in OpenAPI spec."""
@@ -304,3 +310,7 @@ class TestOpenAPIEnums:
     def test_review_decision_enum_exists(self, schemas):
         """Verify ReviewDecision enum exists."""
         assert "ReviewDecision" in schemas, "Missing ReviewDecision enum"
+
+    def test_action_execution_status_enum_values(self, schemas):
+        """Execution status reserves success and future recoverable failure."""
+        assert schemas["ActionExecutionStatus"]["enum"] == ["succeeded", "failed"]

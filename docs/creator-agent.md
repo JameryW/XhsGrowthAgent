@@ -174,6 +174,31 @@ POST /api/creator-agent/actions/{action_id}/resolve
 可以接收该 intent，本期不会搜索、购买、预约、发消息或调用任何外部系统；变更
 已解析 intent 的 disposition 会返回 `ERROR_CREATOR_ACTION_CONFLICT`。
 
+### 执行已确认的 Action Intent
+
+确认后仍需一次显式执行调用，才能生成机器可读的执行收据：
+
+```http
+POST /api/creator-agent/actions/{action_id}/execute
+GET /api/creator-agent/actions/{action_id}/execution?account_id=xhs-account-1
+```
+
+执行请求只携带 `account_id`；服务端从持久化 Action Intent 读取确认状态，不能
+由请求体伪造 `confirmed`。`pending_confirmation` 和 `cancelled` 会返回
+`409 ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED`，不会写入收据。
+
+本期执行器是 `local-v1`，无搜索、商家、购买、预约、消息或平台写入副作用：
+
+- `compare_options` 返回选中推荐候选的 Decision Record 快照（候选 ID、标签、
+  分数、理由和 Evidence ID）；
+- `save_shortlist` 返回选中的推荐候选 ID，作为可审计的 shortlist 结果；
+- `request_more_evidence` 返回原 Decision Record 的状态、Evidence 覆盖率和置信度，
+  交给上游调用方继续补证据。
+
+同一 `(account_id, action_id)` 只会产生一张不可变收据，重复 POST 和 GET 返回相同
+的 `execution_id`、结果和时间戳。收据保留 `decision_id`、`model_revision`、
+`executor_version`，便于未来替换执行器时审计历史行为。
+
 ### 查询 Decision Dataset
 
 Decision Dataset 是 Decision Record 和 User Feedback 的只读历史投影，适合

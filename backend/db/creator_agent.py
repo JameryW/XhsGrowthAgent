@@ -9,6 +9,7 @@ from typing import Any
 
 from backend.creator_agent.dataset import build_decision_dataset_page
 from backend.creator_agent.models import (
+    ActionExecution,
     ActionIntent,
     ActionResolution,
     ActionStatus,
@@ -32,10 +33,12 @@ from backend.creator_agent.models import (
     utc_now_iso,
 )
 from backend.creator_agent.repository import (
+    ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionResolutionConflictError,
     CreatorModelRevisionConflictError,
     CreatorReviewModelRequiredError,
+    DecisionRecordMissingError,
     LearningSignalMissingError,
     LearningSignalReviewConflictError,
 )
@@ -48,6 +51,7 @@ _mem_learning_signals: dict[tuple[str, str], LearningSignal] = {}
 _mem_feedback_signals: dict[tuple[str, str], str] = {}
 _mem_actions: dict[tuple[str, str], ActionIntent] = {}
 _mem_action_idempotency: dict[tuple[str, str], str] = {}
+_mem_action_executions: dict[tuple[str, str], ActionExecution] = {}
 _mem_lock = asyncio.Lock()
 
 _CREATE_MODELS_SQL = """
@@ -114,6 +118,20 @@ CREATE TABLE IF NOT EXISTS creator_agent_actions (
 );
 """
 
+_CREATE_ACTION_EXECUTIONS_SQL = """
+CREATE TABLE IF NOT EXISTS creator_agent_action_executions (
+    account_id    TEXT NOT NULL,
+    action_id     TEXT NOT NULL,
+    execution_id  TEXT NOT NULL UNIQUE,
+    decision_id   TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    payload_json  TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    PRIMARY KEY (account_id, action_id)
+);
+"""
+
 _CREATE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_creator_agent_decisions_audience
     ON creator_agent_decisions (account_id, audience_id, created_at DESC);
@@ -123,6 +141,8 @@ CREATE INDEX IF NOT EXISTS idx_creator_agent_learning_signals_status
     ON creator_agent_learning_signals (account_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_creator_agent_actions_status
     ON creator_agent_actions (account_id, status, created_at DESC, action_id DESC);
+CREATE INDEX IF NOT EXISTS idx_creator_agent_action_executions_status
+    ON creator_agent_action_executions (account_id, status, created_at DESC, action_id DESC);
 """
 
 
@@ -135,6 +155,7 @@ def _reset_memory_store() -> None:
     _mem_feedback_signals.clear()
     _mem_actions.clear()
     _mem_action_idempotency.clear()
+    _mem_action_executions.clear()
 
 
 async def ensure_tables() -> None:
@@ -147,11 +168,17 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_RELATIONSHIPS_SQL)
         await conn.execute(_CREATE_LEARNING_SIGNALS_SQL)
         await conn.execute(_CREATE_ACTIONS_SQL)
+        await conn.execute(_CREATE_ACTION_EXECUTIONS_SQL)
         await conn.execute(_CREATE_INDEX_SQL)
 
 
 def _dumps(
-    model: CreatorModel | DecisionRecord | RelationshipMemory | LearningSignal | ActionIntent,
+    model: CreatorModel
+    | DecisionRecord
+    | RelationshipMemory
+    | LearningSignal
+    | ActionIntent
+    | ActionExecution,
 ) -> str:
     return json.dumps(model.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
 
@@ -184,6 +211,23 @@ def _learning_signal_from_row(row: Any) -> LearningSignal:
 
 def _action_from_row(row: Any) -> ActionIntent:
     return ActionIntent.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
+
+
+def _action_execution_from_row(row: Any) -> ActionExecution:
+    return ActionExecution.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
+
+
+def _validate_action_execution_source(action: ActionIntent, execution: ActionExecution) -> None:
+    """Reject a receipt whose provenance does not match its Action Intent."""
+    mismatches = {
+        "decision_id": (action.decision_id, execution.decision_id),
+        "creator_id": (action.creator_id, execution.creator_id),
+        "audience_id": (action.audience_id, execution.audience_id),
+        "action_kind": (action.action_kind, execution.action_kind),
+    }
+    for field, (expected, actual) in mismatches.items():
+        if expected != actual:
+            raise ValueError(f"action execution {field} does not match source Action Intent")
 
 
 def _updated_relationship(
@@ -791,6 +835,120 @@ class DurableCreatorAgentRepository:
                 ),
             )
         return action
+
+    async def get_action_execution(self, account_id: str, action_id: str) -> ActionExecution | None:
+        """Read one immutable receipt inside the caller's account scope."""
+        if not is_pool_ready():
+            async with _mem_lock:
+                execution = _mem_action_executions.get((account_id, action_id))
+                return execution.model_copy(deep=True) if execution else None
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_action_executions
+                WHERE account_id = %s AND action_id = %s
+                """,
+                (account_id, action_id),
+            )
+            row = await cur.fetchone()
+        return _action_execution_from_row(row) if row else None
+
+    async def create_action_execution(self, execution: ActionExecution) -> ActionExecution:
+        """Persist one receipt after rechecking confirmation and provenance.
+
+        The action row is locked for the entire Postgres transaction.  This is
+        important because resolving an intent and executing it are separate
+        calls: a cancellation racing with execution must win or lose as one
+        serialized state transition, never produce a receipt for a cancelled
+        intent.
+        """
+        key = (execution.account_id, execution.action_id)
+        if not is_pool_ready():
+            async with _mem_lock:
+                existing = _mem_action_executions.get(key)
+                if existing is not None:
+                    return existing.model_copy(deep=True)
+                action = _mem_actions.get(key)
+                if action is None:
+                    raise ActionIntentMissingError(execution.action_id)
+                if action.status is not ActionStatus.CONFIRMED:
+                    raise ActionExecutionNotAllowedError(execution.action_id, action.status)
+                _validate_action_execution_source(action, execution)
+                decision = _mem_decisions.get((execution.account_id, execution.decision_id))
+                if decision is None:
+                    raise DecisionRecordMissingError(execution.decision_id)
+                stored = execution.model_copy(deep=True)
+                _mem_action_executions[key] = stored
+                return stored.model_copy(deep=True)
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_actions
+                WHERE account_id = %s AND action_id = %s FOR UPDATE
+                """,
+                key,
+            )
+            action_row = await cur.fetchone()
+            if action_row is None:
+                raise ActionIntentMissingError(execution.action_id)
+            action = _action_from_row(action_row)
+            if action.status is not ActionStatus.CONFIRMED:
+                raise ActionExecutionNotAllowedError(execution.action_id, action.status)
+            _validate_action_execution_source(action, execution)
+
+            # Keep the source Decision Record read in the same transaction as
+            # the locked action and receipt insert.  The Decision Record is an
+            # immutable snapshot, so its payload is only used for provenance
+            # validation here; the Advisor already built the deterministic
+            # result from this exact decision ID and model revision.
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_decisions
+                WHERE account_id = %s AND decision_id = %s FOR SHARE
+                """,
+                (execution.account_id, execution.decision_id),
+            )
+            decision_row = await cur.fetchone()
+            if decision_row is None:
+                raise DecisionRecordMissingError(execution.decision_id)
+            decision = _decision_from_row(decision_row)
+            if decision.model_revision != execution.model_revision:
+                raise ValueError("action execution decision snapshot does not match")
+
+            await cur.execute(
+                """
+                INSERT INTO creator_agent_action_executions (
+                    account_id, action_id, execution_id, decision_id, status,
+                    payload_json, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (account_id, action_id) DO NOTHING
+                """,
+                (
+                    execution.account_id,
+                    execution.action_id,
+                    execution.execution_id,
+                    execution.decision_id,
+                    execution.status.value,
+                    _dumps(execution),
+                    execution.created_at,
+                    execution.updated_at,
+                ),
+            )
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_action_executions
+                WHERE account_id = %s AND action_id = %s
+                """,
+                key,
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise RuntimeError("action execution insert did not return a durable row")
+        return _action_execution_from_row(row)
 
     async def apply_feedback(
         self,
