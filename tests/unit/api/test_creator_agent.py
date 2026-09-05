@@ -289,3 +289,40 @@ def test_evidence_reference_type_matches_dynamic_http_enum():
     values = app.openapi()["components"]["schemas"]["EvidenceReferenceType"]["enum"]
     assert values == [item.value for item in EvidenceReferenceType]
     assert len(values) == len(set(values))
+
+
+def test_decision_dataset_route_returns_page_and_typed_validation(client, monkeypatch):
+    async def _owned(_user_id: str, account_id: str):
+        assert account_id == "account-a"
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    empty = client.get("/api/creator-agent/dataset/decisions?account_id=account-a")
+    assert empty.status_code == 200
+    assert empty.json()["data"] == {
+        "items": [],
+        "total": 0,
+        "limit": 20,
+        "next_cursor": None,
+    }
+
+    invalid_cursor = client.get(
+        "/api/creator-agent/dataset/decisions",
+        params={"account_id": "account-a", "cursor": "invalid"},
+    )
+    assert invalid_cursor.status_code == 400
+    assert invalid_cursor.json()["error"]["code"] == "ERROR_VALIDATION"
+
+    blank_audience = client.get(
+        "/api/creator-agent/dataset/decisions",
+        params={"account_id": "account-a", "audience_id": "   "},
+    )
+    assert blank_audience.status_code == 400
+    assert blank_audience.json()["error"]["code"] == "ERROR_VALIDATION"
+
+    invalid_limit = client.get(
+        "/api/creator-agent/dataset/decisions",
+        params={"account_id": "account-a", "limit": 101},
+    )
+    assert invalid_limit.status_code == 400
+    assert invalid_limit.json()["error"]["code"] == "ERROR_VALIDATION"

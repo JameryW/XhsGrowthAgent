@@ -12,10 +12,13 @@ from backend.creator_agent.models import (
     CreatorModel,
     CreatorModelDefinition,
     CreatorReviewDisposition,
+    DecisionDatasetPage,
     DecisionRecord,
+    DecisionStatus,
     EvidenceGraphEntry,
     EvidenceReferenceType,
     EvidenceSource,
+    FeedbackOutcome,
     LearningSignal,
     LearningSignalReview,
     LearningSignalStatus,
@@ -118,6 +121,18 @@ class CreatorAgentRepository(Protocol):
     async def create_decision(self, decision: DecisionRecord) -> None: ...
 
     async def get_decision(self, account_id: str, decision_id: str) -> DecisionRecord | None: ...
+
+    async def list_decision_dataset(
+        self,
+        account_id: str,
+        *,
+        audience_id: str | None = None,
+        status: DecisionStatus | None = None,
+        feedback_outcome: FeedbackOutcome | None = None,
+        has_feedback: bool | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> DecisionDatasetPage: ...
 
     async def get_action_by_idempotency_key(
         self, account_id: str, idempotency_key: str

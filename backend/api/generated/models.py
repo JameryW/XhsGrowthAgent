@@ -372,6 +372,18 @@ class DecisionRecord(BaseModel):
     updated_at: AwareDatetime
 
 
+class DecisionDatasetEntry(BaseModel):
+    decision: DecisionRecord
+    learning_signal_ids: Annotated[list[StrictStr], Field(max_length=1000)]
+
+
+class DecisionDatasetPage(BaseModel):
+    items: Annotated[list[DecisionDatasetEntry], Field(max_length=100)]
+    total: Annotated[StrictInt, Field(ge=0)]
+    limit: Annotated[StrictInt, Field(ge=1, le=100)]
+    next_cursor: StrictStr | None = None
+
+
 class RelationshipMemory(BaseModel):
     account_id: StrictStr
     audience_id: StrictStr
@@ -713,6 +725,7 @@ class Success(Enum):
 class Code(Enum):
     BAD_REQUEST = "BAD_REQUEST"
     VALIDATION_ERROR = "VALIDATION_ERROR"
+    ERROR_VALIDATION = "ERROR_VALIDATION"
     ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH = "ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH"
     ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
     ERROR_CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
@@ -855,6 +868,10 @@ class ApiResponseCreatorModel(ApiResponse):
 
 class ApiResponseDecisionRecord(ApiResponse):
     data: DecisionRecord | None = None
+
+
+class ApiResponseDecisionDatasetPage(ApiResponse):
+    data: DecisionDatasetPage | None = None
 
 
 class ApiResponseFeedbackResult(ApiResponse):

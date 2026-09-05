@@ -50,6 +50,14 @@ _Avoid_: Recommendation, answer
 The growing history of Decision Records and User Feedback used to inspect and improve a Creator Model.
 _Avoid_: Chat history, analytics
 
+**Decision Dataset Entry**:
+A read-only projection containing one immutable Decision Record snapshot and the ascending IDs of Learning Signals linked to that decision. It never recomputes the decision from a newer Creator Model.
+_Avoid_: Training row, recommendation result
+
+**Decision Dataset Page**:
+An account-scoped, cursor-paginated page of Decision Dataset Entries with the complete filtered total, requested limit, and an opaque next cursor.
+_Avoid_: Offset page, live query result
+
 ## Relationship and learning
 
 **Audience Member**:

@@ -12,6 +12,7 @@ from backend.creator_agent.models import (
     ActionResolution,
     ActionStatus,
     DecisionCandidate,
+    DecisionDatasetPage,
     DecisionRecord,
     DecisionRequest,
     DecisionStatus,
@@ -375,6 +376,28 @@ class CreatorAdvisor:
         if decision is None:
             raise DecisionRecordMissingError(decision_id)
         return decision
+
+    async def list_decision_dataset(
+        self,
+        account_id: str,
+        *,
+        audience_id: str | None = None,
+        status: DecisionStatus | None = None,
+        feedback_outcome: FeedbackOutcome | None = None,
+        has_feedback: bool | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> DecisionDatasetPage:
+        """Return the immutable, account-scoped Decision Dataset projection."""
+        return await self._repository.list_decision_dataset(
+            account_id.strip(),
+            audience_id=audience_id.strip() if audience_id is not None else None,
+            status=status,
+            feedback_outcome=feedback_outcome,
+            has_feedback=has_feedback,
+            cursor=cursor,
+            limit=limit,
+        )
 
     async def get_relationship(self, account_id: str, audience_id: str) -> RelationshipMemory:
         relationship = await self._repository.get_relationship(account_id, audience_id)
