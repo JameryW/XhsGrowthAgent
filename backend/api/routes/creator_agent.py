@@ -11,6 +11,8 @@ from backend.api.account_scope import require_owned_account
 from backend.api.deps import get_current_user
 from backend.api.errors import (
     CreatorActionConflictError,
+    CreatorActionExecutionNotAllowedError,
+    CreatorActionExecutionNotFoundError,
     CreatorActionNotFoundError,
     CreatorDecisionNotFoundError,
     CreatorEvidenceNotFoundError,
@@ -25,6 +27,7 @@ from backend.api.errors import (
 )
 from backend.api.responses import ApiResponse, success
 from backend.creator_agent import (
+    ActionExecution,
     ActionIntentRequest,
     ActionResolution,
     ActionResolutionDisposition,
@@ -47,6 +50,7 @@ from backend.creator_agent import (
     RelationshipMemory,
 )
 from backend.creator_agent.repository import (
+    ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionResolutionConflictError,
     ActionValidationError,
@@ -77,6 +81,10 @@ class RecordFeedbackRequest(BaseModel):
 class ResolveActionRequest(BaseModel):
     account_id: str = Field(min_length=1, max_length=128)
     disposition: ActionResolutionDisposition
+
+
+class ExecuteActionRequest(BaseModel):
+    account_id: str = Field(min_length=1, max_length=128)
 
 
 class ReviewLearningSignalRequest(BaseModel):
@@ -267,6 +275,41 @@ async def resolve_creator_action(
     except ActionResolutionConflictError as exc:
         raise CreatorActionConflictError(exc.action_id, exc.existing_status.value) from exc
     return success(data=action.model_dump(mode="json"))
+
+
+@router.post("/actions/{action_id}/execute")
+async def execute_creator_action(
+    action_id: str,
+    request: ExecuteActionRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[ActionExecution]:
+    """Execute a confirmed intent with the local deterministic executor."""
+    account_id = request.account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    try:
+        execution = await _advisor().execute_action(account_id, action_id.strip())
+    except ActionIntentMissingError as exc:
+        raise CreatorActionNotFoundError(exc.action_id) from exc
+    except ActionExecutionNotAllowedError as exc:
+        raise CreatorActionExecutionNotAllowedError(exc.action_id, exc.status.value) from exc
+    except DecisionRecordMissingError as exc:
+        raise CreatorDecisionNotFoundError(exc.decision_id) from exc
+    return success(data=execution.model_dump(mode="json"))
+
+
+@router.get("/actions/{action_id}/execution")
+async def get_creator_action_execution(
+    action_id: str,
+    account_id: str = Query(..., min_length=1),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[ActionExecution]:
+    """Read an immutable local execution receipt within the account scope."""
+    account_id = account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    execution = await _advisor().get_action_execution(account_id, action_id.strip())
+    if execution is None:
+        raise CreatorActionExecutionNotFoundError(action_id.strip())
+    return success(data=execution.model_dump(mode="json"))
 
 
 @router.get("/learning-signals")

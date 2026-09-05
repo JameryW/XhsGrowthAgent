@@ -416,6 +416,37 @@ class ActionIntent(BaseModel):
     updated_at: str
 
 
+class ActionExecutionStatus(StrEnum):
+    """Durable result state emitted by an Action Intent executor."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class ActionExecution(BaseModel):
+    """Immutable, deterministic receipt for one confirmed Action Intent."""
+
+    execution_id: str = Field(min_length=1, max_length=128)
+    account_id: str = Field(min_length=1, max_length=128)
+    action_id: str = Field(min_length=1, max_length=128)
+    decision_id: str = Field(min_length=1, max_length=128)
+    creator_id: str = Field(min_length=1, max_length=128)
+    audience_id: str = Field(min_length=1, max_length=128)
+    action_kind: ActionCapability
+    model_revision: int = Field(ge=1)
+    executor_version: str = Field(min_length=1, max_length=128)
+    status: ActionExecutionStatus = ActionExecutionStatus.SUCCEEDED
+    result: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+# The domain calls this an execution receipt in prose.  Keep the shorter
+# ``ActionExecution`` name as the canonical model while allowing callers to
+# use the explicit receipt terminology without creating a second schema.
+ActionExecutionReceipt = ActionExecution
+
+
 class RelationshipMemory(BaseModel):
     account_id: str
     audience_id: str
@@ -485,6 +516,9 @@ __all__ = [
     "encode_decision_dataset_cursor",
     "encode_dataset_cursor",
     "ActionCapability",
+    "ActionExecution",
+    "ActionExecutionReceipt",
+    "ActionExecutionStatus",
     "ActionIntent",
     "ActionIntentRequest",
     "ActionResolution",

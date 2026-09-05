@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from backend.creator_agent.models import (
+    ActionExecution,
     ActionIntent,
     ActionResolution,
     ActionResolutionDisposition,
@@ -81,6 +82,15 @@ class ActionValidationError(Exception):
         super().__init__(reason)
 
 
+class ActionExecutionNotAllowedError(Exception):
+    """An Action Intent is not confirmed and therefore cannot execute."""
+
+    def __init__(self, action_id: str, status: ActionStatus) -> None:
+        self.action_id = action_id
+        self.status = status
+        super().__init__(f"action intent {action_id!r} with status {status.value!r} cannot execute")
+
+
 class LearningSignalMissingError(Exception):
     def __init__(self, signal_id: str) -> None:
         self.signal_id = signal_id
@@ -150,6 +160,12 @@ class CreatorAgentRepository(Protocol):
         self, account_id: str, action_id: str, resolution: ActionResolution
     ) -> ActionIntent: ...
 
+    async def get_action_execution(
+        self, account_id: str, action_id: str
+    ) -> ActionExecution | None: ...
+
+    async def create_action_execution(self, execution: ActionExecution) -> ActionExecution: ...
+
     async def apply_feedback(
         self,
         account_id: str,
@@ -195,6 +211,7 @@ class CreatorAgentRepository(Protocol):
 __all__ = [
     "CreatorAgentRepository",
     "ActionIntentMissingError",
+    "ActionExecutionNotAllowedError",
     "ActionResolutionConflictError",
     "ActionValidationError",
     "CreatorModelMissingError",

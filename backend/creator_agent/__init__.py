@@ -8,6 +8,9 @@ from backend.creator_agent.dataset import (
 from backend.creator_agent.model_store import CreatorModelStore
 from backend.creator_agent.models import (
     ActionCapability,
+    ActionExecution,
+    ActionExecutionReceipt,
+    ActionExecutionStatus,
     ActionIntent,
     ActionIntentRequest,
     ActionResolution,
@@ -52,6 +55,9 @@ __all__ = [
     "build_decision_dataset_page",
     "project_decision_dataset",
     "ActionCapability",
+    "ActionExecution",
+    "ActionExecutionReceipt",
+    "ActionExecutionStatus",
     "ActionIntent",
     "ActionIntentRequest",
     "ActionResolution",

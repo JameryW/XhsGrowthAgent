@@ -153,6 +153,11 @@ class ActionResolutionDisposition(Enum):
     CANCELLED = "cancelled"
 
 
+class ActionExecutionStatus(Enum):
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class FeedbackOutcome(Enum):
     CONSIDERED = "considered"
     ACCEPTED = "accepted"
@@ -324,6 +329,10 @@ class ActionResolutionRequest(BaseModel):
     disposition: ActionResolutionDisposition
 
 
+class ExecuteActionRequest(BaseModel):
+    account_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+
+
 class RankedCandidate(BaseModel):
     candidate_id: StrictStr
     label: StrictStr
@@ -444,6 +453,22 @@ class ActionIntent(BaseModel):
     idempotency_key: Annotated[StrictStr, Field(max_length=256, min_length=1)]
     status: ActionStatus = ActionStatus.PENDING_CONFIRMATION
     resolved_at: AwareDatetime | None = None
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
+class ActionExecution(BaseModel):
+    execution_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    account_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    action_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    decision_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    creator_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    audience_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    action_kind: ActionCapability
+    model_revision: Annotated[StrictInt, Field(ge=1)]
+    executor_version: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    status: ActionExecutionStatus
+    result: dict[str, Any]
     created_at: AwareDatetime
     updated_at: AwareDatetime
 
@@ -729,6 +754,7 @@ class Code(Enum):
     ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH = "ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH"
     ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
     ERROR_CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
+    ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED = "ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED"
 
 
 class Error(BaseModel):
@@ -756,6 +782,7 @@ class Code1(Enum):
     ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
     ERROR_CREATOR_EVIDENCE_NOT_FOUND = "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
     ERROR_CREATOR_ACTION_NOT_FOUND = "ERROR_CREATOR_ACTION_NOT_FOUND"
+    ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND = "ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND"
 
 
 class Error1(BaseModel):
@@ -782,6 +809,7 @@ class Code2(Enum):
     ERROR_CREATOR_MODEL_REVISION_CONFLICT = "ERROR_CREATOR_MODEL_REVISION_CONFLICT"
     ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
     ERROR_CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
+    ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED = "ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED"
 
 
 class Error2(BaseModel):
@@ -896,6 +924,10 @@ class ApiResponseActionIntent(ApiResponse):
 
 class ApiResponseActionIntentList(ApiResponse):
     data: list[ActionIntent] | None = None
+
+
+class ApiResponseActionExecution(ApiResponse):
+    data: ActionExecution | None = None
 
 
 class ApiResponseEvidenceGraphList(ApiResponse):

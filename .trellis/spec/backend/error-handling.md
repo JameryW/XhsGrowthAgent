@@ -368,3 +368,19 @@ raise the typed `ValidationError` (`400`, `ERROR_VALIDATION`). Invalid cursors
 must never be treated as a missing cursor, because that would silently restart
 the caller at page one. Account ownership is checked before the repository
 projection is read.
+
+## Scenario: Creator Agent Action Execution Receipts
+
+Execution routes preserve the confirmation boundary and map domain failures
+into typed responses:
+
+- missing or cross-account Action Intents are `CreatorActionNotFoundError`
+  (`404`);
+- pending or cancelled intents raise `CreatorActionExecutionNotAllowedError`
+  (`409`, `ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED`) and do not create a
+  receipt;
+- a missing source Decision Record is `CreatorDecisionNotFoundError` (`404`);
+- a missing receipt on the read route is
+  `CreatorActionExecutionNotFoundError` (`404`), including foreign accounts;
+- repeated execution returns the original immutable payload and is not treated
+  as a conflict.

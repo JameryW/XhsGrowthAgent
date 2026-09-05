@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Action receipt persistence, lock/idempotency and memory/Postgres parity"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Typed execution conflicts and account-scoped not-found mapping"}
+{"file": "CONTEXT.md", "reason": "Canonical Action Execution and receipt terminology"}
+{"file": "docs/adr/0004-action-intents-require-explicit-resolution.md", "reason": "Existing confirmation gate decision and safety boundary"}

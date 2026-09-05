@@ -229,6 +229,83 @@ def test_action_routes_require_resolution_and_remain_account_scoped(client, monk
     assert conflict.json()["error"]["code"] == "ERROR_CREATOR_ACTION_CONFLICT"
 
 
+def test_action_execution_routes_require_confirmation_and_return_receipt(client, monkeypatch):
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+    decision = client.post(
+        "/api/creator-agent/decisions",
+        json={
+            "account_id": "account-a",
+            "audience_id": "audience-a",
+            "goal": "选耐用品",
+            "candidates": [
+                {"candidate_id": "a", "label": "A", "signals": {"durability": 0.9}},
+                {"candidate_id": "b", "label": "B", "signals": {"durability": 0.2}},
+            ],
+        },
+    ).json()["data"]
+    action = client.post(
+        "/api/creator-agent/actions",
+        json={
+            "account_id": "account-a",
+            "decision_id": decision["decision_id"],
+            "action_kind": "compare_options",
+            "candidate_ids": ["a", "b"],
+            "idempotency_key": "api-execution-1",
+        },
+    ).json()["data"]
+
+    pending = client.post(
+        f"/api/creator-agent/actions/{action['action_id']}/execute",
+        json={"account_id": "account-a"},
+    )
+    assert pending.status_code == 409
+    assert pending.json()["error"]["code"] == "ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED"
+
+    assert (
+        client.post(
+            f"/api/creator-agent/actions/{action['action_id']}/resolve",
+            json={"account_id": "account-a", "disposition": "confirmed"},
+        ).status_code
+        == 200
+    )
+    executed = client.post(
+        f"/api/creator-agent/actions/{action['action_id']}/execute",
+        json={"account_id": "account-a"},
+    )
+    assert executed.status_code == 200
+    receipt = executed.json()["data"]
+    assert receipt["action_id"] == action["action_id"]
+    assert receipt["status"] == "succeeded"
+    assert receipt["result"]["candidate_ids"] == ["a", "b"]
+
+    repeated = client.post(
+        f"/api/creator-agent/actions/{action['action_id']}/execute",
+        json={"account_id": "account-a"},
+    )
+    fetched = client.get(
+        f"/api/creator-agent/actions/{action['action_id']}/execution",
+        params={"account_id": "account-a"},
+    )
+    assert repeated.json()["data"] == receipt
+    assert fetched.json()["data"] == receipt
+    missing = client.get(
+        "/api/creator-agent/actions/missing/execution",
+        params={"account_id": "account-a"},
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND"
+    foreign_execute = client.post(
+        f"/api/creator-agent/actions/{action['action_id']}/execute",
+        json={"account_id": "account-b"},
+    )
+    assert foreign_execute.status_code == 404
+    assert foreign_execute.json()["error"]["code"] == "ERROR_CREATOR_ACTION_NOT_FOUND"
+
+
 def test_evidence_graph_routes_filter_and_scope_missing(client, monkeypatch):
     async def _owned(_user_id: str, _account_id: str):
         return object()

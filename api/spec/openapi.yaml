@@ -838,7 +838,7 @@ paths:
       tags:
         - creator-agent
       summary: Confirm or cancel a Creator Agent Action Intent
-      description: Records an explicit resolution; confirmed is not executed in this increment.
+      description: Records an explicit resolution; confirmed authorizes a later explicit execution call.
       operationId: resolveCreatorAction
       parameters:
         - name: action_id
@@ -872,6 +872,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Conflict'
+
+  /creator-agent/actions/{action_id}/execute:
+    post:
+      tags:
+        - creator-agent
+      summary: Execute a confirmed Creator Agent Action Intent
+      description: Produces one immutable, deterministic local receipt without contacting an external system.
+      operationId: executeCreatorAction
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteActionRequest'
+      responses:
+        '200':
+          description: Action execution receipt created or returned from an idempotent retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ActionExecution'
+        '404':
+          description: Action Intent or source Decision Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '409':
+          description: Action Intent must be confirmed before execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conflict'
+
+  /creator-agent/actions/{action_id}/execution:
+    get:
+      tags:
+        - creator-agent
+      summary: Get a Creator Agent Action execution receipt
+      description: Returns an immutable receipt within the account scope.
+      operationId: getCreatorActionExecution
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Action execution receipt retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ActionExecution'
+        '404':
+          description: Execution receipt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
 
   /creator-agent/learning-signals:
     get:
@@ -1197,6 +1271,14 @@ components:
               items:
                 $ref: '#/components/schemas/ActionIntent'
 
+    ApiResponse_ActionExecution:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ActionExecution'
+
     ApiResponse_EvidenceGraphList:
       allOf:
         - $ref: '#/components/schemas/ApiResponse'
@@ -1328,6 +1410,10 @@ components:
       type: string
       enum: [confirmed, cancelled]
 
+    ActionExecutionStatus:
+      type: string
+      enum: [succeeded, failed]
+
     EvidenceReferenceType:
       type: string
       enum: [model, preference, knowledge_claim, decision_policy, decision, candidate, learning_signal]
@@ -1438,6 +1524,13 @@ components:
       properties:
         account_id: {type: string, minLength: 1, maxLength: 128}
         disposition: {$ref: '#/components/schemas/ActionResolutionDisposition'}
+
+    ExecuteActionRequest:
+      type: object
+      required: [account_id]
+      additionalProperties: false
+      properties:
+        account_id: {type: string, minLength: 1, maxLength: 128}
 
     Evidence:
       type: object
@@ -1763,6 +1856,38 @@ components:
         idempotency_key: {type: string, minLength: 1, maxLength: 256}
         status: {$ref: '#/components/schemas/ActionStatus'}
         resolved_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+
+    ActionExecution:
+      type: object
+      description: Immutable receipt emitted by the local deterministic executor.
+      required:
+        - execution_id
+        - account_id
+        - action_id
+        - decision_id
+        - creator_id
+        - audience_id
+        - action_kind
+        - model_revision
+        - executor_version
+        - status
+        - result
+        - created_at
+        - updated_at
+      properties:
+        execution_id: {type: string, minLength: 1, maxLength: 128}
+        account_id: {type: string, minLength: 1, maxLength: 128}
+        action_id: {type: string, minLength: 1, maxLength: 128}
+        decision_id: {type: string, minLength: 1, maxLength: 128}
+        creator_id: {type: string, minLength: 1, maxLength: 128}
+        audience_id: {type: string, minLength: 1, maxLength: 128}
+        action_kind: {$ref: '#/components/schemas/ActionCapability'}
+        model_revision: {type: integer, minimum: 1}
+        executor_version: {type: string, minLength: 1, maxLength: 128}
+        status: {$ref: '#/components/schemas/ActionExecutionStatus'}
+        result: {type: object, additionalProperties: true}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
 
@@ -2297,7 +2422,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_VALIDATION, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT, ERROR_CREATOR_ACTION_CONFLICT]
+                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_VALIDATION, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT, ERROR_CREATOR_ACTION_CONFLICT, ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED]
                 message:
                   type: string
           example:
@@ -2325,7 +2450,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND, ERROR_CREATOR_EVIDENCE_NOT_FOUND, ERROR_CREATOR_ACTION_NOT_FOUND]
+                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND, ERROR_CREATOR_EVIDENCE_NOT_FOUND, ERROR_CREATOR_ACTION_NOT_FOUND, ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND]
                 message:
                   type: string
           example:
@@ -2352,7 +2477,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [ERROR_CREATOR_MODEL_REVISION_CONFLICT, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT, ERROR_CREATOR_ACTION_CONFLICT]
+                  enum: [ERROR_CREATOR_MODEL_REVISION_CONFLICT, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT, ERROR_CREATOR_ACTION_CONFLICT, ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED]
                 message:
                   type: string
           example:
