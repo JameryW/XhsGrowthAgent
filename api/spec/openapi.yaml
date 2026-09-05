@@ -589,6 +589,68 @@ paths:
               schema:
                 $ref: '#/components/schemas/Conflict'
 
+  /creator-agent/dataset/decisions:
+    get:
+      tags:
+        - creator-agent
+      summary: List the Creator Agent Decision Dataset
+      description: Returns immutable Decision Record snapshots with linked Learning Signal IDs.
+      operationId: listCreatorDecisionDataset
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: audience_id
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/DecisionStatus'
+        - name: feedback_outcome
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/FeedbackOutcome'
+        - name: has_feedback
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Decision Dataset page retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_DecisionDatasetPage'
+        '400':
+          description: Invalid cursor, limit, or filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+
   /creator-agent/decisions:
     post:
       tags:
@@ -1075,6 +1137,14 @@ components:
             data:
               $ref: '#/components/schemas/DecisionRecord'
 
+    ApiResponse_DecisionDatasetPage:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/DecisionDatasetPage'
+
     ApiResponse_FeedbackResult:
       allOf:
         - $ref: '#/components/schemas/ApiResponse'
@@ -1559,6 +1629,39 @@ components:
         feedback: {type: array, items: {$ref: '#/components/schemas/UserFeedback'}}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+
+    DecisionDatasetEntry:
+      type: object
+      required: [decision, learning_signal_ids]
+      properties:
+        decision:
+          $ref: '#/components/schemas/DecisionRecord'
+        learning_signal_ids:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+            minLength: 1
+
+    DecisionDatasetPage:
+      type: object
+      required: [items, total, limit]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/DecisionDatasetEntry'
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        next_cursor:
+          type: string
+          nullable: true
 
     RelationshipMemory:
       type: object
@@ -2194,7 +2297,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT, ERROR_CREATOR_ACTION_CONFLICT]
+                  enum: [BAD_REQUEST, VALIDATION_ERROR, ERROR_VALIDATION, ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH, ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT, ERROR_CREATOR_ACTION_CONFLICT]
                 message:
                   type: string
           example:

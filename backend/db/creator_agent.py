@@ -7,6 +7,7 @@ import json
 import uuid
 from typing import Any
 
+from backend.creator_agent.dataset import build_decision_dataset_page
 from backend.creator_agent.models import (
     ActionIntent,
     ActionResolution,
@@ -14,7 +15,9 @@ from backend.creator_agent.models import (
     CreatorModel,
     CreatorModelDefinition,
     CreatorReviewDisposition,
+    DecisionDatasetPage,
     DecisionRecord,
+    DecisionStatus,
     Evidence,
     EvidenceGraphEntry,
     EvidenceReference,
@@ -530,6 +533,87 @@ class DurableCreatorAgentRepository:
             )
             row = await cur.fetchone()
         return _decision_from_row(row) if row else None
+
+    async def list_decision_dataset(
+        self,
+        account_id: str,
+        *,
+        audience_id: str | None = None,
+        status: DecisionStatus | None = None,
+        feedback_outcome: FeedbackOutcome | None = None,
+        has_feedback: bool | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> DecisionDatasetPage:
+        """Read a stable Decision Dataset page from one snapshot boundary."""
+        normalized_account_id = (account_id or "").strip()
+        normalized_audience_id = audience_id.strip() if audience_id is not None else None
+
+        if not is_pool_ready():
+            async with _mem_lock:
+                decisions = [
+                    decision.model_copy(deep=True)
+                    for (stored_account, _), decision in _mem_decisions.items()
+                    if stored_account == normalized_account_id
+                ]
+                signals = [
+                    signal.model_copy(deep=True)
+                    for (stored_account, _), signal in _mem_learning_signals.items()
+                    if stored_account == normalized_account_id
+                ]
+            return build_decision_dataset_page(
+                decisions,
+                signals,
+                audience_id=normalized_audience_id,
+                status=status,
+                feedback_outcome=feedback_outcome,
+                has_feedback=has_feedback,
+                cursor=cursor,
+                limit=limit,
+            )
+
+        pool = get_pool()
+        conditions = ["account_id = %s"]
+        params: list[Any] = [normalized_account_id]
+        if normalized_audience_id is not None:
+            conditions.append("audience_id = %s")
+            params.append(normalized_audience_id)
+        if status is not None:
+            conditions.append("payload_json::jsonb ->> 'status' = %s")
+            params.append(status.value)
+        where = " AND ".join(conditions)
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            # Decisions and linked Learning Signals must come from the same
+            # repeatable-read snapshot before the pure projection runs.
+            await cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            await cur.execute(
+                f"""
+                SELECT payload_json FROM creator_agent_decisions
+                WHERE {where}
+                ORDER BY created_at DESC, decision_id DESC
+                """,
+                params,
+            )
+            decision_rows = await cur.fetchall()
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_learning_signals
+                WHERE account_id = %s
+                ORDER BY signal_id ASC
+                """,
+                (normalized_account_id,),
+            )
+            signal_rows = await cur.fetchall()
+        return build_decision_dataset_page(
+            [_decision_from_row(row) for row in decision_rows],
+            [_learning_signal_from_row(row) for row in signal_rows],
+            audience_id=normalized_audience_id,
+            status=status,
+            feedback_outcome=feedback_outcome,
+            has_feedback=has_feedback,
+            cursor=cursor,
+            limit=limit,
+        )
 
     async def get_action_by_idempotency_key(
         self, account_id: str, idempotency_key: str

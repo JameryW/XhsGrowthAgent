@@ -358,3 +358,13 @@ Resolution is side-effect free: `confirmed` authorizes only a future executor,
 while `cancelled` permanently prevents execution. Missing or cross-account
 intents are `CreatorActionNotFoundError` (`404`); changing the disposition of a
 resolved intent is `CreatorActionConflictError` (`409`).
+
+## Scenario: Creator Agent Decision Dataset query validation
+
+The authenticated Decision Dataset route validates the account and optional
+audience identifiers after trimming and before reading any snapshots. Blank
+identifiers, malformed/version-unsupported cursors, and limits outside `1..100`
+raise the typed `ValidationError` (`400`, `ERROR_VALIDATION`). Invalid cursors
+must never be treated as a missing cursor, because that would silently restart
+the caller at page one. Account ownership is checked before the repository
+projection is read.

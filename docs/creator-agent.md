@@ -174,6 +174,24 @@ POST /api/creator-agent/actions/{action_id}/resolve
 可以接收该 intent，本期不会搜索、购买、预约、发消息或调用任何外部系统；变更
 已解析 intent 的 disposition 会返回 `ERROR_CREATOR_ACTION_CONFLICT`。
 
+### 查询 Decision Dataset
+
+Decision Dataset 是 Decision Record 和 User Feedback 的只读历史投影，适合
+审核、导出和后续训练管线使用。每一行的 `decision` 都是创建时保存的完整快照，
+不会因为当前 Creator Model revision 变化而重新计算；`learning_signal_ids` 只返回
+同一账号、同一 decision 关联的 Signal ID，不展开 Signal payload：
+
+```http
+GET /api/creator-agent/dataset/decisions?account_id=xhs-account-1&limit=20
+GET /api/creator-agent/dataset/decisions?account_id=xhs-account-1&audience_id=audience-1&status=recommended&feedback_outcome=purchased&has_feedback=true
+```
+
+结果按 `created_at DESC, decision_id DESC` 稳定排序，`total` 是当前筛选条件下的
+完整总数，即使请求带 `cursor` 也不会变成“剩余行数”。`next_cursor` 是仅包含该
+排序键的版本化不透明游标；游标损坏会返回 `ERROR_VALIDATION`，不会静默回到第一页。
+过滤条件会先应用，再计算总数和分页，`limit` 范围为 `1..100`。账号归属校验在
+读取任何快照之前完成；接口不会写入反馈、Learning Signal、Action Intent 或模型。
+
 ## 与现有能力的关系
 
 - XHS Account 仍是平台操作和权限范围；Creator ID 才是可迁移的创作者身份。

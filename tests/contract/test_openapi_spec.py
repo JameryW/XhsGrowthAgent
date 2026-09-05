@@ -133,6 +133,7 @@ class TestOpenAPIRequiredEndpoints:
         expected = {
             "/creator-agent/model": {"get", "put"},
             "/creator-agent/decisions": {"post"},
+            "/creator-agent/dataset/decisions": {"get"},
             "/creator-agent/decisions/{decision_id}": {"get"},
             "/creator-agent/decisions/{decision_id}/feedback": {"post"},
             "/creator-agent/relationships/{audience_id}": {"get"},

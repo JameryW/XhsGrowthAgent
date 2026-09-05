@@ -496,3 +496,23 @@ existing lock. Creation returns the original payload on retry and never
 overwrites candidate IDs or action kind. Resolution locks the intent, permits
 only one transition from `pending_confirmation`, and stores `confirmed` or
 `cancelled` without invoking an external executor.
+
+## Scenario: Creator Agent Decision Dataset projection
+
+The Decision Dataset is a read-only projection over the immutable
+`creator_agent_decisions` and feedback-derived
+`creator_agent_learning_signals` payloads. It introduces no table or migration.
+
+- `list_decision_dataset` orders rows by `created_at DESC, decision_id DESC` and
+  uses a versioned cursor containing only that canonical sort key. Filters are
+  applied before both the complete `total` and cursor traversal.
+- The memory fallback copies the account's decision and signal maps under
+  `_mem_lock`, then delegates to the pure projection helper. The Postgres path
+  reads both snapshot families inside one explicit `REPEATABLE READ` transaction
+  before assembling the page. Both paths must return equivalent account-scoped
+  rows and never expose another account's snapshots.
+- A dataset entry returns the original `DecisionRecord` snapshot verbatim and
+  only the stable ascending Learning Signal IDs linked by account and
+  `decision_id`; signal payloads are not joined into the entry.
+- Malformed cursors and limits outside `1..100` are validation failures. A
+  cursor never silently restarts at page one.

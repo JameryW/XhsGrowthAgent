@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -293,6 +296,75 @@ class DecisionRecord(BaseModel):
     updated_at: str
 
 
+def encode_decision_dataset_cursor(created_at: str, decision_id: str) -> str:
+    """Encode the canonical Decision Dataset sort key as an opaque cursor.
+
+    The dataset is ordered newest-first by ``created_at`` and then
+    ``decision_id``.  Only that key is encoded so a cursor never captures a
+    filter or account identifier that could be replayed across queries.
+    """
+
+    payload = json.dumps(
+        {
+            "v": 1,
+            "created_at": str(created_at or ""),
+            "decision_id": str(decision_id or ""),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_decision_dataset_cursor(cursor: str) -> tuple[str, str]:
+    """Decode and validate a versioned Decision Dataset cursor.
+
+    Invalid tokens are deliberately rejected instead of silently restarting
+    at page one.  This keeps stale links observable to API clients and makes
+    future cursor format changes safe to roll out.
+    """
+
+    token = (cursor or "").strip()
+    if not token:
+        raise ValueError("cursor cannot be empty")
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        raw = json.loads(base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True))
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error, json.JSONDecodeError) as exc:
+        raise ValueError("invalid decision dataset cursor") from exc
+    if not isinstance(raw, dict) or type(raw.get("v")) is not int or raw.get("v") != 1:
+        raise ValueError("unsupported decision dataset cursor")
+    if set(raw) != {"v", "created_at", "decision_id"}:
+        raise ValueError("invalid decision dataset cursor fields")
+    created_at = raw.get("created_at")
+    decision_id = raw.get("decision_id")
+    if not isinstance(created_at, str) or not isinstance(decision_id, str) or not decision_id:
+        raise ValueError("invalid decision dataset cursor fields")
+    return created_at, decision_id
+
+
+# Short aliases keep the cursor contract discoverable to generic pagination
+# callers while retaining an explicitly namespaced canonical implementation.
+encode_dataset_cursor = encode_decision_dataset_cursor
+decode_dataset_cursor = decode_decision_dataset_cursor
+
+
+class DecisionDatasetEntry(BaseModel):
+    """Read-only projection of one immutable Decision Record snapshot."""
+
+    decision: DecisionRecord
+    learning_signal_ids: list[str] = Field(default_factory=list, max_length=1000)
+
+
+class DecisionDatasetPage(BaseModel):
+    """A stable, account-scoped page of Decision Dataset entries."""
+
+    items: list[DecisionDatasetEntry] = Field(default_factory=list, max_length=100)
+    total: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
+    next_cursor: str | None = None
+
+
 class ActionIntentRequest(BaseModel):
     """Request to create an account-scoped, confirmation-gated action."""
 
@@ -402,10 +474,16 @@ __all__ = [
     "CreatorModel",
     "CreatorModelDefinition",
     "DecisionCandidate",
+    "DecisionDatasetEntry",
+    "DecisionDatasetPage",
     "DecisionPolicy",
     "DecisionRecord",
     "DecisionRequest",
     "DecisionStatus",
+    "decode_decision_dataset_cursor",
+    "decode_dataset_cursor",
+    "encode_decision_dataset_cursor",
+    "encode_dataset_cursor",
     "ActionCapability",
     "ActionIntent",
     "ActionIntentRequest",

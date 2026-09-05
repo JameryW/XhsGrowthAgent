@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify cursor pagination and persistence isolation"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify typed invalid cursor behavior"}
+{"file": "CONTEXT.md", "reason": "Verify domain terminology and contract synchronization"}

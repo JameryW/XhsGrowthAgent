@@ -1,6 +1,10 @@
 """Creator-owned intelligence and evidence-backed decision interfaces."""
 
 from backend.creator_agent.advisor import CreatorAdvisor
+from backend.creator_agent.dataset import (
+    build_decision_dataset_page,
+    project_decision_dataset,
+)
 from backend.creator_agent.model_store import CreatorModelStore
 from backend.creator_agent.models import (
     ActionCapability,
@@ -13,6 +17,8 @@ from backend.creator_agent.models import (
     CreatorModelDefinition,
     CreatorReviewDisposition,
     DecisionCandidate,
+    DecisionDatasetEntry,
+    DecisionDatasetPage,
     DecisionPolicy,
     DecisionRecord,
     DecisionRequest,
@@ -35,10 +41,16 @@ from backend.creator_agent.models import (
     Preference,
     PreferenceStance,
     RelationshipMemory,
+    decode_dataset_cursor,
+    decode_decision_dataset_cursor,
+    encode_dataset_cursor,
+    encode_decision_dataset_cursor,
 )
 
 __all__ = [
     "CreatorAdvisor",
+    "build_decision_dataset_page",
+    "project_decision_dataset",
     "ActionCapability",
     "ActionIntent",
     "ActionIntentRequest",
@@ -50,15 +62,21 @@ __all__ = [
     "CreatorModelStore",
     "CreatorReviewDisposition",
     "DecisionCandidate",
+    "DecisionDatasetEntry",
+    "DecisionDatasetPage",
     "DecisionPolicy",
     "DecisionRecord",
     "DecisionRequest",
     "DecisionStatus",
+    "decode_decision_dataset_cursor",
+    "decode_dataset_cursor",
     "Evidence",
     "EvidenceGraphEntry",
     "EvidenceReference",
     "EvidenceReferenceType",
     "EvidenceSource",
+    "encode_decision_dataset_cursor",
+    "encode_dataset_cursor",
     "FeedbackInput",
     "FeedbackOutcome",
     "FeedbackResult",

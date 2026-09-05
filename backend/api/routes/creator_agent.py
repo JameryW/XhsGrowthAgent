@@ -33,11 +33,14 @@ from backend.creator_agent import (
     CreatorModelDefinition,
     CreatorModelStore,
     CreatorReviewDisposition,
+    DecisionDatasetPage,
     DecisionRequest,
+    DecisionStatus,
     EvidenceGraphEntry,
     EvidenceReferenceType,
     EvidenceSource,
     FeedbackInput,
+    FeedbackOutcome,
     LearningSignal,
     LearningSignalReview,
     LearningSignalStatus,
@@ -149,6 +152,43 @@ async def get_creator_decision(
     except DecisionRecordMissingError as exc:
         raise CreatorDecisionNotFoundError(exc.decision_id) from exc
     return success(data=decision.model_dump(mode="json"))
+
+
+@router.get("/dataset/decisions")
+async def list_creator_decision_dataset(
+    account_id: str = Query(..., min_length=1),
+    audience_id: str | None = Query(default=None, json_schema_extra={"minLength": 1}),
+    status: DecisionStatus | None = Query(default=None),
+    feedback_outcome: FeedbackOutcome | None = Query(default=None),
+    has_feedback: bool | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=20, json_schema_extra={"minimum": 1, "maximum": 100}),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[DecisionDatasetPage]:
+    """List immutable decision snapshots with account-scoped pagination."""
+    normalized_account_id = (account_id or "").strip()
+    if not normalized_account_id:
+        raise ValidationError("account_id", "account_id cannot be empty")
+    normalized_audience_id = audience_id.strip() if audience_id is not None else None
+    if audience_id is not None and not normalized_audience_id:
+        raise ValidationError("audience_id", "audience_id cannot be empty")
+    if not 1 <= limit <= 100:
+        raise ValidationError("limit", "limit must be between 1 and 100")
+    await require_owned_account(str(user["id"]), normalized_account_id)
+    try:
+        page = await _advisor().list_decision_dataset(
+            normalized_account_id,
+            audience_id=normalized_audience_id,
+            status=status,
+            feedback_outcome=feedback_outcome,
+            has_feedback=has_feedback,
+            cursor=cursor,
+            limit=limit,
+        )
+    except ValueError as exc:
+        field = "cursor" if "cursor" in str(exc) else "dataset"
+        raise ValidationError(field, str(exc)) from exc
+    return success(data=page.model_dump(mode="json"))
 
 
 @router.post("/decisions/{decision_id}/feedback")
