@@ -24,7 +24,7 @@ def _spec():
     on every test (function-scoped), adding ~0.13s of repeated parse cost per
     test. Request this session-scoped fixture and slice from the cached dict.
     """
-    with open(OPENAPI_SPEC_PATH) as f:
+    with open(OPENAPI_SPEC_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
