@@ -23,6 +23,8 @@ from backend.creator_agent.models import (
     LearningSignal,
     LearningSignalReview,
     LearningSignalStatus,
+    ModelRevision,
+    ModelRevisionPage,
     RelationshipMemory,
     UserFeedback,
 )
@@ -39,6 +41,15 @@ class CreatorModelMissingError(Exception):
     def __init__(self, account_id: str) -> None:
         self.account_id = account_id
         super().__init__(f"creator model not found for account {account_id!r}")
+
+
+class ModelRevisionMissingError(Exception):
+    """No immutable Model Revision snapshot exists for the requested revision."""
+
+    def __init__(self, account_id: str, revision: int) -> None:
+        self.account_id = account_id
+        self.revision = revision
+        super().__init__(f"creator model revision {revision} not found for account {account_id!r}")
 
 
 class DecisionRecordMissingError(Exception):
@@ -127,6 +138,16 @@ class CreatorAgentRepository(Protocol):
         *,
         expected_revision: int,
     ) -> CreatorModel: ...
+
+    async def list_model_revisions(
+        self,
+        account_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> ModelRevisionPage: ...
+
+    async def get_model_revision(self, account_id: str, revision: int) -> ModelRevision | None: ...
 
     async def create_decision(self, decision: DecisionRecord) -> None: ...
 
@@ -217,6 +238,7 @@ __all__ = [
     "CreatorModelMissingError",
     "CreatorModelRevisionConflictError",
     "DecisionRecordMissingError",
+    "ModelRevisionMissingError",
     "FeedbackAudienceMismatchError",
     "LearningSignalMissingError",
     "LearningSignalReviewConflictError",

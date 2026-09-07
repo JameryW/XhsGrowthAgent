@@ -28,6 +28,9 @@ from backend.creator_agent.models import (
     LearningSignal,
     LearningSignalReview,
     LearningSignalStatus,
+    ModelRevision,
+    ModelRevisionPage,
+    ModelRevisionSource,
     RelationshipMemory,
     UserFeedback,
     utc_now_iso,
@@ -42,9 +45,11 @@ from backend.creator_agent.repository import (
     LearningSignalMissingError,
     LearningSignalReviewConflictError,
 )
+from backend.creator_agent.revisions import build_model_revision_page
 from backend.db.pool import get_pool, is_pool_ready
 
 _mem_models: dict[str, CreatorModel] = {}
+_mem_model_revisions: dict[tuple[str, int], ModelRevision] = {}
 _mem_decisions: dict[tuple[str, str], DecisionRecord] = {}
 _mem_relationships: dict[tuple[str, str], RelationshipMemory] = {}
 _mem_learning_signals: dict[tuple[str, str], LearningSignal] = {}
@@ -132,6 +137,22 @@ CREATE TABLE IF NOT EXISTS creator_agent_action_executions (
 );
 """
 
+_CREATE_MODEL_REVISIONS_SQL = """
+CREATE TABLE IF NOT EXISTS creator_agent_model_revisions (
+    -- Append-only history.  A row is inserted exactly once when its revision
+    -- becomes current and is never updated, so historical Decision Records
+    -- and receipts can always resolve the model revision they cite.
+    account_id        TEXT NOT NULL,
+    creator_id        TEXT NOT NULL,
+    revision          INTEGER NOT NULL,
+    source            TEXT NOT NULL,
+    source_signal_id  TEXT,
+    payload_json      TEXT NOT NULL,
+    recorded_at       TEXT NOT NULL,
+    PRIMARY KEY (account_id, revision)
+);
+"""
+
 _CREATE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_creator_agent_decisions_audience
     ON creator_agent_decisions (account_id, audience_id, created_at DESC);
@@ -143,12 +164,26 @@ CREATE INDEX IF NOT EXISTS idx_creator_agent_actions_status
     ON creator_agent_actions (account_id, status, created_at DESC, action_id DESC);
 CREATE INDEX IF NOT EXISTS idx_creator_agent_action_executions_status
     ON creator_agent_action_executions (account_id, status, created_at DESC, action_id DESC);
+CREATE INDEX IF NOT EXISTS idx_creator_agent_model_revisions_history
+    ON creator_agent_model_revisions (account_id, revision DESC);
+"""
+
+_SELECT_ALL_MODELS_SQL = """
+SELECT payload_json FROM creator_agent_models
+"""
+
+_INSERT_MODEL_REVISION_SQL = """
+INSERT INTO creator_agent_model_revisions (
+    account_id, creator_id, revision, source, source_signal_id, payload_json, recorded_at
+) VALUES (%s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (account_id, revision) DO NOTHING
 """
 
 
 def _reset_memory_store() -> None:
     """Clear the process-memory adapter for isolated tests."""
     _mem_models.clear()
+    _mem_model_revisions.clear()
     _mem_decisions.clear()
     _mem_relationships.clear()
     _mem_learning_signals.clear()
@@ -169,7 +204,26 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_LEARNING_SIGNALS_SQL)
         await conn.execute(_CREATE_ACTIONS_SQL)
         await conn.execute(_CREATE_ACTION_EXECUTIONS_SQL)
+        await conn.execute(_CREATE_MODEL_REVISIONS_SQL)
         await conn.execute(_CREATE_INDEX_SQL)
+        # One-time, idempotent: accounts whose current model predates revision
+        # history resolve to themselves instead of citing an empty history.
+        # Snapshots are built by the same constructor the live write paths use so
+        # imported and recorded rows can never have different shapes.
+        async with conn.cursor() as cur:
+            await cur.execute(_SELECT_ALL_MODELS_SQL)
+            rows = await cur.fetchall()
+            for row in rows:
+                model = _model_from_row(row)
+                snapshot = _model_revision_snapshot(
+                    model,
+                    ModelRevisionSource.IMPORTED_HISTORY,
+                    recorded_at=model.updated_at,
+                )
+                await cur.execute(
+                    _INSERT_MODEL_REVISION_SQL,
+                    DurableCreatorAgentRepository._model_revision_params(snapshot),
+                )
 
 
 def _dumps(
@@ -178,7 +232,8 @@ def _dumps(
     | RelationshipMemory
     | LearningSignal
     | ActionIntent
-    | ActionExecution,
+    | ActionExecution
+    | ModelRevision,
 ) -> str:
     return json.dumps(model.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
 
@@ -195,6 +250,28 @@ def _json_text(value: Any) -> str:
 
 def _model_from_row(row: Any) -> CreatorModel:
     return CreatorModel.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
+
+
+def _model_revision_from_row(row: Any) -> ModelRevision:
+    return ModelRevision.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
+
+
+def _model_revision_snapshot(
+    model: CreatorModel,
+    source: ModelRevisionSource,
+    *,
+    source_signal_id: str | None = None,
+    recorded_at: str | None = None,
+) -> ModelRevision:
+    """Freeze one just-computed Creator Model into its immutable history entry."""
+    return ModelRevision(
+        account_id=model.account_id,
+        revision=model.revision,
+        recorded_at=recorded_at or model.updated_at or utc_now_iso(),
+        source=source,
+        source_signal_id=source_signal_id,
+        model=model.model_copy(deep=True),
+    )
 
 
 def _decision_from_row(row: Any) -> DecisionRecord:
@@ -456,6 +533,7 @@ class DurableCreatorAgentRepository:
                     raise CreatorModelRevisionConflictError(expected_revision, actual_revision)
                 model = self._next_model(account_id, definition, current)
                 _mem_models[account_id] = model.model_copy(deep=True)
+                self._remember_model_revision(model, ModelRevisionSource.CREATOR_EDIT)
                 return model
 
         pool = get_pool()
@@ -500,6 +578,9 @@ class DurableCreatorAgentRepository:
                     model.updated_at,
                 ),
             )
+            await self._insert_model_revision(
+                cur, _model_revision_snapshot(model, ModelRevisionSource.CREATOR_EDIT)
+            )
         return model
 
     @staticmethod
@@ -517,6 +598,113 @@ class DurableCreatorAgentRepository:
             created_at=current.created_at if current else now,
             updated_at=now,
         )
+
+    @staticmethod
+    def _remember_model_revision(
+        model: CreatorModel,
+        source: ModelRevisionSource,
+        *,
+        source_signal_id: str | None = None,
+    ) -> None:
+        """Append one snapshot to the memory history.  Callers hold ``_mem_lock``.
+
+        Keep-first mirrors the Postgres ``ON CONFLICT DO NOTHING``: history is
+        never rewritten, so a replayed write cannot change what a revision said.
+        """
+        snapshot = _model_revision_snapshot(model, source, source_signal_id=source_signal_id)
+        key = (snapshot.account_id, snapshot.revision)
+        if key not in _mem_model_revisions:
+            _mem_model_revisions[key] = snapshot
+
+    @staticmethod
+    def _memory_model_for_applied_revision(
+        account_id: str, signal: LearningSignal
+    ) -> CreatorModel | None:
+        """Memory counterpart of :meth:`_model_for_applied_revision`.
+
+        Callers already hold ``_mem_lock``, which is not reentrant.
+        """
+        applied = signal.applied_model_revision
+        if applied is None:
+            return None
+        snapshot = _mem_model_revisions.get((account_id, applied))
+        if snapshot is not None:
+            return snapshot.model.model_copy(deep=True)
+        current = _mem_models.get(account_id)
+        if current is not None and current.revision == applied:
+            return current.model_copy(deep=True)
+        return None
+
+    @staticmethod
+    def _model_revision_params(
+        snapshot: ModelRevision,
+    ) -> tuple[str, str, int, str, str | None, str, str]:
+        """One column order for every writer of the history table."""
+        return (
+            snapshot.account_id,
+            snapshot.model.creator_id,
+            snapshot.revision,
+            snapshot.source.value,
+            snapshot.source_signal_id,
+            _dumps(snapshot),
+            snapshot.recorded_at,
+        )
+
+    @classmethod
+    async def _insert_model_revision(cls, cur: Any, snapshot: ModelRevision) -> None:
+        """Append one snapshot inside the caller's transaction.
+
+        ``ON CONFLICT DO NOTHING`` is deliberate: a retried or replayed write
+        must never rewrite a historical revision, only fail to add a duplicate.
+        """
+        await cur.execute(_INSERT_MODEL_REVISION_SQL, cls._model_revision_params(snapshot))
+
+    async def list_model_revisions(
+        self,
+        account_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> ModelRevisionPage:
+        if not is_pool_ready():
+            async with _mem_lock:
+                snapshots = [
+                    snapshot.model_copy(deep=True)
+                    for key, snapshot in _mem_model_revisions.items()
+                    if key[0] == account_id
+                ]
+            return build_model_revision_page(snapshots, cursor=cursor, limit=limit)
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_model_revisions
+                WHERE account_id = %s
+                """,
+                (account_id,),
+            )
+            rows = await cur.fetchall()
+        stored = [_model_revision_from_row(row) for row in rows]
+        return build_model_revision_page(stored, cursor=cursor, limit=limit)
+
+    async def get_model_revision(self, account_id: str, revision: int) -> ModelRevision | None:
+        if not is_pool_ready():
+            async with _mem_lock:
+                snapshot = _mem_model_revisions.get((account_id, revision))
+                return snapshot.model_copy(deep=True) if snapshot else None
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT payload_json FROM creator_agent_model_revisions
+                WHERE account_id = %s AND revision = %s
+                """,
+                (account_id, revision),
+            )
+            row = await cur.fetchone()
+        return _model_revision_from_row(row) if row else None
 
     async def create_decision(self, decision: DecisionRecord) -> None:
         if not is_pool_ready():
@@ -1233,13 +1421,7 @@ class DurableCreatorAgentRepository:
                         raise LearningSignalReviewConflictError(
                             signal_id, signal.status, review.disposition
                         )
-                    model = _mem_models.get(account_id)
-                    if (
-                        model is not None
-                        and signal.applied_model_revision is not None
-                        and model.revision != signal.applied_model_revision
-                    ):
-                        model = None
+                    model = self._memory_model_for_applied_revision(account_id, signal)
                     return signal, model.model_copy(deep=True) if model else None
                 if review.disposition is CreatorReviewDisposition.APPROVED:
                     if review.model is None or review.expected_revision is None:
@@ -1252,6 +1434,9 @@ class DurableCreatorAgentRepository:
                         )
                     model = self._next_model(account_id, review.model, current)
                     _mem_models[account_id] = model.model_copy(deep=True)
+                    self._remember_model_revision(
+                        model, ModelRevisionSource.LEARNING_REVIEW, source_signal_id=signal_id
+                    )
                     signal.applied_model_revision = model.revision
                 else:
                     model = None
@@ -1333,6 +1518,12 @@ class DurableCreatorAgentRepository:
                         model.updated_at,
                     ),
                 )
+                await self._insert_model_revision(
+                    cur,
+                    _model_revision_snapshot(
+                        model, ModelRevisionSource.LEARNING_REVIEW, source_signal_id=signal_id
+                    ),
+                )
 
             now = utc_now_iso()
             signal.status = LearningSignalStatus(review.disposition.value)
@@ -1361,8 +1552,24 @@ class DurableCreatorAgentRepository:
     async def _model_for_applied_revision(
         cur: Any, account_id: str, signal: LearningSignal
     ) -> CreatorModel | None:
+        """Resolve the exact revision an earlier approval produced.
+
+        History is the source of truth: a later creator edit must not erase
+        what a completed Creator Review already embodied.
+        """
         if signal.applied_model_revision is None:
             return None
+        await cur.execute(
+            """
+            SELECT payload_json FROM creator_agent_model_revisions
+            WHERE account_id = %s AND revision = %s
+            """,
+            (account_id, signal.applied_model_revision),
+        )
+        row = await cur.fetchone()
+        if row is not None:
+            return _model_revision_from_row(row).model
+        # Only reachable for accounts whose applied revision predates history.
         await cur.execute(
             "SELECT payload_json FROM creator_agent_models WHERE account_id = %s",
             (account_id,),

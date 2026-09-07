@@ -20,6 +20,7 @@ from backend.api.errors import (
     CreatorLearningSignalConflictError,
     CreatorLearningSignalNotFoundError,
     CreatorModelNotFoundError,
+    CreatorModelRevisionNotFoundError,
     ValidationError,
 )
 from backend.api.errors import (
@@ -47,6 +48,8 @@ from backend.creator_agent import (
     LearningSignal,
     LearningSignalReview,
     LearningSignalStatus,
+    ModelRevision,
+    ModelRevisionPage,
     RelationshipMemory,
 )
 from backend.creator_agent.repository import (
@@ -61,6 +64,7 @@ from backend.creator_agent.repository import (
     FeedbackAudienceMismatchError,
     LearningSignalMissingError,
     LearningSignalReviewConflictError,
+    ModelRevisionMissingError,
 )
 from backend.db.creator_agent import get_repository
 
@@ -131,6 +135,66 @@ async def save_creator_model(
     except CreatorModelRevisionConflictError as exc:
         raise ApiModelRevisionConflictError(exc.expected, exc.actual) from exc
     return success(data=model.model_dump(mode="json"))
+
+
+@router.get("/model/revisions")
+async def list_creator_model_revisions(
+    account_id: str = Query(..., min_length=1),
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=20, json_schema_extra={"minimum": 1, "maximum": 100}),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[ModelRevisionPage]:
+    """List immutable Creator Model revisions, newest first, without recomputation."""
+    normalized_account_id = (account_id or "").strip()
+    if not normalized_account_id:
+        raise ValidationError("account_id", "account_id cannot be empty")
+    if not 1 <= limit <= 100:
+        raise ValidationError("limit", "limit must be between 1 and 100")
+    await require_owned_account(str(user["id"]), normalized_account_id)
+    try:
+        page = await _advisor().list_model_revisions(
+            normalized_account_id, cursor=cursor, limit=limit
+        )
+    except ValueError as exc:
+        field = "cursor" if "cursor" in str(exc) else "revisions"
+        raise ValidationError(field, str(exc)) from exc
+    return success(data=page.model_dump(mode="json"))
+
+
+@router.get("/model/revisions/{revision}")
+async def get_creator_model_revision(
+    revision: int,
+    account_id: str = Query(..., min_length=1),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[ModelRevision]:
+    """Resolve one immutable Creator Model revision within the account scope."""
+    account_id = account_id.strip()
+    if revision < 1:
+        raise ValidationError("revision", "revision must be 1 or greater")
+    await require_owned_account(str(user["id"]), account_id)
+    try:
+        snapshot = await _advisor().get_model_revision(account_id, revision)
+    except ModelRevisionMissingError as exc:
+        raise CreatorModelRevisionNotFoundError(exc.account_id, exc.revision) from exc
+    return success(data=snapshot.model_dump(mode="json"))
+
+
+@router.get("/decisions/{decision_id}/model-revision")
+async def get_creator_decision_model_revision(
+    decision_id: str,
+    account_id: str = Query(..., min_length=1),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[ModelRevision]:
+    """Return the exact Creator Model revision a decision was judged against."""
+    account_id = account_id.strip()
+    await require_owned_account(str(user["id"]), account_id)
+    try:
+        snapshot = await _advisor().get_decision_model_revision(account_id, decision_id)
+    except DecisionRecordMissingError as exc:
+        raise CreatorDecisionNotFoundError(exc.decision_id) from exc
+    except ModelRevisionMissingError as exc:
+        raise CreatorModelRevisionNotFoundError(exc.account_id, exc.revision) from exc
+    return success(data=snapshot.model_dump(mode="json"))
 
 
 @router.post("/decisions")

@@ -100,6 +100,14 @@ class CreatorReviewDisposition(StrEnum):
     DISMISSED = "dismissed"
 
 
+class ModelRevisionSource(StrEnum):
+    """Which durable event caused a Creator Model revision to exist."""
+
+    CREATOR_EDIT = "creator_edit"
+    LEARNING_REVIEW = "learning_review"
+    IMPORTED_HISTORY = "imported_history"
+
+
 class Evidence(BaseModel):
     evidence_id: str = Field(min_length=1, max_length=128)
     source_kind: EvidenceSource
@@ -206,6 +214,85 @@ class CreatorModel(CreatorModelDefinition):
     revision: int = Field(ge=1)
     created_at: str
     updated_at: str
+
+
+class ModelRevision(BaseModel):
+    """One immutable snapshot of a complete, creator-approved Model Revision.
+
+    The embedded Creator Model is stored verbatim so a historical Decision
+    Record or Action Execution Receipt can always be resolved to the exact
+    judgement it used, independent of the current model.
+    """
+
+    account_id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=1)
+    recorded_at: str = Field(min_length=1, max_length=64)
+    source: ModelRevisionSource
+    source_signal_id: str | None = Field(default=None, max_length=128)
+    model: CreatorModel
+
+    @model_validator(mode="after")
+    def validate_snapshot_identity(self) -> ModelRevision:
+        if self.model.account_id != self.account_id:
+            raise ValueError("revision snapshot account mismatch")
+        if self.model.revision != self.revision:
+            raise ValueError("revision snapshot revision mismatch")
+        if (
+            self.source is not ModelRevisionSource.LEARNING_REVIEW
+            and self.source_signal_id is not None
+        ):
+            raise ValueError("only learning_review snapshots may name a signal")
+        return self
+
+
+class ModelRevisionPage(BaseModel):
+    """A stable, account-scoped page of immutable Model Revision snapshots."""
+
+    items: list[ModelRevision] = Field(default_factory=list, max_length=100)
+    total: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
+    next_cursor: str | None = None
+
+
+def encode_model_revision_cursor(revision: int) -> str:
+    """Encode the Model Revision History keyset key as an opaque cursor.
+
+    History is ordered newest revision first, so only ``revision`` is encoded.
+    A cursor never captures an account identifier that could be replayed
+    against another creator.
+    """
+
+    payload = json.dumps(
+        {"v": 1, "revision": int(revision)},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_model_revision_cursor(cursor: str) -> int:
+    """Decode and validate a versioned Model Revision cursor.
+
+    Invalid tokens are rejected rather than silently restarting at the newest
+    page, which keeps stale links observable to API clients.
+    """
+
+    token = (cursor or "").strip()
+    if not token:
+        raise ValueError("cursor cannot be empty")
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        raw = json.loads(base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True))
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error, json.JSONDecodeError) as exc:
+        raise ValueError("invalid model revision cursor") from exc
+    if not isinstance(raw, dict) or type(raw.get("v")) is not int or raw.get("v") != 1:
+        raise ValueError("unsupported model revision cursor")
+    if set(raw) != {"v", "revision"}:
+        raise ValueError("invalid model revision cursor fields")
+    revision = raw.get("revision")
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        raise ValueError("invalid model revision cursor fields")
+    return revision
 
 
 class HardConstraint(BaseModel):
@@ -513,8 +600,10 @@ __all__ = [
     "DecisionStatus",
     "decode_decision_dataset_cursor",
     "decode_dataset_cursor",
+    "decode_model_revision_cursor",
     "encode_decision_dataset_cursor",
     "encode_dataset_cursor",
+    "encode_model_revision_cursor",
     "ActionCapability",
     "ActionExecution",
     "ActionExecutionReceipt",
@@ -541,6 +630,9 @@ __all__ = [
     "LearningSignalReview",
     "LearningSignalReviewResult",
     "LearningSignalStatus",
+    "ModelRevision",
+    "ModelRevisionPage",
+    "ModelRevisionSource",
     "Preference",
     "PreferenceStance",
     "RankedCandidate",

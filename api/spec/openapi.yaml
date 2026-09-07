@@ -589,6 +589,124 @@ paths:
               schema:
                 $ref: '#/components/schemas/Conflict'
 
+  /creator-agent/model/revisions:
+    get:
+      tags:
+        - creator-agent
+      summary: List the Creator Model Revision History
+      description: >-
+        Returns immutable Model Revision snapshots, newest revision first. The
+        history is append-only: every Creator Model write adds exactly one
+        snapshot and no write ever mutates an earlier one.
+      operationId: listCreatorModelRevisions
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Model Revision History page retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ModelRevisionPage'
+        '400':
+          description: Invalid cursor or limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+
+  /creator-agent/model/revisions/{revision}:
+    get:
+      tags:
+        - creator-agent
+      summary: Get one immutable Creator Model revision
+      description: >-
+        Resolves one stored Model Revision snapshot. A missing revision never
+        falls back to the current Creator Model, and foreign accounts are
+        indistinguishable from absent revisions.
+      operationId: getCreatorModelRevision
+      parameters:
+        - name: revision
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Model Revision snapshot retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ModelRevision'
+        '404':
+          description: Creator Model revision not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+
+  /creator-agent/decisions/{decision_id}/model-revision:
+    get:
+      tags:
+        - creator-agent
+      summary: Resolve the Creator Model revision a decision used
+      description: >-
+        Returns the exact immutable Model Revision a stored Decision Record was
+        evaluated against. The decision is never recomputed against the current
+        model.
+      operationId: getCreatorDecisionModelRevision
+      parameters:
+        - name: decision_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Decision Model Revision resolved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ModelRevision'
+        '404':
+          description: Decision record or its Creator Model revision not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+
   /creator-agent/dataset/decisions:
     get:
       tags:
@@ -1203,6 +1321,22 @@ components:
             data:
               $ref: '#/components/schemas/CreatorModel'
 
+    ApiResponse_ModelRevision:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ModelRevision'
+
+    ApiResponse_ModelRevisionPage:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ModelRevisionPage'
+
     ApiResponse_DecisionRecord:
       allOf:
         - $ref: '#/components/schemas/ApiResponse'
@@ -1633,6 +1767,53 @@ components:
             revision: {type: integer, minimum: 1}
             created_at: {type: string, format: date-time}
             updated_at: {type: string, format: date-time}
+
+    ModelRevisionSource:
+      type: string
+      description: Which durable event caused a Creator Model revision to exist.
+      enum: [creator_edit, learning_review, imported_history]
+
+    ModelRevision:
+      type: object
+      description: >-
+        One immutable snapshot of a complete Model Revision. The embedded
+        Creator Model is stored verbatim so historical decisions resolve to the
+        judgement they actually used.
+      required: [account_id, revision, recorded_at, source, model]
+      properties:
+        account_id: {type: string, minLength: 1, maxLength: 128}
+        revision: {type: integer, minimum: 1}
+        recorded_at: {type: string, format: date-time}
+        source:
+          $ref: '#/components/schemas/ModelRevisionSource'
+        source_signal_id:
+          type: string
+          nullable: true
+          maxLength: 128
+          description: Present only when source is learning_review.
+        model:
+          $ref: '#/components/schemas/CreatorModel'
+
+    ModelRevisionPage:
+      type: object
+      required: [items, total, limit]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ModelRevision'
+        total:
+          type: integer
+          minimum: 0
+          description: Complete history size for the account, before cursor traversal.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        next_cursor:
+          type: string
+          nullable: true
 
     HardConstraint:
       type: object
@@ -2450,7 +2631,7 @@ components:
               properties:
                 code:
                   type: string
-                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND, ERROR_CREATOR_EVIDENCE_NOT_FOUND, ERROR_CREATOR_ACTION_NOT_FOUND, ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND]
+                  enum: [NOT_FOUND, ERROR_CREATOR_MODEL_NOT_FOUND, ERROR_CREATOR_MODEL_REVISION_NOT_FOUND, ERROR_CREATOR_DECISION_NOT_FOUND, ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND, ERROR_CREATOR_EVIDENCE_NOT_FOUND, ERROR_CREATOR_ACTION_NOT_FOUND, ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND]
                 message:
                   type: string
           example:

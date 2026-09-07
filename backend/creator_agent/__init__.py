@@ -41,19 +41,33 @@ from backend.creator_agent.models import (
     LearningSignalReviewResult,
     LearningSignalStatus,
     LearningStatus,
+    ModelRevision,
+    ModelRevisionPage,
+    ModelRevisionSource,
     Preference,
     PreferenceStance,
     RelationshipMemory,
     decode_dataset_cursor,
     decode_decision_dataset_cursor,
+    decode_model_revision_cursor,
     encode_dataset_cursor,
     encode_decision_dataset_cursor,
+    encode_model_revision_cursor,
 )
+from backend.creator_agent.repository import ModelRevisionMissingError
+from backend.creator_agent.revisions import build_model_revision_page
 
 __all__ = [
     "CreatorAdvisor",
     "build_decision_dataset_page",
     "project_decision_dataset",
+    "build_model_revision_page",
+    "ModelRevision",
+    "ModelRevisionMissingError",
+    "ModelRevisionPage",
+    "ModelRevisionSource",
+    "decode_model_revision_cursor",
+    "encode_model_revision_cursor",
     "ActionCapability",
     "ActionExecution",
     "ActionExecutionReceipt",

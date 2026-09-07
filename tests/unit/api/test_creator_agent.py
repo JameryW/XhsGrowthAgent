@@ -403,3 +403,121 @@ def test_decision_dataset_route_returns_page_and_typed_validation(client, monkey
     )
     assert invalid_limit.status_code == 400
     assert invalid_limit.json()["error"]["code"] == "ERROR_VALIDATION"
+
+
+def _revise_model(client, account_id: str = "account-a") -> None:
+    payload = _model_payload(account_id)
+    payload["expected_revision"] = 1
+    payload["model"]["identity_summary"] = "一个改过主意的创作者"
+    assert client.put("/api/creator-agent/model", json=payload).status_code == 200
+
+
+def test_model_revision_history_route_pages_newest_first(client, monkeypatch):
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+    _revise_model(client)
+
+    history = client.get(
+        "/api/creator-agent/model/revisions", params={"account_id": "account-a", "limit": 1}
+    )
+    assert history.status_code == 200
+    page = history.json()["data"]
+    assert page["total"] == 2
+    assert page["limit"] == 1
+    assert [item["revision"] for item in page["items"]] == [2]
+    assert page["items"][0]["source"] == "creator_edit"
+    assert page["items"][0]["source_signal_id"] is None
+    assert page["next_cursor"]
+
+    second = client.get(
+        "/api/creator-agent/model/revisions",
+        params={"account_id": "account-a", "limit": 1, "cursor": page["next_cursor"]},
+    )
+    assert second.status_code == 200
+    assert [item["revision"] for item in second.json()["data"]["items"]] == [1]
+    assert second.json()["data"]["next_cursor"] is None
+    # total describes the complete history, not the remainder after the cursor.
+    assert second.json()["data"]["total"] == 2
+
+
+def test_model_revision_lookup_resolves_the_model_a_decision_used(client, monkeypatch):
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+    decision = client.post(
+        "/api/creator-agent/decisions",
+        json={
+            "account_id": "account-a",
+            "audience_id": "audience-a",
+            "goal": "选耐用品",
+            "candidates": [
+                {"candidate_id": "a", "label": "A", "signals": {"durability": 0.9}},
+                {"candidate_id": "b", "label": "B", "signals": {"durability": 0.2}},
+            ],
+        },
+    ).json()["data"]
+    _revise_model(client)
+
+    resolved = client.get(
+        f"/api/creator-agent/decisions/{decision['decision_id']}/model-revision",
+        params={"account_id": "account-a"},
+    )
+    current = client.get("/api/creator-agent/model", params={"account_id": "account-a"})
+    assert resolved.status_code == 200
+    assert resolved.json()["data"]["revision"] == decision["model_revision"] == 1
+    assert resolved.json()["data"]["model"]["identity_summary"] == "一个重视证据的创作者"
+    assert current.json()["data"]["revision"] == 2
+    assert current.json()["data"]["identity_summary"] == "一个改过主意的创作者"
+
+    single = client.get("/api/creator-agent/model/revisions/1", params={"account_id": "account-a"})
+    assert single.status_code == 200
+    assert single.json()["data"] == resolved.json()["data"]
+
+
+def test_model_revision_routes_return_typed_not_found_and_validation(client, monkeypatch):
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+
+    missing = client.get(
+        "/api/creator-agent/model/revisions/99", params={"account_id": "account-a"}
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "ERROR_CREATOR_MODEL_REVISION_NOT_FOUND"
+
+    zero = client.get("/api/creator-agent/model/revisions/0", params={"account_id": "account-a"})
+    assert zero.status_code == 400
+    assert zero.json()["error"]["code"] == "ERROR_VALIDATION"
+
+    foreign = client.get("/api/creator-agent/model/revisions/1", params={"account_id": "account-b"})
+    assert foreign.status_code == 404
+    assert foreign.json()["error"]["code"] == "ERROR_CREATOR_MODEL_REVISION_NOT_FOUND"
+
+    missing_decision = client.get(
+        "/api/creator-agent/decisions/missing/model-revision", params={"account_id": "account-a"}
+    )
+    assert missing_decision.status_code == 404
+    assert missing_decision.json()["error"]["code"] == "ERROR_CREATOR_DECISION_NOT_FOUND"
+
+    invalid_cursor = client.get(
+        "/api/creator-agent/model/revisions", params={"account_id": "account-a", "cursor": "bad"}
+    )
+    assert invalid_cursor.status_code == 400
+    assert invalid_cursor.json()["error"]["code"] == "ERROR_VALIDATION"
+
+    invalid_limit = client.get(
+        "/api/creator-agent/model/revisions", params={"account_id": "account-a", "limit": 0}
+    )
+    assert invalid_limit.status_code == 400
+    assert invalid_limit.json()["error"]["code"] == "ERROR_VALIDATION"
+
+    blank_account = client.get("/api/creator-agent/model/revisions", params={"account_id": "   "})
+    assert blank_account.status_code == 400
+    assert blank_account.json()["error"]["code"] == "ERROR_VALIDATION"

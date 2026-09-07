@@ -19,6 +19,7 @@ class ErrorCode(StrEnum):
     CREATOR_NOTE_NOT_FOUND = "ERROR_CREATOR_NOTE_NOT_FOUND"
     CREATOR_MODEL_NOT_FOUND = "ERROR_CREATOR_MODEL_NOT_FOUND"
     CREATOR_MODEL_REVISION_CONFLICT = "ERROR_CREATOR_MODEL_REVISION_CONFLICT"
+    CREATOR_MODEL_REVISION_NOT_FOUND = "ERROR_CREATOR_MODEL_REVISION_NOT_FOUND"
     CREATOR_DECISION_NOT_FOUND = "ERROR_CREATOR_DECISION_NOT_FOUND"
     CREATOR_FEEDBACK_AUDIENCE_MISMATCH = "ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH"
     CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
@@ -116,6 +117,22 @@ class CreatorModelRevisionConflictError(APIError):
             message="Creator Model revision is stale",
             details={"expected_revision": expected, "actual_revision": actual},
             status_code=409,
+        )
+
+
+class CreatorModelRevisionNotFoundError(APIError):
+    """No immutable Model Revision snapshot exists for the requested revision.
+
+    Foreign accounts and genuinely absent revisions are intentionally
+    indistinguishable so history cannot be probed across accounts.
+    """
+
+    def __init__(self, account_id: str, revision: int):
+        super().__init__(
+            code=ErrorCode.CREATOR_MODEL_REVISION_NOT_FOUND,
+            message=f"Creator Model revision {revision} not found",
+            details={"account_id": account_id, "revision": revision},
+            status_code=404,
         )
 
 
