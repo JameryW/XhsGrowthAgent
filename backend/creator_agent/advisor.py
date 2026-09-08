@@ -20,6 +20,7 @@ from backend.creator_agent.models import (
     DecisionStatus,
     Evidence,
     EvidenceGraphEntry,
+    EvidenceProposal,
     EvidenceReferenceType,
     EvidenceSource,
     ExcludedCandidate,
@@ -40,6 +41,8 @@ from backend.creator_agent.models import (
     UserFeedback,
     utc_now_iso,
 )
+from backend.creator_agent.observations import CreatorContentObservationSource
+from backend.creator_agent.proposals import build_evidence_proposals
 from backend.creator_agent.repository import (
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
@@ -86,8 +89,14 @@ class CreatorAdvisor:
 
     EXECUTOR_VERSION = "local-v1"
 
-    def __init__(self, repository: CreatorAgentRepository):
+    def __init__(
+        self,
+        repository: CreatorAgentRepository,
+        *,
+        content_observations: CreatorContentObservationSource | None = None,
+    ):
         self._repository = repository
+        self._content_observations = content_observations
 
     async def decide(self, request: DecisionRequest) -> DecisionRecord:
         model = await self._repository.get_model(request.account_id)
@@ -454,6 +463,37 @@ class CreatorAdvisor:
     async def get_evidence(self, account_id: str, evidence_id: str) -> EvidenceGraphEntry | None:
         """Look up one Evidence Graph node within the account scope."""
         return await self._repository.get_evidence(account_id.strip(), evidence_id.strip())
+
+    async def list_evidence_proposals(
+        self,
+        account_id: str,
+        *,
+        min_confidence: float | None = None,
+        limit: int = 50,
+    ) -> list[EvidenceProposal]:
+        """Project Creative Memory observations into traceable Evidence Proposals.
+
+        Strictly read-only.  Nothing on this path can change a Creator Model:
+        adoption remains an explicit, creator-approved revision.
+        """
+        normalized_account_id = account_id.strip()
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if min_confidence is not None and not 0.0 <= min_confidence <= 1.0:
+            raise ValueError("min_confidence must be between 0 and 1")
+        if self._content_observations is None or not normalized_account_id:
+            return []
+
+        observations = await self._content_observations.observations(
+            normalized_account_id, limit=limit
+        )
+        cited = {
+            entry.evidence.source_ref
+            for entry in await self._repository.list_evidence(normalized_account_id)
+        }
+        return build_evidence_proposals(
+            observations, cited_source_refs=cited, min_confidence=min_confidence, limit=limit
+        )
 
     async def get_decision(self, account_id: str, decision_id: str) -> DecisionRecord:
         decision = await self._repository.get_decision(account_id, decision_id)

@@ -248,6 +248,12 @@ class Preference(BaseModel):
     evidence_ids: Annotated[list[StrictStr], Field(max_length=50, min_length=1)]
 
 
+class EvidenceProposal(BaseModel):
+    proposal_id: Annotated[StrictStr, Field(max_length=64, min_length=1)]
+    evidence: Evidence
+    draft_preference: Preference | None = None
+
+
 class KnowledgeClaim(BaseModel):
     claim_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
     statement: Annotated[StrictStr, Field(max_length=2000, min_length=1)]
@@ -967,6 +973,10 @@ class ApiResponseActionIntentList(ApiResponse):
 
 class ApiResponseActionExecution(ApiResponse):
     data: ActionExecution | None = None
+
+
+class ApiResponseEvidenceProposalList(ApiResponse):
+    data: list[EvidenceProposal] | None = None
 
 
 class ApiResponseEvidenceGraphList(ApiResponse):

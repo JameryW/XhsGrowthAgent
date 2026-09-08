@@ -243,8 +243,37 @@ GET /api/creator-agent/decisions/{decision_id}/model-revision?account_id=xhs-acc
 因此当前模型和历史永远不会分叉。撤销/回滚、revision 差异对比、删除历史都不在契约内，
 未来的回滚也必须表达成新的、被创作者批准的 revision。
 
+### 从 Creative Memory 生成 Evidence 提案
+
+Creator Model 目前只能由创作者手写 JSON 起步，但账号里其实已经有可追溯的实测历史：风格指纹的
+互动率与样本数、转化打法的平均互动率与验证次数、素材的复用效果与来源笔记。这个接口把这些观察
+投影成**只读**的 Evidence 提案：
+
+```http
+GET /api/creator-agent/model/evidence-proposals?account_id=xhs-account-1&limit=50
+GET /api/creator-agent/model/evidence-proposals?account_id=xhs-account-1&min_confidence=0.3
+```
+
+每条提案包含一个稳定 ID、一个 `creator_content` Evidence 节点，以及在观察足够有力时附带一条草稿
+Preference：
+
+- `source_ref` 指向具体持久化行（`creative-memory://style/{style_id}` 等），`evidence_id` 由同一
+  身份推导，因此采纳后不会被重复提案；
+- `claim` 只是实测数字的确定性渲染（互动率、样本/验证/复用次数），不含数据支撑不了的描述；
+- `confidence` 用样本量收缩（`rate * n/(n+5)`），没有样本的观察置信度为 0，只被报告、不被应用；
+- 草稿 Preference 只在 `confidence >= 0.3` 且样本数 `>= 3` 时出现，`stance` 永远是 `prefer`，
+  `applies_when` 留空——适用场景属于创作者的判断。
+
+排序是置信度降序、`source_ref` 升序打破平局，因此重复调用结果完全一致；已被 Evidence Graph 引用的
+`source_ref` 会被跳过。账号没有 Creative Memory 时返回空列表，不是报错。
+
+这条路径**不写任何东西**：没有采纳接口，也没有“全部接受”。提案要成为模型内容，只能由创作者带着
+新定义走 `PUT /api/creator-agent/model`，从而产生一次被批准的 revision 与它的不可变历史快照。
+读取提案不会改变模型或历史。冷启动合成的 `default_*` 风格会被直接丢弃，避免把虚构内容当成创作者
+的真实历史（见 ADR-0006）。
+
 ## 与现有能力的关系
 
 - XHS Account 仍是平台操作和权限范围；Creator ID 才是可迁移的创作者身份。
-- Creative Memory（Style DNA、转化策略、素材）可以在未来作为 `creator_content` Evidence 接入，但不等于 Creator Model。
+- Creative Memory（Style DNA、转化策略、素材）已经以只读 Evidence 提案接入 Creator Model（见上一节），但它本身不等于 Creator Model：采纳仍然由创作者批准的 revision 完成。
 - Trend / Brief / Free 工作流本期保持兼容；后续可以把它们的建议生成改为调用 `CreatorAdvisor`，而不是各自拼接字符串。

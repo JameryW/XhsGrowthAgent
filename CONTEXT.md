@@ -38,6 +38,10 @@ _Avoid_: Vector index, citation list
 A typed edge from one Evidence node to the durable Creator Agent object that cites it, including the relevant Model Revision when one exists.
 _Avoid_: Link, foreign key
 
+**Evidence Proposal**:
+A read-only, traceable suggestion of one Evidence node derived from a durable Creative Memory observation, optionally with a draft Preference. Becoming part of a Creator Model still requires a creator-approved Model Revision.
+_Avoid_: Auto-learning, imported evidence, model patch
+
 **Decision Request**:
 One Audience Member's goal, context, constraints, and candidate choices submitted to a Creator Agent.
 _Avoid_: Prompt, brief

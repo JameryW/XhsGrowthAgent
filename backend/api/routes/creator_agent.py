@@ -41,6 +41,7 @@ from backend.creator_agent import (
     DecisionRequest,
     DecisionStatus,
     EvidenceGraphEntry,
+    EvidenceProposal,
     EvidenceReferenceType,
     EvidenceSource,
     FeedbackInput,
@@ -67,6 +68,7 @@ from backend.creator_agent.repository import (
     ModelRevisionMissingError,
 )
 from backend.db.creator_agent import get_repository
+from backend.memory.creator_agent_observations import CreativeMemoryObservationSource
 
 router = APIRouter()
 
@@ -100,7 +102,7 @@ class ReviewLearningSignalRequest(BaseModel):
 
 
 def _advisor() -> CreatorAdvisor:
-    return CreatorAdvisor(get_repository())
+    return CreatorAdvisor(get_repository(), content_observations=CreativeMemoryObservationSource())
 
 
 def _model_store() -> CreatorModelStore:
@@ -177,6 +179,28 @@ async def get_creator_model_revision(
     except ModelRevisionMissingError as exc:
         raise CreatorModelRevisionNotFoundError(exc.account_id, exc.revision) from exc
     return success(data=snapshot.model_dump(mode="json"))
+
+
+@router.get("/model/evidence-proposals")
+async def list_creator_evidence_proposals(
+    account_id: str = Query(..., min_length=1),
+    min_confidence: float | None = Query(default=None),
+    limit: int = Query(default=50, json_schema_extra={"minimum": 1, "maximum": 100}),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[list[EvidenceProposal]]:
+    """Suggest traceable Evidence from Creative Memory; never mutates the model."""
+    normalized_account_id = (account_id or "").strip()
+    if not normalized_account_id:
+        raise ValidationError("account_id", "account_id cannot be empty")
+    if not 1 <= limit <= 100:
+        raise ValidationError("limit", "limit must be between 1 and 100")
+    if min_confidence is not None and not 0.0 <= min_confidence <= 1.0:
+        raise ValidationError("min_confidence", "min_confidence must be between 0 and 1")
+    await require_owned_account(str(user["id"]), normalized_account_id)
+    proposals = await _advisor().list_evidence_proposals(
+        normalized_account_id, min_confidence=min_confidence, limit=limit
+    )
+    return success(data=[proposal.model_dump(mode="json") for proposal in proposals])
 
 
 @router.get("/decisions/{decision_id}/model-revision")
