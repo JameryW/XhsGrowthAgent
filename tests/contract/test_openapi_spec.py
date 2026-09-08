@@ -24,7 +24,7 @@ def _spec():
     on every test (function-scoped), adding ~0.13s of repeated parse cost per
     test. Request this session-scoped fixture and slice from the cached dict.
     """
-    with open(OPENAPI_SPEC_PATH) as f:
+    with open(OPENAPI_SPEC_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -145,6 +145,9 @@ class TestOpenAPIRequiredEndpoints:
             "/creator-agent/actions/{action_id}/resolve": {"post"},
             "/creator-agent/actions/{action_id}/execute": {"post"},
             "/creator-agent/actions/{action_id}/execution": {"get"},
+            "/creator-agent/model/revisions": {"get"},
+            "/creator-agent/model/revisions/{revision}": {"get"},
+            "/creator-agent/decisions/{decision_id}/model-revision": {"get"},
         }
         for path, methods in expected.items():
             assert path in paths, f"Missing {path} endpoint"

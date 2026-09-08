@@ -64,6 +64,8 @@ PUT /api/creator-agent/model
 
 第一次写入使用 `expected_revision=0`，服务会生成稳定的 `creator_id` 和 revision `1`。后续写入必须带当前 revision；旧 revision 会返回 `409 ERROR_CREATOR_MODEL_REVISION_CONFLICT`。
 
+每一次被接受的写入都会在同一事务里追加一条不可变的 Model Revision 快照。历史 revision 只能追加、不会被覆盖，因此旧 Decision Record 或执行收据引用的 revision 永远还能查回原文。
+
 ### 做一次决策
 
 ```http
@@ -216,6 +218,30 @@ GET /api/creator-agent/dataset/decisions?account_id=xhs-account-1&audience_id=au
 排序键的版本化不透明游标；游标损坏会返回 `ERROR_VALIDATION`，不会静默回到第一页。
 过滤条件会先应用，再计算总数和分页，`limit` 范围为 `1..100`。账号归属校验在
 读取任何快照之前完成；接口不会写入反馈、Learning Signal、Action Intent 或模型。
+
+### 追溯 Model Revision 历史
+
+Model Revision 历史是追加写的只读投影，用来回答“这条建议/收据当时依据的是哪一版判断”：
+
+```http
+GET /api/creator-agent/model/revisions?account_id=xhs-account-1&limit=20
+GET /api/creator-agent/model/revisions/{revision}?account_id=xhs-account-1
+GET /api/creator-agent/decisions/{decision_id}/model-revision?account_id=xhs-account-1
+```
+
+每条快照内嵌一个完整的 `CreatorModel`，并记录它的来源：`creator_edit`（创作者直接
+修订）、`learning_review`（被批准的 Creator Review，同时带上 `source_signal_id`），
+或 `imported_history`（本功能上线前已存在的模型行）。历史按 `revision DESC` 稳定排序，
+`total` 始终是完整历史条数而不是游标之后的剩余量，`next_cursor` 是只编码 revision
+排序键的版本化不透明游标；游标损坏返回 `ERROR_VALIDATION`，不会静默回到第一页。
+
+`/decisions/{decision_id}/model-revision` 只解析 Decision Record 里已存的 `model_revision`，
+既不会用当前模型替代它，也不会重算这条决策。revision 不存在、或属于别的账号时，统一
+返回 `404 ERROR_CREATOR_MODEL_REVISION_NOT_FOUND`，两者不可区分。
+
+写入侧没有“追加一条 revision”的接口：快照只能作为 Creator Model 写入的副结果产生，
+因此当前模型和历史永远不会分叉。撤销/回滚、revision 差异对比、删除历史都不在契约内，
+未来的回滚也必须表达成新的、被创作者批准的 revision。
 
 ## 与现有能力的关系
 

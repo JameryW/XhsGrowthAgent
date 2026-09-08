@@ -89,6 +89,37 @@ introduce an Evidence write table or mutate any source snapshot.
   node or a node owned by another account, while list filters are exact enum
   matches.
 
+## Scenario: Creator Agent Model Revision History
+
+`creator_agent_models` keeps one current row per account, so every revision it
+has ever held must also exist as an immutable row in
+`creator_agent_model_revisions`, keyed by `(account_id, revision)` with the full
+snapshot payload plus `source`, `source_signal_id`, and `recorded_at`.
+
+- A snapshot is only ever a side effect of a Creator Model write. There is no
+  public append operation, so the current row and the history cannot diverge.
+- `save_model` and the approved branch of `review_learning_signal` append inside
+  the same transaction/advisory lock (Postgres) or the same `_mem_lock` region
+  (memory fallback). Dismissed and already-resolved reviews append nothing.
+- Inserts use `ON CONFLICT (account_id, revision) DO NOTHING`. Historical rows
+  are never updated or deleted; a replay cannot rewrite what a revision said.
+- Provenance is explicit: `creator_edit`, `learning_review` (naming the reviewed
+  signal), or `imported_history` for model rows that predate the table.
+  `ModelRevision` validates that the embedded `CreatorModel` matches the outer
+  `account_id`/`revision`, so a mislabeled snapshot cannot be persisted.
+- `ensure_tables` backfills from `creator_agent_models` idempotently, so an
+  existing account's current revision always resolves to itself.
+- `list_model_revisions` orders `revision DESC` and returns the complete
+  `total` before cursor traversal, through the shared pure
+  `build_model_revision_page`; the cursor encodes only `revision` and a corrupt
+  token is a typed validation error rather than a restart at page one.
+- Resolution never falls back. `get_model_revision` and the advisor's
+  decision-to-revision lookup raise/return not-found instead of substituting the
+  current model, and they never recompute a historical decision.
+- A completed Creator Review resolves its `applied_model_revision` from history.
+  Reading the current row instead made the memory and Postgres adapters disagree
+  once a later edit landed.
+
 ## Scenario: Workflow Metadata Persistence
 
 ### 1. Scope / Trigger

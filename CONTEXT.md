@@ -81,8 +81,16 @@ The creator's explicit disposition of a Learning Signal, including whether it is
 _Avoid_: Automatic learning, moderation
 
 **Model Revision**:
-One complete, creator-approved version of a Creator Model. A revision is immutable once it has been used by a Decision Record.
+One complete, creator-approved version of a Creator Model, stored as an immutable snapshot from the moment it becomes current. A revision is never rewritten by a later edit.
 _Avoid_: Prompt version, chat turn
+
+**Model Revision History**:
+The append-only, creator-scoped sequence of Model Revision snapshots that lets a Decision Record, Action Execution Receipt, or Creator Review resolve the exact judgement it cited.
+_Avoid_: Changelog, edit log, audit trail table
+
+**Revision Provenance**:
+The recorded reason a Model Revision exists: a direct creator edit, an accepted Creator Review, or history imported before snapshots were stored.
+_Avoid_: Commit message, author
 
 ## Action and execution
 

@@ -288,6 +288,37 @@ class CreatorModel(CreatorModelDefinition):
     updated_at: AwareDatetime
 
 
+class ModelRevisionSource(Enum):
+    CREATOR_EDIT = "creator_edit"
+    LEARNING_REVIEW = "learning_review"
+    IMPORTED_HISTORY = "imported_history"
+
+
+class ModelRevision(BaseModel):
+    account_id: Annotated[StrictStr, Field(max_length=128, min_length=1)]
+    revision: Annotated[StrictInt, Field(ge=1)]
+    recorded_at: AwareDatetime
+    source: ModelRevisionSource
+    source_signal_id: Annotated[
+        StrictStr | None,
+        Field(description="Present only when source is learning_review.", max_length=128),
+    ] = None
+    model: CreatorModel
+
+
+class ModelRevisionPage(BaseModel):
+    items: Annotated[list[ModelRevision], Field(max_length=100)]
+    total: Annotated[
+        StrictInt,
+        Field(
+            description="Complete history size for the account, before cursor traversal.",
+            ge=0,
+        ),
+    ]
+    limit: Annotated[StrictInt, Field(ge=1, le=100)]
+    next_cursor: StrictStr | None = None
+
+
 class HardConstraint(BaseModel):
     field: Annotated[StrictStr, Field(max_length=128, min_length=1)]
     value: Any
@@ -892,6 +923,14 @@ class ApiResponseCostReport(ApiResponse):
 
 class ApiResponseCreatorModel(ApiResponse):
     data: CreatorModel | None = None
+
+
+class ApiResponseModelRevision(ApiResponse):
+    data: ModelRevision | None = None
+
+
+class ApiResponseModelRevisionPage(ApiResponse):
+    data: ModelRevisionPage | None = None
 
 
 class ApiResponseDecisionRecord(ApiResponse):

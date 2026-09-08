@@ -28,7 +28,7 @@ def _spec():
     """Parse openapi.yaml once per session (1387 lines) — shared by the
     openapi_enums/openapi_schemas fixtures across all classes below, which
     previously each re-parsed per test (function-scoped)."""
-    with open(OPENAPI_SPEC_PATH) as f:
+    with open(OPENAPI_SPEC_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -46,27 +46,27 @@ def _backend_enum_values():
 @pytest.fixture(scope="session")
 def _workflow_types_content():
     """Read workflow.ts once per session."""
-    with open(FRONTEND_TYPES_PATH / "workflow.ts") as f:
+    with open(FRONTEND_TYPES_PATH / "workflow.ts", encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
 def _review_types_content():
     """Read review.ts once per session."""
-    with open(FRONTEND_TYPES_PATH / "review.ts") as f:
+    with open(FRONTEND_TYPES_PATH / "review.ts", encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
 def _analytics_types_content():
     """Read analytics.ts once per session."""
-    with open(FRONTEND_TYPES_PATH / "analytics.ts") as f:
+    with open(FRONTEND_TYPES_PATH / "analytics.ts", encoding="utf-8") as f:
         return f.read()
 
 
 def extract_python_enum_values(file_path: Path, enum_name: str) -> set[str]:
     """Extract enum values from a Python enum class by parsing the file."""
-    with open(file_path) as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     # Find the enum class definition — matches both (str, Enum) and (StrEnum)
@@ -280,7 +280,7 @@ class TestGeneratedModelsConsistency:
     def test_backend_substates_match_openapi(self, openapi_schemas):
         """Verify backend substates have corresponding OpenAPI schemas."""
         # Read substates file to find defined classes
-        with open(BACKEND_SUBSTATES_PATH) as f:
+        with open(BACKEND_SUBSTATES_PATH, encoding="utf-8") as f:
             content = f.read()
 
         # Find TypedDict class names

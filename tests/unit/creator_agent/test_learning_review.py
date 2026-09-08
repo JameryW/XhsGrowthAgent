@@ -157,6 +157,7 @@ async def test_dismissal_is_model_neutral_and_conflicting_review_fails():
     current = await repo.get_model("account-a")
     assert reviewed.signal.status is LearningSignalStatus.DISMISSED
     assert reviewed.signal.applied_model_revision is None
+    assert reviewed.model is None
     assert current is not None
     assert current.revision == initial.revision
     assert current.model_dump() == initial.model_dump()

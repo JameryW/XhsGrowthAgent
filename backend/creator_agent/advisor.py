@@ -31,6 +31,8 @@ from backend.creator_agent.models import (
     LearningSignalReviewResult,
     LearningSignalStatus,
     LearningStatus,
+    ModelRevision,
+    ModelRevisionPage,
     Preference,
     PreferenceStance,
     RankedCandidate,
@@ -46,6 +48,7 @@ from backend.creator_agent.repository import (
     CreatorModelMissingError,
     DecisionRecordMissingError,
     FeedbackAudienceMismatchError,
+    ModelRevisionMissingError,
 )
 
 
@@ -457,6 +460,37 @@ class CreatorAdvisor:
         if decision is None:
             raise DecisionRecordMissingError(decision_id)
         return decision
+
+    async def list_model_revisions(
+        self,
+        account_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> ModelRevisionPage:
+        """Read the account-scoped, append-only Model Revision History."""
+        return await self._repository.list_model_revisions(
+            account_id.strip(), cursor=cursor, limit=limit
+        )
+
+    async def get_model_revision(self, account_id: str, revision: int) -> ModelRevision:
+        """Resolve one immutable revision snapshot, independent of the current model."""
+        normalized_account_id = account_id.strip()
+        snapshot = await self._repository.get_model_revision(normalized_account_id, revision)
+        if snapshot is None:
+            raise ModelRevisionMissingError(normalized_account_id, revision)
+        return snapshot
+
+    async def get_decision_model_revision(self, account_id: str, decision_id: str) -> ModelRevision:
+        """Return the exact Creator Model revision a Decision Record was judged against.
+
+        Only the revision the decision already cites is resolved.  A missing
+        snapshot is a typed error: this method never falls back to the current
+        model and never re-evaluates the decision.
+        """
+        normalized_account_id = account_id.strip()
+        decision = await self.get_decision(normalized_account_id, decision_id.strip())
+        return await self.get_model_revision(normalized_account_id, decision.model_revision)
 
     async def list_decision_dataset(
         self,
