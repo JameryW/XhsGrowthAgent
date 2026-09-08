@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Repository/table patterns, ensure_tables idempotency, memory-fallback parity for the new revisions table"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Typed domain errors and their HTTP error-code mapping for ModelRevisionMissingError"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Where creator_agent domain, repository, DB adapter, and API route layers live"}
+{"file": "docs/creator-agent.md", "reason": "Existing Creator Agent contract doc that must stay synchronized"}
+{"file": "CONTEXT.md", "reason": "Canonical Creator Agent terminology including Model Revision"}
