@@ -265,7 +265,21 @@ Preference：
   `applies_when` 留空——适用场景属于创作者的判断。
 
 排序是置信度降序、`source_ref` 升序打破平局，因此重复调用结果完全一致；已被 Evidence Graph 引用的
-`source_ref` 会被跳过。账号没有 Creative Memory 时返回空列表，不是报错。
+`source_ref` 会被跳过。账号没有 Creative Memory 时返回空页，不是报错。
+
+接口返回的是显式分页对象，而不是裸数组：
+
+```json
+{ "items": [], "total": 13, "limit": 3, "truncated": false }
+```
+
+`limit` 只决定返回多少条，**不决定扫描多少条**。每个 Creative Memory 家族各自按自己的存储顺序取候选
+（素材按软降权 `weight`，风格/打法按原始互动率），而提案按“样本收缩后的置信度”排序，所以两者必须分开：
+否则一个 `limit=3` 的小页面会把最有决定力的观察挤在窗口之外，还呈现成"已排好序"的结果。扫描预算取
+`max(60, limit * 4)`，并被存储上限 100 行/家族钳制。
+
+`total` 是筛选与去重之后、分页截断之前的匹配条数；`truncated: true` 表示至少一个家族填满了候选窗口，
+此时 `total` 只是"扫到的下限"而不是穷尽计数。页面短但 `truncated: false`，才说明确实没有更多证据了。
 
 这条路径**不写任何东西**：没有采纳接口，也没有“全部接受”。提案要成为模型内容，只能由创作者带着
 新定义走 `PUT /api/creator-agent/model`，从而产生一次被批准的 revision 与它的不可变历史快照。

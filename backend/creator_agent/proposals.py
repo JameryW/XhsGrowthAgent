@@ -17,6 +17,7 @@ from backend.creator_agent.models import (
     ContentObservationKind,
     Evidence,
     EvidenceProposal,
+    EvidenceProposalPage,
     EvidenceSource,
     Preference,
     PreferenceStance,
@@ -91,11 +92,15 @@ def build_evidence_proposals(
     cited_source_refs: set[str] | frozenset[str] = frozenset(),
     min_confidence: float | None = None,
     limit: int = 50,
-) -> list[EvidenceProposal]:
-    """Project observations into stable, deduplicated, read-only proposals.
+    scan_saturated: bool = False,
+) -> EvidenceProposalPage:
+    """Project observations into a stable, deduplicated, read-only page.
 
-    Ordering is confidence descending with ``kind``/``source_id`` as tie-breaker,
-    so repeated calls over the same data return byte-identical results.
+    Ordering is confidence descending with ``source_ref`` as tie-breaker, so
+    repeated calls over the same data return byte-identical results.  ``total``
+    counts everything that survives filtering and dedupe *before* the page cut;
+    ``truncated`` reflects only that the scan itself was bounded, never that the
+    page happened to be short.
     """
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
         raise ValueError("limit must be between 1 and 100")
@@ -144,7 +149,12 @@ def build_evidence_proposals(
             item[1].evidence.source_ref,
         )
     )
-    return [proposal for _, proposal in proposals[:limit]]
+    return EvidenceProposalPage(
+        items=[proposal for _, proposal in proposals[:limit]],
+        total=len(proposals),
+        limit=limit,
+        truncated=scan_saturated,
+    )
 
 
 __all__ = [

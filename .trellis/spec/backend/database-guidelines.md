@@ -143,8 +143,16 @@ projection adds no table and performs no write, so ADR-0002's
   pass always agree. Changing claim wording is therefore a contract change.
 - Dedupe reads `source_ref`s from the existing Evidence Graph projection, never
   from the current model row, so the current revision cannot un-cite history.
-- Empty account, blank account id, or no injected source returns `[]`; only
-  out-of-range `limit` / `min_confidence` are errors.
+- Empty account, blank account id, or no injected source returns an empty
+  `EvidenceProposalPage`; only out-of-range `limit` / `min_confidence` are errors.
+- The scan window and the page size are separate numbers. Each family is windowed
+  by its own storage order (materials by soft-demotion `weight`, styles/plays by
+  raw measured rate) while proposals rank by sample-shrunk confidence, so reusing
+  one `limit` for both lets a small page drop the strongest observation and still
+  come back looking ranked. The advisor scans `max(60, limit * 4)`, clamped by the
+  enumeration's 100 rows per family, and surfaces saturation as `truncated`.
+- `total` counts matches before the page cut and is a scanned floor whenever
+  `truncated` is true; a bounded scan is never presented as an exhaustive one.
 
 ## Scenario: Workflow Metadata Persistence
 

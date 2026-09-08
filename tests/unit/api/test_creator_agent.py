@@ -537,7 +537,13 @@ def test_evidence_proposal_route_is_read_only_and_account_scoped(client, monkeyp
 
     proposals_url = "/api/creator-agent/model/evidence-proposals"
     try:
-        assert client.get(proposals_url, params={"account_id": "account-a"}).json()["data"] == []
+        empty_page = client.get(proposals_url, params={"account_id": "account-a"})
+        assert empty_page.json()["data"] == {
+            "items": [],
+            "total": 0,
+            "limit": 50,
+            "truncated": False,
+        }
 
         asyncio.run(
             creative_memory_db.upsert_style(
@@ -566,8 +572,10 @@ def test_evidence_proposal_route_is_read_only_and_account_scoped(client, monkeyp
 
         response = client.get(proposals_url, params={"account_id": "account-a"})
         assert response.status_code == 200
-        items = response.json()["data"]
+        page = response.json()["data"]
+        items = page["items"]
         assert [item["evidence"]["source_ref"] for item in items] == ["creative-memory://style/s-1"]
+        assert (page["total"], page["limit"], page["truncated"]) == (1, 50, False)
         assert items[0]["evidence"]["source_kind"] == "creator_content"
         # 0.9 measured rate shrunk by 30/(30+5) samples.
         assert items[0]["evidence"]["confidence"] == 0.771
@@ -583,7 +591,7 @@ def test_evidence_proposal_route_is_read_only_and_account_scoped(client, monkeyp
         assert history.json()["data"]["total"] == 1
 
         foreign = client.get(proposals_url, params={"account_id": "account-b"})
-        assert [item["evidence"]["source_ref"] for item in foreign.json()["data"]] == [
+        assert [item["evidence"]["source_ref"] for item in foreign.json()["data"]["items"]] == [
             "creative-memory://style/s-other"
         ]
 

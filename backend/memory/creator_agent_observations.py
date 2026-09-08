@@ -15,11 +15,19 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from backend.creator_agent.models import ContentObservation, ContentObservationKind
+from backend.creator_agent.models import (
+    ContentObservation,
+    ContentObservationKind,
+    ContentObservationScan,
+)
 
 logger = logging.getLogger(__name__)
 
 _COLD_START_PREFIX = "default_"
+
+# The durable Creative Memory enumeration caps every family at this many rows, so
+# a larger scan budget cannot be honored and would be reported as saturated.
+_MAX_FAMILY_WINDOW = 100
 
 
 def _text(row: dict[str, Any], key: str) -> str:
@@ -103,34 +111,37 @@ def _material_observation(row: dict[str, Any]) -> ContentObservation | None:
 class CreativeMemoryObservationSource:
     """Reads durable Style DNA, Conversion Plays, and Materials for one account."""
 
-    async def observations(self, account_id: str, *, limit: int) -> list[ContentObservation]:
+    async def observations(self, account_id: str, *, window: int) -> ContentObservationScan:
         from backend.db import creative_memory as creative_memory_db
 
         account_id = (account_id or "").strip()
         if not account_id:
-            return []
+            return ContentObservationScan()
 
-        rows = await creative_memory_db.list_styles(account_id, limit=limit)
-        styles = [
-            item
-            for item in (_style_observation(row) for row in rows if isinstance(row, dict))
-            if item is not None
-        ]
-        rows = await creative_memory_db.list_plays(account_id, limit=limit)
-        plays = [
-            item
-            for item in (_play_observation(row) for row in rows if isinstance(row, dict))
-            if item is not None
-        ]
-        rows = await creative_memory_db.list_materials(account_id, limit=limit)
-        materials = [
-            item
-            for item in (_material_observation(row) for row in rows if isinstance(row, dict))
-            if item is not None
-        ]
+        window = max(1, min(int(window), _MAX_FAMILY_WINDOW))
+        families = (
+            (await creative_memory_db.list_styles(account_id, limit=window), _style_observation),
+            (await creative_memory_db.list_plays(account_id, limit=window), _play_observation),
+            (
+                await creative_memory_db.list_materials(account_id, limit=window),
+                _material_observation,
+            ),
+        )
 
-        # Stable family order; ranking and truncation belong to the projection.
-        return styles + plays + materials
+        observations: list[ContentObservation] = []
+        saturated = False
+        for rows, mapper in families:
+            # Every family is windowed by its own storage order, so a family that
+            # filled the window may hold rows this scan never looked at.
+            saturated = saturated or len(rows) >= window
+            observations.extend(
+                observation
+                for observation in (mapper(row) for row in rows if isinstance(row, dict))
+                if observation is not None
+            )
+
+        # Stable family order; ranking and page cuts belong to the projection.
+        return ContentObservationScan(observations=observations, saturated=saturated)
 
 
 __all__ = ["CreativeMemoryObservationSource"]

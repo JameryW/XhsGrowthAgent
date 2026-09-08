@@ -51,6 +51,14 @@ Introduce an append-free Evidence Proposal seam.
   appears only above confidence and sample thresholds, cites exactly its own
   evidence id, and leaves `applies_when` empty — deciding when a preference
   applies is the creator's judgement.
+- **The scan budget is never the page size.** Each family is windowed by its own
+  storage order — materials by soft-demotion `weight`, styles and plays by raw
+  measured rate — while proposals rank by sample-shrunk confidence. Reusing one
+  `limit` for both made a `limit=3` page return three confidence-0.178 rows and
+  drop a confidence-0.711 observation that had never entered the window. The
+  advisor now scans `max(60, limit * 4)` per family, clamped by the enumeration's
+  100-row ceiling, and the page reports `total` plus a `truncated` flag so a
+  bounded scan is never read as "the account has nothing else".
 - **Nothing on this path writes.** No table, no endpoint that accepts a
   proposal, no "adopt all". The only way a proposal becomes model content is the
   creator submitting a new `CreatorModelDefinition` through `PUT /model`, which

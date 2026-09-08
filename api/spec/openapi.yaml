@@ -675,12 +675,6 @@ paths:
       tags:
         - creator-agent
       summary: List Evidence Proposals from Creative Memory
-      description: >-
-        Suggests traceable Evidence nodes derived from durable Creative Memory
-        observations, deduplicated against what the account already cites.
-        Strictly read-only: adopting a proposal still requires the creator to
-        approve a new Model Revision, and this route never mutates a Creator
-        Model, a revision, or Creative Memory.
       operationId: listCreatorEvidenceProposals
       parameters:
         - name: account_id
@@ -705,13 +699,20 @@ paths:
             minimum: 1
             maximum: 100
             default: 50
+      description: >-
+        Suggests traceable Evidence nodes derived from durable Creative Memory
+        observations, deduplicated against what the account already cites.
+        Returns an explicit page: `total` counts everything matching and
+        `truncated` says whether the candidate window filled, so a short page is
+        never mistaken for a complete one. Strictly read-only: adopting a
+        proposal still requires a creator-approved Model Revision.
       responses:
         '200':
-          description: Evidence Proposals retrieved successfully
+          description: Evidence Proposal page retrieved successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse_EvidenceProposalList'
+                $ref: '#/components/schemas/ApiResponse_EvidenceProposalPage'
         '400':
           description: Invalid account_id, limit, or min_confidence
           content:
@@ -1481,15 +1482,40 @@ components:
             - $ref: '#/components/schemas/Preference'
           nullable: true
 
-    ApiResponse_EvidenceProposalList:
+    EvidenceProposalPage:
+      type: object
+      description: >-
+        A page of Evidence Proposals that states how completely it scanned. The
+        scan budget per Creative Memory family is independent of `limit`, so the
+        requested page size never changes which observations were considered.
+      required: [items, total, limit, truncated]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/EvidenceProposal'
+        total:
+          type: integer
+          minimum: 0
+          description: Proposals matching the filters, counted before the page cut.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        truncated:
+          type: boolean
+          description: >-
+            True when the candidate window filled at least one family, so more
+            rows may exist than were examined and total is a scanned floor.
+
+    ApiResponse_EvidenceProposalPage:
       allOf:
         - $ref: '#/components/schemas/ApiResponse'
         - type: object
           properties:
             data:
-              type: array
-              items:
-                $ref: '#/components/schemas/EvidenceProposal'
+              $ref: '#/components/schemas/EvidenceProposalPage'
 
     ApiResponse_EvidenceGraphList:
       allOf:

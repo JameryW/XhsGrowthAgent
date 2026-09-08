@@ -6,6 +6,7 @@ from pydantic import ValidationError as PydanticValidationError
 from backend.creator_agent import (
     ContentObservation,
     ContentObservationKind,
+    ContentObservationScan,
     CreatorAdvisor,
     CreatorModelDefinition,
     EvidenceProposal,
@@ -56,9 +57,9 @@ class _FakeSource:
         self.observations_list = observations
         self.seen: list[tuple[str, int]] = []
 
-    async def observations(self, account_id: str, *, limit: int) -> list[ContentObservation]:
-        self.seen.append((account_id, limit))
-        return list(self.observations_list)
+    async def observations(self, account_id: str, *, window: int) -> ContentObservationScan:
+        self.seen.append((account_id, window))
+        return ContentObservationScan(observations=list(self.observations_list))
 
 
 def test_identity_and_traceability_helpers_are_deterministic():
@@ -67,9 +68,9 @@ def test_identity_and_traceability_helpers_are_deterministic():
     assert observation_evidence_id(observation) == "ev_style_style-1"
     first = build_evidence_proposals([observation])
     second = build_evidence_proposals([observation])
-    assert [p.model_dump() for p in first] == [p.model_dump() for p in second]
-    assert first[0].proposal_id.startswith("prop_")
-    assert first[0].evidence.source_kind is EvidenceSource.CREATOR_CONTENT
+    assert [p.model_dump() for p in first.items] == [p.model_dump() for p in second.items]
+    assert first.items[0].proposal_id.startswith("prop_")
+    assert first.items[0].evidence.source_kind is EvidenceSource.CREATOR_CONTENT
 
 
 @pytest.mark.parametrize(
@@ -116,7 +117,9 @@ def test_proposals_are_ordered_by_confidence_then_source_ref_and_truncated():
     weak = _obs(source_id="a-weak", rate=0.2, samples=4)
     mid = _obs(source_id="c-mid", rate=0.6, samples=20)
 
-    proposals = build_evidence_proposals([weak, mid, strong])
+    page = build_evidence_proposals([weak, mid, strong])
+    proposals = page.items
+    assert page.total == 3
     assert [p.evidence.source_ref for p in proposals] == [
         "creative-memory://style/b-strong",
         "creative-memory://style/c-mid",
@@ -124,7 +127,7 @@ def test_proposals_are_ordered_by_confidence_then_source_ref_and_truncated():
     ]
     assert [p.evidence.confidence for p in proposals] == [0.9, 0.48, 0.089]
 
-    limited = build_evidence_proposals([weak, mid, strong], limit=2)
+    limited = build_evidence_proposals([weak, mid, strong], limit=2).items
     assert [p.evidence.source_ref for p in limited] == [
         "creative-memory://style/b-strong",
         "creative-memory://style/c-mid",
@@ -134,8 +137,8 @@ def test_proposals_are_ordered_by_confidence_then_source_ref_and_truncated():
 def test_ties_break_on_source_ref_not_input_order():
     first = _obs(source_id="z", rate=0.5, samples=10)
     second = _obs(source_id="a", rate=0.5, samples=10)
-    from_forward = build_evidence_proposals([first, second])
-    from_reverse = build_evidence_proposals([second, first])
+    from_forward = build_evidence_proposals([first, second]).items
+    from_reverse = build_evidence_proposals([second, first]).items
     assert [p.evidence.source_ref for p in from_forward] == [
         "creative-memory://style/a",
         "creative-memory://style/z",
@@ -148,20 +151,22 @@ def test_ties_break_on_source_ref_not_input_order():
 def test_already_cited_and_duplicate_observations_are_not_re_proposed():
     observation = _obs(source_id="style-1")
     duplicated = build_evidence_proposals([observation, observation])
-    assert len(duplicated) == 1
+    assert (len(duplicated.items), duplicated.total) == (1, 1)
 
     deduped = build_evidence_proposals(
         [observation, _obs(source_id="style-2")],
         cited_source_refs={observation_source_ref(observation)},
     )
-    assert [p.evidence.source_ref for p in deduped] == ["creative-memory://style/style-2"]
+    assert [p.evidence.source_ref for p in deduped.items] == ["creative-memory://style/style-2"]
+    assert deduped.total == 1
 
 
 def test_min_confidence_filters_before_limit():
     strong = _obs(source_id="s", rate=0.95, samples=90)
     weak = _obs(source_id="w", rate=0.2, samples=4)
     filtered = build_evidence_proposals([strong, weak], min_confidence=0.5, limit=50)
-    assert [p.evidence.source_ref for p in filtered] == ["creative-memory://style/s"]
+    assert [p.evidence.source_ref for p in filtered.items] == ["creative-memory://style/s"]
+    assert (filtered.total, len(filtered.items)) == (1, 1)
 
 
 @pytest.mark.parametrize(
@@ -180,9 +185,11 @@ def test_invalid_bounds_fail_loudly(kwargs: dict):
 
 
 def test_draft_preference_only_for_backed_observations():
-    backed = build_evidence_proposals([_obs(source_id="rich", rate=0.9, samples=30)])[0]
-    thin_samples = build_evidence_proposals([_obs(source_id="thin", rate=0.9, samples=2)])[0]
-    thin_confidence = build_evidence_proposals([_obs(source_id="lowrate", rate=0.2, samples=40)])[0]
+    backed = build_evidence_proposals([_obs(source_id="rich", rate=0.9, samples=30)]).items[0]
+    thin_samples = build_evidence_proposals([_obs(source_id="thin", rate=0.9, samples=2)]).items[0]
+    thin_confidence = build_evidence_proposals(
+        [_obs(source_id="lowrate", rate=0.2, samples=40)]
+    ).items[0]
 
     assert backed.draft_preference is not None
     draft = backed.draft_preference
@@ -197,7 +204,7 @@ def test_draft_preference_only_for_backed_observations():
 
 
 def test_proposal_rejects_a_draft_that_cites_something_else():
-    proposal = build_evidence_proposals([_obs()])[0]
+    proposal = build_evidence_proposals([_obs()]).items[0]
     evidence = proposal.evidence
     with pytest.raises(PydanticValidationError, match="its own evidence"):
         EvidenceProposal(
@@ -249,8 +256,9 @@ async def test_adapter_maps_durable_rows_and_drops_unusable_ones():
         "account-a", "m-1", {"category": "文案片段", "effectiveness": 0.7, "reuse_count": 6}
     )
 
-    observations = await CreativeMemoryObservationSource().observations("account-a", limit=50)
-    by_id = {item.source_id: item for item in observations}
+    scan = await CreativeMemoryObservationSource().observations("account-a", window=50)
+    by_id = {item.source_id: item for item in scan.observations}
+    assert scan.saturated is False
 
     assert set(by_id) == {"s-good", "p-1", "m-1"}
     assert by_id["s-good"].kind is ContentObservationKind.STYLE
@@ -264,8 +272,10 @@ async def test_adapter_maps_durable_rows_and_drops_unusable_ones():
 @pytest.mark.asyncio
 async def test_adapter_returns_nothing_for_blank_or_unknown_account():
     source = CreativeMemoryObservationSource()
-    assert await source.observations("   ", limit=50) == []
-    assert await source.observations("account-empty", limit=50) == []
+    empty = await source.observations("   ", window=50)
+    assert (empty.observations, empty.saturated) == ([], False)
+    none = await source.observations("account-empty", window=50)
+    assert (none.observations, none.saturated) == ([], False)
 
 
 def _definition() -> CreatorModelDefinition:
@@ -285,10 +295,11 @@ async def test_advisor_propagates_scoping_without_touching_the_model():
     source = _FakeSource([_obs(source_id="s-1"), _obs(source_id="s-2", rate=0.4, samples=8)])
     advisor = CreatorAdvisor(repo, content_observations=source)
 
-    proposals = await advisor.list_evidence_proposals("  account-a  ", limit=10)
+    page = await advisor.list_evidence_proposals("  account-a  ", limit=10)
 
-    assert source.seen == [("account-a", 10)]
-    assert [p.evidence.source_ref for p in proposals] == [
+    assert source.seen == [("account-a", 60)]
+    assert page.limit == 10
+    assert [p.evidence.source_ref for p in page.items] == [
         "creative-memory://style/s-1",
         "creative-memory://style/s-2",
     ]
@@ -318,8 +329,9 @@ async def test_advisor_dedupes_against_evidence_the_model_already_cites():
         repo, content_observations=_FakeSource([observation, _obs(source_id="s-2")])
     )
 
-    proposals = await advisor.list_evidence_proposals("account-a")
-    assert [p.evidence.source_ref for p in proposals] == ["creative-memory://style/s-2"]
+    page = await advisor.list_evidence_proposals("account-a")
+    assert [p.evidence.source_ref for p in page.items] == ["creative-memory://style/s-2"]
+    assert page.total == 1
 
 
 @pytest.mark.asyncio
@@ -327,13 +339,12 @@ async def test_advisor_without_a_source_or_bounds_degrades_to_empty_and_typed_er
     repo = creator_agent_db.DurableCreatorAgentRepository()
     await repo.save_model("account-a", _definition(), expected_revision=0)
 
-    assert await CreatorAdvisor(repo).list_evidence_proposals("account-a") == []
-    assert (
-        await CreatorAdvisor(repo, content_observations=_FakeSource([])).list_evidence_proposals(
-            "   "
-        )
-        == []
-    )
+    empty = await CreatorAdvisor(repo).list_evidence_proposals("account-a")
+    assert (empty.items, empty.total, empty.truncated) == ([], 0, False)
+    blank = await CreatorAdvisor(
+        repo, content_observations=_FakeSource([])
+    ).list_evidence_proposals("   ")
+    assert (blank.items, blank.total, blank.truncated) == ([], 0, False)
 
     advisor = CreatorAdvisor(repo, content_observations=_FakeSource([_obs()]))
     with pytest.raises(ValueError, match="limit"):
