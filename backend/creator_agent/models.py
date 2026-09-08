@@ -189,6 +189,30 @@ class EvidenceProposal(BaseModel):
         return self
 
 
+class ContentObservationScan(BaseModel):
+    """One bounded pass over an account's content observations.
+
+    ``saturated`` records that some family filled its whole candidate window, so
+    storage may hold rows that were never examined. It keeps a short result from
+    being read as "there is nothing else".
+    """
+
+    observations: list[ContentObservation] = Field(default_factory=list, max_length=1000)
+    saturated: bool = False
+
+
+class EvidenceProposalPage(BaseModel):
+    """A page of Evidence Proposals that states how completely it scanned."""
+
+    items: list[EvidenceProposal] = Field(default_factory=list, max_length=100)
+    total: int = Field(default=0, ge=0)
+    limit: int = Field(default=50, ge=1, le=100)
+    truncated: bool = Field(
+        default=False,
+        description="The candidate window filled at least one family; total is a scanned floor.",
+    )
+
+
 class KnowledgeClaim(BaseModel):
     claim_id: str = Field(min_length=1, max_length=128)
     statement: str = Field(min_length=1, max_length=2000)
@@ -637,6 +661,7 @@ class LearningSignalReviewResult(BaseModel):
 __all__ = [
     "ContentObservation",
     "ContentObservationKind",
+    "ContentObservationScan",
     "CreatorModel",
     "CreatorModelDefinition",
     "DecisionCandidate",
@@ -647,6 +672,7 @@ __all__ = [
     "DecisionRequest",
     "DecisionStatus",
     "EvidenceProposal",
+    "EvidenceProposalPage",
     "decode_decision_dataset_cursor",
     "decode_dataset_cursor",
     "decode_model_revision_cursor",

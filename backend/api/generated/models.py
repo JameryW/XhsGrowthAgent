@@ -975,8 +975,15 @@ class ApiResponseActionExecution(ApiResponse):
     data: ActionExecution | None = None
 
 
-class ApiResponseEvidenceProposalList(ApiResponse):
-    data: list[EvidenceProposal] | None = None
+class EvidenceProposalPage(BaseModel):
+    items: Annotated[list[EvidenceProposal], Field(max_length=100)]
+    total: Annotated[StrictInt, Field(ge=0)]
+    limit: Annotated[StrictInt, Field(ge=1, le=100)]
+    truncated: StrictBool
+
+
+class ApiResponseEvidenceProposalPage(ApiResponse):
+    data: EvidenceProposalPage | None = None
 
 
 class ApiResponseEvidenceGraphList(ApiResponse):

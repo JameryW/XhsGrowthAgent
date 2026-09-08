@@ -41,7 +41,7 @@ from backend.creator_agent import (
     DecisionRequest,
     DecisionStatus,
     EvidenceGraphEntry,
-    EvidenceProposal,
+    EvidenceProposalPage,
     EvidenceReferenceType,
     EvidenceSource,
     FeedbackInput,
@@ -187,7 +187,7 @@ async def list_creator_evidence_proposals(
     min_confidence: float | None = Query(default=None),
     limit: int = Query(default=50, json_schema_extra={"minimum": 1, "maximum": 100}),
     user: dict[str, Any] = Depends(get_current_user),
-) -> ApiResponse[list[EvidenceProposal]]:
+) -> ApiResponse[EvidenceProposalPage]:
     """Suggest traceable Evidence from Creative Memory; never mutates the model."""
     normalized_account_id = (account_id or "").strip()
     if not normalized_account_id:
@@ -197,10 +197,10 @@ async def list_creator_evidence_proposals(
     if min_confidence is not None and not 0.0 <= min_confidence <= 1.0:
         raise ValidationError("min_confidence", "min_confidence must be between 0 and 1")
     await require_owned_account(str(user["id"]), normalized_account_id)
-    proposals = await _advisor().list_evidence_proposals(
+    page = await _advisor().list_evidence_proposals(
         normalized_account_id, min_confidence=min_confidence, limit=limit
     )
-    return success(data=[proposal.model_dump(mode="json") for proposal in proposals])
+    return success(data=page.model_dump(mode="json"))
 
 
 @router.get("/decisions/{decision_id}/model-revision")

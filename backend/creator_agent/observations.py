@@ -10,18 +10,22 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from backend.creator_agent.models import ContentObservation
+from backend.creator_agent.models import ContentObservationScan
 
 
 class CreatorContentObservationSource(Protocol):
     """Supplies durable Creative Memory observations for one account."""
 
-    async def observations(self, account_id: str, *, limit: int) -> list[ContentObservation]:
-        """Return up to ``limit`` observations owned by ``account_id``.
+    async def observations(self, account_id: str, *, window: int) -> ContentObservationScan:
+        """Scan up to ``window`` candidate rows per family for ``account_id``.
 
-        Implementations must return an empty list rather than raising when the
-        account has no content history, and must never return synthetic or
-        cold-start placeholder rows.
+        ``window`` is a scan budget, never a page size: the caller decides how
+        many proposals to return separately, so the requested page size can never
+        change which observations were considered.  Implementations set
+        ``saturated`` when a family filled the whole window, meaning storage may
+        hold rows that were not examined, and must return an empty scan rather
+        than raising when the account has no content history.  Synthetic or
+        cold-start placeholder rows must never be returned.
         """
         ...
 

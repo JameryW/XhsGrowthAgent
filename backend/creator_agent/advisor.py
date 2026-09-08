@@ -20,7 +20,7 @@ from backend.creator_agent.models import (
     DecisionStatus,
     Evidence,
     EvidenceGraphEntry,
-    EvidenceProposal,
+    EvidenceProposalPage,
     EvidenceReferenceType,
     EvidenceSource,
     ExcludedCandidate,
@@ -82,6 +82,16 @@ def _constraint_failures(candidate: DecisionCandidate, request: DecisionRequest)
 
 def _preference_applies(preference: Preference, candidate: DecisionCandidate) -> bool:
     return bool(set(preference.tags) & set(candidate.tags))
+
+
+# Evidence Proposal scan policy: a per-family candidate budget, deliberately
+# decoupled from the page size. `limit * 4` keeps the window generous for wide
+# pages while the floor protects small pages, which are exactly the case where a
+# storage-ordered window would otherwise hide the strongest observation. The
+# Creative Memory enumeration clamps each family to 100 rows, so a bigger request
+# is reported as saturated rather than silently honored.
+_PROPOSAL_MIN_WINDOW = 60
+_PROPOSAL_WINDOW_FACTOR = 4
 
 
 class CreatorAdvisor:
@@ -470,11 +480,18 @@ class CreatorAdvisor:
         *,
         min_confidence: float | None = None,
         limit: int = 50,
-    ) -> list[EvidenceProposal]:
-        """Project Creative Memory observations into traceable Evidence Proposals.
+    ) -> EvidenceProposalPage:
+        """Project Creative Memory observations into a page of Evidence Proposals.
 
         Strictly read-only.  Nothing on this path can change a Creator Model:
         adoption remains an explicit, creator-approved revision.
+
+        The scan budget is deliberately wider than the page.  Each Creative Memory
+        family is windowed by its own storage order — materials by soft-demotion
+        weight, styles and plays by raw measured rate — while proposals rank by
+        sample-shrunk confidence.  Reusing ``limit`` as the window would therefore
+        let a small page drop the strongest available evidence and still come back
+        looking correctly ranked.
         """
         normalized_account_id = account_id.strip()
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
@@ -482,17 +499,22 @@ class CreatorAdvisor:
         if min_confidence is not None and not 0.0 <= min_confidence <= 1.0:
             raise ValueError("min_confidence must be between 0 and 1")
         if self._content_observations is None or not normalized_account_id:
-            return []
+            return EvidenceProposalPage(limit=limit)
 
-        observations = await self._content_observations.observations(
-            normalized_account_id, limit=limit
+        scan = await self._content_observations.observations(
+            normalized_account_id,
+            window=max(_PROPOSAL_MIN_WINDOW, limit * _PROPOSAL_WINDOW_FACTOR),
         )
         cited = {
             entry.evidence.source_ref
             for entry in await self._repository.list_evidence(normalized_account_id)
         }
         return build_evidence_proposals(
-            observations, cited_source_refs=cited, min_confidence=min_confidence, limit=limit
+            scan.observations,
+            cited_source_refs=cited,
+            min_confidence=min_confidence,
+            limit=limit,
+            scan_saturated=scan.saturated,
         )
 
     async def get_decision(self, account_id: str, decision_id: str) -> DecisionRecord:
