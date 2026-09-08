@@ -146,6 +146,7 @@ class TestOpenAPIRequiredEndpoints:
             "/creator-agent/actions/{action_id}/execute": {"post"},
             "/creator-agent/actions/{action_id}/execution": {"get"},
             "/creator-agent/model/revisions": {"get"},
+            "/creator-agent/model/evidence-proposals": {"get"},
             "/creator-agent/model/revisions/{revision}": {"get"},
             "/creator-agent/decisions/{decision_id}/model-revision": {"get"},
         }

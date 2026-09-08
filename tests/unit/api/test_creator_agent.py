@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -521,3 +523,78 @@ def test_model_revision_routes_return_typed_not_found_and_validation(client, mon
     blank_account = client.get("/api/creator-agent/model/revisions", params={"account_id": "   "})
     assert blank_account.status_code == 400
     assert blank_account.json()["error"]["code"] == "ERROR_VALIDATION"
+
+
+def test_evidence_proposal_route_is_read_only_and_account_scoped(client, monkeypatch):
+    from backend.db import creative_memory as creative_memory_db
+
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    creative_memory_db._reset_memory_store()
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+
+    proposals_url = "/api/creator-agent/model/evidence-proposals"
+    try:
+        assert client.get(proposals_url, params={"account_id": "account-a"}).json()["data"] == []
+
+        asyncio.run(
+            creative_memory_db.upsert_style(
+                "account-a",
+                "s-1",
+                {
+                    "tone": "治愈",
+                    "visual_style": "温暖",
+                    "engagement_rate": 0.9,
+                    "sample_count": 30,
+                },
+            )
+        )
+        asyncio.run(
+            creative_memory_db.upsert_style(
+                "account-b",
+                "s-other",
+                {
+                    "tone": "犀利",
+                    "visual_style": "高冷",
+                    "engagement_rate": 0.9,
+                    "sample_count": 30,
+                },
+            )
+        )
+
+        response = client.get(proposals_url, params={"account_id": "account-a"})
+        assert response.status_code == 200
+        items = response.json()["data"]
+        assert [item["evidence"]["source_ref"] for item in items] == ["creative-memory://style/s-1"]
+        assert items[0]["evidence"]["source_kind"] == "creator_content"
+        # 0.9 measured rate shrunk by 30/(30+5) samples.
+        assert items[0]["evidence"]["confidence"] == 0.771
+        assert items[0]["draft_preference"]["stance"] == "prefer"
+
+        # Reading proposals must not adopt them: the model and its history are
+        # untouched, so ADR-0002's explicit-approval invariant still holds.
+        model = client.get("/api/creator-agent/model", params={"account_id": "account-a"})
+        assert model.json()["data"]["revision"] == 1
+        history = client.get(
+            "/api/creator-agent/model/revisions", params={"account_id": "account-a"}
+        )
+        assert history.json()["data"]["total"] == 1
+
+        foreign = client.get(proposals_url, params={"account_id": "account-b"})
+        assert [item["evidence"]["source_ref"] for item in foreign.json()["data"]] == [
+            "creative-memory://style/s-other"
+        ]
+
+        bad_limit = client.get(proposals_url, params={"account_id": "account-a", "limit": 200})
+        assert bad_limit.status_code == 400
+        assert bad_limit.json()["error"]["code"] == "ERROR_VALIDATION"
+
+        bad_confidence = client.get(
+            proposals_url, params={"account_id": "account-a", "min_confidence": 1.5}
+        )
+        assert bad_confidence.status_code == 400
+        assert bad_confidence.json()["error"]["code"] == "ERROR_VALIDATION"
+    finally:
+        creative_memory_db._reset_memory_store()

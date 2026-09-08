@@ -670,6 +670,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/NotFound'
 
+  /creator-agent/model/evidence-proposals:
+    get:
+      tags:
+        - creator-agent
+      summary: List Evidence Proposals from Creative Memory
+      description: >-
+        Suggests traceable Evidence nodes derived from durable Creative Memory
+        observations, deduplicated against what the account already cites.
+        Strictly read-only: adopting a proposal still requires the creator to
+        approve a new Model Revision, and this route never mutates a Creator
+        Model, a revision, or Creative Memory.
+      operationId: listCreatorEvidenceProposals
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: min_confidence
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: 0
+            maximum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Evidence Proposals retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_EvidenceProposalList'
+        '400':
+          description: Invalid account_id, limit, or min_confidence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+
   /creator-agent/decisions/{decision_id}/model-revision:
     get:
       tags:
@@ -1412,6 +1461,35 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/ActionExecution'
+
+    EvidenceProposal:
+      type: object
+      description: >-
+        A traceable, read-only suggestion of one Evidence node derived from a
+        durable Creative Memory observation, optionally with a draft Preference
+        the creator may adopt into a new Model Revision.
+      required: [proposal_id, evidence]
+      properties:
+        proposal_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        evidence:
+          $ref: '#/components/schemas/Evidence'
+        draft_preference:
+          allOf:
+            - $ref: '#/components/schemas/Preference'
+          nullable: true
+
+    ApiResponse_EvidenceProposalList:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/EvidenceProposal'
 
     ApiResponse_EvidenceGraphList:
       allOf:

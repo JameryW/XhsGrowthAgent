@@ -344,6 +344,24 @@ from backend.memory import MemoryManager, SceneDatabase
 
 ---
 
+### Cross-Subsystem Read Seams
+
+Domain cores may consume another subsystem's data only through a Protocol the
+core itself declares, with the adapter living in the supplying subsystem and
+injected at the API boundary:
+
+```
+backend/creator_agent/observations.py   # Protocol CreatorContentObservationSource (core owns the contract)
+backend/memory/creator_agent_observations.py  # Creative Memory adapter (implements it)
+backend/api/routes/creator_agent.py     # wires them together
+```
+
+`backend/creator_agent/` must not import `backend/memory` or
+`backend/db/creative_memory`. This keeps Creator Agent judgement independent of
+how content production stores its history, and keeps rejected surfaces — such as
+`CreativeMemory.recall_*`, which fabricates cold-start defaults — out of the
+core by construction rather than by discipline.
+
 ## Naming Conventions
 
 ### File Naming

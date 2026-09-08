@@ -108,6 +108,14 @@ class ModelRevisionSource(StrEnum):
     IMPORTED_HISTORY = "imported_history"
 
 
+class ContentObservationKind(StrEnum):
+    """Durable Creative Memory row families that can ground an Evidence Proposal."""
+
+    STYLE = "style"
+    PLAY = "play"
+    MATERIAL = "material"
+
+
 class Evidence(BaseModel):
     evidence_id: str = Field(min_length=1, max_length=128)
     source_kind: EvidenceSource
@@ -141,6 +149,44 @@ class Preference(BaseModel):
     strength: float = Field(default=0.5, ge=0.0, le=1.0)
     rationale: str = Field(default="", max_length=2000)
     evidence_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class ContentObservation(BaseModel):
+    """One durable Creative Memory observation, already scoped to one account.
+
+    Carried into the Creator Agent core through an injected read seam so the
+    model layer never imports the content-production storage it came from.
+    """
+
+    kind: ContentObservationKind
+    source_id: str = Field(min_length=1, max_length=128)
+    description: str = Field(min_length=1, max_length=300)
+    measured_rate: float = Field(ge=0.0, le=1.0)
+    sample_count: int = Field(default=0, ge=0)
+    observed_at: str = Field(default="", max_length=64)
+
+
+class EvidenceProposal(BaseModel):
+    """A traceable, read-only suggestion of one Evidence node.
+
+    Adopting a proposal still requires the creator to approve a new Model
+    Revision; this object exists only to make that decision informed.
+    """
+
+    proposal_id: str = Field(min_length=1, max_length=64)
+    evidence: Evidence
+    draft_preference: Preference | None = None
+
+    @model_validator(mode="after")
+    def validate_draft_provenance(self) -> EvidenceProposal:
+        draft = self.draft_preference
+        if draft is None:
+            return self
+        if draft.evidence_ids != [self.evidence.evidence_id]:
+            raise ValueError("draft preference must cite exactly its own evidence")
+        if draft.stance is not PreferenceStance.PREFER:
+            raise ValueError("draft proposals never assert an aversion")
+        return self
 
 
 class KnowledgeClaim(BaseModel):
@@ -589,6 +635,8 @@ class LearningSignalReviewResult(BaseModel):
 
 
 __all__ = [
+    "ContentObservation",
+    "ContentObservationKind",
     "CreatorModel",
     "CreatorModelDefinition",
     "DecisionCandidate",
@@ -598,6 +646,7 @@ __all__ = [
     "DecisionRecord",
     "DecisionRequest",
     "DecisionStatus",
+    "EvidenceProposal",
     "decode_decision_dataset_cursor",
     "decode_dataset_cursor",
     "decode_model_revision_cursor",

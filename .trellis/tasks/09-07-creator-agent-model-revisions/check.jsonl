@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gate expectations for the new module"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify adapter parity and idempotent DDL"}
+{"file": "docs/adr/0003-evidence-graph-as-read-projection.md", "reason": "Precedent for read-only projections over durable creator objects"}
+{"file": "tests/contract/test_openapi_spec.py", "reason": "OpenAPI contract checks that must pass after spec edits"}

@@ -120,6 +120,32 @@ snapshot payload plus `source`, `source_signal_id`, and `recorded_at`.
   Reading the current row instead made the memory and Postgres adapters disagree
   once a later edit landed.
 
+## Scenario: Creator Agent Evidence Proposals (read-only cross-subsystem seam)
+
+Creative Memory observations reach the Creator Model only as suggestions. The
+projection adds no table and performs no write, so ADR-0002's
+"creator-approved revision or nothing" rule holds structurally.
+
+- `backend/creator_agent/` declares `CreatorContentObservationSource` and must
+  never import `backend/memory` or `backend/db/creative_memory`; the adapter
+  (`backend/memory/creator_agent_observations.py`) is injected at the HTTP
+  boundary. A unit test asserts this import direction.
+- The adapter enumerates durable rows with `list_styles` / `list_plays` /
+  `list_materials`. It must not use `CreativeMemory.recall_*`: those are
+  relevance APIs whose small limits, semantic ranking, and `default_*` cold-start
+  fallback would present fabricated content as measured creator history.
+- Rows are dropped rather than weakened when the measurement or the description
+  needed for a claim is missing or non-numeric.
+- Confidence is `rate * n/(n + _SAMPLE_PRIOR)`, clamped and reported; it is never
+  applied to anything.
+- Evidence ids and `source_ref`s are derived deterministically from
+  `(kind, source_id)` so a proposal, its adopted Evidence node, and the dedupe
+  pass always agree. Changing claim wording is therefore a contract change.
+- Dedupe reads `source_ref`s from the existing Evidence Graph projection, never
+  from the current model row, so the current revision cannot un-cite history.
+- Empty account, blank account id, or no injected source returns `[]`; only
+  out-of-range `limit` / `min_confidence` are errors.
+
 ## Scenario: Workflow Metadata Persistence
 
 ### 1. Scope / Trigger
