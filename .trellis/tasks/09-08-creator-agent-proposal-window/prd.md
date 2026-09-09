@@ -128,3 +128,26 @@ read-only.
   proposals.
 - Changing Creative Memory storage, its indexes, or the `recall_*` relevance APIs.
 - Any write or adoption endpoint.
+
+## Follow-up executed: real-Postgres parity
+
+Run after the window fix. `tests/integration/test_creator_agent_backend_parity.py`
+drives one behavioral scenario against both backends and compares masked traces.
+First execution of the Postgres branches anywhere, locally or in CI.
+
+Two findings:
+
+1. **Windows cannot run the async Postgres path at all** under asyncio's default
+   `ProactorEventLoop`; psycopg3 requires a selector loop. The parity module owns
+   its loop instead of using `pytest.mark.asyncio`, which is also why the memory
+   fallback has always been the only tested path.
+2. **A real divergence, then fixed:** the Postgres branch validated "approval
+   requires a model" before reading the signal, so replaying an already-approved
+   disposition raised where memory returned the original result. The contract says
+   repeating a disposition is idempotent, so memory was right; the check moved
+   inside the pending-approval branch. Pinned by a memory-only regression test so
+   it stays caught without a database.
+
+The run also proves against a live server that `ensure_tables` is idempotent, the
+revision backfill yields a parseable `ModelRevision` tagged `imported_history`,
+and the history table's `(account_id, revision)` key exists.

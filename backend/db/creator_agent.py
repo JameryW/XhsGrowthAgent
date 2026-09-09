@@ -1448,11 +1448,6 @@ class DurableCreatorAgentRepository:
                 _mem_learning_signals[(account_id, signal_id)] = signal.model_copy(deep=True)
                 return signal, model
 
-        if review.disposition is CreatorReviewDisposition.APPROVED and (
-            review.model is None or review.expected_revision is None
-        ):
-            raise CreatorReviewModelRequiredError()
-
         pool = get_pool()
         async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             await cur.execute(
@@ -1477,6 +1472,10 @@ class DurableCreatorAgentRepository:
             if review.disposition is CreatorReviewDisposition.DISMISSED:
                 model = None
             else:
+                # Only a first approval needs a definition; a replay of an
+                # already-resolved signal stays idempotent above.
+                if review.model is None or review.expected_revision is None:
+                    raise CreatorReviewModelRequiredError()
                 assert review.model is not None
                 assert review.expected_revision is not None
                 await conn.execute(
