@@ -15,10 +15,11 @@ assertion is about *semantics* — statuses, ordering, conflicts, provenance —
 never about literal ids.
 
 Opt-in and non-destructive by construction: point ``XHS_PG_PARITY_URI`` at any
-reachable PostgreSQL server. The fixture creates a randomly named scratch database
-on that server and drops it at teardown, so no pre-existing database is read from
-or written to. Without the variable the whole module skips and default/CI runs are
-unchanged.
+reachable PostgreSQL server (13 or newer, for ``DROP DATABASE ... WITH (FORCE)``).
+The fixture creates a randomly named scratch database on that server and drops it
+at teardown, so no pre-existing database is read from or written to. Without the
+variable the whole module skips, so the suite stays hermetic wherever no server is
+configured.
 
 Run it with, for example::
 
@@ -411,7 +412,14 @@ def _isolate_global_adapter_state() -> Any:
 
 @pytest.fixture
 def scratch_database() -> Any:
-    """Create a private database on the given server and drop it afterwards."""
+    """Create a private database on the given server and drop it afterwards.
+
+    Teardown needs PostgreSQL 13+ for ``DROP DATABASE ... WITH (FORCE)``. The
+    earlier terminate-then-drop sequence raced the pool's background reconnection
+    task: a connection re-established between the two statements made the drop
+    fail with "database is being accessed", turning a passing test into a
+    teardown error on an unrelated pull request.
+    """
     import psycopg
 
     admin_uri = os.environ[PG_URI_ENV]
@@ -425,12 +433,7 @@ def scratch_database() -> Any:
         yield scratch_uri
     finally:
         with psycopg.connect(admin_uri, autocommit=True) as admin:
-            admin.execute(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity"
-                " WHERE datname = %s AND pid <> pg_backend_pid()",
-                (database,),
-            )
-            admin.execute(f'DROP DATABASE "{database}"')
+            admin.execute(f'DROP DATABASE "{database}" WITH (FORCE)')
 
 
 def test_postgres_and_memory_adapters_behave_identically(scratch_database: str) -> None:

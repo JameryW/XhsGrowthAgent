@@ -52,6 +52,28 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12"]
+    # Disposable server for the Creator Agent cross-backend parity suite, which
+    # otherwise skips and leaves every Postgres branch of the adapter unexecuted.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Without this the first test can connect before the server accepts,
+        # which would surface as an intermittent teardown failure.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Deliberately not POSTGRES_URI: tests/conftest.py pops that so the suite
+      # stays hermetic. The parity module opens its own pool from this variable,
+      # creates a randomly named scratch database, and drops it on teardown.
+      XHS_PG_PARITY_URI: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -63,6 +85,18 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Pytest
         run: pytest -q
+      # A suite that silently skips is indistinguishable from one that passes, and
+      # that is precisely how every Postgres branch of the adapter went untested.
+      # Re-running the parity module alone costs seconds and makes the wiring,
+      # rather than the result, the thing that fails here.
+      - name: Verify backend parity actually ran
+        run: |
+          out=$(pytest tests/integration/test_creator_agent_backend_parity.py -q)
+          echo "$out" | tail -3
+          if ! echo "$out" | grep -q " passed"; then
+            echo "::error::Postgres backend parity did not execute; check the postgres service and XHS_PG_PARITY_URI" >&2
+            exit 1
+          fi
 
   omp-typecheck:
     name: OMP Typecheck

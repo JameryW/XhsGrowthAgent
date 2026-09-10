@@ -18,7 +18,10 @@ os.environ.setdefault("XHS_USE_BROWSER", "false")
 # pytest process. Pop it before any backend import and neutralise load_dotenv
 # so app.py's module-level `load_dotenv(override=True)` can't re-inject it.
 # Tests that need pool behavior mock `is_pool_ready` explicitly; none rely on a
-# live DB connection (verified across the suite).
+# live DB connection. The one exception is opt-in and self-isolating:
+# tests/integration/test_creator_agent_backend_parity.py opens its own pool from
+# XHS_PG_PARITY_URI (a different variable, so it cannot leak here) and drops a
+# scratch database it created.
 os.environ.pop("POSTGRES_URI", None)
 os.environ.pop("REDIS_URI", None)
 # App lifespan compiles the development graph for TestClient-based integration
