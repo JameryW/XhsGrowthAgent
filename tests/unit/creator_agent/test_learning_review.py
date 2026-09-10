@@ -175,6 +175,54 @@ async def test_dismissal_is_model_neutral_and_conflicting_review_fails():
 
 
 @pytest.mark.asyncio
+async def test_replaying_an_approved_disposition_needs_no_model_payload():
+    """A resolved signal stays idempotent without restating the approval payload.
+
+    The Postgres branch used to validate "approval requires a model" before
+    reading the signal, so replaying an approval raised where the memory fallback
+    returned the original result. Repeating a disposition is documented as
+    idempotent, so the payload is only required when a decision is still pending.
+    """
+    repo = creator_agent_db.DurableCreatorAgentRepository()
+    initial = await repo.save_model("account-a", _definition(), expected_revision=0)
+    advisor = CreatorAdvisor(repo)
+    decision = await advisor.decide(_request())
+    signal = (
+        await advisor.record_feedback(
+            "account-a",
+            decision.decision_id,
+            FeedbackInput(
+                feedback_id="feedback-replay",
+                audience_id="audience-a",
+                outcome=FeedbackOutcome.DISSATISFIED,
+                correction="更轻便。",
+            ),
+        )
+    ).learning_signal
+    assert signal is not None
+
+    approved = await advisor.review_learning_signal(
+        "account-a",
+        signal.signal_id,
+        LearningSignalReview(
+            disposition=CreatorReviewDisposition.APPROVED,
+            expected_revision=initial.revision,
+            model=_definition("加入便携性权衡"),
+        ),
+    )
+
+    replayed = await advisor.review_learning_signal(
+        "account-a",
+        signal.signal_id,
+        LearningSignalReview(disposition=CreatorReviewDisposition.APPROVED),
+    )
+
+    assert replayed.signal.model_dump() == approved.signal.model_dump()
+    assert replayed.model is not None
+    assert replayed.model.revision == approved.signal.applied_model_revision
+
+
+@pytest.mark.asyncio
 async def test_approval_requires_complete_model_and_is_optimistic_concurrency_safe():
     repo = creator_agent_db.DurableCreatorAgentRepository()
     initial = await repo.save_model("account-a", _definition(), expected_revision=0)
