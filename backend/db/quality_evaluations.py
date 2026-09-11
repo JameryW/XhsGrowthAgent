@@ -8,6 +8,7 @@ Postgres is unavailable.
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import uuid
@@ -41,6 +42,11 @@ class QualityEvaluationRun:
     created_at: str = ""
     completed_at: str | None = None
     stale_at: str | None = None
+    # Insertion order assigned by the store, not by callers. Two runs can share
+    # a `created_at` string on a coarse clock, and without this column "latest"
+    # has no definition: max() keeps the first tie while Postgres returns an
+    # arbitrary one, so the two backends can disagree about application state.
+    seq: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,6 +71,7 @@ class QualityEvaluationRun:
 
 
 _mem_runs: dict[str, QualityEvaluationRun] = {}
+_mem_seq = itertools.count(1)
 
 
 def _reset_memory_store() -> None:
@@ -90,8 +97,21 @@ CREATE TABLE IF NOT EXISTS quality_evaluation_runs (
     error                  TEXT,
     created_at             TEXT NOT NULL,
     completed_at           TEXT,
-    stale_at               TEXT
+    stale_at               TEXT,
+    seq                    BIGINT NOT NULL DEFAULT 0
 );
+"""
+
+# Existing deployments get the column without rewriting history: legacy rows
+# keep seq 0, which only matters among rows that also tie on created_at, and
+# DEFAULT 0 keeps them ordered ahead of anything inserted after the upgrade.
+_CREATE_SEQUENCE_SQL = """
+CREATE SEQUENCE IF NOT EXISTS quality_evaluation_runs_seq;
+"""
+
+_ALTER_ADD_SEQ_SQL = """
+ALTER TABLE quality_evaluation_runs
+    ADD COLUMN IF NOT EXISTS seq BIGINT NOT NULL DEFAULT 0;
 """
 
 _CREATE_INDEX_SQL = """
@@ -115,6 +135,8 @@ async def ensure_tables() -> None:
     pool = get_pool()
     async with pool.connection() as conn:
         await conn.execute(_CREATE_TABLE_SQL)
+        await conn.execute(_CREATE_SEQUENCE_SQL)
+        await conn.execute(_ALTER_ADD_SEQ_SQL)
         await conn.execute(_CREATE_INDEX_SQL)
     logger.info("quality_evaluation_runs table ensured")
 
@@ -153,6 +175,7 @@ def _from_row(row: Any) -> QualityEvaluationRun | None:
             result_json=_normalize_json(row[10]),
             coverage_json=_normalize_json(row[11]),
             thresholds_json=_normalize_json(row[12]),
+            seq=int(row[17]) if len(row) > 17 else 0,
             error=str(row[13]) if row[13] is not None else None,
             created_at=str(row[14] or ""),
             completed_at=str(row[15]) if row[15] is not None else None,
@@ -176,6 +199,7 @@ def _from_row(row: Any) -> QualityEvaluationRun | None:
         created_at=str(row.get("created_at") or ""),
         completed_at=str(row["completed_at"]) if row.get("completed_at") is not None else None,
         stale_at=str(row["stale_at"]) if row.get("stale_at") is not None else None,
+        seq=int(row.get("seq") or 0),
     )
 
 
@@ -183,8 +207,18 @@ _SELECT_COLUMNS = """
     evaluation_id, account_id, subject_type, subject_id, assessment_type,
     source_content_hash, source_data_as_of, context_hash, evaluator_fingerprint,
     status, result_json, coverage_json, thresholds_json, error, created_at,
-    completed_at, stale_at
+    completed_at, stale_at, seq
 """
+
+
+def _recency_key(run: QualityEvaluationRun) -> tuple[str, int]:
+    """Single ordering key so the memory fallback and Postgres agree on ties."""
+    return (run.created_at, run.seq)
+
+
+def _completion_key(run: QualityEvaluationRun) -> tuple[str, int]:
+    """Trend ordering key: completion time when known, else creation time."""
+    return (run.completed_at or run.created_at, run.seq)
 
 
 def _matches(
@@ -238,7 +272,7 @@ async def get_cached(
             and run.status in {"ready", "partial"}
             and not run.stale_at
         ]
-        return max(candidates, key=lambda run: run.created_at, default=None)
+        return max(candidates, key=_recency_key, default=None)
     try:
         pool = get_pool()
         async with pool.connection() as conn:
@@ -251,7 +285,7 @@ async def get_cached(
                       AND assessment_type = %s AND source_content_hash = %s
                       AND context_hash = %s AND evaluator_fingerprint = %s
                       AND status IN ('ready', 'partial') AND stale_at IS NULL
-                    ORDER BY created_at DESC LIMIT 1""",
+                    ORDER BY created_at DESC, seq DESC LIMIT 1""",
                     (
                         account_id,
                         subject_type,
@@ -280,6 +314,7 @@ async def create_run(run: QualityEvaluationRun) -> QualityEvaluationRun:
     if not run.created_at:
         run.created_at = datetime.now(UTC).isoformat()
     if not is_pool_ready():
+        run.seq = next(_mem_seq)
         _mem_runs[run.evaluation_id] = run
         return run
     try:
@@ -293,8 +328,9 @@ async def create_run(run: QualityEvaluationRun) -> QualityEvaluationRun:
                     (evaluation_id, account_id, subject_type, subject_id, assessment_type,
                      source_content_hash, source_data_as_of, context_hash,
                      evaluator_fingerprint, status, result_json, coverage_json,
-                     thresholds_json, error, created_at, completed_at, stale_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     thresholds_json, error, created_at, completed_at, stale_at, seq)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            nextval('quality_evaluation_runs_seq'))
                     RETURNING {_SELECT_COLUMNS}""",
                     (
                         run.evaluation_id,
@@ -380,7 +416,7 @@ async def get_latest_for_subject(
             and run.subject_id == subject_id
             and run.assessment_type == assessment_type
         ]
-        return max(candidates, key=lambda run: run.created_at, default=None)
+        return max(candidates, key=_recency_key, default=None)
     try:
         pool = get_pool()
         async with pool.connection() as conn:
@@ -391,7 +427,7 @@ async def get_latest_for_subject(
                     f"""SELECT {_SELECT_COLUMNS} FROM quality_evaluation_runs
                     WHERE account_id = %s AND subject_type = %s AND subject_id = %s
                       AND assessment_type = %s
-                    ORDER BY created_at DESC LIMIT 1""",
+                    ORDER BY created_at DESC, seq DESC LIMIT 1""",
                     (account_id, subject_type, subject_id, assessment_type),
                 )
                 return _from_row(await cur.fetchone())
@@ -452,14 +488,12 @@ async def fetch_trend_points(
     """
     limit = max(1, min(int(limit or 100), 500))
     if not is_pool_ready():
-        rows = [
-            row
-            for run in _mem_runs.values()
-            if (not account_id or run.account_id == account_id)
-            for row in (_run_to_trend_row(run),)
-            if row is not None
-        ]
-        rows.sort(key=lambda r: str(r.get("created_at") or ""))
+        runs = [run for run in _mem_runs.values() if not account_id or run.account_id == account_id]
+        # Order the durable runs, not the projected rows: `seq` exists on the run
+        # only, and completed_at must win over created_at exactly the way COALESCE
+        # does in the Postgres branch below.
+        runs.sort(key=_completion_key)
+        rows = [row for row in (_run_to_trend_row(run) for run in runs) if row is not None]
         return rows[-limit:]
 
     try:
@@ -474,7 +508,7 @@ async def fetch_trend_points(
                     SELECT {_SELECT_COLUMNS}
                     FROM quality_evaluation_runs
                     WHERE account_id = %s
-                    ORDER BY COALESCE(completed_at, created_at) DESC
+                    ORDER BY COALESCE(completed_at, created_at) DESC, seq DESC
                     LIMIT %s
                     """,
                     (account_id, limit),
@@ -484,24 +518,26 @@ async def fetch_trend_points(
                     f"""
                     SELECT {_SELECT_COLUMNS}
                     FROM quality_evaluation_runs
-                    ORDER BY COALESCE(completed_at, created_at) DESC
+                    ORDER BY COALESCE(completed_at, created_at) DESC, seq DESC
                     LIMIT %s
                     """,
                     (limit,),
                 )
-            runs = [_from_row(r) for r in await cur.fetchall()]
+            runs = [row for row in (_from_row(r) for r in await cur.fetchall()) if row is not None]
     except Exception as exc:
         logger.warning("fetch quality evaluation trend failed: %s", exc)
         return []
 
     points: list[dict[str, Any]] = []
-    for run in runs:
-        if run is None:
-            continue
+    # The query returned newest-first including the seq tie-break, so mapping in
+    # reverse gives the ascending timeline the chart wants. Re-sorting the rows by
+    # created_at alone would throw that tie-break away and leave runs sharing a
+    # timestamp newest-first here, while the memory fallback returned them
+    # oldest-first.
+    for run in reversed(runs):
         row = _run_to_trend_row(run)
         if row is not None:
             points.append(row)
-    points.sort(key=lambda r: str(r.get("created_at") or ""))
     return points
 
 

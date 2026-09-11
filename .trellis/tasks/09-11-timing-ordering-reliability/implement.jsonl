@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "ensure_tables idempotency, memory/Postgres dual-branch parity rules the new ordering column must respect"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "How backend.db adapters degrade on failure; the sequence column must not change read error semantics"}
+{"file": "tests/integration/test_creator_agent_backend_parity.py", "reason": "Existing opt-in pattern for proving memory and Postgres behave identically"}
