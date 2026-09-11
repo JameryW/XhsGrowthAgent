@@ -151,3 +151,16 @@ No production semantics changed.
   assert nothing about ties; tie-break unavailable → record the ambiguity rather
   than invent one), plus review-checklist and forbidden-pattern entries covering
   clock-inferred concurrency assertions and re-sorting already-ordered rows.
+
+## Resolved after archiving
+
+The open question answered itself: the queue **is** index-bearing.
+`FreeDraftHistoryPanel.vue` computes `previewIndex` from
+`filteredDraftIds.indexOf(draft_id)`, feeds `queue-position` (the "N / M"
+display) and bounds prev/next, so a non-total order moves the position between
+two GETs of unchanged data. The evaluation's central premise — that `BaseStore`
+offers no durable tie-break — was wrong: store items carry their own
+`created_at` / `updated_at`, finer than the app-authored payload timestamp.
+Landed as a total order `(payload updated_at, item.updated_at, draft_id)` with
+tests that fail against the previous single-key sort, so no sequence column and
+no schema change were needed after all.

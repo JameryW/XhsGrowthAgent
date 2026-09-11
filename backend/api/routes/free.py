@@ -534,6 +534,9 @@ async def list_drafts(
         raise ValidationError("store", "Memory store unavailable; cannot list drafts")
 
     drafts: list[dict[str, Any]] = []
+    # Parallel to `drafts`: the store's own updated_at as text, kept separate so
+    # it never leaks into the response payload.
+    store_timestamps: list[str] = []
     hit_limit = False
     try:
         items = await store.asearch(_draft_ns(account_id), query="", limit=100)
@@ -552,6 +555,12 @@ async def list_drafts(
                 continue
             if q_norm and q_norm not in str(title).lower():
                 continue
+            store_updated_at = getattr(item, "updated_at", None)
+            # isinstance guard: real stores return datetimes, and anything else
+            # must not smuggle a mock's repr into a sort key.
+            store_timestamps.append(
+                store_updated_at.isoformat() if isinstance(store_updated_at, datetime) else ""
+            )
             drafts.append(
                 {
                     "draft_id": item.key,
@@ -575,9 +584,23 @@ async def list_drafts(
             )
     except Exception:
         logger.warning("store.alist failed for account %s; returning empty list", account_id)
-    # Sort newest-first by updated_at (ISO strings sort lexicographically =
-    # chronologically). Drafts without updated_at (old records) sort last.
-    drafts.sort(key=lambda d: d.get("updated_at") or "", reverse=True)
+    # Newest-first, as a total order rather than a by-product of whatever
+    # sequence the store yielded: the app's ISO updated_at sorts chronologically,
+    # then the store's own finer updated_at and the durable draft_id settle
+    # records that tie. The review queue derives its "N / M" position and
+    # prev/next bounds from this order, and Postgres leaves equal updated_at rows
+    # unordered, so without these legs a position could move between two GETs of
+    # unchanged data. Drafts without updated_at (old records) still sort last.
+    order = sorted(
+        range(len(drafts)),
+        key=lambda i: (
+            drafts[i].get("updated_at") or "",
+            store_timestamps[i],
+            str(drafts[i].get("draft_id") or ""),
+        ),
+        reverse=True,
+    )
+    drafts = [drafts[i] for i in order]
     if hit_limit:
         logger.info(
             "free drafts list hit 100-cap for account %s — older drafts hidden "
