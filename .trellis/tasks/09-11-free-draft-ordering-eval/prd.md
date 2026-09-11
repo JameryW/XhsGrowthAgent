@@ -145,7 +145,9 @@ No production semantics changed.
   timestamp trick) belongs on the roadmap. Nothing in this repository was found
   to depend on it, which is why A was safe — absence of a found consumer is not
   proof none exists.
-- Whether to record the general rule in `.trellis/spec/backend/`: a list ordered
-  by a caller-supplied timestamp must either define a tie-break or state that
-  ties are unordered. This is the third instance of the family, so the rule is
-  probably worth writing even though no code change is pending.
+- ~~Whether to record the general rule in `.trellis/spec/backend/`~~ **Done**:
+  `quality-guidelines.md` §11.4 now states the three cases (load-bearing → real
+  tie-break used identically in both branches; not guaranteed → document it and
+  assert nothing about ties; tie-break unavailable → record the ambiguity rather
+  than invent one), plus review-checklist and forbidden-pattern entries covering
+  clock-inferred concurrency assertions and re-sorting already-ordered rows.

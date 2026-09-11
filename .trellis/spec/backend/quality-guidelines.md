@@ -650,6 +650,16 @@ The `_on_task_done` callback:
 3. **Avoid global mutable state beyond module-level singletons.**
 4. **Avoid `try/except` in agent `execute()` methods.** Let `BaseAgent.__call__`
    handle errors.
+5. **Never infer asyncio concurrency from clock samples.** Comparing
+   `event_loop.time()` with strict inequality fails against correct code when two
+   `await` yields land in one clock tick. Make the mocks rendezvous on events
+   instead: each side announces it started and waits (bounded) for the other, so
+   a sequential implementation times out. See
+   `tests/unit/api/test_analytics_creator_analysis.py`.
+6. **Never re-sort already-ordered rows by a coarser key.** A query that applied
+   a tie-break loses it if the caller then sorts the projected rows by
+   `created_at` alone; the Postgres and memory branches then disagree and only a
+   cross-backend test notices.
 
 ---
 
@@ -684,6 +694,37 @@ The `_on_task_done` callback:
 
 ---
 
+## 11.4 Every list ordered by a timestamp must
+
+Ordering by a stored timestamp is ambiguous whenever two records are written in
+the same clock tick, which is routine on coarse-resolution hosts (~15.6 ms on
+Windows). Three bugs in this repository came from exactly this, including a test
+that failed only sometimes. Decide explicitly which case you are in:
+
+1. **Order is load-bearing** (audit reads, "the latest run", anything a caller
+   navigates by position): define a tie-break that reflects real insertion
+   order, and use it identically in every branch. `quality_evaluation_runs` does
+   this with a store-assigned `seq` column, so both Postgres
+   (`ORDER BY created_at DESC, seq DESC`) and the in-memory fallback
+   (`max(candidates, key=_recency_key)`) return the same row. Never let `max()`
+   or an unsorted `ORDER BY` decide silently: `max()` keeps the first maximal
+   element while Postgres returns whichever row the planner reaches first.
+2. **Order is not guaranteed** (a display list where ties are harmless): say so
+   at the boundary, and make sure no test asserts an outcome for tied values.
+   `GET /free/drafts` sorts by `updated_at` alone; ties follow store order.
+3. **A durable tie-break is not available**: do not invent one. Random ids as a
+   secondary key are deterministic but meaningless, and process-local monotonic
+   timestamps fabricate time and break with more than one worker. Record the
+   ambiguity instead of papering over it.
+
+Assertions must not depend on the unspecified case either. A test that writes two
+records back-to-back and then expects them to sort apart is asserting a host
+clock property, not a product guarantee: seed explicit distinct timestamps, or
+assert the documented property (`a.updated_at > b.updated_at`) rather than the
+incidental index.
+
+---
+
 ## 12. Code Review Checklist
 
 Before merging any PR that touches `backend/`:
@@ -698,6 +739,9 @@ Before merging any PR that touches `backend/`:
 - [ ] API routes raise `APIError` subclasses, return `success(data=...)`
 - [ ] New state fields have appropriate reducers and defaults
 - [ ] Enums use `StrEnum`, not `Enum`
+- [ ] Any list ordered by a stored timestamp defines a tie-break or documents
+      that ties are unordered (§11.4), and no test relies on a clock to separate
+      same-tick records
 - [ ] Union syntax uses `X | Y`, not `Optional` or `Union`
 - [ ] No emoji in variable names, function names, or log messages
 - [ ] Comments explain WHY, not WHAT
