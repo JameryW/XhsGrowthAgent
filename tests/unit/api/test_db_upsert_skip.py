@@ -130,7 +130,7 @@ class TestSaveHistoryFileSkipUnchanged:
         runner_module._LAST_HISTORY_WRITE.pop("t1", None)
         runner_module._save_history_file("t1", {"phase": "completed", "v": 1})
         history_file = tmp_path / "history" / "t1.json"
-        assert history_file.read_text() == '{"phase": "completed", "v": 1}'
+        assert history_file.read_text(encoding="utf-8") == '{"phase": "completed", "v": 1}'
 
     def test_unchanged_state_skips_rewrite(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XHS_REGISTRY_PATH", str(tmp_path))
@@ -150,7 +150,7 @@ class TestSaveHistoryFileSkipUnchanged:
         runner_module._save_history_file("t1", {"phase": "completed", "v": 1})
         runner_module._save_history_file("t1", {"phase": "completed", "v": 2})
         history_file = tmp_path / "history" / "t1.json"
-        assert history_file.read_text() == '{"phase": "completed", "v": 2}'
+        assert history_file.read_text(encoding="utf-8") == '{"phase": "completed", "v": 2}'
 
     def test_distinct_threads_independent(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XHS_REGISTRY_PATH", str(tmp_path))
