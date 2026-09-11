@@ -24,12 +24,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import fcntl
 import logging
 import math
 import os
 import shutil
 import signal
+import sys
 import time
 from collections.abc import AsyncIterator, Iterable, Iterator
 from dataclasses import dataclass
@@ -149,6 +149,47 @@ class PageCleanupStatus:
     message: str = ""
 
 
+# ── Cross-platform profile lock primitives ──
+#
+# Windows has no flock(). msvcrt.locking() locks a byte range relative to the
+# current position and raises OSError when that range is held elsewhere, so the
+# error is normalized back to BlockingIOError to keep the single retry loop below
+# the only place that knows what contention means.
+
+if sys.platform == "win32":
+    import msvcrt
+
+    _LOCK_RANGE_BYTES = 1
+    # os.kill() is TerminateProcess on Windows, so SIGTERM is already the
+    # non-cooperative kill there and no SIGKILL constant exists.
+    _FORCE_KILL_SIGNAL = signal.SIGTERM
+
+    def _acquire_profile_lock(fd: int) -> None:
+        if os.fstat(fd).st_size < _LOCK_RANGE_BYTES:
+            os.lseek(fd, 0, os.SEEK_END)
+            os.write(fd, b"\0" * _LOCK_RANGE_BYTES)
+        os.lseek(fd, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, _LOCK_RANGE_BYTES)
+        except OSError as exc:
+            raise BlockingIOError(str(exc)) from exc
+
+    def _release_profile_lock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, _LOCK_RANGE_BYTES)
+
+else:
+    import fcntl
+
+    _FORCE_KILL_SIGNAL = signal.SIGKILL
+
+    def _acquire_profile_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _release_profile_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 @contextlib.asynccontextmanager
 async def _profile_launch_lock(profile_path: str) -> AsyncIterator[None]:
     """Serialize launch/stop operations for one profile across processes."""
@@ -160,7 +201,7 @@ async def _profile_launch_lock(profile_path: str) -> AsyncIterator[None]:
     try:
         while not acquired:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _acquire_profile_lock(fd)
                 acquired = True
             except BlockingIOError:
                 if asyncio.get_running_loop().time() >= deadline:
@@ -172,7 +213,7 @@ async def _profile_launch_lock(profile_path: str) -> AsyncIterator[None]:
     finally:
         if acquired:
             with contextlib.suppress(OSError):
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                _release_profile_lock(fd)
         with contextlib.suppress(OSError):
             os.close(fd)
 
@@ -482,10 +523,32 @@ def _pid_alive(pid: int) -> bool:
     """Return True if ``pid`` is a running process.
 
     ``os.kill(pid, 0)`` is the POSIX probe — signal 0 checks existence without
-    actually signalling.
+    signalling. It does not work on Windows: ``os.kill`` maps to
+    ``TerminateProcess``, and for a pid that has already exited the call raises
+    nothing, so the old probe reported dead processes as alive. ``stop_chrome``
+    and ``clear_stale_lock`` then treated a gone Chrome as still running and
+    refused to clear the SingletonLock it left behind. Windows therefore opens the
+    process for query only and reads its exit code.
     """
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes.wintypes import DWORD
+
+        process_query_limited_information = 0x1000
+        still_active = 259
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True
@@ -928,9 +991,9 @@ async def _stop_chrome_unlocked(account: AccountRow) -> ChromeStatus:
         await asyncio.sleep(0.2)
 
     if _pid_alive(pid):
-        # SIGTERM didn't take — escalate.
+        # SIGTERM didn't take — escalate with the platform's force-kill signal.
         with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, _FORCE_KILL_SIGNAL)
         await asyncio.sleep(0.3)
 
     alive = _pid_alive(pid)
