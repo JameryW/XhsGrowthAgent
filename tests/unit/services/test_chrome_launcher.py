@@ -8,9 +8,12 @@ helpers' filtering. All OS/subprocess surface is mocked — no real Chrome runs.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -304,13 +307,22 @@ def test_singleton_lock_pid_none_when_unparseable(_profile_dir: Path):
 
 
 def test_raw_cmdline_has_profile_supports_null_and_space_delimiters():
+    """Delimiter parsing must not depend on the host's path spelling.
+
+    The matcher normalizes with os.path.abspath(), which is host-dependent —
+    POSIX keeps slashes, Windows rewrites them and prefixes a drive letter — so
+    the expected bytes are derived the same way rather than hardcoded to one
+    platform. That keeps the real assertion, argument boundaries, covered on
+    both.
+    """
     profile = "/test/xhs/.chrome-profiles/acc"
-    option = b"--user-data-dir=/test/xhs/.chrome-profiles/acc"
+    resolved = os.path.abspath(profile)
+    option = f"--user-data-dir={resolved}".encode()
 
     assert cl._raw_cmdline_has_profile(b"/opt/chrome\x00" + option + b"\x00", profile)
     assert cl._raw_cmdline_has_profile(b"/opt/chrome " + option + b" --flag", profile)
     assert not cl._raw_cmdline_has_profile(
-        b"/opt/chrome --user-data-dir=/test/xhs/.chrome-profiles/acc-other", profile
+        b"/opt/chrome --user-data-dir=" + f"{resolved}-other".encode(), profile
     )
 
 
@@ -549,7 +561,8 @@ async def test_stop_chrome_escalates_to_sigkill(_profile_dir: Path, monkeypatch)
 
     assert status.action == "stopped"
     assert (5555, signal.SIGTERM) in sent
-    assert (5555, signal.SIGKILL) in sent
+    # The escalation uses whatever this platform's force-kill signal is.
+    assert (5555, cl._FORCE_KILL_SIGNAL) in sent
 
 
 @pytest.mark.asyncio
@@ -1082,3 +1095,80 @@ async def test_hygiene_browser_pages_closes_multiple(_profile_dir, monkeypatch):
     assert statuses[0].action == "cleaned"
     assert statuses[0].closed_count >= 1
     assert close.call_count >= 1
+
+
+# ── host-portability regressions ──
+
+
+def test_pid_alive_reports_an_exited_process_as_dead() -> None:
+    """A finished pid must read as dead, and probing must not disturb a live one.
+
+    On Windows ``os.kill`` is ``TerminateProcess`` and does not raise for a pid
+    that has already exited, so the previous probe called dead processes alive.
+    ``stop_chrome``/``clear_stale_lock`` then left a stale SingletonLock in place
+    because they believed the Chrome that wrote it was still running.
+    """
+    proc = subprocess.Popen(  # noqa: S603
+        [sys.executable, "-c", "pass"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    proc.wait(timeout=15)
+    assert proc.poll() == 0
+    assert cl._pid_alive(proc.pid) is False
+
+
+def test_pid_alive_probe_leaves_a_live_process_running() -> None:
+    """Checking liveness must never be a way to signal the process."""
+    proc = subprocess.Popen(  # noqa: S603
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        assert cl._pid_alive(proc.pid) is True
+        assert cl._pid_alive(proc.pid) is True
+        assert proc.poll() is None, "liveness probe disturbed the process"
+    finally:
+        proc.terminate()
+        with contextlib.suppress(Exception):
+            proc.wait(timeout=5)
+
+
+def test_pid_alive_false_for_nonexistent_pid() -> None:
+    assert cl._pid_alive(0) is False
+    assert cl._pid_alive(-1) is False
+    assert cl._pid_alive(2**31 - 1) is False
+
+
+@pytest.mark.asyncio
+async def test_profile_launch_lock_serializes_holders(_profile_dir: Path, monkeypatch):
+    """A second holder waits and times out instead of launching concurrently.
+
+    Exercises the real OS-level primitive, so it covers msvcrt.locking on
+    Windows and flock on POSIX, including the normalization of host-specific
+    contention errors into the single retry loop.
+    """
+    monkeypatch.setattr(cl, "_PROFILE_LOCK_TIMEOUT_SECONDS", 0.2)
+
+    release = asyncio.Event()
+    stop = asyncio.Event()
+
+    async def _hold() -> None:
+        async with cl._profile_launch_lock(str(_profile_dir)):
+            release.set()
+            await asyncio.wait_for(stop.wait(), timeout=5)
+
+    holder = asyncio.create_task(_hold())
+    await asyncio.wait_for(release.wait(), timeout=5)
+
+    with pytest.raises(TimeoutError):
+        async with cl._profile_launch_lock(str(_profile_dir)):
+            pass  # unreachable while the first holder is inside
+
+    stop.set()
+    await holder
+
+    # Released cleanly: the same lock is acquirable again afterwards.
+    async with cl._profile_launch_lock(str(_profile_dir)):
+        pass
