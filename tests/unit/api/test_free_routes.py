@@ -639,16 +639,38 @@ class TestListDrafts:
                 assert d["last_analytics"] is None
 
     def test_list_sorted_newest_first_by_updated_at(self, client, mock_store):
-        # seed two drafts; second is newer (created after, so updated_at >= first)
-        client.post("/api/free/draft", json={**DRAFT_BODY, "title": "old"})
-        client.post("/api/free/draft", json={**DRAFT_BODY, "title": "new"})
+        """The route orders drafts by ``updated_at`` descending.
+
+        The drafts are seeded with explicit timestamps instead of being created
+        by two back-to-back POSTs: that shape asked the host clock to separate
+        two writes, and on a ~15.6 ms Windows tick both drafts received the same
+        ``updated_at``, leaving their order — and this test — arbitrary. Equal
+        timestamps are deliberately not asserted, because the API makes no
+        promise about ties.
+        """
+        mock_store._records["draft-old"] = {
+            "draft_id": "draft-old",
+            "title": "old",
+            "hashtags": [],
+            "body": "x",
+            "published": False,
+            "updated_at": "2026-09-01T00:00:00+00:00",
+        }
+        mock_store._records["draft-new"] = {
+            "draft_id": "draft-new",
+            "title": "new",
+            "hashtags": [],
+            "body": "y",
+            "published": False,
+            "updated_at": "2026-09-02T00:00:00+00:00",
+        }
+
         r = client.get("/api/free/drafts/acct1")
+        assert r.status_code == 200, r.text
         drafts = r.json()["data"]["drafts"]
-        # newest-first: "new" should come before "old"
-        assert drafts[0]["title"] == "new"
-        assert drafts[1]["title"] == "old"
-        # updated_at descending
-        assert drafts[0]["updated_at"] >= drafts[1]["updated_at"]
+
+        assert [d["title"] for d in drafts] == ["new", "old"]
+        assert drafts[0]["updated_at"] > drafts[1]["updated_at"]
 
     def test_list_old_drafts_without_metadata_degrade_gracefully(self, client, mock_store):
         # seed a draft the old way (no metadata fields) directly into the store
