@@ -709,13 +709,24 @@ that failed only sometimes. Decide explicitly which case you are in:
    (`max(candidates, key=_recency_key)`) return the same row. Never let `max()`
    or an unsorted `ORDER BY` decide silently: `max()` keeps the first maximal
    element while Postgres returns whichever row the planner reaches first.
-2. **Order is not guaranteed** (a display list where ties are harmless): say so
-   at the boundary, and make sure no test asserts an outcome for tied values.
-   `GET /free/drafts` sorts by `updated_at` alone; ties follow store order.
-3. **A durable tie-break is not available**: do not invent one. Random ids as a
-   secondary key are deterministic but meaningless, and process-local monotonic
-   timestamps fabricate time and break with more than one worker. Record the
-   ambiguity instead of papering over it.
+2. **Order is not guaranteed** (a display list where ties are genuinely
+   harmless): say so at the boundary, and make sure no test asserts an outcome
+   for tied values.
+   Before choosing this, check that nothing downstream derives an index from the
+   list — the free-draft queue did, so this case did not apply.
+3. **A durable tie-break is not available**: do not invent one. Process-local
+   monotonic timestamps fabricate time and break with more than one worker.
+   Record the ambiguity instead of papering over it.
+
+   Check this claim before believing it, and check what the storage layer already
+   returns. `BaseStore` items carry their own `created_at` / `updated_at`
+   (a database-clock timestamp, far finer than anything the app writes into the
+   payload), so a store-backed list can be given a real tie-break without any new
+   persistence: `GET /free/drafts` orders by
+   `(payload updated_at, item.updated_at, draft_id)` for exactly that reason. A
+   final id leg is meaningless as chronology but makes the order total and
+   therefore stable across requests, which is what a position-derived UI needs;
+   prefer it as the last leg, never the only one.
 
 Assertions must not depend on the unspecified case either. A test that writes two
 records back-to-back and then expects them to sort apart is asserting a host

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,6 +18,8 @@ def mock_store():
     """In-memory BaseStore double — records aput calls, serves them via aget."""
     store = MagicMock()
     store._records: dict[str, dict] = {}
+    store._store_updated_at: dict[str, datetime] = {}
+    store._asearch_order = "forward"
 
     async def _aput(ns, *, key, value):
         store._records[key] = value
@@ -40,7 +43,15 @@ def mock_store():
             item.key = key
             item.value = value
             item.namespace = ns
+            # Item carries the store's own timestamps, which are finer than
+            # anything the app writes into the payload; the drafts list leans on
+            # them to keep tied records in a stable order. A bare MagicMock here
+            # would hand back a mock for .isoformat(), so seed a real value.
+            item.updated_at = store._store_updated_at.get(key) or DEFAULT_STORE_TS
+            item.created_at = item.updated_at
             items.append(item)
+        if store._asearch_order == "reverse":
+            items.reverse()
         return items[:limit]
 
     async def _adelete(ns, *, key=None):
@@ -120,6 +131,8 @@ def client(mock_store):
     if hasattr(app.state, "graph"):
         delattr(app.state, "graph")
 
+
+DEFAULT_STORE_TS = datetime(2026, 9, 1, tzinfo=UTC)
 
 DRAFT_BODY = {
     "account_id": "acct1",
@@ -671,6 +684,74 @@ class TestListDrafts:
 
         assert [d["title"] for d in drafts] == ["new", "old"]
         assert drafts[0]["updated_at"] > drafts[1]["updated_at"]
+
+    def test_tied_payload_timestamps_use_store_timestamp_order(self, client, mock_store):
+        """Two drafts whose payload updated_at tie must not order arbitrarily.
+
+        Seeded oldest-store-timestamp first so the store order and the arrival
+        order disagree: a stable sort that merely preserves input order passes
+        this test by accident, which is exactly what the first version of this
+        test did before the seeding order was flipped.
+        """
+        same = "2026-09-01T00:00:00+00:00"
+        seeds = (
+            ("draft-old", datetime(2026, 9, 1, tzinfo=UTC)),
+            ("draft-new", datetime(2026, 9, 2, tzinfo=UTC)),
+        )
+        for key, store_ts in seeds:
+            mock_store._records[key] = {
+                "draft_id": key,
+                "title": key,
+                "hashtags": [],
+                "body": "x",
+                "published": False,
+                "updated_at": same,
+            }
+            mock_store._store_updated_at[key] = store_ts
+
+        r = client.get("/api/free/drafts/acct1")
+        assert r.status_code == 200, r.text
+        ids = [d["draft_id"] for d in r.json()["data"]["drafts"]]
+        assert ids == ["draft-new", "draft-old"], f"tied records ordered by arrival: {ids}"
+
+    def test_order_is_independent_of_how_the_store_arrives(self, client, mock_store):
+        """The listing must be a total order, not a by-product of store order.
+
+        Postgres settles equal `updated_at` rows however the plan likes, so the
+        same unchanged data can arrive in a different sequence on a later
+        request. The queue shows "N / M" and enables prev/next from this list's
+        index, so a non-total order means the position moves with no edit.
+        """
+        equal = "2026-09-01T00:00:00+00:00"
+        stamp = datetime(2026, 9, 3, tzinfo=UTC)
+        for key in ("draft-c", "draft-a", "draft-b"):
+            mock_store._records[key] = {
+                "draft_id": key,
+                "title": key,
+                "hashtags": [],
+                "body": "x",
+                "published": False,
+                "updated_at": equal,
+            }
+            mock_store._store_updated_at[key] = stamp
+
+        def _ids() -> list[str]:
+            body = client.get("/api/free/drafts/acct1").json()
+            return [d["draft_id"] for d in body["data"]["drafts"]]
+
+        forward = _ids()
+        # Same data, opposite arrival order: a real store can do this to us.
+        stored = mock_store._asearch_order
+        mock_store._asearch_order = "reverse"
+        try:
+            reversed_arrival = _ids()
+        finally:
+            mock_store._asearch_order = stored
+
+        assert forward == reversed_arrival, (
+            f"order depends on store arrival: {forward} vs {reversed_arrival}"
+        )
+        assert len(forward) == 3
 
     def test_list_old_drafts_without_metadata_degrade_gracefully(self, client, mock_store):
         # seed a draft the old way (no metadata fields) directly into the store
