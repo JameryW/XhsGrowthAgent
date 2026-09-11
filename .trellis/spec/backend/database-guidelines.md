@@ -518,6 +518,19 @@ ERROR_CREATOR_NOTE_NOT_FOUND 404 response.
   identity in `result_json.source.snapshot_id`; this is additive JSON metadata,
   so old rows remain readable through the timestamp-compatible fallback. The
   in-memory fallback is test/dev only; Postgres startup calls `ensure_tables`.
+- Recency reads (`get_cached`, `get_latest_for_subject`, `fetch_trend_points`)
+  order by `(created_at, seq)`, never `created_at` alone. `seq` is assigned by
+  the store at insert — Postgres `nextval('quality_evaluation_runs_seq')` and a
+  module counter in the fallback — because `created_at` is a TEXT timestamp and
+  two runs in one clock tick tie, which made "latest" undefined and let the two
+  branches return different rows. The column is additive:
+  `CREATE SEQUENCE IF NOT EXISTS` plus
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS seq BIGINT NOT NULL DEFAULT 0`, so
+  legacy rows stay readable and sort before anything inserted after the upgrade.
+  `seq` is deliberately absent from `to_dict()` (payload shape) and optional in
+  `_from_row()` (existing 17-column test doubles). The trend branch must order
+  the durable runs, not the projected rows, and must not re-sort those rows by
+  `created_at` afterward: that discards the tie-break the query already applied.
 
 ### 4. Validation & Error Matrix
 - Blank account ID → structured validation error at the API boundary.
