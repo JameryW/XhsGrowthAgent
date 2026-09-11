@@ -386,7 +386,7 @@ class TestWorkflowRoutes:
                 history_dir = Path(".xhs") / "history"
                 history_dir.mkdir(parents=True, exist_ok=True)
                 history_file = history_dir / "xhs_test_abc123.json"
-                history_file.write_text(json.dumps({"phase": "scouting"}))
+                history_file.write_text(json.dumps({"phase": "scouting"}), encoding="utf-8")
 
             response = client.delete("/api/workflow/xhs_test_abc123")
             # Should get 400 (blocked) not 404 (not found)

@@ -54,7 +54,8 @@ class TestBaseAgent:
         )
         prompt_file = prompts_dir / "_test_prompt.yaml"
         prompt_file.write_text(
-            'system: "You are a test agent."\nuser_template: "Process this: {topic}"\n'
+            'system: "You are a test agent."\nuser_template: "Process this: {topic}"\n',
+            encoding="utf-8",
         )
 
         class DummyAgent(BaseAgent):

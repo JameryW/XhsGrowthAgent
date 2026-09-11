@@ -286,7 +286,7 @@ def _save_history_file(thread_id: str, state_values: dict[str, Any]) -> None:
         history_dir = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs")) / "history"
         history_dir.mkdir(parents=True, exist_ok=True)
         path = history_dir / f"{thread_id}.json"
-        path.write_text(serialized)
+        path.write_text(serialized, encoding="utf-8")
     except Exception:
         logger.exception("Failed to save history for %s", thread_id)
 

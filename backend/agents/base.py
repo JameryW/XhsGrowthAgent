@@ -102,7 +102,7 @@ class BaseAgent(ABC):
         if path.exists():
             import yaml
 
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             return {
                 "system": data.get("system", ""),

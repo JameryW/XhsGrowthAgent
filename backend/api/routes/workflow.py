@@ -69,7 +69,7 @@ def _load_history_file(thread_id: str) -> dict[str, Any] | None:
     path = _HISTORY_DIR / f"{thread_id}.json"
     if path.exists():
         try:
-            return cast(dict[str, Any], json.loads(path.read_text()))
+            return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
         except Exception:
             logger.exception("Failed to load history for %s", thread_id)
     return None
