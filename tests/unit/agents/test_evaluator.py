@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 
 from backend.agents import evaluator as evaluator_module
-from backend.agents.evaluator import EvaluatorAgent
+from backend.agents.evaluator import EvaluationContext, EvaluatorAgent
 from backend.db.evaluator_config import EvaluatorWeights, PromptEpoch
 from backend.state.enums import ContentStatus
 from backend.state.schema import WorkflowPhase
@@ -220,13 +220,19 @@ class TestEvaluatorAgent:
         assert "过度宽容" in ev["bias_warning"]
 
     @pytest.mark.asyncio
-    async def test_empty_content_degrades_to_pass(self, agent, mock_store):
-        """No copy/visual → degrade to pass (don't block empty flow)."""
+    async def test_empty_content_is_degraded_not_fake_pass(self, agent, mock_store):
+        """P0-W5: 无内容可评估 must NOT be a fabricated 100/APPROVED pass.
+
+        The old `_empty_pass()` shape made an empty-content workflow look like
+        a fully-approved evaluation and auto-routed to the publisher. It now
+        degrades to decision=None (same human channel as an evaluator outage).
+        """
         state = {"account_id": "a", "niche": "母婴", "phase": WorkflowPhase.REVIEWING}
         result = await agent.execute(state, store=mock_store)
         ev = result["evaluation_result"]
-        assert ev["decision"] == ContentStatus.APPROVED
-        assert ev["overall_score"] == 100.0
+        assert ev["decision"] is None
+        assert ev["overall_score"] is None
+        assert ev.get("degraded") is True
 
     @pytest.mark.asyncio
     async def test_missing_dimensions_are_unavailable(self, agent, mock_state, mock_store):
@@ -323,7 +329,7 @@ class TestEvaluatorAgent:
         for name in _REQUIRED_DIMENSIONS:
             score = 100.0 if name != "bias_check" else 100.0
             dims.append({"dimension": name, "score": score, "is_blocking": False})
-        overall = agent._compute_overall(dims)
+        overall = agent._compute_overall(dims, EvaluationContext())
         # all 100, no bias penalty → 100
         assert overall == 100.0
 
@@ -338,7 +344,7 @@ class TestEvaluatorAgent:
         for d in dims:
             if d["dimension"] == "bias_check":
                 d["bias_severity"] = 80.0  # >= penalty threshold (60)
-        overall = agent._compute_overall(dims)
+        overall = agent._compute_overall(dims, EvaluationContext())
         # 100 weighted minus penalty
         assert overall < 100.0
 
@@ -353,7 +359,7 @@ class TestEvaluatorAgent:
             if d["dimension"] == "bias_check":
                 d["bias_severity"] = 30.0  # below threshold → no penalty
                 d["score"] = 40.0  # score 不再驱动 penalty，低 score 不应触发
-        overall = agent._compute_overall(dims)
+        overall = agent._compute_overall(dims, EvaluationContext())
         assert overall == 100.0
 
     def test_build_result_bias_severity_explicit_wins(self, agent):
@@ -368,7 +374,7 @@ class TestEvaluatorAgent:
             if d["dimension"] == "bias_check":
                 d["score"] = 90.0  # high score alone would NOT trigger penalty
                 d["bias_severity"] = 80.0  # high severity SHOULD trigger
-        result = agent._build_evaluation_result({"dimensions": raw_dims})
+        result = agent._build_evaluation_result({"dimensions": raw_dims}, ctx=EvaluationContext())
         bias = next(d for d in result["dimensions"] if d["dimension"] == "bias_check")
         assert bias["bias_severity"] == 80.0
         assert result["overall_score"] < 100.0  # penalty applied via severity
@@ -384,25 +390,25 @@ class TestEvaluatorAgent:
         for d in raw_dims:
             if d["dimension"] == "bias_check":
                 d["score"] = 30.0  # low score → high severity (100-30=70) → penalty
-        result = agent._build_evaluation_result({"dimensions": raw_dims})
+        result = agent._build_evaluation_result({"dimensions": raw_dims}, ctx=EvaluationContext())
         bias = next(d for d in result["dimensions"] if d["dimension"] == "bias_check")
         assert bias["bias_severity"] == 70.0  # 100 - 30
         assert result["overall_score"] < 100.0
 
     def test_build_system_prompt_injects_weights_and_epoch(self, agent):
         """_build_system_prompt replaces {weights_block}/{thresholds}/{bias_severity_note}
-        from DB weights + active epoch — prompt no longer hardcodes them."""
-        from backend.db.evaluator_config import EvaluatorWeights
+        from DB weights + active epoch — prompt no longer hardcodes them.
 
-        # Custom weights + strict epoch
-        agent._weights = EvaluatorWeights()
-        agent._weights.dimension_weights["copywriting"] = 0.40
-        agent._weights.pass_threshold = 75.0
-        agent._weights.reject_threshold = 55.0
-        agent._bias_severity = "strict"
+        P0-W1: weights/bias arrive via the per-call EvaluationContext, not
+        shared instance state."""
+        weights = EvaluatorWeights()
+        weights.dimension_weights["copywriting"] = 0.40
+        weights.pass_threshold = 75.0
+        weights.reject_threshold = 55.0
+        ctx = EvaluationContext(weights=weights, bias_severity="strict")
 
         state = {"niche": "美食"}
-        prompt = agent._build_system_prompt(state, extra_context="audience-pref")
+        prompt = agent._build_system_prompt(state, extra_context="audience-pref", ctx=ctx)
 
         # weights block injected with the custom weight
         assert "copywriting 0.40" in prompt
@@ -420,7 +426,7 @@ class TestEvaluatorAgent:
         assert "{bias_severity_note}" not in prompt
 
     def test_build_system_prompt_default_weights_when_unset(self, agent):
-        """Fresh agent (defaults) → prompt shows default weights, no placeholders."""
+        """No ctx → prompt falls back to default weights, no placeholders."""
         state = {"niche": "母婴"}
         prompt = agent._build_system_prompt(state)
         assert "copywriting 0.18" in prompt  # default (incl. altruism rebalance)
@@ -567,11 +573,14 @@ class TestEvaluatorGatherConcurrency:
         ):
             result = await agent._resolve_weights("acct")
 
-        # Returns the default weights and sets side-effects identically to the
-        # pre-gather serial implementation.
-        assert isinstance(result, EvaluatorWeights)
-        assert result is agent._weights
-        assert agent._bias_severity == "standard"
+        # P0-W1: the resolved context is returned as a local value — no
+        # instance side-effects exist any more. Both fetch failures degrade to
+        # defaults (identical to the pre-gather serial implementation).
+        assert isinstance(result, EvaluationContext)
+        assert isinstance(result.weights, EvaluatorWeights)
+        assert result.bias_severity == "standard"
+        assert not hasattr(agent, "_weights")
+        assert not hasattr(agent, "_bias_severity")
 
     @pytest.mark.asyncio
     async def test_execute_gathers_weights_and_memory_concurrently(
@@ -649,3 +658,105 @@ class TestEvaluatorGatherConcurrency:
         # Concurrency: _resolve_weights and _recall_memory overlapped in time.
         assert "resolve" in windows and "recall" in windows
         assert self._overlapping(windows["resolve"], windows["recall"])
+
+
+class TestEvaluatorWeightsIsolation:
+    """P0-W1 regression: weights/bias must be per-call, not per-singleton.
+
+    The EvaluatorAgent module-level singletons are shared by every concurrent
+    request. The old implementation stored the gather result on
+    ``self._weights``/``self._bias_severity``, so a second evaluation could
+    overwrite the first one's weights BEFORE the first prompt was built.
+
+    Deterministic interleaving (no clock reliance): run A parks inside its
+    gathered ``_recall_memory`` until run B has already built its system prompt
+    (which implies B's weights landed on the agent). If A's prompt then shows
+    B's weights, the shared instance state leaked.
+    """
+
+    @pytest.mark.asyncio
+    async def test_concurrent_executions_do_not_share_weights(self):
+        import contextvars
+
+        tag_var: contextvars.ContextVar[str] = contextvars.ContextVar("tag")
+
+        agent = EvaluatorAgent()
+
+        weights_a = EvaluatorWeights()
+        weights_a.dimension_weights["copywriting"] = 0.40  # marker only in A
+        weights_b = EvaluatorWeights()
+        weights_b.pass_threshold = 93.0  # marker only in B (">= 93")
+
+        b_prompt_built = asyncio.Event()
+        prompts: dict[str, str] = {}
+
+        async def _load(_account_id: str) -> EvaluatorWeights:
+            tag = tag_var.get()
+            await asyncio.sleep(0)
+            return weights_a if tag == "A" else weights_b
+
+        async def _epoch():
+            await asyncio.sleep(0)
+            return PromptEpoch(0, "standard", "default", True, "")
+
+        real_build = EvaluatorAgent._build_system_prompt
+
+        def _build_and_signal(self, state, extra_context="", ctx=None):
+            prompt = (
+                real_build(self, state, extra_context, ctx)
+                if ctx is not None
+                else real_build(self, state, extra_context)
+            )
+            if tag_var.get() == "B":
+                b_prompt_built.set()
+            prompts[tag_var.get()] = prompt
+            return prompt
+
+        async def _asearch(ns, query="", limit=0, **kwargs):
+            # Run A parks here (its resolve already landed) until run B has
+            # fully built its prompt — i.e. until B's weights have been written
+            # to the agent. Then A continues to prompt-building.
+            if tag_var.get() == "A":
+                await b_prompt_built.wait()
+            return []
+
+        store = MagicMock()
+        store.asearch = AsyncMock(side_effect=_asearch)
+
+        mock_response = MagicMock()
+        mock_response.content = TestEvaluatorAgent()._full_panel_response({})
+
+        def _state(account: str) -> dict:
+            return {
+                "account_id": account,
+                "niche": "母婴",
+                "phase": WorkflowPhase.REVIEWING,
+                "content_plan": {"selected_topic": "婴儿车推荐"},
+                "copy_content": {"selected_title": "t", "body_text": "b"},
+                "visual_plan": {"cover_prompt": "c"},
+            }
+
+        async def _run(account: str, tag: str):
+            tag_var.set(tag)
+            return await agent.execute(_state(account), store=store)
+
+        with (
+            patch.object(evaluator_module, "load_weights", new=_load),
+            patch.object(evaluator_module, "get_active_epoch", new=_epoch),
+            patch.object(EvaluatorAgent, "_build_system_prompt", _build_and_signal),
+            patch.object(type(agent), "model", new_callable=PropertyMock) as m,
+        ):
+            model = MagicMock()
+            model.ainvoke = AsyncMock(return_value=mock_response)
+            m.return_value = model
+            await asyncio.gather(_run("acctA", "A"), _run("acctB", "B"))
+
+        assert "A" in prompts and "B" in prompts
+        # B used its own weights (>= 93) — sanity that the marker system works.
+        assert ">= 93" in prompts["B"]
+        # A must still see its OWN custom copywriting weight — with the old
+        # shared self._weights this assert is red (B overwrote it to 0.18/93).
+        assert "copywriting 0.40" in prompts["A"], (
+            "run A's prompt carried run B's weights — shared instance state cross-contamination"
+        )
+        assert ">= 93" not in prompts["A"]

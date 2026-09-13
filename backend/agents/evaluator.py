@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -73,6 +74,22 @@ _BIAS_PENALTY = 5.0  # 偏倚下调分
 _REQUIRED_DIMENSIONS = list(_DIMENSION_WEIGHTS.keys()) + ["bias_check"]
 
 
+@dataclass(frozen=True)
+class EvaluationContext:
+    """Per-call evaluation inputs (P0-W1).
+
+    EvaluatorAgent instances are module-level singletons shared by all
+    concurrent requests; weights/bias used to live on ``self._weights`` /
+    ``self._bias_severity`` and a second evaluation could overwrite the first
+    one's values before its prompt was even built. The resolved values are now
+    local to each ``execute()`` call and threaded through every consumer as
+    this dataclass — the instance holds no request-scoped state.
+    """
+
+    weights: EvaluatorWeights = field(default_factory=EvaluatorWeights)
+    bias_severity: str = "standard"
+
+
 class EvaluatorAgent(BaseAgent):
     """创作质量评估器 — 发布前 AI 质量关卡."""
 
@@ -80,19 +97,16 @@ class EvaluatorAgent(BaseAgent):
     agent_name = "evaluator"
     prompt_file = "evaluator.yaml"
 
-    def __init__(self) -> None:
-        super().__init__()
-        # ponytail: defaults = module constants; overridden per-account from DB at
-        # execute time. Falls back to defaults when DB unavailable (tests / no PG).
-        self._weights: EvaluatorWeights = EvaluatorWeights()
-        self._bias_severity: str = "standard"
-
-    async def _resolve_weights(self, account_id: str) -> EvaluatorWeights:
-        """Load per-account weights + active prompt epoch from DB; fall back on failure.
+    async def _resolve_weights(self, account_id: str) -> EvaluationContext:
+        """Load per-account weights + active epoch bias from DB; fall back on failure.
 
         Both fetches are read-only and independent; gather them so 2 DB round
         trips collapse into 1 concurrent wave. Each closure swallows its own
         exceptions and returns the fallback value, so gather propagates nothing.
+
+        P0-W1: the result is returned as a local EvaluationContext — no
+        instance state is written, so concurrent evaluations cannot clobber
+        each other's weights.
         """
 
         async def _load() -> EvaluatorWeights:
@@ -110,17 +124,26 @@ class EvaluatorAgent(BaseAgent):
                 logger.debug("epoch load failed, using standard: %s", e)
                 return "standard"
 
-        self._weights, self._bias_severity = await asyncio.gather(_load(), _epoch())
-        return self._weights
+        weights, bias_severity = await asyncio.gather(_load(), _epoch())
+        return EvaluationContext(weights=weights, bias_severity=bias_severity)
 
-    def _build_system_prompt(self, state: XHSGrowthState, extra_context: str = "") -> str:
+    def _build_system_prompt(
+        self,
+        state: XHSGrowthState,
+        extra_context: str = "",
+        ctx: EvaluationContext | None = None,
+    ) -> str:
         """Override to inject DB weights + epoch bias_severity into the prompt.
 
         ponytail: prompt previously hardcoded weights/thresholds; now synced from
         DB so LLM self-reported overall aligns with code-recomputed overall. Uses
         .replace (not .format) because the prompt body contains literal {} in the
         JSON output example.
+
+        P0-W1: weights/bias come from the per-call ``ctx`` (defaults when no
+        context was resolved yet, e.g. degraded early exits).
         """
+        ctx = ctx or EvaluationContext()
         template = self.prompt_template.get("system", "")
         # Historical-note evaluation must not silently invent an account niche.
         # Workflow states retain the legacy default for compatibility, while a
@@ -131,14 +154,12 @@ class EvaluatorAgent(BaseAgent):
         template = template.replace("{account_niche}", niche)
         template = template.replace("{memory_context}", extra_context)
         # weights block: "copywriting 0.20, visual 0.15, ..."
-        weights_block = ", ".join(
-            f"{k} {v:.2f}" for k, v in self._weights.dimension_weights.items()
-        )
+        weights_block = ", ".join(f"{k} {v:.2f}" for k, v in ctx.weights.dimension_weights.items())
         template = template.replace("{weights_block}", weights_block)
-        template = template.replace("{pass_threshold}", f"{self._weights.pass_threshold:.0f}")
-        template = template.replace("{reject_threshold}", f"{self._weights.reject_threshold:.0f}")
+        template = template.replace("{pass_threshold}", f"{ctx.weights.pass_threshold:.0f}")
+        template = template.replace("{reject_threshold}", f"{ctx.weights.reject_threshold:.0f}")
         template = template.replace(
-            "{bias_severity_note}", BIAS_SEVERITY_NOTES.get(self._bias_severity, "")
+            "{bias_severity_note}", BIAS_SEVERITY_NOTES.get(ctx.bias_severity, "")
         )
         return template
 
@@ -153,7 +174,8 @@ class EvaluatorAgent(BaseAgent):
         plan = state.get("content_plan") or {}
         historical_note = bool(state.get("historical_note"))
 
-        # 无内容可评估 → 视为通过（降级，不阻断空流程）
+        # 无内容可评估 → 显式降级（P0-W5：不得伪造 100/APPROVED 直通发布，
+        # 与评估器异常走同一人工通道）
         if not copy_content and not visual_plan:
             if historical_note:
                 return {
@@ -166,7 +188,7 @@ class EvaluatorAgent(BaseAgent):
                         "coverage": {
                             "weighted_ratio": 0.0,
                             "available": [],
-                            "unavailable": list(self._weights.required_dimensions),
+                            "unavailable": list(EvaluationContext().weights.required_dimensions),
                         },
                         "revision_hints": [],
                         "bias_warning": "",
@@ -174,16 +196,18 @@ class EvaluatorAgent(BaseAgent):
                     }
                 }
             return {
-                "evaluation_result": _empty_pass(),
+                "evaluation_result": _empty_content_degraded(),
                 "phase": state.get("phase"),
             }
 
         account_id = state.get("account_id", "default")
         # Gather _resolve_weights (DB weights + epoch) with _recall_memory (store
         # asearch): both read-only + independent, and each swallows its own
-        # exceptions → gather propagates nothing, no wrapper needed. Side-effects
-        # (self._weights/self._bias_severity) land before _build_system_prompt.
-        _, memory_context = await asyncio.gather(
+        # exceptions → gather propagates nothing, no wrapper needed. P0-W1: the
+        # resolved context is a LOCAL value (no instance side-effects), so a
+        # concurrent evaluation can no longer overwrite this call's weights
+        # before _build_system_prompt runs.
+        ctx, memory_context = await asyncio.gather(
             self._resolve_weights(account_id),
             self._recall_memory(
                 store,
@@ -197,7 +221,7 @@ class EvaluatorAgent(BaseAgent):
         for ap in memory_context:
             audience_ctx += f"- {ap.get('preference', '')}\n"
 
-        system_prompt = self._build_system_prompt(state, extra_context=audience_ctx)
+        system_prompt = self._build_system_prompt(state, extra_context=audience_ctx, ctx=ctx)
         ripple_context = self._build_ripple_context(state)
 
         user_msg = self.prompt_template["user_template"].format(
@@ -249,7 +273,7 @@ class EvaluatorAgent(BaseAgent):
                     "coverage": {
                         "weighted_ratio": 0.0,
                         "available": [],
-                        "unavailable": list(self._weights.required_dimensions),
+                        "unavailable": list(ctx.weights.required_dimensions),
                         "required": ["copywriting", "compliance"],
                         "required_available": False,
                     },
@@ -257,7 +281,9 @@ class EvaluatorAgent(BaseAgent):
             }
         raw = self._parse_json_response(cast(str, response.content))
 
-        result = self._build_evaluation_result(raw, historical=historical_note, state=state)
+        result = self._build_evaluation_result(
+            raw, historical=historical_note, state=state, ctx=ctx
+        )
         logger.info(
             "Evaluation done: overall=%s decision=%s bias_warning=%s",
             result["overall_score"],
@@ -266,13 +292,17 @@ class EvaluatorAgent(BaseAgent):
         )
         return {"evaluation_result": result}
 
-    def evaluator_fingerprint(self) -> str:
+    def evaluator_fingerprint(self, ctx: EvaluationContext | None = None) -> str:
         """Return a stable evaluator/model/prompt/weights fingerprint.
 
         The fingerprint is intentionally content-free and safe to expose in an
         API response.  It changes when the prompt body, resolved per-account
         weights/thresholds, or model identity changes.
+
+        P0-W1: weights/bias are passed in via ``ctx`` (the caller's resolved
+        context) instead of being read off the shared instance.
         """
+        ctx = ctx or EvaluationContext()
         model = self.model
         model_name = str(
             getattr(model, "model_name", None)
@@ -285,12 +315,12 @@ class EvaluatorAgent(BaseAgent):
             "prompt_sha256": hashlib.sha256(
                 json.dumps(self.prompt_template, ensure_ascii=False, sort_keys=True).encode()
             ).hexdigest(),
-            "weights": self._weights.dimension_weights,
-            "pass_threshold": self._weights.pass_threshold,
-            "reject_threshold": self._weights.reject_threshold,
-            "bias_penalty_threshold": self._weights.bias_penalty_threshold,
-            "bias_penalty": self._weights.bias_penalty,
-            "bias_severity": self._bias_severity,
+            "weights": ctx.weights.dimension_weights,
+            "pass_threshold": ctx.weights.pass_threshold,
+            "reject_threshold": ctx.weights.reject_threshold,
+            "bias_penalty_threshold": ctx.weights.bias_penalty_threshold,
+            "bias_penalty": ctx.weights.bias_penalty,
+            "bias_severity": ctx.bias_severity,
         }
         digest = hashlib.sha256(
             json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
@@ -326,6 +356,7 @@ class EvaluatorAgent(BaseAgent):
         self,
         raw: dict[str, Any],
         *,
+        ctx: EvaluationContext | None = None,
         historical: bool = False,
         state: XHSGrowthState | None = None,
     ) -> dict[str, Any]:
@@ -333,9 +364,16 @@ class EvaluatorAgent(BaseAgent):
 
         用确定规则重算 overall_score/decision，不信任 LLM 自报值
         （verifiable metric + judge signal 互补）。
+
+        P0-W1: weights/bias arrive via ``ctx`` (per-call), not instance state.
+        P0-W5: REJECTED results carry a structured ``failed_dimensions`` list
+        (blocking dims + compliance dims below the reject threshold) so the
+        router can tell a compliance/policy rejection from a quality-only one.
+        The field is additive — legacy consumers ignore it.
         """
+        ctx = ctx or EvaluationContext()
         if historical:
-            return self._build_historical_evaluation_result(raw, state or {})
+            return self._build_historical_evaluation_result(raw, state or {}, ctx=ctx)
 
         raw_dims = raw.get("dimensions") or []
         dims_by_name = {d.get("dimension"): d for d in raw_dims if isinstance(d, dict)}
@@ -345,7 +383,7 @@ class EvaluatorAgent(BaseAgent):
         dimensions: list[dict[str, Any]] = []
         weighted_available: list[str] = []
         weighted_ratio = 0.0
-        for name in self._weights.required_dimensions:
+        for name in ctx.weights.required_dimensions:
             raw_d = dims_by_name.get(name)
             d: dict[str, Any]
             if raw_d is None:
@@ -371,9 +409,9 @@ class EvaluatorAgent(BaseAgent):
                 }
                 if not available and not d["rationale"]:
                     d["rationale"] = "评估器未返回可用分数，未补中性分"
-            if d.get("available") and name in self._weights.dimension_weights:
+            if d.get("available") and name in ctx.weights.dimension_weights:
                 weighted_available.append(name)
-                weighted_ratio += self._weights.dimension_weights[name]
+                weighted_ratio += ctx.weights.dimension_weights[name]
             # bias_check 维度保留偏倚严重度（驱动 overall 下调 + epoch 演化）。
             # score=校准建议分（越高越无需调整），bias_severity=偏倚严重度（越高越糟）。
             # 语义相反，故 LLM 漏返 bias_severity 时回退 100 - score。
@@ -388,7 +426,7 @@ class EvaluatorAgent(BaseAgent):
             "weighted_ratio": round(weighted_ratio, 4),
             "available": weighted_available,
             "unavailable": [
-                name for name in self._weights.dimension_weights if name not in weighted_available
+                name for name in ctx.weights.dimension_weights if name not in weighted_available
             ],
             "required": ["copywriting", "compliance"],
             "required_available": all(
@@ -401,9 +439,9 @@ class EvaluatorAgent(BaseAgent):
             status = "partial"
             revision_hints = [str(h) for h in (raw.get("revision_hints") or []) if h]
         else:
-            overall = round(self._compute_overall(dimensions), 1)
+            overall = round(self._compute_overall(dimensions, ctx), 1)
             decision, revision_hints = self._compute_decision(
-                overall, dimensions, raw.get("revision_hints") or []
+                overall, dimensions, raw.get("revision_hints") or [], ctx=ctx
             )
             status = "partial" if coverage["unavailable"] else "ready"
 
@@ -414,11 +452,11 @@ class EvaluatorAgent(BaseAgent):
         elif (
             bias_dim
             and bias_dim.get("available")
-            and bias_dim.get("bias_severity", 0) >= self._weights.bias_penalty_threshold
+            and bias_dim.get("bias_severity", 0) >= ctx.weights.bias_penalty_threshold
         ):
             bias_warning = "检测到面板对 AI 生成内容可能过度宽容，已对综合分下调校准"
 
-        return {
+        result: dict[str, Any] = {
             "overall_score": overall,
             "dimensions": dimensions,
             "decision": decision,
@@ -429,9 +467,19 @@ class EvaluatorAgent(BaseAgent):
             "bias_warning": bias_warning,
             "summary": str(raw.get("summary", "")),
         }
+        # P0-W5 structured marker: which dimensions drove the hard rejection.
+        # Missing/empty on legacy results ⇒ the router treats the rejection as
+        # quality-only (backward-compatible default).
+        if decision == ContentStatus.REJECTED:
+            result["failed_dimensions"] = _rejection_failed_dimensions(dimensions, ctx)
+        return result
 
     def _build_historical_evaluation_result(
-        self, raw: dict[str, Any], state: XHSGrowthState
+        self,
+        raw: dict[str, Any],
+        state: XHSGrowthState,
+        *,
+        ctx: EvaluationContext | None = None,
     ) -> dict[str, Any]:
         """Build an honest historical-note result with explicit coverage.
 
@@ -440,6 +488,7 @@ class EvaluatorAgent(BaseAgent):
         never neutral-scored.  Missing niche context similarly removes
         audience/reach from the weighted denominator.
         """
+        ctx = ctx or EvaluationContext()
         raw_dims = raw.get("dimensions") or []
         dims_by_name = {d.get("dimension"): d for d in raw_dims if isinstance(d, dict)}
         niche_available = bool(state.get("niche_context_available"))
@@ -451,7 +500,7 @@ class EvaluatorAgent(BaseAgent):
         dimensions: list[dict[str, Any]] = []
         weighted_available: list[str] = []
         weighted_ratio = 0.0
-        for name in self._weights.required_dimensions:
+        for name in ctx.weights.required_dimensions:
             raw_d = dims_by_name.get(name)
             unavailable = name in unavailable_names and (
                 name not in {"visual", "image_quality"} or not visual_available
@@ -496,8 +545,8 @@ class EvaluatorAgent(BaseAgent):
             if not d["available"]:
                 d["score"] = None
             else:
-                if name in self._weights.dimension_weights:
-                    weighted_ratio += self._weights.dimension_weights[name]
+                if name in ctx.weights.dimension_weights:
+                    weighted_ratio += ctx.weights.dimension_weights[name]
                     weighted_available.append(name)
             dimensions.append(d)
 
@@ -518,7 +567,7 @@ class EvaluatorAgent(BaseAgent):
             "weighted_ratio": round(weighted_ratio, 4),
             "available": weighted_available,
             "unavailable": [
-                name for name in self._weights.dimension_weights if name not in weighted_available
+                name for name in ctx.weights.dimension_weights if name not in weighted_available
             ],
             "required": ["copywriting", "compliance"],
             "required_available": required_ok,
@@ -530,14 +579,14 @@ class EvaluatorAgent(BaseAgent):
             decision: ContentStatus | None = None
         else:
             total = sum(
-                float(d["score"]) * self._weights.dimension_weights[d["dimension"]]
+                float(d["score"]) * ctx.weights.dimension_weights[d["dimension"]]
                 for d in dimensions
-                if d.get("available") and d["dimension"] in self._weights.dimension_weights
+                if d.get("available") and d["dimension"] in ctx.weights.dimension_weights
             )
             overall = round(total / weighted_ratio, 1) if weighted_ratio else None
-            decision, _ = self._compute_decision(overall or 0.0, dimensions, [])
+            decision, _ = self._compute_decision(overall or 0.0, dimensions, [], ctx=ctx)
             status = "partial" if coverage["unavailable"] else "ready"
-        return {
+        result: dict[str, Any] = {
             "overall_score": overall,
             "dimensions": dimensions,
             "decision": decision,
@@ -548,19 +597,26 @@ class EvaluatorAgent(BaseAgent):
             "summary": str(raw.get("summary", "")),
             "assessment_type": "rqgm_content_review",
             "degraded": False,
-            "evaluator_fingerprint": self.evaluator_fingerprint(),
+            "evaluator_fingerprint": self.evaluator_fingerprint(ctx),
         }
+        if decision == ContentStatus.REJECTED:
+            # P0-W5 structured marker (see _build_evaluation_result).
+            result["failed_dimensions"] = _rejection_failed_dimensions(dimensions, ctx)
+        return result
 
-    def _compute_overall(self, dimensions: list[dict[str, Any]]) -> float:
+    def _compute_overall(
+        self, dimensions: list[dict[str, Any]], ctx: EvaluationContext | None = None
+    ) -> float:
         """加权平均 + 偏倚下调.
 
         bias_severity 高（检测到明显偏倚）→ 对 overall 下调。
         不再用 bias_check.score（其语义为"校准建议分"，方向与 severity 相反）。
         """
+        ctx = ctx or EvaluationContext()
         by_name = {d["dimension"]: d for d in dimensions}
         total = 0.0
         covered_weight = 0.0
-        for name, weight in self._weights.dimension_weights.items():
+        for name, weight in ctx.weights.dimension_weights.items():
             d = by_name.get(name)
             if not d or d.get("available", True) is False or d.get("score") is None:
                 continue
@@ -572,8 +628,8 @@ class EvaluatorAgent(BaseAgent):
         total /= covered_weight
 
         bias = by_name.get("bias_check")
-        if bias and bias.get("bias_severity", 0) >= self._weights.bias_penalty_threshold:
-            total -= self._weights.bias_penalty
+        if bias and bias.get("bias_severity", 0) >= ctx.weights.bias_penalty_threshold:
+            total -= ctx.weights.bias_penalty
         return round(max(0.0, min(100.0, total)), 10)
 
     def _compute_decision(
@@ -581,8 +637,11 @@ class EvaluatorAgent(BaseAgent):
         overall: float,
         dimensions: list[dict[str, Any]],
         raw_hints: list[Any],
+        *,
+        ctx: EvaluationContext | None = None,
     ) -> tuple[ContentStatus, list[str]]:
         """确定规则判定 decision（不信任 LLM 自报）."""
+        ctx = ctx or EvaluationContext()
         has_blocking = any(d["is_blocking"] for d in dimensions)
         compliance = next((d for d in dimensions if d["dimension"] == "compliance"), None)
 
@@ -590,10 +649,10 @@ class EvaluatorAgent(BaseAgent):
             compliance
             and compliance.get("available", True)
             and compliance.get("score") is not None
-            and float(compliance["score"]) < self._weights.reject_threshold
+            and float(compliance["score"]) < ctx.weights.reject_threshold
         ):
             decision = ContentStatus.REJECTED
-        elif overall >= self._weights.pass_threshold:
+        elif overall >= ctx.weights.pass_threshold:
             decision = ContentStatus.APPROVED
         else:
             decision = ContentStatus.NEEDS_REVISION
@@ -657,25 +716,62 @@ class EvaluatorAgent(BaseAgent):
         return hints
 
 
-def _empty_pass() -> dict[str, Any]:
-    """无内容可评估时的降级通过结果."""
+def _empty_content_degraded() -> dict[str, Any]:
+    """无内容可评估时的显式降级结果（P0-W5）.
+
+    The legacy shape faked a 100/APPROVED pass which the evaluator router read
+    as approval and sent straight to the publisher. Empty content is NOT
+    evidence of quality: it degrades to decision=None so the workflow takes the
+    same human channel as an evaluator failure — 空内容不得自动发布.
+    """
     return {
-        "overall_score": 100.0,
-        "dimensions": [
-            {
-                "dimension": name,
-                "score": 100.0,
-                "rationale": "无内容可评估，降级通过",
-                "issues": [],
-                "is_blocking": False,
-            }
-            for name in _REQUIRED_DIMENSIONS
-        ],
-        "decision": ContentStatus.APPROVED,
+        "overall_score": None,
+        "dimensions": [],
+        "decision": None,
+        "status": "degraded",
+        "degraded": True,
+        "coverage": {
+            "weighted_ratio": 0.0,
+            "available": [],
+            "unavailable": list(_DIMENSION_WEIGHTS),
+            "required": ["copywriting", "compliance"],
+            "required_available": False,
+        },
         "revision_hints": [],
         "bias_warning": "",
-        "summary": "无内容可评估，自动通过",
+        "summary": "无内容可评估，评估未完成（不得自动发布，等待人工处理）",
     }
+
+
+def _rejection_failed_dimensions(
+    dimensions: list[dict[str, Any]], ctx: EvaluationContext
+) -> list[str]:
+    """Structured REJECTED cause marker (P0-W5, additive field).
+
+    Returns the dimension names that drove the hard rejection: every dimension
+    flagged ``is_blocking`` plus ``compliance`` when it scored below the reject
+    threshold. ``failed_dimensions`` containing a compliance/policy dimension
+    (or any blocking dimension) marks the rejection as compliance-driven, which
+    the router must never force-publish at the revision cap. A quality-only
+    rejection yields the failing non-blocking dimension names — the router's
+    legacy default when the field is absent is also quality.
+    """
+    failed: list[str] = []
+    for d in dimensions:
+        if d.get("is_blocking"):
+            name = str(d.get("dimension") or "")
+            if name and name not in failed:
+                failed.append(name)
+    compliance = next((d for d in dimensions if d.get("dimension") == "compliance"), None)
+    if (
+        compliance
+        and compliance.get("available", True)
+        and compliance.get("score") is not None
+        and float(compliance["score"]) < ctx.weights.reject_threshold
+        and "compliance" not in failed
+    ):
+        failed.append("compliance")
+    return failed
 
 
 def _to_float(v: Any, default: float) -> float:

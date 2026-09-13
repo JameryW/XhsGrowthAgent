@@ -30,7 +30,7 @@ class _DummyAgent(BaseAgent):
     async def execute(self, state, store):  # type: ignore[override]
         # Simulate _llm_ainvoke capturing entries during execute() — must happen
         # before any raise so the failure path still records captured cost.
-        self._llm_perf_entries = list(self._llm_entries)
+        self._current_llm_perf_entries().extend(self._llm_entries)
         if self._exc:
             raise self._exc
         return dict(self._result)

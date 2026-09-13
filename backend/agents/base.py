@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -22,10 +23,25 @@ if TYPE_CHECKING:
     from backend.state.schema import XHSGrowthState
 
 from backend.config.models import TaskType
+from backend.memory.exceptions import UnknownMemoryNamespaceError
 from backend.memory.store import MemoryManager
 from backend.models.router import get_model
 
 logger = logging.getLogger("xhs_growth.agents")
+
+# P0-W1 (task 09-11-p0-correctness-fixes): LLM perf entries live in a
+# ContextVar, NOT on the agent instance. Agent classes are module-level
+# singletons shared by every concurrent workflow on the single asyncio event
+# loop; the old ``self._llm_perf_entries`` list leaked entries across tasks
+# (cross-contaminated performance_log / cost attribution). Each asyncio task
+# gets its own context, so set()/append inside execute() are invisible to
+# sibling tasks — same isolation pattern as ``_tool_llm_cost`` in
+# backend/agents/nodes/_base.py. Child tasks spawned by gather inside execute()
+# inherit the context and mutate the SAME list object (append is visible;
+# rebinding via set() is not — hence reset only at execute/__call__ scope).
+_llm_perf_var: contextvars.ContextVar[list[dict[str, Any]] | None] = contextvars.ContextVar(
+    "llm_perf_entries", default=None
+)
 
 
 class BaseAgent(ABC):
@@ -38,7 +54,28 @@ class BaseAgent(ABC):
     def __init__(self) -> None:
         self._model: BaseChatModel | None = None
         self._prompt_template: dict[str, str] | None = None
-        self._llm_perf_entries: list[dict[str, Any]] = []
+
+    # ── LLM perf entry capture (ContextVar-scoped, P0-W1) ──
+
+    @staticmethod
+    def _current_llm_perf_entries() -> list[dict[str, Any]]:
+        """The live per-context llm perf entry list (created if absent)."""
+        entries = _llm_perf_var.get()
+        if entries is None:
+            entries = []
+            _llm_perf_var.set(entries)
+        return entries
+
+    @staticmethod
+    def _drain_llm_perf() -> list[dict[str, Any]]:
+        """Read (and detach) the accumulated llm perf entries for this context.
+
+        Consumers that write ``performance_log`` use this instead of touching
+        instance state — the returned list is owned by the caller afterwards.
+        """
+        entries = _llm_perf_var.get() or []
+        _llm_perf_var.set([])
+        return entries
 
     @property
     def model(self) -> BaseChatModel:
@@ -51,10 +88,11 @@ class BaseAgent(ABC):
 
         Wraps :meth:`model.ainvoke` with timing + token/cost capture (via
         :func:`backend.agents.nodes._base.llm_perf_entry`). Entries accumulate
-        on ``self._llm_perf_entries``; the node wrapper merges them with the
-        node-level entry into ``performance_log``. Reset per execute() via
-        :meth:`_reset_llm_perf`. Best-effort: a capture failure never breaks
-        the call.
+        on a per-asyncio-task ContextVar (P0-W1; formerly a shared instance
+        list that cross-contaminated concurrent workflows); the node wrapper
+        merges them with the node-level entry into ``performance_log``. Reset
+        per execute() via :meth:`_reset_llm_perf`. Best-effort: a capture
+        failure never breaks the call.
         """
         from datetime import UTC, datetime
 
@@ -80,14 +118,19 @@ class BaseAgent(ABC):
             )
             if entry is not None:
                 entry["ainvoke_ms"] = round(ainvoke_ms, 3)
-                self._llm_perf_entries.append(entry)
+                self._current_llm_perf_entries().append(entry)
         except Exception as exc:  # best-effort: never break the call
             logger.debug("llm perf entry capture failed: %s", exc)
         return response
 
     def _reset_llm_perf(self) -> None:
-        """Clear accumulated llm perf entries at the start of execute()."""
-        self._llm_perf_entries = []
+        """Start a fresh llm perf entry accumulation for this context.
+
+        Called at the start of every agent execute(); signature unchanged so
+        all 13 call sites keep working. The new list is bound to the current
+        asyncio task's context (P0-W1), never to the shared agent instance.
+        """
+        _llm_perf_var.set([])
 
     @property
     def prompt_template(self) -> dict[str, str]:
@@ -127,15 +170,21 @@ class BaseAgent(ABC):
     ) -> list[dict[str, Any]]:
         if store is None:
             return []
+        mm = MemoryManager(account_id)
+        ns_map = {
+            "content_history": mm.content_history_ns,
+            "audience_preferences": mm.audience_ns,
+            "performance_insights": mm.insights_ns,
+            "strategy_notes": mm.strategy_ns,
+        }
+        # P0-W2 fail-fast: a typo'd namespace must NOT silently fall back to
+        # performance_insights (that read the wrong memory and looked like a
+        # successful recall). The check sits OUTSIDE the best-effort try so
+        # the except below cannot swallow the programming error.
+        if namespace not in ns_map:
+            raise UnknownMemoryNamespaceError(namespace)
+        ns = ns_map[namespace]
         try:
-            mm = MemoryManager(account_id)
-            ns_map = {
-                "content_history": mm.content_history_ns,
-                "audience_preferences": mm.audience_ns,
-                "performance_insights": mm.insights_ns,
-                "strategy_notes": mm.strategy_ns,
-            }
-            ns = ns_map.get(namespace, mm.insights_ns)
             items = await store.asearch(ns, query=query, limit=limit)
             return [item.value for item in items]
         except Exception as e:
@@ -155,8 +204,9 @@ class BaseAgent(ABC):
             return self._parse_json_response_impl(content)
         finally:
             try:
-                if self._llm_perf_entries:
-                    self._llm_perf_entries[-1]["parse_ms"] = round(
+                entries = _llm_perf_var.get()
+                if entries:
+                    entries[-1]["parse_ms"] = round(
                         (time.perf_counter() - _parse_start) * 1000.0, 3
                     )
             except Exception:
@@ -286,11 +336,14 @@ class BaseAgent(ABC):
 
         started = _now_iso()
         retries = int(state.get("retry_count", 0) or 0)
-        # Set a per-execute tool-LLM-cost accumulator so enrich_with_llm calls
-        # made inside tools during execute() can append kind:"llm" entries.
-        # Drained + reset below (both paths) so tool-path token cost reaches
-        # performance_log and the /analytics/costs reader; the set/reset token
-        # isolates per-execute and prevents stale leakage across requests.
+        # P0-W1: open a per-execute llm-perf context scope (token reset in the
+        # finally below) so entries never survive this call. Set a per-execute
+        # tool-LLM-cost accumulator so enrich_with_llm calls made inside tools
+        # during execute() can append kind:"llm" entries. Drained + reset below
+        # (both paths) so tool-path token cost reaches performance_log and the
+        # /analytics/costs reader; the set/reset token isolates per-execute and
+        # prevents stale leakage across requests.
+        perf_token = _llm_perf_var.set([])
         tool_token = _tool_llm_cost.set([])
         try:
             try:
@@ -299,7 +352,8 @@ class BaseAgent(ABC):
                 logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
                 # Drain tool-path cost captured during execute() BEFORE building
                 # the failed entry so it rides the perf log; reset via token.
-                self._llm_perf_entries.extend(_tool_llm_cost.get() or [])
+                perf_entries = self._drain_llm_perf()
+                perf_entries.extend(_tool_llm_cost.get() or [])
                 # Stateful retry: return error state (not raise) so LangGraph
                 # merges it and should_plan/orchestrator routers can read
                 # retry_count to retry/terminate. See prd ADR-lite.
@@ -317,7 +371,7 @@ class BaseAgent(ABC):
                             retries=retries + 1,
                         )
                     ]
-                    entries.extend(self._llm_perf_entries)
+                    entries.extend(perf_entries)
                     result["performance_log"] = entries
                 except Exception as timer_err:  # best-effort: never break the node
                     logger.debug("performance_log failed entry failed: %s", timer_err)
@@ -325,7 +379,8 @@ class BaseAgent(ABC):
 
             # Drain tool-path cost captured during execute() BEFORE building the
             # success entry so it rides the perf log; reset via token below.
-            self._llm_perf_entries.extend(_tool_llm_cost.get() or [])
+            perf_entries = self._drain_llm_perf()
+            perf_entries.extend(_tool_llm_cost.get() or [])
             result["current_agent"] = self.agent_name
             result["error"] = None  # Clear stale error on success
             try:
@@ -341,15 +396,17 @@ class BaseAgent(ABC):
                         retries=retries,
                     )
                 ]
-                entries.extend(self._llm_perf_entries)
+                entries.extend(perf_entries)
                 result["performance_log"] = entries
             except Exception as timer_err:  # best-effort: never break the node
                 logger.debug("performance_log node entry failed: %s", timer_err)
             return result
         finally:
-            # Always reset via the token so a nested/errored execute never leaks
-            # stale entries to the next request (drain already happened above).
+            # Always reset via the tokens so a nested/errored execute never
+            # leaks stale entries to the next request (drain already happened
+            # above).
             _tool_llm_cost.reset(tool_token)
+            _llm_perf_var.reset(perf_token)
 
 
 def _now_iso() -> str:
