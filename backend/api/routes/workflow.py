@@ -18,7 +18,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
-from backend.agents.publisher import run_publish
+from backend.agents.publisher import (
+    evaluate_unknown_publish_retry,
+    reconcile_unknown_publish,
+    run_publish,
+)
 from backend.api.account_scope import (
     assert_thread_owned,
     require_owned_account,
@@ -42,9 +46,10 @@ from backend.db.workflows import (
 from backend.db.workflows import (
     update_workflow as db_update,
 )
+from backend.graph.routers import PAUSE_REASON_EVALUATOR_FAIL_CLOSED
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
-from backend.state.enums import WorkflowPhase
+from backend.state.enums import ContentStatus, WorkflowPhase
 from backend.state.machine import WorkflowStatus, derive_status
 
 logger = logging.getLogger(__name__)
@@ -214,6 +219,137 @@ def _resume_phase_for_next_nodes(
         if node in phase_by_node:
             return phase_by_node[node]
     return fallback
+
+
+# ── P0-W5 continuation channel: evaluator fail-closed pause ──────────────────
+#
+# The evaluator gate is fail-closed: a degraded evaluation or a compliance
+# rejection ends the run with phase=PAUSED + pause_reason=evaluator_fail_closed
+# (backend/graph/routers.py::evaluator_requires_human is the single source of
+# truth shared by node and router). Such a thread must NEVER fall through to the
+# legacy restart below — ainvoke-from-scouting would re-run the whole creation
+# pipeline. A human decision continues it in place instead:
+#
+#   approve → evaluation_result is patched to APPROVED and the gate is replayed
+#             via aupdate_state(as_node="evaluator_gate"), so the conditional
+#             edge routes straight to the publisher (verified empirically in
+#             tests/integration/test_evaluator_pause_resume.py). Compliance
+#             blocks are human-overridable BY DESIGN — fail-closed means
+#             "requires a human", not "forbidden".
+#   revise   → patched to NEEDS_REVISION with a FRESH revision budget
+#             (revision_count reset to 0), so the human-initiated cycle gets a
+#             full Settings().workflow.max_revision_count allowance instead of
+#             instantly re-triggering the fail-closed cap.
+#
+# Both paths keep the original judge output (score/dimensions/summary) so the
+# audit trail and the training samples still show what the panel actually said;
+# only the verdict fields the shared predicate reads are overridden, and the
+# decision is stamped into ``human_override`` for attribution.
+
+HUMAN_DECISIONS = ("approve", "revise")
+
+
+def build_evaluator_pause_resume_updates(values: dict[str, Any], decision: str) -> dict[str, Any]:
+    """State patch that carries a thread past an evaluator fail-closed pause.
+
+    Written with ``as_node="evaluator_gate"`` so the gate's own conditional edge
+    decides what runs next; the patched result must make
+    ``evaluator_requires_human`` False (asserted against the real predicate in
+    the tests).
+    """
+    evaluation = dict(values.get("evaluation_result") or {})
+    dimensions = evaluation.get("dimensions")
+    if isinstance(dimensions, list):
+        # Clear stale blocking evidence: the human has seen it and decided. The
+        # next gate pass re-derives its own verdict from a fresh panel run.
+        evaluation["dimensions"] = [
+            {**d, "is_blocking": False} if isinstance(d, dict) else d for d in dimensions
+        ]
+    evaluation["degraded"] = False
+    evaluation["failed_dimensions"] = []
+    evaluation["human_override"] = {
+        "decision": decision,
+        "source": "resume_api",
+        "at": datetime.now(UTC).isoformat(),
+    }
+
+    if decision == "approve":
+        evaluation["decision"] = ContentStatus.APPROVED.value
+        evaluation["status"] = "human_approved"
+        phase: WorkflowPhase = WorkflowPhase.PUBLISHING
+    else:
+        evaluation["decision"] = ContentStatus.NEEDS_REVISION.value
+        evaluation["status"] = "human_revision_requested"
+        hints = [h for h in (evaluation.get("revision_hints") or []) if isinstance(h, str)]
+        evaluation["revision_hints"] = hints or [
+            "人工复核未放行：请根据评估意见重写标题/正文/视觉方案后再次送审"
+        ]
+        phase = WorkflowPhase.REVIEWING
+
+    updates: dict[str, Any] = {
+        "evaluation_result": evaluation,
+        "pause_reason": None,
+        "phase": phase,
+        "error": None,
+    }
+    if decision == "revise":
+        # Fresh revision budget for the human-initiated cycle (see header).
+        updates["revision_count"] = 0
+    return updates
+
+
+async def _resume_past_evaluator_pause(
+    thread_id: str,
+    request: Request,
+    graph: Any,
+    config: dict[str, Any],
+    state: Any,
+) -> ApiResponse[Any]:
+    """Handle /resume for a thread the evaluator parked. Always returns or 4xx.
+
+    An explicit human_decision is mandatory here: silently continuing would
+    either re-run the whole pipeline (legacy path) or auto-publish past a
+    compliance block, which is exactly what P0-W5 forbids.
+    """
+    body: dict[str, Any] = (
+        await request.json()
+        if request.headers.get("content-type", "").startswith("application/json")
+        else {}
+    )
+    decision = str(body.get("human_decision") or "").strip().lower()
+    if decision not in HUMAN_DECISIONS:
+        raise ValidationError(
+            "human_decision",
+            "该工作流停在评估质量门（evaluator_fail_closed），必须由人工显式决定如何继续："
+            '请求体需带 {"human_decision": "approve"}（放行发布）或 '
+            '"revise"（退回修订并给出新的修订额度）。'
+            "未提供决定时不会重跑创作流水线，也不会自动发布。",
+        )
+
+    updates = build_evaluator_pause_resume_updates(state.values or {}, decision)
+    await graph.aupdate_state(config, updates, as_node="evaluator_gate")
+    phase = updates["phase"]
+    await _start_resume_task(thread_id, graph, config, phase)
+    logger.info(
+        "Evaluator fail-closed pause continued by human decision=%s for %s (phase=%s)",
+        decision,
+        thread_id,
+        phase,
+    )
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": phase,
+            "human_decision": decision,
+            "continued_from": "evaluator_gate",
+            "message": (
+                "人工已放行评估质量门，继续发布（不会重跑创作链路）"
+                if decision == "approve"
+                else "人工选择修订：已退回内容修订环节，并授予新的修订额度"
+            ),
+        }
+    )
 
 
 def _task_name(task: Any) -> str | None:
@@ -435,6 +571,13 @@ class WorkflowStatusResponse(BaseModel):
     reselect_count: int = Field(default=0, description="重新选题次数")
     ripple_reason: str = Field(default="", description="Ripple 未运行原因")
     label: str = Field(default="", description="工作流名称")
+    # P0-W5: set when the evaluator quality gate parked the workflow
+    # ("evaluator_fail_closed"). The UI uses it to render an approve/revise
+    # decision prompt instead of a plain "resume" button, because /resume on
+    # such a thread REQUIRES an explicit human_decision.
+    pause_reason: str | None = Field(
+        default=None, description="原因：为何工作流停在 paused（如 evaluator_fail_closed）"
+    )
     checkpoint_lost: bool = Field(
         default=False,
         description="Checkpoint lost after container restart",
@@ -859,6 +1002,7 @@ async def get_workflow_status(
                 reselect_count=state.values.get("reselect_count", 0),
                 ripple_reason=state.values.get("ripple_reason") or "",
                 label=label,
+                pause_reason=state.values.get("pause_reason"),
                 orphan=is_orphan,
             ).model_dump()
         )
@@ -1227,6 +1371,22 @@ async def resume_workflow(
         thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
     ) or (thread_id in _runner._active_sync_executions)
     derived = derive_status(state, has_active_task=has_active)
+
+    # P0-W5 continuation channel: the evaluator parked this thread on purpose.
+    # Handled exclusively here — such a thread must never reach the legacy
+    # restart further down (that re-runs scouting and the whole creation chain).
+    # Only run-ended/terminal shapes qualify; a thread that is live or waiting at
+    # another gate keeps its existing channel (review submit, gate resume, ...).
+    if str(
+        (state.values or {}).get("pause_reason") or ""
+    ) == PAUSE_REASON_EVALUATOR_FAIL_CLOSED and derived in (
+        WorkflowStatus.PAUSED,
+        WorkflowStatus.COMPLETED,
+        WorkflowStatus.CANCELLED,
+        WorkflowStatus.ERROR,
+        WorkflowStatus.STALE,
+    ):
+        return await _resume_past_evaluator_pause(thread_id, request, graph, config, state)
 
     if derived == WorkflowStatus.AWAITING_REVIEW:
         return success(
@@ -2594,6 +2754,9 @@ async def retry_publish(
 
     用于发布失败（status=failed/error）或试运行（mock_published）后手动重发。
     已发布的（status=published/success）拒绝，避免重复发笔记。
+    P0-W4：status="unknown"（结果不明）先自动对账；对账确认已发布则不重发，
+    对账不确定时拒绝重试，需请求体显式 {"force": true} 才继续（真实发布侧还有
+    确定性 publish_id 幂等护栏兜底）。
     """
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -2653,6 +2816,37 @@ async def retry_publish(
             }
         )
 
+    # P0-W4: status="unknown"（提交后超时等结果不明）的重试必须先对账；对账
+    # 不确定时要求请求体显式 force=true 才继续——盲目重发可能产生重复笔记。
+    body: dict[str, Any] = (
+        await request.json()
+        if request.headers.get("content-type", "").startswith("application/json")
+        else {}
+    )
+    force_retry = bool(body.get("force"))
+    if pr_status == "unknown":
+        reconciled = await reconcile_unknown_publish(values, request.app.state.graph.store)
+        gate = evaluate_unknown_publish_retry(pr_status, force_retry, reconciled)
+        if gate is not None:
+            return success(
+                data={
+                    "thread_id": thread_id,
+                    **gate,
+                }
+            )
+        # 显式 force：把人工决定落到 publish_options.force_publish，run_publish
+        # 的幂等护栏据此放行（并重新记录本次尝试）。
+        await graph.aupdate_state(
+            config,
+            {
+                "publish_options": {
+                    **(values.get("publish_options") or {}),
+                    "force_publish": True,
+                }
+            },
+            as_node=_get_as_node(state),
+        )
+
     def _emit_retry_event(tid: str, publish_result: dict[str, Any]) -> None:
         bus = EventBusService.get_instance()
         status = publish_result.get("status", "unknown")
@@ -2680,7 +2874,18 @@ async def retry_publish(
             snap = await graph.aget_state(config)
             await graph.aupdate_state(
                 config,
-                {"publish_result": publish_result, "phase": WorkflowPhase.PUBLISHING},
+                {
+                    "publish_result": publish_result,
+                    "phase": WorkflowPhase.PUBLISHING,
+                    # P0-W4 (F3): run_publish consumes an explicit force one
+                    # shot and returns the cleared options — write them back so
+                    # the next publish on this thread is guarded again.
+                    **(
+                        {"publish_options": result["publish_options"]}
+                        if result.get("publish_options") is not None
+                        else {}
+                    ),
+                },
                 as_node=_get_as_node(snap),
             )
             # ponytail: 真实 XHS 发布成功只 redirect 到 success 页，post_id 从 URL

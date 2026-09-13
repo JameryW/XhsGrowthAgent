@@ -545,13 +545,16 @@ class XHSClient:
             )
         return self._engagement
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=10, max=120),
-        reraise=True,
-    )
+    # P0-W3/W4: deliberately NO generic auto-retry on this method. It is the
+    # side-effecting submit — a retry that fires after the platform already
+    # accepted the note (e.g. on a response timeout) DOUBLE-POSTS. The read
+    # methods above keep their tenacity retries; retrying a publish is an
+    # explicit human action via /api/workflow/publish-retry, guarded by the
+    # deterministic publish_id idempotency record + unknown-result
+    # reconciliation (backend/agents/publisher.py). Unified retry ownership
+    # (Gateway) lands in P1c.
     async def publish_post(self, post: XHSPost) -> dict[str, Any]:
-        """发布帖子 (Playwright)"""
+        """发布帖子 (Playwright) — 单次真实提交，不自动重试。"""
         logger.info(f"Publishing post: {post.title}")
 
         if not self.use_browser:

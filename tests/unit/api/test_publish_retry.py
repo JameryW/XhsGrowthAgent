@@ -229,3 +229,62 @@ def test_not_found_when_no_state(app_and_client):
     # WorkflowNotFoundError → error envelope (not success)
     body = resp.json()
     assert body["success"] is False
+
+
+def test_forced_retry_clears_force_publish_in_checkpoint(app_and_client):
+    """P0-W4 (F3) stickiness: the forced retry must hand back cleared
+    publish_options so the NEXT publish on this thread is guarded again —
+    force_publish is one-shot, not a thread-level permanent bypass."""
+    app, client, graph = app_and_client
+    pr = {"post_id": "p1", "post_url": "u", "status": "published"}
+    run_result = {
+        "publish_result": pr,
+        "publish_options": {"dry_run": False, "account_id": "acc1", "force_publish": False},
+    }
+    captured = {}
+
+    def fake_create_task(coro, **kw):
+        captured["coro"] = coro
+        task = MagicMock()
+        task.add_done_callback = MagicMock()
+        task.get_name = lambda: kw.get("name", "")
+        return task
+
+    with (
+        patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value=run_result),
+        patch(_DB_UPSERT, new_callable=AsyncMock),
+        patch(_EVENT_BUS) as mock_bus_cls,
+        patch("backend.api.routes.workflow.asyncio.create_task", side_effect=fake_create_task),
+    ):
+        mock_bus_cls.get_instance.return_value = MagicMock()
+        client.post("/api/workflow/publish-retry/thr1", json={"force": True})
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(captured["coro"])
+        finally:
+            loop.close()
+
+    updates = graph.aupdate_state.await_args.args[1]
+    assert updates["publish_options"]["force_publish"] is False
+
+
+def test_unknown_publish_without_force_is_refused(app_and_client):
+    """P0-W4: an "unknown" publish result cannot be blind-retried — the endpoint
+    refuses until reconciliation or an explicit force=true arrives."""
+    app, client, graph = app_and_client
+    graph.aget_state.return_value.values = _values(publish_result={"status": "unknown"})
+
+    with (
+        patch(_RUN_PUBLISH, new_callable=AsyncMock) as mock_rp,
+        patch(
+            "backend.api.routes.workflow.reconcile_unknown_publish",
+            new_callable=AsyncMock,
+            return_value={"status": "uncertain"},
+        ),
+    ):
+        resp = client.post("/api/workflow/publish-retry/thr1", json={})
+
+    body = resp.json()["data"]
+    assert body["status"] == "requires_force"
+    assert "force" in body["message"]
+    mock_rp.assert_not_awaited()

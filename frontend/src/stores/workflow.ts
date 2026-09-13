@@ -277,6 +277,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
     currentStatus.value === 'awaiting_blogger_selection'
   )
 
+  // P0-W5: the pre-publish quality gate parked this workflow on purpose
+  // (degraded evaluation or compliance rejection). /resume on such a thread
+  // REQUIRES an explicit human decision (approve / revise) — a plain resume is
+  // rejected with 400 instead of restarting the whole pipeline.
+  const evaluatorGatePaused = computed(() =>
+    currentStatus.value === 'paused'
+    && effectiveState.value?.pause_reason === 'evaluator_fail_closed'
+  )
+
   const bloggerCandidates = computed(() =>
     (effectiveState.value as any)?.blogger_candidates || []
   )
@@ -1001,25 +1010,37 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  async function resumeWorkflow(resumeValue?: Record<string, unknown>) {
+  async function resumeWorkflow(
+    resumeValue?: Record<string, unknown>,
+    humanDecision?: 'approve' | 'revise',
+  ) {
     if (!activeThreadId.value) return
     const threadId = activeThreadId.value
     isLoading.value = true
     error.value = null
     try {
-      const result = await workflowApi.resumeWorkflow(threadId, resumeValue)
+      const result = await workflowApi.resumeWorkflow(threadId, resumeValue, humanDecision)
       const state = workflowStates.value.get(threadId)
       if (state) {
         const nextState = {
           ...state,
           status: result.status || 'running',
           phase: result.phase || state.phase,
+          // The decision consumed the gate pause; don't keep offering it until
+          // the next /status poll confirms from the checkpoint.
+          ...(humanDecision ? { pause_reason: null } : {}),
         } as WorkflowStateResponse
         workflowStates.value.set(threadId, nextState)
         updateProgressFromPhase(nextState.phase, nextState.progress_percent)
       }
       realtimeStore.subscribeWorkflow(threadId)
-      toastStore.success(t('workflow.resumed'), `${t('workflow.currentPhase')}: ${state?.phase}`)
+      // A gate decision carries its own explanation from the backend; plain
+      // resume keeps the generic toast.
+      const decisionMessage = humanDecision ? (result as any).message : ''
+      toastStore.success(
+        decisionMessage || t('workflow.resumed'),
+        `${t('workflow.currentPhase')}: ${state?.phase}`,
+      )
       return result
     } catch (e: any) {
       error.value = e.message
@@ -1375,6 +1396,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isAwaitingBrief,
     isAwaitingRippleDecision,
     isAwaitingBloggerSelection,
+    evaluatorGatePaused,
     bloggerCandidates,
     reselectCount,
     trendData,

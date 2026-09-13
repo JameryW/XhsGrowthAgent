@@ -216,6 +216,11 @@ class XHSPublisher:
 
         Returns:
             发布结果: {"post_id": str, "status": str, "url": str}
+
+            结果契约（P0-W4）：status ∈ {"published", "failed"/"error"/
+            "auth_failed"（确定未发布）, "unknown"/"pending"（提交动作已发起、
+            结果不明）}。后者带 ``result_known: False``，调用方必须保留幂等护栏
+            而不是当成失败重发。
         """
         if hashtags is None:
             hashtags = []
@@ -298,6 +303,16 @@ class XHSPublisher:
 
         page.on("response", _on_resp)
 
+        # P0-W4 (F2): the submit boundary. Everything up to the publish click is
+        # a local/pre-submit phase whose failure is a DEFINITE rejection (the
+        # note never reached the platform). Once the click is initiated the
+        # outcome stops being observable from here — a timeout may mean "the
+        # note published and the response never came back". The flag lets the
+        # return contract say so (`result_known` / publish_result_unknown)
+        # instead of reporting an ambiguous timeout as a plain failure, which
+        # would release the caller's idempotency guard and invite a duplicate.
+        submit_initiated = False
+
         try:
             # 1. 检查登录
             if not await self._check_login():
@@ -336,7 +351,9 @@ class XHSPublisher:
                 await self._set_private(page)
                 logger.info("设置为仅自己可见")
 
-            # 9. 点击发布
+            # 9. 点击发布 — the submit action itself. From here on the platform
+            # has the note (or not) and we can no longer tell from a failure.
+            submit_initiated = True
             await self._click_publish(page)
             logger.info("点击发布按钮")
 
@@ -347,15 +364,33 @@ class XHSPublisher:
 
         except Exception as e:
             logger.error(f"发布失败: {e}", exc_info=True)
-            # ponytail: drop the dirty page (keep the browser) so a retry starts
-            # from a clean page instead of a half-filled/erroring one. The
-            # caller (XHSClient.publish_post) retries up to 3x; without this
-            # reset, _ensure_page returns the same stuck page every attempt.
+            # ponytail: drop the dirty page (keep the browser) so the next
+            # attempt starts from a clean page instead of a half-filled/
+            # erroring one. NOTE (P0-W3/W4 comment fix): XHSClient.publish_post
+            # deliberately has NO auto-retry any more — a generic retry around a
+            # side-effecting submit double-posts on a timeout. Retrying a real
+            # publish is an explicit upper-layer concern (/publish-retry with
+            # idempotency + reconciliation; unified Gateway retry lands in P1c)
+            # — this reset exists so such an explicit retry never reuses a stuck
+            # page.
             if self._page is not None:
                 with contextlib.suppress(Exception):
                     await self._page.close()
                 self._page = None
-            return {"post_id": "", "status": "error", "error": str(e)}
+            if submit_initiated:
+                # Result genuinely unknowable from here: the note may already
+                # exist on the platform. Say so instead of "failed" so the
+                # caller keeps its idempotency guard armed (P0-W4).
+                logger.error("发布提交动作已发起但结果不明（可能已发帖成功）: %s", e)
+                return {
+                    "post_id": "",
+                    "post_url": "",
+                    "status": "unknown",
+                    "error": str(e),
+                    "result_known": False,
+                    "error_type": "publish_result_unknown",
+                }
+            return {"post_id": "", "status": "error", "error": str(e), "result_known": True}
 
     async def _upload_images(self, page: Page, image_paths: list[str]) -> None:
         """上传图片"""
@@ -673,6 +708,9 @@ class XHSPublisher:
                     "post_id": "",
                     "status": "pending",
                     "error": "发布状态未知，请手动确认",
+                    # No verdict after the submit click — treat as unknown so the
+                    # caller keeps the idempotency guard armed (P0-W4).
+                    "result_known": False,
                 }
 
             return {
@@ -688,6 +726,7 @@ class XHSPublisher:
                 "post_id": "",
                 "status": "pending",
                 "error": "发布状态未知，请手动确认",
+                "result_known": False,  # no verdict — see the P0-W4 note above
             }
 
     async def _stop_playwright(self) -> None:

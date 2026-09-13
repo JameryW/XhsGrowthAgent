@@ -25,7 +25,11 @@ from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.nodes.evaluator import evaluator_node
 from backend.agents.nodes.revise_content import revise_content_node
 from backend.graph.builder import build_graph
-from backend.graph.routers import evaluator_outcome
+from backend.graph.routers import (
+    PAUSE_REASON_EVALUATOR_FAIL_CLOSED,
+    evaluator_outcome,
+    evaluator_requires_human,
+)
 from backend.state.enums import ContentStatus, WorkflowPhase
 
 
@@ -87,7 +91,9 @@ class TestEvaluatorNodeIntegration:
 
     @pytest.mark.asyncio
     async def test_node_degrades_to_pass_on_agent_failure(self, state, store):
-        """Agent throwing → node returns explicit degraded/scoreless output."""
+        """Agent throwing → explicit degraded/scoreless output, and the workflow
+        is parked for a human (P0-W5: a degraded quality gate must never
+        silently reach the publisher)."""
         with patch.object(EvaluatorAgent, "model", new_callable=PropertyMock) as m:
             model = MagicMock()
             model.ainvoke = AsyncMock(side_effect=RuntimeError("LLM down"))
@@ -100,6 +106,80 @@ class TestEvaluatorNodeIntegration:
         assert ev["status"] == "degraded"
         assert ev["degraded"] is True
         assert "评估器异常" in ev["summary"]
+        # Human channel: existing paused semantics (derive_status → "paused"),
+        # no new status enum for the frontend.
+        assert result["phase"] == WorkflowPhase.PAUSED
+        # W5 continuation: the pause carries a machine-readable reason so
+        # /resume can demand an explicit human decision instead of restarting
+        # the whole pipeline.
+        assert result["pause_reason"] == PAUSE_REASON_EVALUATOR_FAIL_CLOSED
+
+    @pytest.mark.asyncio
+    async def test_compliance_rejection_at_cap_pauses_with_reason(self, state, store):
+        """Node marker and router share ONE predicate (no divergence).
+
+        A compliance rejection at the revision cap is fail-closed: the node
+        marks the pause with a reason and the router ends the run — the human
+        continuation channel is the only way forward.
+        """
+        dims = ",".join(
+            '{"dimension": "%s", "score": %s, "rationale": "r", "issues": [], '
+            '"is_blocking": %s}' % (name, score, str(blocking).lower())
+            for name, score, blocking in (
+                ("copywriting", 80, False),
+                ("visual", 80, False),
+                ("compliance", 10, True),
+                ("reach", 80, False),
+                ("audience", 80, False),
+                ("ai_taste", 80, False),
+                ("image_quality", 80, False),
+                ("commercial_tone", 80, False),
+                ("bias_check", 90, False),
+            )
+        )
+        mock_response = MagicMock()
+        mock_response.content = (
+            '{"overall_score": 80, "dimensions": [%s], "decision": "approved", '
+            '"revision_hints": [], "bias_warning": "", "summary": "ok"}' % dims
+        )
+        capped = {**state, "revision_count": 99}
+        with patch.object(EvaluatorAgent, "model", new_callable=PropertyMock) as m:
+            model = MagicMock()
+            model.ainvoke = AsyncMock(return_value=mock_response)
+            m.return_value = model
+            result = await evaluator_node(capped, store=store)
+
+        evaluation = result["evaluation_result"]
+        # The panel's blocking compliance evidence overrides the LLM self-report.
+        assert evaluation["decision"] == ContentStatus.REJECTED
+        assert result["phase"] == WorkflowPhase.PAUSED
+        assert result["pause_reason"] == PAUSE_REASON_EVALUATOR_FAIL_CLOSED
+        merged = {**capped, **result}
+        assert evaluator_requires_human(merged) is True
+        assert evaluator_outcome(merged) == "__end__"
+
+    @pytest.mark.asyncio
+    async def test_router_and_predicate_agree_on_healthy_approval(self):
+        """The approved track keeps auto-publishing and never claims a reason."""
+        evaluation = {"decision": ContentStatus.APPROVED, "status": "ready", "dimensions": []}
+        thread_state = {"evaluation_result": evaluation, "revision_count": 99}
+        assert evaluator_requires_human(thread_state) is False
+        assert evaluator_outcome(thread_state) == "publisher"
+
+    @pytest.mark.asyncio
+    async def test_node_does_not_pause_on_approved(self, state, store):
+        """A healthy approved evaluation keeps the phase untouched (no pause)."""
+        mock_response = MagicMock()
+        mock_response.content = _panel_json("approved")
+        with patch.object(EvaluatorAgent, "model", new_callable=PropertyMock) as m:
+            model = MagicMock()
+            model.ainvoke = AsyncMock(return_value=mock_response)
+            m.return_value = model
+            result = await evaluator_node(state, store=store)
+
+        assert result["evaluation_result"]["decision"] == ContentStatus.APPROVED
+        assert result.get("phase") != WorkflowPhase.PAUSED
+        assert result.get("pause_reason") is None, "a passed gate must not stay marked"
 
     @pytest.mark.asyncio
     async def test_node_emits_data_updated_event(self, state, store):
@@ -134,8 +214,13 @@ class TestEvaluatorOutcomeRouting:
             == "revise_content"
         )
 
-    def test_missing_evaluation_defaults_to_publisher(self):
-        assert evaluator_outcome({}) == "publisher"
+    def test_missing_evaluation_is_fail_closed(self):
+        """P0-W5: missing evaluation_result must NOT default to publisher."""
+        assert evaluator_outcome({}) == "__end__"
+
+    def test_degraded_none_decision_is_not_published(self):
+        state = {"evaluation_result": {"decision": None, "degraded": True, "status": "degraded"}}
+        assert evaluator_outcome(state) == "__end__"
 
 
 class TestReviseContentPreservesHints:
@@ -215,3 +300,6 @@ class TestGraphTopologyEvaluatorGate:
         ends = next(iter(ev_branch.values())).ends
         assert ends.get("publisher") == "publisher"
         assert ends.get("revise_content") == "revise_content"
+        # P0-W5 human channel: fail-closed outcomes end the run (the node has
+        # already parked the workflow in the existing paused status).
+        assert "__end__" in ends
