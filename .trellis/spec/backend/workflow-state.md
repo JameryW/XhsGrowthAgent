@@ -156,7 +156,7 @@ def make_snapshot(values, next=None, interrupts=None):
 |-----------|-------|----------------|-----|
 | **Always-pause** | `review_gate`, `choice_gate`, `draft_gate` | `interrupt_before` in `graph.compile()` | These always need human input — no auto-accept logic |
 | **Conditional-pause** | `ripple_gate`, `blogger_gate` | Dynamic `interrupt(payload)` inside node body | These have auto-accept/skip paths — interrupt only when user decision is needed |
-| **Auto-routing** | `evaluator_gate` | No interrupt | AI judge panel (`agent-as-a-judge`) auto-routes by its own verdict — no human input needed. Node degrades to pass-through on failure (non-blocking). Decision read by router from `evaluation_result.decision`. |
+| **Auto-routing** | `evaluator_gate` | No interrupt | AI judge panel (`agent-as-a-judge`) auto-routes by its own verdict — no human input needed. Decision read by router from `evaluation_result.decision`. P0-W5: degraded/decision-less results and compliance/policy rejections are **fail-closed** — router returns `__end__` and the node sets `phase=PAUSED` + `pause_reason="evaluator_fail_closed"` (single shared predicate `evaluator_requires_human`); the human continues via `/resume` with mandatory `{"human_decision": "approve"\|"revise"}` (see error-handling.md P0-W4/W5 scenario; never the legacy pipeline restart). Only quality-track failures keep the revise/force-publish-at-cap loop. |
 
 **Critical Rule:** `interrupt_before` blocks the node body from running at all. If a node has conditional logic to auto-accept (like ripple_gate when results are good, or blogger_gate when no candidates exist), it MUST use dynamic `interrupt()` instead. Otherwise the auto-accept path never executes and the graph always pauses.
 
