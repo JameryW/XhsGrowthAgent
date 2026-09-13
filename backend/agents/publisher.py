@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import socket
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -33,6 +35,238 @@ def _as_str_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+# ── P0-W4: deterministic publish idempotency key ─────────────────────────────
+
+# Idempotency records live in the graph store under this namespace; key =
+# publish_id. Recorded BEFORE the real (non-dry-run) submit action with
+# status "unknown" (result genuinely unknown until confirmed), then upgraded
+# to "published" or downgraded to "failed". A record in ("published",
+# "unknown") blocks any further real publish of the same key (same account +
+# content + images inside the time window) unless the caller passes an
+# explicit force (publish-retry force=true → publish_options.force_publish).
+PUBLISH_IDEMPOTENCY_NS: tuple[str, ...] = ("publish", "idempotency")
+# Time window folded into the key: after it rolls over, the same content may
+# legitimately be re-published as a NEW attempt.
+_PUBLISH_ID_WINDOW_SECONDS = 6 * 3600
+
+_PUBLISH_BLOCKED_ERROR_TYPE = "duplicate_publish_blocked"
+# P0-W4 (F2): the submit action was initiated and the platform gave us no
+# verdict (post-click timeout, dead page, "发布状态未知"). Reporting that as
+# "failed" would release the idempotency guard and invite a duplicate note, so
+# it flows through the pipeline as status="unknown" + this typed error.
+_PUBLISH_RESULT_UNKNOWN = "publish_result_unknown"
+
+# Structured recovery dict (spec: never a bare string) for an unknown outcome.
+_UNKNOWN_OUTCOME_RECOVERY: dict[str, Any] = {
+    "message": "发布提交后结果不明，发帖可能已成功",
+    "action": "wait",
+    "action_label": "去人工核对",
+    "hint": "请先在小红书近期笔记中确认是否已发布；确认可安全重发时，"
+    "在 /publish-retry 请求体中显式传 force=true。",
+}
+
+
+def _submit_outcome_is_unknown(result: dict[str, Any], status: str) -> bool:
+    """True when the browser layer finished WITHOUT a verdict on our submit.
+
+    Honest contract from XHSPublisher (P0-W4 F2): ``result_known=False`` or the
+    typed ``publish_result_unknown`` error, and the legacy no-verdict
+    ``"unknown"``/``"pending"`` statuses, all mean "the note may exist".
+    Anything else (a platform rejection message, an auth failure before the
+    click) is a definite outcome the guard may be released for.
+    """
+    if result.get("result_known") is False:
+        return True
+    if str(result.get("error_type") or "") == _PUBLISH_RESULT_UNKNOWN:
+        return True
+    return status in ("unknown", "pending")
+
+
+def _publish_account_id(state: Mapping[str, Any]) -> str:
+    publish_options = state.get("publish_options") or {}
+    return (
+        str(publish_options.get("account_id") or state.get("account_id") or "default").strip()
+        or "default"
+    )
+
+
+def compute_publish_id(state: Mapping[str, Any]) -> str:
+    """Deterministic idempotency key: hash(account + content + images + window).
+
+    Same workflow content published to the same account inside the same time
+    window yields the same publish_id, so accidental double-fires (node
+    re-execution, naive publish-retry) can be detected before the real submit.
+    """
+    import hashlib
+    import time
+
+    copy = state.get("copy_content") or {}
+    visual = state.get("visual_plan") or {}
+    images = _as_str_list(visual.get("image_paths")) or _as_str_list(visual.get("generated_images"))
+    payload = {
+        "account_id": _publish_account_id(state),
+        "title": str(copy.get("selected_title") or ""),
+        "body": str(copy.get("body_text") or ""),
+        "hashtags": _as_str_list(copy.get("hashtags")),
+        "cta": str(copy.get("cta") or ""),
+        "images": sorted(images),
+        "window": int(time.time() // _PUBLISH_ID_WINDOW_SECONDS),
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+
+
+def _is_timeout_error(exc: BaseException) -> bool:
+    """Browser/HTTP timeout detection across playwright/httpx/asyncio shapes.
+
+    asyncio's TimeoutError is the builtin; playwright's and some httpx
+    timeouts are distinct classes — match by name as a fallback.
+    """
+    if isinstance(exc, TimeoutError):
+        return True
+    return "timeout" in type(exc).__name__.lower()
+
+
+async def _read_publish_record(store: BaseStore | None, publish_id: str) -> dict[str, Any] | None:
+    """Best-effort read of a prior idempotency record (dict value only)."""
+    if store is None or not publish_id:
+        return None
+    try:
+        existing = await store.aget(PUBLISH_IDEMPOTENCY_NS, publish_id)
+    except Exception as e:  # storage outage must not crash publish
+        logger.warning("publish idempotency read failed (proceeding): %s", e)
+        return None
+    value = getattr(existing, "value", None) if existing is not None else None
+    return value if isinstance(value, dict) else None
+
+
+async def _write_publish_record(
+    store: BaseStore | None, publish_id: str, record: dict[str, Any]
+) -> None:
+    """Best-effort write of the idempotency record (checkpoint/event mirror)."""
+    if store is None or not publish_id:
+        return
+    try:
+        await store.aput(PUBLISH_IDEMPOTENCY_NS, publish_id, record)
+    except Exception as e:
+        logger.warning("publish idempotency record write failed (non-blocking): %s", e)
+
+
+def _blocked_duplicate_result(publish_id: str, prior: dict[str, Any]) -> dict[str, Any]:
+    prior_status = str(prior.get("status") or "unknown")
+    if prior_status == "published":
+        message = "相同内容在近期已成功发布（幂等键命中），已阻止重复发帖。"
+    else:
+        message = (
+            "相同内容近期发起过真实发布且结果不明（幂等键命中），"
+            "已阻止自动重复发帖；请先人工核对小红书近期笔记。"
+        )
+    return {
+        "post_id": "",
+        "post_url": "",
+        "status": "failed",
+        "error": message,
+        "error_type": _PUBLISH_BLOCKED_ERROR_TYPE,
+        "publish_id": publish_id,
+        # Structured recovery dict (spec: never a bare string).
+        "recovery": {
+            "message": message,
+            "action": "wait",
+            "action_label": "稍后处理",
+            "hint": (
+                "如确认该笔记未发布成功，可使用发布重试并显式 force=true；"
+                "如已发布成功，请勿重复发布。"
+            ),
+        },
+    }
+
+
+async def reconcile_unknown_publish(state: dict[str, Any], store: BaseStore) -> dict[str, Any]:
+    """Reconcile a publish whose result is unknown BEFORE any re-publish.
+
+    Uses the two identity mechanisms that already exist:
+    1. the P0-W4 idempotency record (upgraded to "published" with the real
+       post_id by the completing run), and
+    2. the platform_post_id/link_status matching trail — ContentHistory rows
+       keyed by post_id carrying {title, status:"published"} — searched for a
+       recent note matching this workflow's title.
+
+    Returns {"status": "published", "evidence": {...}} when a match confirms
+    the post exists, else {"status": "uncertain"} — the caller must then demand
+    an explicit human force decision instead of silently re-posting.
+    """
+    publish_id = compute_publish_id(state)
+    record = await _read_publish_record(store, publish_id)
+    if record and record.get("status") == "published":
+        return {"status": "published", "evidence": {"source": "idempotency_record", **record}}
+
+    copy = state.get("copy_content") or {}
+    title = str(copy.get("selected_title") or "").strip()
+    if title and store is not None:
+        try:
+            from backend.memory.store import MemoryManager
+
+            mm = MemoryManager(_publish_account_id(state))
+            items = await store.asearch(mm.content_history_ns, query=title, limit=10)
+            for item in items:
+                value = getattr(item, "value", None)
+                if (
+                    isinstance(value, dict)
+                    and str(value.get("title") or "").strip() == title
+                    and str(value.get("status") or "") == "published"
+                ):
+                    return {
+                        "status": "published",
+                        "evidence": {
+                            "source": "content_history",
+                            "post_id": str(value.get("post_id") or getattr(item, "key", "") or ""),
+                        },
+                    }
+        except Exception as e:
+            logger.warning("unknown-publish reconciliation failed: %s", e)
+    return {"status": "uncertain"}
+
+
+def evaluate_unknown_publish_retry(
+    pr_status: Any, force: bool, reconciled: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Pure gate for /publish-retry against a status="unknown" publish.
+
+    Returns an early-response payload dict when the retry must NOT run, or
+    None to proceed:
+
+    - non-unknown statuses are unaffected (None).
+    - unknown + force=true → proceed (None); the caller marks the attempt as
+      forced (publish_options.force_publish) so the idempotency guard lets the
+      explicit human decision through.
+    - unknown + no force + reconciliation CONFIRMED published → do not retry;
+      report "reconciled".
+    - unknown + no force + uncertain → refuse with "requires_force" and tell
+      the caller an explicit force=true is needed.
+    """
+    if str(pr_status or "") != "unknown":
+        return None
+    if force:
+        return None
+    if (reconciled or {}).get("status") == "published":
+        evidence = (reconciled or {}).get("evidence") or {}
+        return {
+            "status": "reconciled",
+            "message": (
+                "对账确认：该笔记已存在于账号近期发布记录中，未重复发布。"
+                f"匹配来源: {evidence.get('source', 'unknown')}"
+            ),
+            "evidence": evidence,
+        }
+    return {
+        "status": "requires_force",
+        "message": (
+            "上次发布结果不明（可能已发帖成功），且自动对账无法确认。"
+            "请先人工核对小红书近期笔记；确认可安全重发时，请在请求体中显式传 force=true。"
+        ),
+    }
 
 
 def _with_publish_link_metadata(
@@ -169,6 +403,14 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
     /api/workflow/publish-retry endpoint) can re-run just the publish step
     with the workflow's existing content, without re-running the creation
     chain or honoring dry_run. Returns the same shape as execute.
+
+    Outcome contract (P0-W4): publish_result.status is "published" (verdict:
+    posted), a definite failure status (verdict: not posted), or "unknown" —
+    the submit action was initiated and the platform gave no verdict, so the
+    note may exist. Only the first two rewrite the idempotency record;
+    "unknown" leaves it armed until reconciliation or an explicit force.
+    When this execution consumed ``publish_options.force_publish`` it also
+    returns cleared ``publish_options`` (one-shot force, F3).
     """
     copy = state.get("copy_content", {})
     plan = state.get("content_plan", {})
@@ -191,7 +433,11 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         account = await get_account(publish_account_id)
         if account is None or not account.is_active:
             logger.warning(f"账号 {publish_account_id} 未激活或不存在，跳过发布")
-            publish_result = {
+            # Explicit annotation: publish_result is a heterogeneous dict
+            # (str fields + nested recovery dict + bools). Without it mypy
+            # joins the first literal's values to Collection[str] and rejects
+            # the later `result_known: bool` writes.
+            publish_result: dict[str, Any] = {
                 "post_id": "",
                 "post_url": "",
                 "status": "failed",
@@ -239,6 +485,53 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
             }
         logger.info("按选中账号 %s 的 CDP profile 登录态发布", publish_account_id)
 
+    # ── P0-W4 idempotency gate (real publish path only) ──
+    # Deterministic key recorded BEFORE the real submit action. A previous
+    # attempt with a known outcome ("published" or result-unknown "unknown")
+    # for the same account+content+images+window blocks this publish unless
+    # the caller passed an explicit force (publish-retry force=true writes
+    # publish_options.force_publish — consumed ONCE, see F3 below). dry-run
+    # traffic never reaches this code (guarded in PublisherAgent.execute / the
+    # mock branch above).
+    publish_id = compute_publish_id(state)
+    force_publish = bool(publish_options.get("force_publish"))
+    if not force_publish:
+        prior = await _read_publish_record(store, publish_id)
+        if prior and prior.get("status") in ("published", "unknown"):
+            logger.warning(
+                "阻止重复真实发布: publish_id=%s 已有 status=%s 的幂等记录",
+                publish_id,
+                prior.get("status"),
+            )
+            return {
+                "publish_result": _with_publish_link_metadata(
+                    _blocked_duplicate_result(publish_id, prior), state
+                ),
+                "phase": WorkflowPhase.PUBLISHING,
+            }
+    # Record the attempt as result-unknown BEFORE submitting, so a crash /
+    # lost response in between still blocks duplicate real publishes.
+    await _write_publish_record(
+        store,
+        publish_id,
+        {
+            "status": "unknown",
+            "publish_id": publish_id,
+            "account_id": _publish_account_id(state),
+            "thread_id": str(state.get("session_id") or state.get("thread_id") or ""),
+            "recorded_at": datetime.now().isoformat(),
+            "forced": force_publish,
+        },
+    )
+
+    # P0-W4 (F3): an explicit force is ONE-SHOT. Whatever the outcome of this
+    # execution, the flag is cleared out of publish_options (returned to the
+    # caller / written back to state) so the NEXT publish on this thread faces
+    # the idempotency guard again instead of silently bypassing it forever.
+    cleared_publish_options: dict[str, Any] | None = (
+        {**publish_options, "force_publish": False} if force_publish else None
+    )
+
     # 调用真实发布服务
     from backend.services.xhs_client import XHSClient, XHSPost
 
@@ -283,15 +576,22 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
             scheduled_time=_normalize_scheduled_time(plan.get("suggested_timing", "")),
         )
 
-        # 执行发布
+        # 执行发布（真实提交动作 — 之后的一切超时都是"结果不明"而非确定失败）
         result = await client.publish_post(post)
+
+        raw_status = str(result.get("status") or "unknown")
+        # P0-W4 (F2): the browser layer swallows its own exceptions into a result
+        # dict, so the "unknown" case normally arrives HERE (not as a raised
+        # exception). Honour its honest verdict-or-nothing contract.
+        outcome_unknown = _submit_outcome_is_unknown(result, raw_status)
+        status = "unknown" if outcome_unknown else raw_status
 
         publish_result = {
             "post_id": result.get("post_id", ""),
             "post_url": result.get("post_url", ""),
             "published_at": result.get("published_at", ""),
             "ab_variant": cast(Any, None),
-            "status": result.get("status", "unknown"),
+            "status": status,
         }
         if result.get("error"):
             publish_result["error"] = result["error"]
@@ -300,6 +600,51 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
             error_type, recovery = classify_publish_error(str(result["error"]))
             publish_result["error_type"] = result.get("error_type") or error_type.value
             publish_result["recovery"] = result.get("recovery") or recovery
+        if outcome_unknown:
+            # Re-label the typed error/recovery as "result unknown" even when
+            # the browser reported a bare timeout string: the duplicate-post
+            # risk, not the network diagnosis, is what the caller must act on.
+            publish_result["error_type"] = _PUBLISH_RESULT_UNKNOWN
+            publish_result["recovery"] = _UNKNOWN_OUTCOME_RECOVERY
+            publish_result["result_known"] = False
+            publish_result["note"] = (
+                "提交动作已发起但结果不明——发布可能已成功，请先人工核对小红书近期笔记"
+            )
+
+        # P0-W4: idempotency key rides the result for events/checkpoint audit.
+        publish_result["publish_id"] = publish_id
+
+        # Outcome-known: upgrade or downgrade the pre-recorded "unknown". A
+        # platform-reported definite failure (status != published, verdict known)
+        # releases the guard; an unknown outcome leaves it ARMED on purpose.
+        if status == "published":
+            await _write_publish_record(
+                store,
+                publish_id,
+                {
+                    "status": "published",
+                    "publish_id": publish_id,
+                    "post_id": str(publish_result.get("post_id") or ""),
+                    "thread_id": str(state.get("session_id") or ""),
+                },
+            )
+        elif outcome_unknown:
+            logger.error(
+                "发布结果不明（提交后无判定）: publish_id=%s 幂等护栏保持 armed，"
+                "需对账或显式 force 才能再次真实发布",
+                publish_id,
+            )
+        else:
+            await _write_publish_record(
+                store,
+                publish_id,
+                {
+                    "status": "failed",
+                    "publish_id": publish_id,
+                    "thread_id": str(state.get("session_id") or ""),
+                    "error": str(publish_result.get("error") or ""),
+                },
+            )
 
         logger.info(f"发布完成: {publish_result['post_id']}")
 
@@ -308,14 +653,38 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         from backend.api.errors import classify_publish_error
 
         error_type, recovery = classify_publish_error(str(e))
+        # P0-W4: distinguish "failed" (definitely not posted) from "unknown"
+        # (result not observable). After the real submit action was entered, a
+        # browser/HTTP timeout means the note may well have been published —
+        # reporting that as "failed" invites a duplicate post. The idempotency
+        # record deliberately STAYS "unknown" so the next real publish is
+        # blocked until reconciliation/force.
+        is_unknown = _is_timeout_error(e)
         publish_result = {
             "post_id": "",
             "post_url": "",
-            "status": "failed",
+            "status": "unknown" if is_unknown else "failed",
             "error": str(e),
             "error_type": error_type.value,
             "recovery": recovery,
         }
+        if is_unknown:
+            publish_result["publish_id"] = publish_id
+            publish_result["result_known"] = False
+            publish_result["note"] = (
+                "提交后超时，发帖结果不明——发布可能已成功，请先人工核对小红书近期笔记"
+            )
+        else:
+            await _write_publish_record(
+                store,
+                publish_id,
+                {
+                    "status": "failed",
+                    "publish_id": publish_id,
+                    "thread_id": str(state.get("session_id") or ""),
+                    "error": str(e),
+                },
+            )
 
     finally:
         await client.close()
@@ -354,4 +723,7 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
     return {
         "publish_result": _with_publish_link_metadata(publish_result, state),
         "phase": WorkflowPhase.PUBLISHING,
+        # Only present when this execution consumed an explicit force (F3):
+        # the caller writes it back to state so the bypass never sticks.
+        **({"publish_options": cleared_publish_options} if cleared_publish_options else {}),
     }

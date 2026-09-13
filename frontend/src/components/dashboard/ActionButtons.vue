@@ -125,6 +125,16 @@ const resumeWorkflow = () => {
   workflowStore.resumeWorkflow()
 }
 
+// P0-W5 continuation channel: the evaluator gate parked the workflow, so the
+// human decides — "approve" publishes without re-running creation, "revise"
+// sends it back to the revision step with a fresh revision budget. The click
+// itself is the explicit decision the API demands (no silent pipeline restart).
+const evaluatorGatePaused = computed(() => workflowStore.evaluatorGatePaused)
+
+const decideEvaluatorGate = (decision: 'approve' | 'revise') => {
+  void workflowStore.resumeWorkflow(undefined, decision)
+}
+
 const openPostUrl = () => {
   if (publishResult.value?.post_url) {
     window.open(publishResult.value.post_url, '_blank', 'noopener,noreferrer')
@@ -225,9 +235,51 @@ const scrollToDraftInput = () => {
         </span>
       </NeonButton>
 
+      <!-- P0-W5: the pre-publish quality gate parked this workflow on purpose
+           (degraded evaluation or a compliance rejection). /resume here needs
+           an explicit human decision, so ask for one instead of the plain
+           resume button (the API rejects a decision-less resume with 400
+           rather than restarting the whole pipeline). -->
+      <p
+        v-if="evaluatorGatePaused"
+        class="w-full sm:w-auto text-xs text-amber-300/90 self-center"
+      >
+        {{ t('dashboard.actionButtons.evaluatorGateHint') }}
+      </p>
+      <NeonButton
+        v-if="evaluatorGatePaused"
+        variant="cyan"
+        size="lg"
+        class="w-full sm:w-auto"
+        :title="t('dashboard.actionButtons.evaluatorGateApproveDesc')"
+        :aria-label="t('dashboard.actionButtons.evaluatorGateApprove')"
+        :loading="workflowStore.isLoading"
+        @click="decideEvaluatorGate('approve')"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="CheckCircle" size="lg" variant="white" />
+          <span class="font-bold">{{ t('dashboard.actionButtons.evaluatorGateApprove') }}</span>
+        </span>
+      </NeonButton>
+      <NeonButton
+        v-if="evaluatorGatePaused"
+        variant="pink"
+        size="lg"
+        class="w-full sm:w-auto"
+        :title="t('dashboard.actionButtons.evaluatorGateReviseDesc')"
+        :aria-label="t('dashboard.actionButtons.evaluatorGateRevise')"
+        :loading="workflowStore.isLoading"
+        @click="decideEvaluatorGate('revise')"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="Pencil" size="lg" variant="white" />
+          <span class="font-bold">{{ t('dashboard.actionButtons.evaluatorGateRevise') }}</span>
+        </span>
+      </NeonButton>
+
       <!-- Resume button when paused -->
       <NeonButton
-        v-if="isPaused"
+        v-if="isPaused && !evaluatorGatePaused"
         variant="cyan"
         size="lg"
         class="w-full sm:w-auto"

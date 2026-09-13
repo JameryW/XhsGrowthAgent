@@ -312,3 +312,77 @@ class TestCDPMode:
         existing_context.add_cookies.assert_not_called()
         existing_context.add_init_script.assert_not_called()
         assert page is not None
+
+
+class TestSubmitOutcomeContract:
+    """P0-W4 round 2 (F2): the real submit action's outcome must be honest.
+
+    A timeout AFTER the publish click does not mean "not posted" — from here the
+    result is unknowable, and reporting it as a definite failure releases the
+    idempotency guard and invites a duplicate note. Everything that fails BEFORE
+    the click is a definite rejection. The return contract carries that
+    difference (``result_known`` + a typed ``publish_result_unknown``).
+    """
+
+    def _wire(
+        self,
+        publisher: XHSPublisher,
+        *,
+        click_error: BaseException | None = None,
+        fill_error: BaseException | None = None,
+    ) -> AsyncMock:
+        page = AsyncMock()
+        page.on = MagicMock()  # real page.on is sync
+        publisher._ensure_page = AsyncMock(return_value=page)  # type: ignore[method-assign]
+        publisher._check_login = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        publisher._wait_for_publish_ready = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        publisher._upload_images = AsyncMock()  # type: ignore[method-assign]
+        publisher._fill_content = AsyncMock(side_effect=fill_error)  # type: ignore[method-assign]
+        publisher._click_publish = AsyncMock(side_effect=click_error)  # type: ignore[method-assign]
+        publisher._wait_for_success = AsyncMock(  # type: ignore[method-assign]
+            return_value={"post_id": "p1", "status": "published", "url": "u"}
+        )
+        return page
+
+    async def _publish(self, publisher: XHSPublisher) -> dict:
+        return await publisher._publish_note_locked(
+            title="t",
+            body="b",
+            image_paths=["/x.jpg"],
+            hashtags=[],
+            category="",
+            location="",
+            scheduled_time="",
+            is_private=False,
+        )
+
+    async def test_timeout_after_publish_click_is_result_unknown(self, publisher: XHSPublisher):
+        self._wire(publisher, click_error=TimeoutError("Timeout 30000ms exceeded"))
+
+        result = await self._publish(publisher)
+
+        assert result["result_known"] is False
+        assert result["status"] == "unknown"
+        assert result["error_type"] == "publish_result_unknown"
+        assert result["post_id"] == ""
+
+    async def test_error_after_publish_click_is_result_unknown(self, publisher: XHSPublisher):
+        """Any failure once the submit action was initiated is ambiguous — the
+        platform may have accepted the note and the page simply died."""
+        self._wire(publisher, click_error=RuntimeError("Execution context was destroyed"))
+
+        result = await self._publish(publisher)
+
+        assert result["result_known"] is False
+        assert result["status"] == "unknown"
+
+    async def test_failure_before_publish_click_stays_definite(self, publisher: XHSPublisher):
+        """Pre-submit failures are definite rejections: the note was never sent."""
+        self._wire(publisher, fill_error=ValueError("没有有效的图片文件"))
+
+        result = await self._publish(publisher)
+
+        assert result["result_known"] is True
+        assert result["status"] == "error"
+        assert result.get("error_type") != "publish_result_unknown"
+        assert result["error"] == "没有有效的图片文件"

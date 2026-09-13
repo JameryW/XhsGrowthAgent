@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from backend.config.settings import Settings
@@ -123,25 +124,106 @@ def review_outcome(state: XHSGrowthState) -> Literal["evaluator_gate", "revise_c
 # WORKFLOW_MAX_CYCLE_COUNT). They mirror ripple.max_reselect_count — see
 # evaluator_outcome / should_continue below.
 
+# P0-W5: dimensions whose failure is a compliance/policy failure — these can
+# NEVER be silently force-published (fail-closed track). Anything else is on
+# the quality track, where fail-open at the revision cap remains allowed.
+COMPLIANCE_DIMENSIONS = frozenset({"compliance", "policy"})
 
-def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content"]:
-    """创作质量评估路由 — RQGM agent-as-a-judge 面板判定.
+# P0-W5 (round 2): the reason stamped on the state when this fail-closed gate
+# parks the workflow. It is the CONTRACT between the evaluator node (writer)
+# and POST /resume (reader): a paused thread carrying it can only continue via
+# an explicit human decision (approve / revise), never via the legacy
+# whole-pipeline restart. Written by the node from the SAME predicate the router
+# uses (`evaluator_requires_human`), so the two can never diverge.
+PAUSE_REASON_EVALUATOR_FAIL_CLOSED = "evaluator_fail_closed"
+
+
+def _evaluation_is_degraded(evaluation: Any) -> bool:
+    """Degraded evidence: missing/empty result, degraded flag/status, or a
+    missing/None decision (synthesized degraded, LLM timeout, empty content)."""
+    if not evaluation or not isinstance(evaluation, dict):
+        return True
+    if evaluation.get("degraded"):
+        return True
+    if str(evaluation.get("status") or "").lower() == "degraded":
+        return True
+    return "decision" not in evaluation or evaluation.get("decision") is None
+
+
+def _rejection_is_compliance_driven(evaluation: Mapping[str, Any]) -> bool:
+    """True when a REJECTED decision was driven by compliance/policy evidence.
+
+    Primary marker: the additive ``failed_dimensions`` list (P0-W5) intersected
+    with the compliance dimensions. Back-compat for legacy results without the
+    marker: any dimension flagged ``is_blocking`` (the same evidence that made
+    _compute_decision reject). Missing marker + no blocking dims ⇒ quality
+    (the PRD's backward-compatible default).
+    """
+    failed_dims = evaluation.get("failed_dimensions")
+    dims = evaluation.get("dimensions") or []
+    blocking = {
+        str(d.get("dimension")) for d in dims if isinstance(d, dict) and d.get("is_blocking")
+    }
+    if failed_dims is not None:
+        if set(failed_dims) & set(COMPLIANCE_DIMENSIONS):
+            return True
+        # A blocking dimension on ANY track is a hard policy signal.
+        return bool(set(failed_dims) & blocking)
+    return bool(blocking)
+
+
+def evaluator_requires_human(state: XHSGrowthState) -> bool:
+    """P0-W5 single source of truth: does this evaluation forbid auto-publish?
+
+    Used by BOTH the evaluator node (to park the workflow in the existing
+    paused status) and the evaluator_outcome router (to end the run), so the
+    "human channel" decision can never diverge between them.
+    """
+    evaluation = state.get("evaluation_result")
+    # `_evaluation_is_degraded` already reports None/empty as degraded; the
+    # explicit `is None` arm only narrows the type for the checks below.
+    if evaluation is None or _evaluation_is_degraded(evaluation):
+        return True
+    decision: Any = evaluation.get("decision")
+    if decision in (ContentStatus.REJECTED, "rejected"):
+        revision_count = state.get("revision_count", 0)
+        if (
+            revision_count >= Settings().workflow.max_revision_count
+            and _rejection_is_compliance_driven(evaluation)
+        ):
+            return True
+    return False
+
+
+def evaluator_outcome(
+    state: XHSGrowthState,
+) -> Literal["publisher", "revise_content", "__end__"]:
+    """创作质量评估路由 — RQGM agent-as-a-judge 面板判定（P0-W5 fail-closed）.
 
     review_gate approved 后进入 evaluator_gate。读取 evaluation_result.decision：
     - approved → publisher
-    - needs_revision / rejected → revise_content（revision_hints 随 evaluation_result 携带）
+    - needs_revision / rejected（质量轨）→ revise_content（revision_hints 随
+      evaluation_result 携带）
+    - 降级/缺失/decision=None、以及 compliance/政策维度的拒绝 → __end__：
+      质量门失败时禁止静默放行发布（compliance fail-closed）。evaluator 节点已
+      把 phase 置为既有 PAUSED 语义并写入 PAUSE_REASON_EVALUATOR_FAIL_CLOSED，
+      人工通过 POST /resume/{thread_id} {"human_decision": "approve"|"revise"}
+      继续（compliance 阻断按设计可被人工推翻——fail-closed 是"必须有人决定"，
+      不是"禁止发布"）。路由本身不写状态。
 
-    循环防护：revision_count >= Settings().workflow.max_revision_count（默认 2）
-    时强制放行 publisher，防止评估器反复否决导致无限修订循环（与 ripple_gate
-    的 reselect 上限同理）。
+    循环防护（仅质量轨）：revision_count >= Settings().workflow.max_revision_count
+    （默认 2）时，只有全部 REJECTED 证据都来自质量维度才放行 publisher（保持
+    旧行为锚定）；compliance/阻塞维度参与的拒绝走与上面相同的人工通道。
 
-    不读 _check_terminal：评估器节点已自带降级放行，且此处只在人审通过后触发，
-    不会有 cancelled/paused 分支（那些在 review_outcome 已拦截）。
+    不读 _check_terminal：此处只在人审通过后触发，不会有 cancelled/paused 分支
+    （那些在 review_outcome 已拦截）。
     """
-    evaluation = state.get("evaluation_result") or {}
-    decision: Any = evaluation.get("decision", ContentStatus.APPROVED)
+    if evaluator_requires_human(state):
+        return "__end__"
 
-    revision_count = state.get("revision_count", 0)
+    evaluation = state.get("evaluation_result") or {}
+    decision: Any = evaluation.get("decision")
+
     if decision in (
         ContentStatus.NEEDS_REVISION,
         ContentStatus.REJECTED,
@@ -149,10 +231,12 @@ def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_con
         "rejected",
     ):
         # Force-approve if revision limit reached — prevent infinite loop
+        # (quality track only; compliance rejections were caught above).
+        revision_count = state.get("revision_count", 0)
         if revision_count >= Settings().workflow.max_revision_count:
             return "publisher"
         return "revise_content"
-    # approved 或未知 → 放行发布
+    # approved（及显式未知 decision 的 legacy 结果）→ 放行发布
     return "publisher"
 
 

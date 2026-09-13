@@ -58,12 +58,23 @@ export async function pauseWorkflow(threadId: string): Promise<{ thread_id: stri
 }
 
 // 恢复工作流
-export async function resumeWorkflow(threadId: string, resumeValue?: Record<string, unknown>): Promise<WorkflowResponse> {
+// humanDecision：评估质量门 fail-closed 暂停（status=paused +
+// pause_reason="evaluator_fail_closed"）时，后端要求的显式人工决定
+// （"approve" 放行发布 / "revise" 退回修订）。其他暂停不需要它。
+export async function resumeWorkflow(
+  threadId: string,
+  resumeValue?: Record<string, unknown>,
+  humanDecision?: 'approve' | 'revise',
+): Promise<WorkflowResponse> {
   const { retryWithBackoff } = useRetry()
   return retryWithBackoff(async () => {
     try {
-      const payload = resumeValue ? { resume_value: resumeValue } : undefined
-      const result = await client.post(`/workflow/resume/${threadId}`, payload) as WorkflowResponse
+      const payload = {
+        ...(resumeValue ? { resume_value: resumeValue } : {}),
+        ...(humanDecision ? { human_decision: humanDecision } : {}),
+      }
+      const body = Object.keys(payload).length ? payload : undefined
+      const result = await client.post(`/workflow/resume/${threadId}`, body) as WorkflowResponse
       return result
     } catch (error) {
       throw error

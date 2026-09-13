@@ -342,6 +342,10 @@ class EvaluationResult(TypedDict, total=False):
     revision_hints: list[str]  # 给 copywriter 的修订指令（不合格时）
     bias_warning: str  # 对抗偏倚检测结论（无偏倚则空串）
     summary: str
+    # P0-W5 (additive): dimension names that drove a REJECTED decision
+    # (blocking dims + compliance below the reject threshold). Missing/empty
+    # on legacy results ⇒ quality-only (router back-compat default).
+    failed_dimensions: list[str]
 
 
 class BriefContent(TypedDict, total=False):

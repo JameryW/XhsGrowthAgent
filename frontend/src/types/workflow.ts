@@ -339,6 +339,10 @@ export interface WorkflowStateResponse {
   current_agent?: string
   next_steps: string[]
   error?: string | null
+  /** Why the workflow is paused. `evaluator_fail_closed` = the pre-publish
+   * quality gate parked it on purpose, so /resume demands an explicit
+   * `human_decision` (approve / revise) instead of restarting the pipeline. */
+  pause_reason?: string | null
   progress_percent: number
   created_at?: string
   updated_at?: string

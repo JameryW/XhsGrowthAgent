@@ -68,6 +68,10 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     builder = StateGraph(XHSGrowthState)
 
     # ── 添加节点 ──
+    # P0-W3: every node passes get_retry_policy(<exact node name>) — the
+    # registry is exhaustive (backend/graph/error_handling.py) and unknown
+    # names raise KeyError, so "framework retry or not" is an explicit,
+    # auditable decision per node.
     builder.add_node(
         "orchestrator",
         orchestrator_node,
@@ -94,8 +98,14 @@ def build_graph() -> StateGraph[XHSGrowthState]:
         retry_policy=get_retry_policy("visual_designer"),
     )
     builder.add_node("review_gate", review_gate_node, retry_policy=get_retry_policy("review_gate"))
-    # Evaluator gate — RQGM agent-as-a-judge panel (AI quality gate after human review)
-    builder.add_node("evaluator_gate", evaluator_node, retry_policy=get_retry_policy("evaluator"))
+    # Evaluator gate — RQGM agent-as-a-judge panel (AI quality gate after human review).
+    # No framework retry by design (explicit None): the node degrades fail-closed.
+    builder.add_node(
+        "evaluator_gate", evaluator_node, retry_policy=get_retry_policy("evaluator_gate")
+    )
+    # Publisher — external side-effect node. P0-W3: generic framework auto-retry
+    # is forbidden (a retry would re-post); explicit None + /publish-retry with
+    # idempotency key + unknown reconciliation is the only retry path.
     builder.add_node("publisher", publisher_node, retry_policy=get_retry_policy("publisher"))
     builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
     builder.add_node("revise_content", revise_content_node)
@@ -343,12 +353,16 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     )
 
     # ── 创作质量评估路由 (RQGM agent-as-a-judge) ──
+    # P0-W5: __end__ is the fail-closed human channel — the evaluator node has
+    # already parked the workflow in the existing paused status when it decides
+    # a human must look (degraded evaluation or compliance/policy rejection).
     builder.add_conditional_edges(
         "evaluator_gate",
         evaluator_outcome,
         {
             "publisher": "publisher",
             "revise_content": "revise_content",
+            "__end__": END,
         },
     )
 

@@ -41,6 +41,18 @@ class XHSGrowthState(TypedDict, total=False):
     prev_phase: str  # Phase before pause/cancel, for resume
     current_agent: str
     error: str | None
+    # P0-W5 (additive, checkpoint-compatible): WHY the workflow is paused.
+    # "evaluator_fail_closed" is written by the evaluator node exactly when the
+    # shared router predicate says a human is required, and is the contract
+    # POST /resume uses to demand an explicit {"human_decision": ...} instead of
+    # the legacy whole-pipeline restart. Any other pause (user pause, cancel)
+    # leaves it None/absent. Add-only: never rename/remove.
+    pause_reason: str | None
+    # P0-W3 (additive, checkpoint-compatible): error taxonomy class of the
+    # last recorded failure — transient / semantic / side_effect_unknown /
+    # policy_violation / auth_expired. Written by handle_agent_error; no
+    # router reads it yet (default transient = old behavior).
+    error_class: str | None
     retry_count: int
     execution_mode: str  # "single" or "continuous" — from ExecutionMode enum
     workflow_mode: WorkflowMode  # "trend" or "brief" — determines pipeline path

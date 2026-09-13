@@ -315,11 +315,13 @@ class TestLlmPerfBreakdown:
         fake_response = MagicMock()
         fake_response.usage_metadata = {"input_tokens": 10, "output_tokens": 5}
         fake_response.response_metadata = {"model_name": "test-model"}
+        agent._reset_llm_perf()
         with patch.object(type(agent), "model", new_callable=PropertyMock) as m:
             m.return_value = MagicMock(ainvoke=AsyncMock(return_value=fake_response))
             await agent._llm_ainvoke([MagicMock()])
-        assert len(agent._llm_perf_entries) == 1
-        entry = agent._llm_perf_entries[0]
+        entries = agent._current_llm_perf_entries()
+        assert len(entries) == 1
+        entry = entries[0]
         assert "ainvoke_ms" in entry
         assert entry["ainvoke_ms"] >= 0.0
 
@@ -333,10 +335,10 @@ class TestLlmPerfBreakdown:
                 return {}
 
         agent = DummyAgent()
-        agent._llm_perf_entries.append({"kind": "llm", "agent": "dummy"})
+        agent._current_llm_perf_entries().append({"kind": "llm", "agent": "dummy"})
         agent._parse_json_response('{"k": "v"}')
-        assert agent._llm_perf_entries[-1].get("parse_ms") is not None
-        assert agent._llm_perf_entries[-1]["parse_ms"] >= 0.0
+        assert agent._current_llm_perf_entries()[-1].get("parse_ms") is not None
+        assert agent._current_llm_perf_entries()[-1]["parse_ms"] >= 0.0
 
     def test_parse_without_prior_entry_does_not_raise(self):
         class DummyAgent(BaseAgent):
@@ -348,7 +350,135 @@ class TestLlmPerfBreakdown:
                 return {}
 
         agent = DummyAgent()
-        # No prior _llm_ainvoke → empty entries; parse must still work + not raise.
+        # Fresh per-execute scope with no prior _llm_ainvoke → empty entries;
+        # parse must still work + not raise.
+        agent._reset_llm_perf()
         result = agent._parse_json_response('{"k": "v"}')
         assert result == {"k": "v"}
-        assert agent._llm_perf_entries == []
+        assert agent._current_llm_perf_entries() == []
+
+
+class TestLlmPerfAsyncIsolation:
+    """P0-W1 regression: perf entries must be isolated per asyncio task.
+
+    The agent module-level singletons are shared by every concurrent workflow
+    (single-process uvicorn, asyncio background tasks on one loop). With the
+    old shared ``self._llm_perf_entries`` list, task A's drain picked up task
+    B's LLM entries (cross-contaminated performance_log / cost attribution).
+
+    The two tasks meet on a bidirectional asyncio.Event rendezvous INSIDE
+    execute(), so overlap is proven structurally — Windows loop-clock
+    granularity (~15.6ms) is NOT used as concurrency evidence.
+    """
+
+    @pytest.mark.asyncio
+    async def test_concurrent_executes_do_not_cross_pollute_perf_entries(self):
+        import asyncio
+        import contextvars
+
+        current_tag: contextvars.ContextVar[str] = contextvars.ContextVar("tag")
+
+        class DummyAgent(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "dummy"
+            prompt_file = ""
+
+            async def execute(self, state, store):
+                self._reset_llm_perf()
+                tag = current_tag.get()
+                # Bidirectional rendezvous: both tasks must have entered
+                # execute() (and reset) before either appends its entry.
+                state["arrived"][tag].set()
+                other = "B" if tag == "A" else "A"
+                await state["arrived"][other].wait()
+                await self._llm_ainvoke([MagicMock()])
+                return {"done": tag}
+
+        agent = DummyAgent()
+
+        fake_model = MagicMock()
+
+        async def _ainvoke(_messages):
+            tag = current_tag.get()
+            resp = MagicMock()
+            resp.usage_metadata = {"input_tokens": 10, "output_tokens": 5}
+            resp.response_metadata = {"model_name": f"model-{tag}"}
+            return resp
+
+        fake_model.ainvoke = AsyncMock(side_effect=_ainvoke)
+
+        arrived = {"A": asyncio.Event(), "B": asyncio.Event()}
+
+        async def _run(tag: str):
+            current_tag.set(tag)
+            state = {"retry_count": 0, "arrived": arrived}
+            return await agent(state, store=AsyncMock())
+
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as m:
+            m.return_value = fake_model
+            results = await asyncio.gather(_run("A"), _run("B"))
+
+        for tag, result in zip(("A", "B"), results, strict=True):
+            llm_entries = [e for e in result["performance_log"] if e.get("kind") == "llm"]
+            assert len(llm_entries) == 1, (
+                f"task {tag} saw {len(llm_entries)} llm perf entries — "
+                "entries from the concurrent task leaked through shared "
+                "instance state"
+            )
+            assert llm_entries[0]["model"] == f"model-{tag}"
+
+
+class TestMemoryNamespaceFailFast:
+    """P0-W2 regression: an unknown memory namespace must raise, not silently
+    fall back to the performance-insights namespace."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_namespace_raises_instead_of_silent_fallback(self):
+        from backend.memory.exceptions import UnknownMemoryNamespaceError
+
+        class DummyAgent(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "dummy"
+            prompt_file = ""
+
+            async def execute(self, state, store):
+                return {}
+
+        agent = DummyAgent()
+        mock_store = AsyncMock()
+        mock_store.asearch = AsyncMock(return_value=[])
+
+        # Typo'd namespace must fail fast — pre-fix this silently searched the
+        # performance_insights namespace and returned [].
+        with pytest.raises(UnknownMemoryNamespaceError):
+            await agent._recall_memory(
+                mock_store,
+                account_id="test",
+                query="q",
+                namespace="audience_perferences",
+            )
+        mock_store.asearch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_all_valid_namespaces_still_resolve(self):
+        class DummyAgent(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "dummy"
+            prompt_file = ""
+
+            async def execute(self, state, store):
+                return {}
+
+        agent = DummyAgent()
+        for namespace in (
+            "content_history",
+            "audience_preferences",
+            "performance_insights",
+            "strategy_notes",
+        ):
+            mock_store = AsyncMock()
+            mock_store.asearch = AsyncMock(return_value=[])
+            await agent._recall_memory(
+                mock_store, account_id="test", query="q", namespace=namespace
+            )
+            mock_store.asearch.assert_awaited_once()

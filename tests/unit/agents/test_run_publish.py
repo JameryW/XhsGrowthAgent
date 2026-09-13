@@ -356,3 +356,396 @@ async def test_ignores_past_suggested_timing(_browser_settings, mock_store, monk
 
     post = client.publish_post.await_args.args[0]
     assert post.scheduled_time == ""
+
+
+# ── P0-W4: idempotency key + failed-vs-unknown separation ─────────────────────
+
+
+def _real_store():
+    from langgraph.store.memory import InMemoryStore
+
+    return InMemoryStore()
+
+
+@pytest.mark.asyncio
+async def test_timeout_after_submit_action_marks_unknown_not_failed(_browser_settings, monkeypatch):
+    """A browser/HTTP timeout during the real submit action means the note may
+    have been published anyway — status must be "unknown", never "failed"
+    (a false "failed" invites a duplicate publish)."""
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_t"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+
+    client = MagicMock()
+    client.publish_post = AsyncMock(side_effect=TimeoutError("page load timed out"))
+    client.close = AsyncMock()
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+
+    result = await run_publish(state, store=_real_store())
+
+    pr = result["publish_result"]
+    assert pr["status"] == "unknown"
+    assert isinstance(pr["recovery"], dict)  # spec: recovery must stay a dict
+    assert "publish_post" in str(pr["error"]) or "timed out" in str(pr["error"])
+
+
+@pytest.mark.asyncio
+async def test_non_timeout_error_still_marks_failed(_browser_settings, monkeypatch):
+    """Non-timeout submit errors keep the old "failed" classification."""
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_f"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    client = MagicMock()
+    client.publish_post = AsyncMock(side_effect=RuntimeError("boom"))
+    client.close = AsyncMock()
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+
+    result = await run_publish(state, store=_real_store())
+    assert result["publish_result"]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_second_real_publish_of_same_content_blocked(_browser_settings, monkeypatch):
+    """After a successful real publish, a second real publish of the same
+    (account, content, window) must be blocked before touching the client."""
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_d"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    client = _mock_client("p_once")
+    ctor = _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+    store = _real_store()
+
+    first = await run_publish(state, store=store)
+    assert first["publish_result"]["status"] == "published"
+
+    second = await run_publish(state, store=store)
+
+    assert second["publish_result"]["status"] == "failed"
+    assert second["publish_result"]["error_type"] == "duplicate_publish_blocked"
+    assert isinstance(second["publish_result"]["recovery"], dict)
+    # publish_post only ran for the first attempt (one client construction).
+    client.publish_post.assert_awaited_once()
+    assert ctor.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_record_blocks_second_publish(_browser_settings, monkeypatch):
+    """A pre-existing "unknown" idempotency record blocks the next real publish."""
+    from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_u"})
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(PUBLISH_IDEMPOTENCY_NS, pid, {"status": "unknown", "publish_id": pid})
+
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    client = _mock_client("p_never")
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+
+    result = await run_publish(state, store=store)
+    assert result["publish_result"]["error_type"] == "duplicate_publish_blocked"
+    client.publish_post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_force_publish_bypasses_idempotency_guard(_browser_settings, monkeypatch):
+    """Explicit force (publish-retry force=true path) overrides the duplicate
+    block while still recording the attempt."""
+    from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
+
+    state = _state(
+        publish_options={"dry_run": False, "account_id": "acc_forced", "force_publish": True}
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(PUBLISH_IDEMPOTENCY_NS, pid, {"status": "unknown", "publish_id": pid})
+
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    client = _mock_client("p_forced")
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+
+    result = await run_publish(state, store=store)
+    assert result["publish_result"]["post_id"] == "p_forced"
+    client.publish_post.assert_awaited_once()
+
+
+def test_publish_id_is_deterministic_within_window():
+    """Same account+content+images inside the window ⇒ same publish_id."""
+    from backend.agents.publisher import compute_publish_id
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    a = compute_publish_id(state)
+    b = compute_publish_id(dict(state))
+    assert a and a == b
+
+    # Different account or different content ⇒ different key.
+    other_acct = _state(publish_options={"dry_run": False, "account_id": "acc_2"})
+    assert compute_publish_id(other_acct) != a
+    other_content = _state(
+        copy_content={"selected_title": "完全不同", "body_text": "x", "hashtags": []},
+        publish_options={"dry_run": False, "account_id": "acc_1"},
+    )
+    assert compute_publish_id(other_content) != a
+
+
+@pytest.mark.asyncio
+async def test_dry_run_top_level_guard_is_never_bypassed(monkeypatch):
+    """Dry-run double protection anchor: state["dry_run"]=True with
+    publish_options.dry_run=False must still take the mock path (top-level
+    workflow contract beats per-decision flag)."""
+    from backend.agents.publisher import PublisherAgent
+
+    fake = MagicMock()
+    fake.platform.use_browser = True
+    fake.platform.cdp_endpoint = ""
+    monkeypatch.setattr("backend.config.settings.Settings", lambda: fake)
+    client = MagicMock()
+    monkeypatch.setattr("backend.services.xhs_client.XHSClient", client)
+
+    state = {
+        "session_id": "s",
+        "account_id": "a",
+        "dry_run": True,  # workflow-level dry_run
+        "copy_content": {"selected_title": "t", "body_text": "b"},
+        "visual_plan": {},
+        "content_plan": {},
+        "publish_options": {"dry_run": False},  # user tries to flip it
+    }
+    result = await PublisherAgent().execute(state, store=AsyncMock())
+
+    client.assert_not_called()
+    assert result["publish_result"]["status"] == "mock_published"
+
+
+# ── P0-W4: publish-retry "unknown" protection (service layer) ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_reconcile_unknown_publish_finds_confirmed_record():
+    """An idempotency record upgraded to published reconciles the unknown."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_r"})
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS, pid, {"status": "published", "publish_id": pid, "post_id": "pp"}
+    )
+
+    recon = await reconcile_unknown_publish(state, store)
+    assert recon["status"] == "published"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_unknown_publish_finds_history_match():
+    """A matching published entry in content history reconciles the unknown."""
+    from backend.agents.publisher import reconcile_unknown_publish
+    from backend.memory.store import MemoryManager
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_r2"})
+    store = _real_store()
+    mm = MemoryManager("acc_r2")
+    await store.aput(
+        mm.content_history_ns,
+        "note-1",
+        {"title": "t", "status": "published", "post_id": "note-1"},
+    )
+
+    recon = await reconcile_unknown_publish(state, store)
+    assert recon["status"] == "published"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_unknown_publish_uncertain_without_evidence():
+    from backend.agents.publisher import reconcile_unknown_publish
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_r3"})
+    recon = await reconcile_unknown_publish(state, _real_store())
+    assert recon["status"] == "uncertain"
+
+
+def test_unknown_retry_requires_force_gate():
+    """Endpoint gate: unknown + no force + uncertain reconciliation must be
+    rejected (early response), never silently re-publish."""
+    from backend.agents.publisher import evaluate_unknown_publish_retry
+
+    gate = evaluate_unknown_publish_retry(
+        pr_status="unknown", force=False, reconciled={"status": "uncertain"}
+    )
+    assert gate is not None
+    assert gate["status"] == "requires_force"
+
+    # force=true proceeds (returns None → caller continues the retry).
+    assert evaluate_unknown_publish_retry("unknown", True, {"status": "uncertain"}) is None
+    # reconciliation confirming publication short-circuits with reconciled.
+    done = evaluate_unknown_publish_retry(
+        "unknown", False, {"status": "published", "evidence": {"post_id": "x"}}
+    )
+    assert done is not None and done["status"] == "reconciled"
+    # non-unknown statuses are unaffected.
+    assert evaluate_unknown_publish_retry("failed", False, {"status": "uncertain"}) is None
+
+
+# ── P0-W4 round 2 (F2): the REAL browser path must be able to reach "unknown" ──
+#
+# XHSPublisher swallows browser exceptions into an error dict, so the raising
+# path above is not what production hits after a post-click timeout. The
+# round-2 contract is `result_known: bool` + `error_type="publish_result_unknown"`
+# on that dict — run_publish must map it to status="unknown" and leave the
+# idempotency record ARMED (a definite pre-submit rejection still releases it).
+
+
+def _browser_post_click_timeout() -> dict:
+    """The shape XHSPublisher returns when the page dies AFTER the click."""
+    return {
+        "post_id": "",
+        "post_url": "",
+        "status": "unknown",
+        "error": "Timeout 30000ms exceeded waiting for selector",
+        "result_known": False,
+        "error_type": "publish_result_unknown",
+    }
+
+
+def _browser_pre_submit_failure() -> dict:
+    """The shape for a definite rejection before the submit action."""
+    return {
+        "post_id": "",
+        "post_url": "",
+        "status": "error",
+        "error": "没有有效的图片文件",
+        "result_known": True,
+    }
+
+
+def _client_returning(payload: dict):
+    client = MagicMock()
+    client.publish_post = AsyncMock(return_value=payload)
+    client.close = AsyncMock()
+    return client
+
+
+async def _read_record(store, state):
+    from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
+
+    item = await store.aget(PUBLISH_IDEMPOTENCY_NS, compute_publish_id(state))
+    return getattr(item, "value", None) if item is not None else None
+
+
+@pytest.mark.asyncio
+async def test_browser_timeout_after_click_marks_unknown_and_keeps_guard(
+    _browser_settings, monkeypatch
+):
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_bc"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _patch_client(monkeypatch, _client_returning(_browser_post_click_timeout()))
+    _mock_history(monkeypatch)
+    store = _real_store()
+
+    result = await run_publish(state, store=store)
+    pr = result["publish_result"]
+
+    assert pr["status"] == "unknown"
+    assert pr["error_type"] == "publish_result_unknown"
+    assert pr["result_known"] is False
+    assert isinstance(pr["recovery"], dict)  # spec: recovery is never a string
+    # The guard stays armed for an unknown outcome.
+    assert (await _read_record(store, state))["status"] == "unknown"
+
+    # ...so a naive second attempt is blocked instead of double-posting.
+    client2 = _mock_client("p_should_not_fire")
+    _patch_client(monkeypatch, client2)
+    second = await run_publish(state, store=store)
+    assert second["publish_result"]["error_type"] == "duplicate_publish_blocked"
+    client2.publish_post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_browser_definite_failure_releases_guard(_browser_settings, monkeypatch):
+    """A pre-submit rejection is known-failed: retry of the same content is
+    allowed (no duplicate note was ever possible)."""
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_bf"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _patch_client(monkeypatch, _client_returning(_browser_pre_submit_failure()))
+    _mock_history(monkeypatch)
+    store = _real_store()
+
+    result = await run_publish(state, store=store)
+    pr = result["publish_result"]
+
+    assert pr["status"] != "unknown"
+    assert pr["status"] != "published"
+    assert (await _read_record(store, state))["status"] == "failed"
+
+    client2 = _mock_client("p_retry_ok")
+    _patch_client(monkeypatch, client2)
+    second = await run_publish(state, store=store)
+    assert second["publish_result"].get("post_id") == "p_retry_ok"
+    client2.publish_post.assert_awaited_once()
+
+
+def test_side_effecting_submit_has_no_generic_auto_retry():
+    """P0-W3/F2: a framework/tenacity auto-retry around the real submit can
+    DOUBLE-POST on a timeout. Only pre-submit/read phases may auto-retry."""
+    from backend.services.xhs_client import XHSClient
+
+    assert getattr(XHSClient.publish_post, "retry", None) is None
+    assert not hasattr(XHSClient.publish_post, "retry_with")
+
+
+# ── P0-W4 round 2 (F3): force_publish is one-shot ─────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_force_publish_is_consumed_and_guard_rearmed(_browser_settings, monkeypatch):
+    """After a forced publish runs, force must NOT stick to the thread: the next
+    (different) publish on the same thread has to face the guard again."""
+    from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
+
+    store = _real_store()
+    state_a = _state(
+        copy_content={"selected_title": "A", "body_text": "a", "hashtags": []},
+        publish_options={"dry_run": False, "account_id": "acc_1", "force_publish": True},
+    )
+    pid_a = compute_publish_id(state_a)
+    await store.aput(PUBLISH_IDEMPOTENCY_NS, pid_a, {"status": "unknown", "publish_id": pid_a})
+
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _patch_client(monkeypatch, _mock_client("p_forced"))
+    _mock_history(monkeypatch)
+
+    first = await run_publish(state_a, store=store)
+    assert first["publish_result"]["post_id"] == "p_forced"
+    # The force flag was consumed by this execution.
+    cleared_options = first["publish_options"]
+    assert not cleared_options.get("force_publish")
+    assert cleared_options.get("dry_run") is False  # other options survive
+
+    # Second, DIFFERENT content published with the state-carried options must be
+    # guarded again (i.e. force did not silently leak into it).
+    state_b = _state(
+        copy_content={"selected_title": "B", "body_text": "b", "hashtags": []},
+        publish_options=cleared_options,
+    )
+    pid_b = compute_publish_id(state_b)
+    await store.aput(PUBLISH_IDEMPOTENCY_NS, pid_b, {"status": "unknown", "publish_id": pid_b})
+    client_b = _mock_client("p_must_not_fire")
+    _patch_client(monkeypatch, client_b)
+
+    second = await run_publish(state_b, store=store)
+    assert second["publish_result"]["error_type"] == "duplicate_publish_blocked"
+    client_b.publish_post.assert_not_awaited()

@@ -246,7 +246,43 @@ class TestRevisionCountInterruptPreservation:
         # revision_count=2 is below max_revision_count(2)? No: >= means 2 >= 2
         # is True, so if the evaluator rejects, it force-approves. But we're
         # approving, so it goes straight to publisher.
-        final_state = await graph.ainvoke(resume_input, config)
+        #
+        # P0-W5: the evaluator gate is fail-closed for degraded results, and
+        # the global conftest LLM stub ('{"result": "mocked"}') produces a
+        # decision-less (degraded) evaluation → paused human channel. This
+        # test's subject is counter persistence across the checkpoint, so
+        # drive the evaluator with an explicit APPROVED judge panel.
+        from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+
+        from backend.agents.evaluator import EvaluatorAgent
+
+        dims = ",".join(
+            f'{{"dimension": "{name}", "score": 80, "rationale": "r", "issues": [], '
+            f'"is_blocking": false}}'
+            for name in (
+                "copywriting",
+                "visual",
+                "compliance",
+                "reach",
+                "audience",
+                "ai_taste",
+                "image_quality",
+                "commercial_tone",
+                "altruism",
+            )
+        )
+        panel_response = MagicMock()
+        panel_response.content = (
+            f'{{"overall_score": 80, "dimensions": [{dims}, {{"dimension": "bias_check", '
+            f'"score": 90, "bias_severity": 10, "rationale": "r", "issues": [], '
+            f'"is_blocking": false}}], "decision": "approved", "revision_hints": [], '
+            f'"bias_warning": "", "summary": "ok"}}'
+        )
+        with patch.object(EvaluatorAgent, "model", new_callable=PropertyMock) as model_patch:
+            judge_model = MagicMock()
+            judge_model.ainvoke = AsyncMock(return_value=panel_response)
+            model_patch.return_value = judge_model
+            final_state = await graph.ainvoke(resume_input, config)
 
         # revision_count should still be 2 (approve doesn't bump it)
         assert final_state.get("revision_count", 0) == 2

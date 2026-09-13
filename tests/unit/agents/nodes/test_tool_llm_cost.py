@@ -4,8 +4,9 @@ Covers the prd (08-06-track-tool-llm-cost-enrich-with-llm): enrich_with_llm
 calls made inside tools bypass BaseAgent._llm_ainvoke, so their token cost was
 invisible to the /analytics/costs reader. A ContextVar (_tool_llm_cost) set by
 BaseAgent.__call__ before execute() lets enrich_with_llm append kind:"llm"
-entries; __call__ drains them into self._llm_perf_entries so they ride
-performance_log. Approach A — no signature changes.
+entries; __call__ drains them into the ContextVar-scoped llm perf entry list
+(P0-W1; formerly ``self._llm_perf_entries``) so they ride performance_log.
+Approach A — no signature changes.
 """
 
 from __future__ import annotations

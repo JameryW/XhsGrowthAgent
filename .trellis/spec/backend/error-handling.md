@@ -50,25 +50,54 @@ except TimeoutError:
 ### Retry Policy Connection
 
 ```python
-# backend/graph/error_handling.py
-RETRY_POLICIES: dict[str, RetryPolicy] = {
-    "scouting": RetryPolicy(max_attempts=3),
-    "writing": RetryPolicy(max_attempts=2),
+# backend/graph/error_handling.py — exhaustive registry keyed by REAL graph node names
+RETRY_POLICIES: dict[str, RetryPolicy | None] = {
+    "trend_scout": RetryPolicy(max_attempts=3),
+    "publisher": None,  # side-effecting node — generic auto-retry is FORBIDDEN
     ...
 }
 
 def get_retry_policy(node_name: str) -> RetryPolicy | None:
-    """Used in builder.add_node(..., retry=...)"""
+    """RETRY_POLICIES[node_name] — raises KeyError for unregistered nodes.
+    A "no framework retry" decision must be an explicit None entry, never a
+    silent miss. builder registers a policy for every node in build_graph()
+    (tests/unit/graph/test_retry_registry.py asserts the full inventory)."""
 ```
+
+Because `BaseAgent.__call__` swallows agent-level exceptions (see below), these
+policies in practice only fire on wrapper-side raises (`_check_cancelled`,
+event-bus errors). Do not assume `max_attempts=N` retries the LLM call itself.
+
+### Error Taxonomy (`error_class`)
+
+`handle_agent_error` runs `classify_error()` and writes an additive state field
+`error_class` into the checkpoint (declared in `backend/state/schema.py`):
+
+| Class | Examples | Intended policy |
+|-------|----------|-----------------|
+| `transient` | network/429/timeout | stateful retry (current routers) |
+| `semantic` | malformed output / no result | repair / replan (P1 structured-output) |
+| `side_effect_unknown` | publish submitted but no verdict | idempotency guard + reconcile + explicit human force — never auto-retry |
+| `policy_violation` / `auth_expired` | compliance, expired login | fail-closed, human required |
+
+P0 keeps routing behavior unchanged (default `transient` = legacy path); the
+taxonomy is the contract that P1c/P2a retry consolidation must consume.
 
 ## Contracts
 
 ### BaseAgent Error Behavior
 
-- `BaseAgent.__call__` raises `AgentError` on failure (does NOT swallow)
-- LangGraph's `RetryPolicy` catches and retries based on exception type
-- After max retries, `AgentError` propagates — graph does NOT continue through fixed edges
+- `BaseAgent.__call__` **catches** agent exceptions and routes them through
+  `handle_agent_error(...)` → `phase=ERROR` + `error` + `retry_count+1` + `error_class`
+  (stateful retry; explicit trade-off documented at `backend/agents/base.py` —
+  the framework-level `RetryPolicy` therefore only sees wrapper-side raises).
 - Successful execution clears stale `error` field from state (`result["error"] = None`)
+- **No request-scoped state on agent instances.** Agents are module-level singletons
+  shared by concurrent asyncio workflows. LLM perf entries live in a
+  `contextvars.ContextVar` scoped to `__call__`; per-request evaluation inputs use a
+  frozen `EvaluationContext` passed as a local. Never add `self._<something>` writes
+  inside `execute()`/`__call__` paths (P0 fix W1; regression-locked by
+  `tests/unit/agents/test_base_agent.py`).
 
 ### Cancel/Pause Guard
 
@@ -174,6 +203,25 @@ if values.get("error"):
 if values.get("error") and (phase == WorkflowPhase.ERROR or not next_nodes):
     return WorkflowStatus.ERROR
 ```
+
+## Scenario: Publish Side-Effect Outcomes, Idempotency & Quality-Gate Pause (P0-W4/W5)
+
+### Contracts
+
+- **No generic retry around the submit action.** `XHSClient.publish_post` must not carry a blanket `@retry` — a post-click retry can double-post. Only pre-submit/read phases may retry.
+- **Outcome trichotomy** in `run_publish`: definite pre-submit failure → `status="failed"` (guard released); post-click timeout / no verdict → `status="unknown"` with typed `error_type="publish_result_unknown"` and `result_known=False` (guard stays armed). Never map ambiguous outcomes to `failed`.
+- **Idempotency record:** before a real (non-dry-run) submit, a record keyed by `compute_publish_id` (sha256 of account + content + images + time window) is pre-written as `"unknown"`, then upgraded/downgraded. A second real publish hitting an armed `published`/`unknown` record is blocked with structured `error_type="duplicate_publish_blocked"` recovery.
+- **`force_publish` is one-shot:** consumed on every execution outcome and cleared from state/publish_options afterwards — it must never persistently disarm the guard for later publishes on the same thread.
+- **`/publish-retry` for `unknown`:** reconcile first (idempotency record + ContentHistory trail); only `confirm-published` or an explicit body `{"force": true}` proceeds. Dry-run double guard (`state.dry_run` OR `publish_options.dry_run`) is untouched and outranks everything above.
+
+### Quality-gate fail-closed continuation
+
+- `evaluator_requires_human` (backend/graph/routers.py) is the SINGLE predicate for "human required"; the evaluator node stamps `phase=PAUSED` + `pause_reason="evaluator_fail_closed"` with it, and the router returns `__end__` with it — the two can never diverge.
+- Resume of such a terminal thread REQUIRES body `{"human_decision": "approve"|"revise"}`: approve patches `evaluation_result` (cleared `failed_dimensions`, `degraded=False`, `decision=approved`) via `aupdate_state(as_node="evaluator_gate")` so the conditional edge goes straight to `publisher` without re-running upstream; revise grants a fresh revision budget. Missing/invalid decision → 4xx structured error — never the legacy whole-pipeline restart. Legacy pauses (no `pause_reason`) keep old resume behavior.
+
+### Tests Required
+
+`tests/unit/agents/test_run_publish.py` (timeout→unknown, duplicate blocked, force one-shot), `tests/unit/services/test_xhs_publisher.py` (submit contract, no `.retry` on publish_post), `tests/integration/test_evaluator_pause_resume.py` + `tests/unit/api/test_resume_evaluator_pause.py` (decision-gated resume, no restart), `tests/unit/graph/test_retry_registry.py` (full node inventory, publisher None, KeyError).
 
 ## Scenario: Publish Failure Recovery Shape (Cross-Layer Contract)
 

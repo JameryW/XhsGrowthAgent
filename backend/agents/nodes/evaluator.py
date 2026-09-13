@@ -8,18 +8,27 @@ Does NOT use interrupt_before — the decision is the AI panel's own verdict,
 not a human input (per RQGM judge semantics). Evaluation result is written
 to state + emitted as a WORKFLOW_DATA_UPDATED event for visibility.
 
-Failure is non-blocking: on evaluator error, log and pass-through to publisher
-(degrade gracefully rather than block publishing on a quality-check failure).
+Failure semantics (P0-W5, task 09-11-p0-correctness-fixes): a degraded or
+decision-less evaluation — and a compliance/policy rejection at the revision
+cap — is fail-CLOSED: the router ends the run (__end__) and this node parks
+the workflow in the existing paused phase for the human channel. It must
+never silently pass through to the publisher. Quality-only revisions keep
+the pre-existing revise/force-publish loop.
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from langgraph.store.base import BaseStore
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.nodes._base import NodeResult, _check_cancelled
+from backend.graph.routers import (
+    PAUSE_REASON_EVALUATOR_FAIL_CLOSED,
+    evaluator_requires_human,
+)
 from backend.realtime import EventBusService, EventType
+from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.graph.nodes")
@@ -28,21 +37,28 @@ _evaluator = EvaluatorAgent()
 
 
 async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    """Run the creation-quality evaluator and emit its result."""
+    """Run the creation-quality evaluator and emit its result.
+
+    P0-W5 (fail-closed quality gate): a degraded / decision-less evaluation or
+    a compliance/policy rejection must NOT silently reach the publisher. The
+    evaluator_gate router ends the run for those cases (__end__); this node
+    additionally parks the workflow in the existing PAUSED phase so
+    derive_status surfaces the (frontend-handled) "paused" status and the human
+    can continue via the existing resume/review channels.
+    """
     _check_cancelled(state)
 
     result = await _evaluator(state, store=store)
 
     # Degrade on failure: BaseAgent.__call__ returns an error state (phase=ERROR,
-    # error, retry_count) instead of raising (prd 07-07 stateful retry). The
-    # evaluator is a non-blocking quality gate — a failure must not block
-    # publishing. Detect the error state (no evaluation_result key) and
-    # replace with an explicit degraded result.  A failure must remain
-    # non-blocking for the workflow, but must never look like a successful
-    # 100/approved evaluation in analytics or KPI aggregates.
+    # error, retry_count) instead of raising (prd 07-07 stateful retry). Detect
+    # the error state (no evaluation_result key) and replace with an explicit
+    # degraded result.  A failure must remain non-blocking for the *creation*
+    # flow, but must never look like a successful 100/approved evaluation in
+    # analytics/KPI — and (P0-W5) must never auto-publish.
     if "evaluation_result" not in result:
         error = result.get("error", "unknown evaluator failure")
-        logger.warning("Evaluator failed, degrading to pass-through: %s", error)
+        logger.warning("Evaluator failed, degrading to an explicit fail-closed result: %s", error)
         result = {
             "evaluation_result": {
                 "overall_score": None,
@@ -75,6 +91,26 @@ async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
         # non-blocking (DB may be absent in dev/test). Real engagement label back-filled
         # later by analyst_node after publish.
         await _collect_sample(state, thread_id, evaluation)
+
+    # P0-W5 human channel: mirror the router's fail-closed decision (shared
+    # single source of truth) and mark the workflow paused WITH A REASON, so
+    # POST /resume can tell this pause apart from a user pause and demand an
+    # explicit human decision instead of restarting the whole pipeline. The
+    # router reads the merged state, so node and router stay consistent by
+    # construction — the marker uses the very same predicate value.
+    merged = {**state, **result}
+    if evaluator_requires_human(cast("XHSGrowthState", merged)):
+        result["phase"] = WorkflowPhase.PAUSED
+        result["pause_reason"] = PAUSE_REASON_EVALUATOR_FAIL_CLOSED
+        logger.warning(
+            "Evaluator gate fail-closed (degraded/compliance) — parking workflow %s "
+            "as paused for human review instead of publishing",
+            thread_id,
+        )
+    else:
+        # A gate that passed (or took the quality revise loop) must not keep a
+        # stale pause marker around — /resume would keep demanding a decision.
+        result["pause_reason"] = None
 
     return NodeResult(result, "evaluator").to_dict()
 

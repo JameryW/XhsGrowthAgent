@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from backend.services.creator_stats.types import NoteStats
     from backend.state.schema import XHSGrowthState
 
-from backend.agents.evaluator import MIN_EVALUATION_COVERAGE, EvaluatorAgent
+from backend.agents.evaluator import MIN_EVALUATION_COVERAGE, EvaluationContext, EvaluatorAgent
 from backend.api.account_scope import (
     assert_note_owned,
     assert_thread_owned,
@@ -966,15 +966,15 @@ async def run_note_evaluation(
     # row again via _score_thresholds. The two try/except paths stay independent —
     # fingerprint resolution also depends on get_active_epoch (separate row), and
     # threshold default-fallback must remain reachable on its own.
-    resolved_weights: EvaluatorWeights | None = None
+    resolved_ctx: EvaluationContext | None = None
     try:
-        resolved_weights = await _evaluator._resolve_weights(account_id)
-        evaluator_fingerprint = _evaluator.evaluator_fingerprint()
+        resolved_ctx = await _evaluator._resolve_weights(account_id)
+        evaluator_fingerprint = _evaluator.evaluator_fingerprint(resolved_ctx)
     except Exception as exc:
         logger.debug("evaluator fingerprint resolution failed: %s", exc)
         evaluator_fingerprint = "rqgm:unknown"
-    if resolved_weights is not None:
-        thresholds = _thresholds_from_weights(resolved_weights)
+    if resolved_ctx is not None:
+        thresholds = _thresholds_from_weights(resolved_ctx.weights)
     else:
         thresholds = await _score_thresholds(account_id)
 

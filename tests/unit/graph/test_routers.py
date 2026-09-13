@@ -229,9 +229,95 @@ class TestEvaluatorOutcome:
         state = {"evaluation_result": {"decision": ContentStatus.REJECTED}}
         assert evaluator_outcome(state) == "revise_content"
 
-    def test_no_evaluation_defaults_to_publisher(self):
-        """No evaluation_result → degrade to publisher (don't block on missing eval)."""
+    def test_no_evaluation_is_fail_closed(self):
+        """P0-W5 fail-closed: no evaluation_result must NOT silently publish.
+
+        Old behavior returned "publisher" for a missing result, letting an
+        evaluator outage / skipped evaluation auto-publish. New behavior ends
+        the run (the evaluator node marks the workflow paused for a human).
+        """
         state = {}
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_empty_evaluation_dict_is_fail_closed(self):
+        assert evaluator_outcome({"evaluation_result": {}}) == "__end__"
+
+    def test_decision_none_degraded_is_not_published(self):
+        """Synthesized degraded (decision=None) must not reach publisher."""
+        state = {
+            "evaluation_result": {
+                "decision": None,
+                "status": "degraded",
+                "degraded": True,
+                "overall_score": None,
+            }
+        }
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_decision_key_missing_is_fail_closed(self):
+        """A result without a decision is degraded evidence, not approval."""
+        state = {"evaluation_result": {"overall_score": None, "dimensions": []}}
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_empty_content_fake_pass_is_not_published(self):
+        """P0-W5: legacy 100/APPROVED empty-content shape with the degraded
+        marker must not publish (the producer now emits decision=None)."""
+        state = {
+            "evaluation_result": {
+                "decision": None,
+                "degraded": True,
+                "status": "degraded",
+                "summary": "无内容可评估",
+            }
+        }
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_compliance_rejection_at_cap_not_force_published(self):
+        """Revision cap force-publish applies to QUALITY-only rejections.
+
+        A compliance/policy driven REJECTED at the cap must go to the same
+        human channel as a degraded evaluation (__end__ + paused by the node),
+        never silently publish.
+        """
+        state = {
+            "evaluation_result": {
+                "decision": ContentStatus.REJECTED,
+                "failed_dimensions": ["compliance"],
+                "dimensions": [{"dimension": "compliance", "is_blocking": True}],
+            },
+            "revision_count": 2,
+        }
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_blocking_dimension_rejection_at_cap_not_force_published_legacy_shape(self):
+        """Back-compat: legacy results without failed_dimensions still use the
+        structured is_blocking evidence to detect a compliance/policy reject."""
+        state = {
+            "evaluation_result": {
+                "decision": "rejected",
+                "dimensions": [
+                    {"dimension": "copywriting", "is_blocking": False},
+                    {"dimension": "compliance", "is_blocking": True, "score": 20.0},
+                ],
+            },
+            "revision_count": 5,
+        }
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_quality_only_rejection_at_cap_still_publishes(self):
+        """Quality-only REJECTED at the cap keeps the old force-publish path
+        (fail-OPEN is allowed for the quality track)."""
+        state = {
+            "evaluation_result": {
+                "decision": ContentStatus.REJECTED,
+                "failed_dimensions": ["copywriting", "visual"],
+                "dimensions": [
+                    {"dimension": "copywriting", "is_blocking": False},
+                    {"dimension": "visual", "is_blocking": False},
+                ],
+            },
+            "revision_count": 2,
+        }
         assert evaluator_outcome(state) == "publisher"
 
     def test_needs_revision_force_approves_at_limit(self):
