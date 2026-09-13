@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from backend.config.settings import Settings
@@ -149,7 +150,7 @@ def _evaluation_is_degraded(evaluation: Any) -> bool:
     return "decision" not in evaluation or evaluation.get("decision") is None
 
 
-def _rejection_is_compliance_driven(evaluation: dict[str, Any]) -> bool:
+def _rejection_is_compliance_driven(evaluation: Mapping[str, Any]) -> bool:
     """True when a REJECTED decision was driven by compliance/policy evidence.
 
     Primary marker: the additive ``failed_dimensions`` list (P0-W5) intersected
@@ -179,7 +180,9 @@ def evaluator_requires_human(state: XHSGrowthState) -> bool:
     "human channel" decision can never diverge between them.
     """
     evaluation = state.get("evaluation_result")
-    if _evaluation_is_degraded(evaluation):
+    # `_evaluation_is_degraded` already reports None/empty as degraded; the
+    # explicit `is None` arm only narrows the type for the checks below.
+    if evaluation is None or _evaluation_is_degraded(evaluation):
         return True
     decision: Any = evaluation.get("decision")
     if decision in (ContentStatus.REJECTED, "rejected"):

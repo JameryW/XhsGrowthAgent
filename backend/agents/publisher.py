@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import socket
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -83,7 +84,7 @@ def _submit_outcome_is_unknown(result: dict[str, Any], status: str) -> bool:
     return status in ("unknown", "pending")
 
 
-def _publish_account_id(state: dict[str, Any]) -> str:
+def _publish_account_id(state: Mapping[str, Any]) -> str:
     publish_options = state.get("publish_options") or {}
     return (
         str(publish_options.get("account_id") or state.get("account_id") or "default").strip()
@@ -91,7 +92,7 @@ def _publish_account_id(state: dict[str, Any]) -> str:
     )
 
 
-def compute_publish_id(state: dict[str, Any]) -> str:
+def compute_publish_id(state: Mapping[str, Any]) -> str:
     """Deterministic idempotency key: hash(account + content + images + window).
 
     Same workflow content published to the same account inside the same time
@@ -432,7 +433,11 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         account = await get_account(publish_account_id)
         if account is None or not account.is_active:
             logger.warning(f"账号 {publish_account_id} 未激活或不存在，跳过发布")
-            publish_result = {
+            # Explicit annotation: publish_result is a heterogeneous dict
+            # (str fields + nested recovery dict + bools). Without it mypy
+            # joins the first literal's values to Collection[str] and rejects
+            # the later `result_known: bool` writes.
+            publish_result: dict[str, Any] = {
                 "post_id": "",
                 "post_url": "",
                 "status": "failed",
