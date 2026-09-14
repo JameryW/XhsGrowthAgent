@@ -336,7 +336,8 @@ async def test_content_strategist_calls_build_mode_creative_context():
     store.aput = AsyncMock()
     store.aget = AsyncMock(return_value=None)
 
-    agent._recall_memory = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    # P1b-S4-3 迁移后 strategist 不再走 BaseAgent._recall_memory（insights 走
+    # S2 管线，经 store.asearch 返回 [] 即 EMPTY），打桩已无意义，移除。
     agent._score_trend_topics = AsyncMock(return_value="")  # type: ignore[method-assign]
     agent._extract_candidate_topics = MagicMock(return_value=[])  # type: ignore[method-assign]
 

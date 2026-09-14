@@ -418,3 +418,179 @@ class TestContentStrategistAgent:
             result = await agent._ripple_cancel("job-err")
 
         assert result is None
+
+
+class TestContentStrategistContextPipeline:
+    """S4-3 迁移契约：performance_insights recall 走 S2 管线、prompt 走
+    compile_prompt、降级可观测、L4 记忆段逐字等价（D3'）。"""
+
+    @pytest.fixture
+    def agent(self):
+        return ContentStrategistAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    @pytest.fixture
+    def mock_state(self):
+        return {
+            "account_id": "test_account",
+            "trend_data": {"trending_topics": ["美食探店"]},
+        }
+
+    def _ripple_patches(self):
+        return (
+            patch("backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock),
+            patch("backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock),
+        )
+
+    def _mock_scorer(self):
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+        return scorer
+
+    @pytest.mark.asyncio
+    async def test_recall_uses_context_pipeline_ns_and_query(self, agent, mock_store, mock_state):
+        """S2 pipeline recall: same ns/query/limit as the old _recall_memory."""
+        mock_response = MagicMock()
+        mock_response.content = '{"selected_topic": "美食探店"}'
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
+
+        pred, pmf = self._ripple_patches()
+        with (
+            pred as mock_pred,
+            pmf as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", self._mock_scorer()),
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+            await agent.execute(mock_state, store=mock_store)
+
+        by_ns = {c.args[0][-1]: c for c in mock_store.asearch.call_args_list}
+        assert "performance_insights" in by_ns
+        ins = by_ns["performance_insights"]
+        assert ins.args[0] == ("accounts", "test_account", "performance_insights")
+        assert ins.kwargs.get("query") == "content strategy"
+        assert ins.kwargs.get("limit") == 5
+
+    @pytest.mark.asyncio
+    async def test_memory_context_l4_format_verbatim(self, agent, mock_store, mock_state):
+        """L4 记忆段逐字等价，占位符无残留（{memory_context} 删除、
+        {ripple_context} 由 post-render replace 清空）。"""
+        mock_item = MagicMock()
+        mock_item.value = {"insight": "美食话题互动率高"}
+        mock_store.asearch = AsyncMock(return_value=[mock_item])
+
+        captured: dict = {}
+        responses = [MagicMock()]
+        responses[0].content = '{"selected_topic": "美食探店"}'
+
+        async def _ainvoke(messages, **kwargs):
+            captured.setdefault("calls", []).append(messages)
+            return responses[len(captured["calls"]) - 1]
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = _ainvoke
+        agent._model = mock_model
+
+        pred, pmf = self._ripple_patches()
+        with (
+            pred as mock_pred,
+            pmf as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", self._mock_scorer()),
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+            await agent.execute(mock_state, store=mock_store)
+
+        system = captured["calls"][0][0].content
+        assert "\n历史表现洞察：\n- 美食话题互动率高\n" in system
+        assert "{memory_context}" not in system
+        assert "{ripple_context}" not in system
+
+    def test_yaml_segment_schema(self, agent):
+        """YAML 分段 schema：恰好一个 L4 标记，{memory_context} 占位符移除。"""
+        system = agent.prompt_template["system"]
+        assert system.count("<!-- ctx:") == 1
+        assert "<!-- ctx:l4_memory -->" in system
+        assert "{memory_context}" not in system
+        # {ripple_context} 占位符按 consumer-map 暂保留（post-render replace）
+        assert "{ripple_context}" in system
+
+    @pytest.mark.asyncio
+    async def test_degraded_recall_drops_memory_section(self, agent, mock_store, mock_state):
+        """Store 故障 → 降级而非崩溃：记忆段缺席，节点照常产出 content_plan。"""
+
+        async def _boom(ns, **kwargs):
+            raise RuntimeError("store down")
+
+        mock_store.asearch = _boom
+
+        captured: dict = {}
+        mock_response = MagicMock()
+        mock_response.content = '{"selected_topic": "美食探店"}'
+
+        async def _ainvoke(messages, **kwargs):
+            captured.setdefault("calls", []).append(messages)
+            return mock_response
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = _ainvoke
+        agent._model = mock_model
+
+        pred, pmf = self._ripple_patches()
+        with (
+            pred as mock_pred,
+            pmf as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", self._mock_scorer()),
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+            result = await agent.execute(mock_state, store=mock_store)
+
+        assert "content_plan" in result
+        system = captured["calls"][0][0].content
+        assert "历史表现洞察" not in system
+        assert "{memory_context}" not in system
+
+    @pytest.mark.asyncio
+    async def test_drift_retry_prompt_carries_correction_hint(self, agent, mock_store, mock_state):
+        """漂移纠偏 retry（双形态之一）：第二次调用 SystemMessage 携带【纠偏】提示，
+        且两次调用都经 compile_prompt 编译（L4 标记已消费）。"""
+        first = MagicMock()
+        first.content = '{"selected_topic": "不在候选里的自创话题"}'
+        retry = MagicMock()
+        retry.content = '{"selected_topic": "美食探店"}'
+        responses = [first, retry]
+
+        captured: dict = {}
+
+        async def _ainvoke(messages, **kwargs):
+            captured.setdefault("calls", []).append(messages)
+            return responses[len(captured["calls"]) - 1]
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = _ainvoke
+        agent._model = mock_model
+
+        pred, pmf = self._ripple_patches()
+        with (
+            pred as mock_pred,
+            pmf as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", self._mock_scorer()),
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+            result = await agent.execute(mock_state, store=mock_store)
+
+        assert len(captured["calls"]) == 2
+        assert result["content_plan"].get("topic_revised") is True
+        retry_system = captured["calls"][1][0].content
+        assert "【纠偏】" in retry_system
+        assert "不在候选话题内" in retry_system
+        assert "{memory_context}" not in retry_system
