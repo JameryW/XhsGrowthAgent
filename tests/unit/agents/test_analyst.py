@@ -102,13 +102,14 @@ class TestAnalystAgent:
     async def test_execute_gathers_memory_and_ripple_concurrently(
         self, agent, mock_state, mock_store
     ):
-        """_recall_memory + _ripple_report run concurrently via asyncio.gather.
+        """_recall_history + _ripple_report run concurrently via asyncio.gather.
 
         Discriminator: analyst module now has TWO gather calls — the top-level
         memory+ripple gather and the post-publish store-write gather. Both patch
         backend.agents.analyst.asyncio.gather; we filter captured calls for the
-        one whose awaitables are the _recall_memory + _ripple_report coroutines
-        (qualname check). Serial implementation never calls gather with that pair.
+        one whose awaitables are the pipeline recall (_recall_history, P1b-S4-5)
+        + _ripple_report coroutines (qualname check). Serial implementation
+        never calls gather with that pair.
         """
         captured: list[tuple] = []
 
@@ -133,13 +134,13 @@ class TestAnalystAgent:
             await agent.execute(mock_state, store=mock_store)
 
         # Find the memory+ripple gather call (exactly 2 awaitables whose
-        # coroutines are _recall_memory + _ripple_report).
+        # coroutines are _recall_history + _ripple_report).
         memory_ripple_calls = []
         for awaitables in captured:
             if len(awaitables) != 2:
                 continue
             qualnames = sorted(getattr(aw, "__qualname__", "") for aw in awaitables)
-            if qualnames == ["AnalystAgent._ripple_report", "BaseAgent._recall_memory"]:
+            if qualnames == ["AnalystAgent._ripple_report", "_recall_history"]:
                 memory_ripple_calls.append(awaitables)
         assert len(memory_ripple_calls) == 1, (
             f"expected 1 memory+ripple gather, got {len(memory_ripple_calls)}"
@@ -448,3 +449,89 @@ class TestAnalystWriteGather:
         )
         # All recs stored regardless of the insight failure.
         assert stored_notes == ["r1", "r2"], f"expected both recs stored, got {stored_notes}"
+
+
+class TestAnalystContextPipeline:
+    """S4-5 迁移契约：content_history recall 走 S2 管线，raw_items 还原原始
+    记录列表使 user_msg 内 ``历史数据：{history}`` 的 list repr 逐字节等价（D3'）。"""
+
+    @pytest.fixture
+    def agent(self):
+        return AnalystAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        store.aput = AsyncMock()
+        return store
+
+    @pytest.fixture
+    def mock_state(self):
+        return {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.PUBLISHING,
+            "publish_result": {"post_id": "123", "views": 1000, "likes": 50},
+        }
+
+    def _mock_model(self, agent, captured):
+        mock_response = MagicMock()
+        mock_response.content = '{"insights": [], "recommendations": []}'
+
+        async def _capture(messages, **kwargs):
+            captured.setdefault("calls", []).append(messages)
+            return mock_response
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = _capture
+        agent._model = mock_model
+
+    @pytest.mark.asyncio
+    async def test_recall_uses_context_pipeline_ns_and_query(self, agent, mock_store, mock_state):
+        """S2 pipeline recall: same ns/query/limit as the old _recall_memory."""
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        await agent.execute(mock_state, store=mock_store)
+        by_ns = {c.args[0][-1]: c for c in mock_store.asearch.call_args_list}
+        assert "content_history" in by_ns
+        hist = by_ns["content_history"]
+        assert hist.args[0] == ("accounts", "test_account", "content_history")
+        assert hist.kwargs.get("query") == "content performance"
+        assert hist.kwargs.get("limit") == 10
+
+    @pytest.mark.asyncio
+    async def test_history_list_repr_verbatim_in_user_msg(self, agent, mock_store, mock_state):
+        """user_msg 的 ``历史数据：{history}`` 与旧路径 list repr 逐字节等价。"""
+        mock_item = MagicMock()
+        mock_item.value = {"title": "Past Post", "engagement": 80}
+        mock_store.asearch = AsyncMock(return_value=[mock_item])
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        await agent.execute(mock_state, store=mock_store)
+
+        user = captured["calls"][0][1].content
+        assert "历史数据：[{'title': 'Past Post', 'engagement': 80}]" in user
+        assert "历史数据：[]" not in user
+
+    @pytest.mark.asyncio
+    async def test_degraded_recall_renders_empty_history(self, agent, mock_store, mock_state):
+        """Store 故障 → 降级而非崩溃：user_msg 内历史数据渲染为 []，节点照常产出。"""
+
+        async def _boom(ns, **kwargs):
+            raise RuntimeError("store down")
+
+        mock_store.asearch = _boom
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        result = await agent.execute(mock_state, store=mock_store)
+
+        assert "analytics" in result
+        user = captured["calls"][0][1].content
+        assert "历史数据：[]" in user
+
+    def test_yaml_no_memory_placeholder(self, agent):
+        """analyst system 无 {memory_context} 占位符（历史数据走 user_msg），
+        compile 走无标记整段 L0。"""
+        system = agent.prompt_template["system"]
+        assert "{memory_context}" not in system
+        assert "<!-- ctx:" not in system

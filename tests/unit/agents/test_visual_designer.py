@@ -201,3 +201,38 @@ class TestVisualDesignerAgent:
         """Verify agent class attributes."""
         assert agent.agent_name == "visual_designer"
         assert agent.prompt_file == "visual_designer.yaml"
+
+
+class TestVisualDesignerContextPipeline:
+    """S4-5 迁移契约：creative_ctx 经 compile_prompt 渲染到 L4 标记位
+    （标记移至 system 末尾，JSON 规范留 L0——跨层顺序变化属 D3' 段落
+    内容集合等价口径）。"""
+
+    @pytest.fixture
+    def agent(self):
+        return VisualDesignerAgent()
+
+    def test_yaml_segment_schema(self, agent):
+        """YAML 分段 schema：恰一个 L4 标记（位于 system 末尾），
+        {memory_context} 占位符移除。"""
+        system = agent.prompt_template["system"]
+        assert system.count("<!-- ctx:") == 1
+        assert "<!-- ctx:l4_memory -->" in system
+        assert "{memory_context}" not in system
+
+    def test_compile_system_prompt_renders_creative_ctx(self, agent):
+        """_compile_system_prompt 将 creative_ctx 渲染进 system，policy 与
+        JSON 规范段内容集合不变。"""
+        state = {"account_id": "test", "niche": "母婴"}
+        prompt = agent._compile_system_prompt(state, "风格参考：生活种草风")
+        assert "风格参考：生活种草风" in prompt
+        assert "{memory_context}" not in prompt
+        assert "视觉设计专家" in prompt
+        assert '"cover_prompt"' in prompt
+
+    def test_compile_system_prompt_empty_ctx(self, agent):
+        """空 creative_ctx → L4 EMPTY，system 照常渲染不崩溃。"""
+        state = {"account_id": "test"}
+        prompt = agent._compile_system_prompt(state, "")
+        assert "视觉设计专家" in prompt
+        assert "{memory_context}" not in prompt

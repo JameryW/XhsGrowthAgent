@@ -1,4 +1,11 @@
-"""Visual Designer agent — generates cover prompts and layout recommendations."""
+"""Visual Designer agent — generates cover prompts and layout recommendations.
+
+P1b-S4 迁移第五批销号（consumer-map §六.5，creative_ctx 类批）：本 agent 无
+管线 ns recall（仅 CreativeMemory），creative_ctx 经 compile_prompt 渲染到
+`<!-- ctx:l4_memory -->` 标记位。原 `{memory_context}` 占位符位于 system
+中部（JSON 输出规范之前），迁移后 L4 段按层序渲染到 L0 尾部——跨层顺序变化
+符合 D3' 段落内容集合等价口径（与 copywriter/strategist 同一先例）。
+"""
 
 from __future__ import annotations
 
@@ -10,13 +17,49 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import (
+    ContextItem,
+    PromptLayer,
+    RetrievalMode,
+    RetrievalResult,
+    RunContext,
+)
 from backend.state.schema import WorkflowPhase, XHSGrowthState
+
+_compiler = ContextCompiler()
 
 
 class VisualDesignerAgent(BaseAgent):
     task_type = TaskType.VISUAL
     agent_name = "visual_designer"
     prompt_file = "visual_designer.yaml"
+
+    def _compile_system_prompt(self, state: XHSGrowthState, l4_extra: str) -> str:
+        """System prompt via ContextCompiler（S4-5 迁移）。niche 默认 "母婴"
+        为 consumer-map §五 既有隐式默认，统一切换留 S4-7。"""
+        run_context = RunContext(
+            thread_id=str(state.get("session_id") or ""),
+            account_id=str(state.get("account_id", "default")),
+            niche=str(state.get("niche", "母婴")),
+            values=state,
+        )
+        if l4_extra:
+            memory = RetrievalResult(
+                namespace="visual_designer_memory",
+                layer=PromptLayer.L4_MEMORY,
+                mode=RetrievalMode.HIT,
+                items=(ContextItem(body=l4_extra, source="memory:visual_designer"),),
+            )
+        else:
+            memory = RetrievalResult(
+                namespace="visual_designer_memory",
+                layer=PromptLayer.L4_MEMORY,
+                mode=RetrievalMode.EMPTY,
+            )
+        return _compiler.compile_prompt(
+            run_context, self.prompt_template["system"], retrievals=(memory,)
+        ).render()
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -42,7 +85,7 @@ class VisualDesignerAgent(BaseAgent):
         )
 
         creative_ctx = cm.build_creative_context(styles, [], cover_materials)
-        system_prompt = self._build_system_prompt(state, extra_context=creative_ctx)
+        system_prompt = self._compile_system_prompt(state, creative_ctx)
 
         niche = state.get("niche", "母婴")
         body_summary = copy.get("body_text", "")[:200] if copy else ""

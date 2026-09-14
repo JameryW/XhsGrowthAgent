@@ -1,4 +1,11 @@
-"""Analyst agent — reads engagement data, generates insights, with Ripple report integration."""
+"""Analyst agent — reads engagement data, generates insights, with Ripple report integration.
+
+P1b-S4 迁移第五批销号（consumer-map §六.5，creative_ctx 类批之 analyst）：
+content_history recall 走 S2 管线（RetrievalResult.mode 降级信号 +
+kind=context 事件面），``raw_items`` 还原原始记录列表使 user_msg 内
+``历史数据：{history}`` 的 list repr 逐字节等价（D3'）；system prompt
+组装接 ContextCompiler.compile_prompt（本 YAML 无占位符，整段 L0）。
+"""
 
 from __future__ import annotations
 
@@ -11,6 +18,9 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import RetrievalMode, RetrievalResult, RunContext
+from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.services.ripple_service import RippleTimeoutError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
@@ -21,8 +31,51 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("xhs_growth.agents.analyst")
 
+_compiler = ContextCompiler()
+
 # Ripple 报告获取超时（秒）— 报告生成是增值操作，不阻塞主流程
 _RIPPLE_REPORT_TIMEOUT = 120
+
+
+async def _recall_history(
+    store: BaseStore | None, account_id: str, thread_id: str
+) -> RetrievalResult:
+    """content_history recall through the S2 pipeline (D6').
+
+    Same namespace / query / limit as the pre-migration ``_recall_memory``
+    call; a store failure now degrades with an explicit ``mode`` instead of
+    silently returning ``[]``, and — with a ``thread_id`` — lands in the
+    workflow_events tier as ``kind="context"``.
+    """
+    if store is None:
+        return RetrievalResult(
+            namespace="content_history",
+            mode=RetrievalMode.DEGRADED,
+            error="store_unavailable",
+        )
+    results = await recall_namespaces(
+        store,
+        account_id=account_id,
+        requests=[
+            RecallRequest(namespace="content_history", query="content performance", limit=10)
+        ],
+        thread_id=thread_id,
+        emit_events=True,
+    )
+    return results["content_history"]
+
+
+def _format_history(result: RetrievalResult) -> list[dict[str, Any]]:
+    """History records for the user_msg list repr, format identical to the
+    pre-migration block (分段等价): the raw store records themselves —
+    ``raw_items`` mirrors ``item.value`` so ``{history}`` renders the same
+    ``[{...}, ...]`` repr. EMPTY/DEGRADED renders as ``[]`` (the old
+    swallow-and-return-``[]`` text), except the degradation is now visible
+    as a ``mode`` (and a workflow_events entry).
+    """
+    if result.mode is RetrievalMode.HIT and result.raw_items:
+        return list(result.raw_items)
+    return []
 
 
 async def _safe_evolve(account_id: object) -> None:
@@ -75,21 +128,26 @@ class AnalystAgent(BaseAgent):
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
         account_id = state.get("account_id", "default")
+        thread_id = str(state.get("session_id") or "")
         publish_result = state.get("publish_result", {})
 
-        # 召回历史数据 + 获取 Ripple 报告（并发：memory RTT 隐藏在 Ripple 长轮询后）
-        history, ripple_report = await asyncio.gather(
-            self._recall_memory(
-                store,
-                account_id,
-                query="content performance",
-                namespace="content_history",
-                limit=10,
-            ),
+        # 召回历史数据 + 获取 Ripple 报告（并发：memory RTT 隐藏在 Ripple 长轮询后）。
+        # recall 走 S2 管线（降级信号 + kind=context 事件面），并发契约不变。
+        history_result, ripple_report = await asyncio.gather(
+            _recall_history(store, account_id, thread_id),
             self._ripple_report(state),
         )
+        history = _format_history(history_result)
 
-        system_prompt = self._build_system_prompt(state)
+        run_context = RunContext(
+            thread_id=thread_id,
+            account_id=account_id,
+            niche=str(state.get("niche", "母婴")),
+            values=state,
+        )
+        system_prompt = _compiler.compile_prompt(
+            run_context, self.prompt_template["system"]
+        ).render()
 
         ripple_context = ""
         if ripple_report:
@@ -185,7 +243,6 @@ class AnalystAgent(BaseAgent):
         # ── Back-fill real engagement onto the evaluator's training sample ──
         # ponytail: weak label for grader finetuning — attaches publish_result
         # engagement to the evaluator judgment sample. Non-blocking.
-        thread_id = state.get("session_id")
         if thread_id:
             try:
                 from backend.db.evaluator_config import backfill_engagement
