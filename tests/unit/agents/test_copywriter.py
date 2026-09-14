@@ -146,12 +146,12 @@ class TestCopywriterAgent:
     async def test_execute_recalls_memory_concurrently(
         self, agent, mock_state, mock_store, _mock_de_ai
     ):
-        """The 4 memory recalls run via one asyncio.gather (not 4 serial awaits).
+        """The memory recalls run via one asyncio.gather (not serial awaits).
 
         Non-vacuous: patches ``asyncio.gather`` in the copywriter module and
-        asserts it's awaited exactly once with 4 awaitables. If the recalls
-        are reverted to 4 serial ``await`` assignments, ``asyncio.gather`` is
-        never called and this test fails.
+        asserts it's awaited exactly once with 3 awaitables. If the recalls
+        are reverted to serial ``await`` assignments, ``asyncio.gather`` is
+        never called with that arity and this test fails.
         """
         import asyncio as _asyncio
 
@@ -177,14 +177,15 @@ class TestCopywriterAgent:
             await agent.execute(mock_state, store=mock_store)
 
         assert len(gather_calls) >= 1, "memory recalls must be gathered"
-        # The memory-recall gather is the one with 4 awaitables (recall_style +
-        # recall_materials + 2x _recall_memory). Other gathers (e.g. deposit
-        # material) may fire with a different arity — discriminate by content,
-        # not by total call count. See copywriter gather-deposit-material.
-        recall_gathers = [c for c in gather_calls if len(c[0]) == 4]
-        assert len(recall_gathers) == 1, "expected exactly one 4-awaitable recall gather"
+        # The memory-recall gather is the one with 3 awaitables (recall_style +
+        # recall_materials + _recall_memories batching both pipeline namespaces
+        # through recall_namespaces). Other gathers (2-way deposit, the
+        # pipeline's internal 2-namespace batch) fire with a different arity —
+        # discriminate by content, not by total call count.
+        recall_gathers = [c for c in gather_calls if len(c[0]) == 3]
+        assert len(recall_gathers) == 1, "expected exactly one 3-awaitable recall gather"
         awaitables, _ = recall_gathers[0]
-        assert len(awaitables) == 4, "expected exactly 4 concurrent recalls"
+        assert len(awaitables) == 3, "expected exactly 3 concurrent recall sources"
 
     @pytest.mark.asyncio
     async def test_execute_handles_empty_plan(self, agent, mock_store, _mock_de_ai):
@@ -459,3 +460,127 @@ class TestCopywriterAgent:
         # warning on first attempt + error after retry
         assert any("empty on first attempt" in r.message for r in caplog.records)
         assert any("empty after retry" in r.message for r in caplog.records)
+
+
+class TestCopywriterContextPipeline:
+    """S4-2 迁移契约：双 ns recall 走 S2 管线、prompt 走 compile_prompt、
+    降级可观测、L4 记忆段逐字等价（D3'）。"""
+
+    @pytest.fixture
+    def agent(self):
+        return CopywriterAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    @pytest.fixture
+    def mock_state(self):
+        return {
+            "account_id": "test_account",
+            "content_plan": {
+                "selected_topic": "美食探店",
+                "content_angle": "攻略分享",
+                "target_audience": "美食爱好者",
+                "content_type": "图文笔记",
+            },
+        }
+
+    def _mock_model(self, agent, content: str, captured: dict):
+        mock_response = MagicMock()
+        mock_response.content = content
+        mock_model = MagicMock()
+
+        async def _capture(messages, **kwargs):
+            captured["messages"] = messages
+            return mock_response
+
+        mock_model.ainvoke = _capture
+        agent._model = mock_model
+
+    @pytest.mark.asyncio
+    async def test_recall_uses_context_pipeline_ns_and_query(self, agent, mock_store, mock_state):
+        """S2 pipeline recall: same ns/query/limit as the two old _recall_memory."""
+        self._mock_model(agent, '{"title_candidates": [], "body_text": ""}', {})
+        await agent.execute(mock_state, store=mock_store)
+        by_ns = {c.args[0][-1]: c for c in mock_store.asearch.call_args_list}
+        assert "content_history" in by_ns
+        assert "audience_preferences" in by_ns
+        hist = by_ns["content_history"]
+        assert hist.args[0] == ("accounts", "test_account", "content_history")
+        assert hist.kwargs.get("query") == "美食探店"
+        assert hist.kwargs.get("limit") == 3
+        aud = by_ns["audience_preferences"]
+        assert aud.args[0] == ("accounts", "test_account", "audience_preferences")
+        assert aud.kwargs.get("query") == "audience preference for 图文笔记"
+        assert aud.kwargs.get("limit") == 3
+
+    @pytest.mark.asyncio
+    async def test_memory_context_l4_format_verbatim(self, agent, mock_store, mock_state):
+        """L4 记忆段逐字等价：多字段 bullet 由 raw_items 格式化，占位符无残留。"""
+
+        async def _asearch(ns, **kwargs):
+            if ns[-1] == "content_history":
+                item = MagicMock()
+                item.value = {"title": "历史爆款", "engagement_rate": 0.1}
+                return [item]
+            if ns[-1] == "audience_preferences":
+                item = MagicMock()
+                item.value = {"preference": "喜欢实用内容"}
+                return [item]
+            return []
+
+        mock_store.asearch = _asearch
+        captured: dict = {}
+        self._mock_model(agent, '{"title_candidates": [], "body_text": ""}', captured)
+        await agent.execute(mock_state, store=mock_store)
+
+        system = captured["messages"][0].content
+        assert "\n历史爆款参考：\n- 历史爆款 (互动率: 0.1)\n" in system
+        assert "\n受众偏好：\n- 喜欢实用内容\n" in system
+        # 占位符必须全部消失（{memory_context} 由分段标记替代）
+        assert "{memory_context}" not in system
+
+    def test_yaml_segment_schema(self, agent):
+        """YAML 分段 schema：恰好一个 L4 标记，{memory_context} 占位符移除。"""
+        system = agent.prompt_template["system"]
+        assert system.count("<!-- ctx:") == 1
+        assert "<!-- ctx:l4_memory -->" in system
+        assert "{memory_context}" not in system
+
+    @pytest.mark.asyncio
+    async def test_degraded_recall_drops_memory_section(self, agent, mock_store, mock_state):
+        """Store 故障 → 降级而非崩溃：记忆段缺席，节点照常产出 copy_content。"""
+
+        async def _boom(ns, **kwargs):
+            raise RuntimeError("store down")
+
+        mock_store.asearch = _boom
+        captured: dict = {}
+        self._mock_model(agent, '{"title_candidates": [], "body_text": ""}', captured)
+        result = await agent.execute(mock_state, store=mock_store)
+
+        assert "copy_content" in result
+        system = captured["messages"][0].content
+        assert "历史爆款参考" not in system
+        assert "受众偏好" not in system
+        assert "{memory_context}" not in system
+
+    @pytest.mark.asyncio
+    async def test_ripple_context_still_replaced(self, agent, mock_store, mock_state):
+        """{ripple_context} 保持 post-render replace（P1b 暂不动），占位符无残留。"""
+        mock_state["content_plan"]["ripple_prediction"] = {
+            "estimated_reach": 10000,
+            "estimated_engagement": 800,
+            "viral_probability": 0.42,
+        }
+        captured: dict = {}
+        self._mock_model(agent, '{"title_candidates": [], "body_text": ""}', captured)
+        await agent.execute(mock_state, store=mock_store)
+
+        system = captured["messages"][0].content
+        assert "Ripple 传播预测数据" in system
+        assert "预计触达: 10000" in system
+        assert "{ripple_context}" not in system

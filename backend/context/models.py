@@ -78,6 +78,11 @@ class RetrievalResult(BaseModel):
     ``mode`` is mandatory observability: ``DEGRADED`` means the caller saw a
     failure (partial data or an error) and ``error`` carries a human-readable
     summary; a ``HIT``/``EMPTY`` result must leave ``error`` empty.
+
+    ``raw_items`` mirrors the original store records (same order as
+    ``items``) for agents that format multi-field fields (e.g. copywriter's
+    ``- {title} (互动率: {rate})`` bullets) — ``items[].body`` alone collapses
+    a record to a single string and would lose the field structure.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -85,6 +90,7 @@ class RetrievalResult(BaseModel):
     namespace: str
     layer: PromptLayer = PromptLayer.L4_MEMORY
     items: tuple[ContextItem, ...] = ()
+    raw_items: tuple[dict[str, Any], ...] = ()
     mode: RetrievalMode = RetrievalMode.EMPTY
     error: str = ""
 
