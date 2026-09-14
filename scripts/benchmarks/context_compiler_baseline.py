@@ -13,6 +13,9 @@ feeds every agent a shared synthetic recall, and reports:
 Exit code 1 if any stability invariant fails or drift exceeds the threshold,
 so CI can gate on it.
 
+See docs/context-compiler-baseline.md for the measurement rationale, how to
+read the numbers, and how to refresh the snapshot after a deliberate change.
+
 Examples:
     python scripts/benchmarks/context_compiler_baseline.py
     python scripts/benchmarks/context_compiler_baseline.py --budget 1200
@@ -33,6 +36,7 @@ from backend.context.baseline import (
     DEFAULT_PROMPT_DIR,
     Snapshot,
     build_snapshot,
+    check_prompt_coverage,
     compare_snapshot,
     run_baseline,
 )
@@ -120,6 +124,16 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"== {GATE_NAME} ==")
     print(f"budget={args.budget} agents={len(reports[0].costs)}\n")
+
+    coverage = check_prompt_coverage(args.prompt_dir)
+    print(
+        f"-- prompt coverage --\ndeclared={len(coverage.declared)} present={len(coverage.present)}"
+    )
+    if coverage.missing:
+        print(f"MISSING (agent declares a prompt file that does not exist): {coverage.missing}")
+    if coverage.orphaned:
+        print(f"ORPHANED (prompt YAML no agent declares): {coverage.orphaned}")
+    print()
     for report in reports:
         print(f"-- scenario: {report.scenario} --")
         print(_render_table(report))
@@ -156,6 +170,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nSnapshot written: {args.snapshot}")
 
     failed = [row for report in reports for row in report.stability if not row.ok]
+    if not coverage.ok:
+        print(f"\n{GATE_NAME}: FAILED (prompt coverage: {coverage.missing})")
+        return 1
     if failed:
         print(f"\n{GATE_NAME}: FAILED ({len(failed)} agent(s))")
         return 1

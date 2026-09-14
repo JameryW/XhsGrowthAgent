@@ -19,11 +19,13 @@ from backend.context.baseline import (
     CostRow,
     Snapshot,
     build_snapshot,
+    check_prompt_coverage,
     compare_snapshot,
     load_agent_cases,
     measure_cost,
     measure_stability,
     run_baseline,
+    scan_declared_prompts,
     synthetic_retrievals,
 )
 from backend.context.models import ContextItem, PromptLayer, RetrievalMode, RetrievalResult
@@ -221,6 +223,51 @@ def _fake_report(scenario: str, tokens: dict[str, int]) -> BaselineReport:
         stability=(),
         scenario=scenario,
     )
+
+
+class TestPromptCoverage:
+    def test_every_declared_prompt_exists(self):
+        """A typo'd prompt_file compiles an empty system prompt — the gate
+        must catch that, since BaseAgent degrades silently."""
+        report = check_prompt_coverage(DEFAULT_PROMPT_DIR)
+        assert report.declared, "AST scan found no prompt_file declarations"
+        assert report.missing == ()
+        assert report.ok
+
+    def test_no_orphan_prompts(self):
+        report = check_prompt_coverage(DEFAULT_PROMPT_DIR)
+        assert report.orphaned == ()
+
+    def test_coverage_matches_loaded_cases(self):
+        """The gate's agent count and the coverage scan must agree —
+        otherwise the gate is measuring a different set than it reports."""
+        report = check_prompt_coverage(DEFAULT_PROMPT_DIR)
+        cases = load_agent_cases(DEFAULT_PROMPT_DIR)
+        assert {f"{case.name}.yaml" for case in cases} == set(report.present)
+
+    def test_scan_reads_sources_without_importing(self, tmp_path: Path):
+        """AST scan: a module with import-time side effects must still be
+        readable (a gate must never execute agent modules)."""
+        module = tmp_path / "boom.py"
+        module.write_text(
+            "raise RuntimeError('importing this must never happen')\n",
+            encoding="utf-8",
+        )
+        agent = tmp_path / "ok.py"
+        agent.write_text("class DummyAgent:\n    prompt_file = 'dummy.yaml'\n", encoding="utf-8")
+        assert scan_declared_prompts(tmp_path) == ("dummy.yaml",)
+
+    def test_missing_declaration_is_reported(self, tmp_path: Path):
+        (tmp_path / "prompts").mkdir()
+        (tmp_path / "prompts" / "ghost.yaml").write_text("system: hi\n", encoding="utf-8")
+        (tmp_path / "agents").mkdir()
+        (tmp_path / "agents" / "a.py").write_text(
+            "class A:\n    prompt_file = 'absent.yaml'\n", encoding="utf-8"
+        )
+        report = check_prompt_coverage(tmp_path / "prompts", tmp_path / "agents")
+        assert report.missing == ("absent.yaml",)
+        assert report.orphaned == ("ghost.yaml",)
+        assert not report.ok
 
 
 class TestSnapshotDrift:
