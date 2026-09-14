@@ -1,4 +1,9 @@
-"""Brief Analyzer agent — parses commercial brief text/documents into structured data."""
+"""Brief Analyzer agent — parses commercial brief text/documents into structured data.
+
+P1b-S4 迁移第五批销号（consumer-map §六.5，creative_ctx 类批）：本 agent 无
+管线 ns recall（仅 CreativeMemory），creative_ctx 经 compile_prompt 渲染到
+`<!-- ctx:l4_memory -->` 标记位（占位符原位替换，无跨层顺序变化）。
+"""
 
 from __future__ import annotations
 
@@ -11,10 +16,20 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import (
+    ContextItem,
+    PromptLayer,
+    RetrievalMode,
+    RetrievalResult,
+    RunContext,
+)
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.brief_analyzer")
+
+_compiler = ContextCompiler()
 
 # Confidence threshold below which we flag the brief as vague
 _CLARIFICATION_THRESHOLD = 0.6
@@ -27,10 +42,39 @@ async def _noop_benchmark() -> None:
     return None
 
 
+def _l4_memory(l4_extra: str) -> RetrievalResult:
+    """Wrap the creative-ctx text as the L4 layer item (empty → EMPTY mode)."""
+    if l4_extra:
+        return RetrievalResult(
+            namespace="brief_analyzer_memory",
+            layer=PromptLayer.L4_MEMORY,
+            mode=RetrievalMode.HIT,
+            items=(ContextItem(body=l4_extra, source="memory:brief_analyzer"),),
+        )
+    return RetrievalResult(
+        namespace="brief_analyzer_memory",
+        layer=PromptLayer.L4_MEMORY,
+        mode=RetrievalMode.EMPTY,
+    )
+
+
 class BriefAnalyzerAgent(BaseAgent):
     task_type = TaskType.BRIEF_ANALYSIS
     agent_name = "brief_analyzer"
     prompt_file = "brief_analyzer.yaml"
+
+    def _compile_system_prompt(self, state: XHSGrowthState, l4_extra: str) -> str:
+        """System prompt via ContextCompiler（S4-5 迁移）。niche 默认 ""
+        为 consumer-map §五 既有隐式默认，统一切换留 S4-7。"""
+        run_context = RunContext(
+            thread_id=str(state.get("session_id") or ""),
+            account_id=str(state.get("account_id", "default")),
+            niche=str(state.get("niche", "") or ""),
+            values=state,
+        )
+        return _compiler.compile_prompt(
+            run_context, self.prompt_template["system"], retrievals=(_l4_memory(l4_extra),)
+        ).render()
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -57,7 +101,7 @@ class BriefAnalyzerAgent(BaseAgent):
         )
 
         creative_ctx = cm.build_creative_context(styles, [], [], benchmark)
-        system_prompt = self._build_system_prompt(state, extra_context=creative_ctx)
+        system_prompt = self._compile_system_prompt(state, creative_ctx)
         user_msg = f"""请解析以下商单 brief，提取结构化信息：
 
 ---
@@ -139,7 +183,7 @@ class BriefAnalyzerAgent(BaseAgent):
         self, brief_result: dict[str, Any], raw_text: str, state: XHSGrowthState
     ) -> dict[str, Any]:
         """Generate clarification questions for vague briefs."""
-        system_prompt = self._build_system_prompt(state)
+        system_prompt = self._compile_system_prompt(state, "")
         user_msg = f"""以下商单 brief 解析置信度较低，请生成澄清问题：
 
 已解析的信息：

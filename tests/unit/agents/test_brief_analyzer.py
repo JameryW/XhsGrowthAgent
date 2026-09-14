@@ -207,3 +207,38 @@ class TestBriefAnalyzerParallelRecalls:
             await agent.execute(state, mock_store)
 
         mock_recall_benchmark.assert_called_once_with("美妆")
+
+
+class TestBriefAnalyzerContextPipeline:
+    """S4-5 迁移契约：creative_ctx 经 compile_prompt 渲染到 L4 标记位
+    （原位替换，无跨层顺序变化）。"""
+
+    @pytest.fixture
+    def agent(self):
+        from backend.agents.brief_analyzer import BriefAnalyzerAgent
+
+        return BriefAnalyzerAgent()
+
+    def test_yaml_segment_schema(self, agent):
+        """YAML 分段 schema：恰一个 L4 标记（原 {memory_context} 位置），
+        占位符移除。"""
+        system = agent.prompt_template["system"]
+        assert system.count("<!-- ctx:") == 1
+        assert "<!-- ctx:l4_memory -->" in system
+        assert "{memory_context}" not in system
+
+    def test_compile_system_prompt_renders_creative_ctx(self, agent):
+        """_compile_system_prompt 将 creative_ctx 渲染进 system，占位符无残留。"""
+        state = {"account_id": "test", "niche": "美妆"}
+        prompt = agent._compile_system_prompt(state, "风格指纹：ins风（来自历史沉淀）")
+        assert "风格指纹：ins风（来自历史沉淀）" in prompt
+        assert "{memory_context}" not in prompt
+        # 基础 policy 段仍在（内容集合等价）
+        assert "商单 brief 解析专家" in prompt
+
+    def test_compile_system_prompt_empty_ctx(self, agent):
+        """空 creative_ctx → L4 EMPTY，system 照常渲染不崩溃。"""
+        state = {"account_id": "test"}
+        prompt = agent._compile_system_prompt(state, "")
+        assert "商单 brief 解析专家" in prompt
+        assert "{memory_context}" not in prompt
