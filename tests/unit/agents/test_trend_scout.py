@@ -269,19 +269,19 @@ class TestTrendScoutAgent:
 
     @pytest.mark.asyncio
     async def test_execute_gathers_memory_with_xhs_fetch(self, agent, mock_store):
-        """_recall_memory + _fetch_real_data run via one top-level
+        """_recall_insights + _fetch_real_data run via one top-level
         asyncio.gather (not 2 serial awaits), so the fast Postgres memory RTT
         hides behind the slow XHS fetch (the long pole).
 
         Non-vacuous: patches ``asyncio.gather`` in the trend_scout module and
         asserts exactly one gather call whose awaitables include the
-        ``_recall_memory`` coroutine. Discriminates by coroutine source
+        ``_recall_insights`` coroutine. Discriminates by coroutine source
         (qualified name), not by awaitable count alone — the module also has
         #504's internal 2-awaitable gather (_safe_xhs_trending +
         _safe_competitor_analyzer inside _fetch_real_data), so count-based
         filtering cannot disambiguate the top-level gather. If the top-level
         calls are reverted to 2 serial ``await`` assignments, no gather
-        contains the _recall_memory coroutine and this test fails.
+        contains the _recall_insights coroutine and this test fails.
         """
         import asyncio as _asyncio
 
@@ -323,10 +323,10 @@ class TestTrendScoutAgent:
         def _names(awaitables):
             return ",".join(getattr(a, "__qualname__", "") for a in awaitables)
 
-        # The top-level gather: _recall_memory + _fetch_real_data.
-        top_level_gathers = [c for c, _ in gather_calls if "_recall_memory" in _names(c)]
+        # The top-level gather: _recall_insights + _fetch_real_data.
+        top_level_gathers = [c for c, _ in gather_calls if "_recall_insights" in _names(c)]
         assert len(top_level_gathers) == 1, (
-            "_recall_memory + _fetch_real_data must be gathered in one top-level call"
+            "_recall_insights + _fetch_real_data must be gathered in one top-level call"
         )
         assert "_fetch_real_data" in _names(top_level_gathers[0]), (
             "top-level gather must also contain _fetch_real_data"
@@ -340,3 +340,149 @@ class TestTrendScoutAgent:
         from backend.config.models import TaskType
 
         assert agent.task_type == TaskType.SCOUTING
+
+
+class TestTrendScoutContextPipeline:
+    """S4-1 迁移契约：recall 走 S2 管线、prompt 走 compile_prompt、降级可观测。"""
+
+    @pytest.fixture
+    def agent(self):
+        return TrendScoutAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    def _mock_model(self, agent, content: str, captured: dict):
+        from unittest.mock import MagicMock
+
+        mock_response = MagicMock()
+        mock_response.content = content
+        mock_model = MagicMock()
+
+        async def _capture(messages, **kwargs):
+            captured["messages"] = messages
+            return mock_response
+
+        mock_model.ainvoke = _capture
+        agent._model = mock_model
+
+    @pytest.mark.asyncio
+    async def test_recall_uses_context_pipeline_ns_and_query(self, agent, mock_store):
+        """S2 pipeline recall: same ns/query/limit as the old _recall_memory."""
+        mock_state = {"account_id": "test_account", "phase": WorkflowPhase.IDLE}
+        self._mock_model(agent, '{"trending_topics": []}', {})
+        await agent.execute(mock_state, store=mock_store)
+        mock_store.asearch.assert_called_once()
+        args, kwargs = mock_store.asearch.call_args
+        assert args[0] == ("accounts", "test_account", "performance_insights")
+        assert kwargs.get("query") == "trend insights"
+        assert kwargs.get("limit") == 3
+
+    @pytest.mark.asyncio
+    async def test_memory_context_in_l4_format(self, agent, mock_store):
+        """L4 block keeps the pre-migration format byte-for-byte."""
+        mock_item = MagicMock()
+        mock_item.value = {"insight": "美食话题表现好"}
+        mock_store.asearch = AsyncMock(return_value=[mock_item])
+        mock_state = {"account_id": "test_account", "phase": WorkflowPhase.IDLE}
+        self._mock_model(agent, '{"trending_topics": []}', captured := {})
+        await agent.execute(mock_state, store=mock_store)
+        system = captured["messages"][0].content
+        assert "历史趋势洞察：\n- 美食话题表现好\n" in system
+
+    @pytest.mark.asyncio
+    async def test_no_placeholder_leaks_into_prompt(self, agent, mock_store):
+        """The {memory_context} placeholder must not survive the migration."""
+        mock_state = {"account_id": "test_account", "phase": WorkflowPhase.IDLE}
+        self._mock_model(agent, '{"trending_topics": []}', captured := {})
+        await agent.execute(mock_state, store=mock_store)
+        system = captured["messages"][0].content
+        assert "{memory_context}" not in system
+        assert "你是小红书趋势侦察专家" in system
+
+    @pytest.mark.asyncio
+    async def test_no_real_data_degradation_string_and_llm_source(self, agent, mock_store):
+        """No realtime data -> the exact degradation text stays in the prompt
+        and data_source keeps its pre-migration value (分段等价 + 状态契约)."""
+        mock_state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.IDLE,
+            "niche": "母婴",
+        }
+        self._mock_model(agent, '{"trending_topics": []}', captured := {})
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending") as trending,
+            patch("backend.tools.xhs.trending.keyword_monitor") as monitor,
+            patch("backend.tools.xhs.trending.competitor_analyzer") as competitor,
+        ):
+            trending.ainvoke = AsyncMock(return_value=[])
+            monitor.ainvoke = AsyncMock(return_value={})
+            competitor.ainvoke = AsyncMock(return_value=[])
+            result = await agent.execute(mock_state, store=mock_store)
+        system = captured["messages"][0].content
+        assert "小红书实时数据不可用，基于你的知识生成趋势分析。" in system
+        assert result["trend_data"]["data_source"] == "llm_generated"
+
+    @pytest.mark.asyncio
+    async def test_real_data_block_in_prompt(self, agent, mock_store):
+        """Realtime data -> L5 block with the pre-migration header."""
+        mock_state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.IDLE,
+            "niche": "母婴",
+        }
+        self._mock_model(agent, '{"trending_topics": []}', captured := {})
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending") as trending,
+            patch("backend.tools.xhs.trending.keyword_monitor") as monitor,
+            patch("backend.tools.xhs.trending.competitor_analyzer") as competitor,
+        ):
+            trending.ainvoke = AsyncMock(return_value=[{"topic": "露营亲子", "heat_score": 88}])
+            monitor.ainvoke = AsyncMock(return_value={})
+            competitor.ainvoke = AsyncMock(return_value=[])
+            result = await agent.execute(mock_state, store=mock_store)
+        system = captured["messages"][0].content
+        assert "## 实时数据（来自小红书 API）" in system
+        assert "- 露营亲子 (热度: 88)" in system
+        assert result["trend_data"]["data_source"] == "real"
+
+    @pytest.mark.asyncio
+    async def test_degraded_realtime_emits_context_event(self, agent, mock_store):
+        """L5 degradation (no realtime data) with a thread_id lands a
+        kind=context event — the §十五 silent-degradation kill. With realtime
+        data (HIT) no observation event is emitted."""
+        from backend.db.workflow_events import _reset_memory_store, list_events
+
+        mock_state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.IDLE,
+            "niche": "母婴",
+            "session_id": "thread-tel",
+        }
+        self._mock_model(agent, '{"trending_topics": []}', {})
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending") as trending,
+            patch("backend.tools.xhs.trending.keyword_monitor") as monitor,
+            patch("backend.tools.xhs.trending.competitor_analyzer") as competitor,
+        ):
+            _reset_memory_store()
+            trending.ainvoke = AsyncMock(return_value=[])
+            monitor.ainvoke = AsyncMock(return_value={})
+            competitor.ainvoke = AsyncMock(return_value=[])
+            await agent.execute(mock_state, store=mock_store)
+            events = await list_events("thread-tel", kind="context")
+            degraded = [
+                e for e in events if e.get("event") == "observation" and e.get("mode") == "degraded"
+            ]
+            assert len(degraded) == 1
+            assert degraded[0]["error"] == "realtime_unavailable"
+            assert degraded[0]["agent"] == "trend_scout"
+
+            _reset_memory_store()
+            trending.ainvoke = AsyncMock(return_value=[{"topic": "x", "heat_score": 1}])
+            await agent.execute(mock_state, store=mock_store)
+            events = await list_events("thread-tel", kind="context")
+            assert not [e for e in events if e.get("event") == "observation"]
