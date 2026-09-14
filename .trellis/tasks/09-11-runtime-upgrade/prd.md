@@ -13,8 +13,8 @@
 ### P0 `09-11-p0-correctness-fixes` — 正确性修复（无前置依赖）
 async 共享可变状态、双 Retry 语义收口、Publisher 幂等、namespace fail-fast、Evaluator compliance fail-closed。本任务独立可合并，不依赖后续任何阶段。
 
-### P1a `09-11-p1-kernel-state-layers` — Kernel 核心对象 + State 三层拆分（依赖 P0）
-引入 RunContext / Task / ArtifactRef / ToolResult / ActionIntent / ExecutionReceipt 六个核心对象；XHSGrowthState 收缩为 RuntimeState（phase/task/retry/interrupt/artifact refs）；copy/visual/PDF 等大块内容改存 Artifact Store（checkpoint 只留 artifact_id）；performance_log/messages 等 append 流迁往 Event/Trace Store，消除 checkpoint 放大。含 Memory 检索降级显式信号（RetrievalResult.mode/degraded）。checkpoint 迁移兼容需单独设计。
+### P1a `09-11-p1-kernel-state-layers` — Kernel 最小骨架 + State 三层拆分（依赖 P0）
+**范围已按 2026-09-13 用户拍板收敛**（详案与代价记录见该任务 info.md + research/）：本任务落 **3+2 件**——ArtifactRef + ArtifactStore（LangGraph BaseStore + façade）+ EventStore（workflow_events 表 + 内存回退）+ RuntimeState 字段矩阵 + hydration 层。XHSGrowthState 收缩为 RuntimeState（路由谓词只消费本层字段；versions_meta/trend_summary 类摘要留驻、正文外置）；performance_log 与死字段（messages、state content_history）出 checkpoint；/status 保全文响应（6 个读面收口 hydration，前端零改动）。迁移=一刀切：新 run 新 schema、存量 checkpoint 不重写、旧线程透传；RunContext→P1b、Task/ToolResult→P1c、ActionIntent/Receipt 通用化→P2a（避免无消费方的提前抽象）。Memory 检索降级信号（RetrievalResult.mode/degraded）随 P1b recall 管线落。
 
 ### P1b `09-11-p1-context-compiler` — Context Compiler（依赖 P1a 的 RunContext）
 统一 recall → rerank → dedup → freshness → confidence → token budget → compile；prompt 分层 L0-L5 稳定前缀（L0 system/policy、L1 tool schema、L2 account profile ｜ L3 task、L4 memory、L5 observations）；消除 `"母婴"` 隐式默认上下文污染；context item 带 source/timestamp/confidence/scope/priority/token_cost。

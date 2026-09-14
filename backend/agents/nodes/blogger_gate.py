@@ -81,8 +81,8 @@ async def blogger_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
     # ponytail: bare node has no BaseAgent.__call__ to set #491's _tool_llm_cost
     # ContextVar, and this is a direct model.ainvoke (not enrich_with_llm). A
     # local accumulator threaded through the 2 private helpers captures the
-    # kind:"llm" cost entry; merged into the returned performance_log so the
-    # /analytics/costs reader sees it (state._append_list reducer merges).
+    # kind:"llm" cost entry; P1a-S2 emits it to the Event store so the
+    # /analytics/costs reader sees it without the checkpoint carrying it.
     perf_acc: list[dict[str, Any]] = []
     blogger_notes = await _fetch_blogger_notes(
         state, selected_user_id, note_limit, perf_acc=perf_acc
@@ -100,7 +100,9 @@ async def blogger_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
         "phase": WorkflowPhase.CREATING,
     }
     if perf_acc:
-        updates["performance_log"] = perf_acc
+        from backend.state.events import emit_events, resolve_thread_id
+
+        await emit_events(resolve_thread_id(state), perf_acc)
     return NodeResult(updates, "blogger_gate").to_dict()
 
 
@@ -115,7 +117,7 @@ async def _fetch_blogger_notes(
 
     For mock bloggers (mock_ prefix), generates simulated notes via LLM.
     ``perf_acc`` (when provided) accumulates a kind:"llm" cost entry from the
-    underlying model.ainvoke so the bare node can merge it into performance_log.
+    underlying model.ainvoke so the bare node can emit it to the Event store.
     """
     # Mock blogger — generate simulated notes via LLM
     if user_id.startswith("mock_"):

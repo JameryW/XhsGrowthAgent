@@ -535,6 +535,170 @@ def content_strategist_router(
 existing one is missing the guard, add it — the risk of silent error-phase
 overwrite is high for any router that feeds into a node with auto-accept logic.
 
+## State Tiers (P1a): RuntimeState / Artifact / Event
+
+The LangGraph checkpoint is the **RuntimeState** tier: phase/agent/error/retry
+scalars, router-consumed counters and flags, and summaries (counts, ids,
+meta). It is serialized on **every superstep**, so its size is a latency and
+cost budget — big business payloads and telemetry must not live there.
+
+Three tiers, each with one read seam:
+
+| Tier | Storage | Read seam | Contents |
+|---|---|---|---|
+| RuntimeState | LangGraph checkpoint | `backend/state/hydration.py` | phase/status scalars, refs, counts/flags, summaries |
+| Artifact | LangGraph BaseStore (P1a-S3, landed) | `backend.state.artifacts.resolve_state` (ref resolution) | copy/visual/draft bodies, plans, big vectors |
+| Event | `workflow_events` table (P1a-S2) | `backend/state/events.py` | node/llm/ripple/human_wait telemetry, tool/cost/error/action events |
+
+### Contracts
+
+- **Routers consume RuntimeState only.** A router predicate may not read a field
+  that lives in the Artifact or Event tier.
+- **Every field that leaves the API boundary is enumerated once**, in
+  `hydration.py`. Read surfaces (`/status` live + history-file fallback,
+  `/history`, recover, public showcase, realtime event payloads, the
+  `agent_timeline` transform) call hydration helpers instead of re-listing
+  `values.get(...)` keys. `/status` keeps returning the full aggregated payload
+  (no slim refs) — hydration deduplicates extraction, it does not change output.
+- **Telemetry is written best-effort and never rides a state update.** Node,
+  LLM-cost, ripple and gate-wait entries go to the Event store via
+  `events.emit_events(thread_id, entries)`; a storage failure is logged and
+  swallowed because telemetry must never fail real work.
+- **Never write telemetry keys back into state.** `performance_log` is no
+  longer a state field: seeding `"performance_log": []` in an initial state
+  marks the thread as *legacy* for the reader (see next bullet) and re-grows the
+  checkpoint.
+- **Legacy threads are read, never rewritten** (decision D1: one-cut migration).
+  A pre-P1a checkpoint keeps its inline `performance_log` and its inline
+  business fields; `events.load_perf_log(thread_id, values)` returns the inline
+  list when the checkpoint carries the key and the stored events otherwise, and
+  concatenates both (inline first — it is older) for a legacy thread resumed
+  after the migration. Detection is **key presence**, not truthiness: an empty
+  inline list still means "legacy".
+- Ordering comes from the store, not from timestamps. `workflow_events.seq` is
+  assigned at insert (Postgres sequence / module counter in the memory
+  fallback) and is the only ordering key readers use, because event timestamps
+  are TEXT and tie on a coarse clock.
+
+```python
+# WRONG — telemetry rides the checkpoint and is re-serialized every superstep.
+result["performance_log"] = entries
+
+# WRONG — a fresh initial state that re-seeds the legacy marker.
+initial_state = {"thread_id": thread_id, "performance_log": [], ...}
+
+# CORRECT — emit to the Event store, keyed by the thread derived from state.
+from backend.state.events import emit_events, resolve_thread_id
+await emit_events(resolve_thread_id(state), entries)
+```
+
+```python
+# WRONG — reader assumes the checkpoint still holds telemetry.
+perf_log = state.values.get("performance_log") or []
+
+# CORRECT — one seam that handles legacy inline + post-S2 stored events.
+from backend.state.events import load_perf_log
+perf_log = await load_perf_log(thread_id, state.values)
+```
+
+### Artifact seams (P1a-S3, landed)
+
+The Artifact tier is wired through two seams in `backend/state/artifacts.py`;
+nodes and routes never touch the store directly:
+
+- **Write seam — `artifact_seam(fn)`.** `build_graph` wraps every node with it:
+  refs are resolved on the way in (`resolve_state`) and updated bodies are
+  refs-ified on the way out (`refify_updates`), so no node ever sees a ref'd
+  field. The wrapper keeps the `store` parameter name (LangGraph injection)
+  and copies `__name__`/`__qualname__`/`__doc__` for tracing.
+- **Read seam — `resolve_state(store, thread_id, values)`.** The single place
+  that turns refs back into inline bodies; always returns a plain `dict`
+  (shallow copy — never the caller's mapping). Threads without the
+  `artifacts` key (legacy, decision D1: detection is *absence*, not
+  truthiness) pass through with no store round trip. Wired at `/status`
+  (live branch and history-file fallback), `/history`
+  (`_snapshot_to_checkpoint`), the node boundary, and every route read/write
+  face (S4-0 swept the API routes; S4-2 added the ripple-decision pending
+  read and the ripple-retry endpoint's read + write; S4-3 hoisted the
+  /status resolve above the history dump and the DB label — both must see
+  the hydrated view — and added the brief-upload write seam plus the
+  brief-mode init pre-store).
+
+Refs are `ArtifactRef` dicts (`artifact://kind/id` + `content_hash` + `size`
++ `updated_at`) stored under the `artifacts` state key; bodies live in the
+namespace `("artifacts", thread_id, kind)` with id `latest`. Field
+registries classify updates: `SINGLE_BODY_FIELDS` (copy/visual/draft bodies,
+plans, analytics, — P1a-S4-1 — `trend_data`, — P1a-S4-2 — the remaining
+ripple vectors `ripple_prediction` / `ripple_pmf`, which need no routing
+meta because routers read only the small `ripple_decision` /
+`ripple_pending` fields, and — P1a-S4-3 — `brief_content`, whose `raw_text`
+dominates its size and whose only non-node reader (the /status DB label)
+sits behind the hoisted /status resolve) replace the stored body,
+`APPEND_LIST_FIELDS` (`viral_posts`) concatenate stored-first,
+`REPLACE_LIST_FIELDS` (`user_viral_links`) replace whole, `META_LIST_FIELDS`
+(`content_versions`, `blogger_notes`) store the full list and leave a
+summary in state via `META_KEY_OF` (`versions_meta` / `blogger_notes_meta`;
+`trend_data` adds the dict meta `trend_summary`, derived store-independently
+by `trend_summary_of`).
+
+Storage is **best-effort**: if the store write fails, the body stays inline
+and the key gets a tombstone ref (`artifacts[key] = None`) so a ref never
+points at a missing body.
+
+Router predicates consume RuntimeState only (contract above):
+`_version_count` reads `versions_meta` length first and falls back to
+`len(state["content_versions"])` for legacy threads; `_has_blogger_notes`
+reads `blogger_notes_meta["count"] > 0` and falls back to inline truthiness;
+`_has_actionable_trends` (P1a-S4-1) reads `trend_summary["has_topics"]` first
+and falls back to the inline `hot_topics or trending_topics or topics` alias
+chain — the exact chain `should_plan` read pre-S4-1, and the chain
+`trend_summary_of` derives the meta from, so a ref'd and a legacy thread can
+never diverge on the same data. Deliberate clears of a refable field (the
+retopic route resetting `trend_data` and the ripple fields) and route-level
+writes of refable fields (the ripple-retry endpoint storing fresh
+`ripple_prediction`/`ripple_pmf`) must also go through `refify_updates` —
+a bare inline clear would be shadowed by the stale ref on the next resolve.
+`versions_meta_of` preserves write order and copies `version_id` verbatim —
+the meta list must stay order-compatible with the inline list it replaces.
+
+P0 contract equivalence is pinned by test, not by convention
+(P1a-S4-4, `tests/unit/agents/test_publish_contract_equivalence.py`):
+`compute_publish_id` over the resolved view must equal the inline-view key
+(双跑断言同值 — the P0-W4 double-fire guard must not silently re-arm on
+ref'd threads); the dry-run double check, `pause_reason` /
+`evaluation_result` and the `evaluator_requires_human` quality-gate
+predicate must return identical verdicts on both shapes, and the contract
+scalars stay registry-exempt (`REFABLE_FIELDS` must never grow them).
+
+Legacy rendering is pinned by the four read-face regressions
+(P1a-S4-5, `tests/unit/api/test_legacy_read_faces.py`): one pre-P1a
+checkpoint — all bodies inline, no `artifacts` key, ripple payloads only
+nested in `content_plan`, pre-S2 telemetry inline, dead keys still present —
+must render through /status (live snapshot + history-file fallback),
+/history, recover and the public showcase exactly as before P1a, paying
+zero Artifact Store round trips. Two per-face quirks are part of the
+contract: the /status history-file branch keeps its pre-P1a exclusions
+(`_HISTORY_FILE_UNHYDRATED_KEYS` stay at response-model defaults even when
+the dump carries them), and the showcase projection keeps its flat-only
+ripple rule (nested payloads never leak into public output).
+
+```python
+# WRONG — a node hydrating bodies itself from the store.
+body = await store.get(("artifacts", thread_id, "copy"), "latest")
+
+# CORRECT — the seam already resolved refs; the node sees plain state.
+async def copywriter_node(state, *, store):
+    text = state["copy_content"]["body_text"]
+```
+
+```python
+# WRONG — a route re-deriving version count from inline bodies.
+n = len(state.get("content_versions") or [])  # body is ref'd post-S3 → always 0
+
+# CORRECT — the router seam reads RuntimeState meta (legacy fallback inside).
+n = _version_count(state)
+```
+
 ## Tests Required
 
 - `test_derive_status_running`: scouting phase with next nodes, no interrupts → RUNNING
@@ -557,6 +721,12 @@ overwrite is high for any router that feeds into a node with auto-accept logic.
 - `test_derive_status_error_non_terminal`: error present + next non-empty + phase≠ERROR → RUNNING
 - `test_should_continue_single_mode_after_analysis`: ANALYZING → "__end__"
 - `test_orchestrator_router_legacy_engaging`: ENGAGING → "__end__"
+- `test_emit_events_orders_by_seq`: appended entries come back in insert order per thread, isolated across threads
+- `test_load_perf_log_legacy_inline_passthrough`: a checkpoint carrying `performance_log` still reads it (no stored events)
+- `test_load_perf_log_merges_inline_then_stored`: legacy thread resumed post-migration sees inline entries before stored ones
+- `test_base_agent_emits_perf_entry`: `BaseAgent.__call__` emits node/llm entries to the Event store and leaves state free of telemetry
+- `test_refd_snapshot_resolves_bodies`: a ref'd snapshot through `_snapshot_to_checkpoint(store, thread_id)` equals the inline equivalent checkpoint
+- `test_snapshot_to_checkpoint_resolves_refd_state`: every `CHECKPOINT_STAGE_KEYS` member matches after refifying all `REFABLE_FIELDS` — route functions return identical values for ref'd vs fully-hydrated state
 
 ## Ripple State Fields
 

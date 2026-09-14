@@ -60,6 +60,7 @@ from backend.graph.routers import (
     should_present_choice,
     visual_designer_router,
 )
+from backend.state.artifacts import artifact_seam as _artifact_seam
 from backend.state.schema import XHSGrowthState
 
 
@@ -74,69 +75,79 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     # auditable decision per node.
     builder.add_node(
         "orchestrator",
-        orchestrator_node,
+        _artifact_seam(orchestrator_node),
         retry_policy=get_retry_policy("orchestrator"),
     )
     builder.add_node(
         "trend_scout",
-        trend_scout_node,
+        _artifact_seam(trend_scout_node),
         retry_policy=get_retry_policy("trend_scout"),
     )
     builder.add_node(
         "content_strategist",
-        content_strategist_node,
+        _artifact_seam(content_strategist_node),
         retry_policy=get_retry_policy("content_strategist"),
     )
     builder.add_node(
         "copywriter",
-        copywriter_node,
+        _artifact_seam(copywriter_node),
         retry_policy=get_retry_policy("copywriter"),
     )
     builder.add_node(
         "visual_designer",
-        visual_designer_node,
+        _artifact_seam(visual_designer_node),
         retry_policy=get_retry_policy("visual_designer"),
     )
-    builder.add_node("review_gate", review_gate_node, retry_policy=get_retry_policy("review_gate"))
+    builder.add_node(
+        "review_gate",
+        _artifact_seam(review_gate_node),
+        retry_policy=get_retry_policy("review_gate"),
+    )
     # Evaluator gate — RQGM agent-as-a-judge panel (AI quality gate after human review).
     # No framework retry by design (explicit None): the node degrades fail-closed.
     builder.add_node(
-        "evaluator_gate", evaluator_node, retry_policy=get_retry_policy("evaluator_gate")
+        "evaluator_gate",
+        _artifact_seam(evaluator_node),
+        retry_policy=get_retry_policy("evaluator_gate"),
     )
     # Publisher — external side-effect node. P0-W3: generic framework auto-retry
     # is forbidden (a retry would re-post); explicit None + /publish-retry with
     # idempotency key + unknown reconciliation is the only retry path.
-    builder.add_node("publisher", publisher_node, retry_policy=get_retry_policy("publisher"))
-    builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
-    builder.add_node("revise_content", revise_content_node)
+    builder.add_node(
+        "publisher", _artifact_seam(publisher_node), retry_policy=get_retry_policy("publisher")
+    )
+    builder.add_node(
+        "analyst", _artifact_seam(analyst_node), retry_policy=get_retry_policy("analyst")
+    )
+    builder.add_node("revise_content", _artifact_seam(revise_content_node))
     # Ripple gate — conditional interrupt when Ripple results are suboptimal
-    builder.add_node("ripple_gate", ripple_gate_node)
+    builder.add_node("ripple_gate", _artifact_seam(ripple_gate_node))
     # Ripple finalize — reads background Ripple result from store (background mode only)
-    builder.add_node("ripple_finalize", ripple_finalize_node)
+    builder.add_node("ripple_finalize", _artifact_seam(ripple_finalize_node))
     # Ripple late-recheck — bounded-polls the store after visual_designer for
     # the late-arriving background Ripple result (background mode only). Inserts
     # between visual_designer and review_gate so copywriter+visual run concurrent
     # with Ripple; interrupts for a suboptimal result.
-    builder.add_node("ripple_late_recheck", ripple_late_recheck_node)
+    builder.add_node("ripple_late_recheck", _artifact_seam(ripple_late_recheck_node))
     # 发布前优化节点
-    builder.add_node("draft_gate", draft_gate_node)
-    builder.add_node("viral_matcher", viral_matcher_node)
-    builder.add_node("blogger_scout", blogger_scout_node)
-    builder.add_node("blogger_gate", blogger_gate_node)
-    builder.add_node("content_analyzer", content_analyzer_node)
-    builder.add_node("version_generator", version_generator_node)
-    builder.add_node("choice_gate", choice_gate_node)
+    builder.add_node("draft_gate", _artifact_seam(draft_gate_node))
+    builder.add_node("viral_matcher", _artifact_seam(viral_matcher_node))
+    builder.add_node("blogger_scout", _artifact_seam(blogger_scout_node))
+    builder.add_node("blogger_gate", _artifact_seam(blogger_gate_node))
+    builder.add_node("content_analyzer", _artifact_seam(content_analyzer_node))
+    builder.add_node("version_generator", _artifact_seam(version_generator_node))
+    builder.add_node("choice_gate", _artifact_seam(choice_gate_node))
 
     # 商单 Brief 模式节点
     builder.add_node(
         "brief_analyzer",
-        brief_analyzer_node,
+        _artifact_seam(brief_analyzer_node),
         retry_policy=get_retry_policy("brief_analyzer"),
     )
-    builder.add_node("brief_gate", brief_gate_node)
+    builder.add_node("brief_gate", _artifact_seam(brief_gate_node))
     builder.add_node(
         "shooting_planner",
-        shooting_planner_node,
+        _artifact_seam(shooting_planner_node),
         retry_policy=get_retry_policy("shooting_planner"),
     )
 

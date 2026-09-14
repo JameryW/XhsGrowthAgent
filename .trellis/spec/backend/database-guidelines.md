@@ -18,6 +18,43 @@ Both pools are initialized in `app.py` lifespan and closed on shutdown.
 
 ---
 
+## Scenario: Workflow Event Telemetry (P1a-S2)
+
+`backend/db/workflow_events.py` stores workflow telemetry that used to ride the
+LangGraph checkpoint as `performance_log`. It follows the same dual-backend
+convention as the Creator Agent adapter: PostgreSQL in production, a
+process-memory fallback for tests/dev when `is_pool_ready()` is false.
+
+- Columns are `(seq, thread_id, ts, kind, payload)`; `seq` comes from
+  `workflow_events_seq` and is the **only** ordering key. `ts` is TEXT and can
+  tie within one clock tick — ordering by it made "latest" undefined for
+  `quality_evaluation_runs`, and the same trap applies here.
+- `append_events(thread_id, entries)` derives `kind` from each entry's own
+  `kind` (absent ⇒ `"node"`, the pre-kind `performance_log` meaning) and `ts`
+  from `completed_at` / `timestamp` / `resumed_at` / `started_at`, falling back
+  to now. It returns the number stored.
+- **All writes are best-effort.** Telemetry must never fail a workflow node, so
+  a storage error is logged and returns 0 instead of raising. Callers do not
+  wrap it in their own try/except.
+- `list_events(thread_id, kind=None)` returns payloads only (the shape every
+  reader consumed from `performance_log`), ordered by `seq`. Callers reach it
+  through `backend/state/events.py`, which owns the legacy-inline merge — do not
+  query the table directly from routes or agents.
+- The memory fallback is guarded by a module lock and reset by the test helper
+  `_reset_memory_store()` (exposed as `backend.state.events.reset_memory_store`);
+  `tests/conftest.py` resets it around every test.
+- `ensure_tables()` runs from the app lifespan alongside the other `ensure_*`
+  migrations. A standalone CLI must not depend on that lifespan.
+
+### Do Not
+
+- Do not add a second telemetry sink (e.g. write both the table and the
+  checkpoint) — no double writes.
+- Do not order events by `ts` or by any payload timestamp.
+- Do not let an event-storage exception propagate into a node's return path.
+
+---
+
 ## Scenario: Creator Agent judgement and decision persistence
 
 The Creator Agent adapter (`backend/db/creator_agent.py`) stores creator

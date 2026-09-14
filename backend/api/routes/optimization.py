@@ -49,17 +49,32 @@ async def submit_draft(
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
+    # P1a-S4 seams: draft_content / user_viral_links are refable fields. The
+    # write must go through refify_updates (a bare inline write would be
+    # shadowed by the stale ref body on the next resolve) and the echo below
+    # must read through resolve_state (the fresh body lives in the store).
+    from backend.state.artifacts import refify_updates, resolve_state
+
+    store = getattr(graph, "store", None)
+    values = await resolve_state(store, thread_id, state.values)
+
     # Write draft content and viral links to state.
     # Mark source as "user_submitted" for downstream provenance tracking
     # (draft_gate_node no longer checks it — it just advances phase on resume).
     draft_data = draft.model_dump()
     draft_data["source"] = "user_submitted"
-    await graph.aupdate_state(
-        config,
+    refified = await refify_updates(
+        store,
+        thread_id,
         {
             "draft_content": draft_data,
             "user_viral_links": draft.viral_links,
         },
+        prev_values=values,
+    )
+    await graph.aupdate_state(
+        config,
+        refified,
         as_node=_runner._get_as_node(state),
     )
 
@@ -68,9 +83,9 @@ async def submit_draft(
     # Python bridge) read these fields to render an inline title/body
     # preview; without the echo the preview is permanently empty.
     updated_state = await graph.aget_state(config)
-    values = updated_state.values or {}
-    echoed_draft = values.get("draft_content") or draft_data
-    echoed_analysis = values.get("optimization_analysis") or {}
+    updated_values = await resolve_state(store, thread_id, updated_state.values or {})
+    echoed_draft = updated_values.get("draft_content") or draft_data
+    echoed_analysis = updated_values.get("optimization_analysis") or {}
 
     # If graph is interrupted at draft_gate, advance via ainvoke(None).
     # Command(resume=...) only works for dynamic interrupt(), not interrupt_before.

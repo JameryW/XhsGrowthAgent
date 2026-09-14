@@ -411,15 +411,23 @@ class TestLlmPerfAsyncIsolation:
 
         async def _run(tag: str):
             current_tag.set(tag)
-            state = {"retry_count": 0, "arrived": arrived}
+            # Distinct threads: P1a-S2 telemetry is per-thread in the Event
+            # store, so leakage between tasks would show up as the other tag's
+            # model id under this thread.
+            state = {"retry_count": 0, "arrived": arrived, "thread_id": f"thread-{tag}"}
             return await agent(state, store=AsyncMock())
 
         with patch.object(type(agent), "model", new_callable=PropertyMock) as m:
             m.return_value = fake_model
             results = await asyncio.gather(_run("A"), _run("B"))
 
+        from backend.state.events import load_perf_log
+
         for tag, result in zip(("A", "B"), results, strict=True):
-            llm_entries = [e for e in result["performance_log"] if e.get("kind") == "llm"]
+            assert "performance_log" not in result
+            llm_entries = [
+                e for e in await load_perf_log(f"thread-{tag}") if e.get("kind") == "llm"
+            ]
             assert len(llm_entries) == 1, (
                 f"task {tag} saw {len(llm_entries)} llm perf entries — "
                 "entries from the concurrent task leaked through shared "

@@ -3,7 +3,7 @@
   "name": "p1-context-compiler",
   "title": "sub: p1-context-compiler",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-09-11",
   "completedAt": null,
-  "branch": null,
+  "branch": "feat/p1b-context-compiler",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "09-11-runtime-upgrade",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "决策已冻结（2026-09-14 按推荐：D1'-D6' 见 info.md）。分支 feat/p1b-context-compiler 暂基于 feat/p1a-state-layers（叠加分支，S1 零依赖；P1a 合并后 PR base 改 main 并 rebase）。S1 骨架已落：backend/context/（models/estimator/compiler）+ 24 单测，全门禁绿（2477 passed/3 skip）。剩余 S2 recall 管线 → S3 L0-L5 分层 → S4 逐 agent 迁移（consumer-map 销号）→ S5 基准。",
   "meta": {}
 }

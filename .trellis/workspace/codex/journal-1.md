@@ -505,3 +505,36 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: P0 正确性修复完成并合并（PR #577），P1a 方案拍板
+
+**Date**: 2026-09-13
+**Task**: P0 正确性修复完成并合并（PR #577），P1a 方案拍板
+**Branch**: `main`
+
+### Summary
+
+架构升级启动：建 runtime-upgrade 父任务+9子任务；P0(W1-W5+F1-F3) 两轮实施两轮 check 全绿合并 PR #577；沉淀 error-handling/workflow-state 规范；P1a 勘察两篇+方案件，D1-D5 已拍板，prd/jsonl 就绪
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48c4c993` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

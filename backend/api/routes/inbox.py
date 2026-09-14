@@ -19,6 +19,7 @@ from backend.api.deps import get_current_user
 from backend.api.responses import ApiResponse, success
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
+from backend.state.artifacts import resolve_state
 
 logger = logging.getLogger("xhs_growth.api.inbox")
 
@@ -127,27 +128,36 @@ async def get_inbox(
     # Fetch checkpoint states concurrently — each aget_state is a separate
     # checkpointer round trip; a serial loop made inbox latency scale with row
     # count. _safe_aget preserves the per-row try/except skip from the loop.
-    async def _safe_aget(thread_id: str) -> Any | None:
+    # P1a-S4 read seam: gate snapshots read copy/visual/versions/blogger_notes,
+    # store-backed on ref'd threads — resolve each snapshot's values alongside
+    # (returns (snapshot, resolved_values); legacy threads pay no store trips).
+    store = getattr(graph, "store", None)
+
+    async def _safe_aget(thread_id: str) -> tuple[Any, dict[str, Any]] | None:
         try:
-            return await graph.aget_state({"configurable": {"thread_id": thread_id}})
+            snapshot = await graph.aget_state({"configurable": {"thread_id": thread_id}})
         except Exception:
             logger.debug("aget_state failed for %s", thread_id, exc_info=True)
             return None
+        values = await resolve_state(store, thread_id, snapshot.values)
+        return snapshot, values
 
     states = await asyncio.gather(*(_safe_aget(row.thread_id) for row in rows))
 
     inbox: list[dict[str, Any]] = []
-    for row, state in zip(rows, states, strict=True):
+    for row, fetched in zip(rows, states, strict=True):
         thread_id = row.thread_id
-        if state is None:
+        if fetched is None:
             continue
+
+        snapshot, values = fetched
 
         # Skip threads with no live checkpoint (created but not started, or
         # already terminal in DB without a graph snapshot).
-        if not state.values or state.values.get("session_id") is None:
+        if not values or values.get("session_id") is None:
             continue
 
-        gate = _detect_gate(state)
+        gate = _detect_gate(snapshot)
         if gate is None:
             continue
 
@@ -155,10 +165,10 @@ async def get_inbox(
             {
                 "thread_id": thread_id,
                 "gate": gate,
-                "phase": state.values.get("phase", "unknown"),
+                "phase": values.get("phase", "unknown"),
                 "created_at": row.created_at,
                 "label": row.label,
-                "snapshot": _gate_snapshot(state.values, gate),
+                "snapshot": _gate_snapshot(values, gate),
             }
         )
 

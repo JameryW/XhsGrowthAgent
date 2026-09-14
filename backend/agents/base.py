@@ -70,7 +70,7 @@ class BaseAgent(ABC):
     def _drain_llm_perf() -> list[dict[str, Any]]:
         """Read (and detach) the accumulated llm perf entries for this context.
 
-        Consumers that write ``performance_log`` use this instead of touching
+        Consumers that write telemetry use this instead of touching
         instance state — the returned list is owned by the caller afterwards.
         """
         entries = _llm_perf_var.get() or []
@@ -90,9 +90,9 @@ class BaseAgent(ABC):
         :func:`backend.agents.nodes._base.llm_perf_entry`). Entries accumulate
         on a per-asyncio-task ContextVar (P0-W1; formerly a shared instance
         list that cross-contaminated concurrent workflows); the node wrapper
-        merges them with the node-level entry into ``performance_log``. Reset
-        per execute() via :meth:`_reset_llm_perf`. Best-effort: a capture
-        failure never breaks the call.
+        merges them with the node-level entry and emits the batch to the Event
+        store. Reset per execute() via :meth:`_reset_llm_perf`. Best-effort: a
+        capture failure never breaks the call.
         """
         from datetime import UTC, datetime
 
@@ -318,11 +318,11 @@ class BaseAgent(ABC):
     async def __call__(self, state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
         """LangGraph node entry point.
 
-        Wraps execute() with node-level timing → appends one performance_log
-        entry per call. On success, the entry rides the returned dict under
-        `performance_log: [entry]`; LangGraph's `_append_list` reducer merges
-        it into state. Recording is best-effort: a timer failure must not
-        break the node (see PRD: 节点级指标).
+        Wraps execute() with node-level timing → appends one performance-log
+        entry per call. On success, the entries are written to the Event store
+        (P1a-S2: telemetry no longer rides the checkpoint, which used to
+        re-serialize it on every superstep). Recording is best-effort: a timer
+        or storage failure must not break the node (see PRD: 节点级指标).
 
         On failure we return an error state update (NOT raise) so LangGraph
         merges it and should_plan/orchestrator routers can read retry_count
@@ -340,7 +340,7 @@ class BaseAgent(ABC):
         # finally below) so entries never survive this call. Set a per-execute
         # tool-LLM-cost accumulator so enrich_with_llm calls made inside tools
         # during execute() can append kind:"llm" entries. Drained + reset below
-        # (both paths) so tool-path token cost reaches performance_log and the
+        # (both paths) so tool-path token cost reaches the Event store and the
         # /analytics/costs reader; the set/reset token isolates per-execute and
         # prevents stale leakage across requests.
         perf_token = _llm_perf_var.set([])
@@ -372,9 +372,9 @@ class BaseAgent(ABC):
                         )
                     ]
                     entries.extend(perf_entries)
-                    result["performance_log"] = entries
+                    await _emit_perf_entries(state, entries)
                 except Exception as timer_err:  # best-effort: never break the node
-                    logger.debug("performance_log failed entry failed: %s", timer_err)
+                    logger.debug("perf event emit failed: %s", timer_err)
                 return result
 
             # Drain tool-path cost captured during execute() BEFORE building the
@@ -397,9 +397,9 @@ class BaseAgent(ABC):
                     )
                 ]
                 entries.extend(perf_entries)
-                result["performance_log"] = entries
+                await _emit_perf_entries(state, entries)
             except Exception as timer_err:  # best-effort: never break the node
-                logger.debug("performance_log node entry failed: %s", timer_err)
+                logger.debug("perf event emit failed: %s", timer_err)
             return result
         finally:
             # Always reset via the tokens so a nested/errored execute never
@@ -409,8 +409,20 @@ class BaseAgent(ABC):
             _llm_perf_var.reset(perf_token)
 
 
+async def _emit_perf_entries(state: Any, entries: list[dict[str, Any]]) -> None:
+    """Write node/llm perf entries to the Event store (P1a-S2).
+
+    Telemetry used to ride the returned state dict under ``performance_log`` so
+    the ``_append_list`` reducer could merge it into the checkpoint. The Event
+    store replaces that: nodes keep their state updates free of telemetry.
+    """
+    from backend.state.events import emit_events, resolve_thread_id
+
+    await emit_events(resolve_thread_id(state), entries)
+
+
 def _now_iso() -> str:
-    """UTC ISO8601 timestamp for performance_log entries."""
+    """UTC ISO8601 timestamp for performance-log entries."""
     from datetime import UTC, datetime
 
     return datetime.now(UTC).isoformat()
