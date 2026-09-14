@@ -24,6 +24,7 @@ from backend.context.models import (
     RetrievalMode,
     RetrievalResult,
     RunContext,
+    require_niche,
 )
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
@@ -36,12 +37,12 @@ class VisualDesignerAgent(BaseAgent):
     prompt_file = "visual_designer.yaml"
 
     def _compile_system_prompt(self, state: XHSGrowthState, l4_extra: str) -> str:
-        """System prompt via ContextCompiler（S4-5 迁移）。niche 默认 "母婴"
-        为 consumer-map §五 既有隐式默认，统一切换留 S4-7。"""
+        """System prompt via ContextCompiler（S4-5 迁移）。niche 走 require_niche
+        fail-fast（S4-7 D2'：不新造默认值）。"""
         run_context = RunContext(
             thread_id=str(state.get("session_id") or ""),
             account_id=str(state.get("account_id", "default")),
-            niche=str(state.get("niche", "母婴")),
+            niche=require_niche(state),
             values=state,
         )
         if l4_extra:
@@ -87,7 +88,7 @@ class VisualDesignerAgent(BaseAgent):
         creative_ctx = cm.build_creative_context(styles, [], cover_materials)
         system_prompt = self._compile_system_prompt(state, creative_ctx)
 
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         body_summary = copy.get("body_text", "")[:200] if copy else ""
         brief_brand = brief.get("brand_name", "") if brief else ""
         brief_requirements = brief.get("style_requirements", "") if brief else ""

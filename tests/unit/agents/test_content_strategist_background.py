@@ -33,6 +33,7 @@ from backend.state.schema import WorkflowPhase
 def _state(**overrides):
     base = {
         "account_id": "test_account",
+        "niche": "母婴",
         "session_id": "thread-bg-1",
         "phase": WorkflowPhase.SCOUTING,
         "trend_data": {"trending_topics": ["美食探店"]},

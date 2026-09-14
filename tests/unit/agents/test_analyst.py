@@ -30,6 +30,7 @@ class TestAnalystAgent:
         """Mock state with publish result."""
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": WorkflowPhase.PUBLISHING,
             "publish_result": {
                 "post_id": "123",
@@ -168,14 +169,17 @@ class TestAnalystAgent:
     @pytest.mark.asyncio
     async def test_ripple_report_none_when_no_job_id(self, agent):
         """_ripple_report returns None when no job_id."""
-        state = {"content_plan": {}}
+        state = {"niche": "母婴", "content_plan": {}}
         result = await agent._ripple_report(state)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_ripple_report_handles_error(self, agent):
         """_ripple_report handles errors gracefully."""
-        state = {"content_plan": {"ripple_prediction": {"ripple_job_id": "job_123"}}}
+        state = {
+            "niche": "母婴",
+            "content_plan": {"ripple_prediction": {"ripple_job_id": "job_123"}},
+        }
 
         with patch("backend.tools.ripple.integration.get_report") as mock_get_report:
             mock_get_report.side_effect = Exception("Ripple error")
@@ -231,7 +235,10 @@ class TestAnalystAgent:
     @pytest.mark.asyncio
     async def test_ripple_report_timeout_returns_none(self, agent):
         """_ripple_report 超时时返回 None"""
-        state = {"content_plan": {"ripple_prediction": {"ripple_job_id": "job-timeout"}}}
+        state = {
+            "niche": "母婴",
+            "content_plan": {"ripple_prediction": {"ripple_job_id": "job-timeout"}},
+        }
 
         # asyncio.wait_for evaluates get_report(job_id) before invoking, so the
         # mock coroutine must be closed to avoid a 'never awaited' leak.
@@ -367,6 +374,7 @@ class TestAnalystWriteGather:
         mock_response = MagicMock()
         mock_response.content = '{"insights": ["i1", "i2", "i3"], "recommendations": ["r1", "r2"]}'
         mock_state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.PUBLISHING,
             "publish_result": {"post_id": "p1"},
@@ -422,6 +430,7 @@ class TestAnalystWriteGather:
         mock_response = MagicMock()
         mock_response.content = '{"insights": ["i1", "i2", "i3"], "recommendations": ["r1", "r2"]}'
         mock_state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.PUBLISHING,
             "publish_result": {"post_id": "p1"},
@@ -470,6 +479,7 @@ class TestAnalystContextPipeline:
     def mock_state(self):
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": WorkflowPhase.PUBLISHING,
             "publish_result": {"post_id": "123", "views": 1000, "likes": 50},
         }

@@ -11,6 +11,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.models import require_niche
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -30,7 +31,7 @@ class BloggerScoutAgent(BaseAgent):
 
         keywords = self._extract_keywords(state)
         if not keywords:
-            niche = state.get("niche", "母婴")
+            niche = require_niche(state)
             logger.info(f"No keywords found, using fallback candidates for niche: {niche}")
             return self._hardcoded_fallback_candidates(niche, [], limit)
 
@@ -80,7 +81,7 @@ class BloggerScoutAgent(BaseAgent):
         self, state: XHSGrowthState, keywords: list[str], limit: int
     ) -> dict[str, Any]:
         """Generate mock blogger candidates using LLM when XHS client is unavailable."""
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         brief_content = state.get("brief_content") or {}
         trend_data = dict(state.get("trend_data") or {})
         trend_summary = self._summarize_trend_data(trend_data)

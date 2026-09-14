@@ -19,7 +19,7 @@ from langgraph.store.base import BaseStore
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
-from backend.context.models import RetrievalMode, RetrievalResult, RunContext
+from backend.context.models import RetrievalMode, RetrievalResult, RunContext, require_niche
 from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.services.ripple_service import RippleTimeoutError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
@@ -139,10 +139,11 @@ class AnalystAgent(BaseAgent):
         )
         history = _format_history(history_result)
 
+        niche = require_niche(state)
         run_context = RunContext(
             thread_id=thread_id,
             account_id=account_id,
-            niche=str(state.get("niche", "母婴")),
+            niche=niche,
             values=state,
         )
         system_prompt = _compiler.compile_prompt(
@@ -153,7 +154,6 @@ class AnalystAgent(BaseAgent):
         if ripple_report:
             ripple_context = f"\nRipple 传播预测报告：\n{ripple_report}\n"
 
-        niche = state.get("niche", "母婴")
         user_msg = f"""帖子数据：{publish_result}
 历史数据：{history}
 账号定位：{account_id}

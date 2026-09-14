@@ -28,6 +28,7 @@ class TestTrendScoutAgent:
         """Standard mock state."""
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": WorkflowPhase.IDLE,
         }
 
@@ -91,7 +92,7 @@ class TestTrendScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_with_account_id(self, agent, mock_store):
         """Execute uses account_id from state."""
-        mock_state = {"account_id": "custom_account"}
+        mock_state = {"niche": "母婴", "account_id": "custom_account"}
         mock_response = MagicMock()
         mock_response.content = '{"trending_topics": []}'
 
@@ -174,9 +175,9 @@ class TestTrendScoutAgent:
         agent._model = mock_model
 
         state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.IDLE,
-            "niche": "母婴",
             "topic": "露营亲子日记",
         }
 
@@ -235,9 +236,9 @@ class TestTrendScoutAgent:
         agent._model = mock_model
 
         state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.IDLE,
-            "niche": "母婴",
         }
 
         with (
@@ -307,9 +308,9 @@ class TestTrendScoutAgent:
         agent._model = mock_model
 
         state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.IDLE,
-            "niche": "母婴",
         }
 
         with (
@@ -372,7 +373,7 @@ class TestTrendScoutContextPipeline:
     @pytest.mark.asyncio
     async def test_recall_uses_context_pipeline_ns_and_query(self, agent, mock_store):
         """S2 pipeline recall: same ns/query/limit as the old _recall_memory."""
-        mock_state = {"account_id": "test_account", "phase": WorkflowPhase.IDLE}
+        mock_state = {"niche": "母婴", "account_id": "test_account", "phase": WorkflowPhase.IDLE}
         self._mock_model(agent, '{"trending_topics": []}', {})
         await agent.execute(mock_state, store=mock_store)
         mock_store.asearch.assert_called_once()
@@ -387,7 +388,7 @@ class TestTrendScoutContextPipeline:
         mock_item = MagicMock()
         mock_item.value = {"insight": "美食话题表现好"}
         mock_store.asearch = AsyncMock(return_value=[mock_item])
-        mock_state = {"account_id": "test_account", "phase": WorkflowPhase.IDLE}
+        mock_state = {"niche": "母婴", "account_id": "test_account", "phase": WorkflowPhase.IDLE}
         self._mock_model(agent, '{"trending_topics": []}', captured := {})
         await agent.execute(mock_state, store=mock_store)
         system = captured["messages"][0].content
@@ -396,7 +397,7 @@ class TestTrendScoutContextPipeline:
     @pytest.mark.asyncio
     async def test_no_placeholder_leaks_into_prompt(self, agent, mock_store):
         """The {memory_context} placeholder must not survive the migration."""
-        mock_state = {"account_id": "test_account", "phase": WorkflowPhase.IDLE}
+        mock_state = {"niche": "母婴", "account_id": "test_account", "phase": WorkflowPhase.IDLE}
         self._mock_model(agent, '{"trending_topics": []}', captured := {})
         await agent.execute(mock_state, store=mock_store)
         system = captured["messages"][0].content
@@ -408,9 +409,9 @@ class TestTrendScoutContextPipeline:
         """No realtime data -> the exact degradation text stays in the prompt
         and data_source keeps its pre-migration value (分段等价 + 状态契约)."""
         mock_state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.IDLE,
-            "niche": "母婴",
         }
         self._mock_model(agent, '{"trending_topics": []}', captured := {})
         with (
@@ -430,9 +431,9 @@ class TestTrendScoutContextPipeline:
     async def test_real_data_block_in_prompt(self, agent, mock_store):
         """Realtime data -> L5 block with the pre-migration header."""
         mock_state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.IDLE,
-            "niche": "母婴",
         }
         self._mock_model(agent, '{"trending_topics": []}', captured := {})
         with (
@@ -457,9 +458,9 @@ class TestTrendScoutContextPipeline:
         from backend.db.workflow_events import _reset_memory_store, list_events
 
         mock_state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.IDLE,
-            "niche": "母婴",
             "session_id": "thread-tel",
         }
         self._mock_model(agent, '{"trending_topics": []}', {})

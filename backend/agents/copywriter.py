@@ -34,6 +34,7 @@ from backend.context.models import (
     RetrievalMode,
     RetrievalResult,
     RunContext,
+    require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.state.schema import WorkflowPhase, XHSGrowthState
@@ -125,7 +126,7 @@ class CopywriterAgent(BaseAgent):
         cm = CreativeMemory(account_id, store=store)
         recall_query = plan.get("selected_topic", "") or brief.get("product_name", "")
         thread_id = str(state.get("session_id") or "")
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         # 3 independent read-only calls with disjoint sources → one concurrent
         # wave instead of serial awaits. CreativeMemory recalls swallow their
         # own exceptions internally; the pipeline recall carries explicit

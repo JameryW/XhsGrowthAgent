@@ -71,6 +71,7 @@ def _seed_after_human_approval(thread_id: str) -> dict[str, Any]:
         "execution_mode": "single",
         "session_id": thread_id,
         "account_id": "test_account",
+        "niche": "母婴",
         "revision_count": 0,
         "error": None,
         "retry_count": 0,

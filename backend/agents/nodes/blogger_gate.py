@@ -10,6 +10,7 @@ from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled, llm_perf_entry
 from backend.config.models import TaskType, get_model_id_for_task
+from backend.context.models import require_niche
 from backend.models.router import get_model
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
@@ -142,7 +143,7 @@ async def _generate_mock_notes(
             nickname = c.get("nickname", "")
             break
 
-    niche = state.get("niche", "母婴")
+    niche = require_niche(state)
     brief_content = state.get("brief_content") or {}
     brief_ctx = ""
     if brief_content.get("brand_name"):

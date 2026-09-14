@@ -23,8 +23,6 @@ if TYPE_CHECKING:
     from backend.state.schema import XHSGrowthState
 
 from backend.config.models import TaskType
-from backend.memory.exceptions import UnknownMemoryNamespaceError
-from backend.memory.store import MemoryManager
 from backend.models.router import get_model
 
 logger = logging.getLogger("xhs_growth.agents")
@@ -154,11 +152,17 @@ class BaseAgent(ABC):
         return {"system": "", "user_template": ""}
 
     def _build_system_prompt(self, state: XHSGrowthState, extra_context: str = "") -> str:
-        template = self.prompt_template.get("system", "")
-        niche = state.get("niche", "母婴")
-        template = template.replace("{account_niche}", niche)
-        template = template.replace("{memory_context}", extra_context)
-        return template
+        """Deprecated legacy template path — P1b-S4-7 removed all callers.
+
+        Kept as a hard-fail stub so any future (re)introduction of the
+        per-agent ``template.replace`` path fails loudly instead of silently
+        bypassing the Context Compiler pipeline. Agents compile via
+        ``ContextCompiler.compile_prompt`` (consumer-map 收口).
+        """
+        raise NotImplementedError(
+            "BaseAgent._build_system_prompt was removed in P1b-S4-7: "
+            "agents must assemble prompts via ContextCompiler.compile_prompt"
+        )
 
     async def _recall_memory(
         self,
@@ -168,28 +172,16 @@ class BaseAgent(ABC):
         namespace: str,
         limit: int = 5,
     ) -> list[dict[str, Any]]:
-        if store is None:
-            return []
-        mm = MemoryManager(account_id)
-        ns_map = {
-            "content_history": mm.content_history_ns,
-            "audience_preferences": mm.audience_ns,
-            "performance_insights": mm.insights_ns,
-            "strategy_notes": mm.strategy_ns,
-        }
-        # P0-W2 fail-fast: a typo'd namespace must NOT silently fall back to
-        # performance_insights (that read the wrong memory and looked like a
-        # successful recall). The check sits OUTSIDE the best-effort try so
-        # the except below cannot swallow the programming error.
-        if namespace not in ns_map:
-            raise UnknownMemoryNamespaceError(namespace)
-        ns = ns_map[namespace]
-        try:
-            items = await store.asearch(ns, query=query, limit=limit)
-            return [item.value for item in items]
-        except Exception as e:
-            logger.warning(f"_recall_memory failed (ns={namespace}): {e}")
-            return []
+        """Deprecated legacy recall path — P1b-S4-7 removed all callers.
+
+        Kept as a hard-fail stub (same rationale as ``_build_system_prompt``):
+        recall must go through ``backend.context.retrieval.recall_namespaces``
+        so every outcome carries the D6' degradation signal.
+        """
+        raise NotImplementedError(
+            "BaseAgent._recall_memory was removed in P1b-S4-7: "
+            "recall must go through backend.context.retrieval.recall_namespaces"
+        )
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
         """从 LLM 响应中提取 JSON（增强版，处理多种格式和常见语法错误）"""

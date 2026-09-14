@@ -28,6 +28,7 @@ class TestBloggerScoutAgent:
         """State for trend mode with keywords."""
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "workflow_mode": WorkflowMode.TREND,
             "phase": WorkflowPhase.CREATING,
             "trend_data": {
@@ -44,6 +45,7 @@ class TestBloggerScoutAgent:
         """State for brief mode with keywords."""
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "workflow_mode": WorkflowMode.BRIEF,
             "phase": WorkflowPhase.CREATING,
             "brief_content": {
@@ -82,6 +84,7 @@ class TestBloggerScoutAgent:
     def test_extract_keywords_deduplicates(self, agent):
         """Keywords are deduplicated while preserving order."""
         state = {
+            "niche": "母婴",
             "trend_data": {"trending_keywords": ["美食", "美食", "咖啡"]},
             "content_plan": {"selected_topic": "美食"},
             "brief_content": {},
@@ -99,6 +102,7 @@ class TestBloggerScoutAgent:
     def test_extract_keywords_limits_to_5(self, agent):
         """At most 5 keywords are returned."""
         state = {
+            "niche": "母婴",
             "trend_data": {"trending_keywords": [f"kw{i}" for i in range(10)]},
             "content_plan": {},
             "brief_content": {},
@@ -148,6 +152,7 @@ class TestBloggerScoutAgent:
     async def test_execute_no_keywords_returns_empty(self, agent, mock_store):
         """Returns hardcoded fallback candidates when no keywords found."""
         state = {
+            "niche": "母婴",
             "account_id": "test",
             "workflow_mode": WorkflowMode.TREND,
             "trend_data": {},

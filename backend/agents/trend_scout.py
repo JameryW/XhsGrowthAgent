@@ -26,6 +26,7 @@ from backend.context.models import (
     RetrievalMode,
     RetrievalResult,
     RunContext,
+    require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.state.enums import WorkflowPhase
@@ -161,7 +162,7 @@ class TrendScoutAgent(BaseAgent):
         self._reset_llm_perf()
         account_id = state.get("account_id", "default")
         # niche 隐式默认保留到 S4 第 7 步（base 收口时与 start 入口校验一并切换，D2'）。
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         # User-provided topic override: include it in the keyword seed so trend
         # scouting / keyword monitoring revolve around the user's topic, not just
         # the niche. Previously dead data — trend_scout only seeded niche.

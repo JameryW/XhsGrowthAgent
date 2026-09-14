@@ -83,6 +83,7 @@ class TestContinuousModeE2E:
             "workflow_mode": "trend",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "publish_result": {"note_id": "test123"},
             # Pre-populate analytics WITHOUT an "insights" key so the
             # orchestrator's execute() returns phase=ANALYZING (routing back
@@ -141,6 +142,7 @@ class TestContinuousModeE2E:
             "workflow_mode": "trend",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "publish_result": {"note_id": "test456"},
             # Pre-populate analytics so orchestrator routes to analyst
             "analytics": {"result": "pending"},
@@ -201,6 +203,7 @@ class TestRevisionCountInterruptPreservation:
             "execution_mode": "single",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "revision_count": 2,
             "error": None,
             "retry_count": 0,

@@ -29,6 +29,7 @@ class TestContentStrategistAgent:
         """Standard mock state with trend_data."""
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": WorkflowPhase.SCOUTING,
             "trend_data": {
                 "trending_topics": ["美食探店"],
@@ -176,7 +177,7 @@ class TestContentStrategistAgent:
     @pytest.mark.asyncio
     async def test_ripple_predict_skipped_no_topic(self, agent, mock_store):
         """Ripple prediction skipped when no topic."""
-        mock_state = {"account_id": "test", "trend_data": {}}
+        mock_state = {"niche": "母婴", "account_id": "test", "trend_data": {}}
         mock_response = MagicMock()
         mock_response.content = '{"selected_topic": ""}'
 
@@ -211,9 +212,9 @@ class TestContentStrategistAgent:
         trend candidate set."""
         # topic NOT in trend candidates — under old guard this would regen.
         state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.SCOUTING,
-            "niche": "母婴",
             "topic": "露营亲子日记",
             "trend_data": {"trending_topics": ["辅食食谱", "早教游戏"]},
         }
@@ -254,9 +255,9 @@ class TestContentStrategistAgent:
     async def test_no_user_topic_keeps_drift_guard(self, agent, mock_store):
         """Without state['topic'], drift guard still fires on a candidate miss."""
         state = {
+            "niche": "母婴",
             "account_id": "test_account",
             "phase": WorkflowPhase.SCOUTING,
-            "niche": "母婴",
             "trend_data": {"trending_topics": ["辅食食谱"]},
         }
         first = MagicMock()
@@ -438,6 +439,7 @@ class TestContentStrategistContextPipeline:
     def mock_state(self):
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "trend_data": {"trending_topics": ["美食探店"]},
         }
 
