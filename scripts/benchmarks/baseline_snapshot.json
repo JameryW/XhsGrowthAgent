@@ -1,0 +1,37 @@
+{
+  "scenarios": {
+    "default": {
+      "analyst": 331,
+      "blogger_scout": 258,
+      "brief_analyzer": 316,
+      "content_analyzer": 583,
+      "content_strategist": 580,
+      "copywriter": 558,
+      "evaluator": 1648,
+      "orchestrator": 279,
+      "publisher": 459,
+      "shooting_planner": 481,
+      "trend_scout": 415,
+      "version_generator": 663,
+      "viral_matcher": 448,
+      "visual_designer": 355
+    },
+    "stress": {
+      "analyst": 351,
+      "blogger_scout": 278,
+      "brief_analyzer": 335,
+      "content_analyzer": 603,
+      "content_strategist": 599,
+      "copywriter": 577,
+      "evaluator": 1668,
+      "orchestrator": 298,
+      "publisher": 478,
+      "shooting_planner": 500,
+      "trend_scout": 434,
+      "version_generator": 683,
+      "viral_matcher": 468,
+      "visual_designer": 374
+    }
+  },
+  "version": 1
+}

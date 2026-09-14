@@ -7,13 +7,19 @@ feeds every agent a shared synthetic recall, and reports:
 
 * token cost vs the pre-migration assembly (dedup / rerank / budget delta)
 * layer stability: repeat / shuffle / dedup / budget-trim invariants
+* drift vs a committed snapshot, so a prompt or compiler change that
+  silently inflates (or starves) context fails instead of shipping
 
-Exit code 1 if any stability invariant fails, so CI can gate on it.
+Exit code 1 if any stability invariant fails or drift exceeds the threshold,
+so CI can gate on it.
 
 Examples:
     python scripts/benchmarks/context_compiler_baseline.py
     python scripts/benchmarks/context_compiler_baseline.py --budget 1200
     python scripts/benchmarks/context_compiler_baseline.py --json report.json
+    # refresh the committed snapshot after a deliberate prompt change
+    python scripts/benchmarks/context_compiler_baseline.py --write-snapshot \
+        scripts/benchmarks/baseline_snapshot.json
 """
 
 from __future__ import annotations
@@ -23,9 +29,16 @@ import json
 import sys
 from pathlib import Path
 
-from backend.context.baseline import DEFAULT_PROMPT_DIR, run_baseline
+from backend.context.baseline import (
+    DEFAULT_PROMPT_DIR,
+    Snapshot,
+    build_snapshot,
+    compare_snapshot,
+    run_baseline,
+)
 
 GATE_NAME = "P1b-S5 context compiler baseline"
+DEFAULT_SNAPSHOT = Path(__file__).resolve().parent / "baseline_snapshot.json"
 
 
 def _render_table(report) -> str:
@@ -70,6 +83,28 @@ def main(argv: list[str] | None = None) -> int:
         help="Only run the stress scenario (duplicated recall + long L5 tail)",
     )
     parser.add_argument("--json", type=Path, default=None, help="Also write JSON report")
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        default=DEFAULT_SNAPSHOT,
+        help="Snapshot file used by --compare / --write-snapshot",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Fail if compiled token cost drifted beyond --drift-pct vs the snapshot",
+    )
+    parser.add_argument(
+        "--drift-pct",
+        type=float,
+        default=5.0,
+        help="Tolerated absolute per-agent drift against the snapshot (default: 5)",
+    )
+    parser.add_argument(
+        "--write-snapshot",
+        action="store_true",
+        help="Refresh the snapshot from this run (use after a deliberate change)",
+    )
     args = parser.parse_args(argv)
 
     scenarios = [("stress", True)] if args.stress_only else [("default", False), ("stress", True)]
@@ -111,10 +146,38 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"\nJSON report: {args.json}")
 
+    if args.write_snapshot:
+        snapshot = build_snapshot(reports)
+        args.snapshot.parent.mkdir(parents=True, exist_ok=True)
+        args.snapshot.write_text(
+            json.dumps(snapshot.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        print(f"\nSnapshot written: {args.snapshot}")
+
     failed = [row for report in reports for row in report.stability if not row.ok]
     if failed:
         print(f"\n{GATE_NAME}: FAILED ({len(failed)} agent(s))")
         return 1
+
+    if args.compare:
+        if not args.snapshot.exists():
+            print(f"\n{GATE_NAME}: FAILED (snapshot missing: {args.snapshot})")
+            return 1
+        payload = json.loads(args.snapshot.read_text(encoding="utf-8"))
+        drift = compare_snapshot(reports, Snapshot.from_dict(payload), threshold_pct=args.drift_pct)
+        print(f"\n-- drift vs {args.snapshot.name} (threshold {args.drift_pct}%) --")
+        for row in drift.breaches:
+            print(
+                f"DRIFT {row.scenario:<8}{row.agent:<22}"
+                f"{row.snapshot_tokens:>8} -> {row.current_tokens:<8}{row.pct:+.1f}%"
+            )
+        for name in drift.missing:
+            print(f"MISSING {name}")
+        if not drift.ok:
+            print(f"\n{GATE_NAME}: FAILED (drift beyond {args.drift_pct}%)")
+            return 1
+        print("drift within threshold")
     print(f"\n{GATE_NAME}: OK")
     return 0
 
