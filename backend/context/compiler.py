@@ -20,6 +20,7 @@ from backend.context.models import (
     RetrievalResult,
     RunContext,
 )
+from backend.context.segments import parse_system_segments
 
 # Budget trimming pulls from the tail of the stability order (L5 first, then
 # L4); L0-L3 are static context and are never trimmed (info.md D4').
@@ -145,3 +146,36 @@ class ContextCompiler:
                 layers[layer] = text
                 total += estimate_tokens(text)
         return CompiledPrompt(layers=layers, total_token_cost=total)
+
+    def compile_prompt(
+        self,
+        run_context: RunContext,
+        system_text: str,
+        user_template: str = "",
+        retrievals: tuple[RetrievalResult, ...] = (),
+        *,
+        budget: int | None = None,
+        source_weights: Mapping[str, float] | None = None,
+    ) -> CompiledPrompt:
+        """Compile a (segmented) prompt YAML pair into a layered prompt.
+
+        S3 entry point: ``system_text`` is parsed by the segment schema
+        (markers -> L0-L5; no markers -> single L0, so unsegmented YAML keeps
+        compiling byte-identically), and ``user_template`` becomes the L3
+        task layer (appended to any L3 segment the system text carries).
+        Everything else — dedup, rerank, budget (L5 first), rendering — is
+        the S1 :meth:`compile` path.
+        """
+        sections = parse_system_segments(system_text)
+        if user_template:
+            existing = sections.get(PromptLayer.L3_TASK, "")
+            sections[PromptLayer.L3_TASK] = "\n\n".join(
+                part for part in (existing, user_template) if part
+            )
+        return self.compile(
+            run_context,
+            sections,
+            retrievals,
+            budget=budget,
+            source_weights=source_weights,
+        )

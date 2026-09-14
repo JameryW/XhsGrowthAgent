@@ -38,9 +38,10 @@ logger = logging.getLogger("xhs_growth.db.workflow_events")
 # Event kinds. The first four are carried over verbatim from the
 # ``performance_log`` entries S2 migrates (``kind`` was already the
 # discriminator there); tool/cost/error/action are the forward-looking set from
-# the P1a prd that later slices will start emitting.
+# the P1a prd that later slices will start emitting. ``context`` is the P1b-S2
+# recall-telemetry kind (RetrievalResult.mode observability, info.md D6').
 EVENT_KINDS: frozenset[str] = frozenset(
-    {"node", "llm", "ripple", "human_wait", "tool", "cost", "error", "action"}
+    {"node", "llm", "ripple", "human_wait", "tool", "cost", "error", "action", "context"}
 )
 
 # Payload key the store prefers as the event timestamp, in order.
