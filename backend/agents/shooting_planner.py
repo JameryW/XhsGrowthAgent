@@ -1,5 +1,10 @@
 """Shooting Planner agent — generates shooting plan from brief
-(brief mode) or content strategy (trend mode)."""
+(brief mode) or content strategy (trend mode).
+
+P1b-S4 迁移第六批销号（consumer-map §六.6，纯模板批）：无管线 ns recall、
+system YAML 无占位符（任务数据全走 user_msg），prompt 组装接
+ContextCompiler.compile_prompt（无标记整段 L0）。
+"""
 
 from __future__ import annotations
 
@@ -11,17 +16,32 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import RunContext
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 from backend.state.substates import BriefContent, ContentPlan, CopyContent, TrendData
 
 logger = logging.getLogger("xhs_growth.agents.shooting_planner")
 
+_compiler = ContextCompiler()
+
 
 class ShootingPlannerAgent(BaseAgent):
     task_type = TaskType.SHOOTING_PLAN
     agent_name = "shooting_planner"
     prompt_file = "shooting_planner.yaml"
+
+    def _compile_system_prompt(self, state: XHSGrowthState) -> str:
+        """System prompt via ContextCompiler（S4-6 纯模板批）。本 agent 不读
+        niche（不在 consumer-map §五隐式默认清单），传 "" 不新造默认值。"""
+        run_context = RunContext(
+            thread_id=str(state.get("session_id") or ""),
+            account_id=str(state.get("account_id", "default")),
+            niche=str(state.get("niche", "")),
+            values=state,
+        )
+        return _compiler.compile_prompt(run_context, self.prompt_template["system"]).render()
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -47,7 +67,7 @@ class ShootingPlannerAgent(BaseAgent):
                 "phase": WorkflowPhase.CREATING,
             }
 
-        system_prompt = self._build_system_prompt(state)
+        system_prompt = self._compile_system_prompt(state)
         response = await self._llm_ainvoke(
             [
                 SystemMessage(content=system_prompt),
