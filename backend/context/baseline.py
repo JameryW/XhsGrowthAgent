@@ -23,7 +23,7 @@ prefix (L0-L3) untouched.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -426,6 +426,128 @@ def measure_stability(
         budget_ok=budget_ok,
         detail=detail,
     )
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """A committed point-in-time record of the compiled token cost.
+
+    Only the auditable numbers are stored (no rendered text): per agent and
+    scenario, what the compiler produced. A later run compares against it, so
+    a prompt or compiler change that silently inflates context fails the gate
+    instead of shipping.
+    """
+
+    version: int = 1
+    scenarios: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"version": self.version, "scenarios": self.scenarios}
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> Snapshot:
+        return cls(
+            version=int(payload.get("version", 1)),
+            scenarios={name: dict(rows) for name, rows in payload.get("scenarios", {}).items()},
+        )
+
+
+@dataclass(frozen=True)
+class DriftRow:
+    """One agent/scenario whose compiled cost moved vs the snapshot."""
+
+    scenario: str
+    agent: str
+    snapshot_tokens: int
+    current_tokens: int
+
+    @property
+    def pct(self) -> float:
+        if self.snapshot_tokens == 0:
+            return 0.0
+        return ((self.current_tokens - self.snapshot_tokens) / self.snapshot_tokens) * 100.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "agent": self.agent,
+            "snapshot_tokens": self.snapshot_tokens,
+            "current_tokens": self.current_tokens,
+            "pct": round(self.pct, 2),
+        }
+
+
+@dataclass(frozen=True)
+class DriftReport:
+    """Result of comparing current runs against the committed snapshot."""
+
+    threshold_pct: float
+    rows: tuple[DriftRow, ...]
+    missing: tuple[str, ...] = ()
+
+    @property
+    def breaches(self) -> tuple[DriftRow, ...]:
+        return tuple(row for row in self.rows if abs(row.pct) > self.threshold_pct)
+
+    @property
+    def ok(self) -> bool:
+        return not self.breaches and not self.missing
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "threshold_pct": self.threshold_pct,
+            "ok": self.ok,
+            "missing": list(self.missing),
+            "breaches": [row.to_dict() for row in self.breaches],
+            "rows": [row.to_dict() for row in self.rows],
+        }
+
+
+def build_snapshot(reports: Iterable[BaselineReport]) -> Snapshot:
+    """Record every scenario's per-agent compiled cost."""
+    scenarios: dict[str, dict[str, int]] = {}
+    for report in reports:
+        scenarios[report.scenario] = {row.agent: row.compiled_tokens for row in report.costs}
+    return Snapshot(scenarios=scenarios)
+
+
+def compare_snapshot(
+    reports: Iterable[BaselineReport],
+    snapshot: Snapshot,
+    *,
+    threshold_pct: float = 5.0,
+) -> DriftReport:
+    """Compare current runs against a committed snapshot.
+
+    ``threshold_pct`` is the tolerated absolute drift per agent/scenario.
+    Agents present in the snapshot but missing now are reported as
+    ``missing`` (a dropped prompt must be a deliberate, visible act).
+    """
+    rows: list[DriftRow] = []
+    missing: list[str] = []
+    for report in reports:
+        recorded = snapshot.scenarios.get(report.scenario)
+        if recorded is None:
+            missing.append(f"scenario:{report.scenario}")
+            continue
+        seen: set[str] = set()
+        for row in report.costs:
+            seen.add(row.agent)
+            if row.agent not in recorded:
+                missing.append(f"{report.scenario}:{row.agent}")
+                continue
+            rows.append(
+                DriftRow(
+                    scenario=report.scenario,
+                    agent=row.agent,
+                    snapshot_tokens=recorded[row.agent],
+                    current_tokens=row.compiled_tokens,
+                )
+            )
+        for agent in recorded:
+            if agent not in seen:
+                missing.append(f"{report.scenario}:{agent}")
+    return DriftReport(threshold_pct=threshold_pct, rows=tuple(rows), missing=tuple(missing))
 
 
 def run_baseline(

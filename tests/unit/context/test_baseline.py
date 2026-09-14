@@ -6,11 +6,20 @@ and (negative cases) actually *fail* when an invariant is broken. A gate
 that can only ever be green is worthless.
 """
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
 
 from backend.context.baseline import (
     DEFAULT_PROMPT_DIR,
     AgentCase,
+    BaselineReport,
+    CostRow,
+    Snapshot,
+    build_snapshot,
+    compare_snapshot,
     load_agent_cases,
     measure_cost,
     measure_stability,
@@ -200,3 +209,72 @@ class TestReport:
         assert report.ok
         assert report.budget == 500
         assert report.total_compiled < run_baseline(DEFAULT_PROMPT_DIR, stress=True).total_compiled
+
+
+def _fake_report(scenario: str, tokens: dict[str, int]) -> BaselineReport:
+    return BaselineReport(
+        budget=None,
+        costs=tuple(
+            CostRow(agent=name, baseline_tokens=tok, compiled_tokens=tok, layer_tokens={})
+            for name, tok in tokens.items()
+        ),
+        stability=(),
+        scenario=scenario,
+    )
+
+
+class TestSnapshotDrift:
+    def test_snapshot_roundtrip(self):
+        snapshot = build_snapshot([_fake_report("default", {"a": 100, "b": 200})])
+        restored = Snapshot.from_dict(snapshot.to_dict())
+        assert restored.scenarios == snapshot.scenarios
+        assert restored.scenarios["default"]["a"] == 100
+
+    def test_no_drift_is_ok(self):
+        snapshot = build_snapshot([_fake_report("default", {"a": 100})])
+        drift = compare_snapshot([_fake_report("default", {"a": 100})], snapshot)
+        assert drift.ok
+        assert not drift.breaches
+
+    def test_within_threshold_is_ok(self):
+        snapshot = build_snapshot([_fake_report("default", {"a": 100})])
+        drift = compare_snapshot([_fake_report("default", {"a": 104})], snapshot, threshold_pct=5.0)
+        assert drift.ok
+        assert drift.rows[0].pct == pytest.approx(4.0)
+
+    def test_drift_beyond_threshold_fails(self):
+        """A prompt that grew must break the gate — not silently ship."""
+        snapshot = build_snapshot([_fake_report("default", {"a": 100})])
+        drift = compare_snapshot([_fake_report("default", {"a": 150})], snapshot, threshold_pct=5.0)
+        assert not drift.ok
+        assert len(drift.breaches) == 1
+        assert drift.breaches[0].pct == pytest.approx(50.0)
+
+    def test_shrink_beyond_threshold_also_fails(self):
+        """Starved context is as much a regression as inflated context."""
+        snapshot = build_snapshot([_fake_report("default", {"a": 100})])
+        drift = compare_snapshot([_fake_report("default", {"a": 50})], snapshot, threshold_pct=5.0)
+        assert not drift.ok
+        assert drift.breaches[0].pct == pytest.approx(-50.0)
+
+    def test_missing_agent_is_reported(self):
+        snapshot = build_snapshot([_fake_report("default", {"a": 100, "b": 200})])
+        drift = compare_snapshot([_fake_report("default", {"a": 100})], snapshot)
+        assert not drift.ok
+        assert "default:b" in drift.missing
+
+    def test_real_prompts_match_committed_snapshot(self):
+        """Guard against a stale snapshot: the committed numbers must still
+        describe the current prompts."""
+        snapshot_path = (
+            Path(DEFAULT_PROMPT_DIR).parents[2]
+            / "scripts"
+            / "benchmarks"
+            / "baseline_snapshot.json"
+        )
+        if not snapshot_path.exists():
+            pytest.skip("no committed snapshot")
+        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        reports = [run_baseline(DEFAULT_PROMPT_DIR), run_baseline(DEFAULT_PROMPT_DIR, stress=True)]
+        drift = compare_snapshot(reports, Snapshot.from_dict(payload), threshold_pct=5.0)
+        assert drift.ok, [row.to_dict() for row in drift.breaches]

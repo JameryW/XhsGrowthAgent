@@ -110,11 +110,14 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: Install
         run: pip install -e ".[dev]"
-      - name: Token cost + layer stability gate
+      - name: Token cost + layer stability + drift gate
         # Offline and deterministic: no workflow, no store, no model call.
         # Exits 1 if any stability invariant (repeat / shuffle / dedup /
-        # budget trim order) breaks, or if the script itself regresses.
-        run: python scripts/benchmarks/context_compiler_baseline.py
+        # budget trim order) breaks, or if compiled token cost drifts beyond
+        # the threshold vs the committed snapshot — a prompt or compiler
+        # change that inflates context must be a deliberate, visible act
+        # (refresh with --write-snapshot in the same PR).
+        run: python scripts/benchmarks/context_compiler_baseline.py --compare --drift-pct 5
 
   omp-typecheck:
     name: OMP Typecheck
