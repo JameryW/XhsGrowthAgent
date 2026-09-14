@@ -98,6 +98,24 @@ jobs:
             exit 1
           fi
 
+  context-baseline:
+    name: Context Compiler Baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Token cost + layer stability gate
+        # Offline and deterministic: no workflow, no store, no model call.
+        # Exits 1 if any stability invariant (repeat / shuffle / dedup /
+        # budget trim order) breaks, or if the script itself regresses.
+        run: python scripts/benchmarks/context_compiler_baseline.py
+
   omp-typecheck:
     name: OMP Typecheck
     runs-on: ubuntu-latest
