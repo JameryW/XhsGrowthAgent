@@ -24,7 +24,7 @@ system: |
     "timestamp": "ISO-8601"
   }
 
-  {memory_context}
+  <!-- ctx:l4_memory -->
 
 user_template: |
   账号定位：{account_niche}
