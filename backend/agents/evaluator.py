@@ -6,6 +6,14 @@
 - 对抗偏倚检测维度校准面板是否对 AI 生成内容过度宽容（论文 1.91x 纠偏）
 - verifiable metric + judge signal 互补：LLM 给原始评分，代码用确定规则重算
   overall_score/decision，保证判定一致性。
+
+P1b-S4 迁移第四个销号 agent（consumer-map §六.4，override + weights 特例）：
+audience_preferences recall 走 S2 管线（RetrievalResult.mode 降级信号 +
+kind=context 事件面）；`_build_system_prompt` override 保留签名（weights/bias
+经 per-call ctx 注入），组装末端接 ContextCompiler.compile_prompt（YAML 分段
+schema，`<!-- ctx:l2_account -->` 标记承接账号垂类段）。受众偏好上下文按现状
+继续经 user_template .format 注入（任务载荷，非 system 层）——override 中原
+`{memory_context}` replace 对本 YAML 是空转（system 无该占位符），迁移后移除。
 """
 
 from __future__ import annotations
@@ -28,6 +36,9 @@ if TYPE_CHECKING:
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TASK_TIMEOUT_OVERRIDES, TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import RetrievalMode, RetrievalResult, RunContext
+from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.db.evaluator_config import (
     BIAS_SEVERITY_NOTES,
     EvaluatorWeights,
@@ -37,6 +48,8 @@ from backend.db.evaluator_config import (
 from backend.state.enums import ContentStatus
 
 logger = logging.getLogger("xhs_growth.agents.evaluator")
+
+_compiler = ContextCompiler()
 
 # Outer wall-clock budget for the LLM panel call. Must match (or slightly
 # exceed) TASK_TIMEOUT_OVERRIDES["evaluation"] so the model HTTP client can
@@ -72,6 +85,43 @@ _BIAS_PENALTY_THRESHOLD = 60.0
 _BIAS_PENALTY = 5.0  # 偏倚下调分
 
 _REQUIRED_DIMENSIONS = list(_DIMENSION_WEIGHTS.keys()) + ["bias_check"]
+
+
+async def _recall_audience_prefs(
+    store: BaseStore | None, account_id: str, *, query: str, thread_id: str
+) -> RetrievalResult:
+    """audience_preferences recall through the S2 pipeline (D6').
+
+    Same namespace / query / limit as the pre-migration ``_recall_memory``
+    call; a store failure now degrades with an explicit ``mode`` instead of
+    silently returning ``[]``, and — with a ``thread_id`` — lands in the
+    workflow_events tier as ``kind="context"``.
+    """
+    if store is None:
+        return RetrievalResult(
+            namespace="audience_preferences",
+            mode=RetrievalMode.DEGRADED,
+            error="store_unavailable",
+        )
+    results = await recall_namespaces(
+        store,
+        account_id=account_id,
+        requests=[RecallRequest(namespace="audience_preferences", query=query, limit=3)],
+        thread_id=thread_id,
+        emit_events=True,
+    )
+    return results["audience_preferences"]
+
+
+def _format_audience_context(result: RetrievalResult) -> str:
+    """Audience-preference L4 text, format identical to the pre-migration
+    block (分段等价): plain ``- {preference}`` bullets, no section header."""
+    if result.mode is RetrievalMode.HIT and result.items:
+        text = ""
+        for item in result.items:
+            text += f"- {item.body}\n"
+        return text
+    return ""
 
 
 @dataclass(frozen=True)
@@ -152,7 +202,6 @@ class EvaluatorAgent(BaseAgent):
         if state.get("historical_note") and not state.get("niche_context_available"):
             niche = "未提供赛道（不可推断）"
         template = template.replace("{account_niche}", niche)
-        template = template.replace("{memory_context}", extra_context)
         # weights block: "copywriting 0.20, visual 0.15, ..."
         weights_block = ", ".join(f"{k} {v:.2f}" for k, v in ctx.weights.dimension_weights.items())
         template = template.replace("{weights_block}", weights_block)
@@ -161,7 +210,21 @@ class EvaluatorAgent(BaseAgent):
         template = template.replace(
             "{bias_severity_note}", BIAS_SEVERITY_NOTES.get(ctx.bias_severity, "")
         )
-        return template
+        # P1b-S4-4: assembly goes through the segment schema pipeline. The
+        # weights/threshold/niche tokens are mid-sentence dynamic parameters
+        # (not layer context) and are substituted pre-compile, so L0 is final
+        # text; the trailing 账号垂类 line is the `<!-- ctx:l2_account -->`
+        # section. ``extra_context`` is kept in the signature for call/test
+        # compatibility — audience preferences flow through user_template
+        # (.format) in this agent, and the old system-side `{memory_context}`
+        # replace was a no-op against this YAML.
+        run_context = RunContext(
+            thread_id=str(state.get("session_id") or ""),
+            account_id=str(state.get("account_id", "default")),
+            niche=niche,
+            values=state,
+        )
+        return _compiler.compile_prompt(run_context, template).render()
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         # Lazy import — langchain_core.messages is heavy (~0.16s); only needed
@@ -201,25 +264,23 @@ class EvaluatorAgent(BaseAgent):
             }
 
         account_id = state.get("account_id", "default")
-        # Gather _resolve_weights (DB weights + epoch) with _recall_memory (store
-        # asearch): both read-only + independent, and each swallows its own
-        # exceptions → gather propagates nothing, no wrapper needed. P0-W1: the
-        # resolved context is a LOCAL value (no instance side-effects), so a
-        # concurrent evaluation can no longer overwrite this call's weights
-        # before _build_system_prompt runs.
-        ctx, memory_context = await asyncio.gather(
+        # Gather _resolve_weights (DB weights + epoch) with the S2 pipeline
+        # recall (audience_preferences via recall_namespaces): both read-only +
+        # independent. _resolve_weights swallows its own exceptions; the
+        # pipeline recall carries explicit degradation modes (D6') instead of
+        # the old silent ``[]``. P0-W1: the resolved context is a LOCAL value
+        # (no instance side-effects), so a concurrent evaluation can no longer
+        # overwrite this call's weights before _build_system_prompt runs.
+        ctx, prefs_result = await asyncio.gather(
             self._resolve_weights(account_id),
-            self._recall_memory(
+            _recall_audience_prefs(
                 store,
                 account_id,
                 query=plan.get("selected_topic", "") or copy_content.get("selected_title", ""),
-                namespace="audience_preferences",
-                limit=3,
+                thread_id=str(state.get("session_id") or ""),
             ),
         )
-        audience_ctx = ""
-        for ap in memory_context:
-            audience_ctx += f"- {ap.get('preference', '')}\n"
+        audience_ctx = _format_audience_context(prefs_result)
 
         system_prompt = self._build_system_prompt(state, extra_context=audience_ctx, ctx=ctx)
         ripple_context = self._build_ripple_context(state)
