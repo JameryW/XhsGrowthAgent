@@ -429,6 +429,84 @@ def measure_stability(
 
 
 @dataclass(frozen=True)
+class CoverageReport:
+    """Do the declared agent prompts and the prompt directory still agree?
+
+    A new agent class with a typo'd ``prompt_file`` silently compiles an
+    empty system prompt (``BaseAgent`` falls back to ``{"system": ""}``), and
+    an orphan YAML is a prompt nobody runs. Both rot quietly, so the gate
+    checks the mapping by parsing the sources (no import, no side effects).
+    """
+
+    declared: tuple[str, ...]
+    present: tuple[str, ...]
+
+    @property
+    def missing(self) -> tuple[str, ...]:
+        """Declared by an agent but absent from the prompt directory."""
+        return tuple(name for name in self.declared if name not in self.present)
+
+    @property
+    def orphaned(self) -> tuple[str, ...]:
+        """Present in the prompt directory but declared by no agent."""
+        return tuple(name for name in self.present if name not in self.declared)
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "declared": list(self.declared),
+            "present": list(self.present),
+            "missing": list(self.missing),
+            "orphaned": list(self.orphaned),
+        }
+
+
+def scan_declared_prompts(agents_dir: Path | str) -> tuple[str, ...]:
+    """Every ``prompt_file = "<name>.yaml"`` class attribute under ``agents_dir``.
+
+    AST walk rather than import: reading agent modules executes their imports
+    and any module-level wiring, which a gate must never do.
+    """
+    import ast
+
+    root = Path(agents_dir)
+    found: set[str] = set()
+    for path in sorted(root.rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except SyntaxError:  # pragma: no cover - a broken file fails CI earlier
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id == "prompt_file"
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)
+                    and node.value.value
+                ):
+                    found.add(node.value.value)
+    return tuple(sorted(found))
+
+
+def check_prompt_coverage(
+    prompt_dir: Path | str = DEFAULT_PROMPT_DIR,
+    agents_dir: Path | str | None = None,
+) -> CoverageReport:
+    """Compare agent-declared prompt files against the prompt directory."""
+    directory = Path(prompt_dir)
+    resolved_agents = Path(agents_dir) if agents_dir else directory.parents[1] / "agents"
+    present = tuple(sorted(path.name for path in directory.glob("*.yaml")))
+    return CoverageReport(declared=scan_declared_prompts(resolved_agents), present=present)
+
+
+@dataclass(frozen=True)
 class Snapshot:
     """A committed point-in-time record of the compiled token cost.
 
