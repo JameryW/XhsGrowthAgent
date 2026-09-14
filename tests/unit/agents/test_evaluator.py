@@ -586,19 +586,21 @@ class TestEvaluatorGatherConcurrency:
     async def test_execute_gathers_weights_and_memory_concurrently(
         self, agent, mock_state, mock_store
     ):
-        """Top-level execute gathers _resolve_weights + _recall_memory concurrently.
+        """Top-level execute gathers _resolve_weights + pipeline recall concurrently.
 
         Drives a full execute() with a mocked LLM panel response, patching
-        load_weights/get_active_epoch (inside _resolve_weights) and _recall_memory
-        to record overlap windows. Asserts the _resolve_weights fetch overlaps
-        _recall_memory — only possible under a top-level gather, not serial awaits.
+        load_weights/get_active_epoch (inside _resolve_weights) and the module
+        pipeline helper ``_recall_audience_prefs`` (P1b-S4-4: the old
+        ``_recall_memory`` path is gone) to record overlap windows. Asserts the
+        _resolve_weights fetch overlaps the recall — only possible under a
+        top-level gather, not serial awaits.
         """
         windows: dict[str, list[float]] = {}
 
         # Capture the real unbound methods before patching, so the tracked
         # wrappers can delegate without recursing into themselves.
         real_resolve_weights = EvaluatorAgent._resolve_weights
-        real_recall_memory = EvaluatorAgent._recall_memory
+        real_recall_prefs = evaluator_module._recall_audience_prefs
 
         async def _tracked_resolve(self_unused, account_id_unused):
             # _resolve_weights itself: record its start, yield, then let the real
@@ -613,13 +615,12 @@ class TestEvaluatorGatherConcurrency:
             finally:
                 windows["resolve"][1] = asyncio.get_event_loop().time()
 
-        async def _tracked_recall(self_unused, *args, **kwargs):
-            del self_unused
+        async def _tracked_recall(*args, **kwargs):
             start = asyncio.get_event_loop().time()
             windows["recall"] = [start, start]
             await asyncio.sleep(0)
             try:
-                return await real_recall_memory(agent, *args, **kwargs)
+                return await real_recall_prefs(*args, **kwargs)
             finally:
                 windows["recall"][1] = asyncio.get_event_loop().time()
 
@@ -644,7 +645,7 @@ class TestEvaluatorGatherConcurrency:
                 new=AsyncMock(return_value=PromptEpoch(0, "standard", "default", True, "")),
             ),
             patch.object(EvaluatorAgent, "_resolve_weights", new=_tracked_resolve),
-            patch.object(EvaluatorAgent, "_recall_memory", new=_tracked_recall),
+            patch.object(evaluator_module, "_recall_audience_prefs", new=_tracked_recall),
             patch.object(type(agent), "model", new_callable=PropertyMock) as m,
         ):
             model = MagicMock()
@@ -760,3 +761,123 @@ class TestEvaluatorWeightsIsolation:
             "run A's prompt carried run B's weights — shared instance state cross-contamination"
         )
         assert ">= 93" not in prompts["A"]
+
+
+class TestEvaluatorContextPipeline:
+    """S4-4 迁移契约：audience_preferences recall 走 S2 管线、system prompt
+    走 compile_prompt（L2 账号垂类段）、降级可观测、受众偏好格式逐字等价（D3'）。"""
+
+    @pytest.fixture
+    def agent(self):
+        return EvaluatorAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    @pytest.fixture
+    def mock_state(self):
+        return {
+            "account_id": "test_account",
+            "niche": "母婴",
+            "session_id": "sess-1",
+            "phase": WorkflowPhase.REVIEWING,
+            "content_plan": {"selected_topic": "婴儿车推荐"},
+            "copy_content": {"selected_title": "通勤带娃神器", "body_text": "正文"},
+            "visual_plan": {"cover_prompt": "封面"},
+        }
+
+    def _mock_model(self, agent, captured):
+        mock_response = MagicMock()
+        mock_response.content = TestEvaluatorAgent()._full_panel_response(
+            {
+                "copywriting": 80,
+                "visual": 80,
+                "compliance": 80,
+                "reach": 80,
+                "audience": 80,
+                "bias_check": 80,
+            }
+        )
+
+        async def _capture(messages, **kwargs):
+            captured.setdefault("calls", []).append(messages)
+            return mock_response
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = _capture
+        agent._model = mock_model
+
+    @pytest.mark.asyncio
+    async def test_recall_uses_context_pipeline_ns_and_query(self, agent, mock_store, mock_state):
+        """S2 pipeline recall: same ns/query/limit as the old _recall_memory."""
+        self._mock_model(agent, {})
+        await agent.execute(mock_state, store=mock_store)
+        by_ns = {c.args[0][-1]: c for c in mock_store.asearch.call_args_list}
+        assert "audience_preferences" in by_ns
+        aud = by_ns["audience_preferences"]
+        assert aud.args[0] == ("accounts", "test_account", "audience_preferences")
+        assert aud.kwargs.get("query") == "婴儿车推荐"
+        assert aud.kwargs.get("limit") == 3
+
+    @pytest.mark.asyncio
+    async def test_audience_context_verbatim_in_user_msg(self, agent, mock_store, mock_state):
+        """受众偏好逐字等价：user_template 的 {memory_context} 仍由 .format 注入
+        （任务载荷，非 system 层），bullet 格式不变；system prompt 占位符全部消费。"""
+        mock_item = MagicMock()
+        mock_item.value = {"preference": "宝妈偏好真实测评"}
+        mock_store.asearch = AsyncMock(return_value=[mock_item])
+
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        await agent.execute(mock_state, store=mock_store)
+
+        system = captured["calls"][0][0].content
+        user = captured["calls"][0][1].content
+        assert "- 宝妈偏好真实测评\n" in user
+        assert "【受众偏好参考】" in user
+        assert "{memory_context}" not in system
+        assert "{memory_context}" not in user
+        assert "{account_niche}" not in system
+        assert "账号垂类：母婴" in system
+
+    def test_yaml_segment_schema(self, agent):
+        """YAML 分段 schema：恰一个 L2 标记；system 无 {memory_context}
+        （受众偏好走 user_template）。"""
+        system = agent.prompt_template["system"]
+        assert system.count("<!-- ctx:") == 1
+        assert "<!-- ctx:l2_account -->" in system
+        assert "{memory_context}" not in system
+
+    @pytest.mark.asyncio
+    async def test_degraded_recall_drops_audience_bullets(self, agent, mock_store, mock_state):
+        """Store 故障 → 降级而非崩溃：受众 bullet 缺席，评估照常产出（不伪造通过）。"""
+
+        async def _boom(ns, **kwargs):
+            raise RuntimeError("store down")
+
+        mock_store.asearch = _boom
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        result = await agent.execute(mock_state, store=mock_store)
+
+        assert "evaluation_result" in result
+        user = captured["calls"][0][1].content
+        assert "宝妈偏好真实测评" not in user
+        assert "{memory_context}" not in user
+
+    @pytest.mark.asyncio
+    async def test_weights_and_thresholds_still_injected(self, agent, mock_store, mock_state):
+        """weights/thresholds 中途动态参数经 pre-compile 替换后进入 L0，
+        分段化不改变 per-account 注入契约。"""
+        weights = EvaluatorWeights()
+        weights.dimension_weights["copywriting"] = 0.40
+        weights.pass_threshold = 75.0
+        ctx = EvaluationContext(weights=weights, bias_severity="strict")
+        prompt = agent._build_system_prompt(mock_state, extra_context="", ctx=ctx)
+        assert "copywriting 0.40" in prompt
+        assert ">= 75" in prompt
+        assert "本 epoch 加严" in prompt
+        assert "{weights_block}" not in prompt

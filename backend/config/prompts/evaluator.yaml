@@ -59,6 +59,7 @@ system: |
     "summary": "一句话总评"
   }
 
+  <!-- ctx:l2_account -->
   账号垂类：{account_niche}
 
 user_template: |
