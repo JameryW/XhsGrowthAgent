@@ -1,4 +1,14 @@
-"""Content Strategist agent — selects topics and plans content, with Ripple spread prediction."""
+"""Content Strategist agent — selects topics and plans content, with Ripple spread prediction.
+
+P1b-S4 迁移第三个销号 agent（consumer-map §六.3）：performance_insights
+recall 走 S2 管线（RetrievalResult.mode 降级信号 + kind=context 事件面），
+prompt 组装走 ContextCompiler.compile_prompt（YAML 分段 schema，
+`<!-- ctx:l4_memory -->` 标记替代 {memory_context} 占位符）。三个拼装点
+（主 prompt / 漂移纠偏 retry / 低传播 retry）各自以对应 L4 文本编译；
+`{ripple_context}` 占位符按 consumer-map 暂保留 post-render .replace
+（P1b 不动）。分段等价口径（info.md D3'）：L0 policy 文本逐字不变，
+L4 段内容集合与迁移前相等（层序渲染到 L0 尾部）。
+"""
 
 from __future__ import annotations
 
@@ -12,14 +22,63 @@ from langgraph.store.base import BaseStore
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.config.settings import Settings
+from backend.context.compiler import ContextCompiler
+from backend.context.models import (
+    ContextItem,
+    PromptLayer,
+    RetrievalMode,
+    RetrievalResult,
+    RunContext,
+)
+from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.services.ripple_service import RippleTimeoutError
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.content_strategist")
 
+_compiler = ContextCompiler()
+
 # Ripple workflow wait timeout (seconds). Real jobs commonly exceed 900s.
 _DEFAULT_RIPPLE_TIMEOUT = 1800
+
+
+async def _recall_insights(
+    store: BaseStore | None, account_id: str, thread_id: str
+) -> RetrievalResult:
+    """performance_insights recall through the S2 pipeline (D6').
+
+    Same namespace / query / limit as the pre-migration ``_recall_memory``
+    call; a store failure now degrades with an explicit ``mode`` instead of
+    silently returning ``[]``, and — with a ``thread_id`` — lands in the
+    workflow_events tier as ``kind="context"``.
+    """
+    if store is None:
+        return RetrievalResult(
+            namespace="performance_insights",
+            mode=RetrievalMode.DEGRADED,
+            error="store_unavailable",
+        )
+    results = await recall_namespaces(
+        store,
+        account_id=account_id,
+        requests=[
+            RecallRequest(namespace="performance_insights", query="content strategy", limit=5)
+        ],
+        thread_id=thread_id,
+        emit_events=True,
+    )
+    return results["performance_insights"]
+
+
+def _format_memory_context(result: RetrievalResult) -> str:
+    """L4 text, format identical to the pre-migration block (分段等价)."""
+    if result.mode is RetrievalMode.HIT and result.items:
+        text = "\n历史表现洞察：\n"
+        for item in result.items:
+            text += f"- {item.body}\n"
+        return text
+    return ""
 
 
 class ContentStrategistAgent(BaseAgent):
@@ -37,27 +96,18 @@ class ContentStrategistAgent(BaseAgent):
 
         cm = CreativeMemory(account_id, store=store)
         niche = state.get("niche", "母婴")
-        # 4 independent read-only recalls with disjoint namespaces → one
-        # concurrent wave instead of 4 serial ones. Each recall swallows its
-        # own exceptions internally (returns [] / None), so gather adds no new
-        # exception surface. Same idiom as content_strategist.py:210 + #502.
-        styles, plays, benchmark, insights = await asyncio.gather(
+        # 4 independent read-only recalls with disjoint sources → one
+        # concurrent wave instead of 4 serial ones. CreativeMemory recalls
+        # swallow their own exceptions internally; the pipeline recall carries
+        # explicit degradation modes (same arity as pre-migration: 3 cm
+        # recalls + 1 batched-ns pipeline helper).
+        styles, plays, benchmark, insights_result = await asyncio.gather(
             cm.recall_style(query=f"content strategy {niche}"),
             cm.recall_plays(condition="content strategy", niche=niche),
             cm.recall_benchmark(niche),
-            self._recall_memory(
-                store,
-                account_id,
-                query="content strategy",
-                namespace="performance_insights",
-                limit=5,
-            ),
+            _recall_insights(store, account_id, str(thread_id or "")),
         )
-        memory_context = ""
-        if insights:
-            memory_context = "\n历史表现洞察：\n"
-            for i in insights:
-                memory_context += f"- {i.get('insight', '')}\n"
+        memory_context = _format_memory_context(insights_result)
 
         # 拼接 creative memory 上下文
         creative_ctx = cm.build_creative_context(styles, plays, [], benchmark)
@@ -74,10 +124,9 @@ class ContentStrategistAgent(BaseAgent):
         except Exception as e:
             logger.debug("creator_stats suggestions skipped: %s", e)
 
-        # 先用基础 prompt 生成初版策略（暂无 Ripple 数据）
-        system_prompt = self._build_system_prompt(state, extra_context=memory_context)
-        system_prompt = system_prompt.replace("{ripple_context}", "")
-
+        # 先用基础 prompt 生成初版策略（暂无 Ripple 数据）。topic 打分在下方
+        # 追加进 L4 文本后才编译——旧路径在此处的首次 _build_system_prompt 构建是
+        # 死代码（构建结果立即被 104 行重建覆盖），迁移后不再保留。
         trend_data: dict[str, Any] = cast(dict[str, Any], state.get("trend_data", {}))
 
         # User-provided topic override. Stored in state["topic"] by /workflow/start
@@ -101,7 +150,13 @@ class ContentStrategistAgent(BaseAgent):
                 "\n用户已明确指定选题主题。selected_topic 必须围绕该用户主题为核心，"
                 "趋势数据仅作为借势角度与热点参考，不得用候选话题替换用户主题。" + memory_context
             )
-        system_prompt = self._build_system_prompt(state, extra_context=memory_context)
+        system_prompt = self._compile_system_prompt(
+            state,
+            thread_id=str(thread_id or ""),
+            account_id=account_id,
+            niche=niche,
+            l4_extra=memory_context,
+        )
         system_prompt = system_prompt.replace("{ripple_context}", "")
 
         user_msg = f"""趋势数据：{trend_data}
@@ -133,9 +188,12 @@ class ContentStrategistAgent(BaseAgent):
         elif candidates and content_plan.get("selected_topic") not in candidates:
             chosen = content_plan.get("selected_topic", "")
             logger.info(f"selected_topic '{chosen}' 不在候选集，触发重生成")
-            retry_prompt = self._build_system_prompt(
+            retry_prompt = self._compile_system_prompt(
                 state,
-                extra_context=memory_context
+                thread_id=str(thread_id or ""),
+                account_id=account_id,
+                niche=niche,
+                l4_extra=memory_context
                 + f"\n【纠偏】上一次输出的 selected_topic='{chosen}' 不在候选话题内。"
                 f"候选话题为：{candidates}。必须从中选取一个，不得自创或改写措辞。",
             )
@@ -296,7 +354,13 @@ class ContentStrategistAgent(BaseAgent):
                 f"regenerating strategy with Ripple insights"
             )
             ripple_context = self._build_ripple_context(ripple_prediction, ripple_pmf)
-            retry_prompt = self._build_system_prompt(state, extra_context=memory_context)
+            retry_prompt = self._compile_system_prompt(
+                state,
+                thread_id=str(thread_id or ""),
+                account_id=account_id,
+                niche=niche,
+                l4_extra=memory_context,
+            )
             # 将 ripple_context 直接拼入 system prompt
             retry_prompt = retry_prompt.replace("{ripple_context}", ripple_context)
 
@@ -331,6 +395,42 @@ class ContentStrategistAgent(BaseAgent):
         await self._deposit_creative_memory(cm, content_plan, niche)
 
         return result
+
+    def _compile_system_prompt(
+        self,
+        state: XHSGrowthState,
+        *,
+        thread_id: str,
+        account_id: str,
+        niche: str,
+        l4_extra: str,
+    ) -> str:
+        """Compile the system prompt via ContextCompiler (S4-3 迁移).
+
+        L4 extra context（历史表现洞察 + creative_ctx + 创作者中心建议 +
+        话题评分 + 用户主题前缀）作为单个 ContextItem 渲染到
+        `<!-- ctx:l4_memory -->` 标记位。``{ripple_context}`` 占位符仍由
+        调用方 post-render replace（consumer-map 口径，P1b 不动）。
+        """
+        run_context = RunContext(
+            thread_id=thread_id, account_id=account_id, niche=niche, values=state
+        )
+        if l4_extra:
+            memory = RetrievalResult(
+                namespace="strategist_memory",
+                layer=PromptLayer.L4_MEMORY,
+                mode=RetrievalMode.HIT,
+                items=(ContextItem(body=l4_extra, source="memory:content_strategist"),),
+            )
+        else:
+            memory = RetrievalResult(
+                namespace="strategist_memory",
+                layer=PromptLayer.L4_MEMORY,
+                mode=RetrievalMode.EMPTY,
+            )
+        return _compiler.compile_prompt(
+            run_context, self.prompt_template["system"], retrievals=(memory,)
+        ).render()
 
     async def _deposit_creative_memory(
         self, cm: Any, content_plan: dict[str, Any], niche: str
