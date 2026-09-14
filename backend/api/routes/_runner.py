@@ -12,12 +12,15 @@ if TYPE_CHECKING:
     # StateSnapshot is annotation-only; importing langgraph.types at module load
     # costs ~600ms (pulls langgraph.graph.state). Deferred — resolved only when
     # type checkers need it, never at runtime.
+    from langgraph.store.base import BaseStore
     from langgraph.types import StateSnapshot
 
     from backend.db.workflows import WorkflowRow
 
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
+from backend.state.artifacts import resolve_state
+from backend.state.hydration import pick, realtime_view
 from backend.state.machine import WorkflowStatus, derive_status
 
 logger = logging.getLogger("xhs_growth.api.runner")
@@ -107,12 +110,21 @@ async def _db_upsert(thread_id: str, **fields: Any) -> WorkflowRow | None:
         return None
 
 
-def _emit_status_transition(
+async def _emit_status_transition(
     new_status: WorkflowStatus,
     thread_id: str,
     snapshot: StateSnapshot | None = None,
+    store: BaseStore | None = None,
 ) -> None:
-    """Emit events when workflow status transitions."""
+    """Emit events when workflow status transitions.
+
+    P1a-S4: gate payloads embed copy_content / visual_plan / content_versions /
+    draft_content / analytics — fields that on a ref'd thread live in the
+    Artifact Store, not the checkpoint. Snapshot values therefore go through
+    the read seam (:func:`resolve_state`) first. Legacy threads come back as a
+    shallow copy with no store round trip, so the hot path pays nothing until
+    refs exist.
+    """
     old_status = _last_status.get(thread_id)
     if old_status == new_status:
         return
@@ -125,28 +137,29 @@ def _emit_status_transition(
     bus = EventBusService.get_instance()
 
     payload: dict[str, Any] = {"status": new_status.value}
+    values: dict[str, Any] = {}
     if snapshot is not None:
-        values = snapshot.values or {}
-        payload["phase"] = values.get("phase")
-        payload["current_agent"] = values.get("current_agent")
+        values = await resolve_state(store, thread_id, snapshot.values or {})
+        payload["phase"] = pick(values, "phase")
+        payload["current_agent"] = pick(values, "current_agent")
         payload["next_steps"] = list(snapshot.next) if snapshot.next else []
 
     if new_status == WorkflowStatus.AWAITING_REVIEW:
         if snapshot is not None:
-            values = snapshot.values or {}
-            payload["content_plan"] = values.get("content_plan", {})
-            payload["copy_content"] = values.get("copy_content", {})
-            payload["visual_plan"] = values.get("visual_plan", {})
-            payload["version_history"] = values.get("content_versions", [])
+            _rv = realtime_view(values, "review_pending")
+            payload["content_plan"] = _rv["content_plan"]
+            payload["copy_content"] = _rv["copy_content"]
+            payload["visual_plan"] = _rv["visual_plan"]
+            payload["version_history"] = _rv["content_versions"]
         bus.emit(EventType.REVIEW_PENDING, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.AWAITING_CHOICE:
         if snapshot is not None:
-            values = snapshot.values or {}
+            _rv = realtime_view(values, "awaiting_choice")
             payload["data"] = {
-                "versions": values.get("content_versions", []),
-                "draft": values.get("draft_content", {}),
-                "analysis": values.get("optimization_analysis", {}),
+                "versions": _rv["content_versions"],
+                "draft": _rv["draft_content"],
+                "analysis": _rv["optimization_analysis"],
             }
         else:
             payload["data"] = {}
@@ -154,32 +167,32 @@ def _emit_status_transition(
 
     elif new_status == WorkflowStatus.AWAITING_DRAFT:
         if snapshot is not None:
-            values = snapshot.values or {}
-            payload["copy_content"] = values.get("copy_content", {})
-            payload["content_plan"] = values.get("content_plan", {})
+            _rv = realtime_view(values, "awaiting_draft")
+            payload["copy_content"] = _rv["copy_content"]
+            payload["content_plan"] = _rv["content_plan"]
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.AWAITING_BRIEF:
         if snapshot is not None:
-            values = snapshot.values or {}
-            payload["brief_content"] = values.get("brief_content", {})
+            _rv = realtime_view(values, "awaiting_brief")
+            payload["brief_content"] = _rv["brief_content"]
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.AWAITING_RIPPLE_DECISION:
         if snapshot is not None:
-            values = snapshot.values or {}
-            payload["ripple_prediction"] = values.get("ripple_prediction", {})
-            payload["ripple_pmf"] = values.get("ripple_pmf", {})
-            payload["ripple_reason"] = values.get("ripple_reason", "")
-            payload["reselect_count"] = values.get("reselect_count", 0)
+            _rv = realtime_view(values, "awaiting_ripple_decision")
+            payload["ripple_prediction"] = _rv["ripple_prediction"]
+            payload["ripple_pmf"] = _rv["ripple_pmf"]
+            payload["ripple_reason"] = _rv["ripple_reason"]
+            payload["reselect_count"] = _rv["reselect_count"]
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.AWAITING_BLOGGER_SELECTION:
         if snapshot is not None:
-            values = snapshot.values or {}
-            payload["blogger_candidates"] = values.get("blogger_candidates", [])
-            payload["blogger_candidate_limit"] = values.get("blogger_candidate_limit", 5)
-            payload["blogger_note_limit"] = values.get("blogger_note_limit", 3)
+            _rv = realtime_view(values, "awaiting_blogger_selection")
+            payload["blogger_candidates"] = _rv["blogger_candidates"]
+            payload["blogger_candidate_limit"] = _rv["blogger_candidate_limit"]
+            payload["blogger_note_limit"] = _rv["blogger_note_limit"]
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.COMPLETED:
@@ -187,16 +200,16 @@ def _emit_status_transition(
         # individual nodes like publisher, which would prematurely close SSE
         # streams before any manually requested post-publish analysis has run.
         if snapshot is not None:
-            values = snapshot.values or {}
-            payload["publish_result"] = values.get("publish_result", {})
-            payload["copy_content"] = values.get("copy_content", {})
-            payload["trend_data"] = values.get("trend_data", {})
-            payload["content_plan"] = values.get("content_plan", {})
-            payload["visual_plan"] = values.get("visual_plan", {})
-            payload["analytics"] = values.get("analytics", {})
-            payload["ripple_prediction"] = values.get("ripple_prediction", {})
-            payload["ripple_pmf"] = values.get("ripple_pmf", {})
-            payload["ripple_comparison"] = values.get("ripple_comparison", {})
+            _rv = realtime_view(values, "completed")
+            payload["publish_result"] = _rv["publish_result"]
+            payload["copy_content"] = _rv["copy_content"]
+            payload["trend_data"] = _rv["trend_data"]
+            payload["content_plan"] = _rv["content_plan"]
+            payload["visual_plan"] = _rv["visual_plan"]
+            payload["analytics"] = _rv["analytics"]
+            payload["ripple_prediction"] = _rv["ripple_prediction"]
+            payload["ripple_pmf"] = _rv["ripple_pmf"]
+            payload["ripple_comparison"] = _rv["ripple_comparison"]
         bus.emit(EventType.WORKFLOW_COMPLETED, thread_id=thread_id, payload=payload)
 
     elif new_status in (WorkflowStatus.PAUSED, WorkflowStatus.CANCELLED):
@@ -204,8 +217,7 @@ def _emit_status_transition(
 
     elif new_status == WorkflowStatus.ERROR:
         if snapshot is not None:
-            values = snapshot.values or {}
-            payload["error"] = values.get("error", "")
+            payload["error"] = pick(values, "error", "")
         bus.emit(EventType.WORKFLOW_ERROR, thread_id=thread_id, payload=payload)
 
     else:
@@ -321,7 +333,12 @@ async def _run_graph_and_persist(
         ) or (thread_id in _active_sync_executions)
         derived = derive_status(snapshot, has_active_task=has_active)
 
-        _emit_status_transition(derived, thread_id, snapshot=snapshot)
+        await _emit_status_transition(
+            derived,
+            thread_id,
+            snapshot=snapshot,
+            store=getattr(graph, "store", None),
+        )
 
         # Phase/error 取图真实状态（snapshot.values），与 derive_status 同源——
         # 否则 ainvoke 返回的 result 只是最后节点输出，phase 可能滞后于中断点真实
@@ -367,7 +384,12 @@ async def _run_graph_and_persist(
             current_phase = (snapshot.values or {}).get("phase", "unknown")
             if current_phase == "paused":
                 await _db_upsert(thread_id, status="paused", phase="paused", error=None)
-                _emit_status_transition(WorkflowStatus.PAUSED, thread_id, snapshot=snapshot)
+                await _emit_status_transition(
+                    WorkflowStatus.PAUSED,
+                    thread_id,
+                    snapshot=snapshot,
+                    store=getattr(graph, "store", None),
+                )
             elif current_phase == "cancelled":
                 # cancel_workflow already set phase+error in graph and DB — skip
                 pass
@@ -375,7 +397,12 @@ async def _run_graph_and_persist(
                 await _db_upsert(
                     thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
                 )
-                _emit_status_transition(WorkflowStatus.CANCELLED, thread_id, snapshot=snapshot)
+                await _emit_status_transition(
+                    WorkflowStatus.CANCELLED,
+                    thread_id,
+                    snapshot=snapshot,
+                    store=getattr(graph, "store", None),
+                )
         except Exception:
             await _db_upsert(
                 thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
@@ -415,10 +442,11 @@ async def _run_graph_and_persist(
                     error=None if is_paused else str(exc),
                     updated_at=datetime.now(UTC).isoformat(),
                 )
-                _emit_status_transition(
+                await _emit_status_transition(
                     WorkflowStatus.PAUSED if is_paused else WorkflowStatus.CANCELLED,
                     thread_id,
                     snapshot=snap,
+                    store=getattr(graph, "store", None),
                 )
             else:
                 with contextlib.suppress(Exception):

@@ -91,15 +91,12 @@ class TestContinuousModeE2E:
             "cycle_count": 0,
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},
             "visual_plan": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
         }
 
         # Run the graph. With continuous mode, it should loop
@@ -150,15 +147,12 @@ class TestContinuousModeE2E:
             "cycle_count": 0,
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},
             "visual_plan": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
         }
 
         final_state = await graph.ainvoke(initial_state, config)
@@ -210,7 +204,6 @@ class TestRevisionCountInterruptPreservation:
             "revision_count": 2,
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {"selected_topic": "test"},
             "copy_content": {"selected_title": "t", "body_text": "b"},
@@ -219,8 +212,6 @@ class TestRevisionCountInterruptPreservation:
             "analytics": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
             "publish_options": {"dry_run": True},
             "dry_run": True,
         }

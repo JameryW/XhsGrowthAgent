@@ -81,6 +81,21 @@ def _mock_ripple_service():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_workflow_event_store():
+    """Isolate the P1a-S2 in-memory Event store between tests.
+
+    Telemetry no longer lives in the checkpoint, so the fallback store is
+    process-global state that would otherwise leak entries (and cost totals)
+    from one test's thread_id into the next.
+    """
+    from backend.state.events import reset_memory_store
+
+    reset_memory_store()
+    yield
+    reset_memory_store()
+
+
 # ── Standard fixtures ────────────────────────────────────────────────────────
 
 
@@ -92,7 +107,6 @@ def initial_state() -> dict:
         "current_agent": "orchestrator",
         "error": None,
         "retry_count": 0,
-        "messages": [],
         "trend_data": {},
         "content_plan": {},
         "copy_content": {},
@@ -101,10 +115,10 @@ def initial_state() -> dict:
         "analytics": {},
         "engagement_actions": [],
         "human_feedback": {},
-        "content_history": [],
-        "performance_log": [],
+        # No "performance_log": P1a-S2 telemetry lives in the Event store.
         "account_id": "test_account",
         "session_id": "test_session",
+        "thread_id": "test_session",
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",
     }

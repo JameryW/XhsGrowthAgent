@@ -42,8 +42,28 @@ def test_state_has_required_fields():
     """状态 TypedDict 包含所有必需字段"""
     # 验证 TypedDict 的注解
     annotations = XHSGrowthState.__annotations__
-    required_keys = {"phase", "current_agent", "error", "messages", "trend_data", "content_plan"}
+    required_keys = {"phase", "current_agent", "error", "trend_data", "content_plan"}
     assert required_keys.issubset(annotations.keys())
+
+
+def test_dead_fields_stay_deleted():
+    """Regression guard for keys that must never re-enter the checkpoint.
+
+    P1a-S1 removed `messages` and state-level `content_history`: zero writers,
+    zero readers, but re-declaring either (a phantom reader or an accidental
+    re-add) would silently re-enter every checkpoint. The live content history
+    is the Store namespace ``content_history_ns`` — not a state key.
+
+    P1a-S2 removed `performance_log`: telemetry moved to the Event store
+    (``backend/state/events.py``). Re-adding it as a state field would put the
+    whole log back on every superstep, which is exactly what S2 removed — and
+    seeding it in an initial state also marks the thread as legacy for the
+    reader.
+    """
+    annotations = XHSGrowthState.__annotations__
+    assert "messages" not in annotations
+    assert "content_history" not in annotations
+    assert "performance_log" not in annotations
 
 
 def _get_reducer(field_name: str):

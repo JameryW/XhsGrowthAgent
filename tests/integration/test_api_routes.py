@@ -434,12 +434,17 @@ class TestBriefPdfCostTracking:
     the extract path (stateless) drops the entry.
     """
 
-    def test_upload_merges_llm_cost_entry_into_performance_log(self, client, mock_graph):
-        """Upload with PDF + LLM usage → aupdate_state values carry perf entry.
+    async def test_upload_emits_llm_cost_entry_for_brief_extraction(self, client, mock_graph):
+        """Upload with PDF + LLM usage → a kind:"llm" event for the thread.
+
+        P1a-S2: the entry goes to the Event store instead of the checkpoint's
+        performance_log (which is no longer a state field at all).
 
         Forces the LLM fallback (pdfplumber yields no text) and mocks get_model
         to return usage_metadata so llm_perf_entry builds a real cost entry.
         """
+        from backend.state.events import load_perf_log
+
         # get_model is imported function-locally inside _extract_pdf_with_llm;
         # the conftest autouse fixture patches backend.models.router.get_model,
         # which that import resolves to — override it here with a usage-bearing
@@ -472,9 +477,13 @@ class TestBriefPdfCostTracking:
         mock_graph.aupdate_state.assert_awaited_once()
         _, kwargs = mock_graph.aupdate_state.call_args
         values = kwargs["values"]
-        assert "performance_log" in values
-        entry = values["performance_log"][0]
-        assert entry["kind"] == "llm"
+        # Telemetry never rides the checkpoint now — only brief_content is written.
+        assert "performance_log" not in values
+
+        emitted = await load_perf_log("xhs_test_abc123")
+        entries = [e for e in emitted if e.get("kind") == "llm"]
+        assert len(entries) == 1
+        entry = entries[0]
         assert entry["agent"] == "brief_pdf_extract"
         assert entry["model"] == "astron-code-latest"
         assert entry["cost_usd"] > 0

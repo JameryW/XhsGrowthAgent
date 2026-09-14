@@ -442,9 +442,15 @@ async def run_evaluation(
     config = {"configurable": {"thread_id": thread_id}}
 
     state = await graph.aget_state(config)
-    values = _get_state_values(state)
-    if not values:
+    raw_values = _get_state_values(state)
+    if not raw_values:
         raise WorkflowNotFoundError(thread_id)
+
+    # P1a-S4 read seam: the evaluator reads copy_content/visual_plan, which are
+    # store-backed on ref'd threads.
+    from backend.state.artifacts import resolve_state
+
+    values = await resolve_state(getattr(graph, "store", None), thread_id, raw_values)
 
     if not values.get("copy_content") and not values.get("visual_plan"):
         raise ValidationError("content", "No copy_content/visual_plan to evaluate for this thread")
@@ -472,13 +478,11 @@ async def run_evaluation(
     thresholds = await _score_thresholds(str(values.get("account_id") or ""))
 
     # Persist evaluation_result to state (does not advance the graph).
-    # Merge result["performance_log"] (kind:"llm" cost entries from
-    # BaseAgent.__call__) so the manual-eval LLM spend is retained in the
-    # thread checkpoint and visible to /analytics/costs. Mirrors PR#493.
-    perf_log = result.get("performance_log") or []
+    # The evaluator's kind:"llm" cost entries no longer come back on the result
+    # dict — P1a-S2 has BaseAgent.__call__ write them straight to the Event
+    # store, keyed by this thread, so /analytics/costs still sees the
+    # manual-eval LLM spend (behavior preserved from PR#493).
     update_values: dict[str, Any] = {"evaluation_result": evaluation}
-    if perf_log:
-        update_values["performance_log"] = perf_log
     await graph.aupdate_state(config, update_values)
 
     return success(

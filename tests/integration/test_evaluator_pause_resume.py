@@ -74,7 +74,6 @@ def _seed_after_human_approval(thread_id: str) -> dict[str, Any]:
         "revision_count": 0,
         "error": None,
         "retry_count": 0,
-        "messages": [],
         "trend_data": {"hot_topics": [{"topic": "test"}]},
         "content_plan": {"selected_topic": "test"},
         "copy_content": {"selected_title": "t", "body_text": "b"},
@@ -83,8 +82,6 @@ def _seed_after_human_approval(thread_id: str) -> dict[str, Any]:
         "analytics": {},
         "engagement_actions": [],
         "human_feedback": {"decision": ContentStatus.APPROVED},
-        "content_history": [],
-        "performance_log": [],
         "publish_options": {"dry_run": True},
         "dry_run": True,
     }

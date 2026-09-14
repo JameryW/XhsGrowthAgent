@@ -113,9 +113,14 @@ async def get_pending_review(
 
     state = await graph.aget_state(config)
 
+    # P1a-S4 read seam: copy_content / visual_plan / content_versions may live
+    # in the Artifact Store on a ref'd thread; legacy threads pay nothing.
+    from backend.state.artifacts import resolve_state
+
+    values = await resolve_state(getattr(graph, "store", None), thread_id, state.values)
+
     # 检查是否在审核门等待（动态 interrupt 或 interrupt_before 兜底）
     if _is_at_review_gate(state):
-        values = state.values
         return success(
             data={
                 "status": "awaiting_review",
@@ -127,7 +132,7 @@ async def get_pending_review(
         )
 
     # No pending review - raise exception
-    current_phase = state.values.get("phase", "unknown")
+    current_phase = values.get("phase", "unknown")
     raise ReviewNotPendingError(thread_id=thread_id, current_phase=current_phase)
 
 
@@ -148,10 +153,15 @@ async def submit_review(
     # interrupt_before fallback).
     state = await graph.aget_state(config)
     if not _is_at_review_gate(state):
-        current_phase = state.values.get("phase", "unknown")
+        current_phase = (state.values or {}).get("phase", "unknown")
         raise ReviewNotPendingError(thread_id=thread_id, current_phase=current_phase)
 
-    values = state.values or {}
+    # P1a-S4 read seam: the version save below reads copy/visual/versions,
+    # which are store-backed on a ref'd thread.
+    from backend.state.artifacts import refify_updates, resolve_state
+
+    store = getattr(graph, "store", None)
+    values = await resolve_state(store, thread_id, state.values or {})
 
     # Side updates written via aupdate_state before resuming. human_feedback is
     # NOT written here — review_gate_node reads the decision from the
@@ -173,14 +183,19 @@ async def submit_review(
         updates["publish_options"] = pub_opts.model_dump()
 
     # ponytail: record how long the user waited at review_gate (PRD 节点级指标).
-    # entered_at = last node completion before the gate; merged via _append_list.
+    # entered_at = last node completion before the gate. P1a-S2: written to the
+    # Event store, not merged into the checkpoint.
     from backend.agents.nodes._base import record_human_wait
+    from backend.state.events import emit_events
 
-    updates["performance_log"] = [record_human_wait(values, "review_gate")]
+    await emit_events(thread_id, [await record_human_wait(values, "review_gate")])
 
-    # Write side updates (versions / publish_options / perf log) to state.
+    # Write side updates (versions / publish_options) to state — through the
+    # write seam, so a ref'd thread's content_versions lands in the Artifact
+    # Store instead of an inline write that resolve would shadow away.
     if updates:
-        await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
+        refified = await refify_updates(store, thread_id, updates, prev_values=values)
+        await graph.aupdate_state(config, refified, as_node=_runner._get_as_node(state))
 
     # Resume the dynamic interrupt() inside review_gate_node with the decision.
     # The node reads this value, writes human_feedback, and sets phase.
@@ -220,13 +235,17 @@ async def get_version_history(
 
     state = await graph.aget_state(config)
 
-    if not state.values or state.values.get("session_id") is None:
+    from backend.state.artifacts import resolve_state
+
+    values = await resolve_state(getattr(graph, "store", None), thread_id, state.values)
+
+    if not values or values.get("session_id") is None:
         from backend.api.errors import WorkflowNotFoundError
 
         raise WorkflowNotFoundError(thread_id)
 
-    versions = state.values.get("content_versions") or []
-    current_copy = state.values.get("copy_content") or {}
+    versions = values.get("content_versions") or []
+    current_copy = values.get("copy_content") or {}
 
     return success(
         data={
@@ -264,6 +283,12 @@ async def get_pending_ripple_decision(
         )
 
     values = state.values
+    # P1a-S4-2: ripple_prediction/ripple_pmf live in the Artifact Store on
+    # ref'd threads — resolve before reading (same contract as
+    # get_pending_review). Legacy threads come back unchanged.
+    from backend.state.artifacts import resolve_state
+
+    values = await resolve_state(getattr(graph, "store", None), thread_id, values)
     prediction = values.get("ripple_prediction") or {}
     pmf = values.get("ripple_pmf") or {}
     reselect_count = values.get("reselect_count", 0)
@@ -331,11 +356,26 @@ async def submit_ripple_decision(
         if action == "retopic":
             updates.update(
                 {
-                    "trend_data": {},
                     "content_plan": {},
-                    "ripple_prediction": {},
-                    "ripple_pmf": {},
                 }
+            )
+            # P1a-S4-1/S4-2: trend_data / ripple_prediction / ripple_pmf are
+            # refable fields — their clears must go through the write seam.
+            # A bare inline {} write would be shadowed by the stale artifact
+            # ref on the next resolve (old bodies resurfacing); refify writes
+            # the inline {} AND tombstones each stale ref (and resets the
+            # trend_summary routing meta) in one step.
+            from backend.state.artifacts import refify_updates, resolve_state
+
+            store = getattr(graph, "store", None)
+            values = await resolve_state(store, thread_id, state.values or {})
+            updates.update(
+                await refify_updates(
+                    store,
+                    thread_id,
+                    {"trend_data": {}, "ripple_prediction": {}, "ripple_pmf": {}},
+                    prev_values=values,
+                )
             )
         await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
@@ -397,9 +437,16 @@ async def update_copy_content(
 
     state = await graph.aget_state(config)
 
+    # P1a-S4: resolve through the read seam — the merge base and the evaluator
+    # input must see stored bodies, not the checkpoint's ref-only view.
+    from backend.state.artifacts import refify_updates, resolve_state
+
+    store = getattr(graph, "store", None)
+    values = await resolve_state(store, thread_id, state.values or {})
+
     # 校验 awaiting_review：review_gate 暂停中（动态 interrupt 或 next 兜底）
     if not _is_at_review_gate(state):
-        current_phase = (state.values or {}).get("phase", "unknown")
+        current_phase = values.get("phase", "unknown")
         return success(
             data={
                 "thread_id": thread_id,
@@ -409,7 +456,6 @@ async def update_copy_content(
             }
         )
 
-    values = state.values or {}
     if values.get("session_id") is None:
         from backend.api.errors import WorkflowNotFoundError
 
@@ -425,15 +471,18 @@ async def update_copy_content(
     if body.hashtags is not None:
         existing_copy["hashtags"] = body.hashtags
 
-    # 1) 持久化 copy_content（merge：保留未提供字段）
-    await graph.aupdate_state(config, {"copy_content": existing_copy})
+    # 1) 持久化 copy_content（merge：保留未提供字段）— 走写缝：ref 线程的
+    #    裸 inline 写会在下次 resolve 时被旧 ref body 覆盖（用户编辑静默丢失）。
+    refified = await refify_updates(
+        store, thread_id, {"copy_content": existing_copy}, prev_values=values
+    )
+    await graph.aupdate_state(config, refified)
 
     # 2) 重跑 evaluator（用更新后的 state 快照）
     evaluation: dict[str, Any] = {}
     warning: str | None = None
     try:
         eval_state = cast("XHSGrowthState", {**values, "copy_content": existing_copy})
-        store = getattr(graph, "store", None)
         result = await _evaluator(eval_state, store=store)  # type: ignore[arg-type]
         evaluation = result.get("evaluation_result") or {}
 

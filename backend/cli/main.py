@@ -84,7 +84,6 @@ def run(
                 "current_agent": "orchestrator",
                 "error": None,
                 "retry_count": 0,
-                "messages": [],
                 "trend_data": {},
                 "content_plan": {},
                 "copy_content": {},
@@ -93,10 +92,11 @@ def run(
                 "analytics": {},
                 "engagement_actions": [],
                 "human_feedback": {},
-                "content_history": [],
-                "performance_log": [],
+                # No "performance_log" seed (P1a-S2: telemetry goes to the
+                # Event store; seeding the key would mark this thread legacy).
                 "account_id": account_id,
                 "session_id": thread_id,
+                "thread_id": thread_id,
                 "created_at": datetime.now(UTC).isoformat(),
                 "updated_at": datetime.now(UTC).isoformat(),
             }
@@ -218,8 +218,11 @@ def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")) -> N
                 )
                 console.print("[dim]使用 xhs-growth resume <thread_id> 恢复执行[/dim]")
 
-            # Show performance log if available
-            perf_log = snapshot.values.get("performance_log", [])
+            # Show performance log if available (P1a-S2: Event store, with the
+            # inline checkpoint list still readable for legacy threads).
+            from backend.state.events import load_perf_log
+
+            perf_log = await load_perf_log(thread_id, snapshot.values)
             if perf_log and len(perf_log) > 0:
                 console.print("\n[dim]性能日志:[/dim]")
                 for entry in perf_log[-3:]:
@@ -363,18 +366,11 @@ def logs(
 
         console.print(Panel(f"📝 工作流日志: {thread_id}", style="bold blue"))
 
-        # Show messages
-        messages = state.values.get("messages", [])
-        if messages:
-            console.print("\n[cyan]对话历史:[/cyan]")
-            for msg in messages[-10:]:
-                msg_type = type(msg).__name__
-                console.print(f"  [dim]• [{msg_type}] {str(msg)[:100]}...[/dim]")
-        else:
-            console.print("[dim]无对话记录[/dim]")
+        # Show performance log (P1a-S2: Event store first, legacy checkpoint
+        # list as fallback).
+        from backend.state.events import load_perf_log
 
-        # Show performance log
-        perf_log = state.values.get("performance_log", [])
+        perf_log = await load_perf_log(thread_id, state.values)
         if perf_log:
             console.print("\n[cyan]性能记录:[/cyan]")
             for entry in perf_log:

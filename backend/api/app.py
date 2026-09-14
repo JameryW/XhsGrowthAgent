@@ -1245,6 +1245,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from backend.db.system_config import (
                 ensure_tables as ensure_system_config,
             )
+            from backend.db.workflow_events import (
+                ensure_tables as ensure_workflow_events,
+            )
             from backend.db.workflows import ensure_table
             from backend.graph.builder import compile_graph_prod
 
@@ -1263,6 +1266,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ensure_creative_memory(),
                 ensure_creator_agent(),
                 ensure_public_telemetry(),
+                ensure_workflow_events(),
             ]
             await asyncio.gather(*ensure_coros)
             graph, result = await compile_graph_prod(db_uri)

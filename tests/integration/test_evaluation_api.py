@@ -137,10 +137,14 @@ class TestRunEvaluationRoute:
         r = client.post("/api/evaluation/run/t1")
         assert r.status_code == 404
 
-    def test_run_merges_performance_log_into_state(self, client, mock_graph, owned_thread):
-        """Manual eval must merge result["performance_log"] (LLM cost) into the
-        thread checkpoint so /analytics/costs can see the spend. Mirrors PR#493
-        upload-brief pattern; the _append_list reducer appends the entries."""
+    def test_run_keeps_telemetry_out_of_checkpoint(self, client, mock_graph, owned_thread):
+        """P1a-S2: manual eval no longer merges LLM cost into the checkpoint.
+
+        BaseAgent.__call__ writes kind:"llm" entries straight to the Event store
+        for the thread (see backend/state/events.py), so /analytics/costs still
+        sees the spend while the route's state update carries evaluation_result
+        only. This replaces PR#493's merge-through-state assertion.
+        """
         perf_entry = {
             "kind": "llm",
             "node": "evaluator",
@@ -172,11 +176,10 @@ class TestRunEvaluationRoute:
         mock_graph.aupdate_state.assert_called_once()
         _config, values = mock_graph.aupdate_state.call_args.args
         assert values["evaluation_result"] == eval_result
-        assert values["performance_log"] == [perf_entry]
+        assert "performance_log" not in values
 
     def test_run_skips_performance_log_when_empty(self, client, mock_graph, owned_thread):
-        """Empty/missing performance_log must not produce a spurious empty merge
-        (match #493's `if perf_entry is not None` guard)."""
+        """The state update never carries telemetry, with or without entries."""
         eval_result = {
             "overall_score": 80.0,
             "decision": "approved",

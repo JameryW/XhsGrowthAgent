@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -234,7 +235,7 @@ class TestEmitStatusTransitionNewStates:
             {"phase": WorkflowPhase.BRIEFING.value, "brief_content": {"brand": "TestBrand"}},
             next=["brief_gate"],
         )
-        _emit_status_transition(WorkflowStatus.AWAITING_BRIEF, "t1", snapshot=snapshot)
+        asyncio.run(_emit_status_transition(WorkflowStatus.AWAITING_BRIEF, "t1", snapshot=snapshot))
 
         events = [e for e in bus._events if e.thread_id == "t1"]
         assert len(events) == 1
@@ -254,7 +255,11 @@ class TestEmitStatusTransitionNewStates:
             },
             next=["ripple_gate"],
         )
-        _emit_status_transition(WorkflowStatus.AWAITING_RIPPLE_DECISION, "t2", snapshot=snapshot)
+        asyncio.run(
+            _emit_status_transition(
+                WorkflowStatus.AWAITING_RIPPLE_DECISION, "t2", snapshot=snapshot
+            )
+        )
 
         events = [e for e in bus._events if e.thread_id == "t2"]
         assert len(events) == 1
@@ -273,7 +278,11 @@ class TestEmitStatusTransitionNewStates:
             },
             next=["blogger_gate"],
         )
-        _emit_status_transition(WorkflowStatus.AWAITING_BLOGGER_SELECTION, "t3", snapshot=snapshot)
+        asyncio.run(
+            _emit_status_transition(
+                WorkflowStatus.AWAITING_BLOGGER_SELECTION, "t3", snapshot=snapshot
+            )
+        )
 
         events = [e for e in bus._events if e.thread_id == "t3"]
         assert len(events) == 1
@@ -286,8 +295,8 @@ class TestEmitStatusTransitionNewStates:
         bus._seq = 0
 
         snapshot = make_snapshot({"phase": WorkflowPhase.BRIEFING.value}, next=["brief_gate"])
-        _emit_status_transition(WorkflowStatus.AWAITING_BRIEF, "t4", snapshot=snapshot)
-        _emit_status_transition(WorkflowStatus.AWAITING_BRIEF, "t4", snapshot=snapshot)
+        asyncio.run(_emit_status_transition(WorkflowStatus.AWAITING_BRIEF, "t4", snapshot=snapshot))
+        asyncio.run(_emit_status_transition(WorkflowStatus.AWAITING_BRIEF, "t4", snapshot=snapshot))
 
         events = [e for e in bus._events if e.thread_id == "t4"]
         assert len(events) == 1  # second call should be no-op
@@ -302,7 +311,7 @@ class TestEmitStatusTerminalStates:
         bus._seq = 0
 
         snapshot = make_snapshot({"phase": WorkflowPhase.PAUSED.value})
-        _emit_status_transition(WorkflowStatus.PAUSED, "tp", snapshot=snapshot)
+        asyncio.run(_emit_status_transition(WorkflowStatus.PAUSED, "tp", snapshot=snapshot))
 
         events = [e for e in bus._events if e.thread_id == "tp"]
         assert len(events) == 1
@@ -315,7 +324,7 @@ class TestEmitStatusTerminalStates:
         bus._seq = 0
 
         snapshot = make_snapshot({"phase": WorkflowPhase.CANCELLED.value})
-        _emit_status_transition(WorkflowStatus.CANCELLED, "tc", snapshot=snapshot)
+        asyncio.run(_emit_status_transition(WorkflowStatus.CANCELLED, "tc", snapshot=snapshot))
 
         events = [e for e in bus._events if e.thread_id == "tc"]
         assert len(events) == 1
@@ -328,7 +337,7 @@ class TestEmitStatusTerminalStates:
         bus._seq = 0
 
         snapshot = make_snapshot({"phase": WorkflowPhase.ERROR.value, "error": "boom"})
-        _emit_status_transition(WorkflowStatus.ERROR, "te", snapshot=snapshot)
+        asyncio.run(_emit_status_transition(WorkflowStatus.ERROR, "te", snapshot=snapshot))
 
         events = [e for e in bus._events if e.thread_id == "te"]
         assert len(events) == 1
@@ -342,7 +351,7 @@ class TestEmitStatusTerminalStates:
         bus._seq = 0
 
         snapshot = make_snapshot({"phase": WorkflowPhase.SCOUTING.value})
-        _emit_status_transition(WorkflowStatus.RUNNING, "tr", snapshot=snapshot)
+        asyncio.run(_emit_status_transition(WorkflowStatus.RUNNING, "tr", snapshot=snapshot))
 
         events = [e for e in bus._events if e.thread_id == "tr"]
         assert len(events) == 1
@@ -352,7 +361,7 @@ class TestEmitStatusTerminalStates:
         """Completed/cancelled/error should be popped from _last_status."""
         from backend.api.routes._runner import _last_status
 
-        _emit_status_transition(WorkflowStatus.COMPLETED, "tclean")
+        asyncio.run(_emit_status_transition(WorkflowStatus.COMPLETED, "tclean"))
         assert "tclean" not in _last_status
 
 

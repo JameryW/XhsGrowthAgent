@@ -5,8 +5,8 @@ calls made inside tools bypass BaseAgent._llm_ainvoke, so their token cost was
 invisible to the /analytics/costs reader. A ContextVar (_tool_llm_cost) set by
 BaseAgent.__call__ before execute() lets enrich_with_llm append kind:"llm"
 entries; __call__ drains them into the ContextVar-scoped llm perf entry list
-(P0-W1; formerly ``self._llm_perf_entries``) so they ride performance_log.
-Approach A — no signature changes.
+(P0-W1; formerly ``self._llm_perf_entries``) so they reach the Event store
+(P1a-S2) — and therefore /analytics/costs. Approach A — no signature changes.
 """
 
 from __future__ import annotations
@@ -135,9 +135,11 @@ class _ToolCallingAgent(BaseAgent):
 
 
 class TestBaseAgentDrainsToolEntries:
-    """BaseAgent.__call__ drains the ContextVar into performance_log."""
+    """BaseAgent.__call__ drains the ContextVar into the Event store (P1a-S2)."""
 
     async def test_baseagent_call_drains_tool_entries_into_perf_log(self):
+        from backend.state.events import load_perf_log
+
         service = LLMEnrichmentService()
         fake_model = MagicMock()
         fake_model.ainvoke = AsyncMock(
@@ -147,9 +149,9 @@ class TestBaseAgentDrainsToolEntries:
 
         agent = _ToolCallingAgent(service=service)
         with patch_get_model:
-            result = await agent({"retry_count": 0}, store=None)
+            result = await agent({"retry_count": 0, "thread_id": "thread-tool-cost"}, store=None)
 
-        perf = result["performance_log"]
+        perf = await load_perf_log("thread-tool-cost")
         kinds = [e["kind"] for e in perf]
         # node entry + the tool-path llm entry drained from the ContextVar
         assert kinds == ["node", "llm"]
@@ -163,7 +165,9 @@ class TestBaseAgentDrainsToolEntries:
 
     async def test_no_leakage_across_executes(self):
         # Two consecutive __call__ invocations: entries from the first must NOT
-        # appear in the second's perf_log (set/reset token isolation).
+        # appear in the second's thread (set/reset token isolation).
+        from backend.state.events import load_perf_log
+
         service = LLMEnrichmentService()
         fake_model = MagicMock()
         fake_model.ainvoke = AsyncMock(
@@ -173,11 +177,11 @@ class TestBaseAgentDrainsToolEntries:
 
         agent = _ToolCallingAgent(service=service)
         with patch_get_model:
-            first = await agent({"retry_count": 0}, store=None)
-            second = await agent({"retry_count": 0}, store=None)
+            await agent({"retry_count": 0, "thread_id": "thread-first"}, store=None)
+            await agent({"retry_count": 0, "thread_id": "thread-second"}, store=None)
 
-        first_llm = [e for e in first["performance_log"] if e["kind"] == "llm"]
-        second_llm = [e for e in second["performance_log"] if e["kind"] == "llm"]
+        first_llm = [e for e in await load_perf_log("thread-first") if e["kind"] == "llm"]
+        second_llm = [e for e in await load_perf_log("thread-second") if e["kind"] == "llm"]
         # Each call captured exactly one tool entry; no duplication/leakage.
         assert len(first_llm) == 1
         assert len(second_llm) == 1
@@ -186,6 +190,8 @@ class TestBaseAgentDrainsToolEntries:
     async def test_failure_path_drains_tool_entries_before_crash(self):
         # execute() runs enrich_with_llm (entry captured) then raises; the
         # captured cost must still ride the failed perf entry.
+        from backend.state.events import load_perf_log
+
         service = LLMEnrichmentService()
         fake_model = MagicMock()
         fake_model.ainvoke = AsyncMock(
@@ -205,11 +211,12 @@ class TestBaseAgentDrainsToolEntries:
 
         agent = _CrashAgent(service=service)
         with patch_get_model:
-            result = await agent({"retry_count": 0}, store=None)
+            await agent({"retry_count": 0, "thread_id": "thread-crash"}, store=None)
 
-        kinds = [e["kind"] for e in result["performance_log"]]
+        emitted = await load_perf_log("thread-crash")
+        kinds = [e["kind"] for e in emitted]
         assert kinds == ["node", "llm"]
-        assert result["performance_log"][0]["status"] == "failed"
-        assert result["performance_log"][1]["agent"] == "tool:polish"
-        assert result["performance_log"][1]["cost_usd"] > 0
+        assert emitted[0]["status"] == "failed"
+        assert emitted[1]["agent"] == "tool:polish"
+        assert emitted[1]["cost_usd"] > 0
         assert _tool_llm_cost.get() is None

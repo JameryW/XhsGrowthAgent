@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
-- **Last Active**: 2026-08-31
+- **Total Sessions**: 16
+- **Last Active**: 2026-09-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~507 | Active |
+| `journal-1.md` | ~540 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-09-13 | P0 正确性修复完成并合并（PR #577），P1a 方案拍板 | `48c4c993` | `main` |
 | 15 | 2026-08-31 | 保存自由草稿审阅返回上下文 | `45b72dcc`, `61d5073a` | `codex/free-draft-review-return-context` |
 | 14 | 2026-08-31 | 实现自由草稿连续审阅队列 | `3b152b36`, `afa46e6` | `codex/free-draft-preview-review-queue` |
 | 13 | 2026-08-31 | 实现自由草稿快速预览抽屉 | `91a17386`, `03b8fe3d` | `codex/free-draft-preview-drawer` |

@@ -101,6 +101,33 @@ class TestShouldPlan:
         result = should_plan(state)
         assert result == "__end__"
 
+    def test_routes_to_strategist_on_trend_summary_meta(self):
+        """Ref'd thread (P1a-S4-1): meta present, body externalized → strategist."""
+        state = {"trend_summary": {"has_topics": True, "hot_topic_count": 2}}
+        result = should_plan(state)
+        assert result == "content_strategist"
+
+    def test_routes_to_end_on_false_trend_summary_meta(self):
+        """Ref'd thread with no actionable topics (post-retopic clear) → END."""
+        state = {"trend_summary": {"has_topics": False, "hot_topic_count": 0}}
+        result = should_plan(state)
+        assert result == "__end__"
+
+    def test_meta_wins_over_stale_inline_trend_data(self):
+        """Meta is derived from the newest write — a stale inline dict must not win."""
+        state = {
+            "trend_summary": {"has_topics": False, "hot_topic_count": 0},
+            "trend_data": {"hot_topics": ["旧话题"]},
+        }
+        result = should_plan(state)
+        assert result == "__end__"
+
+    def test_legacy_inline_alias_chain_fallback(self):
+        """Legacy thread (no meta): trending_topics alias still routes inline."""
+        state = {"trend_data": {"trending_topics": ["美食探店"]}}
+        result = should_plan(state)
+        assert result == "content_strategist"
+
     def test_routes_to_trend_scout_on_retry(self):
         """Error with retry_count < 2 → trend_scout (retry)."""
         state = {"error": "API failed", "retry_count": 0}
