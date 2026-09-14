@@ -141,8 +141,9 @@ async def _recall_one(
             error=f"{type(exc).__name__}: {exc}",
         )
     mapped = tuple(item_to_context_item(item.value, request.namespace) for item in items)
+    raw = tuple(dict(item.value) for item in items)
     mode = RetrievalMode.HIT if mapped else RetrievalMode.EMPTY
-    return RetrievalResult(namespace=request.namespace, mode=mode, items=mapped)
+    return RetrievalResult(namespace=request.namespace, mode=mode, items=mapped, raw_items=raw)
 
 
 def _event_payload(

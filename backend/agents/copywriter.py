@@ -3,6 +3,15 @@
 When blogger_notes are available, generates multiple style variants
 (e.g. professional review, lifestyle seeding, tutorial) so the user
 can choose a preferred style before optimization.
+
+P1b-S4 迁移第二个销号 agent（consumer-map §六.2）：content_history +
+audience_preferences 双 ns recall 走 S2 管线（RetrievalResult.mode 降级
+信号 + kind=context 事件面，``raw_items`` 携带原始记录以逐字保留
+``- {title} (互动率: {rate})`` 旧格式），prompt 组装走
+ContextCompiler.compile_prompt（YAML 分段 schema，`<!-- ctx:l4_memory -->`
+标记替代 {memory_context} 占位符；L4 记忆段落按层序渲染到 L0 尾部，
+跨层顺序变化符合 D3' 段落内容集合等价口径）。``{ripple_context}`` 占位符
+按 consumer-map 暂保留 post-render .replace（P1b 不动）。
 """
 
 from __future__ import annotations
@@ -18,15 +27,84 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import (
+    ContextItem,
+    PromptLayer,
+    RetrievalMode,
+    RetrievalResult,
+    RunContext,
+)
+from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.copywriter")
+
+_compiler = ContextCompiler()
 
 
 def _audience_pref_query(plan: Mapping[str, Any], brief: Mapping[str, Any]) -> str:
     """Build the audience-preference recall query from plan/brief."""
     kind = plan.get("content_type", "note") or brief.get("style_requirements", "note")
     return f"audience preference for {kind}"
+
+
+async def _recall_memories(
+    store: BaseStore | None,
+    account_id: str,
+    *,
+    plan: Mapping[str, Any],
+    brief: Mapping[str, Any],
+    thread_id: str,
+) -> dict[str, RetrievalResult]:
+    """Batch recall of the two pipeline namespaces through the S2 pipeline.
+
+    Same namespaces / queries / limits as the two pre-migration
+    ``BaseAgent._recall_memory`` calls (分段等价), but every outcome now
+    carries a ``mode`` and — with a ``thread_id`` — lands in the
+    workflow_events tier as ``kind="context"`` instead of degrading silently.
+    """
+    return await recall_namespaces(
+        store,
+        account_id=account_id,
+        requests=[
+            RecallRequest(
+                namespace="content_history",
+                query=str(plan.get("selected_topic", "") or brief.get("product_name", "")),
+                limit=3,
+            ),
+            RecallRequest(
+                namespace="audience_preferences",
+                query=_audience_pref_query(plan, brief),
+                limit=3,
+            ),
+        ],
+        thread_id=thread_id,
+        emit_events=True,
+    )
+
+
+def _format_memory_context(history: RetrievalResult, prefs: RetrievalResult) -> str:
+    """L4 text for the recalled namespaces, format identical to the
+    pre-migration block (分段等价): multi-field bullets come from
+    ``raw_items`` so ``- {title} (互动率: {rate})`` survives verbatim.
+
+    EMPTY/DEGRADED outcomes render as an empty string — the same prompt text
+    the old swallow-and-return-``[]`` path produced, except the degradation
+    is now visible as a ``mode`` (and a workflow_events entry).
+    """
+    memory_context = ""
+    if history.mode is RetrievalMode.HIT and history.raw_items:
+        memory_context += "\n历史爆款参考：\n"
+        for pc in history.raw_items:
+            title = pc.get("title", "")
+            rate = pc.get("engagement_rate", "N/A")
+            memory_context += f"- {title} (互动率: {rate})\n"
+    if prefs.mode is RetrievalMode.HIT and prefs.raw_items:
+        memory_context += "\n受众偏好：\n"
+        for ap in prefs.raw_items:
+            memory_context += f"- {ap.get('preference', '')}\n"
+    return memory_context
 
 
 class CopywriterAgent(BaseAgent):
@@ -46,41 +124,28 @@ class CopywriterAgent(BaseAgent):
 
         cm = CreativeMemory(account_id, store=store)
         recall_query = plan.get("selected_topic", "") or brief.get("product_name", "")
-        # 4 independent read-only recalls with disjoint namespaces → one
-        # concurrent wave instead of 4 serial ones. Each recall swallows its
-        # own exceptions internally (returns []), so gather adds no new
-        # exception surface. Precedent: content_strategist.py:210.
-        styles, materials, past_content, audience_prefs = await asyncio.gather(
+        thread_id = str(state.get("session_id") or "")
+        niche = state.get("niche", "母婴")
+        # 3 independent read-only calls with disjoint sources → one concurrent
+        # wave instead of serial awaits. CreativeMemory recalls swallow their
+        # own exceptions internally; the pipeline recall carries explicit
+        # degradation modes. Precedent: trend_scout (S4-1, PR #580).
+        styles, materials, memory_results = await asyncio.gather(
             cm.recall_style(query=recall_query),
             cm.recall_materials(category="文案片段", tags=["高转化", "爆款标题"]),
-            self._recall_memory(
+            _recall_memories(
                 store,
                 account_id,
-                query=recall_query,
-                namespace="content_history",
-                limit=3,
-            ),
-            self._recall_memory(
-                store,
-                account_id,
-                query=_audience_pref_query(plan, brief),
-                namespace="audience_preferences",
-                limit=3,
+                plan=plan,
+                brief=brief,
+                thread_id=thread_id,
             ),
         )
 
-        # 构建完整 memory context
-        memory_context = ""
-        if past_content:
-            memory_context += "\n历史爆款参考：\n"
-            for pc in past_content:
-                title = pc.get("title", "")
-                rate = pc.get("engagement_rate", "N/A")
-                memory_context += f"- {title} (互动率: {rate})\n"
-        if audience_prefs:
-            memory_context += "\n受众偏好：\n"
-            for ap in audience_prefs:
-                memory_context += f"- {ap.get('preference', '')}\n"
+        # 构建完整 memory context（ recalled ns 走 S2 管线格式化）
+        memory_context = _format_memory_context(
+            memory_results["content_history"], memory_results["audience_preferences"]
+        )
 
         # 拼接 creative memory 上下文
         creative_ctx = cm.build_creative_context(styles, [], materials)
@@ -101,7 +166,30 @@ class CopywriterAgent(BaseAgent):
         except Exception as e:
             logger.debug("creator_stats suggestions skipped: %s", e)
 
-        system_prompt = self._build_system_prompt(state, extra_context=memory_context)
+        # L4 记忆段（recall 管线 + creative_ctx + 创作者中心建议）打包成单个
+        # ContextItem，经 compile_prompt 按 `<!-- ctx:l4_memory -->` 标记位渲染
+        if memory_context:
+            memory = RetrievalResult(
+                namespace="copywriter_memory",
+                layer=PromptLayer.L4_MEMORY,
+                mode=RetrievalMode.HIT,
+                items=(ContextItem(body=memory_context, source="memory:copywriter"),),
+            )
+        else:
+            memory = RetrievalResult(
+                namespace="copywriter_memory",
+                layer=PromptLayer.L4_MEMORY,
+                mode=RetrievalMode.EMPTY,
+            )
+
+        run_context = RunContext(
+            thread_id=thread_id, account_id=account_id, niche=niche, values=state
+        )
+        system_prompt = _compiler.compile_prompt(
+            run_context,
+            self.prompt_template["system"],
+            retrievals=(memory,),
+        ).render()
 
         # 构建 Ripple 传播预测上下文
         ripple_context = self._build_ripple_context(dict(plan))
@@ -113,8 +201,6 @@ class CopywriterAgent(BaseAgent):
         if revisions:
             hints = "\n".join(f"- {h}" for h in revisions)
             system_prompt += f"\n\n【质量评估修订要求 — 请据此重写】\n{hints}"
-
-        niche = state.get("niche", "母婴")
 
         if is_brief_mode:
             # Brief mode: build user message from brief_content + blogger references

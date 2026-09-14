@@ -282,13 +282,17 @@ async def test_copywriter_injects_creator_stats_context():
 
     captured: dict = {}
 
-    def capture_prompt(state, extra_context=""):
-        captured["extra"] = extra_context
-        return "sys {ripple_context}"
+    # P1b-S4-2 迁移：system prompt 由 ContextCompiler.compile_prompt 组装，
+    # creator stats 建议随 L4 记忆段渲染进 SystemMessage —— 捕获 LLM 消息
+    # 而非打桩 _build_system_prompt（该方法已不在 copywriter 路径上）。
+    def capture_prompt(messages, **kwargs):
+        captured["messages"] = messages
+        return mock_response
 
-    agent._build_system_prompt = capture_prompt  # type: ignore[method-assign]
+    async def _ainvoke(messages, **kwargs):
+        return capture_prompt(messages, **kwargs)
+
     agent._build_ripple_context = MagicMock(return_value="")  # type: ignore[method-assign]
-    agent._recall_memory = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
     store = AsyncMock()
     store.asearch = AsyncMock(return_value=[])
@@ -306,13 +310,13 @@ async def test_copywriter_injects_creator_stats_context():
     }
     with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
         mock_model = MagicMock()
-        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model.ainvoke = _ainvoke
         mock_model_prop.return_value = mock_model
         await agent.execute(state, store=store)  # type: ignore[arg-type]
 
-    extra = captured.get("extra", "")
-    assert "创作数据建议" in extra or "创作者中心" in extra
-    assert "cw_acc" in extra or "互动" in extra or "笔记" in extra
+    system = captured["messages"][0].content
+    assert "创作数据建议" in system or "创作者中心" in system
+    assert "cw_acc" in system or "互动" in system or "笔记" in system
 
 
 @pytest.mark.asyncio
