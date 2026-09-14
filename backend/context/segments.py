@@ -30,13 +30,11 @@ def marker_for(layer: PromptLayer) -> str:
 
 
 def _layer_from_marker(line: str) -> PromptLayer:
-    name = line.strip()[len(_MARKER_START):-len(_MARKER_END)].strip()
+    name = line.strip()[len(_MARKER_START) : -len(_MARKER_END)].strip()
     try:
         return PromptLayer(name)
     except ValueError as exc:
-        raise SegmentSchemaError(
-            f"unknown prompt layer in segment marker: {name!r}"
-        ) from exc
+        raise SegmentSchemaError(f"unknown prompt layer in segment marker: {name!r}") from exc
 
 
 def parse_system_segments(system: str) -> dict[PromptLayer, str]:
@@ -62,13 +60,9 @@ def parse_system_segments(system: str) -> dict[PromptLayer, str]:
             layer = _layer_from_marker(stripped)
             order = LAYER_ORDER.index(layer)
             if order < last_order:
-                raise SegmentSchemaError(
-                    f"segment markers out of canonical order at {layer.value}"
-                )
+                raise SegmentSchemaError(f"segment markers out of canonical order at {layer.value}")
             if layer in seen:
-                raise SegmentSchemaError(
-                    f"duplicate segment marker for {layer.value}"
-                )
+                raise SegmentSchemaError(f"duplicate segment marker for {layer.value}")
             seen.add(layer)
             last_order = order
             current = layer

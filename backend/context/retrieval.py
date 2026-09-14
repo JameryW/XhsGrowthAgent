@@ -134,9 +134,7 @@ async def _recall_one(
             limit=request.limit,
         )
     except Exception as exc:
-        logger.warning(
-            "recall degraded (ns=%s): %s", request.namespace, exc
-        )
+        logger.warning("recall degraded (ns=%s): %s", request.namespace, exc)
         return RetrievalResult(
             namespace=request.namespace,
             mode=RetrievalMode.DEGRADED,
@@ -194,18 +192,14 @@ async def recall_namespaces(
     if unknown:
         raise UnknownMemoryNamespaceError(unknown[0])
     started = time.perf_counter()
-    results_list = await asyncio.gather(
-        *(_recall_one(store, account_id, req) for req in requests)
-    )
+    results_list = await asyncio.gather(*(_recall_one(store, account_id, req) for req in requests))
     results = {res.namespace: res for res in results_list}
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     if emit_events and thread_id:
         try:
             from backend.db.workflow_events import append_events
 
-            await append_events(
-                thread_id, [_event_payload(requests, results, elapsed_ms)]
-            )
+            await append_events(thread_id, [_event_payload(requests, results, elapsed_ms)])
         except Exception as exc:  # best-effort telemetry
             logger.debug("context event emission failed: %s", exc)
     return results

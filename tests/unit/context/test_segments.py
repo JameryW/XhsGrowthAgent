@@ -74,28 +74,20 @@ def test_unknown_layer_fails_fast() -> None:
 
 
 def test_descending_order_fails_fast() -> None:
-    system = (
-        "<!-- ctx:l4_memory -->\n记忆\n"
-        "<!-- ctx:l0_system -->\n政策\n"
-    )
+    system = "<!-- ctx:l4_memory -->\n记忆\n<!-- ctx:l0_system -->\n政策\n"
     with pytest.raises(SegmentSchemaError):
         parse_system_segments(system)
 
 
 def test_duplicate_marker_fails_fast() -> None:
-    system = (
-        "<!-- ctx:l0_system -->\n一\n"
-        "<!-- ctx:l0_system -->\n二\n"
-    )
+    system = "<!-- ctx:l0_system -->\n一\n<!-- ctx:l0_system -->\n二\n"
     with pytest.raises(SegmentSchemaError):
         parse_system_segments(system)
 
 
 def test_marker_for_round_trips() -> None:
     assert marker_for(PromptLayer.L2_ACCOUNT) == "<!-- ctx:l2_account -->"
-    segments = parse_system_segments(
-        f"{marker_for(PromptLayer.L2_ACCOUNT)}\n正文"
-    )
+    segments = parse_system_segments(f"{marker_for(PromptLayer.L2_ACCOUNT)}\n正文")
     assert segments == {PromptLayer.L2_ACCOUNT: "正文"}
 
 
@@ -165,8 +157,9 @@ def test_l0_l2_prefix_stable_across_supersteps() -> None:
     for layer in (PromptLayer.L0_SYSTEM, PromptLayer.L1_TOOL_SCHEMA, PromptLayer.L2_ACCOUNT):
         assert first.layers.get(layer, "") == second.layers.get(layer, "")
     prefix = "\n\n".join(
-        first.layers[layer] for layer in PromptLayer if layer in first.layers
-        and layer in (PromptLayer.L0_SYSTEM, PromptLayer.L2_ACCOUNT)
+        first.layers[layer]
+        for layer in PromptLayer
+        if layer in first.layers and layer in (PromptLayer.L0_SYSTEM, PromptLayer.L2_ACCOUNT)
     )
     assert second.render().startswith(prefix)
 
@@ -175,9 +168,11 @@ def test_budget_trims_l5_before_l4() -> None:
     compiler = ContextCompiler()
     l4_body = "四" * 40
     l5_body = "五" * 40
-    static_cost = estimate_tokens("你是小红书增长引擎。") + estimate_tokens(
-        "安全与风格红线：不得虚构数据。"
-    ) + estimate_tokens("账号定位：{account_niche}")
+    static_cost = (
+        estimate_tokens("你是小红书增长引擎。")
+        + estimate_tokens("安全与风格红线：不得虚构数据。")
+        + estimate_tokens("账号定位：{account_niche}")
+    )
     budget = static_cost + estimate_tokens(l4_body) + estimate_tokens(l5_body) - 1
     prompt = compiler.compile_prompt(
         _rc(),
@@ -206,20 +201,14 @@ def test_budget_never_touches_static_layers() -> None:
 
 
 def test_recall_item_with_timestamp_reranks_by_recency() -> None:
-    old = ContextItem(
-        body="旧", source="memory:ns", timestamp=datetime(2026, 1, 1, tzinfo=UTC)
-    )
-    new = ContextItem(
-        body="新", source="memory:ns", timestamp=datetime(2026, 9, 14, tzinfo=UTC)
-    )
+    old = ContextItem(body="旧", source="memory:ns", timestamp=datetime(2026, 1, 1, tzinfo=UTC))
+    new = ContextItem(body="新", source="memory:ns", timestamp=datetime(2026, 9, 14, tzinfo=UTC))
     result = RetrievalResult(
         namespace="ns",
         mode=RetrievalMode.HIT,
         items=(old, new),
     )
-    prompt = ContextCompiler().compile_prompt(
-        _rc(), SYSTEM_SEGMENTED, retrievals=(result,)
-    )
+    prompt = ContextCompiler().compile_prompt(_rc(), SYSTEM_SEGMENTED, retrievals=(result,))
     assert prompt.layers[PromptLayer.L4_MEMORY].index("新") < prompt.layers[
         PromptLayer.L4_MEMORY
     ].index("旧")
