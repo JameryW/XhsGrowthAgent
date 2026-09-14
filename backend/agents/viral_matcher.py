@@ -1,4 +1,9 @@
-"""Viral Matcher agent — matches viral posts for comparison."""
+"""Viral Matcher agent — matches viral posts for comparison.
+
+P1b-S4 迁移第六批销号（consumer-map §六.6，纯模板批）：无管线 ns recall、
+system YAML 无占位符（任务数据全走 user_msg），prompt 组装接
+ContextCompiler.compile_prompt（无标记整段 L0）。
+"""
 
 from __future__ import annotations
 
@@ -10,10 +15,14 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import RunContext
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.viral_matcher")
+
+_compiler = ContextCompiler()
 
 
 class ViralMatcherAgent(BaseAgent):
@@ -22,6 +31,17 @@ class ViralMatcherAgent(BaseAgent):
     task_type = TaskType.VIRAL_MATCHING
     agent_name = "viral_matcher"
     prompt_file = "viral_matcher.yaml"
+
+    def _compile_system_prompt(self, state: XHSGrowthState) -> str:
+        """System prompt via ContextCompiler（S4-6 纯模板批）。本 agent 不读
+        niche（不在 consumer-map §五隐式默认清单），传 "" 不新造默认值。"""
+        run_context = RunContext(
+            thread_id=str(state.get("session_id") or ""),
+            account_id=str(state.get("account_id", "default")),
+            niche=str(state.get("niche", "")),
+            values=state,
+        )
+        return _compiler.compile_prompt(run_context, self.prompt_template["system"]).render()
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -57,7 +77,7 @@ class ViralMatcherAgent(BaseAgent):
             auto_keywords.extend((brief.get("required_keywords") or [])[:3])
             auto_keywords.extend((brief.get("selling_points") or [])[:2])
 
-        system_prompt = self._build_system_prompt(state)
+        system_prompt = self._compile_system_prompt(state)
 
         if has_draft:
             assert draft is not None

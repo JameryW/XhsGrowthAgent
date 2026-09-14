@@ -1,4 +1,9 @@
-"""Content Analyzer agent — gap analysis between draft and viral posts."""
+"""Content Analyzer agent — gap analysis between draft and viral posts.
+
+P1b-S4 迁移第六批销号（consumer-map §六.6，纯模板批）：无管线 ns recall、
+system YAML 无占位符（任务数据全走 user_msg），prompt 组装接
+ContextCompiler.compile_prompt（无标记整段 L0）。
+"""
 
 from __future__ import annotations
 
@@ -11,13 +16,30 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import RunContext
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.content_analyzer")
 
+_compiler = ContextCompiler()
+
 
 class ContentAnalyzerAgent(BaseAgent):
     """对比分析 Agent."""
+
+    def _compile_system_prompt(self, state: XHSGrowthState) -> str:
+        """System prompt via ContextCompiler（S4-6 纯模板批）。
+
+        本 agent 不读 niche（不在 consumer-map §五隐式默认清单），传 ""
+        不新造默认值，统一切换留 S4-7。"""
+        run_context = RunContext(
+            thread_id=str(state.get("session_id") or ""),
+            account_id=str(state.get("account_id", "default")),
+            niche=str(state.get("niche", "")),
+            values=state,
+        )
+        return _compiler.compile_prompt(run_context, self.prompt_template["system"]).render()
 
     task_type = TaskType.CONTENT_ANALYSIS
     agent_name = "content_analyzer"
@@ -45,7 +67,7 @@ class ContentAnalyzerAgent(BaseAgent):
         if not viral_posts:
             logger.info("No viral posts, analyzing draft against brief/strategy context")
 
-        system_prompt = self._build_system_prompt(state)
+        system_prompt = self._compile_system_prompt(state)
 
         # 构建爆款摘要或内容参考
         if viral_posts:

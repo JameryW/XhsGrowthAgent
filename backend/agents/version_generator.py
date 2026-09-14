@@ -19,9 +19,13 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.compiler import ContextCompiler
+from backend.context.models import RunContext
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger(__name__)
+
+_compiler = ContextCompiler()
 
 
 class VersionGeneratorAgent(BaseAgent):
@@ -30,6 +34,18 @@ class VersionGeneratorAgent(BaseAgent):
     task_type = TaskType.VERSION_GEN
     agent_name = "version_generator"
     prompt_file = "version_generator.yaml"
+
+    def _compile_system_prompt(self, state: XHSGrowthState) -> str:
+        """System prompt via ContextCompiler（S4-6 纯模板批，主/变体两拼装点
+        共用）。本 agent 不读 niche（不在 consumer-map §五隐式默认清单），
+        传 "" 不新造默认值。"""
+        run_context = RunContext(
+            thread_id=str(state.get("session_id") or ""),
+            account_id=str(state.get("account_id", "default")),
+            niche=str(state.get("niche", "")),
+            values=state,
+        )
+        return _compiler.compile_prompt(run_context, self.prompt_template["system"]).render()
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         """执行版本生成."""
@@ -77,7 +93,7 @@ class VersionGeneratorAgent(BaseAgent):
         Generate conservative/balanced/aggressive versions that keep
         the style but vary optimization intensity.
         """
-        system_prompt = self._build_system_prompt(state)
+        system_prompt = self._compile_system_prompt(state)
 
         # Build analysis context (may be partial for brief mode)
         analysis_ctx = ""
@@ -226,7 +242,7 @@ class VersionGeneratorAgent(BaseAgent):
         patterns_str = "\n".join([f"- {p}" for p in viral_patterns[:5]]) or "无爆款模式"
 
         # 构建系统提示
-        system_prompt = self._build_system_prompt(state)
+        system_prompt = self._compile_system_prompt(state)
 
         # 构建用户消息
         user_msg = f"""原始草稿标题：{draft.get("title", "未提供")}
