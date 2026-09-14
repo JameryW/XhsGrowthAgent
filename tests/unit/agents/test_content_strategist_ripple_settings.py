@@ -31,6 +31,7 @@ class TestRippleSettingsFlowThrough:
     def content_plan_state(self):
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": WorkflowPhase.SCOUTING,
             "trend_data": {"trending_topics": ["美食探店"]},
         }

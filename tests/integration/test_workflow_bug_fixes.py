@@ -198,6 +198,7 @@ class TestPausePreservesStatus:
                 "phase": WorkflowPhase.SCOUTING.value,
                 "session_id": thread_id,
                 "account_id": "test_account",
+                "niche": "母婴",
                 "current_agent": "trend_scout",
             },
             next=["trend_scout"],
@@ -208,6 +209,7 @@ class TestPausePreservesStatus:
         _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": "scouting",
             "status": "running",
             "progress_percent": 10,
@@ -286,6 +288,7 @@ class TestResumeGuards:
                 "phase": "paused",
                 "session_id": thread_id,
                 "account_id": "test_account",
+                "niche": "母婴",
                 "prev_phase": WorkflowPhase.PLANNING.value,
                 "current_agent": "content_strategist",
             },
@@ -297,6 +300,7 @@ class TestResumeGuards:
         _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": "paused",
             "status": "paused",
             "progress_percent": 20,
@@ -331,6 +335,7 @@ class TestResumeGuards:
                 "phase": WorkflowPhase.REVIEWING.value,
                 "session_id": thread_id,
                 "account_id": "test_account",
+                "niche": "母婴",
                 "current_agent": "review_gate",
             },
             next=["review_gate"],
@@ -365,6 +370,7 @@ class TestResumeGuards:
                 "phase": WorkflowPhase.CREATING.value,
                 "session_id": thread_id,
                 "account_id": "test_account",
+                "niche": "母婴",
                 "current_agent": "choice_gate",
             },
             next=["choice_gate"],
@@ -405,6 +411,7 @@ class TestReviewSelectUpdates:
                 "phase": WorkflowPhase.REVIEWING.value,
                 "session_id": thread_id,
                 "account_id": "test_account",
+                "niche": "母婴",
                 "current_agent": "review_gate",
                 "content_plan": {"selected_topic": "test topic"},
                 "copy_content": {"title": "Test Title"},
@@ -418,6 +425,7 @@ class TestReviewSelectUpdates:
         _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": "reviewing",
             "status": "awaiting_review",
             "progress_percent": 60,
@@ -495,6 +503,7 @@ class TestReviewSelectUpdates:
                 "phase": WorkflowPhase.CREATING.value,
                 "session_id": thread_id,
                 "account_id": "test_account",
+                "niche": "母婴",
                 "current_agent": "choice_gate",
                 "content_versions": [
                     {"version_id": "v1", "title": "Version A"},
@@ -512,6 +521,7 @@ class TestReviewSelectUpdates:
         _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": "creating",
             "status": "awaiting_choice",
             "progress_percent": 40,
@@ -732,6 +742,7 @@ class TestBackgroundExceptionHandling:
         _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": "scouting",
             "status": "running",
             "progress_percent": 10,
@@ -1074,6 +1085,7 @@ class TestWorkflowAPIIntegration:
             "phase": "scouting",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         mock_graph.aget_state.return_value = mock_state
 
@@ -1094,6 +1106,7 @@ class TestWorkflowAPIIntegration:
             "phase": "reviewing",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         mock_state.next = ["review_gate"]
         mock_state.interrupts = []
@@ -1118,6 +1131,7 @@ class TestWorkflowAPIIntegration:
             "phase": "creating",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         mock_state.next = ["choice_gate"]
         mock_state.interrupts = []
@@ -1143,6 +1157,7 @@ class TestWorkflowAPIIntegration:
             "phase": "creating",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         mock_state.next = ["blogger_gate"]
         mock_state.interrupts = []
@@ -1188,6 +1203,7 @@ class TestWorkflowAPIIntegration:
             "phase": WorkflowPhase.ERROR.value,
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "error": "NotEnoughCvError",
             "current_agent": "visual_designer",
             # prev_phase intentionally absent — the bug scenario
@@ -1311,6 +1327,7 @@ class TestDraftGateBehavior:
             "phase": "creating",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         mock_state.next = ["draft_gate"]
         mock_state.interrupts = []
@@ -1337,6 +1354,7 @@ class TestDraftGateBehavior:
                 "phase": WorkflowPhase.CREATING.value,
                 "session_id": thread_id,
                 "account_id": "test_account",
+                "niche": "母婴",
                 "current_agent": "draft_gate",
                 "copy_content": {"title": "AI Generated Title"},
             },
@@ -1348,6 +1366,7 @@ class TestDraftGateBehavior:
         _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": "creating",
             "status": "awaiting_draft",
             "progress_percent": 35,
@@ -1423,6 +1442,7 @@ class TestDraftGateBehavior:
                 "phase": WorkflowPhase.REVIEWING.value,
                 "session_id": thread_id,
                 "account_id": "test_account",
+                "niche": "母婴",
                 "current_agent": "review_gate",
             },
             next=["review_gate"],
@@ -1433,6 +1453,7 @@ class TestDraftGateBehavior:
         _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": "reviewing",
             "status": "awaiting_review",
             "progress_percent": 60,
@@ -1581,6 +1602,7 @@ class TestGateInterruptFix:
             "phase": "reviewing",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         mock_state.next = ["review_gate"]
         mock_state.tasks = []
@@ -1617,6 +1639,7 @@ class TestGateInterruptFix:
             "phase": "reviewing",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         mock_state.next = ["review_gate"]
         mock_state.tasks = []
@@ -1650,6 +1673,7 @@ class TestGateInterruptFix:
             "phase": "creating",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "content_versions": [
                 {"version_id": "v1", "title": "Version A"},
                 {"version_id": "v2", "title": "Version B"},
@@ -1682,6 +1706,7 @@ class TestGateInterruptFix:
             "phase": "creating",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
             "content_versions": [
                 {"version_id": "v1", "title": "Version A"},
                 {"version_id": "v2", "title": "Version B"},
@@ -1718,6 +1743,7 @@ class TestGateInterruptFix:
             "phase": "creating",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         mock_state.next = ["draft_gate"]
         mock_state.tasks = []
@@ -1752,6 +1778,7 @@ class TestGateInterruptFix:
             "phase": "creating",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         gate_snapshot.next = ["draft_gate"]
         gate_snapshot.tasks = []
@@ -1808,6 +1835,7 @@ class TestGateInterruptFix:
             "phase": "reviewing",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "母婴",
         }
         review_snapshot.next = ["review_gate"]
         review_snapshot.tasks = []

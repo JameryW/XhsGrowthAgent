@@ -175,8 +175,13 @@ Some text after"""
         assert result == {"data": [1, 2, 3]}
 
     @pytest.mark.asyncio
-    async def test_recall_memory(self):
-        """Recall items from memory store."""
+    async def test_legacy_recall_memory_removed(self):
+        """P1b-S4-7: the legacy recall path is a hard-fail stub.
+
+        Recall must go through ``backend.context.retrieval.recall_namespaces``
+        (D6' degradation signal); the base stub must fail loudly without
+        ever touching the store.
+        """
 
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
@@ -192,16 +197,15 @@ Some text after"""
         mock_item.value = {"insight": "Test insight"}
         mock_store.asearch = AsyncMock(return_value=[mock_item])
 
-        result = await agent._recall_memory(
-            mock_store,
-            account_id="test",
-            query="test query",
-            namespace="performance_insights",
-            limit=5,
-        )
-
-        assert len(result) == 1
-        assert result[0] == {"insight": "Test insight"}
+        with pytest.raises(NotImplementedError, match="recall_namespaces"):
+            await agent._recall_memory(
+                mock_store,
+                account_id="test",
+                query="test query",
+                namespace="performance_insights",
+                limit=5,
+            )
+        mock_store.asearch.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_call_wraps_execute(self):
@@ -437,13 +441,14 @@ class TestLlmPerfAsyncIsolation:
 
 
 class TestMemoryNamespaceFailFast:
-    """P0-W2 regression: an unknown memory namespace must raise, not silently
-    fall back to the performance-insights namespace."""
+    """P0-W2 regression + P1b-S4-7 hard-fail stub: an unknown memory namespace
+    must raise, not silently fall back to the performance-insights namespace.
+    Since S4-7 the base method itself is a hard-fail stub (recall must go
+    through ``recall_namespaces``, where the namespace whitelist now lives —
+    covered by tests/unit/context/test_retrieval.py)."""
 
     @pytest.mark.asyncio
     async def test_unknown_namespace_raises_instead_of_silent_fallback(self):
-        from backend.memory.exceptions import UnknownMemoryNamespaceError
-
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -458,7 +463,7 @@ class TestMemoryNamespaceFailFast:
 
         # Typo'd namespace must fail fast — pre-fix this silently searched the
         # performance_insights namespace and returned [].
-        with pytest.raises(UnknownMemoryNamespaceError):
+        with pytest.raises(NotImplementedError):
             await agent._recall_memory(
                 mock_store,
                 account_id="test",
@@ -469,6 +474,9 @@ class TestMemoryNamespaceFailFast:
 
     @pytest.mark.asyncio
     async def test_all_valid_namespaces_still_resolve(self):
+        """P1b-S4-7: even the four valid legacy namespaces go through the
+        hard-fail stub — no direct store access on the base path anymore."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -486,7 +494,8 @@ class TestMemoryNamespaceFailFast:
         ):
             mock_store = AsyncMock()
             mock_store.asearch = AsyncMock(return_value=[])
-            await agent._recall_memory(
-                mock_store, account_id="test", query="q", namespace=namespace
-            )
-            mock_store.asearch.assert_awaited_once()
+            with pytest.raises(NotImplementedError):
+                await agent._recall_memory(
+                    mock_store, account_id="test", query="q", namespace=namespace
+                )
+            mock_store.asearch.assert_not_called()

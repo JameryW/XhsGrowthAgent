@@ -29,6 +29,7 @@ from backend.context.models import (
     RetrievalMode,
     RetrievalResult,
     RunContext,
+    require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.services.ripple_service import RippleTimeoutError
@@ -95,7 +96,7 @@ class ContentStrategistAgent(BaseAgent):
         from backend.memory.creative import CreativeMemory
 
         cm = CreativeMemory(account_id, store=store)
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         # 4 independent read-only recalls with disjoint sources → one
         # concurrent wave instead of 4 serial ones. CreativeMemory recalls
         # swallow their own exceptions internally; the pipeline recall carries

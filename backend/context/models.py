@@ -64,6 +64,23 @@ class ContextItem(BaseModel):
         return self.model_copy(update={"token_cost": token_cost})
 
 
+def require_niche(state: Mapping[str, Any]) -> str:
+    """D2' fail-fast companion: resolve the niche from state or raise.
+
+    Workflow start resolves/provides the account niche (start 入口校验必填);
+    agents must never invent a default (the old ``state.get("niche", "母婴")``
+    silently compiled a made-up niche into prompts). Raises ``ValueError``
+    with an actionable message instead.
+    """
+    niche = state.get("niche")
+    if not niche or not str(niche).strip():
+        raise ValueError(
+            "niche is required (D2'): workflow start must provide or resolve "
+            "the account niche; refusing to compile a default niche into the prompt"
+        )
+    return str(niche)
+
+
 class RetrievalMode(StrEnum):
     """Outcome of one recall — the degradation signal (info.md D6')."""
 

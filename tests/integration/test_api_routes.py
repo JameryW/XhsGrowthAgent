@@ -99,6 +99,7 @@ def mock_state_values():
         "phase": WorkflowPhase.SCOUTING.value,
         "session_id": "xhs_test_abc123",
         "account_id": "test_account",
+        "niche": "母婴",
         "current_agent": "orchestrator",
         "created_at": "2026-01-01T00:00:00Z",
     }
@@ -138,13 +139,31 @@ class TestHealthCheck:
 class TestWorkflowRoutes:
     """Tests for workflow API routes."""
 
+    @staticmethod
+    def _niche_patch(niche: str):
+        """Patch resolve_account_niche (D2'): tests must not hit the real
+        resolver's account-binding persistence path."""
+        from backend.services.niche_resolver import NicheResolution
+
+        return patch(
+            "backend.services.niche_resolver.resolve_account_niche",
+            AsyncMock(
+                return_value=NicheResolution(
+                    niche=niche,
+                    source="manual" if niche else "cold_start",
+                )
+            ),
+        )
+
     def test_start_workflow_success(self, client, mock_graph):
         """Start workflow returns unified success response."""
         mock_graph.ainvoke.return_value = {"phase": "scouting"}
 
-        response = client.post(
-            "/api/workflow/start", json={"account_id": "test_account", "phase": "scouting"}
-        )
+        with self._niche_patch("母婴"):
+            response = client.post(
+                "/api/workflow/start",
+                json={"account_id": "test_account", "phase": "scouting", "niche": "母婴"},
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -161,12 +180,32 @@ class TestWorkflowRoutes:
         """Start workflow with default phase."""
         mock_graph.ainvoke.return_value = {"phase": "scouting"}
 
-        response = client.post("/api/workflow/start", json={"account_id": "test_account"})
+        with self._niche_patch("美妆"):
+            response = client.post("/api/workflow/start", json={"account_id": "test_account"})
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert data["data"]["phase"] == "scouting"
+
+    def test_start_workflow_unresolvable_niche_rejected_422(self, client, mock_graph):
+        """D2' fail-fast: cold-start with no resolvable niche → 422.
+
+        The workflow must never start with an invented default niche
+        (legacy behavior silently compiled '母婴' into every prompt).
+        """
+        mock_graph.ainvoke.return_value = {"phase": "scouting"}
+
+        with self._niche_patch(""):
+            response = client.post("/api/workflow/start", json={"account_id": "cold_start_account"})
+
+        assert response.status_code == 422
+        data = response.json()
+        # HTTPException surfaces the raw FastAPI detail (no unified envelope
+        # wrapper for 422 raised before handler dispatch completes).
+        assert "niche" in data["detail"]
+        # The graph must never have been invoked for a rejected start.
+        mock_graph.ainvoke.assert_not_called()
 
     def test_start_workflow_invalid_account(self, client):
         """Start workflow with empty account_id returns error."""

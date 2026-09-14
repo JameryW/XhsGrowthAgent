@@ -28,6 +28,7 @@ class TestVisualDesignerAgent:
         """Mock state with content plan and copy."""
         return {
             "account_id": "test_account",
+            "niche": "母婴",
             "phase": WorkflowPhase.CREATING,
             "content_plan": {
                 "selected_topic": "美食探店",
@@ -69,6 +70,7 @@ class TestVisualDesignerAgent:
         """Execute truncates long body text to 200 chars."""
         long_body_state = {
             "account_id": "test",
+            "niche": "母婴",
             "content_plan": {"selected_topic": "美食"},
             "copy_content": {
                 "body_text": "A" * 500,  # Very long text
@@ -92,6 +94,7 @@ class TestVisualDesignerAgent:
     async def test_execute_handles_empty_copy(self, agent, mock_store):
         """Execute handles empty copy_content."""
         mock_state = {
+            "niche": "母婴",
             "account_id": "test",
             "content_plan": {"selected_topic": "美食"},
             "copy_content": {},
@@ -113,6 +116,7 @@ class TestVisualDesignerAgent:
     async def test_execute_handles_missing_copy(self, agent, mock_store):
         """Execute handles missing copy_content."""
         mock_state = {
+            "niche": "母婴",
             "account_id": "test",
             "content_plan": {"selected_topic": "美食"},
         }
@@ -232,7 +236,7 @@ class TestVisualDesignerContextPipeline:
 
     def test_compile_system_prompt_empty_ctx(self, agent):
         """空 creative_ctx → L4 EMPTY，system 照常渲染不崩溃。"""
-        state = {"account_id": "test"}
+        state = {"niche": "母婴", "account_id": "test"}
         prompt = agent._compile_system_prompt(state, "")
         assert "视觉设计专家" in prompt
         assert "{memory_context}" not in prompt

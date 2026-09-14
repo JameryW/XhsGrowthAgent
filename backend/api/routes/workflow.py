@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
@@ -687,15 +687,25 @@ async def start_workflow(
     graph = request.app.state.graph
     thread_id = f"xhs_{req.account_id}_{uuid.uuid4().hex[:8]}"
 
-    # Resolve niche: manual (non-empty) wins; else infer from imported history notes
+    # Resolve niche: manual (non-empty) wins; else infer from imported history
+    # notes. D2' fail-fast: an unresolvable niche rejects the start (422) —
+    # agents must never compile an invented default into prompts.
     from backend.services.niche_resolver import resolve_account_niche
 
     niche_res = await resolve_account_niche(
         req.account_id,
         manual_niche=req.niche,
-        cold_start_default="母婴",
+        cold_start_default="",
         persist=True,
     )
+    if not niche_res.niche:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "niche 无法解析（冷启动且无历史笔记可推断）：请显式传入 niche 后重试"
+                "（D2': 工作流起点必须提供垂类赛道，不再默认 '母婴'）"
+            ),
+        )
 
     initial_state: dict[str, Any] = {
         "phase": req.phase,
@@ -719,7 +729,7 @@ async def start_workflow(
         "session_id": thread_id,
         "thread_id": thread_id,
         "topic": req.topic,
-        "niche": niche_res.niche or "母婴",
+        "niche": niche_res.niche,
         "niche_resolution": niche_res.to_dict(),
         "dry_run": req.dry_run,
         "auto_publish": req.auto_publish,

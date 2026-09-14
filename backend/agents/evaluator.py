@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 from backend.agents.base import BaseAgent
 from backend.config.models import TASK_TIMEOUT_OVERRIDES, TaskType
 from backend.context.compiler import ContextCompiler
-from backend.context.models import RetrievalMode, RetrievalResult, RunContext
+from backend.context.models import RetrievalMode, RetrievalResult, RunContext, require_niche
 from backend.context.retrieval import RecallRequest, recall_namespaces
 from backend.db.evaluator_config import (
     BIAS_SEVERITY_NOTES,
@@ -195,12 +195,15 @@ class EvaluatorAgent(BaseAgent):
         """
         ctx = ctx or EvaluationContext()
         template = self.prompt_template.get("system", "")
-        # Historical-note evaluation must not silently invent an account niche.
-        # Workflow states retain the legacy default for compatibility, while a
-        # historical state explicitly carries ``niche_context_available``.
-        niche = state.get("niche", "母婴")
+        # Historical-note evaluation must not silently invent an account niche:
+        # a historical state without ``niche_context_available`` renders the
+        # explicit "not provided" marker; every other path requires the niche
+        # resolved at workflow start (D2' fail-fast, no 母婴 default).
+        niche = str(state.get("niche") or "")
         if state.get("historical_note") and not state.get("niche_context_available"):
             niche = "未提供赛道（不可推断）"
+        elif not niche:
+            niche = require_niche(state)
         template = template.replace("{account_niche}", niche)
         # weights block: "copywriting 0.20, visual 0.15, ..."
         weights_block = ", ".join(f"{k} {v:.2f}" for k, v in ctx.weights.dimension_weights.items())

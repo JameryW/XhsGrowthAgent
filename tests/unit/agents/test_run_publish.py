@@ -21,6 +21,7 @@ def _state(**overrides):
         "content_plan": {},
         "visual_plan": {"image_paths": ["/tmp/x.png"]},
         "account_id": "test_account",
+        "niche": "母婴",
         "session_id": "test_session",
         "publish_options": {"dry_run": False},
     }

@@ -20,6 +20,7 @@ def mock_graph():
     snapshot.values = {
         "session_id": "t1",
         "phase": WorkflowPhase.REVIEWING,
+        "niche": "母婴",
         "copy_content": {"selected_title": "t", "body_text": "b"},
         "visual_plan": {"cover_prompt": "c"},
     }
