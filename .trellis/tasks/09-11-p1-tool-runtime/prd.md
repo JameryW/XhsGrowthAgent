@@ -89,7 +89,11 @@ Agent 只声明 capability 需求。
 执行记录（2026-09-15）：**S3c 实际拆为两片**。
 
 - **S3c-1 ✅**：`ripple.get_report`（analyst）。等待预算从调用点的 120s `asyncio.wait_for` 搬到能力声明（`timeout_s=120.0`），直调 **6 → 5**。
-- **S3c-2 待办（有阻塞）**：`ripple.predict_spread` / `ripple.validate_pmf` **不能机械迁移** —— 这两个工具用 `RippleTimeoutError`（携带 `job_id`，调用方据此取消任务并留作续存）表达"等超时"这一**领域结果**，而 Gateway 把一切失败归一化成字符串 `error`，`job_id` 会丢；同时它们把软失败当数据返回（`{"error": ...}`），经 Gateway 会被记为 `ok=True`（trace 失真）。动这两处之前需要先给 `ToolResult` 增加领域结果通道。
+- **S3c-2 ✅（本分支）**：`ripple.predict_spread` / `ripple.validate_pmf`（content_strategist），直调 **5 → 3**。先给 `ToolResult` 补上**领域结果通道**：`ErrorKind.DOMAIN` + `DomainOutcome(reason, **payload)`，Gateway 接住后**立刻返回**（不进重试循环），payload 落在 `ToolResult.domain`；trace 只带 `domain_reason`。要点：
+  - **为什么必须是新的异常类型**：`RippleTimeoutError` 是 `TimeoutError` 子类，原样穿过 Gateway 会被归类成"网关自己的等待超时"，而那条路上 **`job_id` 会被剥掉** —— 取消与恢复都从它开始。
+  - **Gateway 的兜底必须高于工具自己的等待预算**：这两个工具用 payload 的 `max_wait`（默认 1800s，来自 `RIPPLE_WORKFLOW_TIMEOUT`）等待，并以领域结果报告超时；Gateway 的 `wait_for` 若先触发就会取消调用、永远看不到那个 id。故声明 `timeout_s=3600.0`（`_RIPPLE_SAFETY_NET_S`），只兜挂死的连接，不承担调度含义。
+  - **顺手修正两处失真**：`integration` 不再自己吞异常（归一化只在 Gateway 一个归属地）；服务"降级"（`ripple_fallback=True` + 全零预测体）从"一次成功的预测"改为 `DomainOutcome("unavailable")` —— 原先真实服务返回的零点会被 agent 当成真实预测读走，而 conftest 的替身只返回 `{"ripple_fallback": True}`，两者行为不一致，正是这个不一致掩盖了 bug。
+  - 调用点用一个 `_RippleCall` 一次读清结果，删掉"`"ripple_reason" not in result` 即表示成功"的缺失键语义。
 
 ## 验收
 

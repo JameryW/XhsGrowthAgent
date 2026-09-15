@@ -23,6 +23,7 @@ from backend.tools.runtime.gateway import (
 )
 from backend.tools.runtime.models import (
     CostClass,
+    DomainOutcome,
     ErrorKind,
     LatencyClass,
     PassStyle,
@@ -41,6 +42,7 @@ from backend.tools.runtime.registry import (
 
 __all__ = [
     "CostClass",
+    "DomainOutcome",
     "DuplicateCapabilityError",
     "ErrorKind",
     "LatencyClass",

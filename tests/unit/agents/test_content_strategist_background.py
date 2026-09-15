@@ -24,9 +24,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.agents.content_strategist import ContentStrategistAgent
+from backend.agents.content_strategist import ContentStrategistAgent, _RippleCall
 from backend.realtime import EventType
-from backend.services.ripple_service import RippleTimeoutError
 from backend.state.schema import WorkflowPhase
 
 
@@ -140,13 +139,13 @@ class TestScheduleRippleBackground:
                 agent,
                 "_ripple_predict",
                 new_callable=AsyncMock,
-                return_value={"viral_probability": 0.8},
+                return_value=_RippleCall(data={"viral_probability": 0.8}),
             ) as mock_pred,
             patch.object(
                 agent,
                 "_ripple_validate_pmf",
                 new_callable=AsyncMock,
-                return_value={"pmf_score": 0.7},
+                return_value=_RippleCall(data={"pmf_score": 0.7}),
             ) as mock_pmf,
             patch("backend.tools.analysis.topic_scorer.topic_scorer", _scorer()),
             patch(
@@ -184,10 +183,16 @@ class TestScheduleRippleBackground:
             patch("backend.agents.content_strategist.Settings", _background_settings),
             patch("backend.agents.content_strategist.asyncio.create_task", spy),
             patch.object(
-                agent, "_ripple_predict", new_callable=AsyncMock, return_value=pred
+                agent,
+                "_ripple_predict",
+                new_callable=AsyncMock,
+                return_value=_RippleCall(data=pred),
             ) as mock_pred,
             patch.object(
-                agent, "_ripple_validate_pmf", new_callable=AsyncMock, return_value=pmf
+                agent,
+                "_ripple_validate_pmf",
+                new_callable=AsyncMock,
+                return_value=_RippleCall(data=pmf),
             ) as mock_pmf,
             patch("backend.tools.analysis.topic_scorer.topic_scorer", _scorer()),
             patch(
@@ -210,7 +215,7 @@ class TestScheduleRippleBackground:
 
     @pytest.mark.asyncio
     async def test_background_timeout_persists_reason_and_job_id(self, agent, mock_store):
-        """RippleTimeoutError from _ripple_predict → persist ripple_reason='timeout'
+        """A timeout outcome from _ripple_predict → persist ripple_reason='timeout'
         + ripple_job_id, then call _ripple_cancel (best-effort cancel)."""
         agent._model = _mock_model()
         spy = _BackgroundTaskSpy()
@@ -222,13 +227,13 @@ class TestScheduleRippleBackground:
                 agent,
                 "_ripple_predict",
                 new_callable=AsyncMock,
-                side_effect=RippleTimeoutError("job-timeout-bg", 60.0),
+                return_value=_RippleCall(reason="timeout", job_id="job-timeout-bg"),
             ),
             patch.object(
                 agent,
                 "_ripple_validate_pmf",
                 new_callable=AsyncMock,
-                return_value={"pmf_score": 0.7},
+                return_value=_RippleCall(data={"pmf_score": 0.7}),
             ),
             patch.object(agent, "_ripple_cancel", new_callable=AsyncMock) as mock_cancel,
             patch("backend.tools.analysis.topic_scorer.topic_scorer", _scorer()),
@@ -248,13 +253,13 @@ class TestScheduleRippleBackground:
 
     @pytest.mark.asyncio
     async def test_background_unreachable_persists_reason(self, agent, mock_store):
-        """A generic Exception escaping the gather (not RippleTimeoutError) is caught
-        by the _run safety net and persists ripple_reason='unreachable'.
+        """A generic Exception escaping the gather is caught by the _run safety net
+        and persists ripple_reason='unreachable'.
 
-        _ripple_predict normally swallows generic errors into None (which the
-        prediction-shape branch maps to unreachable). To exercise the bare
-        ``except Exception`` arm in _run directly, we make _ripple_predict raise
-        a non-timeout exception that escapes gather.
+        The Gateway reports tool failures as results, so a raised exception
+        reaching _run can only be a defect in the agent's own reading of them.
+        The safety net exists so such a defect cannot kill the background task
+        silently; this test is what keeps it alive.
         """
         agent._model = _mock_model()
         spy = _BackgroundTaskSpy()
@@ -272,7 +277,7 @@ class TestScheduleRippleBackground:
                 agent,
                 "_ripple_validate_pmf",
                 new_callable=AsyncMock,
-                return_value={"pmf_score": 0.7},
+                return_value=_RippleCall(data={"pmf_score": 0.7}),
             ),
             patch("backend.tools.analysis.topic_scorer.topic_scorer", _scorer()),
             patch(
@@ -304,13 +309,13 @@ class TestScheduleRippleBackground:
                 agent,
                 "_ripple_predict",
                 new_callable=AsyncMock,
-                return_value={"viral_probability": 0.8},
+                return_value=_RippleCall(data={"viral_probability": 0.8}),
             ),
             patch.object(
                 agent,
                 "_ripple_validate_pmf",
                 new_callable=AsyncMock,
-                return_value={"pmf_score": 0.7},
+                return_value=_RippleCall(data={"pmf_score": 0.7}),
             ),
             patch("backend.tools.analysis.topic_scorer.topic_scorer", _scorer()),
             patch(
@@ -354,7 +359,7 @@ class TestScheduleRippleBackground:
                 agent,
                 "_ripple_validate_pmf",
                 new_callable=AsyncMock,
-                return_value={"pmf_score": 0.7},
+                return_value=_RippleCall(data={"pmf_score": 0.7}),
             ),
             patch("backend.tools.analysis.topic_scorer.topic_scorer", _scorer()),
             patch(
@@ -386,13 +391,13 @@ class TestScheduleRippleBackground:
                 agent,
                 "_ripple_predict",
                 new_callable=AsyncMock,
-                return_value={"viral_probability": 0.8, "estimated_reach": 5000},
+                return_value=_RippleCall(data={"viral_probability": 0.8, "estimated_reach": 5000}),
             ),
             patch.object(
                 agent,
                 "_ripple_validate_pmf",
                 new_callable=AsyncMock,
-                return_value={"pmf_score": 0.7},
+                return_value=_RippleCall(data={"pmf_score": 0.7}),
             ),
             patch("backend.tools.analysis.topic_scorer.topic_scorer", _scorer()),
             patch(

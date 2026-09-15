@@ -350,7 +350,13 @@ class TestContentStrategistAgent:
 
     @pytest.mark.asyncio
     async def test_ripple_timeout_saves_job_id(self, agent, mock_state, mock_store):
-        """RippleTimeoutError 时保存 job_id 到结果"""
+        """Ripple 超时（DomainOutcome timeout）时保存 job_id 并取消任务
+
+        驱动真实链路：服务抛 RippleTimeoutError → integration 把它翻译成携带
+        job_id 的 DomainOutcome → Gateway 记为 ErrorKind.DOMAIN → agent 读到
+        job_id 并取消。替换 integration 函数本身会绕过那次翻译，于是测到的是
+        虚构而不是行为 —— 而"job_id 在穿越 Gateway 后仍在"正是这一步要守的东西。
+        """
         mock_response = MagicMock()
         mock_response.content = '{"selected_topic": "美食探店"}'
 
@@ -358,34 +364,27 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        async def _raise_timeout(*args, **kwargs):
-            raise RippleTimeoutError("job-timeout-123", 900.0)
-
         scorer = AsyncMock()
         scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
 
+        service = MagicMock()
+        service.is_healthy.return_value = True
+        service.predict_spread = AsyncMock(side_effect=RippleTimeoutError("job-timeout-123", 900.0))
+        service.validate_pmf = AsyncMock(return_value={"ripple_pmf": {"pmf_score": 0.5}})
+
         with (
-            patch(
-                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
-            ) as mock_pred,
-            patch(
-                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
-            ) as mock_pmf,
+            patch("backend.tools.ripple.integration.RippleService") as mock_cls,
             patch.object(agent, "_ripple_cancel", new_callable=AsyncMock) as mock_cancel,
             patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
         ):
-            # predict_spread raises RippleTimeoutError which propagates through _ripple_predict
-            # We need to make _ripple_predict raise RippleTimeoutError
-            mock_pred.side_effect = _raise_timeout
-            mock_pmf.return_value = {"ripple_pmf": None}
-
+            mock_cls.get_instance.return_value = service
             result = await agent.execute(mock_state, store=mock_store)
 
         # job_id 应被保存
         assert result.get("ripple_job_id") == "job-timeout-123"
         assert result.get("ripple_reason") == "timeout"
         # cancel 应被调用
-        mock_cancel.assert_called_once_with("job-timeout-123")
+        mock_cancel.assert_awaited_once_with("job-timeout-123")
 
     @pytest.mark.asyncio
     async def test_ripple_cancel_called_on_timeout(self, agent):
