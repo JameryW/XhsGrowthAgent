@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
+from backend.tools.runtime.models import DomainOutcome
+
 if TYPE_CHECKING:
     from backend.services.xhs_publisher import XHSPublisher
 
@@ -36,6 +38,8 @@ async def xhs_publisher(
     location: str = "",
     scheduled_time: str = "",
     is_private: bool = False,
+    account_id: str = "",
+    idempotency_key: str = "",
 ) -> dict[str, Any]:
     """发布小红书笔记.
 
@@ -48,9 +52,25 @@ async def xhs_publisher(
         location: 发布地点
         scheduled_time: 定时发布时间
         is_private: 是否仅自己可见
+        account_id: 发布所属账号（用于按账号记账的发布冷却）
+        idempotency_key: 请求级幂等键。**本工具不用它去重**——它是运行时
+            重试护栏的输入（见 ``RetryPolicy.requires_idempotency_key``），
+            以及运营排查用的关联 id；内容级去重由发布主链的
+            ``compute_publish_id`` 负责。
 
     Returns:
         发布结果: post_id, status, post_url
+
+    Raises:
+        DomainOutcome: 平台层给出了结论（拒发、冷却中、CDP 忙、或"提交了但
+            结果不明"）。结论不是抖动，所以它作为**答案**上报，而不是作为
+            运行时失败——否则一次超时/结论都会被当成"可以重试"。
+        Exception: 平台调用本身抛错（网络、浏览器、取消）。这类失败没有结论，
+            按运行时失败上报。
+
+    这个工具以前把异常吞成一个 ``{"status": "error"}`` 字典，于是 Gateway 只能
+    看到"成功的一次调用"。去除那层归一化是 P1c 迁移清单的第一条：**归一化只在
+    Gateway 一个归属地**，工具层第二个安静的归一化器正是两边开始不一致的原因。
     """
     if hashtags is None:
         hashtags = []
@@ -69,22 +89,38 @@ async def xhs_publisher(
             location=location,
             scheduled_time=scheduled_time,
             is_private=is_private,
+            account_id=account_id,
         )
-
-        return {
-            "post_id": result.get("post_id", ""),
-            "post_url": result.get("post_url", ""),
-            "status": result.get("status", "unknown"),
-            "published_at": result.get("published_at", ""),
-            "error": result.get("error", ""),
-        }
-
-    except Exception as e:
-        logger.error(f"发布失败: {type(e).__name__}: {e}")
-        return {"post_id": "", "status": "error", "error": str(e)}
-
     finally:
         await publisher.close()
+
+    status = str(result.get("status") or "")
+    if status == "published":
+        return {
+            "post_id": str(result.get("post_id") or ""),
+            # The service answers with ``url`` on the success path and
+            # ``post_url`` on its blocked paths; normalising to one name here
+            # keeps that split from reaching the receipt.
+            "post_url": str(result.get("post_url") or result.get("url") or ""),
+            "status": status,
+            "published_at": str(result.get("published_at") or ""),
+        }
+
+    # Every other status is the platform layer's own verdict -- including
+    # ``unknown``/``pending`` ("a submit went out and the answer was lost"),
+    # which must never arrive as retryable.  One payload, one reader:
+    # ``creator_agent.execution.interpret_publish_result``.
+    #
+    # ``DomainOutcome`` takes the verdict positionally and everything else as
+    # keyword payload -- passing ``payload=dict(result)`` would bury the whole
+    # dict one level down, where the reader's ``status`` lookup would miss it
+    # and every verdict would arrive as an unexplained failure.
+    verdict = {str(key): value for key, value in result.items() if str(key).isidentifier()}
+    verdict.pop("reason", None)  # the positional argument owns that name
+    raise DomainOutcome(
+        str(result.get("error") or status or "publish rejected"),
+        **verdict,
+    )
 
 
 @tool

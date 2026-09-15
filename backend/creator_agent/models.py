@@ -69,7 +69,7 @@ class ActionCapability(StrEnum):
 # the two definitions against each other so they cannot drift apart silently.
 _ARTIFACT_REF_PREFIX = "artifact://"
 _SHA256_HEX_LENGTH = 64
-_PUBLISH_PAYLOAD_KEYS = ("artifact_ref", "content_hash")
+_PUBLISH_PAYLOAD_KEYS = ("artifact_ref", "content_hash", "thread_id")
 
 
 def _validate_publish_payload(
@@ -77,13 +77,24 @@ def _validate_publish_payload(
     action_kind: ActionCapability,
     artifact_ref: str | None,
     content_hash: str | None,
+    thread_id: str | None,
     candidate_ids: list[str],
+    require_thread: bool = False,
 ) -> None:
     """Enforce the publish payload shape; every other capability must omit it.
 
     A mismatched combination is refused rather than silently ignored: a caller
     that attaches a publish payload to ``compare_options`` has a bug, and
-    accepting it would hide that bug until execution time."""
+    accepting it would hide that bug until execution time.
+
+    ``thread_id`` is the one publish key that is *required at the creation
+    boundary but optional on the stored row*.  An artifact ref is thread-scoped
+    (``artifact://<kind>/<id>`` is only resolvable together with the thread it
+    was stored under), so without it a durable intent cannot locate its own
+    content -- P2a-S3 found that gap and closed it here.  It stays optional on
+    ``ActionIntent`` so that a row written before this slice remains readable
+    instead of turning every read into a 500; the executor refuses to publish
+    when it is absent, which is where the refusal belongs."""
     if action_kind is ActionCapability.PUBLISH:
         if artifact_ref is None or not artifact_ref.strip():
             raise ValueError("publish requires artifact_ref")
@@ -91,6 +102,10 @@ def _validate_publish_payload(
             raise ValueError("publish requires content_hash")
         if candidate_ids:
             raise ValueError("publish does not accept candidate IDs")
+        if thread_id is not None and not thread_id.strip():
+            raise ValueError("thread_id cannot be blank")
+        if require_thread and thread_id is None:
+            raise ValueError("publish requires thread_id")
         ref = artifact_ref.strip()
         if not ref.startswith(_ARTIFACT_REF_PREFIX):
             raise ValueError("artifact_ref must look like artifact://<kind>/<id>")
@@ -104,7 +119,7 @@ def _validate_publish_payload(
             raise ValueError("content_hash must be a sha256 hexdigest")
         return
 
-    if artifact_ref is not None or content_hash is not None:
+    if artifact_ref is not None or content_hash is not None or thread_id is not None:
         raise ValueError(f"{action_kind.value} does not accept a publish payload")
 
 
@@ -587,6 +602,7 @@ class ActionIntentRequest(BaseModel):
     # ``_validate_publish_payload`` refuses a mismatched combination.
     artifact_ref: str | None = None
     content_hash: str | None = None
+    thread_id: str | None = None
 
     @field_validator("account_id", "decision_id", "idempotency_key")
     @classmethod
@@ -612,7 +628,9 @@ class ActionIntentRequest(BaseModel):
             action_kind=self.action_kind,
             artifact_ref=self.artifact_ref,
             content_hash=self.content_hash,
+            thread_id=self.thread_id,
             candidate_ids=self.candidate_ids,
+            require_thread=True,
         )
         return self
 
@@ -641,13 +659,19 @@ class ActionIntent(BaseModel):
     # Publish payload; see ``_validate_publish_payload``.
     artifact_ref: str | None = None
     content_hash: str | None = None
+    thread_id: str | None = None
 
     @model_validator(mode="after")
     def validate_publish_payload(self) -> ActionIntent:
+        # ``require_thread`` stays False here on purpose: rows written before
+        # P2a-S3 carry no thread, and a read must not fail because a *new* key
+        # was added.  The creation boundary (``ActionIntentRequest``) does
+        # require it, so every row written from now on has one.
         _validate_publish_payload(
             action_kind=self.action_kind,
             artifact_ref=self.artifact_ref,
             content_hash=self.content_hash,
+            thread_id=self.thread_id,
             candidate_ids=self.candidate_ids,
         )
         return self

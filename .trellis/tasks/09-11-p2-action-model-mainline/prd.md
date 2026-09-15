@@ -207,4 +207,66 @@ S3 接上 Tool Gateway 后它必须消失（`grep` 该异常在生产代码里�
 
 **突变自检：6/6 killed**，每条从原始字节起算、每条被**具名断言**杀掉，覆盖六个不同机制：M1 非 publish 落进发布闸（`…is_out_of_this_policy_scope[compare_options]`）/ M2 收集了风险判决却不看（`…a_risk_block_denies_and_carries_the_retry_hint`）/ M3 读不到门禁当成"清"（`…a_raising_gate_becomes_a_denial_not_an_allow`）/ M4 空 account 放行（`…a_missing_account_is_a_denial_not_an_allow`）/ M5 策略拒绝后仍然落库（`…a_denied_publish_never_becomes_a_durable_intent`）/ M6 拒绝报 400（`…maps_to_403_with_its_own_code_and_retry_hint`）。
 
-**下一片（S3）的入口条件**：① PUBLISH 经 Tool Gateway 调 `xhs.publish`，`ActionCapabilityNotWiredError` 必须消失；② **记账必须用同一个 key** —— `note_publish` 要带上 account_id，否则 `RISK_COOLDOWN` 这条规则依旧是死的（见上面的钉法）；③ 幂等键就位**之后**才解锁 catalog 的 `RetryPolicy`。
+**下一片（S3）的入口条件**：① PUBLISH 经 Tool Gateway 调 `xhs.publish`，`ActionCapabilityNotWiredError` 必须消失；② **记账必须用同一个 key** —— `note_publish` 要带上 account_id，否则 `RISK_COOLDOWN` 这条规则依旧是死的（见上面的钉法）；③ 幂等键就位**之后**才解锁 catalog 的 `RetryPolicy`。（**S3 实测后修订**：只满足 `ToolSpec` 的前置条件还不够 —— 见 S3 的设计决定 2，本片**没有**解锁。）
+
+### S3 — Action Executor（`feat/p2a-s3-action-executor`）
+
+**范围**：让 PUBLISH 第一次真的产生外部副作用。三件事 —— ① 新模块 `creator_agent/execution.py`（载荷构造 / 结论解析 / 两个默认即生产实现的可注入缝）；② `execute_action` 真执行 publish；③ 记账带上 `account_id`（关掉 S2 钉住的既有缺陷）。**不碰主链**（S4 才让 `PublisherAgent` 产 intent），也不新建控制面（`ActionIntent` / `ActionResolution` / `ActionExecution` / 4 条路由 / 人类确认在 S1 就已存在）。
+
+改动（9 改 1 新）：
+
+| 文件 | 改动 |
+|---|---|
+| `creator_agent/execution.py` | **新建，330 行**：`PublishContent` / `PublishRequest` / `PublishOutcome` / `PublishStatus` + `build_publish_payload`（8 键，每个键都必须是工具真的接受的参数）+ `load_publish_content` + `interpret_publish_result`（**Gateway 词汇 → 平台词汇的唯一映射点**）+ `artifact_store_content_reader` / `gateway_publish_dispatcher`（两个缝，默认值即生产实现） |
+| `creator_agent/advisor.py` | `execute_action` 接上 publish：**删掉 `ActionCapabilityNotWiredError` 抛出**；`get_decision` 提前到副作用之前（副作用不许坐在一条即将失败的路上）；新增 `_execute_publish`（三道拒绝全在 Gateway 之前）；receipt 状态 `SUCCEEDED if publish_outcome is None or succeeded else FAILED`；构造器新增 `artifact_store` / `publish` 两个缝 |
+| `creator_agent/models.py` | publish 载荷加 `thread_id`：**创建时必填 / 存量行可选**（`require_thread: bool = False` 故意不对称）；`plan_action` 透传 `thread_id` |
+| `creator_agent/repository.py` | `ActionPublishContentUnavailableError`（带 `action_id` / `reason`） |
+| `api/errors.py` | `ErrorCode.CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE`（**409**） |
+| `api/routes/creator_agent.py` | `_advisor` 接上 `artifact_store`（取自 `app.state.graph.store`，与仓库既有通路一致）+ 409 映射 |
+| `services/xhs_publisher.py` | `publish_note(..., account_id="")`；`check_publish_allowed` 与 `note_publish` **两处都传** —— 给 `account:<id>` 桶接上生产写入者 |
+| `tools/xhs/publisher.py` | 签名加 `account_id` / `idempotency_key`；**拔掉 `except Exception: return {"status": "error"}`**；非 published 一律 `raise DomainOutcome(verdict, **payload)` |
+| `tools/runtime/catalog.py` | `_PUBLISH_SAFETY_NET_S = 900.0`；`retry=RetryPolicy()` **保持 1 次**（见设计决定 2） |
+| `creator_agent/__init__.py` | 导出执行面 |
+
+**四个设计决定**
+
+1. **★ `thread_id` 是"创建时必填、存量行可选"的不对称**：`get_artifact_body(store, thread_id, ref)` 需要 thread，而 `ActionIntent` / `DecisionRecord` / **整个 `creator_agent` 层此前零 thread 概念** → intent 定位不到自己的内容。修法是给 publish 载荷加 `thread_id`，并在**创建路径**必填（新行没有 thread 就是构造错误）、在**读取路径**可空（S1/S2 写的存量行必须仍可读，执行时**拒绝**而不是崩）。两个方向都有用例：`test_a_publish_request_must_say_which_thread_its_artifact_lives_in` + `test_a_stored_publish_row_written_before_s3_is_still_readable`。
+2. **★ `RetryPolicy` 不按原计划解锁（对 S2 交接条件的修订）**：S2 写的是"幂等键就位**之后**才解锁"。实测后**修订**：幂等键满足的只是 `ToolSpec` 的前置条件（side-effecting + retryable 必须有键），而重试真正需要回答的那个问题它答不了 —— **"这次提交到底出去了吗？"**。Gateway 超时会**在浏览器流程提交途中**取消调用，调用方区分不了"提交前失败"和"答案丢了"；重试后者就是**双发一篇真笔记**。所以 `max_attempts` 保持 1，解锁条件是"执行器能在重发前 reconcile"（durable retry，P2b），**而不是"键存在"**。理由写进 `catalog.py` 的注释里，票面 subtask 的措辞（`RetryPolicy unlocked`）据此修订。
+3. **归一化只在 Gateway 一个归属地（这条纪律迁移到了工具层）**：`tools/xhs/publisher.py` 以前把异常吞成 `{"status": "error"}`，于是 Gateway 只能看到"成功的一次调用"——工具层第二个安静的归一化器。本片拔掉它：**平台结论 → `DomainOutcome`（抛）；运行时失败 → 异常穿透**。同一条纪律也是本片顺手修掉一个真 bug 的原因（见下）。
+4. **默认实现那一侧也要有"它真的是生产路径"的测试**：两个缝都可注入，但**默认值就是生产实现**，且各自有一条测试证明这点 —— 默认 dispatcher 经 `shared_gateway()` 打到**按名解析**的真工具（`catalog.bind` 每次调用重新解析，所以 rebind 模块属性会被尊重，测试才跑的是真代码路径而不是它的转述）；默认 reader 就是 Artifact Store 门面。只测注入缝会换来"默认路径从未被测"的假绿。
+
+**★ 本片差点交付的真 bug（门禁前自我发现，已从读者一侧钉住错误形状）**：`DomainOutcome.__init__(reason, **payload)` 的 payload 是 `**kwargs`，**不是**关键字参数。写成 `DomainOutcome(reason=..., payload=dict(result))` 会把整个字典埋进一层，`interpret_publish_result` 读 `domain["status"]` 就 miss → **每一个平台结论都静默退化成"无法解释的失败"**（类型检查过、异常照抛、测试若只测注入缝也全绿）。两条用例显式钉住**错误形状**：`test_a_nested_verdict_would_be_an_unexplained_failure`（读者一侧）与 `test_the_domain_payload_keeps_the_verdict_at_the_top_level`（工具层，`assert "payload" not in excinfo.value.payload`）—— **钉错形状，"对形状"才有意义**。
+
+**★ 既有缺陷已关闭（S2 钉的那条）**：**按账号的发布冷却在生产里不可达**。本片由**执行器把 `account_id` 一路交到 `services.xhs_publisher`**（`build_publish_payload` → 工具签名 → `publish_note` → `check_publish_allowed` / `note_publish` 两处），`account:<id>` 桶从此有生产写入者。S2 那条断言随之**改形**：`TestThePreExistingKeyGap` → `TestTheAccountKeyedCooldownIsReachableNow`，只留"两个桶互不共享冷却"；写入者那一半移到真正拥有它的两层去证（`test_action_publish_execution.py` 证执行器交了账号，`test_xhs_publisher.py` 证服务层收下并记账）。
+
+**★ 新发现（不修，记录而不裁决）**：**501 路径现在没有生产者**。S3 删掉了 `advisor` 里最后一处 `ActionCapabilityNotWiredError` 抛出，于是 `CreatorActionCapabilityNotWiredError`（501）与路由映射**已不可达**，只剩一条"构造该错误看映射"的用例（它钉的是映射，不是行为）。**保留而不顺手删**的理由：`ActionCapability` 是协议的扩展点，而 `execute_action` 的 `else` 兜底会给一个**没有执行器的新能力**铸一张 receipt（静默成功）—— 比 501 更糟。**待决**：要么让兜底也改成拒绝，要么删掉这个错误类型；两条都超出本片范围。
+
+**门禁（四道全绿，提交前实测）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q` | **3144 passed / 3 skipped** —— S2 的 3115 + **29**，恰等于本片新增用例数（新文件 **20** + 工具层重写 **+6**（1→7）+ payload **+3**（2 个新 def + 1 个新参数化用例））→ **零既有用例被删改** |
+| `ruff check .` / `format --check .` | **499 files**，All checks passed |
+| `uv run mypy backend --python-version 3.12` | **202 source files**（S2 的 201 + 1 = 新模块），no issues |
+| P1b 基线 | `drift within threshold`（L0–L5 prompt 逐字节不变） |
+| `tool_runtime_gate.py` | OK；orphan 仍只有 `xhs.publish` —— **主链未接，按设计要到 S4 才消失** |
+
+**突变自检：9/9 killed**，每条**从原始字节起算**（不累积）、每条被**具名断言**杀掉，覆盖九个不同机制：
+
+| # | 突变 | 被谁杀 |
+|---|---|---|
+| M1 | 请求侧 `thread_id` 降回可选（不对称被误用） | `test_a_publish_request_must_say_which_thread_its_artifact_lives_in` |
+| M2 | `DomainOutcome` 的 verdict 埋进 `payload=` 一层 | `test_the_domain_payload_keeps_the_verdict_at_the_top_level` |
+| M3 | 拔掉 `content_hash` 校验（发了没确认过的正文） | `test_a_body_that_does_not_match_the_confirmed_hash_is_refused` |
+| M4 | 默认 dispatcher 变成壳（自己编一个 receipt） | `test_it_reaches_the_shared_gateway_and_the_lazily_resolved_tool` |
+| M5 | `unknown`/`pending` 当成 FAILED（已发出的提交被读成可重跑） | `test_an_ambiguous_verdict_is_read_out_of_the_domain_payload` |
+| M6 | 安全网退回通用 SLOW 默认（合法流程被 120s 砍断） | `test_the_publish_net_outlives_the_generic_slow_net` |
+| M7 | `thread_id` 没被写进 intent | `test_plan_action_persists_a_publish_intent_with_its_payload` |
+| M8 | 工具层装回第二个安静的归一化器 | `test_a_raised_failure_reaches_the_gateway_instead_of_being_swallowed` |
+| M9 | capability 名写错（按名解析不再命中真工具） | 同 M4 |
+
+M6 对应的那条 pin 是**本片补的**：`_PUBLISH_SAFETY_NET_S = 900.0` 初版只写了"必须严格高于工具自身预算"的注释，**没有任何断言**，于是"把 timeout 改回默认"这条突变会存活。补法是**推导而非复述字面量** —— 从 `ToolSpec(latency=SLOW).effective_timeout_s` 取通用网，断言 publish 的网严格高于它，这样下调通用网也不会把顺序悄悄倒过来。
+
+**交付前独立抽验**（提交前重跑，不只转述上表）：M2 / M4 / M6 各一条，覆盖三个不同机制（结论被埋 / 默认路径是壳 / 预算倒挂），**3/3 killed**，且失败**原因**与登记一致 —— M2 → `assert 'payload' not in {...'payload': {...}}`、M4 → `assert 'stub' == 'note-9'`、M6 → `assert spec.timeout_s is not None, "publish must carry its own net"`。抽验脚本放仓库外，每条先重写原始字节、跑完还原，`git status` 与突变前**逐项一致**。
+
+**下一片（S4）的入口条件**：① `PublisherAgent` 产 PublishIntent，`xhs.publish` 的 orphan 消失，`tool_runtime_gate.py` 那条 orphan 断言**同 PR 更新**；② `ActionIntentRequest.account_id` 目前**显式必填**，而主链里 `PublisherAgent` 只有隐式账号 → 落地时要显式传，或放宽为可推导（**待决问题 1**，S1 定、S4 必踩）；③ `compute_publish_id`（内容级去重）与 `ActionIntent.idempotency_key`（请求级）的关系要在票面写明（**待决问题 3**）；④ 501 兜底要么改成拒绝、要么删掉（见上面的新发现）。

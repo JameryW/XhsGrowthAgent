@@ -2,8 +2,8 @@
 
 两件事被钉住：
 
-1. **形状**：publish intent 携带 ``artifact_ref`` + ``content_hash``、不接受 candidate IDs；
-   其它能力**拒绝** publish 载荷（而不是静默忽略）。
+1. **形状**：publish intent 携带 ``artifact_ref`` + ``content_hash`` + ``thread_id``、
+   不接受 candidate IDs；其它能力**拒绝** publish 载荷（而不是静默忽略）。
 2. **键级三态**：publish 两个键只在调用方**真写过**时才出现在 ``model_dump`` 里 ——
    ``db/creator_agent._dumps`` 走的是 ``model_dump(mode="json")``（无 ``exclude_none``），
    所以普通 ``None`` 默认值会给**每个非 publish intent** 的落库 payload 加一个
@@ -30,12 +30,13 @@ from backend.creator_agent import (
     Evidence,
     EvidenceSource,
 )
-from backend.creator_agent.repository import ActionCapabilityNotWiredError
+from backend.creator_agent.repository import ActionPublishContentUnavailableError
 from backend.db import creator_agent as creator_agent_db
 from backend.state.artifacts import make_ref, parse_ref
 
 SHA = "a" * 64
 REF = "artifact://publish/p1"
+THREAD = "thread-1"
 NOW = "2026-01-01T00:00:00+00:00"
 
 
@@ -97,6 +98,7 @@ def _request(**overrides) -> ActionIntentRequest:
         "idempotency_key": "publish-1",
         "artifact_ref": REF,
         "content_hash": SHA,
+        "thread_id": THREAD,
     }
     base.update(overrides)
     return ActionIntentRequest(**base)
@@ -127,7 +129,16 @@ class TestPublishPayloadShape:
         request = _request()
         assert request.artifact_ref == REF
         assert request.content_hash == SHA
+        assert request.thread_id == THREAD
         assert request.candidate_ids == []
+
+    def test_a_publish_request_must_say_which_thread_its_artifact_lives_in(self):
+        """P2a-S3: an artifact ref is thread-scoped, so an intent that omits the
+        thread cannot resolve its own payload -- refused at the creation
+        boundary rather than discovered at execute time."""
+        with pytest.raises(ValidationError) as excinfo:
+            _request(thread_id=None)
+        assert "publish requires thread_id" in str(excinfo.value)
 
     @pytest.mark.parametrize(
         ("overrides", "reason"),
@@ -136,6 +147,7 @@ class TestPublishPayloadShape:
             ({"content_hash": None}, "requires content_hash"),
             ({"artifact_ref": "   "}, "requires artifact_ref"),
             ({"content_hash": "   "}, "requires content_hash"),
+            ({"thread_id": "   "}, "cannot be blank"),
             ({"artifact_ref": "publish/p1"}, "artifact://<kind>/<id>"),
             ({"artifact_ref": "artifact://p1"}, "artifact://<kind>/<id>"),
             ({"artifact_ref": "artifact:///p1"}, "artifact://<kind>/<id>"),
@@ -208,23 +220,45 @@ class TestKeyLevelThreeState:
         dumped = _intent().model_dump(mode="json")
         assert "artifact_ref" not in dumped
         assert "content_hash" not in dumped
+        assert "thread_id" not in dumped
 
     def test_a_non_publish_intent_payload_is_still_byte_identical(self):
         """The stored payload is what ``db/creator_agent._dumps`` produces."""
         payload = creator_agent_db._dumps(_intent())
         assert "artifact_ref" not in payload
         assert "content_hash" not in payload
+        assert "thread_id" not in payload
         assert '"resolved_at":null' in payload  # an existing null default is untouched
 
-    def test_a_publish_intent_carries_both_keys(self):
+    def test_a_publish_intent_carries_all_three_keys(self):
         dumped = _intent(
             action_kind=ActionCapability.PUBLISH,
             candidate_ids=[],
             artifact_ref=REF,
             content_hash=SHA,
+            thread_id=THREAD,
         ).model_dump(mode="json")
         assert dumped["artifact_ref"] == REF
         assert dumped["content_hash"] == SHA
+        assert dumped["thread_id"] == THREAD
+
+    def test_a_stored_publish_row_written_before_s3_is_still_readable(self):
+        """The one deliberate asymmetry: ``thread_id`` is required to *create* a
+        publish intent but optional on the stored row.
+
+        Rows written before P2a-S3 carry no thread, and turning every read of
+        them into a 500 would be a migration hazard rather than a safety
+        improvement.  The refusal lives at execute time, where it costs nothing
+        (see ``test_a_publish_intent_without_a_thread_is_refused_before_any_side_effect``).
+        """
+        legacy = _intent(
+            action_kind=ActionCapability.PUBLISH,
+            candidate_ids=[],
+            artifact_ref=REF,
+            content_hash=SHA,
+        )
+        assert legacy.thread_id is None
+        assert "thread_id" not in legacy.model_dump(mode="json")
 
     def test_an_explicitly_set_none_is_still_honoured(self):
         """Three-state: unset ≠ explicitly None.  Only the *unset* case is dropped."""
@@ -246,12 +280,14 @@ class TestPlanAndExecutePublish:
         assert intent.candidate_ids == []
         assert intent.artifact_ref == REF
         assert intent.content_hash == SHA
+        assert intent.thread_id == THREAD
         assert intent.status.value == "pending_confirmation"
 
         stored = await advisor._repository.get_action("account-a", intent.action_id)  # noqa: SLF001
         assert stored is not None
         assert stored.artifact_ref == REF
         assert stored.content_hash == SHA
+        assert stored.thread_id == THREAD
 
     @pytest.mark.asyncio
     async def test_an_unconfirmed_publish_intent_cannot_execute(self):
@@ -265,8 +301,14 @@ class TestPlanAndExecutePublish:
         assert excinfo.value.__class__.__name__ == "ActionExecutionNotAllowedError"
 
     @pytest.mark.asyncio
-    async def test_a_confirmed_publish_intent_fails_loudly_instead_of_minting_a_receipt(self):
-        """P2a-S1 lands the durable intent only; the side-effecting executor is P2a-S3."""
+    async def test_a_confirmed_publish_intent_without_content_is_refused_without_a_receipt(self):
+        """P2a-S3 wires the executor; what stays loud is an unusable payload.
+
+        The advisor here is built without an artifact store, so the intent's ref
+        resolves to nothing.  The one thing that must never happen is a receipt
+        for a publish that never left the process, so the refusal is asserted
+        *and* the absence of a receipt is asserted with it.
+        """
         advisor, decision_id = await _advisor_with_decision()
         intent = await advisor.plan_action(
             _request(decision_id=decision_id, idempotency_key="publish-3")
@@ -277,10 +319,10 @@ class TestPlanAndExecutePublish:
             ActionResolution(disposition=ActionResolutionDisposition.CONFIRMED),
         )
 
-        with pytest.raises(ActionCapabilityNotWiredError) as excinfo:
+        with pytest.raises(ActionPublishContentUnavailableError) as excinfo:
             await advisor.execute_action("account-a", intent.action_id)
 
-        assert excinfo.value.action_kind is ActionCapability.PUBLISH
+        assert excinfo.value.action_id == intent.action_id
         assert await advisor.get_action_execution("account-a", intent.action_id) is None
 
 
