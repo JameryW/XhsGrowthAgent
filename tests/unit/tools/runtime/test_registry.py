@@ -15,6 +15,7 @@ from backend.tools.runtime import (
     CostClass,
     DuplicateCapabilityError,
     LatencyClass,
+    PassStyle,
     RetryPolicy,
     SideEffect,
     ToolRegistry,
@@ -37,12 +38,41 @@ def _spec(**overrides: Any) -> ToolSpec:
     return ToolSpec(**base)
 
 
-async def _async_echo(payload: dict[str, Any]) -> dict[str, Any]:
+async def _async_echo(payload: Any) -> dict[str, Any]:
+    """A kwargs-style double: the payload's keys are its argument names.
+
+    Deliberately *not* annotated ``dict[str, Any]`` — a single required
+    positional parameter annotated as a mapping is the ambiguous shape
+    ``adapt_tool`` refuses to guess at (see ``TestPassStyle``), and this
+    double means the kwargs reading, so it must not look like that shape.
+    """
     return {"echo": payload}
 
 
 def _sync_double(value: int = 0) -> int:
     return value * 2
+
+
+def _two_args(a: int, b: int) -> int:
+    return a + b
+
+
+def _takes_mapping(data: dict[str, Any]) -> dict[str, Any]:
+    """The ambiguous shape: one required positional argument, a mapping.
+
+    Like ``algorithmic_de_ai`` — the payload *is* this argument.
+    """
+    return {"got": data}
+
+
+def _keyword_payload(*, payload: dict[str, Any]) -> dict[str, Any]:
+    """The same signature intent, made unambiguous by being keyword-only."""
+    return {"got": payload}
+
+
+def _stringly_annotated(data: "dict[str, Any]") -> None:
+    """A hand-written string annotation — what PEP 563 yields for every
+    module in this repo, and what a naive check would fail to recognise."""
 
 
 class _FakeLangchainTool:
@@ -234,6 +264,65 @@ class TestAdaptTool:
             assert inspect.iscoroutinefunction(adapt_tool(target))
 
 
+class TestPassStyle:
+    """The two payload conventions — and the refusal to guess between them.
+
+    ``KWARGS`` and ``MAPPING`` are indistinguishable from a signature like
+    ``async def f(filters: dict)``: both call successfully, one on the wrong
+    data. So the style is declared, and an ambiguous target must be declared
+    explicitly rather than silently defaulted.
+    """
+
+    def test_defaults_to_kwargs(self):
+        assert _spec().pass_style is PassStyle.KWARGS
+
+    @pytest.mark.asyncio
+    async def test_keyword_payload_maps_to_argument_names(self):
+        fn = adapt_tool(_sync_double, pass_style=PassStyle.KWARGS)
+        assert await fn({"value": 21}) == 42
+
+    @pytest.mark.asyncio
+    async def test_mapping_payload_is_handed_over_whole(self):
+        fn = adapt_tool(_takes_mapping, pass_style=PassStyle.MAPPING)
+        assert await fn({"a": 1}) == {"got": {"a": 1}}
+
+    def test_mapping_needs_exactly_one_positional_parameter(self):
+        with pytest.raises(ValueError, match="exactly one positional"):
+            adapt_tool(_two_args, pass_style=PassStyle.MAPPING)
+
+    def test_mapping_on_a_keyword_only_tool_is_rejected(self):
+        """There is no positional slot to hand the mapping to."""
+        with pytest.raises(ValueError, match="exactly one positional"):
+            adapt_tool(_keyword_payload, pass_style=PassStyle.MAPPING)
+
+    def test_ambiguous_shape_must_be_declared(self):
+        """A lone mapping argument is refused, not guessed at."""
+        with pytest.raises(ValueError, match="takes a single mapping argument"):
+            adapt_tool(_takes_mapping)
+
+    def test_resolving_the_ambiguity_the_other_way_is_allowed(self):
+        """Annotating the parameter as its real type says "these are keywords"."""
+        assert adapt_tool(_keyword_payload) is not None
+
+    def test_pep563_string_annotations_are_read_as_types(self):
+        """Every module here postpones annotations, so the raw value is a str.
+
+        A string is never a ``Mapping`` subclass; if the check compared the
+        raw annotation the ambiguity guard would never fire anywhere.
+        """
+        assert _stringly_annotated.__annotations__["data"] == "dict[str, Any]"
+        with pytest.raises(ValueError, match="takes a single mapping argument"):
+            adapt_tool(_stringly_annotated)
+
+    def test_langchain_tools_always_get_the_payload_whole(self):
+        fake = _FakeLangchainTool()
+        fn = adapt_tool(fake, pass_style=PassStyle.MAPPING)
+        assert inspect.iscoroutinefunction(fn)
+
+    def test_style_is_serialised(self):
+        assert _spec(pass_style=PassStyle.MAPPING).to_dict()["pass_style"] == "mapping"
+
+
 class TestDescribeParams:
     def test_langchain_tool_uses_its_pydantic_schema(self):
         described = describe_params(_FakeLangchainTool())
@@ -306,3 +395,29 @@ class TestCatalogue:
         registry = build_registry()
         assert registry.spec("content.polish_copy").cost is CostClass.EXPENSIVE
         assert registry.spec("content.algorithmic_de_ai").cost is CostClass.FREE
+
+    def test_only_the_free_form_tool_is_mapping(self):
+        """Pinned so adopting the other convention stays a deliberate change.
+
+        ``build_registry()`` itself validates every declaration against its
+        target's signature, so a *mismatched* style cannot even be built —
+        this test is about which side each capability is on.
+        """
+        mapping = [
+            entry.capability
+            for entry in build_registry()
+            if entry.spec.pass_style is PassStyle.MAPPING
+        ]
+        assert mapping == ["content.algorithmic_de_ai"]
+
+    @pytest.mark.asyncio
+    async def test_the_free_form_tool_actually_runs(self):
+        """Regression: it was adapted as kwargs-style, so every call raised
+        ``TypeError: unexpected keyword argument`` — which the Gateway would
+        have faithfully reported as the tool failing. Now it runs, and its
+        payload arrives as the mapping it reads."""
+        fn = build_registry().get("content.algorithmic_de_ai").fn
+        result = await fn({"selected_title": "震惊！这个方法绝了", "body_text": "总之就是非常好用"})
+        assert result["selected_title"] == "震惊！这个方法绝了"
+        assert result["body_text"] == "总之就是非常好用"
+        assert result["method"] == "algorithmic"
