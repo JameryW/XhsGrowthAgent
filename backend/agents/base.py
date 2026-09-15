@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from langgraph.store.base import BaseStore
 
     from backend.state.schema import XHSGrowthState
+    from backend.tools.runtime.gateway import ToolGateway
 
 from backend.config.models import TaskType
 from backend.models.router import get_model
@@ -80,6 +81,20 @@ class BaseAgent(ABC):
         if self._model is None:
             self._model = get_model(self.task_type.value)
         return self._model
+
+    @property
+    def tools(self) -> ToolGateway:
+        """The shared Tool Gateway — the *only* way an agent reaches a tool.
+
+        P1c-S3 replaced the direct ``from backend.tools.x import y`` calls
+        with capability invocations, so timeout / retry / scope / tracing
+        apply to every call by construction instead of by convention. The
+        catalogue is not imported here at all: agents name a capability and
+        the runtime decides how to run it (see ``backend.tools.runtime.bridge``).
+        """
+        from backend.tools.runtime.bridge import shared_gateway
+
+        return shared_gateway()
 
     async def _llm_ainvoke(self, messages: list[Any]) -> Any:
         """Invoke the routed model and capture a kind:"llm" perf_log entry.
@@ -325,6 +340,7 @@ class BaseAgent(ABC):
         """
         from backend.agents.nodes._base import _tool_llm_cost, node_perf_entry
         from backend.core.error_handling import handle_agent_error
+        from backend.tools.runtime.bridge import tracing_to
 
         started = _now_iso()
         retries = int(state.get("retry_count", 0) or 0)
@@ -339,7 +355,12 @@ class BaseAgent(ABC):
         tool_token = _tool_llm_cost.set([])
         try:
             try:
-                result = await self.execute(state, store)
+                # P1c-S3: bind this run's tool-trace destination for the whole
+                # execute() — including tasks spawned by gather inside it,
+                # which inherit the context. Unbound (e.g. a bare execute()
+                # call from a test) simply means no tool events are stored.
+                with tracing_to(_tool_event_sink(state)):
+                    result = await self.execute(state, store)
             except Exception as e:
                 logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
                 # Drain tool-path cost captured during execute() BEFORE building
@@ -418,3 +439,28 @@ def _now_iso() -> str:
     from datetime import UTC, datetime
 
     return datetime.now(UTC).isoformat()
+
+
+def _tool_event_sink(state: Any) -> Any:
+    """A trace sink that stores tool events against this run's thread.
+
+    One append per invocation rather than a batch: tool calls are rare and
+    already slow, so the extra write costs nothing next to the call, and the
+    event lands with ``kind: "tool"`` where the perf log already lives. Both
+    layers are best-effort — ``emit_events`` and the gateway's own trace
+    wrapper — because telemetry must never break a node (P1a-S2 contract).
+    """
+
+    async def _sink(event: Any) -> None:
+        from backend.state.events import emit_events, resolve_thread_id
+
+        payload = dict(event)
+        thread_id = resolve_thread_id(state)
+        # The gateway only knows the thread when the caller passed one; here we
+        # always do, and an event that names its own thread is self-describing
+        # once it is read back out of the store.
+        if not payload.get("thread_id"):
+            payload["thread_id"] = thread_id
+        await emit_events(thread_id, [payload])
+
+    return _sink

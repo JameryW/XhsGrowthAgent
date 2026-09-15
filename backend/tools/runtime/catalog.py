@@ -29,18 +29,26 @@ both "work"; one of them runs on the wrong data. That is the silent class of
 bug this runtime exists to kill, so :func:`adapt_tool` refuses a declaration
 the target's signature cannot honour instead of picking one.
 
+Implementations are referenced **by name** (``"pkg.module:attr"``) and looked
+up when called, not captured as objects. That is not indirection for its own
+sake: the whole test suite replaces a tool by rebinding its module attribute
+(``patch("backend.tools.analysis.topic_scorer.topic_scorer", fake)``), and a
+captured function object would ignore that replacement — the agent would keep
+calling the real platform client while the test believed it was faking.
+
 S1 registers metadata only — no call path changes.
 """
 
 from __future__ import annotations
 
+import importlib
 import inspect
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, get_origin, get_type_hints
 
-from backend.tools.analysis.topic_scorer import topic_scorer
-from backend.tools.content.de_ai_taste import algorithmic_de_ai, polish_copy
-from backend.tools.ripple.integration import get_report, predict_spread, validate_pmf
+from pydantic import BaseModel
+
 from backend.tools.runtime.models import (
     CostClass,
     LatencyClass,
@@ -51,10 +59,8 @@ from backend.tools.runtime.models import (
     ToolSpec,
 )
 from backend.tools.runtime.registry import ToolRegistry
-from backend.tools.xhs.publisher import xhs_publisher
-from backend.tools.xhs.trending import competitor_analyzer, keyword_monitor, xhs_trending
 
-__all__ = ["adapt_tool", "build_registry", "describe_params"]
+__all__ = ["adapt_tool", "bind", "build_registry", "describe_params", "tool_ref"]
 
 _LANGCHAIN_TOOL_ATTRS = ("ainvoke", "args_schema", "name")
 
@@ -62,6 +68,60 @@ _LANGCHAIN_TOOL_ATTRS = ("ainvoke", "args_schema", "name")
 def _is_langchain_tool(target: Any) -> bool:
     """Duck-typed check — avoids importing langchain here for typing only."""
     return all(hasattr(target, attr) for attr in _LANGCHAIN_TOOL_ATTRS)
+
+
+@dataclass(frozen=True)
+class ToolRef:
+    """A capability's implementation, named rather than captured.
+
+    ``"backend.tools.analysis.topic_scorer:topic_scorer"``. Keeping the name
+    means the lookup happens when the tool is *called*, so a replaced module
+    attribute (a test double, or a reload in development) is honoured.
+    """
+
+    module: str
+    attr: str
+
+    def __str__(self) -> str:
+        return f"{self.module}:{self.attr}"
+
+    def resolve(self) -> Any:
+        """The current object at that path.
+
+        Raises ``AttributeError``/``ImportError`` if the path is wrong —
+        deliberately at *build* time for every registered tool, so a typo in
+        the catalogue fails the composition root instead of one call.
+        """
+        return getattr(importlib.import_module(self.module), self.attr)
+
+
+def tool_ref(dotted: str) -> ToolRef:
+    """Parse ``"pkg.module:attr"`` into a :class:`ToolRef`."""
+    module, separator, attr = dotted.partition(":")
+    if not separator or not module or not attr:
+        raise ValueError(f"tool reference must be 'pkg.module:attr' (got {dotted!r})")
+    return ToolRef(module=module, attr=attr)
+
+
+def bind(ref: ToolRef, *, pass_style: PassStyle = PassStyle.KWARGS) -> ToolFn:
+    """A ``ToolFn`` that invokes whatever ``ref`` currently points at.
+
+    The target is resolved and adapted once eagerly — so a declaration the
+    signature cannot honour still fails at build time, not on the first call
+    — and re-adapted only when the path starts returning a different object
+    (which is exactly what a test double does).
+    """
+    target = ref.resolve()
+    current: tuple[Any, ToolFn] = (target, adapt_tool(target, pass_style=pass_style))
+
+    async def _call(payload: Mapping[str, Any]) -> Any:
+        nonlocal current
+        target = ref.resolve()
+        if current[0] is not target:
+            current = (target, adapt_tool(target, pass_style=pass_style))
+        return await current[1](payload)
+
+    return _call
 
 
 def _is_mapping_annotation(annotation: Any) -> bool:
@@ -178,6 +238,28 @@ def adapt_tool(target: Any, *, pass_style: PassStyle = PassStyle.KWARGS) -> Tool
     return _call_sync
 
 
+def _reflected_schema(target: Any) -> Mapping[str, Any] | None:
+    """The Pydantic schema behind a LangChain-style tool, when there is one.
+
+    Duck-typing by attributes is enough to *route* a tool, but not to read a
+    schema from it: anything with an ``ainvoke`` attribute (a test double, or
+    a look-alike wrapper) also answers ``args_schema``, and calling
+    ``model_json_schema()`` on that answer returns whatever the double makes
+    up — a coroutine, for an ``AsyncMock``. That crashed the whole catalogue
+    at build time. Real LangChain tools expose a ``BaseModel`` subclass here,
+    so that is what we require; anything else declares no schema (``{}``),
+    which is the honest answer and what the S5 coverage gate is for.
+    """
+    schema = getattr(target, "args_schema", None)
+    if not (isinstance(schema, type) and issubclass(schema, BaseModel)):
+        return None
+    try:
+        reflected = schema.model_json_schema()
+    except Exception:  # a broken schema must not take the catalogue down
+        return None
+    return reflected if isinstance(reflected, Mapping) else None
+
+
 def describe_params(target: Any) -> dict[str, Any]:
     """Lightweight parameter description for prompt rendering (L1 layer).
 
@@ -191,19 +273,19 @@ def describe_params(target: Any) -> dict[str, Any]:
     as the payload rather than nesting it under ``data``. L1 rendering (S4)
     must branch on ``ToolSpec.pass_style`` to render it honestly.
     """
-    if _is_langchain_tool(target):
-        schema = getattr(target, "args_schema", None)
-        if schema is not None and hasattr(schema, "model_json_schema"):
-            properties = schema.model_json_schema().get("properties", {})
-            required = set(schema.model_json_schema().get("required", ()))
-            return {
-                name: {
-                    "type": field.get("type", "any"),
-                    "required": name in required,
-                    "description": field.get("description", ""),
-                }
-                for name, field in properties.items()
+    reflected = _reflected_schema(target)
+    if reflected is not None:
+        properties = reflected.get("properties", {})
+        required = set(reflected.get("required", ()))
+        return {
+            name: {
+                "type": field.get("type", "any"),
+                "required": name in required,
+                "description": field.get("description", ""),
             }
+            for name, field in properties.items()
+        }
+    if _is_langchain_tool(target):
         return {}
 
     signature = inspect.signature(target)
@@ -227,7 +309,7 @@ def _register(
     registry: ToolRegistry,
     *,
     capability: str,
-    target: Any,
+    ref: ToolRef,
     summary: str,
     side_effect: SideEffect,
     latency: LatencyClass,
@@ -239,9 +321,10 @@ def _register(
     """Declare a capability and bind it, from one statement.
 
     The declaration and the adapter are built from the *same* ``pass_style``
-    value here, so ``ToolSpec.pass_style`` cannot claim one convention while
-    the Gateway calls another.
+    value and the *same* resolved target here, so ``ToolSpec.pass_style``
+    cannot claim one convention while the Gateway calls another.
     """
+    target = ref.resolve()
     registry.register(
         ToolSpec(
             capability=capability,
@@ -254,7 +337,7 @@ def _register(
             pass_style=pass_style,
             input_schema=describe_params(target),
         ),
-        adapt_tool(target, pass_style=pass_style),
+        bind(ref, pass_style=pass_style),
     )
 
 
@@ -272,7 +355,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="analysis.topic_scorer",
-        target=topic_scorer,
+        ref=tool_ref("backend.tools.analysis.topic_scorer:topic_scorer"),
         summary="评估话题热度与传播潜力（读取小红书真实数据）",
         # Reads the platform through XHSClient — read-only, but slow and
         # rate-limit sensitive.
@@ -287,7 +370,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="content.algorithmic_de_ai",
-        target=algorithmic_de_ai,
+        ref=tool_ref("backend.tools.content.de_ai_taste:algorithmic_de_ai"),
         summary="算法级去 AI 味改写（纯本地文本规则，无外部调用）",
         # The one MAPPING-style tool: it takes `data: dict[str, Any]` and reads
         # the caller's keys out of it, so the payload *is* that mapping.
@@ -302,7 +385,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="content.polish_copy",
-        target=polish_copy,
+        ref=tool_ref("backend.tools.content.de_ai_taste:polish_copy"),
         summary="LLM 润色文案（计费，单次调用）",
         side_effect=SideEffect.PURE,
         latency=LatencyClass.MEDIUM,
@@ -314,7 +397,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="ripple.get_report",
-        target=get_report,
+        ref=tool_ref("backend.tools.ripple.integration:get_report"),
         summary="取回 Ripple 传播预测报告（按 job id）",
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.MEDIUM,
@@ -325,7 +408,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="ripple.predict_spread",
-        target=predict_spread,
+        ref=tool_ref("backend.tools.ripple.integration:predict_spread"),
         summary="预测内容传播效果（重计算，长耗时）",
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
@@ -336,7 +419,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="ripple.validate_pmf",
-        target=validate_pmf,
+        ref=tool_ref("backend.tools.ripple.integration:validate_pmf"),
         summary="校验 PMF 分布参数",
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.MEDIUM,
@@ -349,7 +432,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="xhs.trending",
-        target=xhs_trending,
+        ref=tool_ref("backend.tools.xhs.trending:xhs_trending"),
         summary="抓取平台热门趋势（只读，有封禁风险）",
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
@@ -360,7 +443,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="xhs.keyword_monitor",
-        target=keyword_monitor,
+        ref=tool_ref("backend.tools.xhs.trending:keyword_monitor"),
         summary="监控关键词数据（只读，有封禁风险）",
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
@@ -371,7 +454,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="xhs.competitor_analyzer",
-        target=competitor_analyzer,
+        ref=tool_ref("backend.tools.xhs.trending:competitor_analyzer"),
         summary="竞品笔记分析（只读，有封禁风险）",
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
@@ -384,7 +467,7 @@ def build_registry() -> ToolRegistry:
     _register(
         registry,
         capability="xhs.publish",
-        target=xhs_publisher,
+        ref=tool_ref("backend.tools.xhs.publisher:xhs_publisher"),
         summary="发布笔记到小红书（写操作）",
         side_effect=SideEffect.SIDE_EFFECTING,
         latency=LatencyClass.SLOW,

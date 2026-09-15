@@ -261,7 +261,7 @@ class CopywriterAgent(BaseAgent):
                 niche,
             )
             # Variants: algorithmic only (cost control); main draft already LLM-polished.
-            content_versions = self._algorithmic_de_ai_variants(content_versions)
+            content_versions = await self._algorithmic_de_ai_variants(content_versions)
 
         # ── Creative Memory: 沉淀 ──
         from backend.memory.types import MaterialEntry
@@ -493,16 +493,17 @@ class CopywriterAgent(BaseAgent):
         out["de_ai_method"] = str(polished.get("method") or "")
         return out
 
-    @staticmethod
-    def _algorithmic_de_ai_variants(
+    async def _algorithmic_de_ai_variants(
+        self,
         variants: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Cheap cliché scrub for multi-style variants (no extra LLM calls)."""
+        """Cheap cliché scrub for multi-style variants (no extra LLM calls).
+
+        P1c-S3: routed through the Tool Gateway (``PassStyle.MAPPING`` — the
+        payload *is* the mapping this tool reads). A failed scrub keeps the
+        variant as generated rather than dropping it.
+        """
         if not variants:
-            return variants
-        try:
-            from backend.tools.content.de_ai_taste import algorithmic_de_ai
-        except Exception:
             return variants
 
         polished_variants: list[dict[str, Any]] = []
@@ -510,14 +511,22 @@ class CopywriterAgent(BaseAgent):
             if not isinstance(variant, dict):
                 polished_variants.append(variant)
                 continue
-            result = algorithmic_de_ai(
+            scrubbed = await self.tools.invoke(
+                "content.algorithmic_de_ai",
                 {
                     "selected_title": variant.get("title") or "",
                     "body_text": variant.get("body") or "",
                     "cta": variant.get("cta") or "",
                     "tone": variant.get("tone") or "",
-                }
+                },
             )
+            result = scrubbed.value
+            if not scrubbed.ok or not isinstance(result, dict):
+                logger.warning(
+                    "algorithmic_de_ai 跳过 (%s): %s", variant.get("title"), scrubbed.error
+                )
+                polished_variants.append(variant)
+                continue
             item = dict(variant)
             if result.get("selected_title"):
                 item["title"] = result["selected_title"]

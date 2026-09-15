@@ -589,9 +589,12 @@ class ContentStrategistAgent(BaseAgent):
 
         hot_topics 元素可能是 dict（含 topic 字段）或纯字符串，统一兼容。
         任一话题评分失败则跳过，不阻断主流程。
-        """
-        from backend.tools.analysis.topic_scorer import topic_scorer
 
+        P1c-S3: goes through the Tool Gateway, so the call carries a timeout
+        (LatencyClass.SLOW → 120s), the declared retry policy and a trace
+        event. A tool failure arrives as ``ok=False`` instead of an
+        exception — the failure mode is the runtime's to define now.
+        """
         topics = self._extract_candidate_topics(trend_data, limit=limit)
         if not topics:
             return ""
@@ -599,7 +602,13 @@ class ContentStrategistAgent(BaseAgent):
         lines: list[str] = []
         for topic in topics:
             try:
-                result = await topic_scorer.ainvoke({"topic": topic, "niche": niche})
+                scored = await self.tools.invoke(
+                    "analysis.topic_scorer", {"topic": topic, "niche": niche}
+                )
+                if not scored.ok:
+                    logger.warning(f"topic_scorer 失败 ({topic}): {scored.error}")
+                    continue
+                result = scored.value
                 if not isinstance(result, dict):
                     continue
                 lines.append(
