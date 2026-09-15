@@ -18,6 +18,7 @@ from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
 from backend.context.models import RunContext
+from backend.models.outputs import ShootingPlanOutput, normalize_shooting_plan
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 from backend.state.substates import BriefContent, ContentPlan, CopyContent, TrendData
@@ -25,6 +26,24 @@ from backend.state.substates import BriefContent, ContentPlan, CopyContent, Tren
 logger = logging.getLogger("xhs_growth.agents.shooting_planner")
 
 _compiler = ContextCompiler()
+
+
+def _shooting_plan_has_content(output: ShootingPlanOutput) -> str | None:
+    """Reject a plan with neither a draft nor a title to shoot.
+
+    ``body_copy`` and ``title_candidates`` are the two things a shooting plan
+    exists to hand the creator, and the prompt asks for both. An all-defaults
+    payload would otherwise stop an empty template into ``shooting_plan``,
+    overwriting whatever the creator had — the same shape the early-return
+    branch produces when there is genuinely nothing to plan from, which is
+    exactly why the two must not be allowed to look alike.
+    """
+    if output.body_copy.strip() or output.title_candidates:
+        return None
+    return (
+        "上一次回答里 body_copy 为空且 title_candidates 为空。"
+        "请严格按 JSON 规范重新输出完整拍摄计划。"
+    )
 
 
 class ShootingPlannerAgent(BaseAgent):
@@ -68,24 +87,21 @@ class ShootingPlannerAgent(BaseAgent):
             }
 
         system_prompt = self._compile_system_prompt(state)
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
+        shooting_plan = normalize_shooting_plan(
+            await self._llm_structured(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ],
+                ShootingPlanOutput,
+                validator=_shooting_plan_has_content,
+            )
         )
 
-        content = response.content
-        if isinstance(content, list):
-            content = str(content)
-        parsed = self._parse_json_response(content)
-
-        result: dict[str, Any] = {
-            "shooting_plan": parsed,
+        return {
+            "shooting_plan": shooting_plan,
             "phase": WorkflowPhase.CREATING,
         }
-
-        return result
 
     def _build_brief_prompt(self, brief: BriefContent, viral_refs: list[Any]) -> str:
         """Build prompt for brief mode — from parsed brief content."""

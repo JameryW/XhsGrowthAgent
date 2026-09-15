@@ -26,9 +26,29 @@ from backend.context.models import (
     RunContext,
     require_niche,
 )
+from backend.models.outputs import VisualPlanOutput, normalize_visual_plan
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 _compiler = ContextCompiler()
+
+
+def _visual_plan_has_content(output: VisualPlanOutput) -> str | None:
+    """Reject a plan that names no cover and no images.
+
+    The schema cannot do this on its own: ``{"raw_content": "…"}`` validates
+    against an all-defaults model, so prose would land in ``visual_plan`` as
+    eight empty fields — and the node would report success while the user gets
+    a note with no cover prompt. Raising instead hands the call to
+    ``BaseAgent.__call__``, which returns the error state for the stateful
+    retry this failure is worth. ``cover_prompt``/``image_prompts``/
+    ``visual_style`` is the whole of what this agent exists to produce.
+    """
+    if output.cover_prompt.strip() or output.image_prompts or output.visual_style.strip():
+        return None
+    return (
+        "上一次回答里 cover_prompt、image_prompts、visual_style 都是空的。"
+        "请严格按 JSON 规范重新输出完整的视觉计划。"
+    )
 
 
 class VisualDesignerAgent(BaseAgent):
@@ -102,14 +122,16 @@ class VisualDesignerAgent(BaseAgent):
 视觉要求：{brief_requirements}
 拍摄要求：{shooting_notes}{shooting_ctx}"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
+        visual_plan = normalize_visual_plan(
+            await self._llm_structured(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ],
+                VisualPlanOutput,
+                validator=_visual_plan_has_content,
+            )
         )
-
-        visual_plan = self._parse_json_response(cast(str, response.content))
 
         # ── Creative Memory: 沉淀风格选择 ──
         from backend.memory.types import StyleDNA

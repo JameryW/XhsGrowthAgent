@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 
 from backend.agents.visual_designer import VisualDesignerAgent
+from backend.models.structured import StructuredOutputError
 from backend.state.schema import WorkflowPhase
 
 
@@ -78,7 +79,7 @@ class TestVisualDesignerAgent:
         }
 
         mock_response = MagicMock()
-        mock_response.content = '{"cover_prompt": ""}'
+        mock_response.content = '{"cover_prompt": "封面提示词", "visual_style": "极简"}'
 
         with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
             mock_model = MagicMock()
@@ -122,7 +123,7 @@ class TestVisualDesignerAgent:
         }
 
         mock_response = MagicMock()
-        mock_response.content = '{"cover_prompt": ""}'
+        mock_response.content = '{"cover_prompt": "封面提示词", "visual_style": "极简"}'
 
         with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
             mock_model = MagicMock()
@@ -134,8 +135,20 @@ class TestVisualDesignerAgent:
         assert "visual_plan" in result
 
     @pytest.mark.asyncio
-    async def test_execute_handles_invalid_json(self, agent, mock_state, mock_store):
-        """Execute handles invalid LLM response."""
+    async def test_execute_rejects_payload_with_no_json_in_it(self, agent, mock_state, mock_store):
+        """Prose is refused; no raw text reaches ``visual_plan``.
+
+        The pre-migration reader stored ``{"raw_content": …}`` and the node
+        reported success — a visual plan that named no cover and no images,
+        indistinguishable from a plan whose fields the model left blank. Now
+        the payload is retried once with the problem named and then raised;
+        ``BaseAgent.__call__`` turns that into the error state, and
+        ``nodes/visual_designer`` deliberately does not overwrite ``phase`` on
+        that path so the failure is not masked.
+
+        The assertions pin the property (no raw text in state) and the
+        mechanism's observable side effect (a second, corrective call).
+        """
         mock_response = MagicMock()
         mock_response.content = "Not valid JSON"
 
@@ -144,16 +157,18 @@ class TestVisualDesignerAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            with pytest.raises(StructuredOutputError):
+                await agent.execute(mock_state, store=mock_store)
 
-        assert "visual_plan" in result
-        assert result["visual_plan"].get("raw_content") == "Not valid JSON"
+        assert mock_model.ainvoke.call_count == 2, "expected one attempt + one correction"
+        retry_messages = mock_model.ainvoke.await_args_list[-1].args[0]
+        assert any("【纠偏】" in str(message) for message in retry_messages)
 
     @pytest.mark.asyncio
     async def test_execute_uses_content_plan(self, agent, mock_state, mock_store):
         """Execute uses content_plan fields."""
         mock_response = MagicMock()
-        mock_response.content = '{"cover_prompt": ""}'
+        mock_response.content = '{"cover_prompt": "封面提示词", "visual_style": "极简"}'
 
         with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
             mock_model = MagicMock()
@@ -177,7 +192,7 @@ class TestVisualDesignerAgent:
         import asyncio as _asyncio
 
         mock_response = MagicMock()
-        mock_response.content = '{"cover_prompt": ""}'
+        mock_response.content = '{"cover_prompt": "封面提示词", "visual_style": "极简"}'
 
         real_gather = _asyncio.gather
         gather_calls: list[tuple[tuple, dict]] = []
