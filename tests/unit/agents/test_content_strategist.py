@@ -77,7 +77,13 @@ class TestContentStrategistAgent:
 
     @pytest.mark.asyncio
     async def test_execute_recalls_memory(self, agent, mock_state, mock_store):
-        """Execute recalls historical performance insights."""
+        """Execute recalls historical performance insights.
+
+        顺带钉住漂移防护的**建议性**：模型对 `{"selected_topic": "test"}` 永不收敛
+        （candidates 只有"美食探店"），旧实现重试一次后照收。若把纠偏升格为硬约束，
+        这个用例会以 StructuredOutputError 失败——这正是它该做的事，所以断言显式写出来，
+        而不是让它偶然依赖某个 call path 的宽容度。
+        """
         mock_item = MagicMock()
         mock_item.value = {"insight": "美食话题互动率高"}
         mock_store.asearch = AsyncMock(return_value=[mock_item])
@@ -104,9 +110,11 @@ class TestContentStrategistAgent:
             mock_pred.return_value = {"ripple_prediction": None}
             mock_pmf.return_value = {"ripple_pmf": None}
 
-            await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         mock_store.asearch.assert_called()
+        assert result["content_plan"]["selected_topic"] == "test"
+        assert result["content_plan"]["topic_revised"] is True
 
     @pytest.mark.asyncio
     async def test_ripple_predict_returns_prediction(self, agent, mock_state, mock_store):
@@ -561,8 +569,13 @@ class TestContentStrategistContextPipeline:
 
     @pytest.mark.asyncio
     async def test_drift_retry_prompt_carries_correction_hint(self, agent, mock_store, mock_state):
-        """漂移纠偏 retry（双形态之一）：第二次调用 SystemMessage 携带【纠偏】提示，
-        且两次调用都经 compile_prompt 编译（L4 标记已消费）。"""
+        """漂移纠偏 retry：第二次调用带【纠偏】提示，而 SystemMessage 逐字节不变。
+
+        P1d 之前纠偏是把 hint 拼进 L4 再重新编译 system prompt；现在纠偏走运行时
+        消息（追加的 HumanMessage）。断言的落点随之移动，但钉住的性质更强了：
+        两次调用的 system prompt 必须完全一致——分层 prompt 有快照基线（P1b），
+        一次调用一个样的 system prompt 会让那份测量什么都说明不了。
+        """
         first = MagicMock()
         first.content = '{"selected_topic": "不在候选里的自创话题"}'
         retry = MagicMock()
@@ -592,6 +605,11 @@ class TestContentStrategistContextPipeline:
         assert len(captured["calls"]) == 2
         assert result["content_plan"].get("topic_revised") is True
         retry_system = captured["calls"][1][0].content
-        assert "【纠偏】" in retry_system
-        assert "不在候选话题内" in retry_system
+        assert retry_system == captured["calls"][0][0].content
         assert "{memory_context}" not in retry_system
+        # 纠偏只出现在第二次调用的差量里，且被显式标注为纠偏（不是新指令）
+        hints = [str(m.content) for m in captured["calls"][1] if "【纠偏】" in str(m.content)]
+        assert len(hints) == 1, hints
+        assert "不在候选话题内" in hints[0]
+        assert "不在候选里的自创话题" in hints[0]
+        assert not [m for m in captured["calls"][0] if "【纠偏】" in str(m.content)]

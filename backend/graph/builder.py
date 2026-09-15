@@ -179,15 +179,25 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     )
 
     # ── 内容创作流水线 ──
-    # content_strategist → [ripple_finalize | ripple_gate] based on Ripple mode.
-    # Background mode (ripple_pending): skip ripple_gate, go to ripple_finalize
-    # which reads the store-written background result. Blocking mode: ripple_gate.
+    # content_strategist → [ripple_finalize | ripple_gate | __end__] based on
+    # Ripple mode. Background mode (ripple_pending): skip ripple_gate, go to
+    # ripple_finalize which reads the store-written background result. Blocking
+    # mode: ripple_gate.
+    #
+    # P1d: `__end__` was missing from this map while `content_strategist_router`
+    # returned it (its terminal guard, added so ripple_gate cannot swallow an
+    # error by auto-accepting). LangGraph resolves a router's value through this
+    # map, so the router's documented terminal branch raised `KeyError:
+    # '__end__'` instead of ending the workflow — every content_strategist
+    # failure crashed the graph. Found when P1d let that node fail for the first
+    # time; the four sibling branches below all had the entry.
     builder.add_conditional_edges(
         "content_strategist",
         content_strategist_router,
         {
             "ripple_finalize": "ripple_finalize",
             "ripple_gate": "ripple_gate",
+            "__end__": END,
         },
     )
 

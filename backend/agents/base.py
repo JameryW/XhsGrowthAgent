@@ -6,8 +6,11 @@ import contextvars
 import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
+
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     # BaseChatModel / BaseStore / XHSGrowthState are only used in annotations.
@@ -27,6 +30,19 @@ from backend.config.models import TaskType
 from backend.models.router import get_model
 
 logger = logging.getLogger("xhs_growth.agents")
+
+T = TypeVar("T", bound=BaseModel)
+
+
+def _response_text(response: Any) -> str:
+    """The text of a chat response, whatever shape the provider returned."""
+    content = getattr(response, "content", response)
+    if isinstance(content, str):
+        return content
+    # Some providers answer with content blocks; str() them exactly the way the
+    # call sites did before this helper existed.
+    return str(content)
+
 
 # P0-W1 (task 09-11-p0-correctness-fixes): LLM perf entries live in a
 # ContextVar, NOT on the agent instance. Agent classes are module-level
@@ -128,7 +144,13 @@ class BaseAgent(ABC):
 
         return shared_gateway()
 
-    async def _llm_ainvoke(self, messages: list[Any]) -> Any:
+    async def _llm_ainvoke(
+        self,
+        messages: list[Any],
+        *,
+        runnable: Any = None,
+        model_kwargs: Mapping[str, Any] | None = None,
+    ) -> Any:
         """Invoke the routed model and capture a kind:"llm" perf_log entry.
 
         Wraps :meth:`model.ainvoke` with timing + token/cost capture (via
@@ -138,6 +160,12 @@ class BaseAgent(ABC):
         merges them with the node-level entry and emits the batch to the Event
         store. Reset per execute() via :meth:`_reset_llm_perf`. Best-effort: a
         capture failure never breaks the call.
+
+        ``runnable`` replaces the model for this call — that is how a structured
+        output runnable (``model.with_structured_output(...)``) gets invoked
+        while still being accounted for. ``model_kwargs`` are bound onto the
+        model instead (``response_format``, say). Both default to the plain
+        routed model, so existing callers behave exactly as before.
         """
         from datetime import UTC, datetime
 
@@ -150,13 +178,19 @@ class BaseAgent(ABC):
         # above also covers entry-build overhead; ainvoke_ms isolates the call.
         import time
 
+        target = runnable or (self.model.bind(**model_kwargs) if model_kwargs else self.model)
         _ainvoke_start = time.perf_counter()
-        response = await self.model.ainvoke(messages)
+        response = await target.ainvoke(messages)
         ainvoke_ms = (time.perf_counter() - _ainvoke_start) * 1000.0
+        # ``with_structured_output(include_raw=True)`` answers with a dict
+        # wrapping the message. The perf entry reads ``usage_metadata`` off
+        # whatever it is handed, so passing the dict would record zero tokens
+        # and put the cost dashboard back to $0 — unwrap before measuring.
+        measured = response.get("raw") if isinstance(response, dict) else response
         try:
             entry = llm_perf_entry(
                 self.agent_name,
-                response,
+                measured,
                 get_model_id_for_task(self.task_type),  # routed model id
                 started_at=started,
                 completed_at=datetime.now(UTC).isoformat(),
@@ -167,6 +201,133 @@ class BaseAgent(ABC):
         except Exception as exc:  # best-effort: never break the call
             logger.debug("llm perf entry capture failed: %s", exc)
         return response
+
+    async def _llm_structured(
+        self,
+        messages: list[Any],
+        output_model: type[T],
+        *,
+        validator: Callable[[T], str | None] | None = None,
+        attempts_per_level: int = 2,
+        accept_last_valid: bool = False,
+    ) -> T:
+        """Ask the model for ``output_model``, degrading rather than failing.
+
+        Walks the chain declared in :mod:`backend.models.structured`
+        strongest-first. A level whose call cannot even be made (the endpoint
+        rejects ``response_format``, the provider has no tool calling) or whose
+        payload does not validate hands the call to the next one. Within a level
+        a failed validation is retried with the correction attached, because a
+        model that produced a well-formed but unacceptable payload only needs to
+        be told which field was wrong.
+
+        ``validator`` is the semantic check — the one thing a schema cannot
+        express. It returns ``None`` to accept, or the correction to send back.
+        The correction is framed as ``【纠偏】…`` here rather than by each
+        validator, so that a model always sees the same marker for "this is a
+        correction to your last answer, not a new instruction".
+
+        Two kinds of failure, two dispositions:
+
+        * the payload is **malformed** (not an object, or the schema rejected
+          it) — never returned, in any configuration. That is how bad data
+          reaches state.
+        * the payload is **well formed but refused** by ``validator`` — the
+          schema model *did* validate it; only the semantic preference said no.
+          Whether that is fatal depends on the strength of the check, which only
+          the caller knows, so the caller declares it. Default (``False``) is
+          fatal: raise once the chain is exhausted. ``accept_last_valid=True``
+          is for *advisory* checks — "prefer this, do not require it" — and
+          returns the last schema-valid instance after logging a warning. The
+          alternative is that plumbing an advisory nudge through this method
+          quietly turns it into a hard requirement and a stubborn model can kill
+          the node.
+        """
+        from langchain_core.messages import HumanMessage
+
+        from backend.config.models import get_model_config, get_model_id_for_task
+        from backend.models.structured import (
+            StructuredOutputError,
+            degradation_path,
+            resolve_structured_mode,
+            validate_output,
+        )
+
+        provider = get_model_config(get_model_id_for_task(self.task_type)).provider
+        conversation = list(messages)
+        failures: list[tuple[Any, str]] = []
+        last_valid: T | None = None
+
+        for level in degradation_path(resolve_structured_mode(provider)):
+            for _ in range(max(1, attempts_per_level)):
+                try:
+                    payload = await self._structured_call(level, conversation, output_model)
+                except Exception as exc:
+                    # The level itself is unusable; a retry would fail the same
+                    # way, so record it and degrade.
+                    failures.append((level, f"{type(exc).__name__}: {exc}"))
+                    break
+                outcome, correction = validate_output(payload, output_model)
+                if outcome is None:
+                    # Malformed: this one can never be the accepted payload.
+                    failures.append((level, correction or "payload did not validate"))
+                else:
+                    correction = validator(outcome) if validator is not None else None
+                    if correction is None:
+                        return outcome
+                    last_valid = outcome
+                    failures.append((level, correction))
+                logger.info(
+                    "%s: %s payload rejected, retrying with the correction",
+                    self.agent_name,
+                    level.value,
+                )
+                conversation = [*conversation, HumanMessage(content=f"【纠偏】{correction or ''}")]
+        if accept_last_valid and last_valid is not None:
+            logger.warning(
+                "%s: %s never satisfied its validator (%d attempt(s)); accepting the last "
+                "schema-valid payload because the check is advisory",
+                self.agent_name,
+                output_model.__name__,
+                len(failures),
+            )
+            return last_valid
+        raise StructuredOutputError(output_model, failures)
+
+    async def _structured_call(
+        self,
+        level: Any,
+        messages: list[Any],
+        output_model: type[T],
+    ) -> Any:
+        """One attempt at one level, returning a payload that is still unchecked.
+
+        Nothing here validates. The schema check and the semantic check live in
+        the caller so that every level is held to the identical standard — the
+        point of the chain is to change how the text is obtained, never whether
+        it is checked.
+        """
+        from langchain_core.messages import HumanMessage
+
+        from backend.models.structured import StructuredMode, render_schema_instructions
+
+        if level is StructuredMode.NATIVE_SCHEMA:
+            runnable = self.model.with_structured_output(output_model, include_raw=True)
+            result = await self._llm_ainvoke(messages, runnable=runnable)
+            if not isinstance(result, dict):  # pragma: no cover - defensive
+                return result
+            if result.get("parsing_error"):
+                raise ValueError(f"native structured output failed: {result['parsing_error']}")
+            return result.get("parsed")
+
+        guided = [*messages, HumanMessage(content=render_schema_instructions(output_model))]
+        if level is StructuredMode.JSON_OBJECT:
+            response = await self._llm_ainvoke(
+                guided, model_kwargs={"response_format": {"type": "json_object"}}
+            )
+        else:
+            response = await self._llm_ainvoke(guided)
+        return self._parse_json_response(_response_text(response))
 
     def _reset_llm_perf(self) -> None:
         """Start a fresh llm perf entry accumulation for this context.
