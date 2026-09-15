@@ -8,8 +8,10 @@ the catalogue actually covers every capability the agents call today.
 
 import inspect
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import BaseModel, Field
 
 from backend.tools.runtime import (
     CostClass,
@@ -57,6 +59,9 @@ def _two_args(a: int, b: int) -> int:
     return a + b
 
 
+_TOPIC_SCORER = "backend.tools.analysis.topic_scorer.topic_scorer"
+
+
 def _takes_mapping(data: dict[str, Any]) -> dict[str, Any]:
     """The ambiguous shape: one required positional argument, a mapping.
 
@@ -75,21 +80,18 @@ def _stringly_annotated(data: "dict[str, Any]") -> None:
     module in this repo, and what a naive check would fail to recognise."""
 
 
+class _FakeArgs(BaseModel):
+    """Mirrors what ``@tool`` generates: ``args_schema`` is a real model."""
+
+    topic: str = Field(description="话题")
+    limit: int = 0
+
+
 class _FakeLangchainTool:
     """Duck-typed stand-in for a StructuredTool — no langchain import needed."""
 
     name = "fake_tool"
-
-    class args_schema:  # noqa: N801 - mimics the attribute, not a class we use
-        @staticmethod
-        def model_json_schema() -> dict[str, Any]:
-            return {
-                "properties": {
-                    "topic": {"type": "string", "description": "话题"},
-                    "limit": {"type": "integer"},
-                },
-                "required": ["topic"],
-            }
+    args_schema = _FakeArgs
 
     def __init__(self) -> None:
         self.calls: list[Any] = []
@@ -338,6 +340,30 @@ class TestDescribeParams:
         assert described["value"]["required"] is False  # has a default
         assert described["value"]["type"] == "int"
 
+    def test_a_look_alike_tool_is_routed_but_not_reflected(self):
+        """Duck-typing decides how to *call* a tool, not how to read it.
+
+        An object with ``ainvoke``/``args_schema``/``name`` is routed as a
+        LangChain tool, but its ``args_schema`` is not a Pydantic model, so
+        there is no schema to read — and inventing one used to blow up the
+        whole catalogue (see the AsyncMock case below).
+        """
+
+        class LookAlike:
+            name = "look_alike"
+            args_schema = None
+
+            async def ainvoke(self, payload: Any) -> Any:
+                return payload
+
+        assert describe_params(LookAlike()) == {}
+
+    def test_an_async_mock_schema_does_not_break_the_catalogue(self):
+        """Regression: ``AsyncMock().args_schema.model_json_schema()`` returns
+        a coroutine, and ``.get`` on it raised — killing ``build_registry()``
+        the moment the gateway was first built with a tool doubled."""
+        assert describe_params(AsyncMock()) == {}
+
 
 class TestCatalogue:
     def test_covers_every_agent_call_site(self):
@@ -390,6 +416,17 @@ class TestCatalogue:
         first, second = build_registry(), build_registry()
         assert first is not second
         assert first.capabilities() == second.capabilities()
+
+    def test_builds_while_a_tool_is_doubled(self):
+        """The catalogue must survive being built with a test double in place.
+
+        The shared gateway is built lazily on first use, which can land inside
+        a ``patch`` block — so a doubled tool must not be able to take the
+        composition root down. See the AsyncMock case in ``TestDescribeParams``.
+        """
+        with patch(_TOPIC_SCORER, AsyncMock()):
+            registry = build_registry()
+        assert "analysis.topic_scorer" in registry
 
     def test_costs_are_classified(self):
         registry = build_registry()

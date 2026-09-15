@@ -6,7 +6,15 @@ the agents currently use. The Gateway (S2) is the only thing allowed to
 invoke them.
 """
 
-from backend.tools.runtime.catalog import adapt_tool, build_registry, describe_params
+from backend.tools.runtime.bridge import reset_gateway, shared_gateway, tracing_to
+from backend.tools.runtime.catalog import (
+    ToolRef,
+    adapt_tool,
+    bind,
+    build_registry,
+    describe_params,
+    tool_ref,
+)
 from backend.tools.runtime.gateway import (
     PermissionDeniedError,
     Sleeper,
@@ -42,12 +50,18 @@ __all__ = [
     "Sleeper",
     "ToolFn",
     "ToolGateway",
+    "ToolRef",
     "ToolRegistry",
     "ToolResult",
     "ToolSpec",
     "TraceSink",
     "UnknownCapabilityError",
     "adapt_tool",
+    "bind",
     "build_registry",
     "describe_params",
+    "reset_gateway",
+    "shared_gateway",
+    "tool_ref",
+    "tracing_to",
 ]
