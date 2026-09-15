@@ -3,7 +3,7 @@
   "name": "p2-action-model-mainline",
   "title": "sub: p2-action-model-mainline",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,15 +12,28 @@
   "assignee": "codex",
   "createdAt": "2026-09-11",
   "completedAt": null,
-  "branch": null,
+  "branch": "feat/p2a-s1-action-protocol",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
   "pr_url": null,
-  "subtasks": [],
+  "subtasks": [
+    "S1 action-protocol: ActionCapability.PUBLISH + publish payload + key-level three-state serializer + not-wired 501",
+    "S2 policy-engine: deterministic fail-closed verdict between plan_action and resolve_action",
+    "S3 action-executor: PUBLISH via Tool Gateway, idempotency key wired, RetryPolicy unlocked",
+    "S4 mainline: PublisherAgent emits PublishIntent, xhs.publish orphan disappears, gate assertion updated in same PR",
+    "S5 credentials + docs/publish-action-protocol.md"
+  ],
   "children": [],
   "parent": "09-11-runtime-upgrade",
-  "relatedFiles": [],
-  "notes": "",
+  "relatedFiles": [
+    "backend/creator_agent/models.py",
+    "backend/creator_agent/repository.py",
+    "backend/creator_agent/advisor.py",
+    "backend/api/errors.py",
+    "backend/api/routes/creator_agent.py",
+    "tests/unit/creator_agent/test_action_publish_payload.py"
+  ],
+  "notes": "S1 landed on feat/p2a-s1-action-protocol (base f83ab057). Gates: pytest 3095 passed/3 skipped (S4 3065 + 30 new = zero existing cases touched), ruff 495 files, mypy 200 files clean, P1b baseline drift within threshold, tool_runtime_gate OK (xhs.publish still the only orphan by design until S4). Mutation self-check 11/11 killed, each by a named assertion. Two env noises, not regressions: (a) test_delete_running_workflow_blocked fails only because the WorkBuddy safe-delete shim times out at 10s -> passes with CODEBUDDY_SAFE_DELETE_ENABLED=0; (b) the predicted mypy return-value errors on model_validator(mode=\"after\") never appeared (pydantic plugin handles it), so NO type: ignore was added. S1 decision on open question 1: publish keeps the decision's audience_id (option b). ActionCapabilityNotWiredError is a temporary roadblock and must disappear in S3.",
   "meta": {}
 }

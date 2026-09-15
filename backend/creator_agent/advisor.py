@@ -44,6 +44,7 @@ from backend.creator_agent.models import (
 from backend.creator_agent.observations import CreatorContentObservationSource
 from backend.creator_agent.proposals import build_evidence_proposals
 from backend.creator_agent.repository import (
+    ActionCapabilityNotWiredError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionValidationError,
@@ -279,6 +280,13 @@ class CreatorAdvisor:
                 raise ActionValidationError(
                     "request_more_evidence does not accept candidate IDs", "candidate_ids"
                 )
+        elif request.action_kind is ActionCapability.PUBLISH:
+            # A publish intent targets an artifact, not a ranked candidate, so the
+            # candidate rules below do not apply.  Shape is already enforced by
+            # ``_validate_publish_payload``; the decision link stays required as
+            # the account-scoped anchor.  Policy gating (cooldown / risk /
+            # compliance) lands in P2a-S2.
+            pass
         else:
             if decision.status is not DecisionStatus.RECOMMENDED:
                 raise ActionValidationError(
@@ -307,6 +315,8 @@ class CreatorAdvisor:
             candidate_ids=candidate_ids,
             idempotency_key=idempotency_key,
             status=ActionStatus.PENDING_CONFIRMATION,
+            artifact_ref=request.artifact_ref,
+            content_hash=request.content_hash,
             created_at=now,
             updated_at=now,
         )
@@ -349,6 +359,11 @@ class CreatorAdvisor:
             raise ActionIntentMissingError(normalized_action_id)
         if action.status is not ActionStatus.CONFIRMED:
             raise ActionExecutionNotAllowedError(normalized_action_id, action.status)
+        if action.action_kind is ActionCapability.PUBLISH:
+            # P2a-S1 lands the durable intent only.  The side-effecting executor
+            # (Tool Gateway call + idempotency-key retry) is P2a-S3; until then a
+            # confirmed publish intent must fail loudly rather than mint a receipt.
+            raise ActionCapabilityNotWiredError(normalized_action_id, action.action_kind)
 
         decision = await self._repository.get_decision(normalized_account_id, action.decision_id)
         if decision is None:
