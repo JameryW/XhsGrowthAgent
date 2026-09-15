@@ -243,6 +243,24 @@ def describe_validation_error(error: ValidationError) -> str:
     return "\n".join(lines)
 
 
+_OBJECT_ROOT_CORRECTION = "输出必须是 JSON 对象（顶层形如 {...}），请重新输出。"
+_LIST_ROOT_CORRECTION = "输出必须是 JSON 对象或数组（顶层形如 {...} 或 [...]），请重新输出。"
+
+
+def _takes_a_list_root(output_model: type[BaseModel]) -> bool:
+    """Whether ``output_model`` declares that a bare JSON array is a legal root.
+
+    Only the model can answer this. For most models an array is not a shape at
+    all but a mistake, while for a few it is the *natural* answer — a question
+    list is ``[{"field": …}]`` long before it is ``{"questions": [...]}``, and
+    ``_parse_json_response`` really does hand back a list for both spellings
+    (measured, not assumed). Pydantic cannot express the difference: the
+    object-only gate below runs before ``model_validate`` ever sees the payload,
+    so a root shape that is not an object has nowhere else to be declared.
+    """
+    return bool(getattr(output_model, "accepts_bare_list", False))
+
+
 def validate_output(
     payload: Any,
     output_model: type[T],
@@ -251,8 +269,16 @@ def validate_output(
 
     Accepts either a mapping to validate or an instance the provider already
     built from ``output_model`` — a native structured-output call hands back the
-    model itself, and re-validating it would be busywork. Anything else is
-    refused: broadening this to "any object" would make the gate decorative.
+    model itself, and re-validating it would be busywork. A bare list is
+    accepted only when the model declares ``accepts_bare_list``; anything else
+    is refused: broadening this to "any object" would make the gate decorative,
+    and broadening it to "any list" would hand eleven object-rooted models a
+    Pydantic root error in place of the instruction to emit an object.
+
+    The refusal carries the shapes this *particular* model accepts, not a fixed
+    sentence: the correction is the entire mechanism of the retry, and telling a
+    model that takes a question list that its answer "must be an object" spends
+    a round trip narrowing it to the spelling we did not need.
 
     Schema only. The semantic check is *deliberately* not folded in here: the
     two failures need different dispositions (a malformed payload is never
@@ -261,10 +287,11 @@ def validate_output(
     from the caller — which is how an advisory check silently becomes a fatal
     one. Callers run their own validator against the returned instance.
     """
+    accepts_list_root = _takes_a_list_root(output_model)
     if isinstance(payload, output_model):
         return payload, None
-    if not isinstance(payload, dict):
-        return None, "输出必须是 JSON 对象（顶层形如 {...}），请重新输出。"
+    if not isinstance(payload, dict) and not (isinstance(payload, list) and accepts_list_root):
+        return None, _LIST_ROOT_CORRECTION if accepts_list_root else _OBJECT_ROOT_CORRECTION
     try:
         return output_model.model_validate(payload), None
     except ValidationError as exc:

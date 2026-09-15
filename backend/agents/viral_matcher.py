@@ -3,6 +3,10 @@
 P1b-S4 迁移第六批销号（consumer-map §六.6，纯模板批）：无管线 ns recall、
 system YAML 无占位符（任务数据全走 user_msg），prompt 组装接
 ContextCompiler.compile_prompt（无标记整段 L0）。
+
+P1d-S2b：爆款匹配迁到 ``_llm_structured`` + ``ViralPostsOutput``
+（裸数组与 ``{"viral_posts": [...]}`` 两种拼法都收）；失败仍然降级成
+"无参考笔记 + optimization_error"，见 ``execute`` 内注释。
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
 from backend.context.models import RunContext
+from backend.models.outputs import ViralPostsOutput, normalize_viral_posts
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -102,12 +107,18 @@ class ViralMatcherAgent(BaseAgent):
 用户指定爆款链接：{", ".join(user_links) if user_links else "无"}
 自动搜索关键词：{", ".join(auto_keywords[:5]) if auto_keywords else "无"}"""
 
+        # P1d-S2b: 爆款匹配走结构化链，但**降级语义刻意与 analyst 相反** ——
+        # 这里连「一次都没问到」也一起兜住，因为爆款参考是本节点唯一的可选产出：
+        # 拿不到就没有参考笔记，而失败**被贴了标签**（``optimization_error``）进
+        # state，不是被伪装成"这次没搜到爆款"。analyst 那边不同：空快照带着
+        # engagement_rate=0.0 进报表，与一次真实的零表现无法区分，所以那里必须上抛。
         try:
-            response = await self._llm_ainvoke(
+            output = await self._llm_structured(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=user_msg),
-                ]
+                ],
+                ViralPostsOutput,
             )
         except Exception as e:
             logger.warning(
@@ -121,11 +132,7 @@ class ViralMatcherAgent(BaseAgent):
                 "phase": WorkflowPhase.CREATING,
             }
 
-        content = response.content
-        if isinstance(content, list):
-            content = str(content)
-        result = self._parse_json_response(content)
-        viral_posts = result.get("viral_posts", [])
+        viral_posts = normalize_viral_posts(output)
 
         logger.info(f"Found {len(viral_posts)} viral posts for comparison")
 

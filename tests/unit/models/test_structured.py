@@ -8,10 +8,10 @@ versus the checks that every level is held to identically.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.config.models import ModelProvider
 from backend.models.structured import (
@@ -329,3 +329,73 @@ class TestStructuredOutputError:
         """
         error = StructuredOutputError(_Item, [(StructuredMode.PROMPTED, "nope")])
         assert not hasattr(error, "payload")
+
+
+class _QuestionList(BaseModel):
+    """A model whose *natural* answer is a bare array (P1d-S2b).
+
+    The shape is declared rather than inferred because only the model can say
+    it: to every other model in the package an array is a mistake, not a shape.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    accepts_bare_list: ClassVar[bool] = True
+
+    questions: list[_Item] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _a_bare_array_is_the_question_list(cls, data: Any) -> Any:
+        if isinstance(data, list):
+            return {"questions": data}
+        return data
+
+
+class TestABareArrayIsALegalRootOnlyWhereDeclared:
+    """``validate_output`` used to refuse every non-dict payload.
+
+    That was right for eleven of the twelve models and wrong for the one whose
+    answer really is a list — ``_parse_json_response`` hands back a ``list`` for
+    ``[{"field": …}]``, so migrating that call site without this would have
+    turned "accepted" into "hard failure".
+    """
+
+    def test_the_array_is_accepted_where_the_model_declares_it(self):
+        instance, correction = validate_output([{"name": "a"}], _QuestionList)
+        assert correction is None
+        assert isinstance(instance, _QuestionList)
+        assert instance.questions == [_Item(name="a")]
+
+    def test_the_same_array_is_still_refused_where_it_is_not_declared(self):
+        instance, correction = validate_output([{"name": "a"}], _Item)
+        assert instance is None
+        assert correction is not None
+
+    def test_the_object_spelling_still_validates_for_a_list_rooted_model(self):
+        instance, correction = validate_output({"questions": [{"name": "a"}]}, _QuestionList)
+        assert correction is None
+        assert isinstance(instance, _QuestionList)
+
+    def test_a_scalar_is_still_refused_for_a_list_rooted_model(self):
+        instance, correction = validate_output("nope", _QuestionList)
+        assert instance is None
+        assert correction is not None
+
+    def test_the_correction_names_the_shapes_this_model_accepts(self):
+        """The correction *is* the retry mechanism, so it must not narrow a
+        list-rooted model down to the spelling we did not need — and must not
+        tell an object-rooted one that an array is welcome."""
+        _, list_rooted = validate_output("nope", _QuestionList)
+        _, object_rooted = validate_output("nope", _Item)
+
+        assert list_rooted is not None and "数组" in list_rooted
+        assert list_rooted is not None and "JSON 对象" in list_rooted
+        assert object_rooted is not None and "数组" not in object_rooted
+
+    def test_an_instance_the_provider_built_is_accepted_before_the_gate(self):
+        """The bare-list gate must not shadow the instance check above it."""
+        already = _QuestionList(questions=[_Item(name="a")])
+        instance, correction = validate_output(already, _QuestionList)
+        assert correction is None
+        assert instance is already

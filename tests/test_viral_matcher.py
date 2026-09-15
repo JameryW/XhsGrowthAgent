@@ -1,10 +1,48 @@
 """Tests for ViralMatcherAgent."""
 
+from __future__ import annotations
+
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.agents.viral_matcher import ViralMatcherAgent
+
+
+class _TimingOutModel:
+    """A real stand-in for "the provider call timed out".
+
+    Deliberately not a ``MagicMock``: a mock invents ``bind``, and the value it
+    returns is not awaitable, so the JSON_OBJECT level dies of a ``TypeError``
+    manufactured by the double. Because the chain re-raises the *first* level's
+    failure when nothing was ever answered, that ``TypeError`` — not the
+    timeout — is what reaches ``optimization_error``. ``bind`` returning the
+    model itself is close enough to ``ChatOpenAI`` for this purpose.
+    """
+
+    def bind(self, **kwargs: Any) -> _TimingOutModel:
+        return self
+
+    async def ainvoke(self, *args: Any, **kwargs: Any) -> Any:
+        raise TimeoutError("Request timed out.")
+
+
+class _AnsweringModel:
+    """Answers the same text on every level it is asked."""
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+    def bind(self, **kwargs: Any) -> _AnsweringModel:
+        return self
+
+    def with_structured_output(self, *args: Any, **kwargs: Any) -> _AnsweringModel:
+        return self
+
+    async def ainvoke(self, *args: Any, **kwargs: Any) -> Any:
+        return SimpleNamespace(content=self.content)
 
 
 @pytest.fixture
@@ -141,11 +179,15 @@ async def test_viral_matcher_with_links(mock_state, mock_store):
 
 @pytest.mark.asyncio
 async def test_viral_matcher_timeout_skips_optimization(mock_state, mock_store):
-    """Should not skip optimization when viral matching fails."""
+    """Should not skip optimization when viral matching fails.
+
+    "Fails" here means the provider call timing out on *every* level of the
+    structured chain — hence the real ``_TimingOutModel`` rather than a mock;
+    see its docstring for why a ``MagicMock`` would report a different error.
+    """
     agent = ViralMatcherAgent()
 
-    mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(side_effect=TimeoutError("Request timed out."))
+    mock_model = _TimingOutModel()
 
     with patch.object(agent, "_model", mock_model):
         result = await agent.execute(mock_state, mock_store)
@@ -199,3 +241,35 @@ async def test_viral_matcher_phase_update(mock_state, mock_store):
         result = await agent.execute(mock_state, mock_store)
 
     assert result.get("phase") is not None
+
+
+@pytest.mark.asyncio
+async def test_viral_matcher_accepts_a_bare_array(mock_state, mock_store):
+    """The prompt lets the model answer with the list itself (S2b).
+
+    The old call site read only ``result.get("viral_posts", [])``, so a bare
+    array quietly became "no reference notes". ``_parse_json_response`` really
+    does hand back a ``list`` for ``[{…}]``, so the output model declares
+    ``accepts_bare_list`` and takes both spellings.
+    """
+    agent = ViralMatcherAgent()
+
+    with patch.object(agent, "_model", _AnsweringModel('[{"note_id": "abc123"}]')):
+        result = await agent.execute(mock_state, mock_store)
+
+    assert [post["note_id"] for post in result["viral_posts"]] == ["abc123"]
+
+
+@pytest.mark.asyncio
+async def test_a_broken_palette_does_not_throw_away_the_batch(mock_state, mock_store):
+    """``color_palette`` is one decorative line in the next prompt; the entry
+    carrying it is a reference note the optimiser needs. A batch is not worth
+    trading for a colour card."""
+    agent = ViralMatcherAgent()
+    payload = '[{"note_id": "a", "color_palette": "暖色"}, {"note_id": "b"}]'
+
+    with patch.object(agent, "_model", _AnsweringModel(payload)):
+        result = await agent.execute(mock_state, mock_store)
+
+    assert [post["note_id"] for post in result["viral_posts"]] == ["a", "b"]
+    assert result["viral_posts"][0]["color_palette"] == {}

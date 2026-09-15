@@ -8,6 +8,12 @@ prompt 组装走 ContextCompiler.compile_prompt（YAML 分段 schema，
 `{ripple_context}` 占位符按 consumer-map 暂保留 post-render .replace
 （P1b 不动）。分段等价口径（info.md D3'）：L0 policy 文本逐字不变，
 L4 段内容集合与迁移前相等（层序渲染到 L0 尾部）。
+
+P1d-S1：主调用点 + 主题漂移纠偏迁到 ``_llm_structured`` +
+``ContentPlanOutput``（validator ``_topic_within_candidates``，
+``accept_last_valid=True``，标志位由 validator 自己置）。
+P1d-S2b：低传播重生成（第三个拼装点）随之迁入，S1 的 `_llm_ainvoke` +
+`_parse_json_response` 残留清零。
 """
 
 from __future__ import annotations
@@ -408,16 +414,19 @@ class ContentStrategistAgent(BaseAgent):
             # 将 ripple_context 直接拼入 system prompt
             retry_prompt = retry_prompt.replace("{ripple_context}", ripple_context)
 
-            retry_response = await self._llm_ainvoke(
+            # P1d-S2b: 低传播重生成也走结构化链（同一模型、同一提示词字节）。
+            # 刻意不挂 ``_topic_within_candidates``：漂移门禁是给"模型自主选题"
+            # 用的，这一次是拿 Ripple 洞察重做决策；而且重生成会整份替换
+            # content_plan，接过门禁就得同时把 ``topic_revised`` 标志搬过来 ——
+            # 那是另一处改动，不在本切片里顺手做。
+            retry_response = await self._llm_structured(
                 [
                     SystemMessage(content=retry_prompt),
                     HumanMessage(content=user_msg),
-                ]
+                ],
+                ContentPlanOutput,
             )
-            retry_content = retry_response.content
-            if isinstance(retry_content, list):
-                retry_content = str(retry_content)
-            revised_plan = self._parse_json_response(retry_content)
+            revised_plan = normalize_content_plan(retry_response)
             # 保留 Ripple 数据
             revised_plan["ripple_prediction"] = ripple_prediction.data
             revised_plan["ripple_pmf"] = ripple_pmf.data
