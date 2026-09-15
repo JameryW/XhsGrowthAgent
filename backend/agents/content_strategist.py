@@ -143,6 +143,11 @@ class ContentStrategistAgent(BaseAgent):
     task_type = TaskType.STRATEGY
     agent_name = "content_strategist"
     prompt_file = "content_strategist.yaml"
+    tool_capabilities = (
+        "analysis.topic_scorer",
+        "ripple.predict_spread",
+        "ripple.validate_pmf",
+    )
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -443,7 +448,11 @@ class ContentStrategistAgent(BaseAgent):
         调用方 post-render replace（consumer-map 口径，P1b 不动）。
         """
         run_context = RunContext(
-            thread_id=thread_id, account_id=account_id, niche=niche, values=state
+            thread_id=thread_id,
+            account_id=account_id,
+            niche=niche,
+            values=state,
+            tool_schema=self.tool_schema_layer(),
         )
         if l4_extra:
             memory = RetrievalResult(

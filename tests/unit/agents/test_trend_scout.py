@@ -599,3 +599,77 @@ class TestXhsReadsThroughTheGateway:
         assert result["trend_data"]["data_source"] == "real"
         assert "露营亲子" in captured["messages"][0].content
         assert all(e["ok"] is True for e in events if e["capability"].startswith("xhs."))
+
+
+class TestL1ToolSchemaLayer:
+    """P1c-S4：L1 接线在真实 prompt 上走通，但默认不出现。
+
+    默认关是本片的决定（模型到 P2c 才有 tool-calling 通道），所以这里既钉
+    "打开后真的进 prompt"，也钉"不打开时一个字都不进" —— 后者才是让 14 个
+    agent 的 prompt 与基线快照保持字节不变的那一条。
+    """
+
+    @pytest.fixture
+    def agent(self):
+        return TrendScoutAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    def _mock_model(self, agent, captured: dict) -> None:
+        mock_response = MagicMock()
+        mock_response.content = '{"trending_topics": []}'
+        mock_model = MagicMock()
+
+        async def _capture(messages, **kwargs):
+            captured["messages"] = messages
+            return mock_response
+
+        mock_model.ainvoke = _capture
+        agent._model = mock_model
+
+    def _state(self) -> dict:
+        return {"niche": "母婴", "account_id": "test_account", "phase": WorkflowPhase.IDLE}
+
+    @staticmethod
+    def _tool(rows) -> MagicMock:
+        """A double whose ``ainvoke`` answers with ``rows``.
+
+        ``AsyncMock(return_value=rows)`` alone would not: the Gateway calls
+        ``target.ainvoke(payload)``, and on an AsyncMock the child attribute is
+        its own mock whose return value is not the parent's.
+        """
+        double = MagicMock()
+        double.ainvoke = AsyncMock(return_value=rows)
+        return double
+
+    @pytest.mark.asyncio
+    async def test_off_by_default_and_then_really_in_the_prompt(self, agent, mock_store):
+        captured: dict = {}
+        self._mock_model(agent, captured)
+
+        # Doubles with usable shapes, so a missing L1 cannot be blamed on a
+        # degraded run.
+        with (
+            patch(
+                "backend.tools.xhs.trending.xhs_trending",
+                new=self._tool([{"topic": "露营亲子", "heat_score": 88}]),
+            ),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=self._tool([])),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=self._tool([])),
+        ):
+            await agent.execute(self._state(), store=mock_store)
+            assert "可用能力" not in captured["messages"][0].content
+
+            agent.include_tool_schema = True
+            self._mock_model(agent, captured)
+            await agent.execute(self._state(), store=mock_store)
+
+        system = captured["messages"][0].content
+        assert "[可用能力]" in system
+        assert "- xhs.trending — " in system
+        # L1 sits in the stable prefix: after the policy layer, before recall.
+        assert system.index("你是小红书趋势侦察专家") < system.index("[可用能力]")

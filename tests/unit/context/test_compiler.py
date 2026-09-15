@@ -195,3 +195,72 @@ def test_degraded_retrieval_items_still_compile_in_s1() -> None:
         ),
     )
     assert "部分数据" in prompt.layers[PromptLayer.L4_MEMORY]
+
+
+# ── L1 tool schema (P1c-S4) ────────────────────────────────────────────────
+#
+# The layer is the one static layer the prompt YAML cannot carry: it is
+# rendered from the capability registry, so it travels on RunContext and the
+# compiler seeds it. Off by default — ``RunContext.tool_schema`` is empty
+# unless an agent opts in — which is what keeps every existing prompt and the
+# recorded baseline byte-identical.
+
+_L1_TEXT = "[可用能力] 以下能力由运行时（Tool Gateway）执行。\n- xhs.trending — 抓取平台热门趋势"
+
+
+def test_no_tool_schema_means_no_l1_layer() -> None:
+    prompt = ContextCompiler().compile_prompt(_run_context(), "系统提示")
+    assert PromptLayer.L1_TOOL_SCHEMA not in prompt.layers
+    assert prompt.render() == "系统提示"
+
+
+def test_the_tool_schema_lands_between_l0_and_l2() -> None:
+    """The whole point of the layer is *where* it sits: stable prefix, after
+    policy and before the account profile that changes per account."""
+    context = RunContext(thread_id="t", account_id="acc", niche="母婴", tool_schema=_L1_TEXT)
+    prompt = ContextCompiler().compile_prompt(context, "系统提示\n<!-- ctx:l2_account -->\n账号段")
+    assert prompt.layers[PromptLayer.L1_TOOL_SCHEMA] == _L1_TEXT
+    rendered = prompt.render()
+    assert rendered.index("系统提示") < rendered.index("[可用能力]") < rendered.index("账号段")
+
+
+def test_l1_is_never_trimmed_by_the_budget() -> None:
+    """L0-L3 are static and the allocator only trims L5/L4 (D4'); L1 is a
+    static layer, so a budget too small for the prompt must not silently drop
+    the schema and leave a prompt that documents none of its capabilities."""
+    context = RunContext(thread_id="t", account_id="acc", niche="母婴", tool_schema="能" * 400)
+    prompt = ContextCompiler().compile_prompt(
+        context,
+        "系统提示",
+        budget=10,
+        retrievals=(
+            RetrievalResult(
+                namespace="performance_insights",
+                items=(_item("召回一"),),
+                mode=RetrievalMode.HIT,
+            ),
+        ),
+    )
+    assert prompt.layers[PromptLayer.L1_TOOL_SCHEMA] == "能" * 400
+
+
+def test_a_yaml_segment_and_a_run_context_merge_into_one_l1() -> None:
+    """Two producers, one layer: a YAML that carries an L1 segment (hand-
+    written prose) and a rendered schema must not overwrite each other —
+    whichever order they are read in, both are in the prefix."""
+    context = RunContext(thread_id="t", account_id="acc", niche="母婴", tool_schema="来自 registry")
+    prompt = ContextCompiler().compile_prompt(
+        context, "系统提示\n<!-- ctx:l1_tool_schema -->\n来自 YAML"
+    )
+    layer = prompt.layers[PromptLayer.L1_TOOL_SCHEMA]
+    assert "来自 YAML" in layer
+    assert "来自 registry" in layer
+
+
+def test_seeding_l1_does_not_mutate_the_callers_sections() -> None:
+    """``compile`` takes a Mapping it does not own; seeding the layer into the
+    caller's dict would leak one run's tool schema into the next."""
+    sections = {PromptLayer.L0_SYSTEM: "系统提示"}
+    context = RunContext(thread_id="t", account_id="acc", niche="母婴", tool_schema=_L1_TEXT)
+    ContextCompiler().compile(context, sections)
+    assert PromptLayer.L1_TOOL_SCHEMA not in sections

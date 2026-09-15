@@ -50,9 +50,41 @@ class BaseAgent(ABC):
     agent_name: str = "base"
     prompt_file: str = ""
 
+    #: The capabilities this agent reaches through the Gateway (P1c-S4).
+    #:
+    #: Declared here so the L1 layer can describe them without importing the
+    #: catalogue, and so the declaration is checkable: S5's AST gate compares
+    #: this tuple against the capability literals the module actually passes
+    #: to ``self.tools.invoke``. Declaring it does **not** put anything in a
+    #: prompt — that is ``include_tool_schema`` below.
+    tool_capabilities: tuple[str, ...] = ()
+
+    #: Whether L1 reaches this agent's prompt. Off, deliberately, and the
+    #: reason is not laziness: the model has no tool-calling channel until
+    #: P2c, so a prompt that lists capabilities would describe an ability it
+    #: cannot exercise — an invitation to emit tool-call syntax inside the
+    #: JSON it is supposed to return — while costing tokens in every request.
+    #: The channel is built and tested; flipping this per agent (they were
+    #: designed to flip independently) is P2c's call, when the capability
+    #: listing becomes true.
+    include_tool_schema: bool = False
+
     def __init__(self) -> None:
         self._model: BaseChatModel | None = None
         self._prompt_template: dict[str, str] | None = None
+
+    def tool_schema_layer(self) -> str:
+        """This agent's L1 text, for ``RunContext.tool_schema``.
+
+        ``""`` while the layer is off or the agent declares no capabilities —
+        and the switch is checked *before* the registry is consulted, so an
+        agent that has not opted in never pays to build the catalogue.
+        """
+        if not self.include_tool_schema or not self.tool_capabilities:
+            return ""
+        from backend.tools.runtime.bridge import tool_schema_section
+
+        return tool_schema_section(self.tool_capabilities)
 
     # ── LLM perf entry capture (ContextVar-scoped, P0-W1) ──
 

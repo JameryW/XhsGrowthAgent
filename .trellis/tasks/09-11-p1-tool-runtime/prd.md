@@ -89,17 +89,27 @@ Agent 只声明 capability 需求。
 执行记录（2026-09-15）：**S3c 实际拆为两片**。
 
 - **S3c-1 ✅**：`ripple.get_report`（analyst）。等待预算从调用点的 120s `asyncio.wait_for` 搬到能力声明（`timeout_s=120.0`），直调 **6 → 5**。
-- **S3c-2 ✅（本分支）**：`ripple.predict_spread` / `ripple.validate_pmf`（content_strategist），直调 **5 → 3**。先给 `ToolResult` 补上**领域结果通道**：`ErrorKind.DOMAIN` + `DomainOutcome(reason, **payload)`，Gateway 接住后**立刻返回**（不进重试循环），payload 落在 `ToolResult.domain`；trace 只带 `domain_reason`。要点：
+- **S3c-2 ✅（PR #596）**：`ripple.predict_spread` / `ripple.validate_pmf`（content_strategist），直调 **5 → 3**。先给 `ToolResult` 补上**领域结果通道**：`ErrorKind.DOMAIN` + `DomainOutcome(reason, **payload)`，Gateway 接住后**立刻返回**（不进重试循环），payload 落在 `ToolResult.domain`；trace 只带 `domain_reason`。要点：
   - **为什么必须是新的异常类型**：`RippleTimeoutError` 是 `TimeoutError` 子类，原样穿过 Gateway 会被归类成"网关自己的等待超时"，而那条路上 **`job_id` 会被剥掉** —— 取消与恢复都从它开始。
   - **Gateway 的兜底必须高于工具自己的等待预算**：这两个工具用 payload 的 `max_wait`（默认 1800s，来自 `RIPPLE_WORKFLOW_TIMEOUT`）等待，并以领域结果报告超时；Gateway 的 `wait_for` 若先触发就会取消调用、永远看不到那个 id。故声明 `timeout_s=3600.0`（`_RIPPLE_SAFETY_NET_S`），只兜挂死的连接，不承担调度含义。
   - **顺手修正两处失真**：`integration` 不再自己吞异常（归一化只在 Gateway 一个归属地）；服务"降级"（`ripple_fallback=True` + 全零预测体）从"一次成功的预测"改为 `DomainOutcome("unavailable")` —— 原先真实服务返回的零点会被 agent 当成真实预测读走，而 conftest 的替身只返回 `{"ripple_fallback": True}`，两者行为不一致，正是这个不一致掩盖了 bug。
   - 调用点用一个 `_RippleCall` 一次读清结果，删掉"`"ripple_reason" not in result` 即表示成功"的缺失键语义。
-- **S3d ✅（本分支）**：`xhs.trending` / `xhs.keyword_monitor` / `xhs.competitor_analyzer`（trend_scout），直调 **3 → 0** —— agent 层对 `backend.tools` 的直调至此清零。要点：
+- **S3d ✅（PR #597）**：`xhs.trending` / `xhs.keyword_monitor` / `xhs.competitor_analyzer`（trend_scout），直调 **3 → 0** —— agent 层对 `backend.tools` 的直调至此清零。要点：
   - **迁移不改降级语义**：失败仍退化为 `data_source="llm_generated"`、仍走同一段降级文案；改的是“谁还知道失败了”。此前工具吞一次异常返回 `[]`、agent 再吞一次，Gateway 只会看到“成功的一次空读取”，于是“平台读不到”与“这个领域确实没热点”是同一个值。
   - **发现并修掉一处真造假**：`XHSClient.monitor_keywords` 对每个关键词循环 `search_posts`，而 `search_posts` 在无 Cookie 时返回 `[]` —— 于是它**为每个关键词造出一行全零**（`post_count: 0, avg_likes: 0`），`trend_scout` 的 `if monitor_data:` 判真，把 `data_source` 报成 `"real"`，再把“0 篇帖子 / 平均点赞 0 / 趋势: declining”当真实平台数据喂给模型。三个读工具现在**在调用前**检查新增的 `XHSClient.can_read`（`_http is not None`），读不到就抛 —— 该前提调用前可知、调用后不可知，所以只能在这一侧判。
   - `backend/tools/xhs/trending.py` 三个工具不再自己 `except → return []`（同 S3c-2 规则：归一化只在 Gateway 一个归属地）。空列表从此只有一个含义：平台被问过，它没有内容。
   - 目录声明：三个 `xhs.*` 读能力 `retry=RetryPolicy()`。迁移前调用点从不重试（各自 catch 后降级），且这里的头号失败是缺凭据 —— 等待修不了它。`auth_scope=("xhs:read",)` 仍只是**声明**（执行归 P2a），用测试钉住。
   - **残留（不在本片范围）**：第一层 `XHSClient` 仍吞异常返回 `[]`（`get_trending`/`search_posts` 的既有契约，`tests/unit/services/test_xhs_client.py` 钉着），所以“限流导致的空”与“确实没内容”在第一层仍不可分；修它要连带 `visual_analysis.py` / `topic_scorer.py`，属凭据整备（P2a）。另：`_fetch_real_data` 把 `niche` 传给 `competitor_analyzer.account_id`（该参数语义是“竞品账号或搜索词”）是迁移前就有的形状，本片原样保留、不顺手改语义。
+
+- **S4 ✅（本分支）**：L1 tool schema 层终于有了生产者并接线到 Context Compiler；**但默认关闭**，14 个 agent 的 prompt 与基线快照**字节不变**（漂移门禁 0 漂移）。
+  - **口径偏离已在动手前与用户确认**：票面 Q5/S4 原文是“接入 Context Compiler + 刷新基线快照”，本片改为“建通道 + 默认关闭”。理由：模型到 P2c 才有 tool-calling 通道，此刻把能力清单写进 prompt 等于描述一种它无法行使的能力（还会诱导它在 JSON 里编 tool-call 语法），并且每次请求白付 token。架构评审 §十八 立 L1 是因为它属于 stable prefix / prompt cache 的稳定区 —— 通道先建好，“打开”留给 P2c 逐 agent 决定。
+  - **生产者** `backend/tools/runtime/schema.py::render_tool_schema(specs)`：纯函数、按 capability 排序（稳定前缀不能每次重排）、空输入返回 `""`（compiler 用“空”判断该层是否存在，不能只吐一个光杆标题）。另走 `registry.subset()` —— S1 当时预留的窄口子，docstring 原文就是给 L1 用的。交付点在 `bridge.tool_schema_section(capabilities)`。
+  - **`pass_style` 分支渲染是 S1 的交办**：MAPPING 工具的 `data` 若照原样渲染，会和另外九个“按名解包”的工具长得一模一样 —— 而那正是“payload 有没有被丢掉”的分水岭，故该行渲染成“整体即 `data: ...`，不再嵌套”。
+  - **运行期事实不进 prompt**：`side_effect` / `auth_scope` / `latency` / `cost` 刻意不渲染（有测试钉住）。L1 只说“有什么、怎么调”；“运行时会拿这次调用做什么”是 Gateway 的事，写进 prompt 只会诱导模型去推理它并不持有的权限。唯一进 prompt 的运行时事实是 `pass_style`，因为它决定调用形状。
+  - **agent 侧**：`BaseAgent.tool_capabilities`（声明，供 S5 做声明↔代码一致性门禁）+ `include_tool_schema = False`（开关）+ `tool_schema_layer()`。四个真在调工具的 agent 各自声明（trend_scout 3 / content_strategist 3 / copywriter 2 / analyst 1 = 9 个；第 10 个 `xhs.publish` 尚无 agent 调用者，属 P2a）。文本随 `RunContext.tool_schema` 走，由 compiler 在 `compile()` 里播种到 L1 —— **“L1 放不放进 prompt”只有一个归属地**；`LAYER_ORDER` 保证它在 L0 之后、L2 之前，`_TRIM_ORDER` 只含 L5/L4，故预算裁剪永远不会吃掉它。隔离性也钉住了：`compile()` 不污染调用方传入的 sections。
+  - **未知 capability 抛错而非静默省略**：`tool_schema_section` 让 `UnknownCapabilityError` 抛出。默认关闭意味着没有消费者会发现配置错误 —— 静默省略会把它藏到 P2c 打开开关的那一天。
+  - **测试**：`test_schema.py`（13，含 MAPPING 分支与“运行期事实不泄露”）、`test_tool_schema_layer.py`（6，含“声明 ⊆ 目录”与“全仓开关为 False”两条钉子）、`test_compiler.py` +5（无声明则无 L1 / 位置在 L0 与 L2 之间 / 预算不吃 L1 / YAML 段与 RunContext 合并 / 不污染调用方的 sections）、`test_trend_scout.py` +1（真实 prompt：关→一个字不进，开→L1 真进去且在 L0 之后）。全量 **2747 passed / 3 skipped**；ruff/format/mypy(196)/基线零漂移全绿。
+  - **残留**：L1 的参数类型是**原样反射**（LangChain 工具给 JSON-schema 的 `string`，普通函数给注解名 `dict[str, Any]`），未做归一化 —— P2c 真要把 schema 交给模型调工具时需要一个统一口径。`docs/tool-runtime.md` 仍归 S5。
 
 ## 验收
 

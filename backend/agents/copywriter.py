@@ -112,6 +112,7 @@ class CopywriterAgent(BaseAgent):
     task_type = TaskType.WRITING
     agent_name = "copywriter"
     prompt_file = "copywriter.yaml"
+    tool_capabilities = ("content.algorithmic_de_ai", "content.polish_copy")
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -184,7 +185,11 @@ class CopywriterAgent(BaseAgent):
             )
 
         run_context = RunContext(
-            thread_id=thread_id, account_id=account_id, niche=niche, values=state
+            thread_id=thread_id,
+            account_id=account_id,
+            niche=niche,
+            values=state,
+            tool_schema=self.tool_schema_layer(),
         )
         system_prompt = _compiler.compile_prompt(
             run_context,
