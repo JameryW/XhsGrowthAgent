@@ -202,3 +202,77 @@ DEEPSEEK（JSON_OBJECT），后者是仅有的两个走 JSON_OBJECT 档的 agent
 - `mypy backend --python-version 3.12`：199 files 干净
 - P1b 基线 `--compare --drift-pct 5`：**drift within threshold（0）**
 - `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）
+
+## S2b 执行记录（2026-09-15，分支 `feat/p1d-s2b-analysis-agents`）
+
+票面 S2 是「其余走 `astron-code-latest` 的主链 agent」。侦察出 **6 个调用点分布在 5 个 agent**：
+`brief_analyzer`（解析 + 澄清，2 个）、`analyst`、`content_analyzer`、`viral_matcher`，以及
+`content_strategist.py:420` 的 **S1 残留**（低传播重生成那条分支）。
+
+**`evaluator` 单独留作 S2c**：它是唯一一个已经有确定性重算构建器
+（`_build_evaluation_result`，约 250 行）与 degraded 路径的调用点 —— 迁移它等于改写既有逻辑，
+而不是替换一个解析器，属另一类改动。
+
+### 交付
+
+| 文件 | 内容 |
+|---|---|
+| `backend/models/outputs.py` | 11 个新模型 + 6 个 `normalize_*`（`__all__` 8 → 21）：brief（`BriefAnalysisOutput` + `normalize_brief_analysis`）、澄清（`ClarificationQuestionOutput` / `BriefClarificationOutput` + …）、分析（`AnalyticsOutput` + …）、差距分析（`GapItemOutput` / `SuggestionItemOutput` / `OptimizationAnalysisOutput` / `ContentAnalysisOutput` + …）、爆款参考（`ViralPostOutput` / `ViralPostsOutput` + …）；助手 `_non_blank` |
+| `backend/models/structured.py` | `accepts_bare_list` 声明 + `_takes_a_list_root` + **形状感知的纠偏文案**（`_OBJECT_ROOT_CORRECTION` / `_LIST_ROOT_CORRECTION`） |
+| `backend/agents/*.py` ×5 | 6 个调用点全部改走 `_llm_structured`；`content_strategist` 的 S1 残留清零 |
+| 测试 | `test_outputs.py`(+267) / `test_structured.py`(+74) / 4 个 agent 测试文件（+476） |
+
+### 设计决定
+
+**降级语义按调用点的可观测后果分别定，而不是统一抄一份。**
+
+| 调用点 | 「问过了但不可用」 | 「一次都没问到」 |
+|---|---|---|
+| `brief_analyzer`（解析 + 澄清） | 空解析 —— confidence 0.5 < 阈值 0.6，仍然去问用户（= 旧行为） | 上抛 |
+| `analyst` | 空快照 | **上抛** —— 空快照带着 `engagement_rate=0.0` / `views=0` 进 state 与报表，与"一次真实的零表现"无法区分（P1c「全零不是数据」的上一层） |
+| `content_analyzer` | 空三键结构 | **上抛** —— 同上，空差距分析看起来像"这篇没有差距" |
+| `viral_matcher` | 空参考列表 + `optimization_error` | **一起兜住**（= 旧行为）—— 爆款参考是本节点唯一的可选产出，而失败**被贴了标签**进 state，不是被伪装成"这次没搜到" |
+| `content_strategist`（重生成） | — | 上抛（与主调用点一致） |
+
+**`accepts_bare_list` 是设施缺口，不是语法糖。** `validate_output` 一律拒收非 object 顶层，而
+`_parse_json_response` 对 `[{"field": …}]` 真的返回 `list`（实测，不是推断）——两个旧调用点
+（`brief_analyzer` 的澄清、`viral_matcher`）**两种拼法都收**。直接迁移会把"能收下"变成"硬失败"。
+这个形态差异 Pydantic 表达不了（object-only 那道闸在 `model_validate` 之前），所以由模型用
+`accepts_bare_list: ClassVar[bool]` 自己声明，`validate_output` 据此放行。
+
+纠偏文案随之形状感知：告诉一个收问题列表的模型"必须是 JSON 对象"，会把重试花在把它收窄到我们
+不需要的那个拼法上 —— 而纠偏是重试机制的全部。
+
+**三处"唯一来源"的收敛**（旧代码里同一件事有两个说法）：
+- **空分析长什么样**：`content_analyzer` 旧代码缺键时另手写 `{"gaps": [], "suggestions": [], "viral_patterns": []}`
+  → 现在只有 `normalize_optimization_analysis` 一个来源；
+- **必带/选带话题带不带 `#`**：`normalize_brief_analysis` **原样保留**（品牌方原文），
+  `normalize_content_plan` **补一个 `#`**（模型生成的推荐标签）—— 判据是"谁写的内容"，不是"看起来像不像标签"；
+- **`SuggestionItemOutput.priority` 默认 3**：提示词的示例写着 `"priority": 1`，`version_generator`
+  两处都读 `s.get('priority', 3)` —— 有消费者的字段拿消费者的兜底值，不另发明一个。
+
+### 动手后才暴露的三件事
+
+1. **`analyst` 的 `StructuredOutputError` 只能由"顶层不是对象"触发**。`AnalyticsOutput`
+   全字段有默认值 + `extra="ignore"`，所以任何能解析成 dict 的答复都合法 —— 一份
+   `{"raw_content": "..."}` 会变成一个合法的空快照。这不是缺陷（空快照的形状由 schema 保证），
+   但它意味着这个模型的"答得不好"分支很窄：测试要造一个**数组**答复才走得到。
+2. **`viral_matcher` 的超时用例此前是假绿**。它用 `MagicMock()` + `ainvoke` 抛 `TimeoutError`，
+   而 `MagicMock` 会自动长出 `bind()`（返回值不可 await）→ JSON_OBJECT 档死于替身**造出来**的
+   `TypeError`；又因为链条在"一次都没答"时抛的是**第一档**的异常，最终进 `optimization_error`
+   的是那个 `TypeError` 而不是超时。换真替身（`_TimingOutModel`，`bind` 返回自身）后两档都抛真实
+   超时，断言恢复原义。
+   - **顺带记一笔未改的观察**：`raise unreachable[0][1]` 取的是**第一档**的失败。当各档失败类型
+     不同（强档属"能力不支持"、弱档是真实网络错）时，报出来的是前者。S2a 的既有用例（单档，
+     或各档抛同一异常对象）分辨不出这个选择，本片也不改它 —— 口径值得单独一轮定。
+3. **`SuggestionItem` 契约里本来就有 `priority`**。侦察时的口头结论是"契约漏了这个字段"，
+   动手时对着 `state/substates.py` 复核发现文档字符串写错了（契约有、提示词有、消费者也读），
+   已按事实改写 —— 与代码相反的注释比没有注释更贵。
+
+### 门禁
+
+- `pytest -q`：**2965 passed / 3 skipped**（较 S2a 的 2910 增 55 条）
+- `ruff check .` / `ruff format --check .`：491 files 干净（全仓口径，与 CI 一致）
+- `mypy backend --python-version 3.12`：199 files 干净
+- P1b 基线 `--compare --drift-pct 5`：**drift within threshold（0）** —— prompt 逐字节未动
+- `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）

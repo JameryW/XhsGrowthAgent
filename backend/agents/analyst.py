@@ -5,6 +5,10 @@ content_history recall 走 S2 管线（RetrievalResult.mode 降级信号 +
 kind=context 事件面），``raw_items`` 还原原始记录列表使 user_msg 内
 ``历史数据：{history}`` 的 list repr 逐字节等价（D3'）；system prompt
 组装接 ContextCompiler.compile_prompt（本 YAML 无占位符，整段 L0）。
+
+P1d-S2b：分析报告迁到 ``_llm_structured`` + ``AnalyticsOutput``。
+只接 ``StructuredOutputError``（分析做不出来 = 业务结果，空快照继续），
+「一次都没问到」原样上抛 —— 见 ``execute`` 内注释。
 """
 
 from __future__ import annotations
@@ -21,6 +25,8 @@ from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
 from backend.context.models import RetrievalMode, RetrievalResult, RunContext, require_niche
 from backend.context.retrieval import RecallRequest, recall_namespaces
+from backend.models.outputs import AnalyticsOutput, normalize_analytics
+from backend.models.structured import StructuredOutputError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 from backend.tools.runtime.models import ErrorKind
 
@@ -158,14 +164,28 @@ class AnalystAgent(BaseAgent):
 账号定位：{account_id}
 垂类赛道：{niche}{ripple_context}"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        # P1d-S2b: 分析报告走结构化链。只接 ``StructuredOutputError`` ——
+        # 「问过了、每一档都没给出可用产物」是一次分析做不出来，属业务结果，降级成
+        # 空快照继续跑。而「一次都没问到」（LLM 完全不可用）必须原样上抛：空快照带
+        # 着 engagement_rate=0.0 / views=0 会进 state 与报表，看起来正好像一次真实
+        # 的零表现 —— 与 P1c 的「全零不是数据」同一条纪律，宁可让节点失败。
+        try:
+            analytics_output = await self._llm_structured(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ],
+                AnalyticsOutput,
+            )
+        except StructuredOutputError as exc:
+            logger.warning(
+                "%s: no usable analytics payload (%d attempt(s)); recording an empty snapshot",
+                self.agent_name,
+                len(exc.attempts),
+            )
+            analytics_output = AnalyticsOutput()
 
-        analytics = self._parse_json_response(cast(str, response.content))
+        analytics = normalize_analytics(analytics_output)
 
         # 将 Ripple 预测与实际数据对比，写入 state
         result_updates: dict[str, Any] = {

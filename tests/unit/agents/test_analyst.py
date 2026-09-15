@@ -1,6 +1,10 @@
 """Unit tests for AnalystAgent."""
 
+from __future__ import annotations
+
 import asyncio
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -565,3 +569,138 @@ class TestAnalystContextPipeline:
         system = agent.prompt_template["system"]
         assert "{memory_context}" not in system
         assert "<!-- ctx:" not in system
+
+
+class _AnsweringModel:
+    """Answers the same text every time and remembers what it was asked.
+
+    A real object rather than a ``MagicMock``: the mock would invent
+    ``with_structured_output``/``bind`` and answer from machinery that does not
+    exist, which is how a chain gets certified against a level it never ran.
+    """
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.calls: list[list[Any]] = []
+
+    @property
+    def levels_asked(self) -> int:
+        return len(self.calls)
+
+    def bind(self, **kwargs: Any) -> _AnsweringModel:
+        return self
+
+    def with_structured_output(self, *args: Any, **kwargs: Any) -> _AnsweringModel:
+        return self
+
+    async def ainvoke(self, messages: Any, **kwargs: Any) -> Any:
+        self.calls.append(list(messages))
+        return SimpleNamespace(content=self.content)
+
+
+class _DeadModel:
+    """Every call raises the same exception instance — an endpoint that is down.
+
+    No ``with_structured_output``, no ``bind``: each level is genuinely
+    uncallable, so "the LLM is down" reaches the chain as itself instead of as
+    a mock's answer.
+    """
+
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+    async def ainvoke(self, *args: Any, **kwargs: Any) -> Any:
+        raise self.error
+
+
+class TestAnalystStructuredAnalytics:
+    """S2b: which failure the node tolerates is the load-bearing part.
+
+    ``StructuredOutputError`` means "asked, and no level produced a usable
+    payload" — an analysis that could not be produced, which is a business
+    outcome and safe to record as empty. An unreachable LLM is *not* that:
+    the same empty snapshot carries ``views=0`` and ``engagement_rate=0.0``
+    into state and into the report, where it is indistinguishable from a post
+    that really got nothing. Same family as P1c's "all zeroes are not data".
+    """
+
+    @pytest.fixture
+    def agent(self):
+        return AnalystAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        store.aput = AsyncMock()
+        return store
+
+    @pytest.fixture
+    def mock_state(self):
+        return {
+            "account_id": "test_account",
+            "niche": "母婴",
+            "phase": WorkflowPhase.PUBLISHING,
+            "publish_result": {"post_id": "123", "views": 1000},
+        }
+
+    @pytest.mark.asyncio
+    async def test_an_answered_but_unusable_report_becomes_the_declared_empty_one(
+        self, agent, mock_state, mock_store
+    ):
+        """A bare array is not an ``AnalyticsSnapshot`` at any level, so the chain
+        exhausts itself and the node records the empty shape — all keys present,
+        which is what the old ``.get(...)``-shaped call site relied on."""
+        agent._model = _AnsweringModel('[{"insights": ["互动率偏低"]}]')
+
+        result = await agent.execute(mock_state, store=mock_store)
+
+        assert result["phase"] == WorkflowPhase.ANALYZING
+        assert result["analytics"]["insights"] == []
+        assert result["analytics"]["views"] == 0
+
+    @pytest.mark.asyncio
+    async def test_the_second_attempt_carried_the_correction(self, agent, mock_state, mock_store):
+        """Pins that the failure above was a *rejected answer*, not a level that
+        could not be called: the model was asked twice and told why."""
+        model = _AnsweringModel('[{"insights": ["互动率偏低"]}]')
+        agent._model = model
+
+        await agent.execute(mock_state, store=mock_store)
+
+        assert model.levels_asked == 2
+        assert any("【纠偏】" in str(message.content) for message in model.calls[1])
+
+    @pytest.mark.asyncio
+    async def test_an_unreachable_model_is_not_recorded_as_an_empty_report(
+        self, agent, mock_state, mock_store
+    ):
+        boom = RuntimeError("LLM unavailable")
+        agent._model = _DeadModel(boom)
+
+        with pytest.raises(RuntimeError) as info:
+            await agent.execute(mock_state, store=mock_store)
+
+        assert info.value is boom
+
+    @pytest.mark.asyncio
+    async def test_the_ripple_comparison_is_still_added_after_normalisation(
+        self, agent, mock_state, mock_store
+    ):
+        """``ripple_comparison`` is a comparison the model cannot make — the
+        caller adds it onto whatever the chain returned, so the normalised
+        result has to stay a plain mutable dict."""
+        state = {
+            **mock_state,
+            "content_plan": {"ripple_prediction": {"estimated_reach": 5000}},
+        }
+        agent._model = _AnsweringModel('{"insights": [], "views": 1000}')
+
+        with patch.object(agent, "_ripple_report", AsyncMock(return_value=None)):
+            result = await agent.execute(state, store=mock_store)
+
+        assert result["analytics"]["ripple_comparison"]["accuracy_rating"] in {
+            "准确",
+            "低估",
+            "高估",
+        }

@@ -14,15 +14,35 @@ import pytest
 from pydantic import ValidationError
 
 from backend.models.outputs import (
+    AnalyticsOutput,
     BloggerScoutOutput,
+    BriefAnalysisOutput,
+    BriefClarificationOutput,
+    ContentAnalysisOutput,
     ContentPlanOutput,
     HotTopicItemOutput,
+    SuggestionItemOutput,
     TrendScoutOutput,
+    ViralPostsOutput,
+    normalize_analytics,
     normalize_blogger_candidates,
+    normalize_brief_analysis,
+    normalize_brief_clarification,
     normalize_content_plan,
+    normalize_optimization_analysis,
     normalize_trend_data,
+    normalize_viral_posts,
 )
-from backend.state.substates import BloggerProfile, TrendData
+from backend.state.substates import (
+    AnalyticsSnapshot,
+    BloggerProfile,
+    BriefContent,
+    GapItem,
+    OptimizationAnalysis,
+    SuggestionItem,
+    TrendData,
+    ViralPost,
+)
 
 
 class TestContentPlanOutput:
@@ -380,3 +400,248 @@ class TestNormalizeBloggerCandidates:
         assert set(normalize_blogger_candidates(output, limit=5)[0]) == set(
             BloggerProfile.__annotations__
         )
+
+
+# ── 商单 brief 解析（analyst / content_analyzer / viral_matcher 同批，P1d-S2b） ──
+
+
+class TestBriefAnalysisOutput:
+    """Two facts about a brief are not the model's to state: *what the client
+    sent* (``raw_text``) and *how it arrived* (``source_type``). Letting a model
+    declare a fact it does not hold is letting it lie about one."""
+
+    def test_the_model_cannot_declare_where_the_text_came_from(self):
+        declared = set(BriefAnalysisOutput.model_fields)
+        assert "raw_text" not in declared
+        assert "source_type" not in declared
+
+    def test_every_key_matches_the_state_contract_shape(self):
+        assert set(normalize_brief_analysis(BriefAnalysisOutput())) == set(
+            BriefContent.__annotations__
+        ) - {"raw_text", "source_type"}
+
+    def test_a_missing_confidence_is_the_callers_old_default(self):
+        """0.5 was what the caller substituted for a field the model omitted."""
+        assert BriefAnalysisOutput().confidence == 0.5
+
+    def test_an_unreadable_confidence_is_the_least_confident_answer(self):
+        """``"高"`` is a judgment the model expressed and we cannot read. Treating
+        it as "no opinion" (0.5) would leave a vague brief below the clarification
+        threshold by accident; 0.0 sends it to the user, the only safe error."""
+        assert BriefAnalysisOutput.model_validate({"confidence": "高"}).confidence == 0.0
+
+    def test_a_confidence_written_as_a_percentage_is_not_rescaled(self):
+        assert BriefAnalysisOutput.model_validate({"confidence": "80%"}).confidence == 80.0
+
+    def test_a_single_string_is_one_selling_point_not_its_characters(self):
+        output = BriefAnalysisOutput.model_validate({"selling_points": "静音、便携"})
+        assert normalize_brief_analysis(output)["selling_points"] == ["静音、便携"]
+
+    def test_blank_entries_are_dropped_from_every_text_list(self):
+        output = BriefAnalysisOutput.model_validate(
+            {"selling_points": ["静音", "  ", ""], "notes": ["  ", "都拍 live 图"]}
+        )
+        normalised = normalize_brief_analysis(output)
+        assert normalised["selling_points"] == ["静音"]
+        assert normalised["notes"] == ["都拍 live 图"]
+
+    def test_client_hashtags_keep_the_brands_own_spelling(self):
+        """必带/选带话题是品牌方原文，"带不带 #"是品牌的写法而不是模型的口误。
+
+        Compare ``normalize_content_plan``'s ``hashtags``: those are labels the
+        model invented for us, so the ``#`` is a format we asked for. Same edit,
+        opposite verdicts — the judge is who wrote the text.
+        """
+        output = BriefAnalysisOutput.model_validate({"required_hashtags": ["几素", "#夏日出行"]})
+        assert normalize_brief_analysis(output)["required_hashtags"] == ["几素", "#夏日出行"]
+
+
+class TestBriefClarificationOutput:
+    def test_a_bare_array_is_the_question_list(self):
+        """The pre-migration call site read both spellings
+        (``parsed if isinstance(parsed, list) else parsed.get("questions", [])``)
+        and ``_parse_json_response`` really returns a list for ``[{…}]`` — so a
+        chain that refused lists would turn "accepted" into a hard failure."""
+        output = BriefClarificationOutput.model_validate(
+            [{"field": "target_audience", "question": "受众是谁？"}]
+        )
+        assert [question.field for question in output.questions] == ["target_audience"]
+
+    def test_the_envelope_spelling_is_no_worse(self):
+        output = BriefClarificationOutput.model_validate(
+            {"questions": [{"field": "x", "question": "?"}]}
+        )
+        assert len(output.questions) == 1
+
+    def test_a_key_the_model_invented_still_reaches_the_ui(self):
+        """``BriefClarification.questions`` is ``list[dict[str, Any]]`` — no shape
+        on purpose, because the questions go straight to the user. Dropping an
+        unmodelled key on a shapeless contract is the one way this migration
+        could quietly send fewer fields to the front end, so this model is the
+        file's single ``extra="allow"``.
+        """
+        output = BriefClarificationOutput.model_validate(
+            [{"field": "x", "question": "?", "hint": "选一个"}]
+        )
+        assert normalize_brief_clarification(output)[0]["hint"] == "选一个"
+
+    def test_the_questions_normalise_to_plain_dicts_for_the_ui(self):
+        output = BriefClarificationOutput.model_validate([{"field": "x", "question": "?"}])
+        question = normalize_brief_clarification(output)[0]
+        assert isinstance(question, dict)
+        assert question["options"] == []
+        assert question["inferred_value"] is None
+
+    def test_options_written_as_one_string_are_not_split_into_characters(self):
+        output = BriefClarificationOutput.model_validate(
+            [{"field": "x", "question": "?", "options": "A、B"}]
+        )
+        assert normalize_brief_clarification(output)[0]["options"] == ["A、B"]
+
+    def test_an_empty_envelope_asks_nothing_rather_than_failing(self):
+        """A user is allowed to skip clarification, so "no questions" is a legal
+        answer and not a failed node."""
+        assert normalize_brief_clarification(BriefClarificationOutput()) == []
+
+
+class TestAnalyticsOutput:
+    def test_it_covers_the_contract_and_adds_the_three_prompt_only_keys(self):
+        """The 5 counters are not in the prompt: the model copies them back out of
+        the "帖子数据" block it was handed. Declaring them turns "may or may not
+        exist" into a field with a default — and ``_extract_post_data`` reads
+        every one of them into the report.
+
+        The other three (表现最好的类型/时段/标签) are in the prompt but in no
+        contract, and they still land in state. The gap has to be exactly those,
+        or a field went missing on the way.
+        """
+        assert set(normalize_analytics(AnalyticsOutput())) == (
+            set(AnalyticsSnapshot.__annotations__) - {"post_id", "timestamp"}
+        ) | {"best_performing_type", "best_performing_time", "top_hashtags"}
+
+    def test_the_model_cannot_declare_the_post_it_is_describing(self):
+        declared = set(AnalyticsOutput.model_fields)
+        assert "post_id" not in declared
+        assert "timestamp" not in declared
+
+    def test_a_missing_counter_is_a_zero_rather_than_a_missing_key(self):
+        normalised = normalize_analytics(AnalyticsOutput())
+        assert normalised["views"] == 0
+        assert normalised["shares"] == 0
+
+    def test_counts_written_in_units_are_read_as_numbers(self):
+        output = AnalyticsOutput.model_validate({"views": "1.2万", "likes": "3k", "shares": "5万"})
+        normalised = normalize_analytics(output)
+        assert normalised["views"] == 12000
+        assert normalised["likes"] == 3000
+        assert normalised["shares"] == 50000
+
+    def test_rates_written_with_a_percent_sign_are_not_rescaled(self):
+        """Neither direction is guessable here — whether a rate is 0-1 or 0-100
+        is a fact about the prompt, not about the string."""
+        output = AnalyticsOutput.model_validate({"engagement_rate": "5%", "reach_rate": 0.05})
+        normalised = normalize_analytics(output)
+        assert normalised["engagement_rate"] == 5.0
+        assert normalised["reach_rate"] == 0.05
+
+    def test_a_single_string_of_insights_is_not_split_into_characters(self):
+        output = AnalyticsOutput.model_validate({"insights": "互动率偏低"})
+        assert normalize_analytics(output)["insights"] == ["互动率偏低"]
+
+    def test_blank_insights_are_dropped_before_they_reach_memory(self):
+        """``analyst.execute`` writes every insight to the memory store; a blank
+        one is a stored record that says nothing."""
+        output = AnalyticsOutput.model_validate({"insights": ["  ", "互动率偏低", ""]})
+        assert normalize_analytics(output)["insights"] == ["互动率偏低"]
+
+
+class TestContentAnalysisOutput:
+    def test_the_envelope_is_kept_because_the_prompt_produces_it(self):
+        """Rewriting the prompt to "answer with the inner object" would change the
+        system prompt's bytes, which this package does not do."""
+        output = ContentAnalysisOutput.model_validate(
+            {"optimization_analysis": {"gaps": [{"dimension": "标题", "severity": "high"}]}}
+        )
+        assert output.optimization_analysis.gaps[0].dimension == "标题"
+
+    def test_the_three_keys_are_present_even_when_everything_is_empty(self):
+        """The old call site hand-wrote an identical empty structure when the key
+        was missing, so "what an empty analysis looks like" had two sources."""
+        assert set(normalize_optimization_analysis(ContentAnalysisOutput())) == set(
+            OptimizationAnalysis.__annotations__
+        )
+
+    def test_the_items_match_their_state_contract_shapes(self):
+        output = ContentAnalysisOutput.model_validate(
+            {
+                "optimization_analysis": {
+                    "gaps": [{"dimension": "标题", "description": "太笼统", "severity": "high"}],
+                    "suggestions": [{"dimension": "标题", "action": "加数字"}],
+                    "viral_patterns": ["前 3 行给结论"],
+                }
+            }
+        )
+        normalised = normalize_optimization_analysis(output)
+        assert set(normalised["gaps"][0]) == set(GapItem.__annotations__)
+        assert set(normalised["suggestions"][0]) == set(SuggestionItem.__annotations__)
+
+    def test_priority_defaults_to_the_number_the_consumer_already_used(self):
+        """``version_generator`` reads ``s.get('priority', 3)`` in two places and
+        the prompt's example says ``"priority": 1``. A field with a reader gets
+        the reader's own fallback, not a new one invented here."""
+        assert SuggestionItemOutput.model_validate({"dimension": "标题"}).priority == 3
+
+    def test_priority_written_as_text_is_read_as_a_number(self):
+        assert SuggestionItemOutput.model_validate({"priority": "2"}).priority == 2
+
+    def test_a_suggestion_key_no_consumer_reads_is_dropped(self):
+        """``SuggestionItem`` is a shapeless-less TypedDict: only declared keys go
+        into state. Contrast ``ClarificationQuestionOutput``'s ``extra="allow"``
+        — the judge is whether the contract has a shape."""
+        output = ContentAnalysisOutput.model_validate(
+            {"optimization_analysis": {"suggestions": [{"dimension": "x", "why": "...", "v": 3}]}}
+        )
+        assert "why" not in normalize_optimization_analysis(output)["suggestions"][0]
+
+
+class TestViralPostsOutput:
+    def test_a_bare_array_is_the_post_list(self):
+        output = ViralPostsOutput.model_validate([{"note_id": "a"}, {"note_id": "b"}])
+        assert [post["note_id"] for post in normalize_viral_posts(output)] == ["a", "b"]
+
+    def test_the_envelope_spelling_also_works(self):
+        output = ViralPostsOutput.model_validate({"viral_posts": [{"note_id": "a"}]})
+        assert len(normalize_viral_posts(output)) == 1
+
+    def test_the_search_keywords_the_prompt_also_produces_are_dropped(self):
+        """Not modelled, and not a loss: the old call site took
+        ``result.get("viral_posts", [])`` and nothing else."""
+        output = ViralPostsOutput.model_validate(
+            {"viral_posts": [], "search_keywords_used": ["美食"]}
+        )
+        assert normalize_viral_posts(output) == []
+
+    def test_a_non_mapping_palette_does_not_take_the_batch_down(self):
+        """``color_palette`` is one decorative line rendered into the *next*
+        prompt, and the entry carrying it is a reference note we need. Trading a
+        whole batch of notes for one colour card is a bad trade."""
+        output = ViralPostsOutput.model_validate(
+            {"viral_posts": [{"title": "a", "color_palette": "暖色"}, {"title": "b"}]}
+        )
+        posts = normalize_viral_posts(output)
+        assert [post["title"] for post in posts] == ["a", "b"]
+        assert posts[0]["color_palette"] == {}
+
+    def test_counts_written_in_units_are_read_as_numbers(self):
+        output = ViralPostsOutput.model_validate([{"likes": "1.5万", "collects": "2千"}])
+        post = normalize_viral_posts(output)[0]
+        assert post["likes"] == 15000
+        assert post["collects"] == 2000
+
+    def test_a_single_hashtag_string_is_not_split_into_characters(self):
+        output = ViralPostsOutput.model_validate([{"hashtags": "#美食"}])
+        assert normalize_viral_posts(output)[0]["hashtags"] == ["#美食"]
+
+    def test_every_key_matches_the_state_contract_shape(self):
+        output = ViralPostsOutput.model_validate([{"note_id": "a"}])
+        assert set(normalize_viral_posts(output)[0]) == set(ViralPost.__annotations__)

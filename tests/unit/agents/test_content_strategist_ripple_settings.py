@@ -6,6 +6,7 @@ RIPPLE_ENSEMBLE_RUNS env vars had no effect. These tests pin the wiring so a
 user lowering RIPPLE_MAX_WAVES actually speeds up the sims.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -176,3 +177,129 @@ class TestRippleSettingsFlowThrough:
 
         # ripple_revised is set ONLY in the low-viral-probability regen branch.
         assert result["content_plan"].get("ripple_revised") is True
+
+
+class _ScriptedModel:
+    """Answers with a scripted sequence, one entry per call.
+
+    A real object (not a ``MagicMock``) so that every level of the structured
+    chain reaches the same script instead of a double answering from invented
+    machinery.
+    """
+
+    def __init__(self, *answers: str) -> None:
+        self._answers = list(answers)
+        self.calls = 0
+
+    def bind(self, **kwargs):
+        return self
+
+    def with_structured_output(self, *args, **kwargs):
+        return self
+
+    async def ainvoke(self, *args, **kwargs):
+        answer = self._answers[min(self.calls, len(self._answers) - 1)]
+        self.calls += 1
+        return SimpleNamespace(content=answer)
+
+
+class TestTheRevisedPlanUsesTheSameStructuredChain:
+    """S2b: the low-viral re-generation was the last ``_llm_ainvoke`` +
+    ``_parse_json_response`` pair in the package (an S1 leftover)."""
+
+    @pytest.fixture
+    def agent(self):
+        return ContentStrategistAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    @pytest.fixture
+    def content_plan_state(self):
+        return {
+            "account_id": "test_account",
+            "niche": "母婴",
+            "phase": WorkflowPhase.SCOUTING,
+            "trend_data": {"trending_topics": ["美食探店"]},
+        }
+
+    @pytest.mark.asyncio
+    async def test_the_revised_plan_is_normalised_like_the_first_one(
+        self, agent, content_plan_state, mock_store
+    ):
+        """Both answers go through ``normalize_content_plan``.
+
+        Otherwise the same "model wrote the points as one string" reply would be
+        repaired on the first attempt and iterated character-by-character on the
+        re-generation — the exact bug the loose-list validator exists to stop.
+        """
+        model = _ScriptedModel(
+            '{"selected_topic": "美食探店"}',
+            '{"selected_topic": "美食探店", "key_points": "钩子、节奏"}',
+        )
+        agent._model = model
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+            patch("backend.agents.content_strategist.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.ripple.low_viral_threshold = 0.5
+            mock_settings.return_value.ripple.background = False
+            mock_pred.return_value = {
+                "ripple_prediction": {"estimated_reach": 5000, "viral_probability": 0.3},
+            }
+            mock_pmf.return_value = {"ripple_pmf": None}
+
+            result = await agent.execute(content_plan_state, store=mock_store)
+
+        assert model.calls == 2
+        assert result["content_plan"]["key_points"] == ["钩子、节奏"]
+
+    @pytest.mark.asyncio
+    async def test_the_ripple_fields_survive_the_replacement(
+        self, agent, content_plan_state, mock_store
+    ):
+        """The revised plan replaces the first one wholesale, so the Ripple data
+        the replacement was triggered by has to be put back explicitly."""
+        model = _ScriptedModel(
+            '{"selected_topic": "美食探店"}',
+            '{"selected_topic": "美食探店"}',
+        )
+        agent._model = model
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+            patch("backend.agents.content_strategist.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.ripple.low_viral_threshold = 0.5
+            mock_settings.return_value.ripple.background = False
+            mock_pred.return_value = {
+                "ripple_prediction": {"estimated_reach": 5000, "viral_probability": 0.3},
+            }
+            mock_pmf.return_value = {"ripple_pmf": {"job_id": "pmf-1"}}
+
+            result = await agent.execute(content_plan_state, store=mock_store)
+
+        plan = result["content_plan"]
+        assert plan["ripple_revised"] is True
+        assert plan["ripple_prediction"]["estimated_reach"] == 5000
+        assert plan["ripple_pmf"] == {"job_id": "pmf-1"}

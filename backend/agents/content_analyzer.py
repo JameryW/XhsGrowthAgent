@@ -3,6 +3,10 @@
 P1b-S4 迁移第六批销号（consumer-map §六.6，纯模板批）：无管线 ns recall、
 system YAML 无占位符（任务数据全走 user_msg），prompt 组装接
 ContextCompiler.compile_prompt（无标记整段 L0）。
+
+P1d-S2b：差距分析迁到 ``_llm_structured`` + ``ContentAnalysisOutput``；
+信封保留（提示词形状不变），旧的"缺键就手写一份空结构"删掉 ——
+``normalize_optimization_analysis`` 是空分析形状的唯一来源。
 """
 
 from __future__ import annotations
@@ -18,6 +22,8 @@ from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
 from backend.context.models import RunContext
+from backend.models.outputs import ContentAnalysisOutput, normalize_optimization_analysis
+from backend.models.structured import StructuredOutputError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.content_analyzer")
@@ -84,26 +90,30 @@ class ContentAnalyzerAgent(BaseAgent):
 
 请分析用户草稿与参考内容之间的差距，并提供优化建议。"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        # P1d-S2b: 差距分析走结构化链。降级只接 ``StructuredOutputError``
+        # （问过了但每一档都没给出可用产物 → 空分析继续，与旧的 parse 失败兜底同义）；
+        # 「一次都没问到」原样上抛，不让 LLM 故障伪装成"这次没有差距"。
+        try:
+            output = await self._llm_structured(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ],
+                ContentAnalysisOutput,
+            )
+        except StructuredOutputError as exc:
+            logger.warning(
+                "%s: no usable optimization analysis (%d attempt(s)); continuing empty",
+                self.agent_name,
+                len(exc.attempts),
+            )
+            output = ContentAnalysisOutput()
 
-        result = self._parse_json_response(cast(str, response.content))
-        optimization_analysis = result.get("optimization_analysis", {})
+        # 三个键总是齐（normalize 是"空分析长什么样"的唯一来源）
+        optimization_analysis = normalize_optimization_analysis(output)
 
-        # 确保返回正确的结构
-        if not optimization_analysis:
-            optimization_analysis = {
-                "gaps": [],
-                "suggestions": [],
-                "viral_patterns": [],
-            }
-
-        gaps_count = len(optimization_analysis.get("gaps") or [])
-        suggestions_count = len(optimization_analysis.get("suggestions") or [])
+        gaps_count = len(optimization_analysis["gaps"])
+        suggestions_count = len(optimization_analysis["suggestions"])
         logger.info(
             f"Generated optimization analysis with "
             f"{gaps_count} gaps and {suggestions_count} suggestions"

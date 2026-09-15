@@ -1,6 +1,7 @@
 """Tests for ContentAnalyzerAgent."""
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -235,3 +236,91 @@ async def test_content_analyzer_limits_viral_posts(mock_state_with_many_viral, m
     viral_summary = agent._build_viral_summary(mock_state_with_many_viral["viral_posts"])
     summary_data = json.loads(viral_summary)
     assert len(summary_data) == 5  # Should only include 5 posts
+
+
+class _AnsweringModel:
+    """Answers the same text every time; a real object, not a ``MagicMock``.
+
+    A mock invents ``with_structured_output``/``bind`` and answers from
+    machinery that does not exist, which is how a chain gets certified against
+    a level it never ran.
+    """
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+    def bind(self, **kwargs):
+        return self
+
+    def with_structured_output(self, *args, **kwargs):
+        return self
+
+    async def ainvoke(self, messages, **kwargs):
+        return SimpleNamespace(content=self.content)
+
+
+class _DeadModel:
+    """Every call raises the same exception instance — an endpoint that is down."""
+
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+    async def ainvoke(self, *args, **kwargs):
+        raise self.error
+
+
+class TestStructuredOptimizationAnalysis:
+    """S2b: same two dispositions as ``analyst``, and the same reason for them.
+
+    "Asked and got nothing usable" is a gap analysis that could not be produced
+    — an empty one is the honest record. An unreachable LLM is not that, and
+    filing the same empty structure under it would turn an outage into "this
+    draft has no gaps".
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_suggestion_keeps_the_priority_its_consumer_reads(
+        self, mock_state_with_draft_and_viral, mock_store
+    ):
+        """``version_generator`` renders ``[P{priority}]`` into the next prompt;
+        dropping the field in migration would silently renumber every
+        suggestion to the consumer's fallback of 3."""
+        agent = ContentAnalyzerAgent()
+
+        with patch.object(agent, "_model", _AnsweringModel(_GAPPED_OPT_JSON)):
+            result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
+
+        suggestion = result["optimization_analysis"]["suggestions"][0]
+        assert suggestion["priority"] == 1
+        assert suggestion["action"] == "添加数字钩子"
+
+    @pytest.mark.asyncio
+    async def test_an_answered_but_unusable_report_is_the_declared_empty_shape(
+        self, mock_state_with_draft_and_viral, mock_store
+    ):
+        """A bare array is not the envelope at any level, so the chain exhausts
+        itself. The three keys still come out — from the normaliser, which is
+        now the only place that says what an empty analysis looks like."""
+        agent = ContentAnalyzerAgent()
+
+        with patch.object(agent, "_model", _AnsweringModel('[{"dimension": "标题"}]')):
+            result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
+
+        assert result["optimization_analysis"] == {
+            "gaps": [],
+            "suggestions": [],
+            "viral_patterns": [],
+        }
+
+    @pytest.mark.asyncio
+    async def test_an_unreachable_model_is_not_recorded_as_no_gaps(
+        self, mock_state_with_draft_and_viral, mock_store
+    ):
+        agent = ContentAnalyzerAgent()
+        boom = RuntimeError("LLM unavailable")
+        agent._model = _DeadModel(boom)
+
+        with pytest.raises(RuntimeError) as info:
+            await agent.execute(mock_state_with_draft_and_viral, mock_store)
+
+        assert info.value is boom

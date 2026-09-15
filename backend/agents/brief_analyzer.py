@@ -24,6 +24,13 @@ from backend.context.models import (
     RetrievalResult,
     RunContext,
 )
+from backend.models.outputs import (
+    BriefAnalysisOutput,
+    BriefClarificationOutput,
+    normalize_brief_analysis,
+    normalize_brief_clarification,
+)
+from backend.models.structured import StructuredOutputError
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -123,35 +130,29 @@ class BriefAnalyzerAgent(BaseAgent):
 - notes: 特殊注意事项列表
 - confidence: 解析置信度 (0-1，信息越模糊越低)"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
-
-        content = response.content
-        if isinstance(content, list):
-            content = str(content)
-        parsed = self._parse_json_response(content)
+        try:
+            output = await self._llm_structured(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ],
+                BriefAnalysisOutput,
+            )
+        except StructuredOutputError as exc:
+            # 旧实现把解析失败变成 `{"raw_content": ...}`，13 个字段于是全部落到默认值；
+            # 而 confidence 的默认值 0.5 低于澄清阈值，所以这条 brief 仍然会去问用户。
+            # 空解析确实该问用户 —— 降级语义原样保留，改的只是它现在明确地叫"降级"，
+            # 而不是"模型给了一个带 raw_content 键的对象"。
+            logger.warning(
+                "%s: no usable brief payload (%d attempt(s)); continuing with an empty parse",
+                self.agent_name,
+                len(exc.attempts),
+            )
+            output = BriefAnalysisOutput()
 
         # Merge with existing brief_content (preserves raw_text, source_type)
-        brief_result = {
-            **brief_content,
-            "brand_name": parsed.get("brand_name", ""),
-            "product_name": parsed.get("product_name", ""),
-            "product_specs": parsed.get("product_specs", []),
-            "selling_points": parsed.get("selling_points", []),
-            "required_keywords": parsed.get("required_keywords", []),
-            "required_hashtags": parsed.get("required_hashtags", []),
-            "optional_hashtags": parsed.get("optional_hashtags", []),
-            "content_direction": parsed.get("content_direction", ""),
-            "target_audience": parsed.get("target_audience", ""),
-            "style_requirements": parsed.get("style_requirements", ""),
-            "shooting_requirements": parsed.get("shooting_requirements", ""),
-            "notes": parsed.get("notes", []),
-            "confidence": parsed.get("confidence", 0.5),
-        }
+        # —— 那两个键是"文本从哪来"的事实，模型无从陈述，所以合并依然由这里做。
+        brief_result = {**brief_content, **normalize_brief_analysis(output)}
 
         result: dict[str, Any] = {
             "brief_content": brief_result,
@@ -159,7 +160,7 @@ class BriefAnalyzerAgent(BaseAgent):
         }
 
         # If confidence is low, generate clarification questions
-        confidence = parsed.get("confidence", 0.5)
+        confidence = brief_result["confidence"]
         if confidence < _CLARIFICATION_THRESHOLD:
             clarification = await self._generate_clarification(brief_result, raw_text, state)
             result["brief_clarification"] = clarification
@@ -198,21 +199,27 @@ class BriefAnalyzerAgent(BaseAgent):
 - options: 2-3个建议选项列表
 - inferred_value: LLM 推断的默认值"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
-
-        content = response.content
-        if isinstance(content, list):
-            content = str(content)
-        parsed = self._parse_json_response(content)
-        questions = parsed if isinstance(parsed, list) else parsed.get("questions", [])
+        try:
+            output = await self._llm_structured(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ],
+                BriefClarificationOutput,
+            )
+        except StructuredOutputError as exc:
+            # 旧实现到这里也是退化成"没有可解析的 JSON"：`parsed` 是个带 raw_content
+            # 的 dict，`isinstance(parsed, list)` 为假 → `parsed.get("questions", [])`
+            # → 空列表。空问题列表不是错答案（用户本来就可以跳过澄清），保留。
+            logger.warning(
+                "%s: no usable clarification payload (%d attempt(s)); asking nothing",
+                self.agent_name,
+                len(exc.attempts),
+            )
+            output = BriefClarificationOutput()
 
         return {
-            "questions": questions,
+            "questions": normalize_brief_clarification(output),
             "resolved": False,
         }
 
