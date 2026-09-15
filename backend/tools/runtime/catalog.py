@@ -433,8 +433,9 @@ def _register(
 
 
 def build_registry() -> ToolRegistry:
-    """The catalogue of every capability the agents currently use (9 call
-    sites) plus publishing, which P2a will route through the Gateway.
+    """The catalogue of every capability the agents use (the nine call sites
+    that existed before P1c, all of them migrated by S3d) plus publishing,
+    which P2a will route through the Gateway.
 
     Registration is explicit rather than derived from a directory scan: a new
     module must be declared here to become reachable, which is what makes the
@@ -547,6 +548,15 @@ def build_registry() -> ToolRegistry:
     )
 
     # ── xhs platform (read) ─────────────────────────────────────────────────
+    # All three declare no retry, and that is a decision rather than the
+    # read-only default applied blindly. The call sites they replace never
+    # retried — each caught its own failure and degraded to ``[]`` — so
+    # ``max_attempts=2`` would have introduced retries that never existed. And
+    # the failure that actually dominates here is a missing platform credential
+    # (``_get_client`` hands ``XHSClient`` no cookie, so its HTTP reads are
+    # structurally unauthenticated — see backend/tools/xhs/trending.py), which
+    # waiting cannot fix. A transient HTTP failure wants a longer ``timeout_s``,
+    # not a second request hidden inside one call.
     _register(
         registry,
         capability="xhs.trending",
@@ -556,7 +566,7 @@ def build_registry() -> ToolRegistry:
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,
-        retry=RetryPolicy(max_attempts=2, backoff_s=3.0),
+        retry=RetryPolicy(),
         auth_scope=("xhs:read",),
     )
     _register(
@@ -568,7 +578,7 @@ def build_registry() -> ToolRegistry:
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,
-        retry=RetryPolicy(max_attempts=2, backoff_s=3.0),
+        retry=RetryPolicy(),
         auth_scope=("xhs:read",),
     )
     _register(
@@ -580,7 +590,7 @@ def build_registry() -> ToolRegistry:
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,
-        retry=RetryPolicy(max_attempts=2, backoff_s=3.0),
+        retry=RetryPolicy(),
         auth_scope=("xhs:read",),
     )
 

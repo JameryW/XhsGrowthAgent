@@ -487,3 +487,115 @@ class TestTrendScoutContextPipeline:
             await agent.execute(mock_state, store=mock_store)
             events = await list_events("thread-tel", kind="context")
             assert not [e for e in events if e.get("event") == "observation"]
+
+
+class TestXhsReadsThroughTheGateway:
+    """S3d 迁移契约：三个平台读点经 Tool Gateway，失败对运行时可见。
+
+    可观测的差别不是降级输出本身 —— trend_scout 迁移前就退化为
+    ``data_source="llm_generated"`` —— 而是失败终于有人知道。此前工具吞一次、
+    agent 再吞一次，Gateway 若在场只会看到"成功的空读取"，于是"平台读不到"和
+    "这个领域确实没热点"是同一个值。
+    """
+
+    @pytest.fixture
+    def agent(self):
+        return TrendScoutAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    @staticmethod
+    def _tool_raising(exc: Exception) -> MagicMock:
+        double = MagicMock()
+        double.ainvoke = AsyncMock(side_effect=exc)
+        return double
+
+    @staticmethod
+    def _tool_returning(rows) -> MagicMock:
+        double = MagicMock()
+        double.ainvoke = AsyncMock(return_value=rows)
+        return double
+
+    def _mock_model(self, agent, captured: dict) -> None:
+        mock_response = MagicMock()
+        mock_response.content = '{"trending_topics": []}'
+        mock_model = MagicMock()
+
+        async def _capture(messages, **kwargs):
+            captured["messages"] = messages
+            return mock_response
+
+        mock_model.ainvoke = _capture
+        agent._model = mock_model
+
+    @pytest.mark.asyncio
+    async def test_a_broken_platform_read_is_traced_and_degrades(self, agent, mock_store):
+        """Non-vacuous: a direct call would raise out of ``execute``. That it
+        returns a degraded result *and* the gateway records all three
+        capabilities as failures is what shows the reads are routed."""
+        from backend.services.xhs_client import XHSAuthError
+        from backend.tools.runtime.bridge import tracing_to
+
+        self._mock_model(agent, {})
+        events: list[dict] = []
+
+        async def _sink(event):
+            events.append(dict(event))
+
+        broken = XHSAuthError("未配置 Cookie")
+        state = {"niche": "母婴", "account_id": "test_account", "session_id": "thread-s3d"}
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending", new=self._tool_raising(broken)),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=self._tool_raising(broken)),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=self._tool_raising(broken)),
+            tracing_to(_sink),
+        ):
+            result = await agent.execute(state, store=mock_store)
+
+        assert result["trend_data"]["data_source"] == "llm_generated"
+        xhs_events = [e for e in events if str(e.get("capability", "")).startswith("xhs.")]
+        assert {e["capability"] for e in xhs_events} == {
+            "xhs.trending",
+            "xhs.keyword_monitor",
+            "xhs.competitor_analyzer",
+        }
+        assert all(e["ok"] is False for e in xhs_events)
+        assert all(e["error_kind"] == "exception" for e in xhs_events)
+        # the caller's thread id rides the event, so it is self-describing
+        assert all(e["thread_id"] == "thread-s3d" for e in xhs_events)
+
+    @pytest.mark.asyncio
+    async def test_a_working_platform_read_still_reports_real(self, agent, mock_store):
+        """The migration must not over-degrade: same doubles, healthy this
+        time, and the gateway sees successes."""
+        from backend.tools.runtime.bridge import tracing_to
+
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        events: list[dict] = []
+
+        async def _sink(event):
+            events.append(dict(event))
+
+        state = {"niche": "母婴", "account_id": "test_account", "session_id": "thread-s3d"}
+        with (
+            patch(
+                "backend.tools.xhs.trending.xhs_trending",
+                new=self._tool_returning([{"topic": "露营亲子", "heat_score": 88}]),
+            ),
+            patch(
+                "backend.tools.xhs.trending.keyword_monitor",
+                new=self._tool_returning([{"keyword": "母婴", "post_count": 3, "avg_likes": 12.0}]),
+            ),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=self._tool_returning([])),
+            tracing_to(_sink),
+        ):
+            result = await agent.execute(state, store=mock_store)
+
+        assert result["trend_data"]["data_source"] == "real"
+        assert "露营亲子" in captured["messages"][0].content
+        assert all(e["ok"] is True for e in events if e["capability"].startswith("xhs."))

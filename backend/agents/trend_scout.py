@@ -5,6 +5,12 @@ P1b-S4 迁移第一个销号 agent（consumer-map §六.1）：recall 走 S2 管
 ContextCompiler.compile_prompt（YAML 分段 schema，`<!-- ctx:l4_memory -->`
 标记替代 {memory_context} 占位符）。分段等价口径（info.md D3'）：L0 policy
 文本逐字不变，L4/L5 各段内容集合与迁移前相等；`data_source` 状态契约不动。
+
+P1c-S3d 迁移最后三个直调点（xhs.trending / xhs.keyword_monitor /
+xhs.competitor_analyzer）——agent 层的 `from backend.tools.xhs.trending import
+...` 至此清零，读平台一律经 Gateway。降级语义不变（失败仍退化为
+`data_source="llm_generated"`），变的是"谁还知道失败了"：以前工具自己吞掉异常
+返回 `[]`、调用方再吞一次，Gateway 只会看到一次"成功的空读取"。
 """
 
 from __future__ import annotations
@@ -72,60 +78,77 @@ def _format_memory_context(result: RetrievalResult) -> str:
     return ""
 
 
-async def _safe_xhs_trending(niche: str, account_id: str) -> list[dict[str, Any]]:
-    """Fetch trending topics; swallow + log own failures (return [])."""
-    from backend.tools.xhs.trending import xhs_trending
-
-    try:
-        return cast(
-            list[dict[str, Any]],
-            await xhs_trending.ainvoke({"category": niche, "account_id": account_id}),
-        )
-    except Exception as e:
-        logger.warning(f"xhs_trending failed: {e}")
-        return []
-
-
-async def _safe_competitor_analyzer(niche: str, account_id: str) -> list[dict[str, Any]]:
-    """Analyze competitors; swallow + log own failures (return [])."""
-    from backend.tools.xhs.trending import competitor_analyzer
-
-    try:
-        return cast(
-            list[dict[str, Any]],
-            await competitor_analyzer.ainvoke(
-                {
-                    "account_id": niche,
-                    "niche": niche,
-                    "credential_account_id": account_id,
-                }
-            ),
-        )
-    except Exception as e:
-        logger.warning(f"competitor_analyzer failed: {e}")
-        return []
-
-
 class TrendScoutAgent(BaseAgent):
     task_type = TaskType.SCOUTING
     agent_name = "trend_scout"
     prompt_file = "trend_scout.yaml"
 
+    async def _safe_xhs_trending(
+        self, niche: str, account_id: str, thread_id: str = ""
+    ) -> list[dict[str, Any]]:
+        """Trending topics through the Gateway; degrade to ``[]`` on failure.
+
+        Degrading is the *caller's* decision and stays exactly where it was.
+        What changed is who else gets told: the old body caught the tool's
+        exception itself, so the failure lived only in a log line, while the
+        Gateway — with the tool swallowing on its side too — recorded a
+        successful call. Now the failure comes back as ``ToolResult(ok=False)``
+        and this method degrades *from* that result, so the trace agrees.
+        """
+        result = await self.tools.invoke(
+            "xhs.trending",
+            {"category": niche, "account_id": account_id},
+            thread_id=thread_id,
+        )
+        if not result.ok:
+            logger.warning("xhs_trending failed: %s", result.error)
+            return []
+        rows = result.value
+        return cast(list[dict[str, Any]], rows) if isinstance(rows, list) else []
+
+    async def _safe_competitor_analyzer(
+        self, niche: str, account_id: str, thread_id: str = ""
+    ) -> list[dict[str, Any]]:
+        """Competitor notes through the Gateway; degrade to ``[]`` on failure.
+
+        The payload keeps its pre-migration shape, ``account_id`` being the
+        *niche* included: the tool reads that argument as "competitor account
+        or search keyword", so a niche is a legitimate value for it and it is
+        the value this call site has always sent. Which one it *should* have
+        been is a product question, not this migration's to re-decide.
+        """
+        result = await self.tools.invoke(
+            "xhs.competitor_analyzer",
+            {
+                "account_id": niche,
+                "niche": niche,
+                "credential_account_id": account_id,
+            },
+            thread_id=thread_id,
+        )
+        if not result.ok:
+            logger.warning("competitor_analyzer failed: %s", result.error)
+            return []
+        rows = result.value
+        return cast(list[dict[str, Any]], rows) if isinstance(rows, list) else []
+
     async def _fetch_real_data(
-        self, niche: str, account_id: str = "", user_topic: str = ""
+        self,
+        niche: str,
+        account_id: str = "",
+        user_topic: str = "",
+        thread_id: str = "",
     ) -> dict[str, Any]:
         """Fetch real data from XHS API via tools. Returns empty dict if unavailable."""
-        from backend.tools.xhs.trending import keyword_monitor
-
         # xhs_trending + competitor_analyzer are independent (no data
-        # dependency, disjoint data keys, each swallows own exceptions) → run
+        # dependency, disjoint data keys, each degrades on its own) → run
         # concurrently. keyword_monitor DEPENDS on trending (builds its keyword
         # seed from trending[:3] topic titles) so it stays serial after the
         # gather. Return-value pattern: assign to `data` after gather (no
         # concurrent dict mutation). Precedent: copywriter.py:53, #502/#503.
         trending, competitor_data = await asyncio.gather(
-            _safe_xhs_trending(niche, account_id),
-            _safe_competitor_analyzer(niche, account_id),
+            self._safe_xhs_trending(niche, account_id, thread_id),
+            self._safe_competitor_analyzer(niche, account_id, thread_id),
         )
 
         data: dict[str, Any] = {}
@@ -135,26 +158,31 @@ class TrendScoutAgent(BaseAgent):
             data["competitor_analysis"] = competitor_data
 
         # keyword_monitor needs trending (enriches keyword seed) — sequential.
-        try:
-            # Keyword seed: niche + user-provided topic (if any), so trend /
-            # keyword monitoring revolves around the user's topic, not just niche.
-            keywords = [niche]
-            if user_topic and user_topic not in keywords:
-                keywords.insert(0, user_topic)
-            if trending:
-                # Add top trending topic titles as keywords
-                for t in trending[:3]:
-                    topic = t.get("topic", "")
-                    if topic and topic not in keywords:
-                        keywords.append(topic)
+        # Keyword seed: niche + user-provided topic (if any), so trend /
+        # keyword monitoring revolves around the user's topic, not just niche.
+        keywords = [niche]
+        if user_topic and user_topic not in keywords:
+            keywords.insert(0, user_topic)
+        if trending:
+            # Add top trending topic titles as keywords
+            for t in trending[:3]:
+                topic = t.get("topic", "")
+                if topic and topic not in keywords:
+                    keywords.append(topic)
 
-            monitor_data = await keyword_monitor.ainvoke(
-                {"keywords": keywords, "account_id": account_id}
-            )
-            if monitor_data:
-                data["keyword_monitor"] = monitor_data
-        except Exception as e:
-            logger.warning(f"keyword_monitor failed: {e}")
+        # No try/except: the Gateway returns failures as data instead of
+        # raising, and the tool no longer swallows its own (see
+        # backend/tools/xhs/trending.py), so a failure here is visible to the
+        # trace rather than only to this log line.
+        monitor = await self.tools.invoke(
+            "xhs.keyword_monitor",
+            {"keywords": keywords, "account_id": account_id},
+            thread_id=thread_id,
+        )
+        if not monitor.ok:
+            logger.warning("keyword_monitor failed: %s", monitor.error)
+        elif monitor.value:
+            data["keyword_monitor"] = monitor.value
 
         return data
 
@@ -174,7 +202,9 @@ class TrendScoutAgent(BaseAgent):
         # coroutine just changed name to _recall_insights.
         insights_result, real_data = await asyncio.gather(
             _recall_insights(store, account_id, thread_id),
-            self._fetch_real_data(niche, account_id=account_id, user_topic=user_topic),
+            self._fetch_real_data(
+                niche, account_id=account_id, user_topic=user_topic, thread_id=thread_id
+            ),
         )
         memory_context = _format_memory_context(insights_result)
 
