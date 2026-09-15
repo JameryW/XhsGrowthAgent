@@ -386,6 +386,7 @@ def _register(
     retry: RetryPolicy,
     auth_scope: tuple[str, ...] = (),
     pass_style: PassStyle = PassStyle.KWARGS,
+    timeout_s: float | None = None,
 ) -> None:
     """Declare a capability and bind it, from one statement.
 
@@ -398,6 +399,9 @@ def _register(
     :func:`_validate_style` rather than routed the wrong way. Anything that
     is not an ordinary function — a LangChain tool, a payload-whole tool —
     must say so here.
+
+    ``timeout_s`` overrides the latency-class default; declare it whenever a
+    call site had a wait budget of its own, so the budget has exactly one home.
     """
     target = ref.resolve()
     registry.register(
@@ -410,6 +414,7 @@ def _register(
             retry_policy=retry,
             auth_scope=auth_scope,
             pass_style=pass_style,
+            timeout_s=timeout_s,
             input_schema=describe_params(target),
         ),
         bind(ref, pass_style=pass_style),
@@ -479,7 +484,20 @@ def build_registry() -> ToolRegistry:
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.MEDIUM,
         cost=CostClass.CHEAP,
-        retry=RetryPolicy(max_attempts=3, backoff_s=2.0),
+        # S3c: the call site (``analyst._ripple_report``) guarded this fetch
+        # with a hard 120s ``asyncio.wait_for``. That budget now belongs to the
+        # capability, so it is declared here and the call site no longer wraps
+        # the call — one home for the wait, not two that can disagree.
+        timeout_s=120.0,
+        # No retry, deliberately — and this is not the read-only default
+        # applied blindly. ``get_report`` reports its own failures as data
+        # (``{"error": ...}``) and so never raises, which leaves the Gateway's
+        # own timeout as the only retryable event; and retrying a timeout is
+        # not a transient-failure remedy, it is a longer wait wearing a
+        # disguise (two attempts behind a 120s guard stall the node for 240s,
+        # which is a budget question, not a retry one). If this ever needs to
+        # wait longer, raise ``timeout_s``.
+        retry=RetryPolicy(),
         auth_scope=("ripple:read",),
     )
     _register(

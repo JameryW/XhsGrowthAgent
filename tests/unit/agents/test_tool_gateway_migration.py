@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from backend.agents.analyst import AnalystAgent
 from backend.agents.base import BaseAgent
 from backend.agents.content_strategist import ContentStrategistAgent
 from backend.agents.copywriter import CopywriterAgent
@@ -19,6 +20,7 @@ from backend.config.models import TaskType
 from backend.tools.runtime import shared_gateway
 
 _TOPIC_SCORER = "backend.tools.analysis.topic_scorer.topic_scorer"
+_GET_REPORT = "backend.tools.ripple.integration.get_report"
 _SHARED_GATEWAY = "backend.tools.runtime.bridge.shared_gateway"
 
 
@@ -141,5 +143,35 @@ class TestMigrationsGoThroughTheGateway:
 
         with patch(_SHARED_GATEWAY, recorder.shared):
             assert await agent._algorithmic_de_ai_variants([]) == []
+
+        assert recorder.calls == []
+
+    @pytest.mark.asyncio
+    async def test_analyst_fetches_the_report_through_the_gateway(self):
+        """S3c: the wait budget moved onto the capability, so the call site no
+        longer wraps the call in its own ``asyncio.wait_for`` — the invocation
+        itself must now be visible to the runtime."""
+        agent = AnalystAgent()
+        recorder = _Recorder()
+        report = AsyncMock(return_value={"rounds": [{"content": "Report text"}]})
+
+        with (
+            patch(_GET_REPORT, report),
+            patch(_SHARED_GATEWAY, recorder.shared),
+        ):
+            text = await agent._ripple_report(
+                {"content_plan": {"ripple_prediction": {"ripple_job_id": "job_1"}}}
+            )
+
+        assert recorder.calls == ["ripple.get_report"]
+        assert text == "Report text"
+
+    @pytest.mark.asyncio
+    async def test_analyst_without_a_job_id_never_reaches_the_gateway(self):
+        agent = AnalystAgent()
+        recorder = _Recorder()
+
+        with patch(_SHARED_GATEWAY, recorder.shared):
+            assert await agent._ripple_report({"content_plan": {}}) is None
 
         assert recorder.calls == []

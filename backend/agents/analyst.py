@@ -21,8 +21,8 @@ from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
 from backend.context.models import RetrievalMode, RetrievalResult, RunContext, require_niche
 from backend.context.retrieval import RecallRequest, recall_namespaces
-from backend.services.ripple_service import RippleTimeoutError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
+from backend.tools.runtime.models import ErrorKind
 
 if TYPE_CHECKING:
     # MemoryManager pulled lazily inside execute() to avoid import cycles;
@@ -32,9 +32,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.agents.analyst")
 
 _compiler = ContextCompiler()
-
-# Ripple 报告获取超时（秒）— 报告生成是增值操作，不阻塞主流程
-_RIPPLE_REPORT_TIMEOUT = 120
 
 
 async def _recall_history(
@@ -295,7 +292,12 @@ class AnalystAgent(BaseAgent):
         return result_updates
 
     async def _ripple_report(self, state: XHSGrowthState) -> str | None:
-        """尝试获取 Ripple 模拟报告（带超时保护）"""
+        """尝试获取 Ripple 模拟报告
+
+        P1c-S3c: 经 Tool Gateway 调用。等待预算声明在能力上
+        （``ripple.get_report`` → ``timeout_s=120``），调用点不再自己包一层
+        ``asyncio.wait_for`` —— 否则超时策略会有两个可能打架的出处。
+        """
         ripple_prediction = state.get("content_plan", {}).get("ripple_prediction", {})
         job_id = (
             ripple_prediction.get("ripple_job_id") if isinstance(ripple_prediction, dict) else None
@@ -304,36 +306,26 @@ class AnalystAgent(BaseAgent):
         if not job_id:
             return None
 
-        try:
-            from backend.tools.ripple.integration import get_report
+        result = await self.tools.invoke("ripple.get_report", {"job_id": job_id})
 
-            report = await asyncio.wait_for(
-                get_report(job_id),
-                timeout=_RIPPLE_REPORT_TIMEOUT,
-            )
-            if "error" not in report:
-                # 提取报告文本
-                rounds = report.get("rounds", [])
-                texts = []
-                for r in rounds:
-                    texts.append(r.get("content", r.get("text", str(r))))
-                return "\n".join(texts)
+        if not result.ok:
+            logger.warning(f"Ripple report retrieval skipped: {result.error}")
+            # 只有超时才是"模拟还在跑"，这时取消任务才有意义。判断依据是
+            # error_kind 而不是错误文本 —— get_report 从不抛异常（失败时返回
+            # {"error": ...}），所以这里实际等价于旧代码的 TimeoutError 分支。
+            if result.error_kind is ErrorKind.TIMEOUT:
+                await self._ripple_cancel(job_id)
+            return None
 
-        except RippleTimeoutError as e:
-            logger.warning(f"Ripple report timed out: job_id={e.job_id}")
-            await self._ripple_cancel(e.job_id)
+        report = result.value
+        if not isinstance(report, dict):
+            return None
+        if "error" in report:
+            logger.warning(f"Ripple report unavailable: {job_id}: {report['error']}")
+            return None
 
-        except TimeoutError:
-            logger.warning(
-                f"Ripple report retrieval timed out after {_RIPPLE_REPORT_TIMEOUT}s for {job_id}"
-            )
-            # 尝试取消报告生成任务
-            await self._ripple_cancel(job_id)
-
-        except Exception as e:
-            logger.warning(f"Ripple report retrieval skipped: {e}")
-
-        return None
+        rounds = report.get("rounds", [])
+        return "\n".join(r.get("content", r.get("text", str(r))) for r in rounds)
 
     async def _ripple_cancel(self, job_id: str) -> None:
         """尝试取消 Ripple 模拟任务（报告超时时调用）"""
