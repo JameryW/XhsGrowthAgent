@@ -15,6 +15,7 @@ from backend.api.errors import (
     CreatorActionExecutionNotAllowedError,
     CreatorActionExecutionNotFoundError,
     CreatorActionNotFoundError,
+    CreatorActionPolicyDeniedError,
     CreatorDecisionNotFoundError,
     CreatorEvidenceNotFoundError,
     CreatorFeedbackAudienceMismatchError,
@@ -58,6 +59,7 @@ from backend.creator_agent.repository import (
     ActionCapabilityNotWiredError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
+    ActionPolicyDeniedError,
     ActionResolutionConflictError,
     ActionValidationError,
     CreatorModelMissingError,
@@ -332,6 +334,13 @@ async def plan_creator_action(
         raise CreatorDecisionNotFoundError(exc.decision_id) from exc
     except ActionValidationError as exc:
         raise ValidationError(exc.field, exc.reason) from exc
+    except ActionPolicyDeniedError as exc:
+        raise CreatorActionPolicyDeniedError(
+            policy_id=exc.policy_id.value,
+            reason=exc.reason,
+            account_id=exc.account_id,
+            retry_after_seconds=exc.retry_after_seconds,
+        ) from exc
     return success(data=action.model_dump(mode="json"))
 
 

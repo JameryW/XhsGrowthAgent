@@ -60,6 +60,14 @@ from backend.creator_agent.models import (
     encode_model_revision_cursor,
 )
 from backend.creator_agent.observations import CreatorContentObservationSource
+from backend.creator_agent.policy import (
+    ActionPolicySnapshot,
+    PolicyId,
+    PolicyVerdict,
+    RiskVerdict,
+    build_action_policy_snapshot,
+    evaluate_action_policy,
+)
 from backend.creator_agent.proposals import (
     build_evidence_proposals,
     observation_claim,
@@ -67,12 +75,22 @@ from backend.creator_agent.proposals import (
     observation_evidence_id,
     observation_source_ref,
 )
-from backend.creator_agent.repository import ModelRevisionMissingError
+from backend.creator_agent.repository import (
+    ActionPolicyDeniedError,
+    ModelRevisionMissingError,
+)
 from backend.creator_agent.revisions import build_model_revision_page
 
 __all__ = [
     "CreatorAdvisor",
     "CreatorContentObservationSource",
+    "ActionPolicyDeniedError",
+    "ActionPolicySnapshot",
+    "PolicyId",
+    "PolicyVerdict",
+    "RiskVerdict",
+    "build_action_policy_snapshot",
+    "evaluate_action_policy",
     "build_decision_dataset_page",
     "project_decision_dataset",
     "build_model_revision_page",

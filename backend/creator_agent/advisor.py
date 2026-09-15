@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 
@@ -42,11 +43,16 @@ from backend.creator_agent.models import (
     utc_now_iso,
 )
 from backend.creator_agent.observations import CreatorContentObservationSource
+from backend.creator_agent.policy import (
+    build_action_policy_snapshot,
+    evaluate_action_policy,
+)
 from backend.creator_agent.proposals import build_evidence_proposals
 from backend.creator_agent.repository import (
     ActionCapabilityNotWiredError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
+    ActionPolicyDeniedError,
     ActionValidationError,
     CreatorAgentRepository,
     CreatorModelMissingError,
@@ -54,6 +60,8 @@ from backend.creator_agent.repository import (
     FeedbackAudienceMismatchError,
     ModelRevisionMissingError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -303,6 +311,31 @@ class CreatorAdvisor:
                 raise ActionValidationError(
                     f"candidate IDs are not recommendations: {missing}", "candidate_ids"
                 )
+
+        # P2a-S2 policy gate.  Placement is the whole point: after shape
+        # validation (so the engine never re-derives an intent's shape) and
+        # before ``create_action`` (so a denial leaves no intent behind for a
+        # human to confirm).  Reached on every capability; the engine itself
+        # decides which ones it has an opinion about.
+        verdict = evaluate_action_policy(build_action_policy_snapshot(request))
+        if not verdict.allowed:
+            # The denial stays observable without persisting an intent: the
+            # caller gets a 403 carrying ``policy_id`` + ``retry_after_seconds``,
+            # and this line puts it in the log.  A denied intent would be a
+            # record nobody can ever confirm, which is why none is written.
+            logger.warning(
+                "creator action policy denied: policy_id=%s account_id=%s kind=%s reason=%s",
+                verdict.policy_id.value,
+                account_id,
+                request.action_kind.value,
+                verdict.reason,
+            )
+            raise ActionPolicyDeniedError(
+                account_id=account_id,
+                policy_id=verdict.policy_id,
+                reason=verdict.reason,
+                retry_after_seconds=verdict.retry_after_seconds,
+            )
 
         now = utc_now_iso()
         action = ActionIntent(

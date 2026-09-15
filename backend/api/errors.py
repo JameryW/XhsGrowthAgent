@@ -30,6 +30,7 @@ class ErrorCode(StrEnum):
     CREATOR_ACTION_EXECUTION_NOT_FOUND = "ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND"
     CREATOR_ACTION_EXECUTION_NOT_ALLOWED = "ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED"
     CREATOR_ACTION_CAPABILITY_NOT_WIRED = "ERROR_CREATOR_ACTION_CAPABILITY_NOT_WIRED"
+    CREATOR_ACTION_POLICY_DENIED = "ERROR_CREATOR_ACTION_POLICY_DENIED"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -253,6 +254,34 @@ class CreatorActionCapabilityNotWiredError(APIError):
             message=f"Creator action kind '{action_kind}' has no executor yet",
             details={"action_id": action_id, "action_kind": action_kind},
             status_code=501,
+        )
+
+
+class CreatorActionPolicyDeniedError(APIError):
+    """Deterministic policy refused the action before an intent was created.
+
+    403 rather than 409: the request is well-formed and the caller is allowed to
+    make it -- the account's current state is what makes it refuse.  ``policy_id``
+    is the stable handle for that state, and ``retry_after_seconds`` (when
+    present) tells the caller when asking again could succeed.
+    """
+
+    def __init__(
+        self,
+        *,
+        policy_id: str,
+        reason: str,
+        account_id: str,
+        retry_after_seconds: int | None = None,
+    ):
+        details: dict[str, Any] = {"policy_id": policy_id, "account_id": account_id}
+        if retry_after_seconds is not None:
+            details["retry_after_seconds"] = retry_after_seconds
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_POLICY_DENIED,
+            message=reason or "Creator action refused by policy",
+            details=details,
+            status_code=403,
         )
 
 

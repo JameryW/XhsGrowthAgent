@@ -29,6 +29,7 @@ from backend.creator_agent.models import (
     RelationshipMemory,
     UserFeedback,
 )
+from backend.creator_agent.policy import PolicyId
 
 
 class CreatorModelRevisionConflictError(Exception):
@@ -103,6 +104,30 @@ class ActionCapabilityNotWiredError(Exception):
         super().__init__(
             f"action {action_id} of kind {action_kind.value} has no executor wired yet"
         )
+
+
+class ActionPolicyDeniedError(Exception):
+    """Deterministic policy refused to let this intent become durable.
+
+    Raised from ``plan_action`` *before* the intent is created, so a denial and
+    a "never planned" are the same thing from the repository's point of view --
+    deliberately: a human must never be asked to confirm an action that policy
+    has already refused.
+    """
+
+    def __init__(
+        self,
+        *,
+        account_id: str,
+        policy_id: PolicyId,
+        reason: str,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        self.account_id = account_id
+        self.policy_id = policy_id
+        self.reason = reason
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(f"action policy {policy_id.value} denied the request: {reason}")
 
 
 class ActionExecutionNotAllowedError(Exception):
