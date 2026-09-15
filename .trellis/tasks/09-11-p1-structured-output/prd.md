@@ -471,3 +471,76 @@ S2b 特意留下的一块。`evaluator` 与其余调用点的区别不在数量�
 
 - `llm_enrichment` 的副本收敛与 `_parse_json_response` 标 legacy（S4）。
   **`_parse_json_response` 仍是 PROMPTED/JSON_OBJECT 档的解析器，别以为迁完就能删。**
+## S4 执行记录（2026-09-15，分支 `feat/p1d-s4-legacy-parser`）
+
+### 交付
+
+| 文件 | 内容 |
+|---|---|
+| `backend/models/json_parsing.py`（新） | 把 `base.py` 的**纯解析策略**原样抽成模块级 `parse_json_payload`（全部策略失败时返回 `UNPARSED` 哨兵），含 `_repair_json` / `_extract_json_from_markdown` |
+| `backend/agents/base.py` | `_parse_json_response_impl` 变**薄包装**（只做哨兵转换；两条 warning 文案逐字保留）；`_parse_json_response` 与 `_impl` 加 LEGACY docstring |
+| `backend/services/llm_enrichment.py` | `_parse_json_response` 加 LEGACY docstring，写明它**刻意不与 base 合并** |
+| 测试 | `tests/unit/models/test_json_parsing.py`（新，45 用例） |
+
+### 结论一：`_parse_json_response` 不是"残留"，是**新链路第三档的解析器**
+
+侦察发现它在生产里的**唯一**运行期调用点是 `base.py` 的
+`_structured_call(...) → return self._parse_json_response(...)` —— 也就是
+**PROMPTED / JSON_OBJECT 两档的落点**；provider 表把 13/15 个 TaskType 判成 PROMPTED。
+其余 8 处引用全是注释 / docstring。所以它不是"迁完就能删的旧代码"，删除前提只有一个：
+**三档只剩 `NATIVE_SCHEMA`**。票面那句"别以为迁完就能删"由此从提醒变成机制性结论。
+
+### 结论二：「副本收敛」的答案是**不合并**（探针推翻设计假设）
+
+票面把 S4 写成"`llm_enrichment` 副本收敛"，隐含两份是同一实现的副本。18 条语料的探针
+推翻了这一点：**两份策略不同，接受集 5 条不同，且双向都不包含**。
+
+| 语料 | `parse_json_payload` | 副本 |
+|---|---|---|
+| `'Here are the results:\n[{"id": 1}, {"id": 2}]'` | `{'id': 1}`（**答错**：按花括号边界把数组截成首元素） | `[{'id': 1}, {'id': 2}]` |
+| `'List: [1, 2, 3] done'` | 不解析 | `[1, 2, 3]` |
+| `'{"tags": ["#a", "#b", #c]}'` | 修复缺引号后解析 | 抛错 |
+| `'{"a": 1}\n{"b": 2}'` | 取**首个**对象 | 抛错 |
+
+方向性：base 独有 `_repair_json`（补 `#` 引号 + 括号修复）；副本独有贪婪
+`\{…\}|\[…\]` 数组抢救。**合并成任一份都会改动另一份的行为**，而本 topic 的红线
+写着「不动 `_parse_json_response` 的现有行为」。所以本片交付的不是合并，而是：
+
+1. 策略收敛到**单一归属地**（`json_parsing.py`），让两份的差异从隐性变成可比；
+2. 差异**钉成可执行断言**（`TestTheTwoParsersCannotBeMerged`）—— 谁想"顺手收敛"，
+   谁在这里红，而不是等某个 agent 的行为回归才被发现；
+3. **既有缺陷**（数组夹散文被截断）显式钉住并注明"本片不修"，避免后人以为是本片引入。
+
+### 失败契约是承重差异（与 S2c / S3 同族纪律的第三次兑现）
+
+- `BaseAgent` → 返回 `{"raw_content": content}` 哨兵、**不抛**。该哨兵是**合法 dict**，
+  配 `extra="ignore"` 的输出模型**什么都拦不住**（S2c 结论），所以语义检查必须由
+  `_llm_structured(validator=...)` 承担。
+- 副本 → `raise LLMEnrichmentError`，而 `enrich_with_llm` 用 `except Exception` 接住 →
+  `fallback_fn`。**这个 raise 是 `fallback_fn` 唯一的触发器**：换成哨兵，`de_ai_taste`
+  会把 `{"raw_content": …}` 当成功富化收下，`method == "algorithmic"` 永不成立。
+  收敛前先问"这个差异下游有没有在用"。
+
+### 行为保持的验证方式
+
+- **探针逐字节比对**：抽取前后各跑一次 `_s4_probe.py`，18 条输出 `diff` 为空。
+- `TestTheAgentBoundaryIsUnchanged` 三条：哨兵、成功路径、warning 文案。
+
+### 门禁
+
+- `pytest -q`：**3065 passed / 3 skipped**（较 S3 的 3020 增 **45** 条，恰等于新测试文件
+  的用例数 → 零既有用例被改动）
+- `ruff check .` / `ruff format --check .`：**494 files** 干净（较 S3 的 492 增 2）
+- `mypy backend --python-version 3.12`：**200 files** 干净（较 S3 的 199 增 1）
+- P1b 基线 `--compare --drift-pct 5`：drift within threshold —— prompt 逐字节未动
+- `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）
+- 突变自检：**6/6 杀死**（哨兵返回 `None` / agent 边界改抛错 / **副本改哨兵＝顺手收敛** /
+  删 hashtag 修复规则 / 不转哨兵直接返回哨兵对象 / **顺手"修"掉数组截断缺陷**）
+
+### 本片不做
+
+- **不修** `parse_json_payload` 把散文里的数组截成首元素的既有缺陷（改它 = 改所有 agent
+  的解析结果，须独立成片）。
+- 不把工具（`de_ai_taste`）与 API 路由（`public_showcase`）的富化路径迁到结构化链路 ——
+  它们不是 agent，没有 `BaseAgent` 设施。
+

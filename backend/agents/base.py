@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from backend.tools.runtime.gateway import ToolGateway
 
 from backend.config.models import TaskType
+from backend.models.json_parsing import UNPARSED, parse_json_payload
 from backend.models.router import get_model
 
 logger = logging.getLogger("xhs_growth.agents")
@@ -417,7 +418,18 @@ class BaseAgent(ABC):
         )
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
-        """从 LLM 响应中提取 JSON（增强版，处理多种格式和常见语法错误）"""
+        """LEGACY（P1d-S4）—— 文本→JSON 的旧解析路径，**不是残留，别删**。
+
+        它同时是 ``_structured_call`` 在 ``PROMPTED`` / ``JSON_OBJECT`` 两档的解析器，
+        而 provider 表把 13/15 个 TaskType 判成 ``PROMPTED`` → 它在**生产主路径**上。
+        删除前提只有一个：三档只剩 ``NATIVE_SCHEMA``。
+
+        策略已收敛到单一归属地 ``backend.models.json_parsing.parse_json_payload``；
+        本方法只负责计时（``parse_ms``）与**哨兵契约**：解析不出来时返回
+        ``{"raw_content": content}`` —— 那是一个**合法 dict**，配 ``extra="ignore"``
+        的输出模型**什么都拦不住**（S2c 实测），语义检查必须由
+        ``_llm_structured(validator=...)`` 承担，不能指望这里报错。
+        """
         import time
 
         # ponytail: record parse wall-clock onto the most recent llm perf entry.
@@ -438,102 +450,20 @@ class BaseAgent(ABC):
                 pass
 
     def _parse_json_response_impl(self, content: str) -> dict[str, Any]:
-        """从 LLM 响应中提取 JSON（增强版，处理多种格式和常见语法错误）"""
-        import re
+        """LEGACY 策略包装 —— 策略住在 ``parse_json_payload``，这里只做哨兵转换。
 
-        def repair_json(json_str: str) -> str:
-            """修复常见的 JSON 语法错误"""
-            # 修复缺少引号的值（如 #hashtag -> "#hashtag"）
-            # 匹配数组中缺少引号的元素: [, #value, -> , "#value",
-            json_str = re.sub(r',\s*#([^\s,\[\]"]+)', r', "#\1"', json_str)
-            # 修复缺少引号的值开头: [#value, -> ["#value",
-            json_str = re.sub(r'\[\s*#([^\s,\[\]"]+)', r'["#\1"', json_str)
-            # 修复缺少引号的值结尾: , #value] -> , "#value"]
-            json_str = re.sub(r',\s*#([^\s,\[\]"]+)\s*\]', r', "#\1"]', json_str)
-
-            # 修复括号不匹配：] 闭合 { 或 } 闭合 [
-            result = []
-            stack = []
-            for ch in json_str:
-                if ch in ("{", "["):
-                    stack.append(ch)
-                    result.append(ch)
-                elif ch == "}" and stack and stack[-1] == "[":
-                    stack.pop()
-                    result.append("]")
-                elif ch == "]" and stack and stack[-1] == "{":
-                    stack.pop()
-                    result.append("}")
-                elif ch in ("}", "]"):
-                    if stack:
-                        stack.pop()
-                    result.append(ch)
-                else:
-                    result.append(ch)
-            json_str = "".join(result)
-            return json_str
-
-        def extract_json_from_markdown(text: str) -> str:
-            """从 markdown 代码块中提取 JSON"""
-            if "```json" in text:
-                return text.split("```json")[1].split("```")[0].strip()
-            if "```" in text:
-                parts = text.split("```")
-                for i, part in enumerate(parts):
-                    if i % 2 == 1:  # 奇数索引是代码块内容
-                        return part.strip()
-            return text
-
+        两条 warning 的文案逐字保留（排障与既有断言依赖）；外层 ``except`` 也照原样
+        保留，因为原实现就是这个形态。
+        """
         try:
-            # 1. 提取 JSON 内容
-            json_content = extract_json_from_markdown(content)
-
-            # 2. 尝试直接解析
-            try:
-                return cast(dict[str, Any], json.loads(json_content))
-            except json.JSONDecodeError:
-                pass
-
-            # 3. 尝试修复常见语法错误后解析
-            repaired = repair_json(json_content)
-            try:
-                return cast(dict[str, Any], json.loads(repaired))
-            except json.JSONDecodeError:
-                pass
-
-            # 4. 尝试从文本中找到 JSON 对象边界
-            start = json_content.find("{")
-            end = json_content.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                json_str = json_content[start : end + 1]
-                try:
-                    return cast(dict[str, Any], json.loads(json_str))
-                except json.JSONDecodeError:
-                    repaired = repair_json(json_str)
-                    try:
-                        return cast(dict[str, Any], json.loads(repaired))
-                    except json.JSONDecodeError:
-                        pass
-
-            # 5. 尝试正则匹配 JSON 对象
-            json_pattern = r"\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}"
-            matches = re.findall(json_pattern, content)
-            for match in matches:
-                try:
-                    return cast(dict[str, Any], json.loads(match))
-                except json.JSONDecodeError:
-                    repaired = repair_json(match)
-                    try:
-                        return cast(dict[str, Any], json.loads(repaired))
-                    except json.JSONDecodeError:
-                        continue
-
-            # 所有方法都失败
-            logger.warning(f"Failed to parse JSON response from {self.agent_name}: {content[:200]}")
-            return {"raw_content": content}
+            parsed = parse_json_payload(content)
         except (json.JSONDecodeError, IndexError) as e:
             logger.warning(f"JSON decode error in {self.agent_name}: {e}")
             return {"raw_content": content}
+        if parsed is UNPARSED:
+            logger.warning(f"Failed to parse JSON response from {self.agent_name}: {content[:200]}")
+            return {"raw_content": content}
+        return cast(dict[str, Any], parsed)
 
     @abstractmethod
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
