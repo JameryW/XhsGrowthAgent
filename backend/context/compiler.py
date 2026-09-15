@@ -1,10 +1,9 @@
-"""Context Compiler pipeline skeleton (P1b-S1, zero behavior change).
+"""Context Compiler pipeline (P1b-S1 skeleton; S2/S3 wired the recall and the
+segmented prompt YAML, P1c-S4 feeds the L1 tool-schema layer).
 
 The stages are pure, deterministic functions (info.md D6': no LLM rerank).
-Recall wiring arrives in S2 (with the store and the degradation events) and
-layered prompt-YAML wiring in S3; nothing imports this module yet — the S4
-migration replaces the per-agent ``template.replace`` paths with
-:meth:`ContextCompiler.compile` in the consumer-map order.
+``compile_prompt`` is the entry point agents use: it parses the (segmented)
+prompt YAML and delegates the dedup / rerank / budget / ordering work below.
 """
 
 from __future__ import annotations
@@ -121,10 +120,20 @@ class ContextCompiler:
     ) -> CompiledPrompt:
         """Compile static sections + recall items into a layered prompt.
 
-        ``run_context`` is accepted now so the signature is stable for S2/S3
-        (the compiler will read niche/task context from it instead of taking
-        pre-rendered L2/L3 strings); it does not influence the S1 output.
+        ``run_context`` supplies the L1 section (``tool_schema``): the layer is
+        the one static layer the prompt YAML cannot carry, because it is
+        *rendered* from the capability registry rather than written by hand.
+        Seeding it here rather than at each call site keeps "where does L1 go?"
+        a single decision — the LAYER_ORDER rendering below already places it
+        between L0 and L2, and the trim order below never touches it.
         """
+        if run_context.tool_schema:
+            seeded = dict(sections)
+            existing = seeded.get(PromptLayer.L1_TOOL_SCHEMA, "")
+            seeded[PromptLayer.L1_TOOL_SCHEMA] = "\n".join(
+                part for part in (existing, run_context.tool_schema) if part
+            )
+            sections = seeded
         items_by_layer: dict[PromptLayer, list[ContextItem]] = {}
         for result in retrievals:
             items_by_layer.setdefault(result.layer, []).extend(result.items)

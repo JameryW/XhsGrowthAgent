@@ -6,7 +6,12 @@ the agents currently use. The Gateway (S2) is the only thing allowed to
 invoke them.
 """
 
-from backend.tools.runtime.bridge import reset_gateway, shared_gateway, tracing_to
+from backend.tools.runtime.bridge import (
+    reset_gateway,
+    shared_gateway,
+    tool_schema_section,
+    tracing_to,
+)
 from backend.tools.runtime.catalog import (
     ToolRef,
     adapt_tool,
@@ -39,6 +44,7 @@ from backend.tools.runtime.registry import (
     ToolRegistry,
     UnknownCapabilityError,
 )
+from backend.tools.runtime.schema import render_tool_schema
 
 __all__ = [
     "CostClass",
@@ -64,8 +70,10 @@ __all__ = [
     "bind",
     "build_registry",
     "describe_params",
+    "render_tool_schema",
     "reset_gateway",
     "shared_gateway",
     "tool_ref",
+    "tool_schema_section",
     "tracing_to",
 ]

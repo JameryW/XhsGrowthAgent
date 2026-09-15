@@ -82,6 +82,11 @@ class TrendScoutAgent(BaseAgent):
     task_type = TaskType.SCOUTING
     agent_name = "trend_scout"
     prompt_file = "trend_scout.yaml"
+    tool_capabilities = (
+        "xhs.trending",
+        "xhs.keyword_monitor",
+        "xhs.competitor_analyzer",
+    )
 
     async def _safe_xhs_trending(
         self, niche: str, account_id: str, thread_id: str = ""
@@ -289,7 +294,11 @@ class TrendScoutAgent(BaseAgent):
                 logger.debug("observation telemetry failed: %s", e)
 
         run_context = RunContext(
-            thread_id=thread_id, account_id=account_id, niche=niche, values=state
+            thread_id=thread_id,
+            account_id=account_id,
+            niche=niche,
+            values=state,
+            tool_schema=self.tool_schema_layer(),
         )
         system_prompt = _compiler.compile_prompt(
             run_context,

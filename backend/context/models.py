@@ -30,8 +30,9 @@ class PromptLayer(StrEnum):
     """The L0-L5 stable-prefix layers (architecture review §十八).
 
     Declared most → least stable; the budget allocator trims from the tail
-    (L5 first) and never touches L0-L3 (info.md D4').  L1 stays empty until
-    P1c Tool Runtime gives tool schemas a producer.
+    (L5 first) and never touches L0-L3 (info.md D4').  L1 is fed by the Tool
+    Runtime's schema renderer (P1c-S4) — see ``RunContext.tool_schema`` — and
+    is empty for an agent that declares no capabilities.
     """
 
     L0_SYSTEM = "l0_system"
@@ -134,6 +135,16 @@ class RunContext(BaseModel):
     phase: str = ""
     topic: str = ""
     values: Mapping[str, Any] = Field(default_factory=dict)
+    tool_schema: str = ""
+    """Pre-rendered L1 text, or ``""`` for no L1 at all.
+
+    Rendered by the agent from its declared capabilities
+    (``BaseAgent.tool_schema_layer()`` → the Tool Runtime's schema renderer)
+    and carried here rather than passed beside it, because it is per-run
+    context like the rest of this object. The compiler seeds the L1 section
+    from it and nowhere else, so the decision "is there a tool layer?" is made
+    in one place instead of once per call site.
+    """
 
 
 class CompiledPrompt(BaseModel):

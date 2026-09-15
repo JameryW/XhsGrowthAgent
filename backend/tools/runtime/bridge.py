@@ -10,14 +10,15 @@ than a review question.
 from __future__ import annotations
 
 import contextvars
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
 from backend.tools.runtime.catalog import build_registry
 from backend.tools.runtime.gateway import ToolGateway, TraceSink
+from backend.tools.runtime.schema import render_tool_schema
 
-__all__ = ["reset_gateway", "shared_gateway", "tracing_to"]
+__all__ = ["reset_gateway", "shared_gateway", "tool_schema_section", "tracing_to"]
 
 _trace_var: contextvars.ContextVar[TraceSink | None] = contextvars.ContextVar(
     "tool_trace_sink", default=None
@@ -60,6 +61,27 @@ def reset_gateway() -> None:
     """Drop the shared gateway so the next call rebuilds it (tests)."""
     global _gateway
     _gateway = None
+
+
+def tool_schema_section(capabilities: Sequence[str]) -> str:
+    """L1 text for these capabilities, resolved from the shared registry.
+
+    The agent-facing seam for the layer (S4): an agent declares the
+    capabilities it uses and hands them over here; it never names a module
+    path, just as it never names one when invoking. Resolution goes through
+    ``ToolRegistry.subset`` — the narrowing S1 built for exactly this, so the
+    renderer sees the agent's own capabilities and not the catalogue's other
+    nine. An unknown or duplicated name raises from the registry rather than
+    rendering as "no such tool": a declaration that does not match the
+    catalogue is a wiring mistake, and the error says which name is wrong.
+
+    Returning ``""`` for an empty declaration is what makes the layer opt-in
+    per agent: no capabilities, no L1, nothing to render.
+    """
+    if not capabilities:
+        return ""
+    registry = shared_gateway().registry
+    return render_tool_schema(registry.subset(list(capabilities)).specs())
 
 
 @contextmanager

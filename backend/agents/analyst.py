@@ -121,6 +121,7 @@ class AnalystAgent(BaseAgent):
     task_type = TaskType.ANALYSIS
     agent_name = "analyst"
     prompt_file = "analyst.yaml"
+    tool_capabilities = ("ripple.get_report",)
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -142,6 +143,7 @@ class AnalystAgent(BaseAgent):
             account_id=account_id,
             niche=niche,
             values=state,
+            tool_schema=self.tool_schema_layer(),
         )
         system_prompt = _compiler.compile_prompt(
             run_context, self.prompt_template["system"]
