@@ -29,7 +29,13 @@ def _fresh_gateway():
 
 
 def _scorer(return_value: dict[str, Any]) -> AsyncMock:
-    """A LangChain-shaped double: routing only needs an awaitable ``ainvoke``."""
+    """A double for the real ``topic_scorer``, shaped the way the suite does it.
+
+    Deliberately *not* ``spec=StructuredTool``. It answers both ``__call__``
+    and ``ainvoke``, so the capability's declared ``PassStyle.INVOKE`` is the
+    only thing that can route the payload correctly — a router that inspected
+    the object would send it to ``__call__`` and these assertions would fail.
+    """
     fake = AsyncMock()
     fake.ainvoke = AsyncMock(return_value=return_value)
     return fake
@@ -81,16 +87,24 @@ class TestLateBinding:
         assert second.ainvoke.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_a_kwargs_double_is_adapted_too(self):
-        """Re-adaptation follows the *object*, not a remembered shape."""
+    async def test_re_adaptation_keeps_the_declared_route(self):
+        """Re-adaptation follows the *object*; the route still follows the
+        declaration.
+
+        The double answers ``__call__`` and ``ainvoke`` both, so routing by
+        what the object looks like would call it instead of invoking it — the
+        S3b defect, where the payload reached nothing and the agent still
+        looked like it had degraded gracefully.
+        """
         gateway = shared_gateway()
+        fake = _scorer({"shape": "ainvoke"})
 
-        async def double(**payload: Any) -> dict[str, Any]:
-            return {"echo": payload}
-
-        with patch(_TOPIC_SCORER, double):
+        with patch(_TOPIC_SCORER, fake):
             result = await gateway.invoke("analysis.topic_scorer", {"topic": "t"})
-        assert result.value == {"echo": {"topic": "t"}}
+
+        assert result.value == {"shape": "ainvoke"}
+        assert fake.ainvoke.await_count == 1
+        fake.assert_not_awaited()  # never reached through __call__
 
 
 class TestTracingScope:
