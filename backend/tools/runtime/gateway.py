@@ -17,6 +17,14 @@ Two failure modes, deliberately different:
   instead of crashing the node. The kind is data rather than a message
   format, because "the work never finished" and "the tool said no" call for
   different responses.
+
+A third case has a channel of its own: a tool whose answer is neither success
+nor failure — Ripple reporting that a simulation is still running, with the
+``job_id`` needed to cancel or resume it — raises :class:`DomainOutcome`. That
+arrives as ``ErrorKind.DOMAIN`` with the payload in ``ToolResult.domain``,
+*returned*, not swallowed: it is an answer the caller must be able to read. It
+is never retried, because asking again costs another simulation and cannot
+change the answer.
 """
 
 from __future__ import annotations
@@ -27,7 +35,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-from backend.tools.runtime.models import ErrorKind, ToolResult, ToolSpec
+from backend.tools.runtime.models import DomainOutcome, ErrorKind, ToolResult, ToolSpec
 from backend.tools.runtime.registry import ToolRegistry
 
 logger = logging.getLogger("xhs_growth.tools.gateway")
@@ -43,9 +51,15 @@ TraceSink = Callable[[Mapping[str, Any]], Awaitable[None]]
 """Where Gateway trace events go (best-effort; never breaks a call).
 
 Shape: ``{"kind": "tool", "capability", "thread_id", "ok", "attempts",
-"elapsed_ms", "error", "error_kind", "degraded", "side_effect"}``. S2 keeps
-this a plain callback so the runtime stays free of a DB dependency; wiring it
-to the ``workflow_events`` tier happens where a thread id exists.
+"elapsed_ms", "error", "error_kind", "domain_reason", "degraded",
+"side_effect"}``. S2 keeps this a plain callback so the runtime stays free of
+a DB dependency; wiring it to the ``workflow_events`` tier happens where a
+thread id exists.
+
+``domain_reason`` is the machine-readable verdict only — not ``ToolResult.domain``.
+That payload can hold prediction bodies, and the same rule as telemetry for
+context recall applies: an event says what happened, the bodies belong behind
+an explicit, sanitised export.
 """
 
 Sleeper = Callable[[float], Awaitable[None]]
@@ -117,6 +131,24 @@ class ToolGateway:
                 attempts = attempt
                 try:
                     value = await asyncio.wait_for(entry.fn(data), timeout=spec.effective_timeout_s)
+                except DomainOutcome as exc:
+                    # The tool has an answer, and the answer *is* the payload —
+                    # so this returns immediately instead of joining the retry
+                    # loop below. Re-asking would cost another simulation and
+                    # cannot change a verdict that has already been reached.
+                    return await self._finish(
+                        spec,
+                        ToolResult(
+                            capability=capability,
+                            ok=False,
+                            error=f"domain outcome: {exc.reason}",
+                            error_kind=ErrorKind.DOMAIN,
+                            domain=dict(exc.payload),
+                            elapsed_ms=(time.perf_counter() - started) * 1000.0,
+                            attempts=attempts,
+                        ),
+                        thread_id,
+                    )
                 except TimeoutError:
                     last_error = f"timeout after {spec.effective_timeout_s:g}s"
                     last_kind = ErrorKind.TIMEOUT
@@ -197,6 +229,7 @@ class ToolGateway:
                 "elapsed_ms": round(result.elapsed_ms, 3),
                 "error": result.error,
                 "error_kind": result.error_kind.value if result.error_kind is not None else "",
+                "domain_reason": str(result.domain.get("reason", "")),
                 "degraded": result.degraded,
             }
             try:

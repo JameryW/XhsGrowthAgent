@@ -8,7 +8,7 @@ node's own thread.
 """
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,6 +17,7 @@ from backend.agents.base import BaseAgent
 from backend.agents.content_strategist import ContentStrategistAgent
 from backend.agents.copywriter import CopywriterAgent
 from backend.config.models import TaskType
+from backend.services.ripple_service import RippleTimeoutError
 from backend.tools.runtime import shared_gateway
 
 _TOPIC_SCORER = "backend.tools.analysis.topic_scorer.topic_scorer"
@@ -175,3 +176,110 @@ class TestMigrationsGoThroughTheGateway:
             assert await agent._ripple_report({"content_plan": {}}) is None
 
         assert recorder.calls == []
+
+
+def _ripple_service(**overrides: Any) -> MagicMock:
+    """A healthy ``RippleService`` double."""
+    service = MagicMock()
+    service.is_healthy.return_value = True
+    service.health_check = AsyncMock()
+    for name, value in overrides.items():
+        setattr(service, name, value)
+    return service
+
+
+class TestRippleMigratedToTheGateway:
+    """S3c-2: the two remaining Ripple capabilities, end to end.
+
+    These deliberately let the *real* ``integration`` layer run: the whole
+    point of this slice is the translation it performs (a service timeout into
+    a domain outcome carrying the ``job_id``, a degraded service into a stated
+    fact). Doubling ``integration`` would test a shape the agent never sees.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_simulation_and_its_pmf_go_through_the_gateway(self):
+        agent = ContentStrategistAgent()
+        recorder = _Recorder()
+        service = _ripple_service(
+            predict_spread=AsyncMock(
+                return_value={
+                    "ripple_job_id": "job-9",
+                    "ripple_prediction": {"viral_probability": 0.4},
+                }
+            ),
+            validate_pmf=AsyncMock(return_value={"ripple_pmf": {"pmf_score": 0.6}}),
+        )
+
+        with (
+            patch("backend.tools.ripple.integration.RippleService") as mock_cls,
+            patch(_SHARED_GATEWAY, recorder.shared),
+        ):
+            mock_cls.get_instance.return_value = service
+            plan = {"selected_topic": "美食探店", "content_angle": "探店攻略"}
+            prediction = await agent._ripple_predict(plan, max_wait=60.0, thread_id="t-1")
+            pmf = await agent._ripple_validate_pmf(plan, max_wait=60.0, thread_id="t-1")
+
+        assert recorder.calls == ["ripple.predict_spread", "ripple.validate_pmf"]
+        assert prediction.ok is True
+        assert prediction.data["ripple_job_id"] == "job-9"
+        assert prediction.data["viral_probability"] == 0.4
+        assert pmf.data == {"pmf_score": 0.6}
+
+    @pytest.mark.asyncio
+    async def test_a_running_simulation_keeps_its_job_id(self):
+        """A job that is still running is not a success, and its id must
+        survive the trip through the Gateway — that id is the whole reason
+        this answer is carried as data instead of as an exception."""
+        agent = ContentStrategistAgent()
+        recorder = _Recorder()
+        service = _ripple_service(
+            predict_spread=AsyncMock(side_effect=RippleTimeoutError("job-late", 900.0))
+        )
+
+        with (
+            patch("backend.tools.ripple.integration.RippleService") as mock_cls,
+            patch(_SHARED_GATEWAY, recorder.shared),
+        ):
+            mock_cls.get_instance.return_value = service
+            call = await agent._ripple_predict(
+                {"selected_topic": "美食探店"}, max_wait=900.0, thread_id="t-1"
+            )
+
+        assert recorder.calls == ["ripple.predict_spread"]
+        assert call.ok is False
+        assert call.reason == "timeout"
+        assert call.job_id == "job-late"
+
+    @pytest.mark.asyncio
+    async def test_a_degraded_service_is_not_a_prediction(self):
+        """``RippleService`` degrades by returning a zeroed prediction body.
+
+        Read as a value, those zeros were stored as the workflow's forecast —
+        the test double's ``{"ripple_fallback": True}`` hid that, because it
+        carries no body at all. Through the Gateway the degradation is a fact
+        the caller branches on.
+        """
+        agent = ContentStrategistAgent()
+        recorder = _Recorder()
+        service = _ripple_service(
+            predict_spread=AsyncMock(
+                return_value={
+                    "ripple_prediction": {"viral_probability": 0.0, "estimated_reach": 0},
+                    "ripple_fallback": True,
+                    "ripple_reason": "unreachable",
+                }
+            )
+        )
+
+        with (
+            patch("backend.tools.ripple.integration.RippleService") as mock_cls,
+            patch(_SHARED_GATEWAY, recorder.shared),
+        ):
+            mock_cls.get_instance.return_value = service
+            call = await agent._ripple_predict({"selected_topic": "美食探店"}, thread_id="t-1")
+
+        assert recorder.calls == ["ripple.predict_spread"]
+        assert call.ok is False
+        assert call.reason == "unavailable"
+        assert call.job_id == ""

@@ -11,6 +11,20 @@ This module provides:
 3. Integration with the XHS Growth state schema
 
 All calls go through RippleService for connection pooling, retry, and fallback.
+
+Ripple answers in a vocabulary of its own, and that answer is *data* rather
+than an exception: "the simulation has not finished, here is the job id to
+cancel or resume" is not a failure of the call. Those answers are raised as
+``DomainOutcome`` — the runtime's channel for them — so they reach the caller
+intact. Raising them rather than returning them is what stops the Gateway from
+filing the call as a success: a returned ``{"error": ...}`` dict used to be
+recorded as ``ok=True``, and a ``RippleTimeoutError`` (a ``TimeoutError``
+subclass) used to arrive as a plain gateway timeout with the ``job_id`` — the
+only field that makes recovery possible — stripped off.
+
+Ordinary exceptions are *not* caught here. Normalising failures is the
+Gateway's job and it has exactly one home (``backend/tools/runtime/gateway.py``);
+a second, quieter normaliser in this file is how the two came to disagree.
 """
 
 from __future__ import annotations
@@ -19,6 +33,7 @@ import logging
 from typing import Any
 
 from backend.services.ripple_service import RippleService, RippleTimeoutError
+from backend.tools.runtime.models import DomainOutcome
 
 logger = logging.getLogger("xhs_growth.tools.ripple")
 
@@ -29,6 +44,31 @@ async def _get_service() -> RippleService:
     if not service.is_healthy():
         await service.health_check()
     return service
+
+
+def _reject_degraded(result: dict[str, Any], *, body_key: str) -> dict[str, Any]:
+    """Turn the service's designed degraded answer into a domain outcome.
+
+    ``RippleService`` reports "service unavailable" by *succeeding*: it returns
+    a fallback body full of zeros next to ``ripple_fallback: True``. Passed
+    through as a value, that is indistinguishable from a real prediction —
+    ``predict_spread`` handed the caller a zeroed ``ripple_prediction`` and the
+    agent read those zeros as a genuine forecast. Saying so as a domain outcome
+    makes the degradation a fact the caller branches on, and gives the trace an
+    honest ``error_kind`` instead of ``ok=True``.
+
+    The zeroed body is deliberately *not* carried in the payload: callers build
+    their own fallback, and copying the same zeros into every payload would be
+    noise. The reason and the message — which explain *why* — are.
+    """
+    if not result.get("ripple_fallback"):
+        return result
+    logger.warning("Ripple degraded answer (%s): %s", body_key, result.get("ripple_reason", ""))
+    raise DomainOutcome(
+        "unavailable",
+        ripple_reason=str(result.get("ripple_reason", "")),
+        ripple_message=str(result.get("ripple_message", "")),
+    )
 
 
 async def predict_spread(
@@ -55,12 +95,15 @@ async def predict_spread(
     Returns:
         - ripple_job_id: 模拟任务 ID
         - ripple_prediction: 预测数据
-        - ripple_fallback: True if service was unavailable
+
+    Raises:
+        DomainOutcome: ``timeout``（携带 ripple_job_id / max_wait）或
+            ``unavailable``（服务降级）
     """
     if tags is None:
         tags = []
+    service = await _get_service()
     try:
-        service = await _get_service()
         result = await service.predict_spread(
             topic=topic,
             content_type=content_type,
@@ -74,13 +117,12 @@ async def predict_spread(
             thread_id=thread_id,
             environment=environment,
         )
-        return result
-    except RippleTimeoutError:
-        # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
-        raise
-    except Exception as e:
-        logger.error(f"Ripple spread prediction failed: {e}")
-        return {"error": str(e), "ripple_prediction": None}
+    except RippleTimeoutError as exc:
+        # The simulation is still running server-side. Carry its id: cancel and
+        # resume both start from it, and it is the reason this is a domain
+        # outcome rather than a plain timeout.
+        raise DomainOutcome("timeout", ripple_job_id=exc.job_id, max_wait=exc.max_wait) from exc
+    return _reject_degraded(result, body_key="ripple_prediction")
 
 
 async def validate_pmf(
@@ -100,20 +142,18 @@ async def validate_pmf(
         max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
         thread_id: 关联的工作流线程 ID，用于推送进度事件
 
-    通过 RippleService 提交模拟并等待完成，返回解析后的结果。
-
-    Args:
-        max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
-
     Returns:
         - ripple_job_id: 模拟任务 ID
         - ripple_pmf: PMF 验证结果（pmf_score, risk_factors 等）
-        - ripple_fallback: True if service was unavailable (降级)
+
+    Raises:
+        DomainOutcome: ``timeout``（携带 ripple_job_id / max_wait）或
+            ``unavailable``（服务降级）
     """
     if differentiators is None:
         differentiators = []
+    service = await _get_service()
     try:
-        service = await _get_service()
         result = await service.validate_pmf(
             product_name=product_name,
             category=category,
@@ -125,13 +165,9 @@ async def validate_pmf(
             max_wait=max_wait,
             thread_id=thread_id,
         )
-        return result
-    except RippleTimeoutError:
-        # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
-        raise
-    except Exception as e:
-        logger.error(f"Ripple PMF validation failed: {e}")
-        return {"error": str(e), "ripple_pmf": None}
+    except RippleTimeoutError as exc:
+        raise DomainOutcome("timeout", ripple_job_id=exc.job_id, max_wait=exc.max_wait) from exc
+    return _reject_degraded(result, body_key="ripple_pmf")
 
 
 async def get_report(job_id: str) -> dict[str, Any]:

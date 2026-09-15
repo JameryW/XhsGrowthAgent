@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from backend.tools.runtime import (
+    DomainOutcome,
     ErrorKind,
     LatencyClass,
     PermissionDeniedError,
@@ -219,6 +220,71 @@ class TestRuntimeFailures:
         assert calls == 2
         assert len(recorder.sleeps) == 1  # between the two attempts only
         assert "ConnectionError" in result.error
+
+
+class TestDomainOutcomes:
+    """A tool's own verdict is an answer, so it gets a channel of its own.
+
+    Reading these as successes (the ``{"error": ...}`` shape) let a Ripple
+    timeout be traced as ``ok=True``; reading them as plain timeouts (letting
+    ``RippleTimeoutError`` through, since it subclasses ``TimeoutError``)
+    stripped the ``job_id`` and left the job uncancellable. Both are asserted
+    against here so neither can come back.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_payload_arrives_intact(self):
+        async def verdict(payload: dict[str, Any]) -> None:
+            raise DomainOutcome("timeout", ripple_job_id="job-1", max_wait=900.0)
+
+        gateway, _ = _gateway(verdict)
+        result = await gateway.invoke("demo.echo")
+        assert result.ok is False
+        assert result.error_kind is ErrorKind.DOMAIN
+        assert result.error == "domain outcome: timeout"
+        assert result.value is None
+        assert result.domain["reason"] == "timeout"
+        assert result.domain["ripple_job_id"] == "job-1"
+        assert result.domain["max_wait"] == 900.0
+
+    @pytest.mark.asyncio
+    async def test_a_verdict_is_never_retried(self):
+        """Retrying an answer cannot change it — it only pays for it twice.
+
+        The spec below *is* retryable, so this fails if the domain branch is
+        ever folded back into the retry loop.
+        """
+        calls = 0
+
+        async def verdict(payload: dict[str, Any]) -> None:
+            nonlocal calls
+            calls += 1
+            raise DomainOutcome("timeout", ripple_job_id="job-1")
+
+        gateway, recorder = _gateway(verdict, spec=_spec(max_attempts=3, backoff_s=0.5))
+        result = await gateway.invoke("demo.echo")
+        assert calls == 1
+        assert result.attempts == 1
+        assert recorder.sleeps == []
+
+    @pytest.mark.asyncio
+    async def test_the_trace_carries_the_reason_but_not_the_body(self):
+        """An event says what happened; bodies belong behind an export.
+
+        Same rule as the context-recall telemetry in P1b: ``domain`` can hold a
+        prediction body, and a trace row is not where those live.
+        """
+
+        async def verdict(payload: dict[str, Any]) -> None:
+            raise DomainOutcome("unavailable", ripple_prediction={"estimated_reach": 5000})
+
+        gateway, recorder = _gateway(verdict)
+        await gateway.invoke("demo.echo", thread_id="t-1")
+        event = recorder.events[0]
+        assert event["error_kind"] == "domain"
+        assert event["domain_reason"] == "unavailable"
+        assert "ripple_prediction" not in event
+        assert "estimated_reach" not in str(event)
 
 
 class TestIdempotencyKey:

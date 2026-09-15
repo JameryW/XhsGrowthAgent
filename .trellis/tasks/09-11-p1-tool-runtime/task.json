@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-09-11",
   "completedAt": null,
-  "branch": "feat/p1c-s3c-ripple-reads",
+  "branch": "feat/p1c-s3c2-domain-outcomes",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "09-11-runtime-upgrade",
   "relatedFiles": [],
-  "notes": "S1 done (PR #591). S2 done (PR #592). S3a done (PR #593, direct sites 9->7). S3b done (PR #594, 7->6). S3c split in two: S3c-1 (this branch) migrates only ripple.get_report (analyst). The other two ripple tools are NOT mechanically migratable: predict_spread/validate_pmf signal a step timeout with RippleTimeoutError carrying job_id (callers use it to cancel the job and persist it for resume), and the Gateway flattens every failure into a string error, so the job_id would be lost; and they report soft failures as data ({\"error\": ...}), which the Gateway would record as ok=True (a dishonest trace). S3c-2 needs a domain-outcome channel on ToolResult first.",
+  "notes": "S1 done (PR #591). S2 done (PR #592). S3a done (PR #593, direct sites 9->7). S3b done (PR #594, 7->6). S3c-1 done (PR #595, 6->5, ripple.get_report + ToolResult.error_kind). S3c-2 (this branch): adds the domain-outcome channel (ErrorKind.DOMAIN + DomainOutcome + ToolResult.domain, returned immediately and never retried) and migrates ripple.predict_spread / ripple.validate_pmf, so direct sites go 5->3. The Gateway net for those two is declared ABOVE their own payload max_wait (3600s vs 1800s default), because a Gateway timeout would cancel the call and lose the job_id that makes cancel/resume possible. integration no longer swallows exceptions, and the service's degraded answer (ripple_fallback=True + zeroed body) is now DomainOutcome(unavailable) instead of being read as a real prediction. Remaining direct sites: trend_scout xhs x3 (S3d).",
   "meta": {}
 }

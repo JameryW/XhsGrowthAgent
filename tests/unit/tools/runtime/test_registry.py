@@ -220,6 +220,41 @@ class TestToolResult:
         assert result.to_dict()["error"] == "timeout after 120s"
         assert result.to_dict()["error_kind"] == "timeout"
 
+    def test_a_domain_outcome_must_carry_its_payload(self):
+        """``domain`` is populated on exactly the domain outcomes.
+
+        Otherwise "has a domain payload" and "is a domain outcome" would be two
+        separate questions, and every caller would have to guess what an empty
+        mapping means.
+        """
+        with pytest.raises(ValueError, match="must carry the tool's outcome payload"):
+            ToolResult(capability="demo.echo", ok=False, error="x", error_kind=ErrorKind.DOMAIN)
+
+    def test_only_a_domain_outcome_carries_a_domain_payload(self):
+        with pytest.raises(ValueError, match="only ErrorKind.DOMAIN carries"):
+            ToolResult(
+                capability="demo.echo",
+                ok=False,
+                error="x",
+                error_kind=ErrorKind.TIMEOUT,
+                domain={"reason": "timeout"},
+            )
+
+    def test_success_carries_no_domain_payload(self):
+        with pytest.raises(ValueError, match="must not carry a domain payload"):
+            ToolResult(capability="demo.echo", ok=True, value=1, domain={"reason": "x"})
+
+    def test_a_domain_outcome_serialises_its_reason(self):
+        result = ToolResult(
+            capability="ripple.predict_spread",
+            ok=False,
+            error="domain outcome: timeout",
+            error_kind=ErrorKind.DOMAIN,
+            domain={"reason": "timeout", "ripple_job_id": "job-1"},
+        )
+        assert result.to_dict()["error_kind"] == "domain"
+        assert result.to_dict()["domain_reason"] == "timeout"
+
 
 class TestRegistry:
     def test_register_and_get(self):
@@ -502,6 +537,25 @@ class TestCatalogue:
         spec = build_registry().spec("ripple.get_report")
         assert spec.timeout_s == 120.0
         assert spec.retry_policy.retryable is False
+
+    def test_the_long_simulations_wait_longer_than_their_own_budget(self):
+        """The Gateway's net must sit above the tool's own wait budget.
+
+        ``predict_spread`` / ``validate_pmf`` take ``max_wait`` in their payload
+        (1800s default, from ``RIPPLE_WORKFLOW_TIMEOUT``) and report an overrun
+        as a domain outcome carrying the ``job_id``. A Gateway timeout cancels
+        the call before that answer can exist and loses the id — so the net has
+        to be strictly larger, or the lazier failure wins.
+        """
+        registry = build_registry()
+        for capability in ("ripple.predict_spread", "ripple.validate_pmf"):
+            spec = registry.spec(capability)
+            assert spec.latency is LatencyClass.SLOW, capability
+            assert spec.timeout_s is not None and spec.timeout_s > 1800.0, capability
+            # Domain outcomes are verdicts; the only other retryable event is
+            # the Gateway timeout, and retrying that is a longer wait rather
+            # than a remedy. The direct call site did not retry either.
+            assert spec.retry_policy.retryable is False, capability
 
     def test_pure_capabilities_need_no_scope(self):
         registry = build_registry()

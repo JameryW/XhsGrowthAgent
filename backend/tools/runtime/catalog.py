@@ -70,6 +70,17 @@ from backend.tools.runtime.registry import ToolRegistry
 
 __all__ = ["adapt_tool", "bind", "build_registry", "describe_params", "tool_ref"]
 
+# The Gateway's timeout for the long Ripple simulations — deliberately *not*
+# the wait budget the caller cares about. Those tools take ``max_wait`` in
+# their payload (default 1800s, from ``RIPPLE_WORKFLOW_TIMEOUT``) and report an
+# overrun as a ``DomainOutcome`` carrying the ``job_id``, the one field that
+# makes cancel and resume possible. The Gateway's own ``wait_for`` cannot
+# report that: it cancels the call, so the id is never observed. The net
+# therefore has to sit strictly *above* the payload budget, or it would
+# pre-empt the answer that matters in order to deliver a less useful one. It
+# guards against a hung connection; it is not a scheduling decision.
+_RIPPLE_SAFETY_NET_S = 3600.0
+
 
 def _is_langchain_tool(target: Any) -> bool:
     """Is this actually a LangChain tool?
@@ -508,7 +519,15 @@ def build_registry() -> ToolRegistry:
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
         cost=CostClass.EXPENSIVE,
-        retry=RetryPolicy(max_attempts=2, backoff_s=5.0),
+        timeout_s=_RIPPLE_SAFETY_NET_S,
+        # No retry, for the same two reasons as ``get_report`` above plus one
+        # of its own: the failures this tool reports are domain outcomes
+        # (verdicts — asking again cannot change a verdict, it only pays for
+        # another simulation), and the remaining retryable event is the Gateway
+        # timeout, which is a longer wait rather than a remedy. The old direct
+        # call site did not retry either; declaring ``max_attempts=2`` here
+        # would have introduced retries that never existed.
+        retry=RetryPolicy(),
         auth_scope=("ripple:read",),
     )
     _register(
@@ -517,9 +536,13 @@ def build_registry() -> ToolRegistry:
         ref=tool_ref("backend.tools.ripple.integration:validate_pmf"),
         summary="校验 PMF 分布参数",
         side_effect=SideEffect.READ_ONLY,
-        latency=LatencyClass.MEDIUM,
+        # SLOW, not MEDIUM: this is the same submit-and-wait round trip as
+        # ``predict_spread`` (payload ``max_wait`` defaults to 1800s), so the
+        # 30s MEDIUM default would have described a call this never makes.
+        latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,
-        retry=RetryPolicy(max_attempts=2, backoff_s=2.0),
+        timeout_s=_RIPPLE_SAFETY_NET_S,
+        retry=RetryPolicy(),
         auth_scope=("ripple:read",),
     )
 

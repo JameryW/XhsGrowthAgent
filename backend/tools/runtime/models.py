@@ -6,8 +6,9 @@ scope. It is the Registry entry type, the thing the Gateway consults to
 decide timeout / retry / rate limiting, and the data source for the L1 tool
 schema layer (the layer P1b left empty until this task gave it a producer).
 
-This slice is purely additive: it registers metadata and changes no call
-path.
+It also holds the vocabulary a *result* speaks: ``ErrorKind`` says how a call
+failed, and ``DomainOutcome`` is how a tool whose answer is neither success nor
+transport failure reports that answer without the Gateway mistaking it for one.
 """
 
 from __future__ import annotations
@@ -233,6 +234,48 @@ class ErrorKind(StrEnum):
     """The Gateway's own wait budget expired and the tool was cancelled."""
     EXCEPTION = "exception"
     """The tool raised. It was given its chance and reported a failure."""
+    DOMAIN = "domain"
+    """The tool reported an outcome in its own vocabulary (``DomainOutcome``).
+
+    Not a failure of the call — an *answer* about the work: Ripple saying "the
+    simulation is still running, its id is X" is neither a success nor a
+    transport problem, and the payload has to survive intact for the caller to
+    act on it.
+    """
+
+
+# Named without an ``Error`` suffix deliberately (ruff N818): this is not an
+# error, it is the tool's answer. The suffix would invite callers to treat a
+# verdict they must act on as something that merely went wrong.
+class DomainOutcome(Exception):  # noqa: N818
+    """A tool's own verdict, raised rather than returned.
+
+    Some tools answer in a vocabulary of their own instead of by succeeding or
+    failing, and the answer carries data the caller needs. Returning it as an
+    ordinary dict makes the Gateway read the call as ``ok=True`` — a lie the
+    trace then repeats (S3c found a Ripple timeout recorded as a success, and
+    the ``{"error": ...}`` variant recorded as a success too). Raising it hands
+    the payload to the Gateway unaltered, which files it under
+    ``ErrorKind.DOMAIN`` and copies it into ``ToolResult.domain``.
+
+    Why this and not just ``raise RippleTimeoutError``: the Gateway classifies
+    by exception *type*, and ``RippleTimeoutError`` is a ``TimeoutError``
+    subclass, so on the way through it would arrive as a plain gateway timeout
+    with the ``job_id`` — the one field that makes cancel/resume possible —
+    stripped off.
+
+    **Never retried.** A domain outcome is an answer, not a hiccup; asking the
+    same question again costs another simulation and cannot change it.
+    """
+
+    def __init__(self, reason: str, **payload: Any) -> None:
+        if not reason:
+            raise ValueError("DomainOutcome needs a reason")
+        self.reason = reason
+        """Short machine-readable verdict (``"timeout"``, ``"unavailable"``)."""
+        self.payload: dict[str, Any] = {"reason": reason, **payload}
+        """The verdict plus whatever the caller needs to act on it."""
+        super().__init__(reason)
 
 
 class ToolResult(BaseModel):
@@ -240,6 +283,8 @@ class ToolResult(BaseModel):
 
     Same honesty contract as ``RetrievalResult`` (P1b D6'): a failure carries
     ``error``; ``degraded`` marks "we got something, but not everything".
+    ``domain`` carries the payload of a domain outcome, and is populated on
+    exactly the failures that have one — see ``__init__``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -249,6 +294,7 @@ class ToolResult(BaseModel):
     value: Any | None = None
     error: str = ""
     error_kind: ErrorKind | None = None
+    domain: Mapping[str, Any] = Field(default_factory=dict)
     elapsed_ms: float = Field(default=0.0, ge=0.0)
     attempts: int = Field(default=1, ge=1)
     degraded: bool = False
@@ -268,6 +314,22 @@ class ToolResult(BaseModel):
             raise ValueError(f"{self.capability}: ok=False must explain itself via error")
         if not self.ok and self.error_kind is None:
             raise ValueError(f"{self.capability}: ok=False must say how it failed via error_kind")
+        # ``domain`` is populated on exactly the domain outcomes. Keeping it
+        # one-way means "has a domain payload" and "is a domain outcome" are
+        # the same question, so no caller has to guess whether an empty
+        # mapping means "no payload" or "not that kind of failure".
+        if self.ok and self.domain:
+            raise ValueError(f"{self.capability}: ok=True must not carry a domain payload")
+        if self.error_kind is ErrorKind.DOMAIN and not self.domain:
+            raise ValueError(
+                f"{self.capability}: ErrorKind.DOMAIN must carry the tool's outcome "
+                "payload via domain"
+            )
+        if self.error_kind is not None and self.error_kind is not ErrorKind.DOMAIN and self.domain:
+            raise ValueError(
+                f"{self.capability}: only ErrorKind.DOMAIN carries a domain payload "
+                f"(got {self.error_kind.value!r} with {sorted(self.domain)})"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -275,6 +337,7 @@ class ToolResult(BaseModel):
             "ok": self.ok,
             "error": self.error,
             "error_kind": self.error_kind.value if self.error_kind is not None else "",
+            "domain_reason": self.domain.get("reason", ""),
             "elapsed_ms": round(self.elapsed_ms, 3),
             "attempts": self.attempts,
             "degraded": self.degraded,
