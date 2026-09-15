@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from backend.api.account_scope import require_owned_account
 from backend.api.deps import get_current_user
 from backend.api.errors import (
+    CreatorActionCapabilityNotWiredError,
     CreatorActionConflictError,
     CreatorActionExecutionNotAllowedError,
     CreatorActionExecutionNotFoundError,
@@ -54,6 +55,7 @@ from backend.creator_agent import (
     RelationshipMemory,
 )
 from backend.creator_agent.repository import (
+    ActionCapabilityNotWiredError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionResolutionConflictError,
@@ -380,6 +382,8 @@ async def execute_creator_action(
         raise CreatorActionNotFoundError(exc.action_id) from exc
     except ActionExecutionNotAllowedError as exc:
         raise CreatorActionExecutionNotAllowedError(exc.action_id, exc.status.value) from exc
+    except ActionCapabilityNotWiredError as exc:
+        raise CreatorActionCapabilityNotWiredError(exc.action_id, exc.action_kind.value) from exc
     except DecisionRecordMissingError as exc:
         raise CreatorDecisionNotFoundError(exc.decision_id) from exc
     return success(data=execution.model_dump(mode="json"))

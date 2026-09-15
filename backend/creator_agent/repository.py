@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from backend.creator_agent.models import (
+    ActionCapability,
     ActionExecution,
     ActionIntent,
     ActionResolution,
@@ -91,6 +92,17 @@ class ActionValidationError(Exception):
         self.reason = reason
         self.field = field
         super().__init__(reason)
+
+
+class ActionCapabilityNotWiredError(Exception):
+    """The capability has a durable intent but no executor wired yet."""
+
+    def __init__(self, action_id: str, action_kind: ActionCapability) -> None:
+        self.action_id = action_id
+        self.action_kind = action_kind
+        super().__init__(
+            f"action {action_id} of kind {action_kind.value} has no executor wired yet"
+        )
 
 
 class ActionExecutionNotAllowedError(Exception):

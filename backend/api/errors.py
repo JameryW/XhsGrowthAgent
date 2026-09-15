@@ -29,6 +29,7 @@ class ErrorCode(StrEnum):
     CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
     CREATOR_ACTION_EXECUTION_NOT_FOUND = "ERROR_CREATOR_ACTION_EXECUTION_NOT_FOUND"
     CREATOR_ACTION_EXECUTION_NOT_ALLOWED = "ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED"
+    CREATOR_ACTION_CAPABILITY_NOT_WIRED = "ERROR_CREATOR_ACTION_CAPABILITY_NOT_WIRED"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -240,6 +241,18 @@ class CreatorActionExecutionNotAllowedError(APIError):
             message="Creator action must be confirmed before execution",
             details={"action_id": action_id, "status": status},
             status_code=409,
+        )
+
+
+class CreatorActionCapabilityNotWiredError(APIError):
+    """The action kind has a durable intent but no executor wired yet."""
+
+    def __init__(self, action_id: str, action_kind: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_CAPABILITY_NOT_WIRED,
+            message=f"Creator action kind '{action_kind}' has no executor yet",
+            details={"action_id": action_id, "action_kind": action_kind},
+            status_code=501,
         )
 
 

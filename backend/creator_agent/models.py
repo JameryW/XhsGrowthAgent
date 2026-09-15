@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_serializer, model_validator
 
 
 def utc_now_iso() -> str:
@@ -49,11 +49,63 @@ class DecisionStatus(StrEnum):
 
 
 class ActionCapability(StrEnum):
-    """Non-transactional capabilities a future action executor may support."""
+    """Capabilities an Action Executor may perform on a confirmed intent.
+
+    ``PUBLISH`` (P2a) is the first **side-effecting** capability: unlike the other
+    three it reaches outside the process through the Tool Gateway, so its intent
+    carries an artifact reference + content hash instead of ranked candidate IDs.
+    """
 
     COMPARE_OPTIONS = "compare_options"
     SAVE_SHORTLIST = "save_shortlist"
     REQUEST_MORE_EVIDENCE = "request_more_evidence"
+    PUBLISH = "publish"
+
+
+# Publish payload (P2a-S1).  The ref format is validated locally instead of
+# importing ``backend.state.artifacts.parse_ref``: that module imports
+# ``langgraph.store.base`` at module level and the domain-models layer stays
+# pydantic-only.  ``tests/unit/creator_agent/test_action_publish_payload.py`` pins
+# the two definitions against each other so they cannot drift apart silently.
+_ARTIFACT_REF_PREFIX = "artifact://"
+_SHA256_HEX_LENGTH = 64
+_PUBLISH_PAYLOAD_KEYS = ("artifact_ref", "content_hash")
+
+
+def _validate_publish_payload(
+    *,
+    action_kind: ActionCapability,
+    artifact_ref: str | None,
+    content_hash: str | None,
+    candidate_ids: list[str],
+) -> None:
+    """Enforce the publish payload shape; every other capability must omit it.
+
+    A mismatched combination is refused rather than silently ignored: a caller
+    that attaches a publish payload to ``compare_options`` has a bug, and
+    accepting it would hide that bug until execution time."""
+    if action_kind is ActionCapability.PUBLISH:
+        if artifact_ref is None or not artifact_ref.strip():
+            raise ValueError("publish requires artifact_ref")
+        if content_hash is None or not content_hash.strip():
+            raise ValueError("publish requires content_hash")
+        if candidate_ids:
+            raise ValueError("publish does not accept candidate IDs")
+        ref = artifact_ref.strip()
+        if not ref.startswith(_ARTIFACT_REF_PREFIX):
+            raise ValueError("artifact_ref must look like artifact://<kind>/<id>")
+        kind, sep, artifact_id = ref[len(_ARTIFACT_REF_PREFIX) :].partition("/")
+        if not sep or not kind or not artifact_id:
+            raise ValueError("artifact_ref must look like artifact://<kind>/<id>")
+        digest = content_hash.strip()
+        if len(digest) != _SHA256_HEX_LENGTH or any(
+            char not in "0123456789abcdef" for char in digest
+        ):
+            raise ValueError("content_hash must be a sha256 hexdigest")
+        return
+
+    if artifact_ref is not None or content_hash is not None:
+        raise ValueError(f"{action_kind.value} does not accept a publish payload")
 
 
 class ActionStatus(StrEnum):
@@ -530,6 +582,11 @@ class ActionIntentRequest(BaseModel):
     action_kind: ActionCapability
     candidate_ids: list[str] = Field(default_factory=list, max_length=100)
     idempotency_key: str = Field(min_length=1, max_length=256)
+    # Publish payload — only meaningful for ActionCapability.PUBLISH.  Declared
+    # with None defaults so every other capability keeps its existing shape;
+    # ``_validate_publish_payload`` refuses a mismatched combination.
+    artifact_ref: str | None = None
+    content_hash: str | None = None
 
     @field_validator("account_id", "decision_id", "idempotency_key")
     @classmethod
@@ -548,6 +605,16 @@ class ActionIntentRequest(BaseModel):
         if len(normalized) != len(set(normalized)):
             raise ValueError("candidate IDs must be unique")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_publish_payload(self) -> ActionIntentRequest:
+        _validate_publish_payload(
+            action_kind=self.action_kind,
+            artifact_ref=self.artifact_ref,
+            content_hash=self.content_hash,
+            candidate_ids=self.candidate_ids,
+        )
+        return self
 
 
 class ActionResolution(BaseModel):
@@ -571,6 +638,36 @@ class ActionIntent(BaseModel):
     resolved_at: str | None = None
     created_at: str
     updated_at: str
+    # Publish payload; see ``_validate_publish_payload``.
+    artifact_ref: str | None = None
+    content_hash: str | None = None
+
+    @model_validator(mode="after")
+    def validate_publish_payload(self) -> ActionIntent:
+        _validate_publish_payload(
+            action_kind=self.action_kind,
+            artifact_ref=self.artifact_ref,
+            content_hash=self.content_hash,
+            candidate_ids=self.candidate_ids,
+        )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_publish_payload(self, handler: Any) -> Any:
+        """Key-level three-state: emit the publish keys only if they were set.
+
+        ``backend/db/creator_agent._dumps`` calls ``model_dump(mode="json")``
+        without ``exclude_none``, so a plain ``None`` default would add
+        ``"artifact_ref": null`` to every non-publish intent's stored payload —
+        a shape change for capabilities that have nothing to do with publishing.
+        Dropping keys that were never *set* keeps those payloads byte-identical,
+        while an explicit ``None`` from a caller is still honoured.
+        """
+        data = handler(self)
+        for key in _PUBLISH_PAYLOAD_KEYS:
+            if key not in self.model_fields_set:
+                data.pop(key, None)
+        return data
 
 
 class ActionExecutionStatus(StrEnum):
