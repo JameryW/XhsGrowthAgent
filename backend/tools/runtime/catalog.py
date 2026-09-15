@@ -13,21 +13,29 @@ What is declared *here* rather than reflected is exactly what LangChain does
 not express: side-effect strength, latency / cost class, retry policy and
 auth scope. Those are the runtime facts the Gateway needs.
 
-Payload passing has **two** conventions, declared per capability
+Payload passing has **three** conventions, declared per capability
 (``ToolSpec.pass_style``):
 
 * ``KWARGS`` (the default) — the payload's keys are the tool's argument
-  names, so ``tool(**payload)``. This is what a LangChain tool means, and
-  what almost every tool here takes.
+  names, so ``tool(**payload)``. What an ordinary Python function means, and
+  what four of the ten capabilities here take.
 * ``MAPPING`` — the tool takes one free-form mapping, so ``tool(payload)``.
   Only ``algorithmic_de_ai(data: dict)`` does this.
+* ``INVOKE`` — a LangChain ``BaseTool``, so ``await tool.ainvoke(payload)``.
+  The five ``@tool``-decorated capabilities.
 
-The style is declared rather than guessed, because the two are
-indistinguishable from a signature like ``async def f(filters: dict)`` — and
-guessing wrong does not raise. ``f(**{"filters": {...}})`` and ``f({...})``
-both "work"; one of them runs on the wrong data. That is the silent class of
-bug this runtime exists to kill, so :func:`adapt_tool` refuses a declaration
-the target's signature cannot honour instead of picking one.
+The style is declared rather than guessed, because the object in hand cannot
+always tell you which one it is — and guessing wrong does not raise.
+``KWARGS`` and ``MAPPING`` are indistinguishable from a signature like
+``async def f(filters: dict)``: ``f(**{"filters": {...}})`` and ``f({...})``
+both "work", one of them on the wrong data. ``KWARGS`` versus ``INVOKE`` is
+worse, because a test double answers *both* ``__call__`` and ``ainvoke``, so
+a doubled ``StructuredTool`` and a doubled plain function look identical from
+the outside. That is the silent class of bug this runtime exists to kill, so
+:func:`adapt_tool` routes by the declaration and refuses a target that cannot
+honour it (:func:`_validate_style`) instead of picking a convention and
+hoping. Both routing defects this file has had came from inspecting the
+object to choose.
 
 Implementations are referenced **by name** (``"pkg.module:attr"``) and looked
 up when called, not captured as objects. That is not indirection for its own
@@ -62,12 +70,25 @@ from backend.tools.runtime.registry import ToolRegistry
 
 __all__ = ["adapt_tool", "bind", "build_registry", "describe_params", "tool_ref"]
 
-_LANGCHAIN_TOOL_ATTRS = ("ainvoke", "args_schema", "name")
-
 
 def _is_langchain_tool(target: Any) -> bool:
-    """Duck-typed check — avoids importing langchain here for typing only."""
-    return all(hasattr(target, attr) for attr in _LANGCHAIN_TOOL_ATTRS)
+    """Is this actually a LangChain tool?
+
+    An ``isinstance`` check, deliberately — *not* duck-typing on
+    ``ainvoke``/``args_schema``/``name``. A test double answers every
+    attribute, so duck-typing classifies an ``AsyncMock`` as a LangChain tool
+    and then routes the payload to ``.ainvoke`` instead of calling it: the
+    double silently never receives the payload, and the code under test looks
+    like it degraded gracefully. Two separate defects in this runtime came
+    from exactly that shortcut (reflecting a schema off a mock, and here), so
+    the question is answered by the real type.
+
+    The import is deferred because the runtime is imported by the agent base
+    class, and only a composition root ever needs langchain.
+    """
+    from langchain_core.tools import BaseTool
+
+    return isinstance(target, BaseTool)
 
 
 @dataclass(frozen=True)
@@ -176,9 +197,44 @@ def _takes_a_free_form_mapping(target: Any) -> bool:
     return _is_mapping_annotation(_resolved_annotation(target, positional[0]))
 
 
+def _target_name(target: Any) -> str:
+    """A readable name for error messages.
+
+    Not ``getattr(target, "__name__", repr(target))``: a mock auto-creates any
+    attribute asked of it, so that returns a ``Mock`` repr rather than the
+    name — the same trap this module keeps having to avoid.
+    """
+    name = getattr(target, "__name__", None)
+    return name if isinstance(name, str) and name else type(target).__name__
+
+
 def _validate_style(target: Any, style: PassStyle) -> None:
-    """Refuse a declared style the target's signature cannot honour."""
-    name = getattr(target, "__name__", repr(target))
+    """Refuse a target the declared style cannot be honoured against.
+
+    This checks the declaration *against* the object; it never infers the
+    declaration from it. Every mismatch caught here is one that would
+    otherwise surface as a tool failure at the first request — or, worse,
+    succeed with the payload in the wrong shape.
+    """
+    name = _target_name(target)
+    if style is PassStyle.INVOKE:
+        if not callable(getattr(target, "ainvoke", None)):
+            raise ValueError(
+                f"{name}: declared PassStyle.INVOKE, which calls "
+                "await target.ainvoke(payload), but the target has no callable "
+                "ainvoke. Declare PassStyle.KWARGS if the payload keys are its "
+                "argument names, or PassStyle.MAPPING if it takes the payload "
+                "mapping whole."
+            )
+        return
+    if _is_langchain_tool(target):
+        # A StructuredTool is not callable, so a direct call raises TypeError
+        # on the first request. Say the fix instead.
+        raise ValueError(
+            f"{name} is a LangChain tool, which is invoked as "
+            "await tool.ainvoke(payload) rather than called. Declare "
+            "PassStyle.INVOKE."
+        )
     positional = _positional_params(target)
     if style is PassStyle.MAPPING:
         if len(positional) != 1:
@@ -201,27 +257,36 @@ def _validate_style(target: Any, style: PassStyle) -> None:
 def adapt_tool(target: Any, *, pass_style: PassStyle = PassStyle.KWARGS) -> ToolFn:
     """Adapt any supported tool object to the unified ``ToolFn`` contract.
 
-    ``pass_style`` states how the payload reaches ``target`` and is validated
-    against the signature (:func:`_validate_style`) rather than inferred.
+    ``pass_style`` states how the payload reaches ``target`` and *decides the
+    route*; :func:`_validate_style` then checks the target can honour that
+    declaration. Nothing here inspects the target in order to choose a
+    convention — see the module docstring for why that is not a safe question
+    to ask of an object.
 
     Sync callables are called directly rather than pushed to a thread: the
     only sync tools here are small local computations (``algorithmic_de_ai``),
     where thread hand-off would cost more than the work itself. A sync tool
     that ever blocks on I/O must be made async (the Gateway cannot help).
     """
-    if _is_langchain_tool(target):
+    _validate_style(target, pass_style)
 
-        async def _call_langchain(payload: Mapping[str, Any]) -> Any:
+    if pass_style is PassStyle.INVOKE:
+
+        async def _call_invoke(payload: Mapping[str, Any]) -> Any:
             return await target.ainvoke(dict(payload))
 
-        return _call_langchain
-
-    _validate_style(target, pass_style)
+        return _call_invoke
 
     if pass_style is PassStyle.MAPPING:
 
         async def _call_mapping(payload: Mapping[str, Any]) -> Any:
-            return target(dict(payload))
+            result = target(dict(payload))
+            # A mapping-style tool may be async; awaiting it keeps ToolFn's
+            # "one awaitable in, one value out" contract true either way, and
+            # avoids handing the Gateway an un-awaited coroutine as a value.
+            if inspect.isawaitable(result):
+                result = await result
+            return result
 
         return _call_mapping
 
@@ -239,16 +304,15 @@ def adapt_tool(target: Any, *, pass_style: PassStyle = PassStyle.KWARGS) -> Tool
 
 
 def _reflected_schema(target: Any) -> Mapping[str, Any] | None:
-    """The Pydantic schema behind a LangChain-style tool, when there is one.
+    """The Pydantic schema behind a real LangChain tool, when there is one.
 
-    Duck-typing by attributes is enough to *route* a tool, but not to read a
-    schema from it: anything with an ``ainvoke`` attribute (a test double, or
-    a look-alike wrapper) also answers ``args_schema``, and calling
-    ``model_json_schema()`` on that answer returns whatever the double makes
-    up — a coroutine, for an ``AsyncMock``. That crashed the whole catalogue
-    at build time. Real LangChain tools expose a ``BaseModel`` subclass here,
-    so that is what we require; anything else declares no schema (``{}``),
-    which is the honest answer and what the S5 coverage gate is for.
+    Only consulted for a ``BaseTool`` (:func:`describe_params` gates on that),
+    and even then only used when the schema really is a Pydantic model's:
+    ``model_json_schema()`` on anything else returns whatever that something
+    makes up — a coroutine, for a double — and ``.get`` on that used to take
+    the whole catalogue down at build time. A tool without a usable schema
+    declares none (``{}``), which is the honest answer and what the S5
+    coverage gate is for.
     """
     schema = getattr(target, "args_schema", None)
     if not (isinstance(schema, type) and issubclass(schema, BaseModel)):
@@ -263,18 +327,25 @@ def _reflected_schema(target: Any) -> Mapping[str, Any] | None:
 def describe_params(target: Any) -> dict[str, Any]:
     """Lightweight parameter description for prompt rendering (L1 layer).
 
-    ``StructuredTool`` exposes a real Pydantic schema, so we use it. For
+    A real ``StructuredTool`` exposes a Pydantic schema, so we use it. For
     plain functions this is a *lightweight* description (name / type /
     default) — deliberately not advertised as strict JSON Schema, and never
     used for validation (validation is the provider's job in P4).
+
+    The reflected path is gated on the real type rather than on the presence
+    of an ``args_schema`` attribute: a double can fake that attribute, and
+    the schema it fakes is not a schema. Anything that is not a ``BaseTool``
+    is described by signature, which is true of it.
 
     This reflects the tool's *signature*: a ``PassStyle.MAPPING`` tool shows
     its one ``data`` parameter, even though callers pass that mapping directly
     as the payload rather than nesting it under ``data``. L1 rendering (S4)
     must branch on ``ToolSpec.pass_style`` to render it honestly.
     """
-    reflected = _reflected_schema(target)
-    if reflected is not None:
+    if _is_langchain_tool(target):
+        reflected = _reflected_schema(target)
+        if reflected is None:
+            return {}
         properties = reflected.get("properties", {})
         required = set(reflected.get("required", ()))
         return {
@@ -285,8 +356,6 @@ def describe_params(target: Any) -> dict[str, Any]:
             }
             for name, field in properties.items()
         }
-    if _is_langchain_tool(target):
-        return {}
 
     signature = inspect.signature(target)
     described: dict[str, Any] = {}
@@ -323,6 +392,12 @@ def _register(
     The declaration and the adapter are built from the *same* ``pass_style``
     value and the *same* resolved target here, so ``ToolSpec.pass_style``
     cannot claim one convention while the Gateway calls another.
+
+    ``KWARGS`` is merely the *default*, not an assumption: it is plain
+    Python's convention, and a target that contradicts it is refused by
+    :func:`_validate_style` rather than routed the wrong way. Anything that
+    is not an ordinary function — a LangChain tool, a payload-whole tool —
+    must say so here.
     """
     target = ref.resolve()
     registry.register(
@@ -357,6 +432,8 @@ def build_registry() -> ToolRegistry:
         capability="analysis.topic_scorer",
         ref=tool_ref("backend.tools.analysis.topic_scorer:topic_scorer"),
         summary="评估话题热度与传播潜力（读取小红书真实数据）",
+        # A LangChain @tool: reached through ainvoke, not called.
+        pass_style=PassStyle.INVOKE,
         # Reads the platform through XHSClient — read-only, but slow and
         # rate-limit sensitive.
         side_effect=SideEffect.READ_ONLY,
@@ -434,6 +511,7 @@ def build_registry() -> ToolRegistry:
         capability="xhs.trending",
         ref=tool_ref("backend.tools.xhs.trending:xhs_trending"),
         summary="抓取平台热门趋势（只读，有封禁风险）",
+        pass_style=PassStyle.INVOKE,
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,
@@ -445,6 +523,7 @@ def build_registry() -> ToolRegistry:
         capability="xhs.keyword_monitor",
         ref=tool_ref("backend.tools.xhs.trending:keyword_monitor"),
         summary="监控关键词数据（只读，有封禁风险）",
+        pass_style=PassStyle.INVOKE,
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,
@@ -456,6 +535,7 @@ def build_registry() -> ToolRegistry:
         capability="xhs.competitor_analyzer",
         ref=tool_ref("backend.tools.xhs.trending:competitor_analyzer"),
         summary="竞品笔记分析（只读，有封禁风险）",
+        pass_style=PassStyle.INVOKE,
         side_effect=SideEffect.READ_ONLY,
         latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,
@@ -469,6 +549,7 @@ def build_registry() -> ToolRegistry:
         capability="xhs.publish",
         ref=tool_ref("backend.tools.xhs.publisher:xhs_publisher"),
         summary="发布笔记到小红书（写操作）",
+        pass_style=PassStyle.INVOKE,
         side_effect=SideEffect.SIDE_EFFECTING,
         latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,

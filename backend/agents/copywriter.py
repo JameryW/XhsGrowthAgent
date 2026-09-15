@@ -453,21 +453,30 @@ class CopywriterAgent(BaseAgent):
         if not title and not body:
             return copy_content
         try:
-            from backend.tools.content.de_ai_taste import polish_copy
-
-            polished = await polish_copy(
-                selected_title=title,
-                body_text=body,
-                cta=str(copy_content.get("cta") or ""),
-                tone=str(copy_content.get("tone") or ""),
-                niche=niche,
-                revision_hints=list(revision_hints or []),
-                use_llm=True,
+            # P1c-S3b: through the Tool Gateway — this is the billable call in
+            # this agent (one LLM polish), so its timeout, retry policy and
+            # trace event matter rather than being left to the call site.
+            polished_result = await self.tools.invoke(
+                "content.polish_copy",
+                {
+                    "selected_title": title,
+                    "body_text": body,
+                    "cta": str(copy_content.get("cta") or ""),
+                    "tone": str(copy_content.get("tone") or ""),
+                    "niche": niche,
+                    "revision_hints": list(revision_hints or []),
+                    "use_llm": True,
+                },
             )
         except Exception as e:
             logger.warning("de_ai_taste polish skipped: %s", e)
             return copy_content
 
+        if not polished_result.ok:
+            logger.warning("de_ai_taste polish skipped: %s", polished_result.error)
+            return copy_content
+
+        polished = polished_result.value
         if not isinstance(polished, dict):
             return copy_content
 

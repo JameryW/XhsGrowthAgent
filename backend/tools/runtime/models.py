@@ -66,19 +66,32 @@ class CostClass(StrEnum):
 class PassStyle(StrEnum):
     """How the payload mapping reaches the underlying tool.
 
-    Not every tool takes keyword arguments. ``algorithmic_de_ai(data: dict)``
-    takes one free-form mapping, so unpacking the payload as keywords would
-    raise ``TypeError: unexpected keyword argument`` — a failure the Gateway
-    would faithfully report as ``ok=False``, i.e. as "the tool broke" rather
-    than "we wired it wrong". Declaring the style here is what makes that
-    distinction auditable (and is exactly what L1 rendering needs to describe
-    a free-form tool without inventing parameter names it cannot know).
+    Three conventions, all of them declared rather than inferred, because the
+    object in hand cannot always tell you which one it is:
+
+    * ``KWARGS`` — the payload's keys are the tool's argument names.
+    * ``MAPPING`` — the tool takes one free-form mapping
+      (``algorithmic_de_ai(data: dict)``); unpacking it as keywords raises
+      ``TypeError``, and nesting it under ``data`` silently drops every field.
+    * ``INVOKE`` — a LangChain ``BaseTool``, invoked as ``tool.ainvoke(payload)``.
+
+    A tool that takes one mapping and a tool whose payload keys are its
+    arguments are indistinguishable from a signature like
+    ``async def f(filters: dict)`` — and guessing wrong does not raise, it
+    quietly runs on the wrong data. ``KWARGS`` versus ``INVOKE`` is worse
+    still: a test double answers both ``__call__`` and ``ainvoke``, so the
+    adapter cannot tell a doubled ``StructuredTool`` from a doubled plain
+    function. Hence: declared here, verified by ``adapt_tool`` against the
+    target, never guessed. (Both silent-misrouting bugs this runtime has had
+    came from trying to infer it.)
     """
 
     KWARGS = "kwargs"
     """Payload keys are the tool's argument names (``tool(**payload)``)."""
     MAPPING = "mapping"
     """The tool takes one mapping argument (``tool(payload)``)."""
+    INVOKE = "invoke"
+    """A LangChain tool: ``await tool.ainvoke(payload)``."""
 
 
 # Default per-latency timeout, unless a spec overrides it explicitly.
@@ -131,8 +144,11 @@ class ToolSpec:
     pass_style: PassStyle = PassStyle.KWARGS
     """How :mod:`~backend.tools.runtime.catalog` hands the payload over.
 
-    Set by ``adapt_tool``'s detection so the adapter and the declaration can
-    never disagree; overridable when a tool's signature is ambiguous.
+    Declared per capability and honoured as written — ``catalog`` builds the
+    adapter from this same value, so the declaration and the call cannot
+    disagree. A target that cannot honour it (a LangChain tool declared
+    ``KWARGS``, a plain function declared ``INVOKE``) is refused at build
+    time rather than failing on the first request.
     """
     timeout_s: float | None = None
     max_concurrency: int | None = None

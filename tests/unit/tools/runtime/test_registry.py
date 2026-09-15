@@ -87,18 +87,25 @@ class _FakeArgs(BaseModel):
     limit: int = 0
 
 
-class _FakeLangchainTool:
-    """Duck-typed stand-in for a StructuredTool — no langchain import needed."""
+async def _fake_ainvoke(**kwargs: Any) -> dict[str, Any]:
+    return {"ok": kwargs}
 
-    name = "fake_tool"
-    args_schema = _FakeArgs
 
-    def __init__(self) -> None:
-        self.calls: list[Any] = []
+def _fake_langchain_tool() -> Any:
+    """A real ``StructuredTool``, because that is what production has.
 
-    async def ainvoke(self, payload: Any) -> Any:
-        self.calls.append(payload)
-        return {"ok": payload}
+    It used to be a hand-rolled object with ``ainvoke``/``args_schema``
+    attributes — which is exactly the duck-typing that misclassified test
+    doubles (see ``TestLangchainDetection``).
+    """
+    from langchain_core.tools import StructuredTool
+
+    return StructuredTool.from_function(
+        coroutine=_fake_ainvoke,
+        name="fake_tool",
+        description="fake",
+        args_schema=_FakeArgs,
+    )
 
 
 class TestToolSpec:
@@ -245,10 +252,9 @@ class TestRegistry:
 class TestAdaptTool:
     @pytest.mark.asyncio
     async def test_langchain_tool_is_invoked_via_ainvoke(self):
-        fake = _FakeLangchainTool()
-        fn = adapt_tool(fake)
-        assert await fn({"topic": "辅食"}) == {"ok": {"topic": "辅食"}}
-        assert fake.calls == [{"topic": "辅食"}]
+        fake = _fake_langchain_tool()
+        fn = adapt_tool(fake, pass_style=PassStyle.INVOKE)
+        assert await fn({"topic": "辅食"}) == {"ok": {"topic": "辅食", "limit": 0}}
 
     @pytest.mark.asyncio
     async def test_async_function_takes_keyword_payload(self):
@@ -262,17 +268,63 @@ class TestAdaptTool:
         assert await fn({"value": 21}) == 42
 
     def test_adapt_tool_always_returns_a_coroutine_function(self):
-        for target in (_async_echo, _sync_double, _FakeLangchainTool()):
+        for target in (_async_echo, _sync_double):
             assert inspect.iscoroutinefunction(adapt_tool(target))
+        assert inspect.iscoroutinefunction(
+            adapt_tool(_fake_langchain_tool(), pass_style=PassStyle.INVOKE)
+        )
+
+
+class TestLangchainDetection:
+    """Detection is the real type, not the presence of three attributes.
+
+    Duck-typing it was a genuine bug source: a test double answers every
+    attribute, so it was classified as a LangChain tool and the payload went
+    to ``.ainvoke`` — the double never ran with the payload, and the code
+    under test looked like it had degraded gracefully instead of being wired
+    wrong. Both defects this runtime has had in schema reflection and payload
+    routing came from that shortcut.
+
+    Routing no longer asks the question at all — the capability's declared
+    ``pass_style`` decides (see ``TestPassStyle``). This is how a tool is
+    *described*, and how a LangChain tool declared ``KWARGS`` is caught.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_real_structured_tool_is_routed_through_ainvoke(self):
+        fake = _fake_langchain_tool()
+        fn = adapt_tool(fake, pass_style=PassStyle.INVOKE)
+        assert await fn({"topic": "辅食"}) == {"ok": {"topic": "辅食", "limit": 0}}
+
+    @pytest.mark.asyncio
+    async def test_a_double_is_called_with_the_payload_as_keywords(self):
+        """It answers ``ainvoke`` as well, so only the type says it is not a
+        tool — and the declaration, not the type, decides the route."""
+        fake = AsyncMock(return_value={"ok": True})
+        fake.name = "fake_tool"
+        fake.args_schema = _FakeArgs  # looks exactly like a LangChain tool
+
+        assert await adapt_tool(fake)({"topic": "辅食"}) == {"ok": True}
+        fake.assert_awaited_once_with(topic="辅食")
+
+    def test_a_specd_double_takes_the_tool_branch(self):
+        """``AsyncMock(spec=StructuredTool)`` is the *faithful* way to double a
+        tool — ``spec`` makes ``isinstance`` true. It still declares no schema,
+        because its ``args_schema`` is a mock rather than a Pydantic model."""
+        from langchain_core.tools import StructuredTool
+
+        assert describe_params(AsyncMock(spec=StructuredTool)) == {}
 
 
 class TestPassStyle:
-    """The two payload conventions — and the refusal to guess between them.
+    """The three payload conventions — and the refusal to guess between them.
 
     ``KWARGS`` and ``MAPPING`` are indistinguishable from a signature like
     ``async def f(filters: dict)``: both call successfully, one on the wrong
-    data. So the style is declared, and an ambiguous target must be declared
-    explicitly rather than silently defaulted.
+    data. ``KWARGS`` and ``INVOKE`` are indistinguishable from a *double*,
+    which answers both ``__call__`` and ``ainvoke``. So the style is declared,
+    the route follows the declaration, and a target that cannot honour it is
+    refused at build time rather than mis-called at the first request.
     """
 
     def test_defaults_to_kwargs(self):
@@ -287,6 +339,34 @@ class TestPassStyle:
     async def test_mapping_payload_is_handed_over_whole(self):
         fn = adapt_tool(_takes_mapping, pass_style=PassStyle.MAPPING)
         assert await fn({"a": 1}) == {"got": {"a": 1}}
+
+    @pytest.mark.asyncio
+    async def test_mapping_awaits_an_async_tool(self):
+        """Otherwise the Gateway would be handed an un-awaited coroutine as
+        the tool's *value*."""
+
+        async def double(data: dict[str, Any]) -> dict[str, Any]:
+            return {"got": data}
+
+        fn = adapt_tool(double, pass_style=PassStyle.MAPPING)
+        assert await fn({"a": 1}) == {"got": {"a": 1}}
+
+    @pytest.mark.asyncio
+    async def test_invoke_hands_the_payload_to_ainvoke(self):
+        fake = _fake_langchain_tool()
+        fn = adapt_tool(fake, pass_style=PassStyle.INVOKE)
+        assert await fn({"topic": "辅食"}) == {"ok": {"topic": "辅食", "limit": 0}}
+
+    def test_a_langchain_tool_must_declare_invoke(self):
+        """A ``StructuredTool`` is not callable, so a kwargs-style declaration
+        would only surface as a ``TypeError`` on the first real request."""
+        with pytest.raises(ValueError, match="Declare PassStyle.INVOKE"):
+            adapt_tool(_fake_langchain_tool())
+
+    def test_invoke_needs_something_it_can_invoke(self):
+        """The mirror image: a plain function cannot answer ``ainvoke``."""
+        with pytest.raises(ValueError, match="no callable ainvoke"):
+            adapt_tool(_async_echo, pass_style=PassStyle.INVOKE)
 
     def test_mapping_needs_exactly_one_positional_parameter(self):
         with pytest.raises(ValueError, match="exactly one positional"):
@@ -316,18 +396,14 @@ class TestPassStyle:
         with pytest.raises(ValueError, match="takes a single mapping argument"):
             adapt_tool(_stringly_annotated)
 
-    def test_langchain_tools_always_get_the_payload_whole(self):
-        fake = _FakeLangchainTool()
-        fn = adapt_tool(fake, pass_style=PassStyle.MAPPING)
-        assert inspect.iscoroutinefunction(fn)
-
     def test_style_is_serialised(self):
         assert _spec(pass_style=PassStyle.MAPPING).to_dict()["pass_style"] == "mapping"
+        assert _spec(pass_style=PassStyle.INVOKE).to_dict()["pass_style"] == "invoke"
 
 
 class TestDescribeParams:
     def test_langchain_tool_uses_its_pydantic_schema(self):
-        described = describe_params(_FakeLangchainTool())
+        described = describe_params(_fake_langchain_tool())
         assert described["topic"] == {
             "type": "string",
             "required": True,
@@ -340,29 +416,21 @@ class TestDescribeParams:
         assert described["value"]["required"] is False  # has a default
         assert described["value"]["type"] == "int"
 
-    def test_a_look_alike_tool_is_routed_but_not_reflected(self):
-        """Duck-typing decides how to *call* a tool, not how to read it.
+    def test_a_double_that_looks_like_a_tool_declares_no_invented_schema(self):
+        """It used to be *reflected*, and a mock's ``model_json_schema()``
+        returns a coroutine — ``.get`` on that killed ``build_registry()``.
 
-        An object with ``ainvoke``/``args_schema``/``name`` is routed as a
-        LangChain tool, but its ``args_schema`` is not a Pydantic model, so
-        there is no schema to read — and inventing one used to blow up the
-        whole catalogue (see the AsyncMock case below).
+        Now such an object is simply not a LangChain tool, so it is described
+        by signature and its fake schema is never consulted.
         """
+        fake = AsyncMock()
+        fake.name = "fake_tool"
+        fake.args_schema = _FakeArgs
 
-        class LookAlike:
-            name = "look_alike"
-            args_schema = None
-
-            async def ainvoke(self, payload: Any) -> Any:
-                return payload
-
-        assert describe_params(LookAlike()) == {}
-
-    def test_an_async_mock_schema_does_not_break_the_catalogue(self):
-        """Regression: ``AsyncMock().args_schema.model_json_schema()`` returns
-        a coroutine, and ``.get`` on it raised — killing ``build_registry()``
-        the moment the gateway was first built with a tool doubled."""
-        assert describe_params(AsyncMock()) == {}
+        assert describe_params(fake) == {
+            "args": {"type": "any", "required": True, "description": ""},
+            "kwargs": {"type": "any", "required": True, "description": ""},
+        }
 
 
 class TestCatalogue:
@@ -446,6 +514,23 @@ class TestCatalogue:
             if entry.spec.pass_style is PassStyle.MAPPING
         ]
         assert mapping == ["content.algorithmic_de_ai"]
+
+    def test_the_langchain_tools_are_declared_invoke(self):
+        """The other deliberate side of the same coin: these five reach their
+        target through ``ainvoke``, and the catalogue must say so — a missing
+        declaration is refused by ``build_registry()`` itself."""
+        invoke = {
+            entry.capability
+            for entry in build_registry()
+            if entry.spec.pass_style is PassStyle.INVOKE
+        }
+        assert invoke == {
+            "analysis.topic_scorer",
+            "xhs.trending",
+            "xhs.keyword_monitor",
+            "xhs.competitor_analyzer",
+            "xhs.publish",
+        }
 
     @pytest.mark.asyncio
     async def test_the_free_form_tool_actually_runs(self):
