@@ -52,9 +52,19 @@ class LLMEnrichmentService:
         return self._models[key]
 
     def _parse_json_response(self, content: str) -> dict[str, Any] | list[Any]:
-        """Extract JSON from LLM response content.
+        """LEGACY（P1d-S4）—— 文本→JSON 的第二份实现，**刻意不与 BaseAgent 那份合并**。
 
-        Handles both raw JSON and markdown-wrapped JSON blocks.
+        它是 ``enrich_with_llm`` 里唯一能让 ``fallback_fn`` 被触发的东西：解析不出来
+        就抛 ``LLMEnrichmentError``。这正是与 ``BaseAgent._parse_json_response``
+        （返回 ``{"raw_content": …}`` 哨兵、**不抛**）的承重差异 —— 那个哨兵是
+        **合法 dict**，混进这条路径会被下游当成一次成功的富化。
+
+        两份的**策略**也不同（副本多一套贪婪 ``\\{…\\}|\\[…\\]`` 数组抢救，少一套
+        ``_repair_json``）。探针实测 18 条语料里 5 条接受集不同、且**双向都不包含**，
+        合并成任一份都会改动另一份的行为；而 S1 红线禁止改 ``_parse_json_response``
+        的既有行为。所以 S4 的结论是**不合并**，并把差异钉成可执行断言。
+
+        语料表与逐条证据见 ``backend/models/json_parsing.py`` 的模块 docstring。
         """
         # Try direct JSON parse first
         try:
