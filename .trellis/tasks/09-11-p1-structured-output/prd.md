@@ -370,3 +370,104 @@ S2b 特意留下的一块。`evaluator` 与其余调用点的区别不在数量�
 - `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）
 - 突变自检：**9/9 杀死**（去语义 validator / 把"没答"降级成空 payload / validator 过严 /
   建模自报值 / 回到直调 / 四个宽松器各一）
+
+---
+
+## S3 执行记录（2026-09-15，分支 `feat/p1d-s3-writing-agents`）
+
+写出类四个 agent、六个调用点。四者档位实测均为 `WRITING`/`VERSION_GEN`/`VISUAL`/
+`SHOOTING_PLAN` → `astron-code-latest` → XUNFEI → **PROMPTED 单档**，所以这一片的验证
+全部落在弱档上，纠偏重试是唯一的补救手段。
+
+### 交付
+
+- `backend/models/outputs.py`：`__all__` 24 → 36（+8 模型 +5 normalizer，其中
+  `_ContentVersionFields` 为私有基类不计入 `__all__`）
+- 四个 agent 的六个调用点：`copywriter`（主文案 + 多风格变体）、`version_generator`
+  （`_generate_from_selected_style` / `_generate_from_analysis`，两处同构抽成
+  `_write_versions`）、`visual_designer`、`shooting_planner`
+- 测试：`test_outputs.py` +35 用例；`test_copywriter.py`（11 个失败 triage）；
+  `test_visual_designer.py`（5 个失败 triage）；**新建**
+  `tests/unit/agents/test_writing_agents_structured.py`（7 用例）
+
+### 设计决定
+
+**1. 六个调用点按"空结果的危害"分两类，处置不同。**
+
+| 调用点 | 空/垃圾产物与真实的空观测同形吗 | 处置 |
+|---|---|---|
+| `copywriter` 主文案 | 同形且有害（空文案照报 success） | 语义 validator + **上抛** → error state |
+| `visual_designer` | 同形且有害（视觉计划无封面无图） | 同上 |
+| `shooting_planner` | **与早退分支的 `{}` 逐字节同形** | 同上 |
+| `copywriter` 变体 | 同形，但空 `content_versions` 在下游是"不写这个键" | validator + `accept_last_valid` |
+| `version_generator` ×2 | 同上（下游 `content_versions: []` 是既有可处理形状） | 同上 |
+
+判据与 S2c 一致（"空结果会不会与一次真实的空观测同形"），但**"降级到哪"仍按各自既有语境
+定**：前三个没有可用的显式降级出口（旧的降级就是垃圾 dict），所以交给 `BaseAgent.__call__`
+的 error state + stateful retry；后两个的空在物理上无害，保留旧的"空集合"结果。
+
+**2. 契约独有的键做"键级三态透传"，不是简单补默认值。**
+
+`ContentVersion` 声明了 `image_prompts` / `changes_summary` / `predicted_score`，两条提示词
+都不要求模型写它们，所以模型通常**不给** —— 而下游读的是"缺键"这件事本身：
+`omp_bridge` 用 `v.get("changes_summary", "draft")`、`artifacts` 用
+`version.get("predicted_score", 0.0)`。无条件补默认值会把占位符从每个既有版本上删掉，把
+"没说过"变成"说它是空的"。所以 `_shared_payload` 用 `model_fields_set` 判"模型写过没有"。
+（提示词要求的九个键则总是输出 —— 它们是回答的骨架。）
+
+**3. 两个来源共用一个基类（推翻最初设计）。**
+
+最初的注释写的是"两条独立提示词，刻意不抽基类"。写测试时发现 `content_versions` 的读者
+（`choice_gate` / `state.artifacts` / OMP `review_versions` / 前端 `optimization.ts`）
+**不区分来源** —— 字段集必须同构，否则同一批读者在两个来源上拿到不同的键。基类是这个
+不变量的唯一归属地。
+
+**4. 归一化键集 = 提示词形状，不顺手修契约漂移。**
+
+`substates.VisualPlan` 声明 `layout_style`，而提示词写的是 `layout_preference`；
+`evaluator` / `public_showcase` / `review` 读 `layout_style` —— 它们**从来没有拿到过**这个键，
+一直在用自己的默认值。补上 `layout_style` 会改变一个从未被喂过的读取点现在看到的东西，
+那是"穿着迁移外衣的行为变更"。所以 normalize 只输出提示词的八个键，漂移用测试的**双向差额**
+钉住（见下）。
+
+**5. 其余形状决定。**
+
+- `CopyContentOutput.selected_title`/`body_text` 接受别名 `title`/`body`：`_apply_de_ai_taste`
+  里那对手写的 `.get("selected_title") or .get("title")` 回退就是生产证据（模型会在两条提示词
+  之间串字段名），为一个模型**确实答了**的字段花一次重试买不到东西。
+- `hashtags` 走 `_non_blank` 而**不是** `_normalize_hashtags`：下游是
+  `publisher._as_str_list`（原样透传，从不补 `#`），补 `#` 是替一个不读它的读者改值。
+- `ShootingAngleOutput` 的裸句包成 `{"description": …}`：提示词要 `[{description: …}]`，
+  模型答"低角度仰拍"就是描述了一个角度；不包的话 Pydantic 直接拒（探针实测），
+  为一个答过的字段花一次重试。
+
+### 动手后才暴露的两件事
+
+1. **突变 M4 存活，暴露了一条没有测试的失败路径。** M4 是"把
+   `except StructuredOutputError` 换成别的异常名让异常穿透"，预期该测试失败，结果**通过** ——
+   因为 `accept_last_valid=True` 把散文（`{"raw_content": …}`，schema 合法）走的是**语义拒**
+   路径并返回最后一个合法实例，根本没进 `except`。两者覆盖的是**两种不同的坏法**：
+   schema 合法但语义空（validator + `accept_last_valid` 兜）vs schema 直接不合法（裸数组被
+   object-only 闸拒 → 一次合法实例都没有 → 上抛 → `except` 兜）。后者此前**没有任何测试**，
+   补 `test_a_payload_the_schema_refuses_also_degrades_to_zero_versions` 之后 12/12 全灭。
+   —— 这是 S2c 那条"突变自检"纪律第一次**直接产出新测试**，而不只是验证旧断言。
+2. **state 契约与提示词双向漂移**（`VisualPlan` 有 `layout_style` 无 `layout_preference`；
+   `ContentVersion` 有 `changes_summary` 无 `version_type`/`tone`/`visual_style`/`color_palette`）。
+   这不是本片引入的，本片的产物**照旧**，但把它钉成了显式双向差额断言 —— 任何人单方面
+   消掉漂移的一半都会红，而不是静默通过。
+
+### 门禁
+
+- `pytest -q`：**3020 passed / 3 skipped**（较 S2c 的 2987 增 33 条）
+- `ruff check .` / `ruff format --check .`：**492 files** 干净（全仓口径；含本片新增的测试文件）
+- `mypy backend --python-version 3.12`：199 files 干净
+- P1b 基线 `--compare --drift-pct 5`：**drift within threshold** —— prompt 逐字节未动
+- `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）
+- 突变自检：**12/12 杀死**（三个主产物 validator 各一 / 兜底穿透 / 不补 version_id /
+  契约键无条件输出 / 调色板退回映射 / 补 layout_style / 去掉别名 / 裸角度不包 /
+  变体不接 accept_last_valid / hashtags 改走补 #）
+
+### 本片不做
+
+- `llm_enrichment` 的副本收敛与 `_parse_json_response` 标 legacy（S4）。
+  **`_parse_json_response` 仍是 PROMPTED/JSON_OBJECT 档的解析器，别以为迁完就能删。**

@@ -11,7 +11,6 @@ Two modes of operation:
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -21,11 +20,30 @@ from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
 from backend.context.models import RunContext
+from backend.models.outputs import ContentVersionsOutput, normalize_content_versions
+from backend.models.structured import StructuredOutputError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger(__name__)
 
 _compiler = ContextCompiler()
+
+
+def _versions_present(output: ContentVersionsOutput) -> str | None:
+    """Empty versions get one corrective retry, then are accepted as empty.
+
+    Same disposition as ``copywriter._variants_present``, and the two are not
+    merged into one factory: they answer different prompts, so each one's
+    correction says what *its* model left out. ``accept_last_valid`` is what
+    keeps the old outcome — ``content_versions: []`` in the update — reachable,
+    because an empty version list is a shape the node already handles.
+    """
+    if output.versions:
+        return None
+    return (
+        "上一次回答里 versions 是空的。请严格按 JSON 规范输出 versions 数组，"
+        "其中含 A/B/C 三个版本。"
+    )
 
 
 class VersionGeneratorAgent(BaseAgent):
@@ -163,48 +181,14 @@ class VersionGeneratorAgent(BaseAgent):
   ]
 }}"""
 
-        response = await self._llm_ainvoke(
+        return await self._write_versions(
+            state,
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),
-            ]
+            ],
+            label="from selected style (A/B/C)",
         )
-
-        content = response.content
-        if isinstance(content, list):
-            content = str(content)
-        parsed = self._parse_json_response(content)
-        versions = parsed.get("versions", [])
-
-        # Ensure version_ids
-        for v in versions:
-            if not v.get("version_id"):
-                v["version_id"] = str(uuid.uuid4())[:8]
-
-        logger.info(f"Generated {len(versions)} versions from selected style (A/B/C)")
-
-        updates: dict[str, Any] = {
-            "content_versions": versions,
-            "phase": WorkflowPhase.CREATING,
-        }
-        # Auto-apply single version
-        if len(versions) == 1:
-            v = versions[0]
-            updates["copy_content"] = {
-                **(state.get("copy_content") or {}),
-                "selected_title": v.get("title", ""),
-                "title_candidates": [v.get("title", "")],
-                "body_text": v.get("body", ""),
-                "hashtags": v.get("hashtags", []),
-                "tone": v.get("tone", ""),
-            }
-            updates["visual_plan"] = {
-                "cover_prompt": v.get("style_suggestion", ""),
-                "style": v.get("visual_style", ""),
-                "color_palette": v.get("color_palette", {}),
-            }
-
-        return updates
 
     async def _generate_from_analysis(
         self,
@@ -260,47 +244,70 @@ class VersionGeneratorAgent(BaseAgent):
 {patterns_str}
 """
 
-        # 调用 LLM
-        response = await self._llm_ainvoke(
+        return await self._write_versions(
+            state,
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_msg),
-            ]
+            ],
+            label="A/B/C",
         )
 
-        # 解析响应
-        content = response.content
-        if isinstance(content, list):
-            content = str(content)
-        result = self._parse_json_response(content)
-        versions = result.get("versions", [])
+    async def _write_versions(
+        self,
+        state: XHSGrowthState,
+        messages: list[Any],
+        *,
+        label: str,
+    ) -> dict[str, Any]:
+        """Ask once, normalise, assemble the update — shared by both entry points.
 
-        # Ensure version_ids
-        for v in versions:
-            if not v.get("version_id"):
-                v["version_id"] = str(uuid.uuid4())[:8]
+        The two call sites were the same twenty-five lines twice: parse, mint
+        missing ids, log a count, build ``updates``, and auto-apply a lone
+        version onto ``copy_content``/``visual_plan``. The only difference was
+        one log word, which meant a fix to the auto-apply block had to be found
+        in both. ``label`` is what keeps the two log lines distinguishable.
+        """
+        try:
+            versions = normalize_content_versions(
+                await self._llm_structured(
+                    messages,
+                    ContentVersionsOutput,
+                    validator=_versions_present,
+                    accept_last_valid=True,
+                )
+            )
+        except StructuredOutputError as exc:
+            # No payload ever satisfied the schema — degrade to the old
+            # "zero versions" outcome, which the node already handles.
+            logger.warning(
+                "version_generator: no usable versions after %d attempt(s): %s",
+                len(exc.attempts),
+                exc,
+            )
+            versions = []
 
-        logger.info(f"Generated {len(versions)} content versions (A/B/C)")
+        logger.info(f"Generated {len(versions)} content versions ({label})")
 
-        # When only 1 version is generated, auto-apply it
         updates: dict[str, Any] = {
             "content_versions": versions,
             "phase": WorkflowPhase.CREATING,
         }
+        # When only 1 version is generated, auto-apply it
         if len(versions) == 1:
-            v = versions[0]
+            version = versions[0]
             updates["copy_content"] = {
                 **(state.get("copy_content") or {}),
-                "selected_title": v.get("title", ""),
-                "title_candidates": [v.get("title", "")],
-                "body_text": v.get("body", ""),
-                "hashtags": v.get("hashtags", []),
-                "tone": v.get("tone", ""),
+                "selected_title": version.get("title", ""),
+                "title_candidates": [version.get("title", "")],
+                "body_text": version.get("body", ""),
+                "hashtags": version.get("hashtags", []),
+                "tone": version.get("tone", ""),
             }
             updates["visual_plan"] = {
-                "cover_prompt": v.get("style_suggestion", ""),
-                "style": v.get("visual_style", ""),
-                "color_palette": v.get("color_palette", {}),
+                "cover_prompt": version.get("style_suggestion", ""),
+                "style": version.get("visual_style", ""),
+                "color_palette": version.get("color_palette", {}),
             }
 
         return updates

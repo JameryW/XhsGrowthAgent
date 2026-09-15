@@ -24,11 +24,12 @@ Two responsibilities, kept apart on purpose:
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 __all__ = [
     "AnalyticsOutput",
@@ -39,22 +40,35 @@ __all__ = [
     "ClarificationQuestionOutput",
     "ContentAnalysisOutput",
     "ContentPlanOutput",
+    "ContentVersionOutput",
+    "ContentVersionsOutput",
+    "CopyContentOutput",
     "EvaluationDimensionOutput",
     "EvaluationPanelOutput",
     "GapItemOutput",
     "HotTopicItemOutput",
+    "ShootingAngleOutput",
+    "ShootingPlanOutput",
+    "StyleVariantOutput",
+    "StyleVariantsOutput",
     "SuggestionItemOutput",
     "TrendScoutOutput",
     "ViralPostsOutput",
+    "VisualPlanOutput",
     "normalize_analytics",
     "normalize_blogger_candidates",
     "normalize_brief_analysis",
     "normalize_brief_clarification",
     "normalize_content_plan",
+    "normalize_content_versions",
+    "normalize_copy_content",
     "normalize_evaluation_panel",
     "normalize_optimization_analysis",
+    "normalize_shooting_plan",
+    "normalize_style_variants",
     "normalize_trend_data",
     "normalize_viral_posts",
+    "normalize_visual_plan",
 ]
 
 
@@ -1038,4 +1052,447 @@ def normalize_evaluation_panel(output: EvaluationPanelOutput) -> dict[str, Any]:
         "revision_hints": _non_blank(output.revision_hints),
         "summary": output.summary,
         "bias_warning": output.bias_warning,
+    }
+
+
+# ── 文案与版本（copywriter / version_generator） ──
+
+
+def _version_id_or_new(value: str) -> str:
+    """A version id, minted when the model left one out.
+
+    Both pre-migration call sites assigned ``str(uuid.uuid4())[:8]`` to a parsed
+    variant *after* parsing and before returning it, so the id belongs to "what
+    leaves", not to "what the model said" — settled here rather than at the two
+    call sites that would otherwise each need to remember.
+    """
+    return value.strip() or str(uuid.uuid4())[:8]
+
+
+class CopyContentOutput(BaseModel):
+    """``copywriter`` 的正文产物，字段对齐 ``state.substates.CopyContent``。
+
+    The prompt's seven keys are the contract's seven keys, so nothing is left
+    out or invented. ``copywriter._apply_de_ai_taste`` later adds ``de_ai_*``
+    keys to the normalised dict — those are the *outcome* of a polish call, not
+    part of what the model answered, which is why they are not modelled here.
+
+    ``selected_title``/``body_text`` also answer to ``title``/``body``: the
+    variant prompt in the same module asks for those names, the model crosses
+    them over often enough that ``_apply_de_ai_taste`` grew a manual
+    ``.get("selected_title") or .get("title")`` fallback for it, and a retry
+    spent on a field the model *did* answer would be buying nothing.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    title_candidates: list[str] = Field(default_factory=list, description="标题候选")
+    selected_title: str = Field(
+        default="",
+        validation_alias=AliasChoices("selected_title", "title"),
+        description="从候选中选定的标题",
+    )
+    body_text: str = Field(
+        default="",
+        validation_alias=AliasChoices("body_text", "body"),
+        description="正文内容",
+    )
+    hashtags: list[str] = Field(default_factory=list, description="话题标签")
+    cta: str = Field(default="", description="互动号召语")
+    emoji_usage: list[str] = Field(default_factory=list, description="使用的 emoji")
+    tone: str = Field(default="", description="语气：亲切/专业/幽默")
+
+    @field_validator("title_candidates", "hashtags", "emoji_usage", mode="before")
+    @classmethod
+    def _loose_text_lists(cls, value: Any) -> list[str]:
+        return _list_items_as_text(value)
+
+    @field_validator("selected_title", "body_text", "cta", "tone", mode="before")
+    @classmethod
+    def _text_fields(cls, value: Any) -> str:
+        return _as_text(value)
+
+
+def normalize_copy_content(output: CopyContentOutput) -> dict[str, Any]:
+    """``CopyContent`` 形状。
+
+    ``hashtags`` goes through ``_non_blank`` rather than
+    ``_normalize_hashtags``: the downstream reader is
+    ``publisher._as_str_list``, which passes tags through untouched, so the
+    tags that leave here are the tags the model wrote.
+    """
+    return {
+        "title_candidates": _non_blank(output.title_candidates),
+        "selected_title": output.selected_title,
+        "body_text": output.body_text,
+        "hashtags": _non_blank(output.hashtags),
+        "cta": output.cta,
+        "emoji_usage": _non_blank(output.emoji_usage),
+        "tone": output.tone,
+    }
+
+
+class _ContentVersionFields(BaseModel):
+    """``content_versions`` 元素在两个来源之间共享的 11 个字段。
+
+    ``copywriter`` 的多风格变体与 ``version_generator`` 的 A/B/C 版本写进**同
+    一个** state 键，下游读者（``choice_gate``、``state.artifacts``、OMP 的
+    ``review_versions``、前端 ``optimization.ts``）不区分来源 —— 所以两个输出
+    模型的字段集必须同构，一个基类是让「同构」只有一个归属地的方式。
+
+    这也是这里字段比提示词多三个的原因：``image_prompts`` /
+    ``changes_summary`` / ``predicted_score`` 不在任何一条提示词里，但它们是
+    ``state.substates.ContentVersion`` 的成员且有真实读者。提示词是给模型的
+    **指示**，契约是可接受的**答案空间**；把契约里的键拒掉，等于把一个模型
+    自发补上的字段从 state 里删掉。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    version_id: str = Field(default="", description="版本 ID")
+    title: str = Field(default="", description="标题（含 emoji）")
+    body: str = Field(default="", description="正文内容")
+    hashtags: list[str] = Field(default_factory=list, description="话题标签")
+    image_prompts: list[str] = Field(default_factory=list, description="配图提示词")
+    style_suggestion: str = Field(default="", description="视觉风格建议")
+    changes_summary: str = Field(default="", description="本版改了什么")
+    predicted_score: float = Field(default=0.0, description="预测得分")
+    tone: str = Field(default="", description="语气描述")
+    visual_style: str = Field(default="", description="视觉风格关键词")
+    color_palette: dict[str, str] = Field(default_factory=dict, description="配色方案")
+
+    @field_validator("hashtags", "image_prompts", mode="before")
+    @classmethod
+    def _loose_text_lists(cls, value: Any) -> list[str]:
+        return _list_items_as_text(value)
+
+    @field_validator("color_palette", mode="before")
+    @classmethod
+    def _palette_or_empty(cls, value: Any) -> Any:
+        """非映射的配色落到 ``{}``，而不是拿三个版本换一个色卡。
+
+        Both prompts ask for a mapping here
+        (``primary``/``secondary``/``accent``) — the opposite of the visual
+        plan's bare list. Shape follows each prompt, not the word "palette".
+        """
+        return value if isinstance(value, Mapping) else {}
+
+    @field_validator("predicted_score", mode="before")
+    @classmethod
+    def _score_as_number(cls, value: Any) -> Any:
+        return _as_float(value)
+
+    @field_validator(
+        "version_id",
+        "title",
+        "body",
+        "style_suggestion",
+        "changes_summary",
+        "tone",
+        "visual_style",
+        mode="before",
+    )
+    @classmethod
+    def _text_fields(cls, value: Any) -> str:
+        return _as_text(value)
+
+    def _shared_payload(self) -> dict[str, Any]:
+        """归一化后的共享键。
+
+        The three contract-only keys leave **only when the model wrote them**.
+        Their absence carries meaning downstream — ``omp_bridge`` does
+        ``v.get("changes_summary", "draft")`` and ``artifacts`` does
+        ``version.get("predicted_score", 0.0)`` — so emitting a default for a
+        key the model never wrote would turn "said nothing" into "said it is
+        empty" and quietly delete the placeholder every existing version was
+        falling back to.
+        """
+        payload: dict[str, Any] = {
+            "version_id": _version_id_or_new(self.version_id),
+            "title": self.title,
+            "body": self.body,
+            "hashtags": _non_blank(self.hashtags),
+            "style_suggestion": self.style_suggestion,
+            "tone": self.tone,
+            "visual_style": self.visual_style,
+            "color_palette": dict(self.color_palette),
+        }
+        if "image_prompts" in self.model_fields_set:
+            payload["image_prompts"] = _non_blank(self.image_prompts)
+        if "changes_summary" in self.model_fields_set:
+            payload["changes_summary"] = self.changes_summary
+        if "predicted_score" in self.model_fields_set:
+            payload["predicted_score"] = self.predicted_score
+        return payload
+
+
+class StyleVariantOutput(_ContentVersionFields):
+    """``copywriter`` 多风格生成里的一个版本：共享字段 + ``style_name``。"""
+
+    style_name: str = Field(default="", description="风格名称")
+
+    @field_validator("style_name", mode="before")
+    @classmethod
+    def _style_name_as_text(cls, value: Any) -> str:
+        return _as_text(value)
+
+    def as_payload(self) -> dict[str, Any]:
+        return {"style_name": self.style_name, **self._shared_payload()}
+
+
+class StyleVariantsOutput(BaseModel):
+    """``{"variants": [...]}``.
+
+    No ``accepts_bare_list``: the pre-migration reader was
+    ``parsed.get("variants", [])``, which *fails* on a bare array. Declaring
+    one here would be a widening smuggled into a migration — leaving it out
+    means a bare array takes the correction path instead, which is strictly
+    better than the crash it used to get.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    variants: list[StyleVariantOutput] = Field(default_factory=list, description="风格版本列表")
+
+
+def normalize_style_variants(output: StyleVariantsOutput) -> list[dict[str, Any]]:
+    """风格版本列表，``ContentVersion`` 形状（每个都带 ``version_id``）。"""
+    return [variant.as_payload() for variant in output.variants]
+
+
+class ContentVersionOutput(_ContentVersionFields):
+    """``version_generator`` 的 A/B/C 版本之一：共享字段 + ``version_type``。"""
+
+    version_type: str = Field(default="", description="版本类型：conservative/balanced/aggressive")
+
+    @field_validator("version_type", mode="before")
+    @classmethod
+    def _version_type_as_text(cls, value: Any) -> str:
+        return _as_text(value)
+
+    def as_payload(self) -> dict[str, Any]:
+        return {"version_type": self.version_type, **self._shared_payload()}
+
+
+class ContentVersionsOutput(BaseModel):
+    """``{"versions": [...]}``；裸数组的处理同 :class:`StyleVariantsOutput`。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    versions: list[ContentVersionOutput] = Field(default_factory=list, description="A/B/C 版本列表")
+
+
+def normalize_content_versions(output: ContentVersionsOutput) -> list[dict[str, Any]]:
+    """``ContentVersion`` 形状的版本列表（每个都带 ``version_id``）。
+
+    与 :func:`normalize_style_variants` 的全部差别就是那个判别键：两个来源写
+    进同一个 state 键，所以元素形状由 :class:`_ContentVersionFields` 统一决定。
+    """
+    return [version.as_payload() for version in output.versions]
+
+
+# ── 视觉计划（visual_designer） ──
+
+
+class VisualPlanOutput(BaseModel):
+    """``visual_designer`` 的视觉计划，字段对齐提示词的输出规范。
+
+    ``color_palette`` here is a **bare list of colours**, not the mapping
+    ``ViralPostOutput`` carries: the consumers are
+    ``StyleDNA.color_palette: list[str]`` and ``publisher._as_str_list``.
+    Copying the mapping shape over would drop a ``{}`` into an ``f"{a}{b}"``
+    and render ``"{}{}"`` into a downstream prompt.
+
+    ``image_count`` goes through ``_as_int`` because the prompt writes it as
+    ``N`` and Chinese models answer "3" or "3张" — the suffix table already
+    handles the units this field sees.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    cover_prompt: str = Field(default="", description="封面 AI 绘画提示词")
+    image_count: int = Field(default=0, description="图片数量")
+    image_prompts: list[str] = Field(default_factory=list, description="各图提示词")
+    visual_style: str = Field(default="", description="视觉风格：ins风/极简/复古/温暖治愈等")
+    layout_preference: str = Field(default="", description="排版偏好：九宫格/四宫格/单图")
+    color_palette: list[str] = Field(default_factory=list, description="配色方案（色值列表）")
+    font_suggestion: str = Field(default="", description="字体建议")
+    brand_elements: list[str] = Field(default_factory=list, description="品牌元素")
+
+    @field_validator("image_prompts", "color_palette", "brand_elements", mode="before")
+    @classmethod
+    def _loose_text_lists(cls, value: Any) -> list[str]:
+        return _list_items_as_text(value)
+
+    @field_validator("image_count", mode="before")
+    @classmethod
+    def _count_as_number(cls, value: Any) -> Any:
+        return _as_int(value)
+
+    @field_validator(
+        "cover_prompt",
+        "visual_style",
+        "layout_preference",
+        "font_suggestion",
+        mode="before",
+    )
+    @classmethod
+    def _text_fields(cls, value: Any) -> str:
+        return _as_text(value)
+
+
+def normalize_visual_plan(output: VisualPlanOutput) -> dict[str, Any]:
+    """``VisualPlan`` 形状 —— 键集**刻意**与提示词一致。
+
+    ``evaluator``/``public_showcase``/``review`` read ``layout_style``, a key
+    the prompt and the old parse result never carried: they have always fallen
+    back to their own defaults. Adding it here would change what a reader that
+    was never fed the key now sees, which is a behaviour change wearing a
+    migration's clothes.
+
+    ``style_id`` is *not* emitted: the call site writes it back after
+    ``deposit_style`` when creative memory returns one.
+    """
+    return {
+        "cover_prompt": output.cover_prompt,
+        "image_count": output.image_count,
+        "image_prompts": _non_blank(output.image_prompts),
+        "visual_style": output.visual_style,
+        "layout_preference": output.layout_preference,
+        "color_palette": _non_blank(output.color_palette),
+        "font_suggestion": output.font_suggestion,
+        "brand_elements": _non_blank(output.brand_elements),
+    }
+
+
+# ── 拍摄计划（shooting_planner） ──
+
+
+class ShootingAngleOutput(BaseModel):
+    """一个拍摄角度 —— ``state.substates.ShootingPlan.shooting_angles`` 的项。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    description: str = Field(default="", description="角度描述")
+    reference_image: str = Field(default="", description="参考图")
+
+    @field_validator("description", "reference_image", mode="before")
+    @classmethod
+    def _text_fields(cls, value: Any) -> str:
+        return _as_text(value)
+
+
+class ShootingPlanOutput(BaseModel):
+    """商单拍摄计划，16 个字段与 ``state.substates.ShootingPlan`` 逐一对齐。
+
+    ``outfits`` is the one nested mapping here — ``{角色: [服装选项]}``.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    creator_nickname: str = Field(default="", description="达人昵称")
+    content_direction: str = Field(default="", description="内容方向")
+    content_type_label: str = Field(default="", description="图文内容标签")
+    profile_link: str = Field(default="", description="主页链接")
+    creator_level: str = Field(default="", description="达人量级")
+    planned_publish_date: str = Field(default="", description="预计发布日期")
+    product_specification: str = Field(default="", description="产品规格描述")
+    draft_requirements: list[str] = Field(default_factory=list, description="初稿要求")
+    draft_notes: list[str] = Field(default_factory=list, description="初稿注意事项")
+    title_candidates: list[str] = Field(default_factory=list, description="标题备选")
+    body_copy: str = Field(default="", description="文案（含必提卖点与必含关键词）")
+    required_hashtags: list[str] = Field(default_factory=list, description="必带话题")
+    optional_hashtags: list[str] = Field(default_factory=list, description="选带话题")
+    suggested_hashtags: list[str] = Field(default_factory=list, description="建议的热门话题")
+    outfits: dict[str, list[str]] = Field(default_factory=dict, description="{角色: [服装选项]}")
+    shooting_angles: list[ShootingAngleOutput] = Field(
+        default_factory=list, description="拍摄角度建议"
+    )
+
+    @field_validator(
+        "draft_requirements",
+        "draft_notes",
+        "title_candidates",
+        "required_hashtags",
+        "optional_hashtags",
+        "suggested_hashtags",
+        mode="before",
+    )
+    @classmethod
+    def _loose_text_lists(cls, value: Any) -> list[str]:
+        return _list_items_as_text(value)
+
+    @field_validator("outfits", mode="before")
+    @classmethod
+    def _outfits_as_mapping(cls, value: Any) -> Any:
+        """非映射的服装建议落到 ``{}``，值统一成字符串列表。
+
+        ``{角色: [服装选项]}`` is this template's own shape. A model that
+        answers ``[{角色, 服装}]`` has answered a different question, and
+        guessing which field is the role would invent a costume for a person
+        nobody named.
+        """
+        if not isinstance(value, Mapping):
+            return {}
+        return {str(role): _list_items_as_text(items) for role, items in value.items()}
+
+    @field_validator("shooting_angles", mode="before")
+    @classmethod
+    def _angles_as_descriptions(cls, value: Any) -> Any:
+        """A bare sentence where the list belongs becomes one angle, not its characters.
+
+        The prompt asks for ``[{description: …}]``, so a model that answers
+        ``"低角度仰拍"`` has described exactly one angle. Letting Pydantic
+        reject it would spend a retry on a field the model did answer, and
+        ``_as_list`` is what keeps the string whole instead of iterating it.
+        An entry that is neither a mapping nor text is dropped: it described
+        no angle.
+        """
+        angles: list[Any] = []
+        for item in _as_list(value):
+            if isinstance(item, Mapping):
+                angles.append(item)
+            elif item is not None and str(item).strip():
+                angles.append({"description": str(item)})
+        return angles
+
+    @field_validator(
+        "creator_nickname",
+        "content_direction",
+        "content_type_label",
+        "profile_link",
+        "creator_level",
+        "planned_publish_date",
+        "product_specification",
+        "body_copy",
+        mode="before",
+    )
+    @classmethod
+    def _text_fields(cls, value: Any) -> str:
+        return _as_text(value)
+
+
+def normalize_shooting_plan(output: ShootingPlanOutput) -> dict[str, Any]:
+    """``ShootingPlan`` 形状（16 个契约键）。
+
+    A whole document rather than a projection: the call site stops this object
+    into state as-is, and every key here is one the template renders.
+    """
+    return {
+        "creator_nickname": output.creator_nickname,
+        "content_direction": output.content_direction,
+        "content_type_label": output.content_type_label,
+        "profile_link": output.profile_link,
+        "creator_level": output.creator_level,
+        "planned_publish_date": output.planned_publish_date,
+        "product_specification": output.product_specification,
+        "draft_requirements": _non_blank(output.draft_requirements),
+        "draft_notes": _non_blank(output.draft_notes),
+        "title_candidates": _non_blank(output.title_candidates),
+        "body_copy": output.body_copy,
+        "required_hashtags": _non_blank(output.required_hashtags),
+        "optional_hashtags": _non_blank(output.optional_hashtags),
+        "suggested_hashtags": _non_blank(output.suggested_hashtags),
+        "outfits": {role: _non_blank(items) for role, items in output.outfits.items()},
+        "shooting_angles": [angle.model_dump() for angle in output.shooting_angles],
     }

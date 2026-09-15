@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 
 from backend.agents.copywriter import CopywriterAgent
+from backend.models.structured import StructuredOutputError
 from backend.state.schema import WorkflowPhase
 
 
@@ -111,7 +112,7 @@ class TestCopywriterAgent:
         mock_store.asearch = AsyncMock(return_value=[mock_item])
 
         mock_response = MagicMock()
-        mock_response.content = '{"title_candidates": [], "body_text": ""}'
+        mock_response.content = '{"selected_title": "测试标题", "body_text": "测试正文"}'
 
         with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
             mock_model = MagicMock()
@@ -131,7 +132,7 @@ class TestCopywriterAgent:
         mock_store.asearch = AsyncMock(return_value=[mock_pref])
 
         mock_response = MagicMock()
-        mock_response.content = '{"title_candidates": [], "body_text": ""}'
+        mock_response.content = '{"selected_title": "测试标题", "body_text": "测试正文"}'
 
         with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
             mock_model = MagicMock()
@@ -157,7 +158,7 @@ class TestCopywriterAgent:
         import asyncio as _asyncio
 
         mock_response = MagicMock()
-        mock_response.content = '{"title_candidates": [], "body_text": ""}'
+        mock_response.content = '{"selected_title": "测试标题", "body_text": "测试正文"}'
 
         real_gather = _asyncio.gather
         gather_calls: list[tuple[tuple, dict]] = []
@@ -206,8 +207,22 @@ class TestCopywriterAgent:
         assert "copy_content" in result
 
     @pytest.mark.asyncio
-    async def test_execute_handles_invalid_json(self, agent, mock_state, mock_store, _mock_de_ai):
-        """Execute handles invalid LLM response."""
+    async def test_execute_rejects_payload_with_no_json_in_it(
+        self, agent, mock_state, mock_store, _mock_de_ai
+    ):
+        """Prose is refused; nothing about it reaches state.
+
+        The pre-migration reader turned unparseable text into
+        ``{"raw_content": …}`` and the node reported success, so state carried
+        a copy_content whose seven fields were all empty — indistinguishable
+        from "the model really wrote nothing". Now the payload is retried once
+        with the problem named and then raised; ``BaseAgent.__call__`` turns
+        that into the error state the stateful retry reads.
+
+        The assertions pin the property (no raw text in state) and the new
+        mechanism's observable side effect (a second, corrective call), not the
+        ``raw_content`` shape it replaced.
+        """
         mock_response = MagicMock()
         mock_response.content = "Not valid JSON"
 
@@ -216,11 +231,12 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            with pytest.raises(StructuredOutputError):
+                await agent.execute(mock_state, store=mock_store)
 
-        # Should still return copy_content with raw_content
-        assert "copy_content" in result
-        assert result["copy_content"].get("raw_content") == "Not valid JSON"
+        assert mock_model.ainvoke.call_count == 2, "expected one attempt + one correction"
+        retry_messages = mock_model.ainvoke.await_args_list[-1].args[0]
+        assert any("【纠偏】" in str(message) for message in retry_messages)
 
     @pytest.mark.asyncio
     async def test_execute_with_key_points(self, agent, mock_store, _mock_de_ai):
@@ -235,7 +251,7 @@ class TestCopywriterAgent:
         }
 
         mock_response = MagicMock()
-        mock_response.content = '{"title_candidates": [], "body_text": ""}'
+        mock_response.content = '{"selected_title": "测试标题", "body_text": "测试正文"}'
 
         with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
             mock_model = MagicMock()
@@ -430,8 +446,21 @@ class TestCopywriterAgent:
         assert mock_model.ainvoke.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_style_variants_empty_after_retry_logs_error(self, agent, caplog):
-        """Both LLM calls return empty variants → returns [] and logs error."""
+    async def test_style_variants_empty_after_retry_returns_empty(self, agent, caplog):
+        """Both attempts answer with nothing usable → ``[]``, after one correction.
+
+        The old code hand-rolled "retry once, verbatim, when variants is empty"
+        and logged its own error. The retry is now the facility's
+        ``attempts_per_level=2``, and the difference is the point: the second
+        attempt carries a correction instead of repeating the same prompt. An
+        empty list is returned rather than raised (``accept_last_valid``)
+        because the call site uses emptiness to decide whether to write the key
+        at all — unlike the main draft, where empty would stand in for a real
+        result.
+
+        So the assertions move: the count stays, and the log line becomes the
+        facility's advisory warning plus the correction on the second call.
+        """
         empty_response = MagicMock()
         empty_response.content = "not json at all"
 
@@ -442,28 +471,27 @@ class TestCopywriterAgent:
             "blogger_notes": [{"title": "参考", "body": "正文"}],
         }
 
-        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            caplog.at_level(logging.WARNING),
+        ):
             mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=empty_response)
             mock_model_prop.return_value = mock_model
 
-            with caplog.at_level(
-                logging.WARNING,
-                logger="xhs_growth.agents.copywriter",
-            ):
-                result = await agent._generate_style_variants(
-                    state,
-                    {},
-                    state["blogger_notes"],
-                    "system prompt",
-                    "美食",
-                )
+            result = await agent._generate_style_variants(
+                state,
+                {},
+                state["blogger_notes"],
+                "system prompt",
+                "美食",
+            )
 
         assert result == []
-        assert mock_model.ainvoke.call_count == 2
-        # warning on first attempt + error after retry
-        assert any("empty on first attempt" in r.message for r in caplog.records)
-        assert any("empty after retry" in r.message for r in caplog.records)
+        assert mock_model.ainvoke.call_count == 2, "expected one attempt + one correction"
+        retry_messages = mock_model.ainvoke.await_args_list[-1].args[0]
+        assert any("【纠偏】" in str(message) for message in retry_messages)
+        assert any("never satisfied its validator" in r.message for r in caplog.records)
 
 
 class TestCopywriterContextPipeline:
@@ -508,7 +536,7 @@ class TestCopywriterContextPipeline:
     @pytest.mark.asyncio
     async def test_recall_uses_context_pipeline_ns_and_query(self, agent, mock_store, mock_state):
         """S2 pipeline recall: same ns/query/limit as the two old _recall_memory."""
-        self._mock_model(agent, '{"title_candidates": [], "body_text": ""}', {})
+        self._mock_model(agent, '{"selected_title": "测试标题", "body_text": "测试正文"}', {})
         await agent.execute(mock_state, store=mock_store)
         by_ns = {c.args[0][-1]: c for c in mock_store.asearch.call_args_list}
         assert "content_history" in by_ns
@@ -539,7 +567,7 @@ class TestCopywriterContextPipeline:
 
         mock_store.asearch = _asearch
         captured: dict = {}
-        self._mock_model(agent, '{"title_candidates": [], "body_text": ""}', captured)
+        self._mock_model(agent, '{"selected_title": "测试标题", "body_text": "测试正文"}', captured)
         await agent.execute(mock_state, store=mock_store)
 
         system = captured["messages"][0].content
@@ -564,7 +592,7 @@ class TestCopywriterContextPipeline:
 
         mock_store.asearch = _boom
         captured: dict = {}
-        self._mock_model(agent, '{"title_candidates": [], "body_text": ""}', captured)
+        self._mock_model(agent, '{"selected_title": "测试标题", "body_text": "测试正文"}', captured)
         result = await agent.execute(mock_state, store=mock_store)
 
         assert "copy_content" in result
@@ -582,7 +610,7 @@ class TestCopywriterContextPipeline:
             "viral_probability": 0.42,
         }
         captured: dict = {}
-        self._mock_model(agent, '{"title_candidates": [], "body_text": ""}', captured)
+        self._mock_model(agent, '{"selected_title": "测试标题", "body_text": "测试正文"}', captured)
         await agent.execute(mock_state, store=mock_store)
 
         system = captured["messages"][0].content

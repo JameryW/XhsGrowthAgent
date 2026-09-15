@@ -20,32 +20,46 @@ from backend.models.outputs import (
     BriefClarificationOutput,
     ContentAnalysisOutput,
     ContentPlanOutput,
+    ContentVersionsOutput,
+    CopyContentOutput,
     EvaluationPanelOutput,
     HotTopicItemOutput,
+    ShootingPlanOutput,
+    StyleVariantsOutput,
     SuggestionItemOutput,
     TrendScoutOutput,
     ViralPostsOutput,
+    VisualPlanOutput,
     normalize_analytics,
     normalize_blogger_candidates,
     normalize_brief_analysis,
     normalize_brief_clarification,
     normalize_content_plan,
+    normalize_content_versions,
+    normalize_copy_content,
     normalize_evaluation_panel,
     normalize_optimization_analysis,
+    normalize_shooting_plan,
+    normalize_style_variants,
     normalize_trend_data,
     normalize_viral_posts,
+    normalize_visual_plan,
 )
 from backend.state.substates import (
     AnalyticsSnapshot,
     BloggerProfile,
     BriefContent,
+    ContentVersion,
+    CopyContent,
     DimensionScore,
     EvaluationResult,
     GapItem,
     OptimizationAnalysis,
+    ShootingPlan,
     SuggestionItem,
     TrendData,
     ViralPost,
+    VisualPlan,
 )
 
 
@@ -794,3 +808,273 @@ class TestEvaluationPanelOutput:
         panel = EvaluationPanelOutput.model_validate({"summary": "ok"})
         normalized = normalize_evaluation_panel(panel)
         assert set(normalized) <= set(EvaluationResult.__annotations__)
+
+
+class TestCopyContentOutput:
+    """``copywriter`` 的正文产物 —— 键集与 ``substates.CopyContent`` 逐一对齐。"""
+
+    def test_the_keys_are_the_state_contract(self):
+        """Equality, and against the state contract rather than this model's own
+        fields: comparing a model to itself is true by construction."""
+        payload = normalize_copy_content(CopyContentOutput.model_validate({}))
+        assert set(payload) == set(CopyContent.__annotations__)
+
+    def test_prose_is_a_legal_payload_which_is_why_the_agent_has_a_validator(self):
+        """The reachable shape of "the model answered prose": ``{"raw_content": …}``
+        validates against an all-defaults model, so the schema refuses nothing.
+        Shape checking cannot tell "answered, with nothing" from "answered
+        nothing at all" — that is the semantic validator's job."""
+        copy = CopyContentOutput.model_validate({"raw_content": "模型这次只说了段话"})
+        assert copy.selected_title == ""
+        assert copy.body_text == ""
+        assert copy.title_candidates == []
+
+    def test_the_sibling_prompts_field_names_are_read(self):
+        """``title``/``body`` are what the variant prompt in the same module asks
+        for, and the model crosses the two prompts over often enough that
+        ``_apply_de_ai_taste`` grew a manual ``.get("selected_title") or
+        .get("title")`` fallback. A retry spent on a field the model *did*
+        answer would buy nothing, so the tolerance is stated once, here."""
+        copy = CopyContentOutput.model_validate({"title": "标题A", "body": "正文A"})
+        assert normalize_copy_content(copy)["selected_title"] == "标题A"
+        assert normalize_copy_content(copy)["body_text"] == "正文A"
+
+    def test_the_canonical_name_wins_when_both_are_written(self):
+        copy = CopyContentOutput.model_validate({"selected_title": "正名", "title": "别名"})
+        assert copy.selected_title == "正名"
+
+    def test_hashtags_keep_the_hash_characters_the_model_wrote(self):
+        """``_normalize_hashtags`` forces exactly one leading ``#``; that is the
+        wrong tool here. The reader is ``publisher._as_str_list``, which passes
+        tags through untouched — retagging them would change what a reader that
+        never looks at the ``#`` now sees."""
+        copy = CopyContentOutput.model_validate({"hashtags": ["#美食", "探店"]})
+        assert normalize_copy_content(copy)["hashtags"] == ["#美食", "探店"]
+
+    def test_a_bare_string_is_one_item_not_its_characters(self):
+        copy = CopyContentOutput.model_validate({"title_candidates": "标题一、标题二"})
+        assert normalize_copy_content(copy)["title_candidates"] == ["标题一、标题二"]
+
+    def test_null_reads_as_said_nothing_not_as_the_word_none(self):
+        copy = CopyContentOutput.model_validate({"cta": None, "tone": None})
+        assert (copy.cta, copy.tone) == ("", "")
+
+
+class TestVersionOutputs:
+    """两个来源的 ``content_versions`` 元素。
+
+    ``copywriter`` 的风格变体与 ``version_generator`` 的 A/B/C 版本写进**同一个**
+    state 键，下游读者（``choice_gate``/``artifacts``/OMP/前端）不区分来源 ——
+    这里钉的就是"字段集必须同构"这条不变量。
+    """
+
+    def test_both_sources_emit_the_same_keys_apart_from_the_discriminator(self):
+        variant = normalize_style_variants(
+            StyleVariantsOutput.model_validate({"variants": [{"style_name": "A"}]})
+        )[0]
+        version = normalize_content_versions(
+            ContentVersionsOutput.model_validate({"versions": [{"version_type": "a"}]})
+        )[0]
+        assert set(variant) - {"style_name"} == set(version) - {"version_type"}
+
+    def test_a_missing_version_id_is_minted_here(self):
+        """Both pre-migration call sites minted ``uuid4()[:8]`` *after* parsing and
+        before returning, so the id belongs to what leaves — one owner."""
+        variant = normalize_style_variants(StyleVariantsOutput.model_validate({"variants": [{}]}))[
+            0
+        ]
+        assert len(variant["version_id"]) == 8
+
+    def test_a_written_version_id_is_kept(self):
+        variant = normalize_style_variants(
+            StyleVariantsOutput.model_validate({"variants": [{"version_id": "style_a"}]})
+        )[0]
+        assert variant["version_id"] == "style_a"
+
+    def test_the_contract_only_keys_leave_only_when_the_model_wrote_them(self):
+        """Absent / empty / set are three different things to downstream.
+
+        ``image_prompts``/``changes_summary``/``predicted_score`` are members of
+        ``substates.ContentVersion`` but appear in neither prompt, so a model
+        normally omits them — and the omission is *read*: ``omp_bridge`` does
+        ``v.get("changes_summary", "draft")`` and ``artifacts`` does
+        ``version.get("predicted_score", 0.0)``. Emitting a default for an
+        unwritten key would delete the placeholder every existing version falls
+        back to, turning "said nothing" into "said it is empty".
+        """
+        silent = normalize_content_versions(
+            ContentVersionsOutput.model_validate({"versions": [{"title": "t"}]})
+        )[0]
+        assert "changes_summary" not in silent
+        assert "predicted_score" not in silent
+        assert "image_prompts" not in silent
+
+        explicit = normalize_content_versions(
+            ContentVersionsOutput.model_validate(
+                {
+                    "versions": [
+                        {
+                            "title": "t",
+                            "changes_summary": "",
+                            "predicted_score": 0,
+                            "image_prompts": [],
+                        }
+                    ]
+                }
+            )
+        )[0]
+        assert explicit["changes_summary"] == ""
+        assert explicit["predicted_score"] == 0.0
+        assert explicit["image_prompts"] == []
+
+    def test_the_prompt_keys_always_leave(self):
+        version = normalize_content_versions(
+            ContentVersionsOutput.model_validate({"versions": [{}]})
+        )[0]
+        assert {"version_id", "version_type", "title", "body", "hashtags", "tone"} <= set(version)
+
+    def test_every_contract_key_with_a_reader_is_reachable(self):
+        """``substates.ContentVersion`` and the two prompts disagree in **both**
+        directions: the contract lists ``image_prompts``/``changes_summary``/
+        ``predicted_score`` that no prompt asks for, while both prompts write
+        ``version_type``/``tone``/``visual_style``/``color_palette`` the contract
+        never declared. The drift predates this migration, whose payload
+        reproduced it; reconciling it here would change what existing readers
+        see.
+
+        So the assertion is the reachability that matters — every contract key
+        except the one the model has to volunteer is produced — rather than a
+        containment that was never true.
+        """
+        version = normalize_content_versions(
+            ContentVersionsOutput.model_validate(
+                {"versions": [{"title": "t", "changes_summary": "c", "predicted_score": 1}]}
+            )
+        )[0]
+        assert set(ContentVersion.__annotations__) - {"image_prompts"} <= set(version)
+        assert {"version_type", "tone", "visual_style", "color_palette"} <= set(version)
+
+    def test_a_bare_array_is_refused(self):
+        """``ViralPostsOutput`` accepts one because both of *its* call sites did.
+        These two read ``parsed.get("variants"/"versions")``, which crashes on a
+        list — declaring ``accepts_bare_list`` would widen the contract under
+        cover of a migration. A bare array instead takes the correction path,
+        which beats the ``AttributeError`` it used to get."""
+        with pytest.raises(ValidationError):
+            StyleVariantsOutput.model_validate([{"style_name": "A"}])
+        with pytest.raises(ValidationError):
+            ContentVersionsOutput.model_validate([{"version_type": "a"}])
+
+    def test_a_non_mapping_palette_becomes_empty_rather_than_failing_the_batch(self):
+        variant = normalize_style_variants(
+            StyleVariantsOutput.model_validate({"variants": [{"color_palette": "primary=#fff"}]})
+        )[0]
+        assert variant["color_palette"] == {}
+
+
+class TestVisualPlanOutput:
+    """``visual_designer`` 的视觉计划 —— 键集刻意与提示词一致。"""
+
+    def test_the_keys_are_the_prompt_shape_not_a_superset(self):
+        """``layout_style`` is read by ``evaluator``/``public_showcase``/``review``
+        and has *never* been in this payload — the prompt writes
+        ``layout_preference``. Emitting it here would change what a reader that
+        was never fed the key now sees. ``style_id`` is absent for the opposite
+        reason: the call site writes it back after ``deposit_style``."""
+        payload = normalize_visual_plan(VisualPlanOutput.model_validate({}))
+        assert set(payload) == {
+            "cover_prompt",
+            "image_count",
+            "image_prompts",
+            "visual_style",
+            "layout_preference",
+            "color_palette",
+            "font_suggestion",
+            "brand_elements",
+        }
+
+    def test_the_drift_between_the_prompt_and_the_state_contract_is_pinned(self):
+        """``substates.VisualPlan`` declares ``layout_style``, which no prompt has
+        ever written, and omits ``visual_style``/``layout_preference``, which the
+        prompt does write. That drift predates this migration, which reproduces
+        the prompt's shape; reconciling the two here would change what
+        ``evaluator``/``public_showcase``/``review`` see, and a migration is not
+        the place for it.
+
+        Pinned as a two-way difference rather than containment, so either half
+        of the drift going away turns this red instead of silently passing.
+        """
+        payload = normalize_visual_plan(VisualPlanOutput.model_validate({}))
+        assert set(payload) - set(VisualPlan.__annotations__) == {
+            "visual_style",
+            "layout_preference",
+        }
+        assert set(VisualPlan.__annotations__) - set(payload) == {"layout_style", "image_paths"}
+
+    def test_the_palette_is_a_list_not_the_mapping_viral_posts_carry(self):
+        """Same word, different shape. ``StyleDNA.color_palette`` and
+        ``publisher._as_str_list`` read a list; copying ``ViralPostOutput``'s
+        mapping fallback (``{}``) over would drop that object into an
+        ``f"{a}{b}"`` and render ``"{}{}"`` into the next prompt."""
+        payload = normalize_visual_plan(
+            VisualPlanOutput.model_validate({"color_palette": ["#fff", "#000"]})
+        )
+        assert payload["color_palette"] == ["#fff", "#000"]
+        assert normalize_visual_plan(VisualPlanOutput.model_validate({"color_palette": "abc"}))[
+            "color_palette"
+        ] == ["abc"]
+
+    def test_an_image_count_written_as_digits_is_read(self):
+        assert VisualPlanOutput.model_validate({"image_count": 3}).image_count == 3
+        assert VisualPlanOutput.model_validate({"image_count": "3"}).image_count == 3
+
+    def test_prose_is_a_legal_payload_which_is_why_the_agent_has_a_validator(self):
+        plan = VisualPlanOutput.model_validate({"raw_content": "只说了段话"})
+        assert plan.cover_prompt == ""
+        assert plan.image_prompts == []
+
+
+class TestShootingPlanOutput:
+    """``shooting_planner`` 的拍摄计划 —— 16 个键与 state 契约逐一对齐。"""
+
+    def test_the_keys_are_the_state_contract(self):
+        payload = normalize_shooting_plan(ShootingPlanOutput.model_validate({}))
+        assert set(payload) == set(ShootingPlan.__annotations__)
+
+    def test_prose_is_a_legal_payload_and_looks_like_the_early_return(self):
+        """``shooting_planner`` returns ``{"shooting_plan": {}}`` when there is
+        genuinely nothing to plan from, so an empty *answer* must not be allowed
+        to look the same. That collision is what the agent's semantic validator
+        exists to prevent — the schema cannot, because this payload validates."""
+        plan = ShootingPlanOutput.model_validate({"raw_content": "只说了段话"})
+        assert plan.body_copy == ""
+        assert plan.title_candidates == []
+
+    def test_a_non_mapping_outfits_becomes_empty(self):
+        """A model that answers ``[{角色, 服装}]`` answered a different question.
+        Guessing which field is the role would invent a costume for a person
+        nobody named."""
+        plan = ShootingPlanOutput.model_validate({"outfits": [{"role": "妈妈"}]})
+        assert normalize_shooting_plan(plan)["outfits"] == {}
+
+    def test_outfit_values_that_are_bare_strings_are_one_item_each(self):
+        plan = ShootingPlanOutput.model_validate({"outfits": {"妈妈": "红裙子"}})
+        assert normalize_shooting_plan(plan)["outfits"] == {"妈妈": ["红裙子"]}
+
+    def test_a_bare_angle_sentence_becomes_one_angle(self):
+        """The prompt asks for ``[{description: …}]``; one sentence is one angle,
+        and ``_as_list`` is what keeps it whole instead of iterating letters.
+        Letting Pydantic reject it would spend a retry on a field the model did
+        answer."""
+        plan = ShootingPlanOutput.model_validate({"shooting_angles": "低角度仰拍"})
+        assert normalize_shooting_plan(plan)["shooting_angles"] == [
+            {"description": "低角度仰拍", "reference_image": ""}
+        ]
+
+    def test_angles_that_are_mappings_keep_their_own_fields(self):
+        plan = ShootingPlanOutput.model_validate(
+            {"shooting_angles": [{"description": "俯拍", "reference_image": "a.png"}]}
+        )
+        assert normalize_shooting_plan(plan)["shooting_angles"] == [
+            {"description": "俯拍", "reference_image": "a.png"}
+        ]

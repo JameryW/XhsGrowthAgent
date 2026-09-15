@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from collections.abc import Mapping
 from typing import Any, cast
 
@@ -37,6 +36,13 @@ from backend.context.models import (
     require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
+from backend.models.outputs import (
+    CopyContentOutput,
+    StyleVariantsOutput,
+    normalize_copy_content,
+    normalize_style_variants,
+)
+from backend.models.structured import StructuredOutputError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.copywriter")
@@ -106,6 +112,47 @@ def _format_memory_context(history: RetrievalResult, prefs: RetrievalResult) -> 
         for ap in prefs.raw_items:
             memory_context += f"- {ap.get('preference', '')}\n"
     return memory_context
+
+
+def _copy_has_content(output: CopyContentOutput) -> str | None:
+    """Reject a payload that answered but said nothing.
+
+    S2c measured the assumption this hinges on: ``_parse_json_response`` does
+    *not* fail on prose — it returns ``{"raw_content": …}``, a perfectly legal
+    dict, and every-default-plus-``extra="ignore"`` models accept any dict, so
+    the schema blocks nothing. Letting that through leaves ``copy_content`` at
+    seven empty fields: downstream ``if selected_title`` goes false, no material
+    is deposited and the node reports success — byte-for-byte the shape of "the
+    model really did write nothing this time". A retry with the problem named is
+    the only thing that tells those two apart.
+
+    Any one of the three content-bearing fields is enough to pass. This is not a
+    quality bar — it is the line between "answered, with something" and
+    "answered, with nothing", and a lone title candidate is firmly on the first
+    side of it.
+    """
+    if output.selected_title.strip() or output.body_text.strip() or output.title_candidates:
+        return None
+    return "上一次回答里 selected_title 与 body_text 都是空的。请严格按 JSON 规范重新输出完整文案。"
+
+
+def _variants_present(output: StyleVariantsOutput) -> str | None:
+    """Empty variants get one corrective retry, then are accepted as empty.
+
+    The old code hand-rolled "retry once, verbatim, if there were no variants";
+    the retry now belongs to ``attempts_per_level=2`` and the only difference is
+    that the second attempt carries a correction instead of repeating the same
+    prompt. Accepting an empty list afterwards is deliberate
+    (``accept_last_valid``): ``content_versions`` empty means the call site does
+    not write that key at all, so this emptiness has nothing to compete with —
+    unlike the main draft, where an empty result would be read as a real one.
+    """
+    if output.variants:
+        return None
+    return (
+        "上一次回答里 variants 是空的。请严格按 JSON 规范输出 variants 数组，"
+        "其中含 3 个风格明显不同的版本。"
+    )
 
 
 class CopywriterAgent(BaseAgent):
@@ -236,14 +283,16 @@ class CopywriterAgent(BaseAgent):
 内容类型：{plan.get("content_type", "note")}
 垂类赛道：{niche}"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
+        copy_content = normalize_copy_content(
+            await self._llm_structured(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ],
+                CopyContentOutput,
+                validator=_copy_has_content,
+            )
         )
-
-        copy_content = self._parse_json_response(cast(str, response.content))
 
         # ── De-AI-taste polish (workflow post-pass) ──
         # RQGM ai_taste feedback lands in human_feedback.revisions; always run a
@@ -395,31 +444,27 @@ class CopywriterAgent(BaseAgent):
             HumanMessage(content=variant_prompt),
         ]
 
-        response = await self._llm_ainvoke(messages)
-
-        raw_response = cast(str, response.content)
-        parsed = self._parse_json_response(raw_response)
-        variants = parsed.get("variants", [])
-
-        # Retry once if the LLM returned no parseable variants (transient format
-        # errors are common). Log the raw snippet to aid diagnosis.
-        if not variants:
-            logger.warning(
-                f"copywriter style variants empty on first attempt: {raw_response[:200]}"
+        try:
+            variants = normalize_style_variants(
+                await self._llm_structured(
+                    messages,
+                    StyleVariantsOutput,
+                    validator=_variants_present,
+                    accept_last_valid=True,
+                )
             )
-            retry_response = await self._llm_ainvoke(messages)
-            raw_response = cast(str, retry_response.content)
-            parsed = self._parse_json_response(raw_response)
-            variants = parsed.get("variants", [])
-            if not variants:
-                logger.error(f"copywriter style variants empty after retry: {raw_response[:200]}")
+        except StructuredOutputError as exc:
+            # Nothing ever satisfied the schema, so there was no payload to
+            # correct — zero variants, as before, but now the reason is logged
+            # instead of being inferred from a raw-text snippet.
+            logger.warning(
+                "copywriter: no usable style variants after %d attempt(s): %s",
+                len(exc.attempts),
+                exc,
+            )
+            return []
 
-        # Ensure each variant has a version_id
-        for v in variants:
-            if not v.get("version_id"):
-                v["version_id"] = str(uuid.uuid4())[:8]
-
-        return cast(list[dict[str, Any]], variants)
+        return variants
 
     @staticmethod
     def _build_ripple_context(plan: dict[str, Any]) -> str:
