@@ -101,7 +101,7 @@ Agent 只声明 capability 需求。
   - 目录声明：三个 `xhs.*` 读能力 `retry=RetryPolicy()`。迁移前调用点从不重试（各自 catch 后降级），且这里的头号失败是缺凭据 —— 等待修不了它。`auth_scope=("xhs:read",)` 仍只是**声明**（执行归 P2a），用测试钉住。
   - **残留（不在本片范围）**：第一层 `XHSClient` 仍吞异常返回 `[]`（`get_trending`/`search_posts` 的既有契约，`tests/unit/services/test_xhs_client.py` 钉着），所以“限流导致的空”与“确实没内容”在第一层仍不可分；修它要连带 `visual_analysis.py` / `topic_scorer.py`，属凭据整备（P2a）。另：`_fetch_real_data` 把 `niche` 传给 `competitor_analyzer.account_id`（该参数语义是“竞品账号或搜索词”）是迁移前就有的形状，本片原样保留、不顺手改语义。
 
-- **S4 ✅（本分支）**：L1 tool schema 层终于有了生产者并接线到 Context Compiler；**但默认关闭**，14 个 agent 的 prompt 与基线快照**字节不变**（漂移门禁 0 漂移）。
+- **S4 ✅（PR #598）**：L1 tool schema 层终于有了生产者并接线到 Context Compiler；**但默认关闭**，14 个 agent 的 prompt 与基线快照**字节不变**（漂移门禁 0 漂移）。
   - **口径偏离已在动手前与用户确认**：票面 Q5/S4 原文是“接入 Context Compiler + 刷新基线快照”，本片改为“建通道 + 默认关闭”。理由：模型到 P2c 才有 tool-calling 通道，此刻把能力清单写进 prompt 等于描述一种它无法行使的能力（还会诱导它在 JSON 里编 tool-call 语法），并且每次请求白付 token。架构评审 §十八 立 L1 是因为它属于 stable prefix / prompt cache 的稳定区 —— 通道先建好，“打开”留给 P2c 逐 agent 决定。
   - **生产者** `backend/tools/runtime/schema.py::render_tool_schema(specs)`：纯函数、按 capability 排序（稳定前缀不能每次重排）、空输入返回 `""`（compiler 用“空”判断该层是否存在，不能只吐一个光杆标题）。另走 `registry.subset()` —— S1 当时预留的窄口子，docstring 原文就是给 L1 用的。交付点在 `bridge.tool_schema_section(capabilities)`。
   - **`pass_style` 分支渲染是 S1 的交办**：MAPPING 工具的 `data` 若照原样渲染，会和另外九个“按名解包”的工具长得一模一样 —— 而那正是“payload 有没有被丢掉”的分水岭，故该行渲染成“整体即 `data: ...`，不再嵌套”。
@@ -110,6 +110,18 @@ Agent 只声明 capability 需求。
   - **未知 capability 抛错而非静默省略**：`tool_schema_section` 让 `UnknownCapabilityError` 抛出。默认关闭意味着没有消费者会发现配置错误 —— 静默省略会把它藏到 P2c 打开开关的那一天。
   - **测试**：`test_schema.py`（13，含 MAPPING 分支与“运行期事实不泄露”）、`test_tool_schema_layer.py`（6，含“声明 ⊆ 目录”与“全仓开关为 False”两条钉子）、`test_compiler.py` +5（无声明则无 L1 / 位置在 L0 与 L2 之间 / 预算不吃 L1 / YAML 段与 RunContext 合并 / 不污染调用方的 sections）、`test_trend_scout.py` +1（真实 prompt：关→一个字不进，开→L1 真进去且在 L0 之后）。全量 **2747 passed / 3 skipped**；ruff/format/mypy(196)/基线零漂移全绿。
   - **残留**：L1 的参数类型是**原样反射**（LangChain 工具给 JSON-schema 的 `string`，普通函数给注解名 `dict[str, Any]`），未做归一化 —— P2c 真要把 schema 交给模型调工具时需要一个统一口径。`docs/tool-runtime.md` 仍归 S5。
+
+- **S5 ✅（本分支）**：门禁 + 文档收官。三件东西 —— 静态审计模块、CI 门禁 job、`docs/tool-runtime.md`。
+  - **门禁一句话**：`backend/agents/**` 里没有工具对象；声明与调用一致；读不懂的调用算失败；目录覆盖度双向可查。入口 = `backend/tools/runtime/audit.py`（纯 AST、不 import）+ `scripts/gates/tool_runtime_gate.py`（CLI，失败退 1）。
+  - **审计在设计上就是静态的**：AST 而非 import —— 读 agent 模块会执行它的 import 与模块级接线，门禁不能有副作用（同 `scan_declared_prompts` 的规矩）。`known_capabilities` 由调用方传入而非 import 目录：测试能给它一棵临时树，且目录构建失败不会把门禁一起拖死。
+  - **判定面被门禁自己修正过一次**：第一版写成“只允许 `base.py` import `backend.tools.runtime.bridge`”，一跑就报三处 —— `analyst.py` / `content_strategist.py` 的 `ErrorKind`/`ToolResult`（读懂 Gateway 结果必需）、`base.py` 的 `ToolGateway`（在 `TYPE_CHECKING` 里）。规则改成“不许持有**工具对象**”：允许 `backend.tools.runtime.**`（运行时自身的类型与设施），禁止其余一切（工具实现），bridge 仍只允许 `base.py`。这条边界现在写在 `_ALLOWED_PREFIX` 的注释里，连同它曾经画错的事实。
+  - **“读不懂 = 失败”是本片最重要的一条**：非字面量 capability、门禁不认识的写法、**解析不了的源文件**，全部报错。这条是被自己的测试逼出来的 —— 测试夹具的三引号字符串保留了方法缩进，文件语法错误，而当时 `_parse_sources` 会静默跳过它 —— 于是门禁在**从未读过的树**上报告“干净”。现在 unparseable 会进 `unreadable`。
+  - **测试先证明能抓违规**（23 例）：7 例直接导入（工具实现 / 裸包 / `import` 写法 / 嵌套目录 / runtime 类型不算违规 / bridge 只许 base / 公共入口与审计一致）、6 例声明一致（含去重、无工具模块不入列）、4 例不可读（非字面量 capability / 非字面量声明 / 无参 invoke / 语法错误；其中“调用不可读时声明会**同时**被报成 unused”是两条都成立的真话，测试如实断言）、2 例覆盖度（未知失败 / orphan 不失败）、5 例对真仓跑（干净、只有四个工具使用者、声明与调用一致、唯一 orphan 是 `xhs.publish`、默认目录就是 agents 包）。
+  - **CI 新增独立 job `Tool Runtime Gate`**（`python scripts/gates/tool_runtime_gate.py`），CI 因此 7 项 → 8 项。
+  - **门禁范围只画到 `backend/agents/**`**：`backend/api/routes/workflow.py:~2184` 的 ripple-retry 路由仍刻意直调，属 API 层。范围能讲清楚，白名单才能是一个可以讲清楚的东西。
+  - **文档** `docs/tool-runtime.md`：三条不可回退决定、双失败模式、PassStyle、10 个 capability 的声明表（含两处容易误读的数字：`timeout_s=3600` 不是“允许等一小时”，两个 ripple 慢查询自己等 1800s 并自报领域超时；retry 少是故意的，重试超时 = 伪装成重试的加长等待）、L1 层与默认关闭的理由、门禁四问与范围、加新工具的 4 步、已知残留。
+  - **顺带修掉一处类型陷阱**：`_agent_tool_usage` 的循环体里把解构结果写进了参数名 `parsed`。运行时侥幸无害（迭代器在循环开始时就已创建，重新绑定不影响它）—— 正因为侥幸无害才危险，mypy 抓住了它。
+  - **门禁**：全量 **2770 passed / 3 skipped**（比 S4 多 23 例）；ruff check + format 全绿（485 files）；mypy backend **197** files 无错；基线漂移 **0**；新门禁 OK。
 
 ## 验收
 
