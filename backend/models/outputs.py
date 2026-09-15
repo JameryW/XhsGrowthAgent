@@ -39,6 +39,8 @@ __all__ = [
     "ClarificationQuestionOutput",
     "ContentAnalysisOutput",
     "ContentPlanOutput",
+    "EvaluationDimensionOutput",
+    "EvaluationPanelOutput",
     "GapItemOutput",
     "HotTopicItemOutput",
     "SuggestionItemOutput",
@@ -49,6 +51,7 @@ __all__ = [
     "normalize_brief_analysis",
     "normalize_brief_clarification",
     "normalize_content_plan",
+    "normalize_evaluation_panel",
     "normalize_optimization_analysis",
     "normalize_trend_data",
     "normalize_viral_posts",
@@ -80,6 +83,62 @@ def _list_items_as_text(value: Any) -> list[str]:
         else:
             items.append(str(item))
     return items
+
+
+def _as_text(value: Any) -> str:
+    """Text from whatever the model wrote where a sentence was expected.
+
+    ``None`` becomes ``""`` rather than the literal ``"None"``. The pre-migration
+    readers were ``str(raw.get(key, ""))``, which is fine for a missing key and
+    writes the four characters ``None`` for an explicit ``null`` — straight into
+    a rationale or a summary a human reads. An empty string says "said nothing";
+    ``"None"`` says something false.
+    """
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else str(value)
+
+
+def _number_or_none(value: Any) -> float | None:
+    """A number from a score-ish field, or ``None`` when there is not one.
+
+    Same arithmetic as the pre-migration ``_to_float(value, nan)``; only the
+    sentinel differs, and it differs deliberately. Downstream reads the score
+    with ``_to_float(score, nan)`` and turns a nan into "this dimension is
+    unavailable", so ``None`` and "unparseable" are one thing to it. Folding
+    here keeps an unreadable score from failing the whole panel: a missing score
+    is a normal input on this path, and a retry spent on one buys nothing.
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+_TRUE_WORDS = frozenset({"true", "yes", "1", "on"})
+_FALSE_WORDS = frozenset({"false", "no", "0", "off"})
+
+
+def _flag_or_none(value: Any) -> bool | None:
+    """A three-state flag → ``bool`` or ``None``; an unreadable spelling reads as
+    "not stated".
+
+    The pre-migration readers were ``bool(raw.get(key, default))``, so a missing
+    key took the default, an explicit ``null`` fell to ``False``, and a string
+    was whatever ``bool()`` says about a non-empty string — which is ``True`` for
+    ``"false"``. The bug is not reproduced: a model that writes ``"false"`` meant
+    ``False``. ``None`` is *kept* rather than flattened because the flattening
+    already has an owner, the ``bool(...)`` inside the evaluator's result
+    builder, and doing it here would erase a distinction that owner uses.
+    """
+    if value is None or isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in _TRUE_WORDS:
+        return True
+    if text in _FALSE_WORDS:
+        return False
+    return None
 
 
 def _as_float(value: Any) -> float:
@@ -865,3 +924,118 @@ class ViralPostsOutput(BaseModel):
 def normalize_viral_posts(output: ViralPostsOutput) -> list[dict[str, Any]]:
     """爆款参考列表，``ViralPost`` 形状。"""
     return [post.model_dump() for post in output.viral_posts]
+
+
+# ── 创作质量评估面板（evaluator） ──
+
+
+class EvaluationDimensionOutput(BaseModel):
+    """The panel's answer for one dimension.
+
+    This declares **the half a model can state** — scores, reasons, problems, a
+    blocking flag. ``overall_score`` and ``decision`` are deliberately absent,
+    and not by omission: ``evaluator._build_evaluation_result`` recomputes both
+    from fixed rules (RQGM's verifiable-metric + judge-signal split), precisely
+    so a judge panel's own verdict is not trusted. Modelling them as model
+    fields would hand that rule straight back to the model. The prompt's example
+    asks for them anyway; ``extra="ignore"`` is what makes that harmless.
+
+    ``available`` is an *internal* concept — the prompt's example does not carry
+    it, and the pre-migration reader defaulted it to ``True`` and then ANDed it
+    with "the score parsed". It stays modelled because a model that writes it
+    means it, and reading ``false`` as ``true`` would invent usable evidence.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    dimension: str = Field(default="", description="维度名，如 copywriting/compliance/altruism")
+    score: float | None = Field(default=None, description="该维度得分 0-100；无法评分时省略")
+    available: bool | None = Field(default=True, description="该维度是否给出了可用的分数")
+    rationale: str = Field(default="", description="评分理由")
+    issues: list[str] = Field(default_factory=list, description="该维度发现的问题")
+    is_blocking: bool | None = Field(default=False, description="是否阻塞发布（合规硬伤）")
+    bias_severity: float | None = Field(
+        default=None, description="bias_check 专用：检测到的偏倚严重度 0-100"
+    )
+
+    @field_validator("dimension", "rationale", mode="before")
+    @classmethod
+    def _text_fields(cls, value: Any) -> str:
+        return _as_text(value)
+
+    @field_validator("score", "bias_severity", mode="before")
+    @classmethod
+    def _number_fields(cls, value: Any) -> float | None:
+        return _number_or_none(value)
+
+    @field_validator("available", "is_blocking", mode="before")
+    @classmethod
+    def _flag_fields(cls, value: Any) -> bool | None:
+        return _flag_or_none(value)
+
+    @field_validator("issues", mode="before")
+    @classmethod
+    def _loose_issues(cls, value: Any) -> list[str]:
+        return _list_items_as_text(value)
+
+
+class EvaluationPanelOutput(BaseModel):
+    """The judge panel's answer: dimensions, hints, a summary.
+
+    The evaluator's deterministic rebuild consumes exactly these keys off the raw
+    payload, so nothing here is decoration — ``bias_warning`` is read only on the
+    historical-note path (the workflow path computes its own from the
+    ``bias_check`` dimension).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    dimensions: list[EvaluationDimensionOutput] = Field(
+        default_factory=list, description="各维度评分面板"
+    )
+    revision_hints: list[str] = Field(default_factory=list, description="具体可执行的修订指令")
+    summary: str = Field(default="", description="一句话总评")
+    bias_warning: str = Field(default="", description="面板偏倚警告")
+
+    @field_validator("revision_hints", mode="before")
+    @classmethod
+    def _loose_hints(cls, value: Any) -> list[str]:
+        return _list_items_as_text(value)
+
+    @field_validator("summary", "bias_warning", mode="before")
+    @classmethod
+    def _text_fields(cls, value: Any) -> str:
+        return _as_text(value)
+
+
+def normalize_evaluation_panel(output: EvaluationPanelOutput) -> dict[str, Any]:
+    """The raw-payload shape ``_build_evaluation_result`` reads.
+
+    A dict rather than the model, because that builder is the other half of this
+    design: it owns the recomputation, the coverage arithmetic and the
+    never-invent-a-neutral-score补齐. Handing it a typed object would put the
+    two halves of one calculation in two modules; handing it this dict keeps the
+    migration to "how the payload is obtained and checked".
+
+    ``available``/``is_blocking``/``bias_severity`` are emitted even when unset —
+    the builder reads them with ``.get(key, default)`` and ``_to_float(None,
+    -1.0)``, where an absent key and an explicit ``None`` are the same input.
+    """
+    dimensions: list[dict[str, Any]] = [
+        {
+            "dimension": dim.dimension,
+            "score": dim.score,
+            "available": dim.available,
+            "rationale": dim.rationale,
+            "issues": dim.issues,
+            "is_blocking": dim.is_blocking,
+            "bias_severity": dim.bias_severity,
+        }
+        for dim in output.dimensions
+    ]
+    return {
+        "dimensions": dimensions,
+        "revision_hints": _non_blank(output.revision_hints),
+        "summary": output.summary,
+        "bias_warning": output.bias_warning,
+    }
