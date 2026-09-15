@@ -34,6 +34,7 @@ from backend.context.models import (
     require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
+from backend.models.outputs import ContentPlanOutput, normalize_content_plan
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 from backend.tools.runtime.models import ErrorKind, ToolResult
@@ -228,46 +229,50 @@ class ContentStrategistAgent(BaseAgent):
 用户指定主题：{user_topic or "（未指定，从趋势候选中选取）"}
 历史表现洞察：{memory_context}"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
-
-        llm_content = response.content
-        if isinstance(llm_content, list):
-            llm_content = str(llm_content)
-        content_plan = self._parse_json_response(llm_content)
-
-        # ponytail: 主题漂移防护——selected_topic 必须落在候选集内
-        # 偏离则带 hint 重生成一次。候选为空时跳过（prompt 已指示输出空）。
-        # 用户指定主题时跳过纠偏：用户主题是 selected_topic 核心，不在候选集是预期而非漂移。
+        # 主题漂移防护（P1d）：从手写的"重生成分支"改为 semantic validator。
+        # 候选为空时不判（prompt 已指示输出空）；用户指定主题时不判——用户主题是
+        # selected_topic 的核心，不在候选集是预期而非漂移。
+        #
+        # accept_last_valid=True 保留了旧实现的口径：纠偏是**建议性**的，重试两次
+        # （旧实现只重试一次）后仍漂移就照收，并用 topic_revised 如实记录。这里若
+        # 取默认的 fail-fast，等于把"候选集是偏好"悄悄改成"候选集是硬约束"——一个
+        # 固执的模型就能让整个节点失败，而这是本片不做的事。
         candidates = self._extract_candidate_topics(trend_data)
         if user_topic:
             logger.info(
                 f"user topic override active: '{user_topic}' — skipping candidate-set drift guard"
             )
-        elif candidates and content_plan.get("selected_topic") not in candidates:
-            chosen = content_plan.get("selected_topic", "")
-            logger.info(f"selected_topic '{chosen}' 不在候选集，触发重生成")
-            retry_prompt = self._compile_system_prompt(
-                state,
-                thread_id=str(thread_id or ""),
-                account_id=account_id,
-                niche=niche,
-                l4_extra=memory_context
-                + f"\n【纠偏】上一次输出的 selected_topic='{chosen}' 不在候选话题内。"
-                f"候选话题为：{candidates}。必须从中选取一个，不得自创或改写措辞。",
+        topic_revised = False
+
+        def _topic_within_candidates(plan: ContentPlanOutput) -> str | None:
+            """拒收漂移的主题，并给出模型下一次必须遵守的约束。
+
+            标志位在这里置，而不是在调用点从结果反推：只有 validator 知道这次
+            拒收是因为主题漂移（而不是某个字段写错），所以只有它能诚实地记录它。
+            """
+            nonlocal topic_revised
+            if user_topic or not candidates:
+                return None
+            if plan.selected_topic in candidates:
+                return None
+            topic_revised = True
+            logger.info(f"selected_topic '{plan.selected_topic}' 不在候选集，触发纠偏重试")
+            return (
+                f"selected_topic='{plan.selected_topic}' 不在候选话题内。"
+                f"候选话题为：{candidates}。必须从中选取一个，不得自创或改写措辞。"
             )
-            retry_prompt = retry_prompt.replace("{ripple_context}", "")
-            retry_response = await self._llm_ainvoke(
-                [SystemMessage(content=retry_prompt), HumanMessage(content=user_msg)]
-            )
-            retry_content = retry_response.content
-            if isinstance(retry_content, list):
-                retry_content = str(retry_content)
-            content_plan = self._parse_json_response(retry_content)
+
+        output = await self._llm_structured(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ],
+            ContentPlanOutput,
+            validator=_topic_within_candidates,
+            accept_last_valid=True,
+        )
+        content_plan = normalize_content_plan(output)
+        if topic_revised:
             content_plan["topic_revised"] = True
 
         # 使用 Ripple 预测传播效果 + PMF 验证（并行调用，带超时保护）
