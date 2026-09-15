@@ -6,6 +6,13 @@ the agents currently use. The Gateway (S2) is the only thing allowed to
 invoke them.
 """
 
+from backend.tools.runtime.audit import (
+    AgentToolUsage,
+    DirectToolImport,
+    ToolRuntimeAudit,
+    UnreadableInvocation,
+    audit_tool_runtime,
+)
 from backend.tools.runtime.bridge import (
     reset_gateway,
     shared_gateway,
@@ -47,7 +54,9 @@ from backend.tools.runtime.registry import (
 from backend.tools.runtime.schema import render_tool_schema
 
 __all__ = [
+    "AgentToolUsage",
     "CostClass",
+    "DirectToolImport",
     "DomainOutcome",
     "DuplicateCapabilityError",
     "ErrorKind",
@@ -63,10 +72,13 @@ __all__ = [
     "ToolRef",
     "ToolRegistry",
     "ToolResult",
+    "ToolRuntimeAudit",
     "ToolSpec",
     "TraceSink",
+    "UnreadableInvocation",
     "UnknownCapabilityError",
     "adapt_tool",
+    "audit_tool_runtime",
     "bind",
     "build_registry",
     "describe_params",

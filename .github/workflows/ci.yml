@@ -119,6 +119,26 @@ jobs:
         # (refresh with --write-snapshot in the same PR).
         run: python scripts/benchmarks/context_compiler_baseline.py --compare --drift-pct 5
 
+  tool-runtime-gate:
+    name: Tool Runtime Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Agent imports + declaration agreement + coverage
+        # Static and offline: no agent module is imported, no workflow runs.
+        # Exits 1 if an agent holds a tool object the Gateway never saw, or if
+        # a capability it invokes is undeclared, unreadable, or absent from
+        # the catalogue. A source that cannot be parsed fails too — a gate
+        # that skips what it does not understand reports a false pass.
+        run: python scripts/gates/tool_runtime_gate.py
+
   omp-typecheck:
     name: OMP Typecheck
     runs-on: ubuntu-latest
