@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from backend.api.account_scope import require_owned_account
@@ -16,6 +16,7 @@ from backend.api.errors import (
     CreatorActionExecutionNotFoundError,
     CreatorActionNotFoundError,
     CreatorActionPolicyDeniedError,
+    CreatorActionPublishContentUnavailableError,
     CreatorDecisionNotFoundError,
     CreatorEvidenceNotFoundError,
     CreatorFeedbackAudienceMismatchError,
@@ -60,6 +61,7 @@ from backend.creator_agent.repository import (
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionPolicyDeniedError,
+    ActionPublishContentUnavailableError,
     ActionResolutionConflictError,
     ActionValidationError,
     CreatorModelMissingError,
@@ -105,8 +107,20 @@ class ReviewLearningSignalRequest(BaseModel):
     model: CreatorModelDefinition | None = None
 
 
-def _advisor() -> CreatorAdvisor:
-    return CreatorAdvisor(get_repository(), content_observations=CreativeMemoryObservationSource())
+def _advisor(*, artifact_store: Any | None = None) -> CreatorAdvisor:
+    """The request-scoped advisor.
+
+    ``artifact_store`` is only ever needed by the publish executor, so every
+    route that does not publish keeps calling ``_advisor()`` unchanged.  The
+    store is handed over rather than fetched in here because it belongs to the
+    compiled graph, not to the Creator Agent domain -- the same reason the
+    workflow routes read it off ``request.app.state.graph``.
+    """
+    return CreatorAdvisor(
+        get_repository(),
+        content_observations=CreativeMemoryObservationSource(),
+        artifact_store=artifact_store,
+    )
 
 
 def _model_store() -> CreatorModelStore:
@@ -380,17 +394,29 @@ async def resolve_creator_action(
 async def execute_creator_action(
     action_id: str,
     request: ExecuteActionRequest,
+    http_request: Request,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[ActionExecution]:
-    """Execute a confirmed intent with the local deterministic executor."""
+    """Execute a confirmed intent: locally, or through the Tool Gateway.
+
+    A publish reaches the platform from here, so the graph's Artifact Store is
+    handed to the advisor -- the intent names its content by ref, and a ref is
+    only resolvable together with the thread it was stored under.
+    """
     account_id = request.account_id.strip()
     await require_owned_account(str(user["id"]), account_id)
+    graph = getattr(http_request.app.state, "graph", None)
+    advisor = _advisor(artifact_store=getattr(graph, "store", None))
     try:
-        execution = await _advisor().execute_action(account_id, action_id.strip())
+        execution = await advisor.execute_action(account_id, action_id.strip())
     except ActionIntentMissingError as exc:
         raise CreatorActionNotFoundError(exc.action_id) from exc
     except ActionExecutionNotAllowedError as exc:
         raise CreatorActionExecutionNotAllowedError(exc.action_id, exc.status.value) from exc
+    except ActionPublishContentUnavailableError as exc:
+        raise CreatorActionPublishContentUnavailableError(
+            action_id=exc.action_id, reason=exc.reason
+        ) from exc
     except ActionCapabilityNotWiredError as exc:
         raise CreatorActionCapabilityNotWiredError(exc.action_id, exc.action_kind.value) from exc
     except DecisionRecordMissingError as exc:

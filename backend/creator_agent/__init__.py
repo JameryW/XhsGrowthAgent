@@ -5,6 +5,16 @@ from backend.creator_agent.dataset import (
     build_decision_dataset_page,
     project_decision_dataset,
 )
+from backend.creator_agent.execution import (
+    PUBLISH_CAPABILITY,
+    PublishContent,
+    PublishOutcome,
+    PublishRequest,
+    PublishStatus,
+    build_publish_payload,
+    interpret_publish_result,
+    load_publish_content,
+)
 from backend.creator_agent.model_store import CreatorModelStore
 from backend.creator_agent.models import (
     ActionCapability,
@@ -77,6 +87,7 @@ from backend.creator_agent.proposals import (
 )
 from backend.creator_agent.repository import (
     ActionPolicyDeniedError,
+    ActionPublishContentUnavailableError,
     ModelRevisionMissingError,
 )
 from backend.creator_agent.revisions import build_model_revision_page
@@ -86,11 +97,20 @@ __all__ = [
     "CreatorContentObservationSource",
     "ActionPolicyDeniedError",
     "ActionPolicySnapshot",
+    "ActionPublishContentUnavailableError",
     "PolicyId",
     "PolicyVerdict",
     "RiskVerdict",
+    "PUBLISH_CAPABILITY",
+    "PublishContent",
+    "PublishOutcome",
+    "PublishRequest",
+    "PublishStatus",
     "build_action_policy_snapshot",
+    "build_publish_payload",
     "evaluate_action_policy",
+    "interpret_publish_result",
+    "load_publish_content",
     "build_decision_dataset_page",
     "project_decision_dataset",
     "build_model_revision_page",

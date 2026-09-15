@@ -139,6 +139,23 @@ class ActionExecutionNotAllowedError(Exception):
         super().__init__(f"action intent {action_id!r} with status {status.value!r} cannot execute")
 
 
+class ActionPublishContentUnavailableError(Exception):
+    """A confirmed publish intent cannot locate a usable payload.
+
+    Raised before the Gateway is consulted, so the refusal costs no side
+    effect.  Two causes share one error because they share one remedy: a human
+    has to look at the intent.  Either the row carries no ``thread_id``
+    (written before P2a-S3 added it), or the artifact it points at is missing,
+    unreadable, or not shaped like a publish payload.  ``reason`` says which,
+    because that is what an operator reading the 409 needs.
+    """
+
+    def __init__(self, action_id: str, reason: str) -> None:
+        self.action_id = action_id
+        self.reason = reason
+        super().__init__(f"publish intent {action_id!r} has no usable content: {reason}")
+
+
 class LearningSignalMissingError(Exception):
     def __init__(self, signal_id: str) -> None:
         self.signal_id = signal_id

@@ -201,6 +201,7 @@ class XHSPublisher:
         location: str = "",
         scheduled_time: str = "",
         is_private: bool = False,
+        account_id: str = "",
     ) -> dict[str, Any]:
         """发布小红书笔记
 
@@ -213,6 +214,8 @@ class XHSPublisher:
             location: 发布地点
             scheduled_time: 定时发布时间 (如 "2024-03-15 18:00")
             is_private: 是否仅自己可见
+            account_id: 发布所属账号；给了它，冷却就按**账号**记账，
+                否则只能按 CDP endpoint 记账（见下）
 
         Returns:
             发布结果: {"post_id": str, "status": str, "url": str}
@@ -227,7 +230,15 @@ class XHSPublisher:
         from backend.services.cdp_session_lock import CdpSessionBusyError, hold_cdp_session
         from backend.services.xhs_risk_gate import check_publish_allowed, note_publish
 
-        publish_block = check_publish_allowed(cdp_endpoint=self.cdp_endpoint)
+        # Key granularity follows ``account_id`` when it is given: the risk gate
+        # prefers ``account:<id>`` over ``cdp:<host>:<port>``.  It has to be
+        # passed to *both* calls or the two halves would look at different
+        # buckets -- a check reading one key while the note writes another is
+        # exactly how the account-keyed cool-down ended up with no writer at all
+        # (P2a-S2 pinned that; this call site is where it closes).  Empty
+        # ``account_id`` keeps the previous endpoint-keyed behaviour, so callers
+        # that cannot supply an account are unaffected.
+        publish_block = check_publish_allowed(account_id=account_id, cdp_endpoint=self.cdp_endpoint)
         if publish_block is not None:
             return {
                 "post_id": "",
@@ -257,7 +268,7 @@ class XHSPublisher:
                 )
                 # Count real publish attempts toward cool-down (including soft fails
                 # after the browser opened — still a risk surface).
-                note_publish(cdp_endpoint=self.cdp_endpoint)
+                note_publish(account_id=account_id, cdp_endpoint=self.cdp_endpoint)
                 return result
         except CdpSessionBusyError as exc:
             return {

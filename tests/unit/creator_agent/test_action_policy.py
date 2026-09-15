@@ -47,6 +47,7 @@ from backend.services.xhs_risk_gate import (
 
 SHA = "a" * 64
 REF = "artifact://publish/p1"
+THREAD = "thread-1"
 NON_PUBLISH = (
     ActionCapability.COMPARE_OPTIONS,
     ActionCapability.SAVE_SHORTLIST,
@@ -80,6 +81,7 @@ def _request(**overrides) -> ActionIntentRequest:
         "idempotency_key": "publish-1",
         "artifact_ref": REF,
         "content_hash": SHA,
+        "thread_id": THREAD,
     }
     base.update(overrides)
     return ActionIntentRequest(**base)
@@ -233,6 +235,7 @@ class TestTheGateBoundaryFailsClosed:
                 action_kind=ActionCapability.SAVE_SHORTLIST,
                 artifact_ref=None,
                 content_hash=None,
+                thread_id=None,
                 candidate_ids=["a"],
             ),
             cooldown_checker=spy,
@@ -316,6 +319,7 @@ class TestPlanActionPlacement:
                 action_kind=ActionCapability.COMPARE_OPTIONS,
                 artifact_ref=None,
                 content_hash=None,
+                thread_id=None,
                 candidate_ids=["a", "b"],
             )
         )
@@ -323,32 +327,28 @@ class TestPlanActionPlacement:
         assert intent.candidate_ids == ["a", "b"]
 
 
-class TestThePreExistingKeyGap:
-    def test_the_intent_time_check_reads_a_key_the_runtime_never_writes(self, monkeypatch):
-        """**Pre-existing gap, not introduced here -- and not fixed here.**
+class TestTheAccountKeyedCooldownIsReachableNow:
+    """P2a-S2 pinned "the account bucket has no production writer"; P2a-S3 gave
+    it one -- the executor's publish hands ``account_id`` down through the tool
+    into ``services.xhs_publisher`` -- so what is worth pinning changed shape.
 
-        ``xhs_risk_gate._profile_key`` prefers ``account_id`` (``account:<id>``)
-        and only falls back to the CDP endpoint.  The one production writer is
-        ``services/xhs_publisher.publish_note``, which passes ``cdp_endpoint``
-        (it has no account_id) -- so the ``account:<id>`` bucket has **no
-        production writer**, and ``check_publish_allowed(account_id=...)``
-        returns ``None`` for every account in production.
+    What remains true, and is what this now pins, is that the two keys are
+    **separate buckets**: a record under one does not block a check under the
+    other.  The writer half belongs to the layers that own it and is proven
+    there (``tests/unit/creator_agent/test_action_publish_execution.py``,
+    ``tests/unit/tools/test_xhs_publisher.py``); restating it here would be a
+    second, weaker copy of the same fact.
+    """
 
-        Consequence for this slice: the ``RISK_COOLDOWN`` rule is wired, unit
-        tested through the real gate, and **currently unreachable in
-        production**.  P2a-S3 (the executor, which knows both the account and the
-        publish event) must record the account key when it executes a publish;
-        the first assertion below is what changes when that happens, so this
-        test fails loudly instead of the gap silently surviving.
-        """
+    def test_the_endpoint_and_account_buckets_do_not_share_a_cooldown(self, monkeypatch):
         monkeypatch.setenv("XHS_PUBLISH_COOLDOWN_SECONDS", "60")
 
-        # What the runtime actually records: the endpoint key only.
+        # A record written the way a caller without an account id writes it.
         note_publish(cdp_endpoint="http://127.0.0.1:9222")
-        assert check_publish_allowed(account_id="acc-1") is None  # <- intent-time check
+        assert check_publish_allowed(account_id="acc-1") is None
         assert check_publish_allowed(cdp_endpoint="http://127.0.0.1:9222") is not None
 
-        # Only a caller that knows the account id makes the intent-time check fire.
+        # A caller that knows the account id lands in its own bucket.
         note_publish(account_id="acc-1")
         assert check_publish_allowed(account_id="acc-1") is not None
 

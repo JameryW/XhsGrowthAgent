@@ -5,7 +5,17 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
+from backend.creator_agent.execution import (
+    PublishDispatcher,
+    PublishOutcome,
+    PublishRequest,
+    artifact_store_content_reader,
+    content_hash_of,
+    gateway_publish_dispatcher,
+    load_publish_content,
+)
 from backend.creator_agent.models import (
     ActionCapability,
     ActionExecution,
@@ -49,10 +59,10 @@ from backend.creator_agent.policy import (
 )
 from backend.creator_agent.proposals import build_evidence_proposals
 from backend.creator_agent.repository import (
-    ActionCapabilityNotWiredError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionPolicyDeniedError,
+    ActionPublishContentUnavailableError,
     ActionValidationError,
     CreatorAgentRepository,
     CreatorModelMissingError,
@@ -93,6 +103,29 @@ def _preference_applies(preference: Preference, candidate: DecisionCandidate) ->
     return bool(set(preference.tags) & set(candidate.tags))
 
 
+def _publish_receipt_result(outcome: PublishOutcome) -> dict[str, object]:
+    """The receipt payload for one publish attempt.
+
+    ``status`` is the platform layer's own vocabulary, kept verbatim: an
+    ``unknown`` outcome (a submit went out, the answer was lost) is the one
+    value an operator must not read as "nothing happened", so flattening it
+    into the receipt's ``error`` text alone would lose the only field a script
+    can branch on.  Empty fields are omitted rather than sent as ``""`` for the
+    same reason S1 omits unset publish keys: "absent" and "empty" are not the
+    same claim.
+    """
+    result: dict[str, object] = {"status": outcome.status.value}
+    if outcome.note_id:
+        result["note_id"] = outcome.note_id
+    if outcome.note_url:
+        result["note_url"] = outcome.note_url
+    if outcome.error:
+        result["error"] = outcome.error
+    if outcome.retry_after_seconds is not None:
+        result["retry_after_seconds"] = outcome.retry_after_seconds
+    return result
+
+
 # Evidence Proposal scan policy: a per-family candidate budget, deliberately
 # decoupled from the page size. `limit * 4` keeps the window generous for wide
 # pages while the floor protects small pages, which are exactly the case where a
@@ -113,9 +146,24 @@ class CreatorAdvisor:
         repository: CreatorAgentRepository,
         *,
         content_observations: CreatorContentObservationSource | None = None,
+        artifact_store: Any | None = None,
+        publish: PublishDispatcher | None = None,
     ):
         self._repository = repository
         self._content_observations = content_observations
+        # Both publish seams are bound once, here.  A composition root that
+        # supplies neither gets the real Artifact Store reader and the real
+        # shared Gateway, which is what lets a test exercise this very code path
+        # instead of a paraphrase of it.
+        #
+        # ``artifact_store=None`` makes the reader answer "no such artifact"
+        # rather than read somewhere else, so a root that forgets to hand over
+        # the store gets a loud 409 instead of publishing a body built from
+        # nothing.
+        self._read_publish_content = artifact_store_content_reader(artifact_store)
+        self._publish: PublishDispatcher = (
+            publish if publish is not None else gateway_publish_dispatcher()
+        )
 
     async def decide(self, request: DecisionRequest) -> DecisionRecord:
         model = await self._repository.get_model(request.account_id)
@@ -350,6 +398,7 @@ class CreatorAdvisor:
             status=ActionStatus.PENDING_CONFIRMATION,
             artifact_ref=request.artifact_ref,
             content_hash=request.content_hash,
+            thread_id=request.thread_id,
             created_at=now,
             updated_at=now,
         )
@@ -392,15 +441,16 @@ class CreatorAdvisor:
             raise ActionIntentMissingError(normalized_action_id)
         if action.status is not ActionStatus.CONFIRMED:
             raise ActionExecutionNotAllowedError(normalized_action_id, action.status)
-        if action.action_kind is ActionCapability.PUBLISH:
-            # P2a-S1 lands the durable intent only.  The side-effecting executor
-            # (Tool Gateway call + idempotency-key retry) is P2a-S3; until then a
-            # confirmed publish intent must fail loudly rather than mint a receipt.
-            raise ActionCapabilityNotWiredError(normalized_action_id, action.action_kind)
 
         decision = await self._repository.get_decision(normalized_account_id, action.decision_id)
         if decision is None:
             raise DecisionRecordMissingError(action.decision_id)
+
+        # The publish is attempted only once the Decision Record is known to
+        # exist: a side effect must never sit on a path that is about to fail.
+        publish_outcome: PublishOutcome | None = None
+        if action.action_kind is ActionCapability.PUBLISH:
+            publish_outcome = await self._execute_publish(action)
 
         recommendations = {item.candidate_id: item for item in decision.recommendations}
         if action.action_kind is ActionCapability.COMPARE_OPTIONS:
@@ -418,6 +468,10 @@ class CreatorAdvisor:
                 "candidate_ids": list(action.candidate_ids),
                 "saved": True,
             }
+        elif action.action_kind is ActionCapability.PUBLISH:
+            # Set on exactly the publish path above, and on no other.
+            assert publish_outcome is not None
+            result = _publish_receipt_result(publish_outcome)
         else:
             result = {
                 "decision_id": decision.decision_id,
@@ -428,6 +482,18 @@ class CreatorAdvisor:
             }
 
         now = utc_now_iso()
+        # Only a *published* outcome is a success.  An ``unknown`` publish
+        # deliberately shares ``FAILED`` rather than getting a third status:
+        # the receipt's ``result["status"]`` keeps the distinction machine
+        # readable, and no consumer of ``ActionExecutionStatus`` tells the two
+        # apart today -- inventing a value would change a durable contract for
+        # nobody.  A publish that *failed to be attempted* never reaches here at
+        # all; it raises before the Gateway (see ``_execute_publish``).
+        receipt_status = (
+            ActionExecutionStatus.SUCCEEDED
+            if publish_outcome is None or publish_outcome.succeeded
+            else ActionExecutionStatus.FAILED
+        )
         execution = ActionExecution(
             execution_id=str(uuid.uuid4()),
             account_id=normalized_account_id,
@@ -438,12 +504,53 @@ class CreatorAdvisor:
             action_kind=action.action_kind,
             model_revision=decision.model_revision,
             executor_version=self.EXECUTOR_VERSION,
-            status=ActionExecutionStatus.SUCCEEDED,
+            status=receipt_status,
             result=result,
             created_at=now,
             updated_at=now,
         )
         return await self._repository.create_action_execution(execution)
+
+    async def _execute_publish(self, action: ActionIntent) -> PublishOutcome:
+        """Resolve one confirmed publish intent, then hand it over exactly once.
+
+        Everything is derived from the immutable intent plus the artifact it
+        points at, so the same intent always builds the same payload.  Every
+        refusal happens *before* the Gateway is reached: a half-resolved publish
+        must not turn into a side effect.
+        """
+        action_id = action.action_id
+        thread_id = (action.thread_id or "").strip()
+        if not thread_id:
+            raise ActionPublishContentUnavailableError(
+                action_id,
+                "intent has no thread_id, so its artifact_ref cannot be resolved",
+            )
+        artifact_ref = (action.artifact_ref or "").strip()
+        body = await self._read_publish_content(thread_id=thread_id, artifact_ref=artifact_ref)
+        content = load_publish_content(body)
+        if content is None:
+            raise ActionPublishContentUnavailableError(
+                action_id, f"artifact {artifact_ref!r} has no publishable body"
+            )
+        # The hash is what a human confirmed.  Publishing a body that does not
+        # match it would post something nobody approved, so the mismatch is a
+        # refusal rather than a warning.
+        expected_hash = (action.content_hash or "").strip()
+        if content_hash_of(body) != expected_hash:
+            raise ActionPublishContentUnavailableError(
+                action_id, "artifact body does not match the confirmed content_hash"
+            )
+        return await self._publish(
+            PublishRequest(
+                account_id=action.account_id,
+                thread_id=thread_id,
+                idempotency_key=action.idempotency_key,
+                artifact_ref=artifact_ref,
+                content_hash=expected_hash,
+                content=content,
+            )
+        )
 
     async def get_action_execution(self, account_id: str, action_id: str) -> ActionExecution | None:
         """Read one immutable receipt within the account scope."""

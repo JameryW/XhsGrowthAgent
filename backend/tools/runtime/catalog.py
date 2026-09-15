@@ -81,6 +81,16 @@ __all__ = ["adapt_tool", "bind", "build_registry", "describe_params", "tool_ref"
 # guards against a hung connection; it is not a scheduling decision.
 _RIPPLE_SAFETY_NET_S = 3600.0
 
+# The publish capability's net. ``services.xhs_publisher`` holds a CDP session
+# lock for up to ``XHS_CDP_PUBLISH_LOCK_TIMEOUT_S`` (default 600s) and only then
+# uploads images (60s selectors) before it can observe success -- so the Gateway
+# default for SLOW (120s) would cancel a publish that is still legitimately in
+# flight, and report a timeout for a submit that may well have happened. Same
+# shape as ``_RIPPLE_SAFETY_NET_S`` above: it guards a hung connection, it is
+# not a scheduling decision. It must stay strictly above the tool's own budget,
+# or the net delivers a worse answer than the one it pre-empted.
+_PUBLISH_SAFETY_NET_S = 900.0
+
 
 def _is_langchain_tool(target: Any) -> bool:
     """Is this actually a LangChain tool?
@@ -604,11 +614,18 @@ def build_registry() -> ToolRegistry:
         side_effect=SideEffect.SIDE_EFFECTING,
         latency=LatencyClass.SLOW,
         cost=CostClass.CHEAP,
-        # No retry yet: publishing is not idempotent until P2a gives it an
-        # idempotency key (Action Executor + Receipt). Enabling retry without
-        # that key would double-publish — and ToolSpec refuses to let us do
-        # that by accident.
+        # Retry stays at one attempt even though P2a-S3 wired the idempotency
+        # key into the payload. The key satisfies this spec's precondition
+        # (side-effecting + retryable requires it) but it does not answer the
+        # question a retry actually needs answered: "did the submit already
+        # reach the platform?". A Gateway timeout cancels the call *while the
+        # browser flow is mid-submit*, so a caller cannot tell a pre-submit
+        # failure from a lost answer -- and retrying the latter double-posts a
+        # real note. Enable ``max_attempts=2`` when the executor can reconcile
+        # before re-submitting (durable retry, P2b), not merely when the key
+        # exists. ``ToolSpec`` refuses the unsafe combination either way.
         retry=RetryPolicy(),
+        timeout_s=_PUBLISH_SAFETY_NET_S,
         auth_scope=("xhs:write",),
     )
 

@@ -31,6 +31,7 @@ class ErrorCode(StrEnum):
     CREATOR_ACTION_EXECUTION_NOT_ALLOWED = "ERROR_CREATOR_ACTION_EXECUTION_NOT_ALLOWED"
     CREATOR_ACTION_CAPABILITY_NOT_WIRED = "ERROR_CREATOR_ACTION_CAPABILITY_NOT_WIRED"
     CREATOR_ACTION_POLICY_DENIED = "ERROR_CREATOR_ACTION_POLICY_DENIED"
+    CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE = "ERROR_CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -282,6 +283,25 @@ class CreatorActionPolicyDeniedError(APIError):
             message=reason or "Creator action refused by policy",
             details=details,
             status_code=403,
+        )
+
+
+class CreatorActionPublishContentUnavailableError(APIError):
+    """A confirmed publish intent has no payload the executor can act on.
+
+    409, not 501: nothing is missing *in the wiring* -- the capability is
+    executable -- the intent itself is not actionable (no thread to resolve its
+    artifact under, or an unreadable/misshaped body).  Refusing here is also
+    what keeps the failure free of side effects: the Gateway is never reached,
+    so no receipt is minted and nothing is posted.
+    """
+
+    def __init__(self, *, action_id: str, reason: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE,
+            message=reason or "Creator action has no publishable content",
+            details={"action_id": action_id},
+            status_code=409,
         )
 
 
