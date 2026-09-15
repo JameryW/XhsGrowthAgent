@@ -86,6 +86,11 @@ Agent 只声明 capability 需求。
 | **S4** | L1 tool schema 生产者：Registry → L1 层渲染，接入 Context Compiler（P1b 遗留空层）；刷新基线快照 | 中 |
 | **S5** | 门禁 + 文档：AST 门禁（`backend/agents/**` 禁止直调 `backend.tools`，白名单=Registry/Gateway）、Registry 覆盖度（每个已注册工具都有 spec）、`docs/tool-runtime.md` | 低 |
 
+执行记录（2026-09-15）：**S3c 实际拆为两片**。
+
+- **S3c-1 ✅**：`ripple.get_report`（analyst）。等待预算从调用点的 120s `asyncio.wait_for` 搬到能力声明（`timeout_s=120.0`），直调 **6 → 5**。
+- **S3c-2 待办（有阻塞）**：`ripple.predict_spread` / `ripple.validate_pmf` **不能机械迁移** —— 这两个工具用 `RippleTimeoutError`（携带 `job_id`，调用方据此取消任务并留作续存）表达"等超时"这一**领域结果**，而 Gateway 把一切失败归一化成字符串 `error`，`job_id` 会丢；同时它们把软失败当数据返回（`{"error": ...}`），经 Gateway 会被记为 `ok=True`（trace 失真）。动这两处之前需要先给 `ToolResult` 增加领域结果通道。
+
 ## 验收
 
 - `backend/agents/**` 对 `backend.tools` 的直调**清零**（AST 门禁强制，白名单仅 Registry/Gateway 自身）

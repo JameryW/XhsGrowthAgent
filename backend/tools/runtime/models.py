@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
     "CostClass",
+    "ErrorKind",
     "LatencyClass",
     "PassStyle",
     "RetryPolicy",
@@ -216,6 +217,24 @@ class ToolSpec:
         }
 
 
+class ErrorKind(StrEnum):
+    """*How* one invocation failed — the part a caller has to branch on.
+
+    A failed call carries its failure as data (see the Gateway docstring), so
+    the kind has to be data as well. Both kinds arrive as ``ok=False``, but
+    they mean opposite things to the caller: a timeout means the work never
+    finished (so there may still be something out there to cancel or resume),
+    while an exception means the tool ran and said no. Branching on the
+    ``error`` string to tell them apart would make a message format load
+    bearing.
+    """
+
+    TIMEOUT = "timeout"
+    """The Gateway's own wait budget expired and the tool was cancelled."""
+    EXCEPTION = "exception"
+    """The tool raised. It was given its chance and reported a failure."""
+
+
 class ToolResult(BaseModel):
     """Outcome of one Gateway invocation.
 
@@ -229,6 +248,7 @@ class ToolResult(BaseModel):
     ok: bool
     value: Any | None = None
     error: str = ""
+    error_kind: ErrorKind | None = None
     elapsed_ms: float = Field(default=0.0, ge=0.0)
     attempts: int = Field(default=1, ge=1)
     degraded: bool = False
@@ -239,14 +259,22 @@ class ToolResult(BaseModel):
             raise ValueError(
                 f"{self.capability}: ok=True must not carry an error (got {self.error!r})"
             )
+        if self.ok and self.error_kind is not None:
+            raise ValueError(
+                f"{self.capability}: ok=True must not carry an error_kind "
+                f"(got {self.error_kind.value!r})"
+            )
         if not self.ok and not self.error:
             raise ValueError(f"{self.capability}: ok=False must explain itself via error")
+        if not self.ok and self.error_kind is None:
+            raise ValueError(f"{self.capability}: ok=False must say how it failed via error_kind")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "capability": self.capability,
             "ok": self.ok,
             "error": self.error,
+            "error_kind": self.error_kind.value if self.error_kind is not None else "",
             "elapsed_ms": round(self.elapsed_ms, 3),
             "attempts": self.attempts,
             "degraded": self.degraded,

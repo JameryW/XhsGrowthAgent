@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from backend.tools.runtime import (
+    ErrorKind,
     LatencyClass,
     PermissionDeniedError,
     RetryPolicy,
@@ -153,6 +154,7 @@ class TestRuntimeFailures:
         result = await gateway.invoke("demo.echo")
         assert result.ok is False
         assert "timeout after 0.01s" in result.error
+        assert result.error_kind is ErrorKind.TIMEOUT
         assert result.attempts == 1
 
     @pytest.mark.asyncio
@@ -164,6 +166,23 @@ class TestRuntimeFailures:
         result = await gateway.invoke("demo.echo")
         assert result.ok is False
         assert result.error == "ValueError: bad input"
+        assert result.error_kind is ErrorKind.EXCEPTION
+
+    @pytest.mark.asyncio
+    async def test_the_kind_survives_a_retry_that_then_succeeds(self):
+        """A recovered call is a success, so it carries no kind at all."""
+        calls = 0
+
+        async def flaky(payload: dict[str, Any]) -> str:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ConnectionError("transient")
+            return "recovered"
+
+        gateway, _ = _gateway(flaky, spec=_spec(max_attempts=3, backoff_s=0.5))
+        result = await gateway.invoke("demo.echo")
+        assert result.error_kind is None
 
     @pytest.mark.asyncio
     async def test_retry_then_success_is_marked_degraded(self):
@@ -305,6 +324,7 @@ class TestTracing:
         assert event["capability"] == "demo.echo"
         assert event["thread_id"] == "t-1"
         assert event["ok"] is False
+        assert event["error_kind"] == "exception"
         assert event["attempts"] == 1
         assert event["side_effect"] == "pure"
         assert "elapsed_ms" in event

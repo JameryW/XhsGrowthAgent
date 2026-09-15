@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from backend.tools.runtime import (
     CostClass,
     DuplicateCapabilityError,
+    ErrorKind,
     LatencyClass,
     PassStyle,
     RetryPolicy,
@@ -188,19 +189,36 @@ class TestToolResult:
     def test_success_carries_no_error(self):
         result = ToolResult(capability="demo.echo", ok=True, value={"a": 1})
         assert result.ok and result.error == ""
+        assert result.error_kind is None
         assert result.to_dict()["ok"] is True
 
     def test_success_with_error_is_rejected(self):
         with pytest.raises(ValueError, match="must not carry an error"):
             ToolResult(capability="demo.echo", ok=True, error="boom")
 
+    def test_success_with_an_error_kind_is_rejected(self):
+        with pytest.raises(ValueError, match="must not carry an error_kind"):
+            ToolResult(capability="demo.echo", ok=True, error_kind=ErrorKind.TIMEOUT)
+
     def test_failure_must_explain_itself(self):
         with pytest.raises(ValueError, match="must explain itself"):
             ToolResult(capability="demo.echo", ok=False)
 
+    def test_failure_must_say_how_it_failed(self):
+        """The kind is how a caller tells "never finished" from "said no", so
+        it cannot be left to a message format."""
+        with pytest.raises(ValueError, match="must say how it failed"):
+            ToolResult(capability="demo.echo", ok=False, error="boom")
+
     def test_failure_with_error(self):
-        result = ToolResult(capability="demo.echo", ok=False, error="timeout")
-        assert result.to_dict()["error"] == "timeout"
+        result = ToolResult(
+            capability="demo.echo",
+            ok=False,
+            error="timeout after 120s",
+            error_kind=ErrorKind.TIMEOUT,
+        )
+        assert result.to_dict()["error"] == "timeout after 120s"
+        assert result.to_dict()["error_kind"] == "timeout"
 
 
 class TestRegistry:
@@ -470,6 +488,20 @@ class TestCatalogue:
         registry = build_registry()
         assert registry.spec("xhs.trending").auth_scope == ("xhs:read",)
         assert registry.spec("ripple.get_report").auth_scope == ("ripple:read",)
+
+    def test_the_report_fetch_declares_its_wait_budget(self):
+        """S3c: the call site used to guard this fetch with a 120s wait.
+
+        The budget now lives on the declaration, so it must not quietly fall
+        back to the MEDIUM default (30s) — that would cut the analyst's report
+        fetch to a quarter of what it was. No retry either: the tool reports
+        failures as data, so the only retryable event would be the Gateway's
+        own timeout, and retrying a timeout is a longer wait rather than a
+        transient-failure remedy (see the catalogue comment).
+        """
+        spec = build_registry().spec("ripple.get_report")
+        assert spec.timeout_s == 120.0
+        assert spec.retry_policy.retryable is False
 
     def test_pure_capabilities_need_no_scope(self):
         registry = build_registry()

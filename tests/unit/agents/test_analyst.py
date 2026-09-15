@@ -7,6 +7,7 @@ import pytest
 
 from backend.agents.analyst import AnalystAgent
 from backend.state.schema import WorkflowPhase
+from backend.tools.runtime import ErrorKind, ToolResult
 
 
 class TestAnalystAgent:
@@ -175,18 +176,27 @@ class TestAnalystAgent:
 
     @pytest.mark.asyncio
     async def test_ripple_report_handles_error(self, agent):
-        """_ripple_report handles errors gracefully."""
+        """_ripple_report handles errors gracefully.
+
+        A tool *exception* is not a reason to cancel the simulation — only a
+        timeout is (the simulation is still running). The two are told apart
+        by ``error_kind``, not by reading the message.
+        """
         state = {
             "niche": "母婴",
             "content_plan": {"ripple_prediction": {"ripple_job_id": "job_123"}},
         }
 
-        with patch("backend.tools.ripple.integration.get_report") as mock_get_report:
+        with (
+            patch("backend.tools.ripple.integration.get_report") as mock_get_report,
+            patch.object(agent, "_ripple_cancel", new_callable=AsyncMock) as mock_cancel,
+        ):
             mock_get_report.side_effect = Exception("Ripple error")
 
             result = await agent._ripple_report(state)
 
         assert result is None
+        mock_cancel.assert_not_awaited()
 
     def test_compare_prediction_vs_actual(self, agent):
         """_compare_prediction_vs_actual returns comparison dict."""
@@ -233,27 +243,37 @@ class TestAnalystAgent:
         assert agent.prompt_file == "analyst.yaml"
 
     @pytest.mark.asyncio
-    async def test_ripple_report_timeout_returns_none(self, agent):
-        """_ripple_report 超时时返回 None"""
+    async def test_ripple_report_timeout_returns_none_and_cancels(self, agent):
+        """超时 → 返回 None **且**尝试取消任务。
+
+        P1c-S3c 之后超时是 Gateway 的事（``ripple.get_report`` 声明
+        ``timeout_s=120``），所以这里伪造一个超时*结果*，而不是去拦
+        ``asyncio.wait_for`` —— 调用点已经没有那一层了。
+        """
         state = {
             "niche": "母婴",
             "content_plan": {"ripple_prediction": {"ripple_job_id": "job-timeout"}},
         }
+        gate_result = ToolResult(
+            capability="ripple.get_report",
+            ok=False,
+            error="timeout after 120s",
+            error_kind=ErrorKind.TIMEOUT,
+        )
 
-        # asyncio.wait_for evaluates get_report(job_id) before invoking, so the
-        # mock coroutine must be closed to avoid a 'never awaited' leak.
-        def _fake_wait_for(coro, timeout, *args, **kwargs):
-            coro.close()
-            raise TimeoutError()
+        class _TimingOutGateway:
+            async def invoke(self, capability, payload=None, **kwargs):
+                return gate_result
 
         with (
-            patch("backend.tools.ripple.integration.get_report", new_callable=AsyncMock),
-            patch.object(agent, "_ripple_cancel", new_callable=AsyncMock),
-            patch("asyncio.wait_for", side_effect=_fake_wait_for),
+            patch.object(type(agent), "tools", new_callable=PropertyMock) as mock_tools,
+            patch.object(agent, "_ripple_cancel", new_callable=AsyncMock) as mock_cancel,
         ):
+            mock_tools.return_value = _TimingOutGateway()
             result = await agent._ripple_report(state)
 
         assert result is None
+        mock_cancel.assert_awaited_once_with("job-timeout")
 
     @pytest.mark.asyncio
     async def test_ripple_cancel_calls_service(self, agent):

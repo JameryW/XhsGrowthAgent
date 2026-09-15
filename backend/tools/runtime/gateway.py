@@ -13,8 +13,10 @@ Two failure modes, deliberately different:
   turning those into a failed ``ToolResult`` would hide a wiring bug behind
   "the tool failed", which is exactly the class of bug P0-W2 and D2' closed.
 * **Runtime failures return** — timeouts and tool exceptions come back as
-  ``ToolResult(ok=False, error=...)`` so callers can degrade instead of
-  crashing the node.
+  ``ToolResult(ok=False, error=..., error_kind=...)`` so callers can degrade
+  instead of crashing the node. The kind is data rather than a message
+  format, because "the work never finished" and "the tool said no" call for
+  different responses.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-from backend.tools.runtime.models import ToolResult, ToolSpec
+from backend.tools.runtime.models import ErrorKind, ToolResult, ToolSpec
 from backend.tools.runtime.registry import ToolRegistry
 
 logger = logging.getLogger("xhs_growth.tools.gateway")
@@ -41,9 +43,9 @@ TraceSink = Callable[[Mapping[str, Any]], Awaitable[None]]
 """Where Gateway trace events go (best-effort; never breaks a call).
 
 Shape: ``{"kind": "tool", "capability", "thread_id", "ok", "attempts",
-"elapsed_ms", "error", "degraded", "side_effect"}``. S2 keeps this a plain
-callback so the runtime stays free of a DB dependency; wiring it to the
-``workflow_events`` tier happens where a thread id exists.
+"elapsed_ms", "error", "error_kind", "degraded", "side_effect"}``. S2 keeps
+this a plain callback so the runtime stays free of a DB dependency; wiring it
+to the ``workflow_events`` tier happens where a thread id exists.
 """
 
 Sleeper = Callable[[float], Awaitable[None]]
@@ -106,6 +108,7 @@ class ToolGateway:
         started = time.perf_counter()
         attempts = 0
         last_error = ""
+        last_kind: ErrorKind | None = None
         gate = self._gate(spec)
         if gate is not None:
             await gate.acquire()
@@ -116,8 +119,10 @@ class ToolGateway:
                     value = await asyncio.wait_for(entry.fn(data), timeout=spec.effective_timeout_s)
                 except TimeoutError:
                     last_error = f"timeout after {spec.effective_timeout_s:g}s"
+                    last_kind = ErrorKind.TIMEOUT
                 except Exception as exc:  # tool failure → normalised, not raised
                     last_error = f"{type(exc).__name__}: {exc}"
+                    last_kind = ErrorKind.EXCEPTION
                 else:
                     return await self._finish(
                         spec,
@@ -150,6 +155,7 @@ class ToolGateway:
                     capability=capability,
                     ok=False,
                     error=last_error,
+                    error_kind=last_kind,
                     elapsed_ms=(time.perf_counter() - started) * 1000.0,
                     attempts=attempts,
                 ),
@@ -190,6 +196,7 @@ class ToolGateway:
                 "attempts": result.attempts,
                 "elapsed_ms": round(result.elapsed_ms, 3),
                 "error": result.error,
+                "error_kind": result.error_kind.value if result.error_kind is not None else "",
                 "degraded": result.degraded,
             }
             try:
