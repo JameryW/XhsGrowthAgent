@@ -524,6 +524,23 @@ class TestCatalogue:
         assert registry.spec("xhs.trending").auth_scope == ("xhs:read",)
         assert registry.spec("ripple.get_report").auth_scope == ("ripple:read",)
 
+    def test_the_platform_reads_declare_scope_and_no_retry(self):
+        """S3d: the three xhs reads are declared ``xhs:read`` and not retried.
+
+        The scope is a declaration only for now — account-level enforcement is
+        P2a — so pinning it here is what keeps it from being quietly dropped in
+        the meantime. No retry because the call sites these replace never
+        retried (they caught their own failure and degraded to ``[]``), and
+        because the failure that dominates here is a missing platform
+        credential, which a second attempt cannot fix.
+        """
+        registry = build_registry()
+        for capability in ("xhs.trending", "xhs.keyword_monitor", "xhs.competitor_analyzer"):
+            spec = registry.spec(capability)
+            assert spec.auth_scope == ("xhs:read",), capability
+            assert spec.side_effect is SideEffect.READ_ONLY, capability
+            assert spec.retry_policy.retryable is False, capability
+
     def test_the_report_fetch_declares_its_wait_budget(self):
         """S3c: the call site used to guard this fetch with a 120s wait.
 

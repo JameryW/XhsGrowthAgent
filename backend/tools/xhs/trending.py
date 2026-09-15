@@ -1,4 +1,14 @@
-"""XHS trending scraper tool — 获取热门话题和趋势数据."""
+"""XHS trending scraper tool — 获取热门话题和趋势数据.
+
+These three are *read* capabilities reached through the Tool Gateway
+(P1c-S3d), so they no longer normalise their own failures. Each one used to
+answer every exception with ``[]``, which collapsed three different situations
+into one value: the platform had nothing, the request failed, and we could not
+ask at all. Normalisation now has exactly one home — the Gateway, which files a
+raised exception as ``ToolResult(ok=False, error_kind=EXCEPTION)`` and lets the
+caller degrade. An empty list returned from here therefore means one thing
+only: the platform was asked and said nothing.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +39,34 @@ async def _get_client(account_id: str = "") -> XHSClient:
     )
 
 
+def _require_readable(client: XHSClient, capability: str) -> None:
+    """Refuse to treat an unreadable platform as an empty one.
+
+    ``XHSClient`` needs a cookie for every HTTP read, and ``_get_client`` has
+    none to hand it — browser login state lives in the CDP profile and is only
+    wired up for publishing — so today this guard fires on every call.
+
+    That is the point. Without it the previous path answered the same
+    situation with ``[]`` from ``get_trending``/``search_posts`` and, worse,
+    with one row of zero counts per keyword from ``monitor_keywords``, which
+    ``trend_scout`` then fed the model as ``data_source="real"`` ("0 篇帖子,
+    平均点赞 0, 趋势: declining" — fabricated evidence, asserted as real).
+    Raising hands the problem to the Gateway; the caller falls back to the
+    honest "no realtime data" branch instead.
+
+    The precondition is knowable *before* the call and is not knowable after
+    it, which is why it is checked here rather than inferred from the result.
+
+    Credential plumbing (which account's cookie, sourced from where) belongs to
+    P2a. This is only about not lying in the meantime.
+    """
+    if client.can_read:
+        return
+    from backend.services.xhs_client import XHSAuthError
+
+    raise XHSAuthError(f"{capability}: 未配置 Cookie，无法读取小红书平台数据")
+
+
 @tool
 async def xhs_trending(category: str = "", account_id: str = "") -> list[dict[str, Any]]:
     """获取小红书热门话题和趋势数据.
@@ -39,11 +77,16 @@ async def xhs_trending(category: str = "", account_id: str = "") -> list[dict[st
 
     Returns:
         热门话题列表，每个包含 topic_id, title, heat_score, growth_rate
+
+    Raises:
+        XHSAuthError: 无 Cookie，根本读不到平台 —— 调用方应降级，而不是把它
+            当作"这个领域没有热点"。
     """
     logger.info(f"Fetching XHS trending for category: {category}")
 
     client = await _get_client(account_id=account_id)
     try:
+        _require_readable(client, "xhs_trending")
         topics = await client.get_trending(category=category)
 
         # 转换为字典格式
@@ -62,10 +105,6 @@ async def xhs_trending(category: str = "", account_id: str = "") -> list[dict[st
 
         return results
 
-    except Exception as e:
-        logger.error(f"获取热门话题失败: {type(e).__name__}: {e}")
-        return []
-
     finally:
         await client.close()
 
@@ -80,6 +119,10 @@ async def keyword_monitor(keywords: list[str], account_id: str = "") -> list[dic
 
     Returns:
         每个关键词的热度数据，包含 post_count, total_likes, avg_likes
+
+    Raises:
+        XHSAuthError: 无 Cookie（见 :func:`_require_readable` —— 此前这种情况
+            会返回"每个关键词一行零"的假数据）。
     """
     logger.info(f"Monitoring keywords: {keywords}")
 
@@ -88,6 +131,7 @@ async def keyword_monitor(keywords: list[str], account_id: str = "") -> list[dic
 
     client = await _get_client(account_id=account_id)
     try:
+        _require_readable(client, "keyword_monitor")
         results = await client.monitor_keywords(keywords)
 
         # 计算趋势
@@ -101,10 +145,6 @@ async def keyword_monitor(keywords: list[str], account_id: str = "") -> list[dic
                 result["trend"] = "declining"
 
         return results
-
-    except Exception as e:
-        logger.error(f"关键词监控失败: {type(e).__name__}: {e}")
-        return []
 
     finally:
         await client.close()
@@ -123,6 +163,9 @@ async def competitor_analyzer(
 
     Returns:
         竞品分析结果，包含热门帖子、平均互动数据
+
+    Raises:
+        XHSAuthError: 无 Cookie，根本读不到平台（调用方应降级）。
     """
     logger.info(f"Analyzing competitor: {account_id}, niche: {niche}")
 
@@ -133,6 +176,8 @@ async def competitor_analyzer(
 
     client = await _get_client(account_id=credential_account_id)
     try:
+        _require_readable(client, "competitor_analyzer")
+
         # 搜索该账号/领域的内容
         posts = await client.search_posts(keyword=search_keyword, limit=30)
 
@@ -169,10 +214,6 @@ async def competitor_analyzer(
                 ],
             }
         ]
-
-    except Exception as e:
-        logger.error(f"竞品分析失败: {type(e).__name__}: {e}")
-        return []
 
     finally:
         await client.close()

@@ -94,6 +94,12 @@ Agent 只声明 capability 需求。
   - **Gateway 的兜底必须高于工具自己的等待预算**：这两个工具用 payload 的 `max_wait`（默认 1800s，来自 `RIPPLE_WORKFLOW_TIMEOUT`）等待，并以领域结果报告超时；Gateway 的 `wait_for` 若先触发就会取消调用、永远看不到那个 id。故声明 `timeout_s=3600.0`（`_RIPPLE_SAFETY_NET_S`），只兜挂死的连接，不承担调度含义。
   - **顺手修正两处失真**：`integration` 不再自己吞异常（归一化只在 Gateway 一个归属地）；服务"降级"（`ripple_fallback=True` + 全零预测体）从"一次成功的预测"改为 `DomainOutcome("unavailable")` —— 原先真实服务返回的零点会被 agent 当成真实预测读走，而 conftest 的替身只返回 `{"ripple_fallback": True}`，两者行为不一致，正是这个不一致掩盖了 bug。
   - 调用点用一个 `_RippleCall` 一次读清结果，删掉"`"ripple_reason" not in result` 即表示成功"的缺失键语义。
+- **S3d ✅（本分支）**：`xhs.trending` / `xhs.keyword_monitor` / `xhs.competitor_analyzer`（trend_scout），直调 **3 → 0** —— agent 层对 `backend.tools` 的直调至此清零。要点：
+  - **迁移不改降级语义**：失败仍退化为 `data_source="llm_generated"`、仍走同一段降级文案；改的是“谁还知道失败了”。此前工具吞一次异常返回 `[]`、agent 再吞一次，Gateway 只会看到“成功的一次空读取”，于是“平台读不到”与“这个领域确实没热点”是同一个值。
+  - **发现并修掉一处真造假**：`XHSClient.monitor_keywords` 对每个关键词循环 `search_posts`，而 `search_posts` 在无 Cookie 时返回 `[]` —— 于是它**为每个关键词造出一行全零**（`post_count: 0, avg_likes: 0`），`trend_scout` 的 `if monitor_data:` 判真，把 `data_source` 报成 `"real"`，再把“0 篇帖子 / 平均点赞 0 / 趋势: declining”当真实平台数据喂给模型。三个读工具现在**在调用前**检查新增的 `XHSClient.can_read`（`_http is not None`），读不到就抛 —— 该前提调用前可知、调用后不可知，所以只能在这一侧判。
+  - `backend/tools/xhs/trending.py` 三个工具不再自己 `except → return []`（同 S3c-2 规则：归一化只在 Gateway 一个归属地）。空列表从此只有一个含义：平台被问过，它没有内容。
+  - 目录声明：三个 `xhs.*` 读能力 `retry=RetryPolicy()`。迁移前调用点从不重试（各自 catch 后降级），且这里的头号失败是缺凭据 —— 等待修不了它。`auth_scope=("xhs:read",)` 仍只是**声明**（执行归 P2a），用测试钉住。
+  - **残留（不在本片范围）**：第一层 `XHSClient` 仍吞异常返回 `[]`（`get_trending`/`search_posts` 的既有契约，`tests/unit/services/test_xhs_client.py` 钉着），所以“限流导致的空”与“确实没内容”在第一层仍不可分；修它要连带 `visual_analysis.py` / `topic_scorer.py`，属凭据整备（P2a）。另：`_fetch_real_data` 把 `niche` 传给 `competitor_analyzer.account_id`（该参数语义是“竞品账号或搜索词”）是迁移前就有的形状，本片原样保留、不顺手改语义。
 
 ## 验收
 

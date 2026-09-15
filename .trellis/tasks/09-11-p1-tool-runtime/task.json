@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-09-11",
   "completedAt": null,
-  "branch": "feat/p1c-s3c2-domain-outcomes",
+  "branch": "feat/p1c-s3d-xhs-platform",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "09-11-runtime-upgrade",
   "relatedFiles": [],
-  "notes": "S1 done (PR #591). S2 done (PR #592). S3a done (PR #593, direct sites 9->7). S3b done (PR #594, 7->6). S3c-1 done (PR #595, 6->5, ripple.get_report + ToolResult.error_kind). S3c-2 (this branch): adds the domain-outcome channel (ErrorKind.DOMAIN + DomainOutcome + ToolResult.domain, returned immediately and never retried) and migrates ripple.predict_spread / ripple.validate_pmf, so direct sites go 5->3. The Gateway net for those two is declared ABOVE their own payload max_wait (3600s vs 1800s default), because a Gateway timeout would cancel the call and lose the job_id that makes cancel/resume possible. integration no longer swallows exceptions, and the service's degraded answer (ripple_fallback=True + zeroed body) is now DomainOutcome(unavailable) instead of being read as a real prediction. Remaining direct sites: trend_scout xhs x3 (S3d).",
+  "notes": "S1 done (PR #591). S2 done (PR #592). S3a done (PR #593, direct sites 9->7). S3b done (PR #594, 7->6). S3c-1 done (PR #595, 6->5). S3c-2 done (PR #596, 5->3, domain-outcome channel). S3d (this branch): migrates trend_scout's three xhs platform reads (xhs.trending / xhs.keyword_monitor / xhs.competitor_analyzer), so direct sites go 3->0 and the agent layer no longer imports backend.tools at all. Degradation semantics are unchanged (data_source stays llm_generated on failure); what changed is that the failure is now visible: both the tool and the agent used to swallow it, leaving the Gateway recording a successful empty read. The three tools no longer catch their own exceptions (normalisation has one home, the Gateway), and they check the new XHSClient.can_read before calling - without it monitor_keywords fabricates one row of zeros per keyword and trend_scout reported that as data_source=real. Catalogue: xhs.* reads declare no retry (the call sites never retried; the dominant failure is a missing credential) and keep auth_scope=('xhs:read',) as a declaration only (enforcement is P2a). Remaining residues: XHSClient's own []-on-failure contract at layer 1, and the niche-passed-as-account_id payload shape. Next: S4 (L1 tool schema producer), S5 (AST gate + docs).",
   "meta": {}
 }

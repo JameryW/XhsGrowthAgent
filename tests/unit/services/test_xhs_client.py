@@ -111,6 +111,15 @@ class TestXHSClient:
         assert client.cookie == "test_cookie"
         assert client.user_id == "test_user"
 
+    def test_can_read_requires_a_cookie(self):
+        """``can_read`` is the precondition the reads cannot report after the
+        fact: without a cookie every read answers ``[]``, which is the same
+        value as "the platform had nothing". Callers that must tell those
+        apart (the trending tools, which used to fabricate zero rows) need to
+        be able to ask *before* the call."""
+        assert XHSClient(cookie="test_cookie").can_read is True
+        assert XHSClient().can_read is False
+
     @pytest.mark.asyncio
     async def test_get_trending_success(self, client):
         """get_trending returns trending topics."""

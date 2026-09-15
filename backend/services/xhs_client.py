@@ -295,6 +295,20 @@ class XHSClient:
         # Cookie 验证
         self._cookie_valid = XHSCookieParser.is_valid(cookie) if cookie else False
 
+    @property
+    def can_read(self) -> bool:
+        """Whether HTTP reads are possible at all.
+
+        The read methods answer a missing cookie with an empty list
+        (``get_trending`` warns and returns ``[]``, ``search_posts`` likewise),
+        which is indistinguishable *after* the call from "the platform had
+        nothing to show". Callers that must not confuse the two — the trending
+        tools did, and reported rows of zeros as real platform data — need the
+        precondition, and this is the only honest place to ask for it: it is
+        knowable *before* the call.
+        """
+        return self._http is not None
+
     async def close(self) -> None:
         """关闭所有连接"""
         if self._http:
