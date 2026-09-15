@@ -276,3 +276,97 @@ DEEPSEEK（JSON_OBJECT），后者是仅有的两个走 JSON_OBJECT 档的 agent
 - `mypy backend --python-version 3.12`：199 files 干净
 - P1b 基线 `--compare --drift-pct 5`：**drift within threshold（0）** —— prompt 逐字节未动
 - `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）
+
+## S2c 执行记录（2026-09-15，分支 `feat/p1d-s2c-evaluator`）
+
+S2b 特意留下的一块。`evaluator` 与其余调用点的区别不在数量（只有一个调用点），而在
+**raw payload 的角色**：它不是直接进 state 的产物，而是 `_build_evaluation_result` /
+`_build_historical_evaluation_result` 的**只读输入**。那两个构建器就是 RQGM 的
+"verifiable metric + judge signal"分工 —— LLM 给原始评分，代码用确定规则重算
+`overall_score` / `decision` / `coverage`。所以这一片的验收标准不是"解析器换掉了"，
+而是"重算逻辑与三条既有 degraded 路径一行没动"。
+
+### 交付
+
+| 文件 | 内容 |
+|---|---|
+| `backend/models/outputs.py` | `EvaluationDimensionOutput` / `EvaluationPanelOutput` + `normalize_evaluation_panel`（`__all__` 21 → 24）；助手 `_as_text` / `_number_or_none` / `_flag_or_none` |
+| `backend/agents/evaluator.py` | 唯一的 LLM 调用点改走 `_llm_structured(..., EvaluationPanelOutput, validator=_panel_has_dimensions)`；新增 `_panel_has_dimensions`（语义检查）与 `_panel_unavailable_result`（显式降级工厂，超时分支共用） |
+| 测试 | `test_evaluator.py`(+263，新类 `TestEvaluatorStructuredPanel` + 真替身 `_ScriptedModel`) / `test_outputs.py`(+149，`TestEvaluationPanelOutput`) |
+
+`_build_evaluation_result`、`_build_historical_evaluation_result`、`_compute_overall`、
+`_compute_decision`、`_altruism_suggestions`、`_hints_from_issues` 均**逐字节未动**；
+三条既有 degraded 路径（无内容 / `TimeoutError` / 历史笔记无内容）也未动。
+
+### 设计决定
+
+**1. 输出模型只声明「模型能陈述的那一半」。**
+
+提示词的示例要求模型写 `overall_score` 与 `decision`，代码却重算它们 —— 把它们建模成模型
+字段等于把那条规则还给模型。所以 `EvaluationPanelOutput` 只有 `dimensions` /
+`revision_hints` / `summary` / `bias_warning`，而 `extra="ignore"` 是让模型照写的那些
+自报值**落地**的开关，不是顺手加的保护。`normalize_evaluation_panel` 吐 dict 而不是模型：
+构建器拥有重算、覆盖度算术与"never invent a neutral score"补齐，给它一个类型化对象会把
+同一个计算的两半分到两个模块里。
+
+**2. 「面板没答」不是「覆盖不足」——本片最贵的一处。**
+
+`_parse_json_response` 对散文**不失败**，它返回 `{"raw_content": "<散文>"}`（实测）。
+而面板模型每个字段都有默认值 + `extra="ignore"`，所以那是个**合法 dict** ——
+`validate_output` 什么都拦不住。于是迁移前的行为是：模型答散文 → 零维度 →
+`status="partial"` + `degraded=False`，**与"面板只评了一部分维度"逐字节同形**。
+
+三条处置：
+
+| 事件 | 判据 | 处置 |
+|---|---|---|
+| 产物坏掉（顶层非对象 / schema 拒收） | 任何配置下都不返回 | 设施拒收 + 纠偏重试 |
+| 答了但是散文（零维度） | 形状检查看不见 → 语义检查接手 | `_panel_has_dimensions` 纠偏一次；仍为空 → `StructuredOutputError` |
+| 一次都没问到（网络故障） | 设施层 `answered=False` | 抛原始异常 → `__call__` → 有状态重试（= 迁移前行为） |
+
+第二类的出口选了**与超时对称**的显式 degraded（`_panel_unavailable_result`：
+`status="degraded"` / `degraded=True` / `decision=None`），而不是降级成空 payload：
+
+- 它与 `TimeoutError` 是**同一个物理事件**（面板没产出可用评分），既有代码已为超时选定
+  "接住 + 显式标记"；给同类失败另选一种处置会让同一后果长出两条路径；
+- 路由后果与迁移前**完全一致**（`decision=None` → `_evaluation_is_degraded` → `__end__`
+  人工通道），变的只有 telemetry 诚实度；
+- 「一次都没问到」那条仍然上抛，就是 S2a/S2b 立的第③类，一个字没改。
+
+判据与 S2b 同一条：「**空结果会不会与一次真实的空观测同形**」—— 会，所以不能降级成那个形状。
+但这里的解法**不是**上抛（那会引入一轮白烧的重试，且与超时处置不一致），而是**让降级出口不同形**。
+
+`_panel_has_dimensions` 的门槛刻意只卡"一个维度都没有"，不卡"维度不够多"：只评了文案与合规
+是真实且被预期的结果，构建器对它早有明确答案（unavailable，绝不补中性分）；在那里拒收会把
+"面板诚实地覆盖得少"变成一次重试。
+
+**3. `available` 的三态是旧读取路径的真实形状，原样保留。**
+
+旧读取是 `bool(raw_d.get("available", True))`：**缺失**走默认 True、**显式 `null`** 落
+`bool(None) = False`、其余按真值 —— 而 `available` 是**内部概念**（提示词示例里根本没有它）。
+所以模型声明为 `bool | None = True`，normalize 原样透传 `None`：压平这两件事的 `bool(...)`
+仍然在下游构建器里，搬到这一层会丢掉它正在使用的区分。
+
+一处**有意修正**：`"available": "false"` 旧被 `bool("false")` 读成 `True`（模型明确标为不可用
+的维度照样被拿去算分），新读成 `False`。方向是"不拿一个自相矛盾的分"，与 P0-W5 的 fail-closed 同向。
+
+### 动手后才暴露的两件事
+
+1. **「垃圾文本会被 schema 拦住」是错的。** 写探针之前，设计是"散文 → `validate_output` 拒收
+   → 重试"；实测才发现 `{"raw_content": …}` 通过校验，静默降级原样保留。这与 S2b 记下的
+   "全默认 + `extra="ignore"` 的模型任何 dict 都合法"是同一条观察，只是这次它落在**有重算
+   构建器**的调用点上，代价从"空快照"升级为"评估器故障伪装成覆盖不足"。语义 validator 是
+   那一刻才成为必需件的 —— 不是可选加固。
+2. **突变自检必须每条从原始内容开始。** 第一轮把 9 条突变的写入**累积**在同一个文件上：
+   M1 删掉 `validator=` 参数后，M3 再改函数体已不影响任何执行路径 → M3 报"假绿"。
+   差一点把脚本的缺陷记成测试的缺陷。改成每条前重写原文后：**9/9 全部被杀死**。
+
+### 门禁
+
+- `pytest -q`：**2987 passed / 3 skipped**（较 S2b 的 2965 增 22 条）
+- `ruff check .` / `ruff format --check .`：491 files 干净（全仓口径，与 CI 一致）
+- `mypy backend --python-version 3.12`：199 files 干净
+- P1b 基线 `--compare --drift-pct 5`：**drift within threshold（0）** —— prompt 逐字节未动
+- `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）
+- 突变自检：**9/9 杀死**（去语义 validator / 把"没答"降级成空 payload / validator 过严 /
+  建模自报值 / 回到直调 / 四个宽松器各一）

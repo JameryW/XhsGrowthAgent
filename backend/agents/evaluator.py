@@ -14,6 +14,14 @@ kind=context 事件面）；`_build_system_prompt` override 保留签名（weigh
 schema，`<!-- ctx:l2_account -->` 标记承接账号垂类段）。受众偏好上下文按现状
 继续经 user_template .format 注入（任务载荷，非 system 层）——override 中原
 `{memory_context}` replace 对本 YAML 是空转（system 无该占位符），迁移后移除。
+
+P1d-S2c 迁移本 agent 的最后一个直调调用点（面板调用）到结构化链。与 S2a/S2b
+两批不同，这里的 raw payload 不是"直接进 state"的产物，而是**确定性重算构建器
+的输入**：`_build_evaluation_result` / `_build_historical_evaluation_result` 用
+固定规则重算 overall_score/decision/coverage，只把面板当成一份只读证据。所以
+`EvaluationPanelOutput` 只声明**模型能陈述的那一半**（dimensions/revision_hints/
+summary/bias_warning），`overall_score`/`decision` 不进模型；构建器与三条既有
+degraded 路径（无内容 / 超时 / 历史笔记无内容）逐字节不变。
 """
 
 from __future__ import annotations
@@ -45,6 +53,8 @@ from backend.db.evaluator_config import (
     get_active_epoch,
     load_weights,
 )
+from backend.models.outputs import EvaluationPanelOutput, normalize_evaluation_panel
+from backend.models.structured import StructuredOutputError
 from backend.state.enums import ContentStatus
 
 logger = logging.getLogger("xhs_growth.agents.evaluator")
@@ -311,10 +321,38 @@ class EvaluatorAgent(BaseAgent):
         # ponytail: ainvoke 无内置 wall-clock timeout；provider 不稳时会挂起整个
         # review/evaluate 请求。外层 wait_for 与 TASK_TIMEOUT_OVERRIDES["evaluation"]
         # 对齐（默认 120s），超时抛 TimeoutError → 返回 degraded（不伪造 100/approved）。
+        #
+        # P1d-S2c: the panel call now runs through the structured chain (the
+        # production route is XUNFEI → PROMPTED, so the chain is one level deep:
+        # a schema hint on the runtime message, a Pydantic check, and the
+        # semantic check — a panel with no dimensions is a non-answer the shape
+        # check cannot see, because prose parses into a valid dict). Two
+        # failures share one explicit degraded exit, because they are the same
+        # physical event — the panel produced no usable scoring:
+        #
+        # * ``TimeoutError`` — nothing came back inside the budget.
+        # * ``StructuredOutputError`` — every level answered, none acceptably.
+        #
+        # Neither is degraded into an empty payload. The pre-migration path did
+        # exactly that: ``_parse_json_response`` returns ``{"raw_content": …}``
+        # when nothing parses, the builder then finds no dimensions, and the
+        # result is ``status="partial"`` with ``degraded=False`` — byte-identical
+        # to a panel that honestly scored only part of the table. "The evaluator
+        # broke" and "the evaluator had little to go on" must not share an
+        # observable, which is the same rule S2b applied to ``viral_matcher``.
+        #
+        # A third failure is *not* caught here. When no level could even be
+        # called (network down, endpoint rejects the call), ``_llm_structured``
+        # re-raises the original exception instead of ``StructuredOutputError``,
+        # and it escapes ``wait_for`` — the same as the pre-migration
+        # ``_llm_ainvoke`` — reaching the stateful retry machinery via
+        # ``BaseAgent.__call__``.
         try:
-            response = await asyncio.wait_for(
-                self._llm_ainvoke(
-                    [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)]
+            panel = await asyncio.wait_for(
+                self._llm_structured(
+                    [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)],
+                    EvaluationPanelOutput,
+                    validator=_panel_has_dimensions,
                 ),
                 timeout=_EVALUATION_LLM_TIMEOUT_S,
             )
@@ -325,25 +363,18 @@ class EvaluatorAgent(BaseAgent):
                 e,
             )
             return {
-                "evaluation_result": {
-                    "overall_score": None,
-                    "dimensions": [],
-                    "decision": None,
-                    "status": "degraded",
-                    "revision_hints": [],
-                    "bias_warning": "",
-                    "summary": f"评估器 LLM 超时，评估未完成: {e}",
-                    "degraded": True,
-                    "coverage": {
-                        "weighted_ratio": 0.0,
-                        "available": [],
-                        "unavailable": list(ctx.weights.required_dimensions),
-                        "required": ["copywriting", "compliance"],
-                        "required_available": False,
-                    },
-                }
+                "evaluation_result": _panel_unavailable_result(
+                    ctx, summary=f"评估器 LLM 超时，评估未完成: {e}"
+                )
             }
-        raw = self._parse_json_response(cast(str, response.content))
+        except StructuredOutputError as e:
+            logger.warning("Evaluator panel produced no usable payload: %s", e)
+            return {
+                "evaluation_result": _panel_unavailable_result(
+                    ctx, summary=f"评估器未产出可用的评分面板，评估未完成: {e}"
+                )
+            }
+        raw = normalize_evaluation_panel(panel)
 
         result = self._build_evaluation_result(
             raw, historical=historical_note, state=state, ctx=ctx
@@ -804,6 +835,66 @@ def _empty_content_degraded() -> dict[str, Any]:
         "revision_hints": [],
         "bias_warning": "",
         "summary": "无内容可评估，评估未完成（不得自动发布，等待人工处理）",
+    }
+
+
+def _panel_has_dimensions(output: EvaluationPanelOutput) -> str | None:
+    """A panel with no dimensions is not an evaluation, it is a non-answer.
+
+    This is the semantic check ``_llm_structured`` takes, and it exists because
+    shape alone cannot catch this one. ``_parse_json_response`` does not fail on
+    prose — it returns ``{"raw_content": "<the prose>"}`` — and that *is* a valid
+    dict for a model whose every field has a default, so ``validate_output`` lets
+    it through and the builder dutifully reports a panel that covered nothing.
+    Zero dimensions is the only shape that non-answer can take, so it is the
+    check.
+
+    A partially filled panel is **not** rejected: scoring some dimensions and
+    omitting others is a real, expected outcome, and the builder already has an
+    explicit answer for it (unavailable, never a neutral score). Rejecting it
+    here would turn "the panel honestly covered less" into a retry.
+
+    Returning a correction spends one more attempt with the instruction
+    attached; if the panel still has nothing to say, the chain exhausts and
+    raises, and the caller takes the explicit degraded exit.
+    """
+    if output.dimensions:
+        return None
+    return "dimensions 为空：请对每个维度给出评分，至少覆盖 copywriting 与 compliance。"
+
+
+def _panel_unavailable_result(ctx: EvaluationContext, *, summary: str) -> dict[str, Any]:
+    """The panel produced no usable scoring — the explicit degraded result.
+
+    Shared by the two ways that happens (LLM wall-clock timeout, and a
+    structured chain that answered without ever satisfying the panel model),
+    because the downstream consequence is one thing: no score → ``decision=None``
+    → ``_evaluation_is_degraded`` → the human channel. One factory means a third
+    cause cannot quietly grow a fourth shape, and it keeps the timeout branch's
+    output byte-identical to what it was before S2c.
+
+    Deliberately *not* merged with :func:`_empty_content_degraded`, which answers
+    a different question — "there was nothing to evaluate" — and therefore
+    reports the static dimension table. This one is "there was something to
+    evaluate and the panel did not score it", so it reports the dimensions *this
+    call's resolved weights* actually asked for.
+    """
+    return {
+        "overall_score": None,
+        "dimensions": [],
+        "decision": None,
+        "status": "degraded",
+        "revision_hints": [],
+        "bias_warning": "",
+        "summary": summary,
+        "degraded": True,
+        "coverage": {
+            "weighted_ratio": 0.0,
+            "available": [],
+            "unavailable": list(ctx.weights.required_dimensions),
+            "required": ["copywriting", "compliance"],
+            "required_available": False,
+        },
     }
 
 

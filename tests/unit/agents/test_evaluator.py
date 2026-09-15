@@ -2,7 +2,12 @@
 
 # ruff: noqa: E501, UP031  — long JSON test fixtures + %-format avoids {}/f-string clash
 
+from __future__ import annotations
+
 import asyncio
+import json
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -881,3 +886,263 @@ class TestEvaluatorContextPipeline:
         assert ">= 75" in prompt
         assert "本 epoch 加严" in prompt
         assert "{weights_block}" not in prompt
+
+
+class _ScriptedModel:
+    """A model that answers with scripted contents, in order (the last repeats).
+
+    A real object rather than a ``MagicMock``, because ``_llm_structured``
+    reaches for ``with_structured_output`` / ``bind`` on whatever it is handed:
+    a mock grows both attributes out of thin air, so a failure that exists only
+    in the double — an un-awaited coroutine, a ``TypeError`` from a mock's
+    ``bind`` — is reported against the code under test and the level the test
+    means to exercise is never the level that ran. Every call is recorded so a
+    test can assert *which* path ran, not merely that something did.
+    """
+
+    def __init__(self, *contents: str) -> None:
+        self._contents = list(contents)
+        self.calls: list[list[Any]] = []
+
+    def bind(self, **kwargs: Any) -> _ScriptedModel:
+        return self
+
+    async def ainvoke(self, messages: list[Any]) -> Any:
+        self.calls.append(list(messages))
+        index = min(len(self.calls) - 1, len(self._contents) - 1)
+        return SimpleNamespace(content=self._contents[index])
+
+
+def _panel_json(*, dimensions: list[dict[str, Any]] | None = None, **extra: Any) -> str:
+    """A panel answer shaped the way the prompt's example asks for it."""
+    if dimensions is None:
+        dimensions = [
+            {"dimension": name, "score": 80.0, "rationale": "r", "issues": [], "is_blocking": False}
+            for name in (
+                "copywriting",
+                "visual",
+                "compliance",
+                "reach",
+                "audience",
+                "ai_taste",
+                "image_quality",
+                "commercial_tone",
+                "altruism",
+            )
+        ] + [
+            {
+                "dimension": "bias_check",
+                "score": 88.0,
+                "bias_severity": 10.0,
+                "rationale": "r",
+                "issues": [],
+                "is_blocking": False,
+            }
+        ]
+    payload: dict[str, Any] = {
+        "overall_score": 80,
+        "dimensions": dimensions,
+        "decision": "approved",
+        "revision_hints": [],
+        "bias_warning": "",
+        "summary": "ok",
+    }
+    payload.update(extra)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+class TestEvaluatorStructuredPanel:
+    """P1d-S2c: 面板调用走结构化链（生产档位 XUNFEI → PROMPTED，单档）。
+
+    与 S2a/S2b 的迁移不同，这里 raw payload 不是直接进 state 的产物，而是
+    `_build_evaluation_result` 的输入。所以这一组钉的是分类问题：**模型答了
+    什么，会走到哪条出口** —— 正常重算 / 纠偏 / 显式 degraded，三者不能互相
+    伪装（尤其"面板没答"不能长成"覆盖不足"的样子）。
+    """
+
+    @pytest.fixture
+    def agent(self):
+        return EvaluatorAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    @pytest.fixture
+    def mock_state(self):
+        return {
+            "account_id": "test_account",
+            "niche": "母婴",
+            "session_id": "sess-1",
+            "phase": WorkflowPhase.REVIEWING,
+            "content_plan": {"selected_topic": "婴儿车推荐"},
+            "copy_content": {"selected_title": "通勤带娃神器", "body_text": "正文"},
+            "visual_plan": {"cover_prompt": "封面"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_the_panel_answer_goes_through_the_structured_chain(
+        self, agent, mock_state, mock_store
+    ):
+        """答对 → 规则重算照旧；schema 提示走运行时消息，system 层逐字节不变。"""
+        model = _ScriptedModel(_panel_json())
+        agent._model = model
+        result = await agent.execute(mock_state, store=mock_store)
+
+        ev = result["evaluation_result"]
+        assert ev["degraded"] is False
+        assert ev["decision"] == ContentStatus.APPROVED
+        assert len(model.calls) == 1
+        system, runtime = model.calls[0][0], model.calls[0][-1]
+        assert "不要 markdown 代码围栏" in str(runtime.content)
+        assert "不要 markdown 代码围栏" not in str(system.content)
+
+    @pytest.mark.asyncio
+    async def test_prose_costs_one_correction_then_degrades_explicitly(
+        self, agent, mock_state, mock_store
+    ):
+        """模型答散文。
+
+        形状检查看不见这个：``_parse_json_response`` 不失败，它把散文包成
+        ``{"raw_content": …}``，而那对每个字段都有默认值的面板模型是合法 dict。
+        于是"没有维度"的语义检查接手 —— 纠偏一次，仍无维度就显式 degraded。
+
+        迁移前的行为是静默 partial（``status="partial"``／``degraded=False``），
+        与"面板只评了一部分维度"逐字节同形；这条用例的存在就是为了让那两者再也
+        不能同形。
+        """
+        model = _ScriptedModel("抱歉，我先说明一下我的评分思路，然后再给出结论。")
+        agent._model = model
+        result = await agent.execute(mock_state, store=mock_store)
+
+        ev = result["evaluation_result"]
+        assert ev["degraded"] is True
+        assert ev["status"] == "degraded"
+        assert ev["decision"] is None
+        assert ev["overall_score"] is None
+        assert "未完成" in ev["summary"]
+        assert len(model.calls) == 2, "attempts_per_level should have spent one correction"
+        assert any("【纠偏】" in str(m.content) for m in model.calls[1])
+        # 覆盖度说的是这次调用解析出来的必需维度，不是静态表
+        assert ev["coverage"]["unavailable"] == list(
+            EvaluationContext().weights.required_dimensions
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_correction_brings_back_a_panel(self, agent, mock_state, mock_store):
+        """散文 → 纠偏 → 第二次给出真面板。纠偏不是仪式，它得真的能救回来。"""
+        model = _ScriptedModel("我的评分如下……", _panel_json())
+        agent._model = model
+        result = await agent.execute(mock_state, store=mock_store)
+
+        ev = result["evaluation_result"]
+        assert ev["degraded"] is False
+        assert ev["decision"] == ContentStatus.APPROVED
+        assert len(model.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_partial_panel_is_not_a_non_answer(self, agent, mock_state, mock_store):
+        """只评了文案与合规是真实结果：不纠偏、不重试，照旧走 partial 覆盖度。"""
+        model = _ScriptedModel(
+            _panel_json(
+                dimensions=[
+                    {
+                        "dimension": "copywriting",
+                        "score": 80.0,
+                        "rationale": "r",
+                        "issues": [],
+                        "is_blocking": False,
+                    },
+                    {
+                        "dimension": "compliance",
+                        "score": 85.0,
+                        "rationale": "r",
+                        "issues": [],
+                        "is_blocking": False,
+                    },
+                ]
+            )
+        )
+        agent._model = model
+        result = await agent.execute(mock_state, store=mock_store)
+
+        ev = result["evaluation_result"]
+        assert len(model.calls) == 1
+        assert ev["degraded"] is False
+        assert ev["status"] == "partial"
+        assert len(ev["dimensions"]) == 10
+
+    @pytest.mark.asyncio
+    async def test_a_self_reported_pass_cannot_survive_an_empty_panel(
+        self, agent, mock_state, mock_store
+    ):
+        """自报 overall_score=99 / decision=approved 但不给任何维度。
+
+        重算规则不看自报值，所以 99 分换不来一个 approved；面板没有维度就不是
+        一次评估，最终落在显式 degraded。
+        """
+        model = _ScriptedModel(
+            _panel_json(dimensions=[], overall_score=99, decision="approved", summary="全优")
+        )
+        agent._model = model
+        result = await agent.execute(mock_state, store=mock_store)
+
+        ev = result["evaluation_result"]
+        assert ev["decision"] is None
+        assert ev["overall_score"] is None
+        assert ev["degraded"] is True
+
+    def test_the_semantic_check_only_refuses_an_empty_panel(self):
+        """拒绝的门槛是"一个维度都没有"，不是"维度不够多"。"""
+        from backend.agents.evaluator import _panel_has_dimensions
+        from backend.models.outputs import EvaluationDimensionOutput, EvaluationPanelOutput
+
+        assert _panel_has_dimensions(EvaluationPanelOutput()) is not None
+        one = EvaluationPanelOutput(
+            dimensions=[EvaluationDimensionOutput(dimension="copywriting", score=80.0)]
+        )
+        assert _panel_has_dimensions(one) is None
+
+    def test_the_panel_model_drops_the_verdict_the_prompt_asks_for(self):
+        """提示词的示例要求模型写 overall_score/decision，模型会照写。
+
+        `extra="ignore"` 就是让它们落地、不进重算输入的那个开关；这条钉住它，
+        因为把这两个字段建模进模型等于把重算规则还给模型。
+        """
+        from backend.models.outputs import EvaluationPanelOutput
+
+        panel = EvaluationPanelOutput.model_validate(
+            {
+                "overall_score": 99,
+                "decision": "approved",
+                "dimensions": [{"dimension": "copywriting", "score": 80}],
+            }
+        )
+        assert set(panel.model_dump()) == {
+            "dimensions",
+            "revision_hints",
+            "summary",
+            "bias_warning",
+        }
+        assert panel.dimensions[0].score == 80.0
+
+    def test_the_source_has_no_direct_llm_call_left(self):
+        """S2c 的验收：`backend/agents/evaluator.py` 不再有直调。
+
+        源码级（AST）断言而不是行为断言 —— 行为断言分不出"走结构化链"和"直调
+        仍然跑得对"，而这条迁移的全部意义就是后者消失。用 AST 而非字符串匹配：
+        注释与 docstring 里会提到这两个方法名，只有真正被**调用**才算。
+        """
+        import ast
+        import inspect
+
+        tree = ast.parse(inspect.getsource(evaluator_module))
+        called = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert "_llm_ainvoke" not in called
+        assert "_parse_json_response" not in called

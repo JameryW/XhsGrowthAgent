@@ -20,6 +20,7 @@ from backend.models.outputs import (
     BriefClarificationOutput,
     ContentAnalysisOutput,
     ContentPlanOutput,
+    EvaluationPanelOutput,
     HotTopicItemOutput,
     SuggestionItemOutput,
     TrendScoutOutput,
@@ -29,6 +30,7 @@ from backend.models.outputs import (
     normalize_brief_analysis,
     normalize_brief_clarification,
     normalize_content_plan,
+    normalize_evaluation_panel,
     normalize_optimization_analysis,
     normalize_trend_data,
     normalize_viral_posts,
@@ -37,6 +39,8 @@ from backend.state.substates import (
     AnalyticsSnapshot,
     BloggerProfile,
     BriefContent,
+    DimensionScore,
+    EvaluationResult,
     GapItem,
     OptimizationAnalysis,
     SuggestionItem,
@@ -645,3 +649,148 @@ class TestViralPostsOutput:
     def test_every_key_matches_the_state_contract_shape(self):
         output = ViralPostsOutput.model_validate([{"note_id": "a"}])
         assert set(normalize_viral_posts(output)[0]) == set(ViralPost.__annotations__)
+
+
+class TestEvaluationPanelOutput:
+    """The judge panel's answer — the *input* to the evaluator's rebuild.
+
+    Unlike every other model in this module, what leaves here is not state. It is
+    the raw payload ``EvaluatorAgent._build_evaluation_result`` reads off, and
+    that builder owns the recomputation of ``overall_score``/``decision`` from
+    fixed rules (RQGM's verifiable metric + judge signal). So these tests are
+    about the half a model may state, and about the two fields it may *not*.
+    """
+
+    def test_the_verdict_fields_are_not_modelled(self):
+        """``overall_score``/``decision`` are recomputed, never taken from the
+        panel. The prompt's example asks a model to write them anyway;
+        ``extra="ignore"`` is what makes that harmless instead of authoritative."""
+        panel = EvaluationPanelOutput.model_validate(
+            {"overall_score": 99, "decision": "approved", "summary": "ok"}
+        )
+        assert set(panel.model_dump()) == {
+            "dimensions",
+            "revision_hints",
+            "summary",
+            "bias_warning",
+        }
+
+    def test_a_payload_with_no_panel_at_all_is_still_a_legal_dict(self):
+        """The reachable shape of "the model answered prose".
+
+        ``_parse_json_response`` does not fail on prose — it wraps it as
+        ``{"raw_content": …}`` — and for a model whose every field has a default
+        that is a perfectly valid dict. Shape checking can refuse nothing here,
+        which is exactly why the evaluator carries a semantic check that reads an
+        empty ``dimensions`` as a non-answer rather than as thin coverage.
+        """
+        panel = EvaluationPanelOutput.model_validate({"raw_content": "模型这次只说了段话"})
+        assert panel.dimensions == []
+        assert normalize_evaluation_panel(panel)["dimensions"] == []
+
+    def test_a_partial_panel_keeps_what_it_has(self):
+        """Not an error, and deliberately not treated as one: the builder has an
+        explicit answer for missing dimensions (unavailable, never a neutral 70)."""
+        panel = EvaluationPanelOutput.model_validate(
+            {"dimensions": [{"dimension": "copywriting", "score": 80}]}
+        )
+        assert len(panel.dimensions) == 1
+        assert normalize_evaluation_panel(panel)["dimensions"][0]["score"] == 80.0
+
+    def test_an_unreadable_score_reads_as_absent_not_as_a_broken_payload(self):
+        """The pre-migration reader was ``_to_float(score, nan)``, which made the
+        dimension unavailable. Failing the whole payload instead would spend a
+        retry on a mistake whose correct disposition already exists."""
+        panel = EvaluationPanelOutput.model_validate(
+            {"dimensions": [{"dimension": "x", "score": "abc"}]}
+        )
+        assert panel.dimensions[0].score is None
+
+    def test_a_score_written_as_digits_is_read(self):
+        panel = EvaluationPanelOutput.model_validate(
+            {"dimensions": [{"dimension": "x", "score": "85"}]}
+        )
+        assert panel.dimensions[0].score == 85.0
+
+    def test_a_bare_issue_string_is_not_split_into_characters(self):
+        """``list(raw.get("issues") or [])`` turned ``"一条问题"`` into four
+        one-character issues. Same family as the ``hashtags``/``viral_patterns``
+        shape fixes: a string is one item, never an iterable of letters."""
+        panel = EvaluationPanelOutput.model_validate(
+            {"dimensions": [{"dimension": "x", "issues": "一条问题"}]}
+        )
+        assert panel.dimensions[0].issues == ["一条问题"]
+
+    def test_a_bare_hint_string_is_not_split_into_characters(self):
+        panel = EvaluationPanelOutput.model_validate({"revision_hints": "提示一"})
+        assert normalize_evaluation_panel(panel)["revision_hints"] == ["提示一"]
+
+    def test_null_reads_as_said_nothing_not_as_the_word_none(self):
+        """``str(raw.get("summary"))`` on an explicit ``null`` produced the literal
+        text ``None`` — four characters a human then reads as the summary."""
+        panel = EvaluationPanelOutput.model_validate(
+            {"summary": None, "dimensions": [{"dimension": "x", "rationale": None}]}
+        )
+        assert panel.summary == ""
+        assert panel.dimensions[0].rationale == ""
+
+    def test_blank_hints_are_dropped_and_kept_hints_are_text(self):
+        panel = EvaluationPanelOutput.model_validate({"revision_hints": ["a", "", "  ", "b"]})
+        assert normalize_evaluation_panel(panel)["revision_hints"] == ["a", "b"]
+
+    def test_the_three_state_flag_survives_normalisation(self):
+        """``available`` is internal — the prompt's example never mentions it — and
+        the pre-migration reader was ``bool(raw.get(key, True))``: absent took the
+        default, an explicit ``null`` fell to ``False``.
+
+        The distinction is kept rather than flattened here because the flattening
+        already has an owner: ``_build_evaluation_result`` ends with ``bool(...)``
+        on this value.
+        """
+        missing = normalize_evaluation_panel(
+            EvaluationPanelOutput.model_validate({"dimensions": [{"dimension": "x"}]})
+        )
+        explicit_null = normalize_evaluation_panel(
+            EvaluationPanelOutput.model_validate(
+                {"dimensions": [{"dimension": "x", "available": None}]}
+            )
+        )
+        assert missing["dimensions"][0]["available"] is True
+        assert explicit_null["dimensions"][0]["available"] is None
+
+    def test_a_boolean_written_as_a_string_is_read_as_a_boolean(self):
+        """``bool("false")`` is ``True``: a dimension the model explicitly marked
+        unusable was scored anyway. Reading it as ``False`` is the fix, not a
+        regression — the score is dropped instead of trusted."""
+        panel = EvaluationPanelOutput.model_validate(
+            {"dimensions": [{"dimension": "x", "score": 80, "available": "false"}]}
+        )
+        assert panel.dimensions[0].available is False
+
+    def test_an_unreadable_flag_reads_as_not_stated(self):
+        """Refusing the payload would let one odd adjective cost the whole panel."""
+        panel = EvaluationPanelOutput.model_validate(
+            {"dimensions": [{"dimension": "x", "is_blocking": "也许"}]}
+        )
+        assert panel.dimensions[0].is_blocking is None
+
+    def test_the_dimension_keys_cover_the_state_contract(self):
+        """Pinned against ``substates.DimensionScore``, not against this model's
+        own fields — comparing a model to itself is true by construction.
+
+        Containment rather than equality, and the difference is the point:
+        ``available`` is carried because the *builder* reads it, and it is absent
+        from the state contract because the builder consumes it rather than
+        storing it.
+        """
+        panel = EvaluationPanelOutput.model_validate(
+            {"dimensions": [{"dimension": "x", "score": 80}]}
+        )
+        item = normalize_evaluation_panel(panel)["dimensions"][0]
+        assert set(DimensionScore.__annotations__) <= set(item)
+        assert set(item) - set(DimensionScore.__annotations__) == {"available"}
+
+    def test_the_envelope_keys_are_a_subset_of_the_state_contract(self):
+        panel = EvaluationPanelOutput.model_validate({"summary": "ok"})
+        normalized = normalize_evaluation_panel(panel)
+        assert set(normalized) <= set(EvaluationResult.__annotations__)
