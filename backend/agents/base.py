@@ -242,6 +242,15 @@ class BaseAgent(ABC):
           alternative is that plumbing an advisory nudge through this method
           quietly turns it into a hard requirement and a stubborn model can kill
           the node.
+
+        A third failure is *not* reported as either of those: when no level
+        could be **called** at all, nothing was answered, so there is no output
+        to have an opinion about. That case re-raises the original exception
+        instead of ``StructuredOutputError``. The difference is load-bearing —
+        ``StructuredOutputError`` is what callers turn into a business fallback
+        ("no trends this time"), and an outage dressed up as that fallback is an
+        outage the workflow never retries. 07-07's error state and the stateful
+        retry machinery exist for precisely the unreachable case.
         """
         from langchain_core.messages import HumanMessage
 
@@ -256,6 +265,8 @@ class BaseAgent(ABC):
         provider = get_model_config(get_model_id_for_task(self.task_type)).provider
         conversation = list(messages)
         failures: list[tuple[Any, str]] = []
+        unreachable: list[tuple[Any, BaseException]] = []
+        answered = False
         last_valid: T | None = None
 
         for level in degradation_path(resolve_structured_mode(provider)):
@@ -266,7 +277,9 @@ class BaseAgent(ABC):
                     # The level itself is unusable; a retry would fail the same
                     # way, so record it and degrade.
                     failures.append((level, f"{type(exc).__name__}: {exc}"))
+                    unreachable.append((level, exc))
                     break
+                answered = True
                 outcome, correction = validate_output(payload, output_model)
                 if outcome is None:
                     # Malformed: this one can never be the accepted payload.
@@ -283,6 +296,18 @@ class BaseAgent(ABC):
                     level.value,
                 )
                 conversation = [*conversation, HumanMessage(content=f"【纠偏】{correction or ''}")]
+        if not answered:
+            # Nothing was ever answered. Hand the failure back as itself rather
+            # than as a verdict on an output that does not exist: the caller's
+            # fallback means "asked and got nothing usable", and an outage that
+            # borrows that meaning is an outage nobody retries.
+            logger.warning(
+                "%s: no level of the chain could be called (%s); propagating instead of "
+                "degrading to a fallback",
+                self.agent_name,
+                "; ".join(f"{level.value}: {type(exc).__name__}" for level, exc in unreachable),
+            )
+            raise unreachable[0][1]
         if accept_last_valid and last_valid is not None:
             logger.warning(
                 "%s: %s never satisfied its validator (%d attempt(s)); accepting the last "

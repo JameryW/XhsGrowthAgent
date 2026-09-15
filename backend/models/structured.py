@@ -145,17 +145,75 @@ _SIMPLE_TYPES: Mapping[type, str] = {
 
 
 def _type_label(annotation: Any) -> str:
-    """A short label for an annotation, written the way a model reads it."""
+    """A short label for an annotation, written the way a model reads it.
+
+    A nested model reads as ``object``: the class name means nothing to a model,
+    and the fields behind it are spelled out by :func:`_describe_fields` instead.
+    An ``Optional[X]`` is unwrapped rather than labelled from the wrapper —
+    ``X | None`` is not a type of its own, and the fall-through used to call it
+    ``string``, which is worse than useless here: a nested model is only spelled
+    out *once*, so the second field referring to it has nothing but its label.
+    """
+    if annotation is Any:
+        return "any"
     origin = get_origin(annotation)
     if origin is list:
         args = get_args(annotation)
-        inner = _type_label(args[0]) if args else "any"
-        return f"list[{inner}]"
+        return f"list[{_type_label(args[0]) if args else 'any'}]"
     if origin is dict:
         return "object"
+    if origin is not None:
+        # Optional[X] / X | None / a genuine union — none of these is a type.
+        labels = list(
+            dict.fromkeys(_type_label(arg) for arg in get_args(annotation) if arg is not type(None))
+        )
+        if not labels:
+            return "any"
+        return labels[0] if len(labels) == 1 else " | ".join(labels)
     if isinstance(annotation, type):
+        if issubclass(annotation, BaseModel):
+            return "object"
         return _SIMPLE_TYPES.get(annotation, annotation.__name__)
     return "string"
+
+
+def _nested_models(annotation: Any) -> list[type[BaseModel]]:
+    """Every model reachable from an annotation, without repeating one."""
+    found: list[type[BaseModel]] = []
+    pending = [annotation]
+    while pending:
+        current = pending.pop()
+        origin = get_origin(current)
+        if origin is not None:
+            pending.extend(get_args(current))
+            continue
+        if isinstance(current, type) and issubclass(current, BaseModel) and current not in found:
+            found.append(current)
+    return found
+
+
+def _describe_fields(
+    lines: list[str], model: type[BaseModel], *, indent: str, expanded: set[type[BaseModel]]
+) -> None:
+    """One field per line, recursing into nested models exactly once.
+
+    Without the recursion a nested field would be described as ``list[object]``
+    and the model would have to guess the keys from the field name alone — which
+    is how a payload that was *supposed* to be shaped arrives as a list of
+    strings and costs a retry. Expanding once (not per reference) keeps the hint
+    from growing with the number of fields that share a nested type.
+    """
+    for name, field in model.model_fields.items():
+        label = _type_label(field.annotation)
+        requirement = "必填" if field.is_required() else "可选"
+        described = f"，{field.description}" if field.description else ""
+        lines.append(f"{indent}- {name}: {label}（{requirement}{described}）")
+        for nested in _nested_models(field.annotation):
+            if nested in expanded:
+                continue
+            expanded.add(nested)
+            lines.append(f"{indent}  {name} 的元素字段：")
+            _describe_fields(lines, nested, indent=indent + "  ", expanded=expanded)
 
 
 def render_schema_instructions(output_model: type[BaseModel]) -> str:
@@ -167,11 +225,7 @@ def render_schema_instructions(output_model: type[BaseModel]) -> str:
     and not others would make that measurement describe nothing.
     """
     lines = ["请只输出一个 JSON 对象（不要 markdown 代码围栏、不要任何解释文字），字段如下："]
-    for name, field in output_model.model_fields.items():
-        label = _type_label(field.annotation)
-        requirement = "必填" if field.is_required() else "可选"
-        described = f"，{field.description}" if field.description else ""
-        lines.append(f"- {name}: {label}（{requirement}{described}）")
+    _describe_fields(lines, output_model, indent="", expanded=set())
     return "\n".join(lines)
 
 

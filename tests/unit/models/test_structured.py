@@ -149,6 +149,78 @@ class TestRenderSchemaInstructions:
         assert "markdown" in text
 
 
+class _Note(BaseModel):
+    title: str = Field(description="笔记标题")
+    likes: int = 0
+
+
+class _Report(BaseModel):
+    notes: list[_Note] = Field(default_factory=list)
+    headline: _Note | None = None
+    payload: Any = None
+
+
+class _Twice(BaseModel):
+    first: _Note | None = None
+    second: _Note | None = None
+
+
+class _Node(BaseModel):
+    label: str = ""
+    children: list[_Node] = Field(default_factory=list)
+
+
+class TestTheSchemaHintSpellsOutNestedModels:
+    """A nested field is rendered as *its fields*, not as a class name.
+
+    ``hot_topics: list[HotTopicItemOutput]`` is what the scouts actually return,
+    and it is the case that matters: rendering it as ``list[object]`` leaves the
+    model to guess the keys from the field name, and a guess that arrives as a
+    list of strings is a retry — the cost this hint exists to avoid.
+    """
+
+    def test_a_nested_model_inside_a_list_is_expanded(self):
+        text = render_schema_instructions(_Report)
+        assert "notes: list[object]" in text
+        assert "title: string" in text
+        assert "likes: integer" in text
+
+    def test_a_nested_model_behind_an_optional_is_expanded(self):
+        """``_Note | None`` used to render as ``string`` — a wrapper read as a
+        type. It compounds with the expand-once rule: the second field naming
+        the same model gets no expansion to correct the mislabel with."""
+        text = render_schema_instructions(_Twice)
+        assert "first: object" in text
+        assert "  first 的元素字段：" in text
+        assert "title: string" in text
+
+    def test_a_real_union_lists_every_label_it_can_be(self):
+        class _Either(BaseModel):
+            either: str | int = ""
+
+        text = render_schema_instructions(_Either)
+        assert "either: string | integer" in text
+
+    def test_an_any_field_is_labelled_any_and_does_not_explode(self):
+        text = render_schema_instructions(_Report)
+        assert "payload: any" in text
+
+    def test_a_nested_model_is_expanded_once_however_often_it_is_referenced(self):
+        """Expanding per reference would make the hint grow with the number of
+        fields sharing a type, for no extra information."""
+        text = render_schema_instructions(_Report)
+        assert text.count("title: string") == 1
+
+    def test_a_self_referential_model_terminates(self):
+        text = render_schema_instructions(_Node)
+        assert "children: list[object]" in text
+        assert text.count("- label: string") <= 2
+
+    def test_the_expansion_is_indented_under_the_field_it_belongs_to(self):
+        text = render_schema_instructions(_Report)
+        assert "  notes 的元素字段：" in text
+
+
 class TestDescribeValidationError:
     def test_it_names_the_field_that_failed(self):
         with pytest.raises(Exception) as excinfo:

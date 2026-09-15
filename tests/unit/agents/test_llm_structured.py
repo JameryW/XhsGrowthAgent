@@ -72,6 +72,31 @@ class _PlainModel:
         return _text_response(self._responses[index])
 
 
+class _UnreachableModel:
+    """A model whose shape is fine and whose calls all raise.
+
+    ``bind`` and ``with_structured_output`` answer as usual — the call *shape*
+    is not the problem — while every invocation raises. That is the outage
+    case, and it is the one a ``MagicMock`` cannot distinguish from a
+    capability gap: both arrive as "the level raised".
+    """
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+        self.levels_attempted: list[str] = []
+
+    def bind(self, **_kwargs: Any) -> _UnreachableModel:
+        self.levels_attempted.append("json_object")
+        return self
+
+    def with_structured_output(self, *_args: Any, **_kwargs: Any) -> _UnreachableModel:
+        self.levels_attempted.append("native_schema")
+        return self
+
+    async def ainvoke(self, _messages: list[Any], **_kwargs: Any) -> Any:
+        raise self._error
+
+
 def _text_agent(*payloads: str) -> tuple[_Agent, list[list[Any]]]:
     """The common case: a model that is mocked but *does* speak text."""
     agent = _Agent()
@@ -194,6 +219,62 @@ class TestDegradation:
         ]
         for level, _ in info.value.attempts:
             assert level.value in str(info.value)
+
+
+class TestWhenNothingWasEverAnswered:
+    """An unreachable model is not a bad answer, and must not be reported as one.
+
+    ``StructuredOutputError`` is what callers turn into a business fallback
+    ("no trends this time"). Handing them that for an outage converts a failure
+    the workflow *would* retry into a result it accepts — which is how
+    trend_scout's LLM-outage path quietly became a successful empty scan, and
+    why this rule has integration tests behind it
+    (``tests/integration/test_stateful_retry.py``).
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_unreachable_model_raises_its_own_error(self):
+        agent = _Agent()
+        boom = RuntimeError("LLM unavailable")
+        agent._model = _UnreachableModel(boom)
+
+        with _with_provider(ModelProvider.XUNFEI), pytest.raises(RuntimeError) as info:
+            await agent._llm_structured(_messages(), _Plan)
+
+        # The same exception, not a verdict about an output that never existed.
+        assert info.value is boom
+        assert not isinstance(info.value, StructuredOutputError)
+
+    @pytest.mark.asyncio
+    async def test_it_happens_even_when_every_level_was_walked(self):
+        agent = _Agent()
+        model = _UnreachableModel(RuntimeError("no transport"))
+        agent._model = model
+
+        with _with_provider(ModelProvider.OPENAI), pytest.raises(RuntimeError):
+            await agent._llm_structured(_messages(), _Plan)
+
+        # Both stronger levels were really attempted before giving up.
+        assert model.levels_attempted == ["native_schema", "json_object"]
+
+    @pytest.mark.asyncio
+    async def test_a_capability_gap_that_a_weaker_level_covers_still_degrades(self):
+        """The companion. "This level cannot be called" is not the same claim as
+        "the model cannot be reached", and the chain must keep the former."""
+        agent = _Agent()
+        agent._model = _PlainModel('{"topic": "weaker level answered"}')
+
+        with _with_provider(ModelProvider.OPENAI):
+            plan = await agent._llm_structured(_messages(), _Plan)
+
+        assert plan == _Plan(topic="weaker level answered")
+
+    @pytest.mark.asyncio
+    async def test_an_answered_but_unusable_batch_is_still_a_verdict(self):
+        agent, _ = _text_agent("{}")  # answered, missing the required field
+
+        with _with_provider(ModelProvider.XUNFEI), pytest.raises(StructuredOutputError):
+            await agent._llm_structured(_messages(), _Plan)
 
 
 class TestCorrectionRetry:

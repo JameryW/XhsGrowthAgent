@@ -12,6 +12,7 @@ from langgraph.store.base import BaseStore
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.context.models import require_niche
+from backend.models.outputs import BloggerScoutOutput, normalize_blogger_candidates
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -100,91 +101,28 @@ class BloggerScoutAgent(BaseAgent):
         )
 
         try:
-            response = await self._llm_ainvoke(
+            output = await self._llm_structured(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=user_prompt),
-                ]
+                ],
+                BloggerScoutOutput,
             )
-
-            content = response.content
-            if isinstance(content, list):
-                content = str(content)
-            parsed = self._parse_json_response(content)
-
-            candidates = parsed.get("candidates", [])
-            if not candidates and parsed.get("raw_content"):
-                logger.warning("LLM did not return JSON, retrying with explicit instruction")
-                return await self._retry_mock_with_explicit_json(
-                    state, keywords, limit, niche, brief_summary, trend_summary
-                )
-
-            # Ensure mock_ prefix on all user_ids
-            for c in candidates:
-                if not c.get("user_id", "").startswith("mock_"):
-                    c["user_id"] = f"mock_{c.get('user_id', 'unknown')}"
-                if "avatar_url" not in c:
-                    c["avatar_url"] = ""
-
-            if not candidates:
-                logger.warning("LLM returned empty candidates, using fallback")
-                return self._hardcoded_fallback_candidates(niche, keywords, limit)
-
-            candidates = candidates[:limit]
-            logger.info(f"Generated {len(candidates)} mock blogger candidates via LLM")
-            return {
-                "blogger_candidates": candidates,
-                "phase": WorkflowPhase.CREATING,
-            }
         except Exception as e:
             logger.error(f"LLM mock generation failed: {e}")
             return self._hardcoded_fallback_candidates(niche, keywords, limit)
 
-    async def _retry_mock_with_explicit_json(
-        self,
-        state: XHSGrowthState,
-        keywords: list[str],
-        limit: int,
-        niche: str,
-        brief_summary: str,
-        trend_summary: str,
-    ) -> dict[str, Any]:
-        """Retry mock generation with a more explicit JSON-only prompt."""
-        prompt = (
-            f"你必须在回复中仅输出一个JSON对象，不要有任何其他文字。\n"
-            f"赛道：{niche}\n关键词：{', '.join(keywords)}\n"
-            f"商单信息：{brief_summary}\n趋势数据：{trend_summary}\n"
-            f"生成{limit}个该赛道风格的虚拟博主候选。\n\n"
-            f'输出格式：{{"candidates": [{{"user_id": "mock_001", '
-            f'"nickname": "博主昵称", "follower_count": 50000, '
-            f'"note_count": 120, "total_engagement": 8000, '
-            f'"top_note_title": "代表作标题"}}]}}\n'
-            f"只输出JSON，不要输出其他任何内容。"
-        )
-        try:
-            response = await self._llm_ainvoke([HumanMessage(content=prompt)])
-            content = response.content
-            if isinstance(content, list):
-                content = str(content)
-            parsed = self._parse_json_response(content)
-            candidates = parsed.get("candidates", [])
-            for c in candidates:
-                if not c.get("user_id", "").startswith("mock_"):
-                    c["user_id"] = f"mock_{c.get('user_id', 'unknown')}"
-                if "avatar_url" not in c:
-                    c["avatar_url"] = ""
-            if not candidates:
-                logger.warning("Retry returned empty candidates, using fallback")
-                return self._hardcoded_fallback_candidates(niche, keywords, limit)
-            candidates = candidates[:limit]
-            logger.info(f"Retry generated {len(candidates)} mock blogger candidates")
-            return {
-                "blogger_candidates": candidates,
-                "phase": WorkflowPhase.CREATING,
-            }
-        except Exception as e:
-            logger.error(f"Retry mock generation also failed: {e}")
+        # `mock_` 前缀与 limit 截断归 normalize 一处所有（此前两个调用点各写一遍）。
+        candidates = normalize_blogger_candidates(output, limit=limit)
+        if not candidates:
+            logger.warning("LLM returned empty candidates, using fallback")
             return self._hardcoded_fallback_candidates(niche, keywords, limit)
+
+        logger.info(f"Generated {len(candidates)} mock blogger candidates via LLM")
+        return {
+            "blogger_candidates": candidates,
+            "phase": WorkflowPhase.CREATING,
+        }
 
     def _hardcoded_fallback_candidates(
         self, niche: str, keywords: list[str], limit: int

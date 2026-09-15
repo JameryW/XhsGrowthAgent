@@ -35,6 +35,8 @@ from backend.context.models import (
     require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
+from backend.models.outputs import TrendScoutOutput, normalize_trend_data
+from backend.models.structured import StructuredOutputError
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -312,25 +314,38 @@ class TrendScoutAgent(BaseAgent):
 
 请基于以上数据进行分析，输出 JSON 格式的趋势报告。"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
-
-        content = response.content
-        if isinstance(content, list):
-            content = str(content)
-        trend_data = self._parse_json_response(content)
-        trend_data["data_source"] = data_source
-
-        # Normalize topic field name to canonical `hot_topics`
-        # LLM may output `trending_topics` or `topics` — ensure `hot_topics` exists
-        if not trend_data.get("hot_topics"):
-            trend_data["hot_topics"] = (
-                trend_data.get("trending_topics") or trend_data.get("topics") or []
+        try:
+            output = await self._llm_structured(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ],
+                TrendScoutOutput,
             )
+        except StructuredOutputError as exc:
+            # 旧实现里 `_parse_json_response` 把解析失败变成 `{"raw_content": ...}`，
+            # 于是"模型没给出可用趋势"退化成空趋势，而不是让节点失败。这个语义是
+            # 对的——空趋势是一个业务结果（should_plan 据此收尾或重试），ERROR 才是
+            # "节点坏了"——所以在这里显式保留它，而不是让它悄悄变成后者。
+            #
+            # 注意这里只接住 StructuredOutputError：它意味着"问过了，答得不能用"。
+            # "一次都没问到"（调用本身抛错）不由它承载，会原样往上抛成节点失败 ——
+            # 那正是 stateful retry 要接的东西，空趋势接不住它。
+            logger.warning(
+                "%s: no usable trend payload (%d attempt(s)); degrading to empty trends",
+                self.agent_name,
+                len(exc.attempts),
+            )
+            # 空结构的形状只有一个来源，不手写一份平行的空 dict。
+            trend_data = normalize_trend_data(TrendScoutOutput())
+        else:
+            # 别名链（trending_topics / topics → hot_topics）与条目形状已由
+            # TrendScoutOutput 收敛，这里拿到的直接就是 state 形状。
+            trend_data = normalize_trend_data(output)
+
+        # data_source 是运行时事实，刻意不放进输出模型：模型能声明它就等于能谎报
+        # 数据来源——S3d 那个假 data_source="real" 正是这么来的。
+        trend_data["data_source"] = data_source
 
         # 沉淀趋势洞察到长期记忆
         if store is not None:
@@ -338,15 +353,10 @@ class TrendScoutAgent(BaseAgent):
                 from backend.memory.store import MemoryManager
 
                 mm = MemoryManager(account_id)
-                topics = trend_data.get(
-                    "hot_topics",
-                    trend_data.get("trending_topics", trend_data.get("topics", [])),
-                )
-                summary = (
-                    ", ".join((t.get("topic") or str(t))[:20] for t in topics[:3])
-                    if topics
-                    else niche
-                )
+                # 条目形状已由 TrendScoutOutput 保证（一定有 topic），所以别名链
+                # 和"元素可能是个字符串"的兜底都是迁移前的事，不再需要。
+                topics = trend_data["hot_topics"]
+                summary = ", ".join(t["topic"][:20] for t in topics[:3]) if topics else niche
                 await mm.store_insight(
                     store,
                     f"趋势信号: {summary}",
