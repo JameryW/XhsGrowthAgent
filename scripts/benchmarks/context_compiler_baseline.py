@@ -34,10 +34,13 @@ from pathlib import Path
 
 from backend.context.baseline import (
     DEFAULT_PROMPT_DIR,
+    AgentCase,
     Snapshot,
     build_snapshot,
     check_prompt_coverage,
     compare_snapshot,
+    load_agent_cases,
+    load_recall_samples,
     run_baseline,
 )
 
@@ -109,18 +112,50 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Refresh the snapshot from this run (use after a deliberate change)",
     )
+    parser.add_argument(
+        "--recall-samples",
+        type=Path,
+        default=None,
+        help=(
+            "JSON file of real (sanitised) recall to measure instead of the "
+            "synthetic fixture — runs a single 'samples' scenario"
+        ),
+    )
     args = parser.parse_args(argv)
 
-    scenarios = [("stress", True)] if args.stress_only else [("default", False), ("stress", True)]
-    reports = [
-        run_baseline(
-            args.prompt_dir,
-            budget=args.budget,
-            repeats=max(2, args.repeats),
-            stress=stress,
+    if args.recall_samples is not None:
+        samples = load_recall_samples(args.recall_samples)
+        cases = tuple(
+            AgentCase(
+                name=case.name,
+                system_text=case.system_text,
+                user_template=case.user_template,
+                retrievals=samples,
+            )
+            for case in load_agent_cases(args.prompt_dir, retrievals=samples)
         )
-        for _, stress in scenarios
-    ]
+        reports = [
+            run_baseline(
+                args.prompt_dir,
+                budget=args.budget,
+                repeats=max(2, args.repeats),
+                cases=cases,
+                scenario="samples",
+            )
+        ]
+    else:
+        scenarios = (
+            [("stress", True)] if args.stress_only else [("default", False), ("stress", True)]
+        )
+        reports = [
+            run_baseline(
+                args.prompt_dir,
+                budget=args.budget,
+                repeats=max(2, args.repeats),
+                stress=stress,
+            )
+            for _, stress in scenarios
+        ]
 
     print(f"== {GATE_NAME} ==")
     print(f"budget={args.budget} agents={len(reports[0].costs)}\n")
@@ -177,7 +212,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{GATE_NAME}: FAILED ({len(failed)} agent(s))")
         return 1
 
-    if args.compare:
+    if args.compare and args.recall_samples is not None:
+        # The snapshot only tracks the synthetic scenarios; an ad-hoc real
+        # sample run is a diagnosis, not a regression comparison.
+        print(
+            "\n-- drift --\nskipped: --recall-samples runs the 'samples' scenario, "
+            "which is not part of the committed snapshot"
+        )
+    elif args.compare:
         if not args.snapshot.exists():
             print(f"\n{GATE_NAME}: FAILED (snapshot missing: {args.snapshot})")
             return 1

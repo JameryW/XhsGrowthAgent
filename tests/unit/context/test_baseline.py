@@ -22,6 +22,7 @@ from backend.context.baseline import (
     check_prompt_coverage,
     compare_snapshot,
     load_agent_cases,
+    load_recall_samples,
     measure_cost,
     measure_stability,
     run_baseline,
@@ -223,6 +224,82 @@ def _fake_report(scenario: str, tokens: dict[str, int]) -> BaselineReport:
         stability=(),
         scenario=scenario,
     )
+
+
+class TestRecallSamples:
+    def _write(self, tmp_path: Path, payload) -> Path:
+        path = tmp_path / "samples.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    def test_loads_real_recall(self, tmp_path: Path):
+        path = self._write(
+            tmp_path,
+            [
+                {
+                    "namespace": "content_history",
+                    "layer": "l4_memory",
+                    "mode": "hit",
+                    "items": [
+                        {
+                            "body": "- 真实召回条目",
+                            "source": "content_history",
+                            "timestamp": "2026-09-10T08:00:00Z",
+                            "confidence": 0.9,
+                        }
+                    ],
+                }
+            ],
+        )
+        results = load_recall_samples(path)
+        assert len(results) == 1
+        assert results[0].namespace == "content_history"
+        assert results[0].layer is PromptLayer.L4_MEMORY
+        assert results[0].mode is RetrievalMode.HIT
+        assert results[0].items[0].body == "- 真实召回条目"
+        assert results[0].items[0].timestamp is not None
+
+    def test_optional_fields_default(self, tmp_path: Path):
+        """A minimal export (body only) must still load: mode defaults to
+        hit, layer to L4, timestamp to None."""
+        path = self._write(tmp_path, [{"namespace": "ns", "items": [{"body": "x"}]}])
+        results = load_recall_samples(path)
+        assert results[0].mode is RetrievalMode.HIT
+        assert results[0].layer is PromptLayer.L4_MEMORY
+        assert results[0].items[0].timestamp is None
+        assert results[0].items[0].confidence == 1.0
+
+    def test_rejects_non_list_payload(self, tmp_path: Path):
+        path = self._write(tmp_path, {"namespace": "ns"})
+        with pytest.raises(ValueError, match="JSON list"):
+            load_recall_samples(path)
+
+    def test_rejects_unknown_layer(self, tmp_path: Path):
+        path = self._write(tmp_path, [{"namespace": "ns", "layer": "l9_nope", "items": []}])
+        with pytest.raises(ValueError):
+            load_recall_samples(path)
+
+    def test_duplicates_in_real_recall_are_still_deduped(self, tmp_path: Path):
+        """The whole point of feeding real recall: duplicates that actually
+        occur in the store must show up as savings, not silently inflate."""
+        path = self._write(
+            tmp_path,
+            [
+                {
+                    "namespace": "content_history",
+                    "items": [
+                        {"body": "- 重复条目", "source": "content_history", "confidence": 0.9},
+                        {"body": "- 重复条目", "source": "content_history", "confidence": 0.9},
+                    ],
+                }
+            ],
+        )
+        report = run_baseline(
+            DEFAULT_PROMPT_DIR, retrievals=load_recall_samples(path), scenario="samples"
+        )
+        assert report.scenario == "samples"
+        assert report.ok
+        assert report.total_compiled < report.total_baseline
 
 
 class TestPromptCoverage:

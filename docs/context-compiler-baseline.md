@@ -61,6 +61,47 @@ CI 对应 job：`Context Compiler Baseline`（`.github/workflows/ci.yml`）。
 
 单 agent stress 收益区间：-2.6%（evaluator，静态 policy 本身很大）到 -13.7%（blogger_scout）。
 
+## 用真实召回样本测量
+
+合成召回只能证明"机制正确"，证明不了"线上能省多少"。要跑真实分布：
+
+```bash
+python scripts/benchmarks/context_compiler_baseline.py \
+    --recall-samples path/to/samples.json
+```
+
+这会跑一个单独的 `samples` 场景，并把该文件作为所有 agent 的召回输入。
+
+> **为什么样本必须来自显式导出，而不是直接读遥测**：`kind="context"` 事件
+> 有意只存元数据（`mode` / `count` / `query` / `limit`），**从不落召回正文**——
+> 所以线上召回内容只能来自一次显式、脱敏的导出。这是隐私设计，不是缺口。
+
+样本 schema（JSON 列表，每项对应一次 namespace 召回）：
+
+```json
+[
+  {"namespace": "content_history", "layer": "l4_memory", "mode": "hit",
+   "items": [
+     {"body": "- 辅食食谱（互动率: 4.2%）", "source": "content_history",
+      "timestamp": "2026-09-10T08:00:00Z", "confidence": 0.9, "priority": 0}
+   ]}
+]
+```
+
+除 `namespace` 和 `items[].body` 外都可省略：`layer` 默认 L4、`mode` 默认 `hit`、
+`timestamp` 缺省为 `None`（排到队尾）、`confidence` 默认 1.0、`source` 默认取 `namespace`。
+`layer` / `mode` 值非法会直接报错（不静默兜底）。
+
+两点使用注意：
+
+- **真实样本里的重复项会被去重**，所以 `samples` 场景的 delta 就是"线上重复召回"
+  实际浪费的量——这正是最值得看的数字。
+- **真实样本的同键条目可能让 `shuffle` 不稳定**（排序键相同 ⇒ 稳定排序保持输入顺序）。
+  门禁会如实报出来：这未必是 bug，但意味着那批召回的相对顺序会影响 prompt，
+  值得单独看一眼。
+- `--recall-samples` 与 `--compare` 互斥（`samples` 场景不在入库快照里，
+  实时诊断不做回归对比）。
+
 ## 快照与漂移门禁
 
 稳定性不变量能抓"编译器坏了"，抓不到"prompt 悄悄长胖 40%"或"某次改动把上下文饿瘦"。

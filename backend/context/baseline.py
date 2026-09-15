@@ -22,6 +22,7 @@ prefix (L0-L3) untouched.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -218,6 +219,54 @@ def synthetic_retrievals(
         )
         for (source, layer), items in grouped.items()
     )
+
+
+def load_recall_samples(path: Path | str) -> tuple[RetrievalResult, ...]:
+    """Load recall fixtures from a JSON file (real / sanitised recall).
+
+    Why a file instead of reading telemetry: the ``kind="context"`` event
+    deliberately stores only metadata (mode / count / query / limit) and
+    never the recalled bodies — so real recall can only come from an
+    explicit, sanitised export. This is the intake for that export.
+
+    Schema (a list of results, each mirroring :class:`RetrievalResult`)::
+
+        [
+          {"namespace": "content_history", "layer": "l4_memory", "mode": "hit",
+           "items": [{"body": "...", "source": "content_history",
+                      "timestamp": "2026-09-01T00:00:00Z", "confidence": 0.9}]}
+        ]
+    """
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("recall samples must be a JSON list of results")
+
+    results: list[RetrievalResult] = []
+    for entry in payload:
+        items = tuple(
+            ContextItem(
+                body=str(item["body"]),
+                source=str(item.get("source", entry.get("namespace", "unknown"))),
+                timestamp=(
+                    datetime.fromisoformat(item["timestamp"]) if item.get("timestamp") else None
+                ),
+                confidence=float(item.get("confidence", 1.0)),
+                scope=str(item.get("scope", "task")),
+                priority=int(item.get("priority", 0)),
+            )
+            for item in entry.get("items", ())
+        )
+        results.append(
+            RetrievalResult(
+                namespace=str(entry["namespace"]),
+                layer=PromptLayer(entry.get("layer", PromptLayer.L4_MEMORY.value)),
+                items=items,
+                raw_items=tuple(item for item in entry.get("raw_items", ())),
+                mode=RetrievalMode(entry.get("mode", RetrievalMode.HIT.value)),
+                error=str(entry.get("error", "")),
+            )
+        )
+    return tuple(results)
 
 
 def _system_context(niche: str) -> RunContext:
@@ -636,18 +685,23 @@ def run_baseline(
     niche: str = "母婴",
     stress: bool = False,
     cases: Iterable[AgentCase] | None = None,
+    retrievals: tuple[RetrievalResult, ...] | None = None,
+    scenario: str | None = None,
 ) -> BaselineReport:
     """Run both axes over every agent prompt (offline, deterministic).
 
     ``stress=True`` feeds duplicated recall + a long observation tail, which
     is where dedup and the L5-first budget allocator pay off.
+
+    ``retrievals`` overrides the synthetic fixture with real (sanitised)
+    recall — see :func:`load_recall_samples`. Pass ``scenario="samples"`` (or
+    any label) so the report says which input produced the numbers.
     """
     engine = ContextCompiler()
-    resolved = (
-        tuple(cases)
-        if cases is not None
-        else load_agent_cases(prompt_dir, niche=niche, stress=stress)
-    )
+    if cases is not None:
+        resolved = tuple(cases)
+    else:
+        resolved = load_agent_cases(prompt_dir, niche=niche, stress=stress, retrievals=retrievals)
     costs = tuple(measure_cost(case, engine, budget=budget, niche=niche) for case in resolved)
     stability = tuple(
         measure_stability(case, engine, repeats=repeats, budget=budget, niche=niche)
@@ -657,5 +711,5 @@ def run_baseline(
         budget=budget,
         costs=costs,
         stability=stability,
-        scenario="stress" if stress else "default",
+        scenario=scenario or ("stress" if stress else "default"),
     )
