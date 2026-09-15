@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = [
     "CostClass",
     "LatencyClass",
+    "PassStyle",
     "RetryPolicy",
     "SideEffect",
     "ToolResult",
@@ -60,6 +61,24 @@ class CostClass(StrEnum):
     """Cheap network call."""
     EXPENSIVE = "expensive"
     """Billed call — LLM inference or a metered service."""
+
+
+class PassStyle(StrEnum):
+    """How the payload mapping reaches the underlying tool.
+
+    Not every tool takes keyword arguments. ``algorithmic_de_ai(data: dict)``
+    takes one free-form mapping, so unpacking the payload as keywords would
+    raise ``TypeError: unexpected keyword argument`` — a failure the Gateway
+    would faithfully report as ``ok=False``, i.e. as "the tool broke" rather
+    than "we wired it wrong". Declaring the style here is what makes that
+    distinction auditable (and is exactly what L1 rendering needs to describe
+    a free-form tool without inventing parameter names it cannot know).
+    """
+
+    KWARGS = "kwargs"
+    """Payload keys are the tool's argument names (``tool(**payload)``)."""
+    MAPPING = "mapping"
+    """The tool takes one mapping argument (``tool(payload)``)."""
 
 
 # Default per-latency timeout, unless a spec overrides it explicitly.
@@ -109,7 +128,20 @@ class ToolSpec:
     cost: CostClass = CostClass.FREE
     retry_policy: RetryPolicy = field(default_factory=RetryPolicy)
     auth_scope: tuple[str, ...] = ()
+    pass_style: PassStyle = PassStyle.KWARGS
+    """How :mod:`~backend.tools.runtime.catalog` hands the payload over.
+
+    Set by ``adapt_tool``'s detection so the adapter and the declaration can
+    never disagree; overridable when a tool's signature is ambiguous.
+    """
     timeout_s: float | None = None
+    max_concurrency: int | None = None
+    """In-flight ceiling for this capability (``None`` = unbounded).
+
+    The Gateway enforces it with a per-capability semaphore. This is the
+    deterministic half of rate limiting; time-based quotas belong to the
+    durable scheduler (P2b).
+    """
     input_schema: Mapping[str, Any] = field(default_factory=dict)
     output_schema: Mapping[str, Any] = field(default_factory=dict)
 
@@ -120,6 +152,8 @@ class ToolSpec:
             raise ValueError(f"{self.capability}: summary must not be empty")
         if self.timeout_s is not None and self.timeout_s <= 0:
             raise ValueError(f"{self.capability}: timeout_s must be > 0")
+        if self.max_concurrency is not None and self.max_concurrency < 1:
+            raise ValueError(f"{self.capability}: max_concurrency must be >= 1")
         # Retrying something that changes external state without an
         # idempotency key is how you double-publish. Fail loudly instead.
         if (
@@ -153,7 +187,9 @@ class ToolSpec:
             "latency": self.latency.value,
             "cost": self.cost.value,
             "auth_scope": list(self.auth_scope),
+            "pass_style": self.pass_style.value,
             "timeout_s": self.effective_timeout_s,
+            "max_concurrency": self.max_concurrency,
             "retry": {
                 "max_attempts": self.retry_policy.max_attempts,
                 "backoff_s": self.retry_policy.backoff_s,

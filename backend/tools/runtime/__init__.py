@@ -7,9 +7,16 @@ invoke them.
 """
 
 from backend.tools.runtime.catalog import adapt_tool, build_registry, describe_params
+from backend.tools.runtime.gateway import (
+    PermissionDeniedError,
+    Sleeper,
+    ToolGateway,
+    TraceSink,
+)
 from backend.tools.runtime.models import (
     CostClass,
     LatencyClass,
+    PassStyle,
     RetryPolicy,
     SideEffect,
     ToolFn,
@@ -27,13 +34,18 @@ __all__ = [
     "CostClass",
     "DuplicateCapabilityError",
     "LatencyClass",
+    "PassStyle",
+    "PermissionDeniedError",
     "RegisteredTool",
     "RetryPolicy",
     "SideEffect",
+    "Sleeper",
     "ToolFn",
+    "ToolGateway",
     "ToolRegistry",
     "ToolResult",
     "ToolSpec",
+    "TraceSink",
     "UnknownCapabilityError",
     "adapt_tool",
     "build_registry",
