@@ -146,3 +146,59 @@ ContentPlan 等 `dict[str, Any]` 全面类型化。
 - P1b 基线 `--compare --drift-pct 5`：**drift within threshold（0）** —— L1 schema 走
   运行时消息，system prompt 逐字节未动
 - `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）
+
+
+## S2a 执行记录（2026-09-15，分支 `feat/p1d-s2a-scout-agents`）
+
+票面要求「逐个迁移」，7 个 agent 一次做完会是一个难以 review 的大 PR，所以先切 scout 类
+（`trend_scout` + `blogger_scout`，3 个调用点）—— **恰好覆盖 PROMPTED 与 JSON_OBJECT 两个
+档位**：`trend_scout` 走 SCOUTING → XUNFEI（PROMPTED），`blogger_scout` 走 MOCK_GEN →
+DEEPSEEK（JSON_OBJECT），后者是仅有的两个走 JSON_OBJECT 档的 agent 之一。
+
+### 交付
+
+| 文件 | 内容 |
+|---|---|
+| `backend/models/outputs.py` | 7 个新模型（`HotTopicItemOutput` / `CompetitorPostOutput` / `NicheOpportunityOutput` / `TrendingNoteOutput` / `TrendScoutOutput` / `BloggerCandidateOutput` / `BloggerScoutOutput`，`__all__` 2 → 8）+ `normalize_trend_data` / `normalize_blogger_candidates`；助手 `_as_float`（`"90%"` 只去符号不换算）、`_as_int`（`"5万"` / `"1.2w"` / `"3k"`）、`_topic_text`（`topic` / `title` / `name` / `keyword` 别名） |
+| `backend/models/structured.py` | `render_schema_instructions` 递归展开嵌套模型（`_nested_models` + `_describe_fields`，每个模型只展开一次）；`_type_label` 认识 `Any` 与 `Optional[X]` |
+| `backend/agents/trend_scout.py` | `_llm_ainvoke` + `_parse_json_response` + 手写别名链 → `_llm_structured`；失败时降级为 `normalize_trend_data(TrendScoutOutput())`（空结构只有一个来源） |
+| `backend/agents/blogger_scout.py` | 同上；删掉 `_retry_mock_with_explicit_json`（36 行、无测试引用，功能被设施自带的纠偏取代） |
+| `backend/agents/base.py` | `_llm_structured` 增第三类失败：**一次都没问到** → 原样抛回（见下） |
+| 测试 | `test_outputs.py`(+171) / `test_structured.py`(+72) / `test_llm_structured.py`(+81) / `test_blogger_scout.py`（替身重做）/ `test_trend_scout.py`（失败语义改写） |
+
+### 动手后才暴露的三件事
+
+1. **`_llm_structured` 把「问不到」当成了「答得不好」—— 本片最贵的一处**。S1 的框架只有
+   两种失败（产物坏掉 / 产物被 validator 拒收），而「调用本身抛错」被当成「这一档不可
+   用」直接降级。对 scout 的后果是：**LLM 完全不可用会被降级成空趋势、节点报 success，
+   `07-07` 的 error state 与 P1a-S2 的 failed perf 条目一起消失**，
+   `tests/integration/test_stateful_retry.py` 三条 E2E 直接变红。判决为 **(b) 类（行为真
+   变差）→ 改设施**：链条走完仍**没有任何一档给出过答复**时抛原始异常，而不是
+   `StructuredOutputError`。这个区分是承重的 —— `StructuredOutputError` 是调用方用来转成
+   业务兜底（「这次没有趋势」）的东西，一次故障借走这个含义就不再被重试。
+2. **`_parse_json_response` 的失败产物 `{"raw_content": ...}` 现在能通过 schema**：全默认
+   字段 + `extra="ignore"` 让它变成一个合法的空 `TrendScoutOutput`。所以「模型原文不进
+   state」由**输出模型声明过所有键**保证，而不是被链条拦住 —— 两个机制都在，断言钉的是
+   可观察性质而不是某一个机制。
+3. **`render_schema_instructions` 对嵌套模型渲染不足**：scout 的输出恰恰是嵌套的，而旧实
+   现只会输出类名。补递归展开，并顺手修 `_type_label` 把 `Optional[X]` 当 `string` 的错
+   —— 它与「只展开一次」叠加后**没有补偿信息**：第二个引用同一模型的字段只剩一个错误标签。
+
+### 顺带发现的既有缺陷（非本片引入）
+
+- `trending_notes`（`blogger_scout._summarize_trend_data` 读 `title`）与
+  `market_saturation`（`content_strategist` 原样透传给 Ripple）都被真实读取，却不在
+  `state/substates.py::TrendData` 里 —— 此前只在模型碰巧输出该键时才有值。两者已进输出
+  模型，并有一条测试把与契约的差距**显式钉成「恰好这两个键」**，免得它悄悄变成三个。
+- `test_blogger_scout.py` 6 条用例用 `AsyncMock()` 当模型：`bind()` 返回**未被 await 的协
+  程** → JSON_OBJECT 档 `AttributeError` → 链条静默降级到 PROMPTED，测试全绿却从没跑过生
+  产用的那一档。换成真对象替身（`_JsonModel`），并加一条
+  `bound == [{"response_format": {"type": "json_object"}}]` 断言把「跑的是生产那一档」钉住。
+
+### 门禁
+
+- `pytest -q`：**2910 passed / 3 skipped**
+- `ruff check` / `ruff format --check`：493 files 干净
+- `mypy backend --python-version 3.12`：199 files 干净
+- P1b 基线 `--compare --drift-pct 5`：**drift within threshold（0）**
+- `scripts/gates/tool_runtime_gate.py`：OK（orphan 仍只有 `xhs.publish`）

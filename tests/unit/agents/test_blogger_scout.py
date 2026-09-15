@@ -1,6 +1,7 @@
 """Unit tests for BloggerScoutAgent."""
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -8,6 +9,39 @@ import pytest
 from backend.agents.blogger_scout import BloggerScoutAgent
 from backend.config.models import TaskType
 from backend.state.enums import WorkflowMode, WorkflowPhase
+
+
+class _JsonModel:
+    """A chat model that answers with one canned payload — ``bind`` included.
+
+    Deliberately a real object rather than an ``AsyncMock``. ``blogger_scout``
+    routes to MOCK_GEN, i.e. DEEPSEEK, i.e. the **JSON_OBJECT** level, whose
+    call shape is ``model.bind(response_format=...).ainvoke(...)``. On an
+    ``AsyncMock`` the ``bind`` call itself hands back an un-awaited coroutine,
+    so that level dies with ``AttributeError``, the chain silently falls
+    through to PROMPTED, and the test goes green while never running the level
+    production actually uses. Same failure mode as the ``_PlainModel`` double
+    in ``test_llm_structured.py``: a mock invents whatever shape it is asked
+    for, so it cannot demonstrate that the level under test was reached.
+    """
+
+    def __init__(self, payload: str | None = None, error: Exception | None = None) -> None:
+        self._payload = payload
+        self._error = error
+        self.calls: list[list[Any]] = []
+        self.bound: list[dict[str, Any]] = []
+
+    def bind(self, **kwargs: Any) -> "_JsonModel":
+        self.bound.append(kwargs)
+        return self
+
+    async def ainvoke(self, messages: list[Any], **_kwargs: Any) -> Any:
+        self.calls.append(messages)
+        if self._error is not None:
+            raise self._error
+        response = MagicMock()
+        response.content = self._payload
+        return response
 
 
 class TestBloggerScoutAgent:
@@ -113,10 +147,8 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_returns_candidates(self, agent, trend_state, mock_store):
         """Execute returns LLM-generated blogger candidates."""
-        mock_response = MagicMock()
-        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 5000, "note_count": 100, "total_engagement": 3000, "top_note_title": "美食探店"}, {"user_id": "mock_002", "nickname": "博主B", "follower_count": 3000, "note_count": 80, "total_engagement": 2000, "top_note_title": "咖啡推荐"}]}'  # noqa: E501
-        agent._model = AsyncMock()
-        agent._model.ainvoke = AsyncMock(return_value=mock_response)
+        payload = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 5000, "note_count": 100, "total_engagement": 3000, "top_note_title": "美食探店"}, {"user_id": "mock_002", "nickname": "博主B", "follower_count": 3000, "note_count": 80, "total_engagement": 2000, "top_note_title": "咖啡推荐"}]}'  # noqa: E501
+        agent._model = _JsonModel(payload)
 
         result = await agent.execute(trend_state, store=mock_store)
 
@@ -124,6 +156,10 @@ class TestBloggerScoutAgent:
         assert len(result["blogger_candidates"]) == 2
         assert result["blogger_candidates"][0]["user_id"] == "mock_001"
         assert result["blogger_candidates"][0]["total_engagement"] > 0
+        # 生产的档位真的被走到了。只断言"拿到了候选"是不够的：一个让 bind 失效
+        # 的替身会让链条静默降到 PROMPTED 而结果看起来一模一样。response_format
+        # 只有 JSON_OBJECT 一档会绑，所以它在这里证明"跑的是生产那一档"。
+        assert agent._model.bound == [{"response_format": {"type": "json_object"}}]
 
     @pytest.mark.asyncio
     async def test_execute_respects_candidate_limit(self, agent, brief_state, mock_store):
@@ -139,10 +175,7 @@ class TestBloggerScoutAgent:
             }
             for i in range(10)
         ]
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({"candidates": candidates}, ensure_ascii=False)
-        agent._model = AsyncMock()
-        agent._model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = _JsonModel(json.dumps({"candidates": candidates}, ensure_ascii=False))
 
         result = await agent.execute(brief_state, store=mock_store)
 
@@ -169,11 +202,9 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_uses_llm_generation(self, agent, trend_state, mock_store):
         """Uses LLM mock generation for blogger candidates."""
-        mock_response = MagicMock()
-        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "测试博主", "follower_count": 5000, "note_count": 50, "total_engagement": 3000, "top_note_title": "测试笔记标题"}]}'  # noqa: E501
+        payload = '{"candidates": [{"user_id": "mock_001", "nickname": "测试博主", "follower_count": 5000, "note_count": 50, "total_engagement": 3000, "top_note_title": "测试笔记标题"}]}'  # noqa: E501
 
-        agent._model = AsyncMock()
-        agent._model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = _JsonModel(payload)
         result = await agent.execute(trend_state, store=mock_store)
 
         assert len(result["blogger_candidates"]) == 1
@@ -184,11 +215,9 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_llm_fallback_ensures_mock_prefix(self, agent, trend_state, mock_store):
         """LLM fallback ensures all user_ids have mock_ prefix even if LLM omits it."""
-        mock_response = MagicMock()
-        mock_response.content = '{"candidates": [{"user_id": "001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'  # noqa: E501
+        payload = '{"candidates": [{"user_id": "001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'  # noqa: E501
 
-        agent._model = AsyncMock()
-        agent._model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = _JsonModel(payload)
         result = await agent.execute(trend_state, store=mock_store)
 
         assert result["blogger_candidates"][0]["user_id"] == "mock_001"
@@ -196,11 +225,9 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_llm_fallback_adds_avatar_url(self, agent, trend_state, mock_store):
         """LLM fallback adds empty avatar_url if not present in LLM response."""
-        mock_response = MagicMock()
-        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'  # noqa: E501
+        payload = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'  # noqa: E501
 
-        agent._model = AsyncMock()
-        agent._model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = _JsonModel(payload)
         result = await agent.execute(trend_state, store=mock_store)
 
         assert "avatar_url" in result["blogger_candidates"][0]
@@ -208,8 +235,7 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_llm_fallback_failure_returns_empty(self, agent, trend_state, mock_store):
         """Returns hardcoded fallback when LLM fallback also fails."""
-        agent._model = AsyncMock()
-        agent._model.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
+        agent._model = _JsonModel(error=Exception("LLM error"))
         result = await agent.execute(trend_state, store=mock_store)
 
         # Should get hardcoded fallback instead of empty

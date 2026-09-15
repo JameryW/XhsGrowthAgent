@@ -1,5 +1,6 @@
 """Unit tests for TrendScoutAgent."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -75,7 +76,19 @@ class TestTrendScoutAgent:
 
     @pytest.mark.asyncio
     async def test_execute_handles_invalid_json(self, agent, mock_state, mock_store):
-        """Execute handles invalid LLM response."""
+        """Unparseable LLM output degrades to the declared empty trend shape.
+
+        The old implementation turned ``_parse_json_response``'s failure into
+        ``{"raw_content": <model text>}`` — it parked the raw answer in state
+        and left the *API layer* to filter it back out (see
+        ``tests/unit/api/test_public_showcase.py``). Note what that payload
+        does now: every field on ``TrendScoutOutput`` has a default and the
+        model ignores extras, so ``{"raw_content": ...}`` *passes* the schema
+        and the failure never even reaches ``StructuredOutputError``. Two
+        independent mechanisms keep the text out of state — the chain never
+        returns a malformed payload, and the output model only admits keys it
+        declared — so the assertion below pins the property, not the mechanism.
+        """
         mock_response = MagicMock()
         mock_response.content = "Not valid JSON"
 
@@ -83,11 +96,23 @@ class TestTrendScoutAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        result = await agent.execute(mock_state, store=mock_store)
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending") as trending,
+            patch("backend.tools.xhs.trending.keyword_monitor") as monitor,
+            patch("backend.tools.xhs.trending.competitor_analyzer") as competitor,
+        ):
+            trending.ainvoke = AsyncMock(return_value=[])
+            monitor.ainvoke = AsyncMock(return_value={})
+            competitor.ainvoke = AsyncMock(return_value=[])
+            result = await agent.execute(mock_state, store=mock_store)
 
-        # Should still return trend_data with raw_content
         assert "trend_data" in result
-        assert result["trend_data"].get("raw_content") == "Not valid JSON"
+        trend_data = result["trend_data"]
+        assert trend_data["hot_topics"] == []
+        assert "raw_content" not in trend_data
+        # 模型原文一个字都不随结果走 —— 上面那条只钉了键名，这条钉内容。
+        assert "Not valid JSON" not in json.dumps(trend_data, ensure_ascii=False)
+        assert trend_data["data_source"] == "llm_generated"
 
     @pytest.mark.asyncio
     async def test_execute_with_account_id(self, agent, mock_store):
