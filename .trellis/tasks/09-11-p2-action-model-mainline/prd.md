@@ -161,3 +161,50 @@ M5/M6 这一对是**故意成对的**：只测 M5 的话，一个"丢键"的实�
 S3 接上 Tool Gateway 后它必须消失（`grep` 该异常在生产代码里的引用面 = `advisor.py` 一处 +
 `routes` 的映射一处）。S2 的 Policy 判据要插在 `plan_action` 之后、`resolve_action` 之前 ——
 这样拒绝路径**不产生 intent**（待决问题 2 的取向）。
+
+### S2 — Policy Engine（`feat/p2a-s2-policy-engine`）
+
+**范围**：新模块 `backend/creator_agent/policy.py` + 接线。S2 三件事里只做"判定"，**不产生副作用、不碰主链**。
+
+改动（5 改 2 新）：
+
+| 文件 | 改动 |
+|---|---|
+| `creator_agent/policy.py` | **新建**：`PolicyId` / `RiskVerdict` / `ActionPolicySnapshot` / `PolicyVerdict` + `evaluate_action_policy`（纯函数规则表）+ `build_action_policy_snapshot`（唯一服务接触面，checker 可注入）+ `_consult_checker`（fail-closed 边界）+ `_risk_gate_publish_verdict`（调用时解析真门禁） |
+| `creator_agent/repository.py` | `ActionPolicyDeniedError`（带 `policy_id` / `reason` / `account_id` / `retry_after_seconds`） |
+| `creator_agent/advisor.py` | `plan_action` 在**形状校验之后、`create_action` 之前**求值；拒绝则 warning + 抛出。新增模块 logger |
+| `api/errors.py` | `ErrorCode.CREATOR_ACTION_POLICY_DENIED` + `CreatorActionPolicyDeniedError`（**403**） |
+| `api/routes/creator_agent.py` | `POST /actions` 异常映射接上 403 |
+| `creator_agent/__init__.py` | 导出策略面 |
+| `tests/unit/creator_agent/test_action_policy.py` | **新建，20 用例** |
+
+**四个设计决定**
+
+1. **引擎是纯函数，服务接触面只有一处**：`evaluate_action_policy` 只吃 `ActionPolicySnapshot`，规则表可单测而不碰 `xhs_risk_gate` 的模块级全局态；与门禁的接触隔离成**可注入的 checker**（默认走真门禁）。注入缝是为了让测试**跑同一条代码路径**，而不是 patch 掉门禁换来一个"默认路径从未被测"的假绿（因此另有一条用例专门证明**默认 checker 就是真门禁**）。
+2. **★ fail-closed 落在边界上，不落在某个实现里**（本片唯一一次被自己的测试推翻的设计）：初版把 `try/except` 写在默认 checker 内部，测试证明**注入的 checker 一抛就穿透** —— 保证只对生产实现成立、不对缝成立，任何替代 checker 都会静默丢掉这个性质。改成 `_consult_checker(checker, …)` 统一包裹：**任何** checker 抛异常都变成 `RISK_UNAVAILABLE` 拒绝。捕获宽 `Exception` 是刻意的（门禁只为"这次发布能不能过"被咨询；答不上来就没有理由放行），`CancelledError` 是 `BaseException`、仍会穿透。
+3. **`risk=None` 只表示"查过且清"**：读不到门禁表达成 `RiskVerdict(RISK_UNAVAILABLE, …)`，**不折叠进 `None`** —— 否则第 2 条的 fail-closed 会被静默改写成 fail-open。
+4. **只闸有副作用的能力**：`NOT_APPLICABLE` 是规则表第一条，且 **builder 里就不去咨询门禁**，所以三个非交易性能力的既有行为**逐字节不变**（专门用例把门禁换成"一碰就 raise"的哨兵来钉这条红线）。
+
+**待决问题 2 的裁决**：**不落库** —— 走"可观测但不留痕"。理由：拒绝既然不产生 intent，那么造一条**永久无法确认的 intent** 就是拿一个死记录换可见性。可见性由 ① **403 响应体**（`policy_id` / `account_id` / `retry_after_seconds`）+ ② **advisor 的 warning 日志**（含 policy_id / kind / reason）承担。**持久化"被拒"审计**（供运营回看）留给 S5，与 immutable DecisionRecord 收尾同批 —— 本片不新造 schema。
+
+**★ 本片发现的既有缺陷（非本片引入，已钉成断言，不修）**：**按账号的发布冷却在生产里不可达**。
+
+`xhs_risk_gate._profile_key` 优先用 `account_id`（键 `account:<id>`），只有在没给 account_id 时才退到 CDP endpoint；而生产里**唯一的写入者**是 `services/xhs_publisher.publish_note`，它**只传 `cdp_endpoint`**（该层拿不到 account_id）→ `account:<id>` 这个桶**没有任何生产写入者**，`check_publish_allowed(account_id=…)` 对所有账号恒返回 `None`。
+
+- 后果：S2 的 `RISK_COOLDOWN` 规则**已接线、已用真门禁测过，但在生产里目前不可达**。
+- 处置：**不假装修好**。钉成 `test_the_intent_time_check_reads_a_key_the_runtime_never_writes` —— 断言"运行时只写 endpoint 键 ⇒ 意图层按账号的检查为空"，并写明 **S3 落地时这条断言必须改**（S3 的 executor 同时知道账号与发布事件，是记账的正确归属地）。
+- **既有测试为什么没发现它**：`test_risk_gate_cooldowns.py` 直接 `note_publish(account_id="a1")` —— **替身比生产多写了一个键**，于是用例全绿而生产这条闸是死的（与 P1d 记录的"替身必须忠实于生产"同一族）。
+
+**门禁（四道全绿，提交前实测）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q` | **3115 passed / 3 skipped** —— S1 的 3095 + **20**，恰等于新测试文件用例数 → **零既有用例被改动** |
+| `ruff check .` / `format --check .` | **497 files**，All checks passed |
+| `uv run mypy backend --python-version 3.12` | **201 source files, no issues** |
+| P1b 基线 | `drift within threshold`（L0–L5 prompt 逐字节不变） |
+| `tool_runtime_gate.py` | OK；orphan 仍只有 `xhs.publish`（S4 才消失） |
+
+**突变自检：6/6 killed**，每条从原始字节起算、每条被**具名断言**杀掉，覆盖六个不同机制：M1 非 publish 落进发布闸（`…is_out_of_this_policy_scope[compare_options]`）/ M2 收集了风险判决却不看（`…a_risk_block_denies_and_carries_the_retry_hint`）/ M3 读不到门禁当成"清"（`…a_raising_gate_becomes_a_denial_not_an_allow`）/ M4 空 account 放行（`…a_missing_account_is_a_denial_not_an_allow`）/ M5 策略拒绝后仍然落库（`…a_denied_publish_never_becomes_a_durable_intent`）/ M6 拒绝报 400（`…maps_to_403_with_its_own_code_and_retry_hint`）。
+
+**下一片（S3）的入口条件**：① PUBLISH 经 Tool Gateway 调 `xhs.publish`，`ActionCapabilityNotWiredError` 必须消失；② **记账必须用同一个 key** —— `note_publish` 要带上 account_id，否则 `RISK_COOLDOWN` 这条规则依旧是死的（见上面的钉法）；③ 幂等键就位**之后**才解锁 catalog 的 `RetryPolicy`。

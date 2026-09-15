@@ -12,7 +12,7 @@
   "assignee": "codex",
   "createdAt": "2026-09-11",
   "completedAt": null,
-  "branch": "feat/p2a-s1-action-protocol",
+  "branch": "feat/p2a-s2-policy-engine",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -34,6 +34,6 @@
     "backend/api/routes/creator_agent.py",
     "tests/unit/creator_agent/test_action_publish_payload.py"
   ],
-  "notes": "S1 landed on feat/p2a-s1-action-protocol (base f83ab057). Gates: pytest 3095 passed/3 skipped (S4 3065 + 30 new = zero existing cases touched), ruff 495 files, mypy 200 files clean, P1b baseline drift within threshold, tool_runtime_gate OK (xhs.publish still the only orphan by design until S4). Mutation self-check 11/11 killed, each by a named assertion. Two env noises, not regressions: (a) test_delete_running_workflow_blocked fails only because the WorkBuddy safe-delete shim times out at 10s -> passes with CODEBUDDY_SAFE_DELETE_ENABLED=0; (b) the predicted mypy return-value errors on model_validator(mode=\"after\") never appeared (pydantic plugin handles it), so NO type: ignore was added. S1 decision on open question 1: publish keeps the decision's audience_id (option b). ActionCapabilityNotWiredError is a temporary roadblock and must disappear in S3.",
+  "notes": "S2 landed on feat/p2a-s2-policy-engine (base 2481e991). Scope: a deterministic publish policy gate evaluated inside plan_action, after shape validation and before create_action, so a denial leaves no Action Intent behind. New module backend/creator_agent/policy.py (pure rule table + one injectable seam to xhs_risk_gate); denial -> ActionPolicyDeniedError -> HTTP 403 ERROR_CREATOR_ACTION_POLICY_DENIED carrying policy_id/account_id/retry_after_seconds. Gates: pytest 3115 passed/3 skipped (S1 3095 + 20 = zero existing cases touched), ruff 497 files, mypy 201 files clean, P1b baseline drift within threshold, tool_runtime_gate OK (xhs.publish still the only orphan by design until S4). Mutation self-check 6/6 killed, each by a named assertion, one per mechanism. Two findings: (a) the fail-closed guarantee had to move from the default checker into the seam -- a test injecting a raising checker proved the first version was fail-open for any other checker; (b) PRE-EXISTING DEFECT, pinned not fixed: the account-keyed publish cooldown has no production writer (services/xhs_publisher records only cdp_endpoint), so check_publish_allowed(account_id=...) returns None for every account in production and the RISK_COOLDOWN rule is wired + tested but currently unreachable. Pinned by test_the_intent_time_check_reads_a_key_the_runtime_never_writes; S3 must record the account key when it executes a publish. Decision on open question 2: denials are NOT persisted -- a permanently unconfirmable intent is a dead record; visibility comes from the 403 body plus an advisor warning log, and a persisted denial audit is deferred to S5.",
   "meta": {}
 }
