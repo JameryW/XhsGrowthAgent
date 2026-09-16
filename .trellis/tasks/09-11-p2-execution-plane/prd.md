@@ -46,7 +46,7 @@
 
 | 切片 | 内容 | 风险 |
 |---|---|---|
-| **S1** ✅ 已交付 | **执行租约的数据面**：owner identity（实例 id + 启动时刻）+ 租约记录（thread_id → owner / acquired_at / heartbeat_at / expires_at / state）+ `acquire` / `renew` / `release` / `expire_scan`。**只写不读** —— 今天的 `_background_tasks` 照旧决定一切，对外零行为变更 | 低-中 |
+| **S1** ✅ [#614] | **执行租约的数据面**：owner identity（实例 id + 启动时刻）+ 租约记录（thread_id → owner / acquired_at / heartbeat_at / expires_at / state）+ `acquire` / `renew` / `release` / `expire_scan`。**只写不读** —— 今天的 `_background_tasks` 照旧决定一切，对外零行为变更 | 低-中 |
 | **S2** | **状态推导改读租约**：`has_active_task` 由租约回答；`/status` `/list` 的 `orphan` 语义从"本进程没有任务"变成"**租约已过期**"。事实 15 的绊线按设计改形 | 中（改可观测语义） |
 | **S3** | **过期租约的接管**：启动扫描 + 周期扫描，从 checkpoint 续跑。**接管只能恢复执行循环、不能替人做决定**（见待决 3） | 高（会重跑工作） |
 | **S4** | **长任务移出 API 进程**：按事实 9、13 逐点分类，把 CDP 会话与重型任务挪出编排进程。**凭证据开闸**（裁定 1）—— 无证据则降级为文档 + 分类清单 | 高 |
@@ -107,7 +107,7 @@
 
 ## 执行记录
 
-### S1 —— 执行租约的数据面（分支 `feat/p2b-s1-execution-lease`）
+### S1 —— 执行租约的数据面（分支 `feat/p2b-s1-execution-lease`，commit `761c2865`，PR [#614](https://github.com/JameryW/XhsGrowthAgent/pull/614)）
 
 **定性**：把「谁在跑这个 thread」从**进程内的事实**变成**可陈述、可过期、可交接的事实**。S1 只建数据面并接上生产的**写入点**，**不接任何读者** —— 今天 `_background_tasks` 照旧决定一切，对外零行为变更。
 
@@ -180,5 +180,7 @@ harness 规矩沿用 S4b/S5b：**step 0** 在未改动树上跑全部具名击�
 **残留与诚实登记**
 
 - **S1 是只写不读**：`acquire` 的返回值在生产被丢弃；`expire_scan` / `is_stale` / `list_leases` 在生产**暂无读者**（按计划 S2/S3 才接）。这不是缺口，是切片边界 —— 登记在此以免被读成「做了一半」。
-- **一次未能定根的观察**（如实登记，不编根因）：定位过一个「pytest 下 `end_lease` 挂起」的现象，最终判定为**探针/环境**而非代码 —— 裸 asyncio 下同形式 **6/6 通过**（含内联 `wait_for` + 活跃心跳）；真实文件单独跑 **3/3 通过**（0.5–0.7s）；三条有界 teardown 用例各自单独跑 **2/2 通过**；现象只出现在我写的临时探针里（已删除），且对「多加一个 task / 多一行 print」敏感（典型时序 Heisenbug）。相邻还有一次 >90s 的「挂起」伴随**机器仅剩 0.07GB 可用内存**。⇒ 没有拿到确定性根因。缓解已内置：测试里 `end_lease` 的 teardown **一律有界**（`wait_for(..., 5.0)`），忘停心跳会表现为**失败**而不是无声挂起（M4/M17 的击杀形态即为此）。
+- **★ 「pytest 下 `end_lease` 挂起」的确定性根因（已定根；推翻早前「环境 Heisenbug」的猜想）**：盘上的 `backend/db/execution_leases.py` 曾把 `end_lease` 里的 **`heartbeat.cancel()` 变成了 `pass`** —— 也就是**突变自检 harness 的一个突变体**。机制：单进程 harness 里 `pytest.main` 一旦挂住，逐条突变的 `finally` **永不执行**，突变体就留在盘上；下一次运行**又把它当成「原始版本」读进来**（自我污染）。`end_lease` 不 cancel → `gather` 等一个无限循环的 task → 永久挂起（在飞 **4m29s** 仍被 kill；`faulthandler` 显示 event loop 在 `windows_events._poll` 空转、**无 pending timer** = 在等一个永不被 set 的 Future）。判定依据：把 `cancel()` 改回后，同一文件 **27 passed / 0.91s**。⇒ 不是环境、不是时序 Heisenbug，是**树被污染**。
+  harness 已补三条硬化（此后 21/21 的那一次即为其产物）：① **锚点前置检查** —— 脏树下**毫秒级**报 `PREFLIGHT-FAIL` 并 `return 3`，而不是花 20 分钟等超时；② **看门狗** —— 超时**先恢复源码**再 `os._exit(99)`，消息写独立日志文件（pytest 会占用 fd 1，`print` 会随硬退出一起丢失）；③ **收尾哈希核验** —— 打印 `restore=OK/FAIL`。
+- **测试侧的独立改进**：测试里 `end_lease` 的 teardown **一律有界**（`wait_for(..., 5.0)`）。理由不止于杀突变：原来直接 `await end_lease(...)`，实现一旦忘记 `cancel`，**失败形态是永久挂死**而不是断言失败 —— 未来任何重构把 `end_lease` 弄坏，整套测试会挂死而非报错。M4/M17 的击杀形态即为此。
 - `EVENT_KINDS` 仍无读者、`account_credentials` 仍无写入者 —— P2a 的既有残留，与本片无关。
