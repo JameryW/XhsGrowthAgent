@@ -96,14 +96,32 @@ class ActionValidationError(Exception):
 
 
 class ActionCapabilityNotWiredError(Exception):
-    """The capability has a durable intent but no executor wired yet."""
+    """The capability has a durable intent but no executor wired yet.
 
-    def __init__(self, action_id: str, action_kind: ActionCapability) -> None:
+    ``action_kind`` is kept **raw** rather than narrowed to
+    :class:`ActionCapability`, because the one caller that raises this holds
+    whatever the intent carried: assuming the enum would break on exactly the
+    case the error was written for (a capability the executor does not know).
+    Read :attr:`kind_label` for the printable form.
+    """
+
+    def __init__(self, action_id: str, action_kind: ActionCapability | str) -> None:
         self.action_id = action_id
         self.action_kind = action_kind
-        super().__init__(
-            f"action {action_id} of kind {action_kind.value} has no executor wired yet"
-        )
+        super().__init__(f"action {action_id} of kind {self.kind_label} has no executor wired yet")
+
+    @property
+    def kind_label(self) -> str:
+        """The capability as text, including values the enum does not declare.
+
+        ``str`` serves both cases because :class:`ActionCapability` is a
+        ``StrEnum``: a member prints as its value (``"publish"``), and so does a
+        raw string the executor did not recognise.  Kept as one spelling on
+        purpose -- a defensive ``getattr(self.action_kind, "value", ...)`` is
+        indistinguishable on every input this error can receive, so the test that
+        pins the member case is worth more than the branch it would justify.
+        """
+        return str(self.action_kind)
 
 
 class ActionPolicyDeniedError(Exception):

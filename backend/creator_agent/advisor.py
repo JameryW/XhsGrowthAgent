@@ -61,6 +61,7 @@ from backend.creator_agent.policy import (
 )
 from backend.creator_agent.proposals import build_evidence_proposals
 from backend.creator_agent.repository import (
+    ActionCapabilityNotWiredError,
     ActionCredentialUnavailableError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
@@ -504,7 +505,7 @@ class CreatorAdvisor:
             # Set on exactly the publish path above, and on no other.
             assert publish_outcome is not None
             result = _publish_receipt_result(publish_outcome)
-        else:
+        elif action.action_kind is ActionCapability.REQUEST_MORE_EVIDENCE:
             result = {
                 "decision_id": decision.decision_id,
                 "decision_status": decision.status.value,
@@ -512,6 +513,17 @@ class CreatorAdvisor:
                 "evidence_coverage": decision.evidence_coverage,
                 "confidence": decision.confidence,
             }
+        else:
+            # Fail closed, and this is the only thing this branch may do.  Every
+            # capability the protocol declares has an arm above, so reaching here
+            # means the executor was handed a kind it does not know -- and
+            # answering that with *another* capability's receipt would produce the
+            # one artefact the protocol cannot tolerate: a durable, immutable
+            # record of work that was never done.  A capability that gains a
+            # member without an executor therefore arrives as a refusal, never as
+            # a plausible-looking receipt (P2a-S1's "未接线必须吵", honoured by an
+            # executor instead of by the absence of one).
+            raise ActionCapabilityNotWiredError(action.action_id, action.action_kind)
 
         now = utc_now_iso()
         # Only a *published* outcome is a success.  An ``unknown`` publish

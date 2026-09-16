@@ -472,7 +472,7 @@ async def execute_creator_action(
             reason=exc.reason,
         ) from exc
     except ActionCapabilityNotWiredError as exc:
-        raise CreatorActionCapabilityNotWiredError(exc.action_id, exc.action_kind.value) from exc
+        raise CreatorActionCapabilityNotWiredError(exc.action_id, exc.kind_label) from exc
     except DecisionRecordMissingError as exc:
         raise CreatorDecisionNotFoundError(exc.decision_id) from exc
     return success(data=execution.model_dump(mode="json"))
