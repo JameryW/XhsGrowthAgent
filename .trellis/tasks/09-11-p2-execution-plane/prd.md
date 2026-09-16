@@ -185,7 +185,7 @@ harness 规矩沿用 S4b/S5b：**step 0** 在未改动树上跑全部具名击�
 - **测试侧的独立改进**：测试里 `end_lease` 的 teardown **一律有界**（`wait_for(..., 5.0)`）。理由不止于杀突变：原来直接 `await end_lease(...)`，实现一旦忘记 `cancel`，**失败形态是永久挂死**而不是断言失败 —— 未来任何重构把 `end_lease` 弄坏，整套测试会挂死而非报错。M4/M17 的击杀形态即为此。
 - `EVENT_KINDS` 仍无读者、`account_credentials` 仍无写入者 —— P2a 的既有残留，与本片无关。
 
-### S2 —— 状态推导改读租约（分支 `feat/p2b-s2-status-reads-the-lease`，commit `<SHA>`，PR `[#615]`）
+### S2 —— 状态推导改读租约（分支 `feat/p2b-s2-status-reads-the-lease`，commit `b88897d3`，PR [#615](https://github.com/JameryW/XhsGrowthAgent/pull/615)）
 
 **定性**：S1 让「谁在跑这个 thread」成为**可陈述的事实**；S2 让**第一个读者上线** —— 同一个问题不再取决于"是哪个进程在读"。`has_active_execution` = **租约 OR 本进程注册表**，喂给 `derive_status` 的站点改用它；孤儿判定从"**本进程**没有它的任务"变成"**没有人持有它**"。
 
