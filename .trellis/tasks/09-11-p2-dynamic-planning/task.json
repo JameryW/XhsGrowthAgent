@@ -15,8 +15,8 @@
   "branch": "feat/p2c-s1-plan-registry",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": "1ede1941",
-  "pr_url": null,
+  "commit": "43580604",
+  "pr_url": "https://github.com/JameryW/XhsGrowthAgent/pull/618",
   "subtasks": [
     "S1 read-only export of the plan: Plan / PlanStep objects + an exhaustive template registry (WorkflowMode -> node sequence and dependencies), derived from build_graph()'s edges and compared against the registry in BOTH directions. ZERO change to the execution path -- no execution code reads it. Precedent for the checker: tests/unit/graph/test_conditional_edge_wiring.py introspects builder.branches and compares both halves of the edge/router contract. DELIVERED: backend/graph/plan.py (478 lines) + tests/unit/graph/test_plan_registry.py (304 lines / 24 cases); see the S1 section in prd.md. The registry declares entry + the router's per-mode vocabulary + the per-mode excluded hops rather than a hand-written node list, because the graph is mode-blind (reachable_nodes()).",
     "S2 edges come from the plan: build_graph()'s 18 add_conditional_edges are generated from the registry/Plan, edge-for-edge equivalent, pinned by the existing structural gate plus test_routers.py (876 lines). The entry router is the main subject -- it is the only one whose destinations cannot be read statically (routers.py:80 returns a bare str) and the only member of the existing gate's _NON_LITERAL_ROUTERS exemption.",

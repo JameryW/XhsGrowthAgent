@@ -60,7 +60,7 @@
 
 | 切片 | 内容 | 风险 |
 |---|---|---|
-| **S1** ✅ | **Plan 的只读导出**：`Plan` / `PlanStep` 对象 + **穷举模板注册表**（`WorkflowMode` → 入口 / 词表 / 排除边），由一个**只读**函数从 `build_graph()` 的边导出并与注册表**双向比对**。执行路径**零改动**（没有执行代码读它）。判据 = 结构比对门禁，照 `test_conditional_edge_wiring.py` 的手法。**已交付**（见本节末的 S1 小节） | 低 |
+| **S1** ✅ | **Plan 的只读导出**：`Plan` / `PlanStep` 对象 + **穷举模板注册表**（`WorkflowMode` → 入口 / 词表 / 排除边），由一个**只读**函数从 `build_graph()` 的边导出并与注册表**双向比对**。执行路径**零改动**（没有执行代码读它）。判据 = 结构比对门禁，照 `test_conditional_edge_wiring.py` 的手法。**已交付**（`43580604` / [#618]，见本节末的 S1 小节） | 低 |
 | **S2** | **边来自 Plan**：`build_graph()` 的 18 条 `add_conditional_edges` 改由注册表/Plan 生成，**逐边等价**；靠现有结构门禁 + `test_routers.py` 钉住。入口路由（事实 4）是这一步的正题：目的地从"读不出的 `str`"变成"可读出的声明" | 中 |
 | **S3** | **Goal 是一等输入**：`/start` 的 26 键字面量 + `if workflow_mode == "brief"` 特例 → `Goal` → 编译；**11 个模式读取点收敛到一处**（事实 3），未知模式**拒绝**而不是静默按 trend | 中-高 |
 | **S4** | **`workflow.py` 分层**：7 个巨型端点（47% 行）按 api / application / runtime / artifacts / actions 拆；先立边界再挪代码，**纯搬移**、无行为变更 | 中 |
