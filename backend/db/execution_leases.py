@@ -7,13 +7,14 @@ detected lazily as orphans. This module starts turning that fact into one that
 can be *stated*: a lease names an owner, records when it last proved it was
 alive, and can therefore expire.
 
-S1 is deliberately write-only. Nothing reads a lease to decide behaviour yet:
-``/status`` and ``/list`` still answer from ``_background_tasks`` (S2 changes
-that reader), and an expired lease does not yet trigger a takeover (S3). The
-point of shipping the data plane first is that "who is running this thread"
-becomes observable *before* anything depends on it.
+S1 shipped the data plane write-only, so that "who is running this thread"
+became observable before anything depended on it. S2 turned the first reader
+on: :func:`thread_is_held` now backs the status-derivation path -- ``/status``
+and ``/list`` ask "does any live owner hold this thread" instead of "does
+*this* process have a task". An expired lease still does not trigger a takeover
+(S3).
 
-Three properties this module owns:
+Four properties this module owns:
 
 - **The lease carries its own budget.** ``ttl_seconds`` is a column, and every
   expiry judgement reads the row's value — never the reader's default.
@@ -23,6 +24,12 @@ Three properties this module owns:
 - **One time anchor.** Expiry is ``heartbeat_at + ttl_seconds``, derived rather
   than stored, so the row cannot hold an expiry that contradicts the heartbeat
   meant to justify it.
+- **The reader judges staleness, it does not read ``state``.** A row can sit
+  at ``held`` long after its owner died: nothing flips a silent row to
+  ``expired`` in the background, because ``expire_scan`` is the only writer of
+  that state and it has no production caller. So asking "is it still
+  renewable" is the question callers actually have. Do not "simplify" this to
+  a state check -- that answers about the past, not the present.
 - **No silent degradation.** Without Postgres the lease lives in this process
   and cannot outlive it; :func:`durability` is the single reader that says
   ``none`` there, instead of every caller inventing its own ``try/except``
@@ -509,6 +516,24 @@ async def end_lease(thread_id: str, heartbeat: asyncio.Task[None] | None) -> Non
     await release(thread_id)
 
 
+async def thread_is_held(thread_id: str) -> bool:
+    """Whether a live owner currently holds this thread.
+
+    This is the reader ``heartbeat_at`` was built for, and the reason staleness
+    is computed here instead of read off ``state``: nothing flips a silent row
+    to ``expired`` in the background -- ``expire_scan`` is the only writer of
+    that state and it has no production caller -- so a row can sit at ``held``
+    long after its owner died. Asking "is it still renewable" is the question
+    callers actually have.
+    """
+    if not thread_id:
+        return False
+    record = await get_lease(thread_id)
+    if record is None:
+        return False
+    return record.state is LeaseState.HELD and not record.is_stale(now=_utcnow())
+
+
 __all__ = [
     "HEARTBEAT_INTERVAL_SECONDS",
     "HEARTBEAT_MISSES_BEFORE_EXPIRY",
@@ -527,4 +552,5 @@ __all__ = [
     "release",
     "renew",
     "start_lease",
+    "thread_is_held",
 ]

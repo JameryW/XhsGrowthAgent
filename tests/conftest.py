@@ -96,6 +96,21 @@ def _reset_workflow_event_store():
     reset_memory_store()
 
 
+@pytest.fixture(autouse=True)
+def _reset_execution_lease_store():
+    """Isolate the P2b execution-lease fallback store between tests.
+
+    S1 only wrote leases, so a row left behind by one test was invisible. S2
+    makes the lease answer "is this thread running", which turns such a row into
+    a wrong answer in the next test (running where stale was expected).
+    """
+    from backend.db import execution_leases
+
+    execution_leases._reset_memory_store()
+    yield
+    execution_leases._reset_memory_store()
+
+
 # ── Standard fixtures ────────────────────────────────────────────────────────
 
 

@@ -205,9 +205,10 @@ class TestPhaseProgressConsistency:
         config = {"configurable": {"thread_id": thread_id}}
 
         result = {"phase": WorkflowPhase.SCOUTING.value, "session_id": thread_id}
-        # Snapshot has session_id but NO phase key; next=['trend_scout'], no
-        # active task -> derive_status returns STALE (non-terminal, no history
-        # file written).
+        # Snapshot has session_id but NO phase key; next=['trend_scout'] is not a
+        # gate, so derive_status falls through to its has_active_task branch.
+        # Since P2b-S2 that branch reads the execution lease, and this call holds
+        # the lease for as long as it runs (see _runner._run_graph_and_persist).
         snapshot = _make_snapshot(
             {"session_id": thread_id, "current_agent": "trend_scout"},
             next_nodes=["trend_scout"],
@@ -237,4 +238,21 @@ class TestPhaseProgressConsistency:
         # Fallback: phase taken from result since snapshot had none
         assert row.phase == WorkflowPhase.SCOUTING.value
         assert row.progress_percent == 10  # get_progress("scouting")
-        assert row.status == WorkflowStatus.STALE.value
+        # Non-terminal: this is what the original STALE assertion stood for --
+        # a paused-but-not-terminal row writes no history file. Asserted as the
+        # property rather than the value, so the intent survives the status
+        # change below.
+        assert row.status not in ("completed", "error", "cancelled")
+        # P2b-S2 changed which non-terminal status this is. The old expectation
+        # was STALE, and it encoded a defect rather than a design: this call is
+        # *running* the graph for this thread, yet only /start's async_mode
+        # branch registers in _background_tasks, so the foreground /start
+        # branch (async_mode=False -- the same "start" source) was invisible to
+        # has_active_task and persisted "stale" about an execution it was
+        # literally inside. The lease now answers, and this function holds the
+        # lease while it runs, so "running" is what it truthfully is.
+        assert row.status == WorkflowStatus.RUNNING.value
+        # ...and the status cannot have come from this process's registries:
+        # no background task is registered here and "start" is not a sync
+        # source. RUNNING is therefore evidence that the lease decided it.
+        assert not runner_module.process_has_active_task(thread_id)

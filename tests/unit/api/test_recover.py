@@ -7,6 +7,7 @@ when the target node can't be determined.
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -412,4 +413,42 @@ def test_checkpoint_lost_pool_not_ready_still_404(app_and_client):
 
     assert resp.status_code == 404
     mock_db_get.assert_not_awaited()
+    mock_start.assert_not_awaited()
+
+
+def test_a_foreign_lease_makes_the_thread_non_recoverable(app_and_client, monkeypatch):
+    """A lease held elsewhere is a live owner: RUNNING, not STALE.
+
+    Same state as test_skip_to_next_uses_command_goto_next_node -- the only
+    difference is a lease held by another instance. The eligibility guard must
+    see it, because a branch still asking this process's registries reads STALE
+    here and would start a second execution on a thread someone is running.
+    """
+    app, client, graph = app_and_client
+    graph.aget_state.return_value = _make_snapshot(
+        _values(phase="creating", error=None), next_nodes=("publisher",), tasks=()
+    )
+    _clear_active_tasks("thr5")
+
+    from backend.db import execution_leases as leases
+
+    monkeypatch.setattr(leases, "is_pool_ready", lambda: False)
+    leases._reset_memory_store()
+    try:
+        with (
+            patch.object(leases, "_instance_id", "other-host:4242:deadbeef"),
+            patch(_START_RESUME, new_callable=AsyncMock) as mock_start,
+            patch(_DB_UPSERT, new_callable=AsyncMock),
+        ):
+            assert asyncio.run(leases.acquire("thr5")) is True
+            resp = client.post("/api/workflow/recover/thr5", json={"strategy": "skip_to_next"})
+    finally:
+        _clear_active_tasks("thr5")
+        leases._reset_memory_store()
+
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["recovered"] is False
+    assert body["status"] == "running"
+    assert "不可 recover" in body["message"]
     mock_start.assert_not_awaited()

@@ -386,17 +386,19 @@ def _persisted_status(phase: str | WorkflowPhase, error: str | None = None) -> s
     return WorkflowStatus.RUNNING.value
 
 
-def _is_orphan_running(thread_id: str, db_status: str) -> bool:
-    """Detect restart orphans: DB says running but no live in-process task.
+async def _is_orphan_running(thread_id: str, db_status: str) -> bool:
+    """Detect orphans: DB says running but nobody holds the lease.
 
-    After deploy/restart the in-process task registry is empty, so DB rows
-    left at status="running" are orphans — the workflow is not actually
-    executing. Reuses STALE semantics via derive_status; does not mutate DB.
+    After deploy/restart the process that held the lease is gone and nothing
+    renews it, so the row goes silent and then expires. This asks about
+    ownership rather than about this process's task registry: "nobody is
+    running it" is a claim about the workflow, and a process that never had
+    the task cannot make it. Reuses STALE semantics via derive_status; does
+    not mutate DB.
     """
     if db_status != WorkflowStatus.RUNNING.value:
         return False
-    task = _runner._background_tasks.get(thread_id)
-    return task is None or task.done()
+    return not await _runner.has_active_execution(thread_id)
 
 
 async def _start_resume_task(
@@ -895,10 +897,7 @@ async def get_workflow_status(
     if state.values and state.values.get("session_id") is not None:
         phase = state.values.get("phase", "unknown")
 
-        has_active = (
-            thread_id in _runner._background_tasks
-            and not _runner._background_tasks[thread_id].done()
-        ) or (thread_id in _runner._active_sync_executions)
+        has_active = await _runner.has_active_execution(thread_id)
         derived_status = derive_status(state, has_active_task=has_active)
         status_str = str(derived_status.value)
         # Orphan: DB reported running but no live in-process task (restart orphan).
@@ -1077,10 +1076,7 @@ async def get_workflow_status(
         # - It has a non-terminal status in DB (meaning it was running/paused/awaiting)
         # - AND there is no active background task for it in this process
         # - AND there is no live LangGraph checkpoint (we already checked above)
-        has_active_task = (
-            thread_id in _runner._background_tasks
-            and not _runner._background_tasks[thread_id].done()
-        )
+        has_active_task = await _runner.has_active_execution(thread_id)
         checkpoint_lost = (
             row.status
             in (
@@ -1098,7 +1094,7 @@ async def get_workflow_status(
         )
         # Orphan: DB running with no live task — restart orphan. Surface as
         # stale in the response so /recover can pick it up.
-        is_orphan = _is_orphan_running(thread_id, row.status)
+        is_orphan = await _is_orphan_running(thread_id, row.status)
         fallback_status = row.status or _persisted_status(row.phase, row.error)
         effective_status = "stale" if is_orphan else fallback_status
         data = WorkflowStatusResponse(
@@ -1354,9 +1350,7 @@ async def resume_workflow(
             }
         )
 
-    has_active = (
-        thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
-    ) or (thread_id in _runner._active_sync_executions)
+    has_active = await _runner.has_active_execution(thread_id)
     derived = derive_status(state, has_active_task=has_active)
 
     # P0-W5 continuation channel: the evaluator parked this thread on purpose.
@@ -1656,10 +1650,7 @@ async def recover_workflow(
         else:
             row = None
         if row:
-            has_active_task = (
-                thread_id in _runner._background_tasks
-                and not _runner._background_tasks[thread_id].done()
-            )
+            has_active_task = await _runner.has_active_execution(thread_id)
             checkpoint_lost = (
                 row.status
                 in (
@@ -1690,9 +1681,7 @@ async def recover_workflow(
                 )
         raise WorkflowNotFoundError(thread_id)
 
-    has_active = (
-        thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
-    ) or (thread_id in _runner._active_sync_executions)
+    has_active = await _runner.has_active_execution(thread_id)
     derived = derive_status(state, has_active_task=has_active)
 
     # 仅 error/stale 可 recover；其他状态给出明确拒绝信息
@@ -1910,10 +1899,7 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
         try:
             state = await graph.aget_state(config)
             if state.values and state.values.get("session_id") is not None:
-                has_active = (
-                    thread_id in _runner._background_tasks
-                    and not _runner._background_tasks[thread_id].done()
-                ) or (thread_id in _runner._active_sync_executions)
+                has_active = await _runner.has_active_execution(thread_id)
                 derived = derive_status(state, has_active_task=has_active)
                 if derived in (
                     WorkflowStatus.COMPLETED,
@@ -2031,7 +2017,7 @@ async def list_workflows_endpoint(
             from backend.api.routes.public_showcase import _public_id
 
             item["showcase_public_id"] = _public_id(r)
-            orphan = _is_orphan_running(r.thread_id, r.status)
+            orphan = await _is_orphan_running(r.thread_id, r.status)
             if orphan:
                 # Restart orphan: DB running but no live task. Reuse STALE
                 # semantics so /recover can resume; do not mutate DB on read.
@@ -2460,9 +2446,14 @@ async def upload_brief_file(
     # it paused at the initial checkpoint — start execution now
     state = await graph.aget_state(config)
     next_nodes = state.next if state.next else ()
-    has_active = (
-        thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
-    ) or (thread_id in _runner._active_sync_executions)
+    # Serialization, not ownership: this starts a task *in this process*, so it
+    # asks what this process is doing. Both directions are pinned by
+    # tests/unit/api/test_serialization_guards_stay_local.py -- a bare lease read
+    # would resume while our own task is live (the lease write is best-effort),
+    # and asking "does anyone hold it" would refuse on a dead owner's lease for
+    # up to LEASE_TTL_SECONDS after a restart, silently skipping the resume the
+    # user just asked for. The status sites do ask the lease; see _runner.
+    has_active = _runner.process_has_active_task(thread_id)
 
     if not has_active and next_nodes:
         # Workflow is paused and waiting — resume execution
@@ -2856,10 +2847,13 @@ async def retry_publish(
     if not values or values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
-    # 并发守卫：工作流正在跑（含正在重试）时不允许再触发
-    has_active = (
-        thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
-    ) or (thread_id in _runner._active_sync_executions)
+    # 并发守卫：工作流正在跑（含正在重试）时不允许再触发。
+    # 与状态推导不同，这里问的是"本进程要不要再起一份任务"——租约答的是"有没有人
+    # 在跑"，两个方向都会错：租约写入是 best-effort，存储故障时会有"活任务却查不到
+    # 租约"，据此放行就起第二份执行；反过来重启后死进程的租约在 TTL 内仍算活着，据此
+    # 拒绝会让用户刚点的重试静默失效（200 但什么都没跑）。
+    # 两条都钉在 tests/unit/api/test_serialization_guards_stay_local.py。
+    has_active = _runner.process_has_active_task(thread_id)
     if has_active:
         return success(
             data={
