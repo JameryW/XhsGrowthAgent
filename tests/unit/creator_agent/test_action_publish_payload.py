@@ -32,12 +32,14 @@ from backend.creator_agent import (
 )
 from backend.creator_agent.repository import ActionPublishContentUnavailableError
 from backend.db import creator_agent as creator_agent_db
+from backend.services.xhs_credentials import XhsCredential
 from backend.state.artifacts import make_ref, parse_ref
 
 SHA = "a" * 64
 REF = "artifact://publish/p1"
 THREAD = "thread-1"
 NOW = "2026-01-01T00:00:00+00:00"
+COOKIE = "a1=" + "0" * 20 + "; web_session=session"
 
 
 @pytest.fixture(autouse=True)
@@ -85,9 +87,15 @@ def _decision_request() -> DecisionRequest:
 async def _advisor_with_decision() -> tuple[CreatorAdvisor, str]:
     repo = creator_agent_db.DurableCreatorAgentRepository()
     await repo.save_model("account-a", _definition(), expected_revision=0)
-    advisor = CreatorAdvisor(repo)
+    # P2a-S5a: publishing needs an account that holds a credential, so the
+    # fixture states one (see test_action_publish_execution for the cookie).
+    advisor = CreatorAdvisor(repo, credentials=_credentialed)
     decision = await advisor.decide(_decision_request())
     return advisor, decision.decision_id
+
+
+async def _credentialed(account_id: str) -> XhsCredential:
+    return XhsCredential(account_id=account_id, cookie=COOKIE, source="account")
 
 
 def _request(**overrides) -> ActionIntentRequest:

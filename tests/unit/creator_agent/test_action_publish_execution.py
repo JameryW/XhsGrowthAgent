@@ -56,11 +56,16 @@ from backend.creator_agent.execution import (
     gateway_publish_dispatcher,
     load_publish_content,
 )
-from backend.creator_agent.repository import ActionPublishContentUnavailableError
+from backend.creator_agent.repository import (
+    ActionCredentialUnavailableError,
+    ActionPublishContentUnavailableError,
+)
 from backend.db import creator_agent as creator_agent_db
+from backend.services.xhs_credentials import XhsCredential
 from backend.services.xhs_risk_gate import reset_gates_for_tests
 from backend.state.artifacts import put_artifact
 from backend.tools.runtime.bridge import shared_gateway
+from backend.tools.runtime.gateway import PermissionDeniedError
 from backend.tools.runtime.models import ErrorKind, ToolResult
 
 ACCOUNT = "account-a"
@@ -73,6 +78,22 @@ BODY: dict[str, Any] = {
     "hashtags": ["耐用"],
     "image_paths": ["/tmp/a.png"],
 }
+
+# P2a-S5a: a publish account must hold the credential the runtime requires, so
+# these fixtures *state* one instead of inheriting an empty test environment.
+# ``a1`` is the login material ``XHSCookieParser.is_valid`` looks for, so this
+# is a usable credential rather than a plausible-looking string.
+COOKIE = "a1=" + "0" * 20 + "; web_session=session"
+
+
+async def _credentialed(account_id: str) -> XhsCredential:
+    """The credential seam, standing in for the real resolver.
+
+    Injecting the *answer* (not a bypass) is the point: the executor still
+    derives its verdict from ``XhsCredential.scopes``, so a test that wants to
+    see the credential refusal only has to state an empty credential.
+    """
+    return XhsCredential(account_id=account_id, cookie=COOKIE, source="account")
 
 
 @pytest.fixture(autouse=True)
@@ -143,10 +164,12 @@ def _request() -> PublishRequest:
     )
 
 
-async def _advisor(store: Any, publish: Any) -> tuple[CreatorAdvisor, str]:
+async def _advisor(
+    store: Any, publish: Any, credentials: Any = _credentialed
+) -> tuple[CreatorAdvisor, str]:
     repo = creator_agent_db.DurableCreatorAgentRepository()
     await repo.save_model(ACCOUNT, _definition(), expected_revision=0)
-    advisor = CreatorAdvisor(repo, artifact_store=store, publish=publish)
+    advisor = CreatorAdvisor(repo, artifact_store=store, publish=publish, credentials=credentials)
     decision = await advisor.decide(_decision_request())
     return advisor, decision.decision_id
 
@@ -351,6 +374,117 @@ class TestEveryRefusalPrecedesTheGateway:
         assert await advisor.get_action_execution(ACCOUNT, intent.action_id) is None
 
 
+class TestTheCredentialRefusal:
+    """P2a-S5a: an account that holds no credential cannot publish.
+
+    The fourth refusal on this path, and the first one that is not about the
+    intent: the intent can be perfectly well formed and still not be executable
+    because the *account* was never credentialed.  It is asserted with the same
+    two companions as its neighbours -- no Gateway call, no receipt -- because
+    the only failure worth fearing here is a publish that happens anyway.
+    """
+
+    @staticmethod
+    async def _empty(account_id: str) -> XhsCredential:
+        return XhsCredential(account_id=account_id)
+
+    async def test_an_account_with_no_credential_is_refused_before_the_gateway(self):
+        store = InMemoryStore()
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder, credentials=self._empty)
+        ref, digest = await _stored(store, BODY)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        with pytest.raises(ActionCredentialUnavailableError) as excinfo:
+            await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert excinfo.value.account_id == ACCOUNT
+        assert excinfo.value.required_scopes == ("xhs:write",)
+        assert recorder.requests == []
+        assert await advisor.get_action_execution(ACCOUNT, intent.action_id) is None
+
+    def test_the_required_scope_is_read_from_the_capability_it_publishes_through(self):
+        """The refusal asks for what ``xhs.publish`` declares, not for a literal.
+
+        A literal here would be a second statement of the same requirement, free
+        to drift from the catalog -- and the drift would be silent, because the
+        Gateway would still enforce the *declared* one while the executor refused
+        for the other.  Deriving it is what keeps the two in one place; this
+        asserts the derivation really is the declaration.
+        """
+        from backend.creator_agent.advisor import _required_publish_scopes  # noqa: SLF001
+
+        declared = shared_gateway().registry.spec(PUBLISH_CAPABILITY).auth_scope
+        assert _required_publish_scopes() == tuple(declared)
+        assert declared, "the publish capability must declare a scope to require"
+
+    async def test_a_present_but_unusable_credential_is_not_a_credential(self):
+        """Availability is half the answer, and presence is not availability.
+
+        A cookie with no login material would put the HTTP client in the
+        "configured, but every call fails" state; treating it as a grant would
+        make the scope check agree with a credential that cannot be used.
+        """
+
+        async def _malformed(account_id: str) -> XhsCredential:
+            return XhsCredential(account_id=account_id, cookie="web_session=stale")
+
+        store = InMemoryStore()
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder, credentials=_malformed)
+        ref, digest = await _stored(store, BODY)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        with pytest.raises(ActionCredentialUnavailableError):
+            await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert recorder.requests == []
+
+    async def test_entitlement_is_answered_without_reading_the_artifact(self):
+        """Ordering, asserted rather than implied.
+
+        With no credential *and* an unresolvable artifact, the verdict is the
+        credential one.  That is the design: whether this account may publish at
+        all does not depend on the artifact, so conditioning the answer on an
+        artifact read would let an unentitled account be told its *content* was
+        the problem -- and would make the verdict depend on the store being up.
+        """
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(InMemoryStore(), recorder, credentials=self._empty)
+        intent = await _confirmed_publish(
+            advisor,
+            decision_id,
+            artifact_ref="artifact://publish_payload/missing",
+            content_hash="a" * 64,
+        )
+
+        with pytest.raises(ActionCredentialUnavailableError):
+            await advisor.execute_action(ACCOUNT, intent.action_id)
+
+    async def test_a_credentialed_account_still_publishes(self):
+        """The contrast that keeps the refusal from being a blanket.
+
+        Same fixture, one difference: the account holds a usable credential --
+        and the intent reaches the dispatcher exactly as it did before S5a.
+        """
+        store = InMemoryStore()
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        ref, digest = await _stored(store, BODY)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        receipt = await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert [request.account_id for request in recorder.requests] == [ACCOUNT]
+        assert receipt.status is ActionExecutionStatus.SUCCEEDED
+
+
 class TestTheReceipt:
     async def _executed(self, outcome: PublishOutcome):
         store = InMemoryStore()
@@ -438,6 +572,12 @@ class TestTheDefaultDispatcherIsTheRealPath:
         ``catalog.bind`` resolves the implementation by module attribute on every
         call, which is exactly why replacing ``xhs_publisher`` here is honoured
         instead of being frozen at build time.
+
+        P2a-S5a adds one more link to that chain, so the credential is supplied
+        the way a single-account deployment supplies it -- ``XHS_COOKIE`` in the
+        environment.  The test therefore runs the whole production path:
+        environment -> ``services.xhs_credentials`` -> granted scopes ->
+        ``xhs.publish``'s declared ``auth_scope`` -> the Gateway -> the tool.
         """
         seen: list[dict[str, Any]] = []
 
@@ -466,6 +606,7 @@ class TestTheDefaultDispatcherIsTheRealPath:
         }
         assert required <= set(payload), required - set(payload)
         monkeypatch.setattr("backend.tools.xhs.publisher.xhs_publisher", _stand_in)
+        monkeypatch.setenv("XHS_COOKIE", COOKIE)
 
         outcome = await gateway_publish_dispatcher()(_request())
 
@@ -473,6 +614,48 @@ class TestTheDefaultDispatcherIsTheRealPath:
         assert outcome.note_id == "note-9"
         assert seen == [{"title": "一条耐用的笔记", "account_id": ACCOUNT, "key": KEY}]
         assert PUBLISH_CAPABILITY in shared_gateway().registry.capabilities()
+
+    @pytest.mark.asyncio
+    async def test_an_unusable_credential_stops_the_publish_at_the_scope_check(self, monkeypatch):
+        """The declaration stops being decorative, which is the whole point.
+
+        ``xhs.publish`` has declared ``auth_scope=("xhs:write",)`` since S1, but
+        every production caller passed ``granted_scopes=None`` and the Gateway
+        reads that as *unchecked* -- so the requirement had no effect.  With the
+        scopes resolved from the account, an account whose credential cannot be
+        used holds no scope at all and is refused *before the tool is resolved*:
+        nothing is posted, and no receipt is minted further up.
+
+        The cookie is set to a malformed value rather than removed, so the test
+        states the condition instead of depending on the machine's environment
+        (and on the environment beating whatever ``.env`` holds).
+        """
+        calls: list[str] = []
+
+        @tool
+        async def _stand_in(
+            title: str,
+            body: str,
+            hashtags: list[str] | None = None,
+            image_paths: list[str] | None = None,
+            category: str = "",
+            location: str = "",
+            scheduled_time: str = "",
+            is_private: bool = False,
+            account_id: str = "",
+            idempotency_key: str = "",
+        ) -> dict[str, Any]:
+            """A stand-in that would publish if it were ever reached."""
+            calls.append(title)
+            return {"post_id": "note-9", "status": "published"}
+
+        monkeypatch.setattr("backend.tools.xhs.publisher.xhs_publisher", _stand_in)
+        monkeypatch.setenv("XHS_COOKIE", "web_session=no-login-material")
+
+        with pytest.raises(PermissionDeniedError):
+            await gateway_publish_dispatcher()(_request())
+
+        assert calls == []
 
 
 class TestTheRuntimeBudget:

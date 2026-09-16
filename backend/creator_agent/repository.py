@@ -156,6 +156,28 @@ class ActionPublishContentUnavailableError(Exception):
         super().__init__(f"publish intent {action_id!r} has no usable content: {reason}")
 
 
+class ActionCredentialUnavailableError(Exception):
+    """The account holds no credential for the capability being executed.
+
+    The third refusal on the publish path, raised where the other two are —
+    before the Gateway, so an unentitled action costs no side effect.  P2a-S5a
+    gives the account a grant owner; until this check existed, ``xhs.publish``'s
+    declared ``auth_scope`` was enforced only when a caller happened to pass
+    scopes, which nothing in production did.
+
+    ``required_scopes`` is what the capability *declares* it needs (read from
+    the registry at refusal time), so the message reports the missing scope
+    instead of restating one this module guessed at.
+    """
+
+    def __init__(self, account_id: str, required_scopes: tuple[str, ...], reason: str) -> None:
+        self.account_id = account_id
+        self.required_scopes = required_scopes
+        self.reason = reason
+        scopes = ", ".join(required_scopes) or "(none declared)"
+        super().__init__(f"account {account_id!r} holds no credential for {scopes}: {reason}")
+
+
 class LearningSignalMissingError(Exception):
     def __init__(self, signal_id: str) -> None:
         self.signal_id = signal_id
@@ -287,6 +309,7 @@ __all__ = [
     "CreatorAgentRepository",
     "ActionIntentMissingError",
     "ActionExecutionNotAllowedError",
+    "ActionCredentialUnavailableError",
     "ActionResolutionConflictError",
     "ActionValidationError",
     "CreatorModelMissingError",

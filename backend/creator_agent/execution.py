@@ -17,12 +17,13 @@ neighbouring slice, shape it:
   module attribute is honoured — which is the only reason a test can run this
   very code path instead of a paraphrase of it.
 
-* **Both seams are injectable, and both default to the real thing.**  A
-  dispatcher (the Gateway call) and a content reader (the Artifact Store
-  fetch).  The defaults are resolved lazily so that injecting a substitute does
-  not quietly replace the production path everywhere else; the module's tests
-  prove the default dispatcher really is the shared Gateway, and the default
-  reader really is the Artifact Store façade.
+* **Every seam is injectable, and every default is the real thing.**  A
+  dispatcher (the Gateway call), a content reader (the Artifact Store fetch)
+  and a scope resolver (the account's credential, P2a-S5a).  The defaults are
+  resolved lazily so that injecting a substitute does not quietly replace the
+  production path everywhere else; the module's tests prove the default
+  dispatcher really is the shared Gateway, and the default reader really is the
+  Artifact Store façade.
 
 Deliberately *not* here: cool-down bookkeeping.  ``note_publish`` belongs to
 the layer that owns the publish event — ``services.xhs_publisher`` already
@@ -53,6 +54,7 @@ __all__ = [
     "PublishOutcome",
     "PublishRequest",
     "PublishStatus",
+    "ScopeResolver",
     "artifact_store_content_reader",
     "build_publish_payload",
     "content_hash_of",
@@ -300,25 +302,41 @@ def gateway_publish_dispatcher(
     gateway: Any | None = None,
     *,
     granted_scopes: tuple[str, ...] | None = None,
+    scope_resolver: ScopeResolver | None = None,
 ) -> PublishDispatcher:
     """The default dispatcher: one Gateway invocation of ``xhs.publish``.
 
-    ``granted_scopes=None`` means *unchecked*, which is what the Gateway
-    documents it to mean.  That is the honest setting here: nothing in this
-    repo owns a publish grant yet, so passing a literal tuple would turn a real
-    check into a no-op that looks enforced.  The parameter exists so that
-    whoever does own the grant can supply it without touching this module.
+    ``granted_scopes`` is an explicit override for a caller that already holds
+    the answer.  Left at ``None``, the scopes are resolved per request from the
+    intent's account through ``services/xhs_credentials`` — which is what stops
+    ``xhs.publish``'s declared ``auth_scope`` from being decorative.  S3 passed
+    ``None`` because "nothing in this repo owns a publish grant yet" and the
+    Gateway reads ``None`` as *unchecked*; an unchecked requirement is
+    indistinguishable from no requirement, which is exactly the state P2a-S5a
+    ends.
+
+    The refusal is not here.  It lives one layer up in
+    ``CreatorAdvisor._execute_publish``, before this function is reached: a
+    Gateway scope violation *raises* by design (a missing grant is a wiring
+    error there), while a caller asking about its own account deserves a typed
+    answer — a receipt-less 409 that names the account.  Both layers read the
+    same rule, so the executor's precondition and the runtime's requirement
+    cannot disagree.
     """
 
     async def _dispatch(request: PublishRequest) -> PublishOutcome:
+        from backend.services.xhs_credentials import granted_scopes as resolve_scopes
         from backend.tools.runtime.bridge import shared_gateway
 
         target = gateway if gateway is not None else shared_gateway()
+        scopes = granted_scopes
+        if scopes is None:
+            scopes = await (scope_resolver or resolve_scopes)(request.account_id)
         result = await target.invoke(
             PUBLISH_CAPABILITY,
             build_publish_payload(request),
             thread_id=request.thread_id,
-            granted_scopes=granted_scopes,
+            granted_scopes=scopes,
         )
         return interpret_publish_result(result)
 
@@ -328,3 +346,12 @@ def gateway_publish_dispatcher(
 # A ``Callable`` alias kept next to the Protocol so type annotations stay short
 # where the executor stores the seam.
 Dispatcher = Callable[[PublishRequest], Awaitable[PublishOutcome]]
+
+ScopeResolver = Callable[[str], Awaitable[tuple[str, ...]]]
+"""How the scopes an account holds are resolved (injectable seam).
+
+The default is the real owner of that answer
+(``services.xhs_credentials.granted_scopes``); the seam exists so a test can
+grant an account a credential without a credential store, not so a caller can
+skip the rule.
+"""

@@ -149,3 +149,63 @@ class TestReadablePlatform:
         with _patch_client(client), pytest.raises(ConnectionError):
             await xhs_trending.ainvoke({"category": "母婴", "account_id": "acc"})
         client.close.assert_awaited_once()
+
+
+class TestTheFactoryHandsTheCredentialOver:
+    """P2a-S5a: every other test in this file replaces ``_get_client`` wholesale.
+
+    That makes this class load-bearing.  A function whose every caller is a
+    stand-in has no test of its own — the P2a-S4a lesson — and the thing that
+    had no test is exactly the hole P1c left open: *which account's cookie,
+    sourced from where*.  These tests call the real factory and read what it
+    hands the client, so the resolution cannot be quietly unwired.
+    """
+
+    COOKIE = "a1=" + "0" * 20 + "; web_session=session"
+
+    @pytest.mark.asyncio
+    async def test_a_resolved_credential_reaches_the_client(self, monkeypatch):
+        from backend.services.xhs_credentials import XhsCredential
+        from backend.tools.xhs import trending
+
+        seen: dict[str, object] = {}
+
+        class _Client:
+            def __init__(self, **kwargs: object) -> None:
+                seen.update(kwargs)
+
+        async def _credential(account_id: str) -> XhsCredential:
+            return XhsCredential(
+                account_id=account_id, cookie=self.COOKIE, user_id="u1", source="account"
+            )
+
+        monkeypatch.setattr("backend.services.xhs_client.XHSClient", _Client)
+        monkeypatch.setattr("backend.services.xhs_credentials.load_credential", _credential)
+
+        await trending._get_client("acc-1")  # noqa: SLF001
+
+        assert seen["cookie"] == self.COOKIE
+        assert seen["user_id"] == "u1"
+
+    @pytest.mark.asyncio
+    async def test_an_uncredentialed_account_gets_a_client_that_cannot_read(self, monkeypatch):
+        """The guard below is only honest if the factory really passes nothing.
+
+        Real ``XHSClient``, real guard: no credential in, ``can_read`` false out,
+        and the read refuses.  An empty cookie that still looked readable would
+        put the platform back in the state this whole path exists to avoid —
+        "asked and had nothing" reported for "never reached it".
+        """
+        from backend.services.xhs_credentials import XhsCredential
+        from backend.tools.xhs import trending
+
+        async def _none(account_id: str) -> XhsCredential:
+            return XhsCredential(account_id=account_id)
+
+        monkeypatch.setattr("backend.services.xhs_credentials.load_credential", _none)
+
+        client = await trending._get_client("acc-1")  # noqa: SLF001
+
+        assert client.can_read is False
+        with pytest.raises(XHSAuthError, match="未配置"):
+            trending._require_readable(client, "xhs_trending")  # noqa: SLF001

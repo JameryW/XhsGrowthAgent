@@ -48,6 +48,12 @@ class XHSPlatformSettings(BaseSettings):
     # env-only（mirror cdp_endpoint，不入 system_config SYSTEM_KEYS）。
     chrome_profiles_dir: str = "/test/xhs/.chrome-profiles"
     cdp_base_port: int = 9222
+    # 读路径的账号凭据。.env.example 从存在的那天起就声明了 XHS_COOKIE /
+    # XHS_USER_ID，直到 P2a-S5a 才有第一个读者（services/xhs_credentials.py）。
+    # 单账号部署的凭据来源；多账号部署里每个账号在 account_credentials 里的
+    # 自己的那一行优先，且一旦存在就不再回退到这里。
+    cookie: str = ""
+    user_id: str = ""
 
     model_config = {"env_prefix": "XHS_", "env_file": ".env", "extra": "ignore"}
 

@@ -12,6 +12,7 @@ from backend.api.deps import get_current_user
 from backend.api.errors import (
     CreatorActionCapabilityNotWiredError,
     CreatorActionConflictError,
+    CreatorActionCredentialUnavailableError,
     CreatorActionExecutionNotAllowedError,
     CreatorActionExecutionNotFoundError,
     CreatorActionNotFoundError,
@@ -58,6 +59,7 @@ from backend.creator_agent import (
 )
 from backend.creator_agent.repository import (
     ActionCapabilityNotWiredError,
+    ActionCredentialUnavailableError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionPolicyDeniedError,
@@ -416,6 +418,12 @@ async def execute_creator_action(
     except ActionPublishContentUnavailableError as exc:
         raise CreatorActionPublishContentUnavailableError(
             action_id=exc.action_id, reason=exc.reason
+        ) from exc
+    except ActionCredentialUnavailableError as exc:
+        raise CreatorActionCredentialUnavailableError(
+            account_id=exc.account_id,
+            required_scopes=exc.required_scopes,
+            reason=exc.reason,
         ) from exc
     except ActionCapabilityNotWiredError as exc:
         raise CreatorActionCapabilityNotWiredError(exc.action_id, exc.action_kind.value) from exc

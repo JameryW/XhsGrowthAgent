@@ -86,6 +86,7 @@ from backend.creator_agent.proposals import (
     observation_source_ref,
 )
 from backend.creator_agent.repository import (
+    ActionCredentialUnavailableError,
     ActionPolicyDeniedError,
     ActionPublishContentUnavailableError,
     ModelRevisionMissingError,
@@ -95,6 +96,7 @@ from backend.creator_agent.revisions import build_model_revision_page
 __all__ = [
     "CreatorAdvisor",
     "CreatorContentObservationSource",
+    "ActionCredentialUnavailableError",
     "ActionPolicyDeniedError",
     "ActionPolicySnapshot",
     "ActionPublishContentUnavailableError",
