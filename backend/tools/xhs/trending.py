@@ -24,16 +24,26 @@ logger = logging.getLogger("xhs_growth.tools.trending")
 
 
 async def _get_client(account_id: str = "") -> XHSClient:
-    """获取 XHSClient 实例.
+    """获取 XHSClient 实例 —— 带上这个账号的凭据.
 
-    account_id is kept for workflow/tool-call compatibility; XHS browser login
-    state is resolved by CDP profile during publishing, not by HTTP credentials.
+    ``account_id`` used to be decorative here ("kept for workflow/tool-call
+    compatibility"): the client was built with no cookie at all, so every HTTP
+    read failed and ``_require_readable`` below fired on every call. Browser
+    login state lives in the CDP profile and is only wired up for publishing, so
+    the read path has to be credentialed from the credential store. That
+    plumbing now lives in ``services/xhs_credentials``: this account's own row
+    if it has one, otherwise the deployment credential, and an unusable answer
+    stays unusable rather than being papered over here.
     """
     from backend.config.settings import Settings
     from backend.services.xhs_client import XHSClient
+    from backend.services.xhs_credentials import load_credential
 
     settings = Settings()
+    credential = await load_credential(account_id)
     return XHSClient(
+        cookie=credential.cookie,
+        user_id=credential.user_id,
         use_browser=settings.platform.use_browser,
         headless=False,
     )
@@ -42,9 +52,9 @@ async def _get_client(account_id: str = "") -> XHSClient:
 def _require_readable(client: XHSClient, capability: str) -> None:
     """Refuse to treat an unreadable platform as an empty one.
 
-    ``XHSClient`` needs a cookie for every HTTP read, and ``_get_client`` has
-    none to hand it — browser login state lives in the CDP profile and is only
-    wired up for publishing — so today this guard fires on every call.
+    ``XHSClient`` needs a cookie for every HTTP read, and the credential this
+    account holds is resolved in ``_get_client`` — so this fires when the
+    resolved credential is missing, malformed, or could not be read at all.
 
     That is the point. Without it the previous path answered the same
     situation with ``[]`` from ``get_trending``/``search_posts`` and, worse,
@@ -57,8 +67,10 @@ def _require_readable(client: XHSClient, capability: str) -> None:
     The precondition is knowable *before* the call and is not knowable after
     it, which is why it is checked here rather than inferred from the result.
 
-    Credential plumbing (which account's cookie, sourced from where) belongs to
-    P2a. This is only about not lying in the meantime.
+    Which account's cookie, sourced from where, is answered in
+    ``services/xhs_credentials`` (P2a-S5a); this guard only asks whether the
+    answer was usable. The Gateway's scope check reads the same answer, so a
+    read cannot be credentialed while its scope is denied.
     """
     if client.can_read:
         return

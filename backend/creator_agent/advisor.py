@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from backend.creator_agent.execution import (
+    PUBLISH_CAPABILITY,
     PublishDispatcher,
     PublishOutcome,
     PublishRequest,
@@ -59,6 +61,7 @@ from backend.creator_agent.policy import (
 )
 from backend.creator_agent.proposals import build_evidence_proposals
 from backend.creator_agent.repository import (
+    ActionCredentialUnavailableError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionPolicyDeniedError,
@@ -70,8 +73,19 @@ from backend.creator_agent.repository import (
     FeedbackAudienceMismatchError,
     ModelRevisionMissingError,
 )
+from backend.services.xhs_credentials import XhsCredential, load_credential
 
 logger = logging.getLogger(__name__)
+
+CredentialLoader = Callable[[str], Awaitable[XhsCredential]]
+"""How one account's credential is resolved (injectable seam).
+
+The default is ``services.xhs_credentials.load_credential`` — the owner of that
+answer, and the same one the publish dispatcher reads its scopes from.  The
+seam exists so a test can state an account's credential directly; it cannot let
+a caller skip the rule, because the refusal below reads its verdict off the
+:class:`XhsCredential` the loader returns.
+"""
 
 
 @dataclass
@@ -126,6 +140,20 @@ def _publish_receipt_result(outcome: PublishOutcome) -> dict[str, object]:
     return result
 
 
+def _required_publish_scopes() -> tuple[str, ...]:
+    """What ``xhs.publish`` declares it needs — read, never restated.
+
+    Reading the declaration is the point: a literal here would be a second
+    statement of the same requirement, free to drift the moment someone edits
+    ``catalog``.  The Gateway enforces the same tuple (the dispatcher hands it
+    the account's real scopes), so this call site cannot demand less than the
+    runtime does, nor more.
+    """
+    from backend.tools.runtime.bridge import shared_gateway
+
+    return tuple(shared_gateway().registry.spec(PUBLISH_CAPABILITY).auth_scope)
+
+
 # Evidence Proposal scan policy: a per-family candidate budget, deliberately
 # decoupled from the page size. `limit * 4` keeps the window generous for wide
 # pages while the floor protects small pages, which are exactly the case where a
@@ -148,6 +176,7 @@ class CreatorAdvisor:
         content_observations: CreatorContentObservationSource | None = None,
         artifact_store: Any | None = None,
         publish: PublishDispatcher | None = None,
+        credentials: CredentialLoader | None = None,
     ):
         self._repository = repository
         self._content_observations = content_observations
@@ -164,6 +193,7 @@ class CreatorAdvisor:
         self._publish: PublishDispatcher = (
             publish if publish is not None else gateway_publish_dispatcher()
         )
+        self._load_credential: CredentialLoader = credentials or load_credential
 
     async def decide(self, request: DecisionRequest) -> DecisionRecord:
         model = await self._repository.get_model(request.account_id)
@@ -520,6 +550,21 @@ class CreatorAdvisor:
         must not turn into a side effect.
         """
         action_id = action.action_id
+        # Entitlement comes first, and not only because it is the cheapest
+        # question.  Whether this account may publish at all does not depend on
+        # the artifact, so conditioning the answer on an artifact read would let
+        # an unentitled account be refused with a message about its *content* --
+        # and would make the verdict depend on the store being reachable.
+        credential = await self._load_credential(action.account_id)
+        missing = tuple(
+            scope for scope in _required_publish_scopes() if scope not in credential.scopes
+        )
+        if missing:
+            raise ActionCredentialUnavailableError(
+                action.account_id,
+                missing,
+                f"credential source: {credential.source or 'none'}",
+            )
         thread_id = (action.thread_id or "").strip()
         if not thread_id:
             raise ActionPublishContentUnavailableError(

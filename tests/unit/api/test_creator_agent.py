@@ -308,6 +308,77 @@ def test_action_execution_routes_require_confirmation_and_return_receipt(client,
     assert foreign_execute.json()["error"]["code"] == "ERROR_CREATOR_ACTION_NOT_FOUND"
 
 
+def test_a_publish_without_a_credential_returns_its_own_409(client, monkeypatch):
+    """P2a-S5a at the API boundary.
+
+    The refusal and its mapping are two seams, and an unmapped domain error
+    surfaces as a 500 — which tells the caller nothing it can act on.  So the
+    status and the code are asserted end to end, and the receipt's absence with
+    them: an account that cannot publish must leave the same trace as an intent
+    that was never executed.
+
+    The condition is stated (an empty ``XHS_COOKIE``) rather than inherited from
+    the machine, so this test does not depend on whether a credential happens to
+    be in the environment -- and it runs the real resolver, not a stand-in.
+    """
+    monkeypatch.setenv("XHS_COOKIE", "")
+
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+    decision = client.post(
+        "/api/creator-agent/decisions",
+        json={
+            "account_id": "account-a",
+            "audience_id": "audience-a",
+            "goal": "选耐用品",
+            "candidates": [
+                {"candidate_id": "a", "label": "A", "signals": {"durability": 0.9}},
+                {"candidate_id": "b", "label": "B", "signals": {"durability": 0.2}},
+            ],
+        },
+    ).json()["data"]
+    action = client.post(
+        "/api/creator-agent/actions",
+        json={
+            "account_id": "account-a",
+            "decision_id": decision["decision_id"],
+            "action_kind": "publish",
+            "idempotency_key": "api-publish-credential-1",
+            "artifact_ref": "artifact://publish_payload/latest",
+            "content_hash": "a" * 64,
+            "thread_id": "thread-1",
+        },
+    ).json()["data"]
+    assert (
+        client.post(
+            f"/api/creator-agent/actions/{action['action_id']}/resolve",
+            json={"account_id": "account-a", "disposition": "confirmed"},
+        ).status_code
+        == 200
+    )
+
+    executed = client.post(
+        f"/api/creator-agent/actions/{action['action_id']}/execute",
+        json={"account_id": "account-a"},
+    )
+
+    assert executed.status_code == 409
+    error = executed.json()["error"]
+    assert error["code"] == "ERROR_CREATOR_ACTION_CREDENTIAL_UNAVAILABLE"
+    assert error["details"] == {
+        "account_id": "account-a",
+        "required_scopes": ["xhs:write"],
+    }
+    receipt = client.get(
+        f"/api/creator-agent/actions/{action['action_id']}/execution",
+        params={"account_id": "account-a"},
+    )
+    assert receipt.status_code == 404
+
+
 def test_evidence_graph_routes_filter_and_scope_missing(client, monkeypatch):
     async def _owned(_user_id: str, _account_id: str):
         return object()

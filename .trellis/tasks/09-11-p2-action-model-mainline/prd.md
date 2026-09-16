@@ -42,8 +42,9 @@ Policy Engine、能产生外部副作用的执行器、主链接线。
 | S2 | **Policy Engine**（新模块，deterministic 无 LLM）：输入 publish 意图 + 账号/内容快照 → `PolicyVerdict(allow/deny, policy_id, reason)`；复用 `xhs_risk_gate` 既有判据；**fail-closed（读不懂 = 拒绝）**。插在 `plan_action` 之后、人类确认之前 | 中 |
 | S3 | **Action Executor 接 Tool Gateway**：PUBLISH 分支经 `ToolGateway` 调 `xhs.publish`（`PassStyle.INVOKE`）；幂等键接上后**解锁 catalog 的 `RetryPolicy`**；receipt 落 `note_id`/`url`。**这是第一次让 Action 产生外部副作用** | 高 |
 | S4a ✅ | **主链提交接入 Tool Gateway**：`run_publish` 不再自己构造 `XHSClient`，改为 `self.tools.invoke("xhs.publish", …)`；**`xhs.publish` orphan 消失** → 门禁那条"唯一 orphan 是 xhs.publish"断言会红，**同 PR 更新**。**不改时序**（既不产 intent，也不等确认）：`run_publish` 的调用点、返回形状、下游 8 处消费逐字段不变 | 高 |
-| **S4b（本片）** | **主链等人类确认**：`WorkflowStatus.AWAITING_PUBLISH` + `machine.py` **两条** gate 识别路径 + 动态 `interrupt`/`Command(resume=…)` + `publish_gate` 节点与路由 + `/resume` **无默认值**分支 + `auto_publish` 从「无人读的键」变成真开关 + 前端可见性。**不产 PublishIntent**（与 S4a 同：主链仍直接 `run_publish`）→ **待决问题 1 未裁决**，理由见 §S4b 的「修订」 | 高 |
-| S5 | **凭据整备** + DecisionRecord immutable 收尾 + `docs/publish-action-protocol.md` | 中 |
+| S4b ✅ | **主链等人类确认**：`WorkflowStatus.AWAITING_PUBLISH` + `machine.py` **两条** gate 识别路径 + 动态 `interrupt`/`Command(resume=…)` + `publish_gate` 节点与路由 + `/resume` **无默认值**分支 + `auto_publish` 从「无人读的键」变成真开关 + 前端可见性。**不产 PublishIntent**（与 S4a 同：主链仍直接 `run_publish`）→ **待决问题 1 未裁决**，理由见 §S4b 的「修订」 | 高 |
+| **S5a（本片）** | **凭据整备**：`services/xhs_credentials.py` 成为"哪个账号的凭据、从哪来"的**唯一所有者**（账号行 → 部署级 `XHS_COOKIE` → 无），可用性 fail-closed；读路径把 cookie 交给 `XHSClient`（P1c 写着"today this guard fires on every call"）；`granted_scopes` 从**恒 `None`（=unchecked）**变成真解析 → `xhs.publish` 的 `auth_scope` 第一次真的生效；executor 加**第四道 Gateway 之前的拒绝**（409）。**拆片理由见 §S5a 的「修订」** | 中-高 |
+| S5b | **收尾**：`DecisionRecord` immutable 收尾 + 持久化"被拒"审计（S2 的 403 与 S4b 的 `cancelled` 至今只有日志/state）+ `docs/publish-action-protocol.md` + 501 兜底 + **待决问题 1/3 的票面裁决** | 中 |
 
 切片顺序的判据：先把**纯数据面**（S1）落定，再落**纯判定**（S2），然后才跨"产生副作用"
 这道坎（S3），最后才动主链（S4）。S3 之前任何一片都不改变生产行为。
@@ -508,8 +509,120 @@ LangGraph 把空载荷读成"没有可恢复的东西"，节点重新 `interrupt
 另一条同类改形在 `tests/integration/test_evaluator_pause_resume.py`：`("publisher",)` →
 `("publish_gate",)`（与 S4a 处理 orphan 绊线同一纪律）。
 
-**下一片（S5）的入口条件**：① 凭据整备 + `DecisionRecord` immutable 收尾 + 持久化"被拒"审计
-（本片的拒绝只写 `publish_confirmation` 与 phase，**没有落审计记录** —— 那是 S5 的范围）；
-② `docs/publish-action-protocol.md`；③ **待决问题 1 仍在**（要裁决它得先有产 intent 的调用者）；
-④ 待决问题 3（`compute_publish_id` 内容级 vs `ActionIntent.idempotency_key` 请求级）S4a 只在
-代码注释里半作答，票面**无正式裁决**；⑤ 501 兜底要么改成拒绝要么删掉（S3 遗留）。
+**S5 已拆成 S5a / S5b，S5a 的交付见 §S5a**（该节末尾列出 S5b 的入口条件）。上面这份清单里的
+① 前半（凭据整备）由 S5a 结掉；**②③④⑤ 与 ① 后半（`DecisionRecord` + 审计）全部仍待 S5b**，
+本片刻意没替③④作答（理由见 §S5a 的设计决定 12）。
+
+### S5a — 凭据整备（`feat/p2a-s5a-credential-provisioning`）
+
+**范围**：让"哪个账号的凭据、从哪来"有一个**所有者**（`backend/services/xhs_credentials.py`），
+并把它接给两个读者 —— 读路径（cookie 交给 `XHSClient`）与 Tool Gateway（scope 交给运行时）。
+**不做**：`DecisionRecord` 收尾、持久化"被拒"审计、`docs/publish-action-protocol.md`、501 兜底
+（全部归 S5b）；**不给 `account_credentials` 写写入者**（登录流程的职责，见「不做的事」）。
+
+**侦察：四条既成事实**（逐条对代码核实）
+
+| # | 事实 | 位置 | 含义 |
+|---|---|---|---|
+| 1 | 读路径**根本拿不到 cookie**：`_get_client` 构造 `XHSClient(use_browser=…, headless=False)`，**没有 cookie 参数**；`_require_readable` 的 docstring 自己写着 *"today this guard fires on every call"* | `backend/tools/xhs/trending.py:26/42` | 三个读能力在生产里**从未读到过任何东西**，一直走"平台不可读"的降级分支 |
+| 2 | `account_credentials`（白名单 `XHS_COOKIE`/`XHS_USER_ID`）**没有任何生产写入者** —— 全仓只有建表、读、和"把 SYSTEM_KEYS 从它里面删掉" | `backend/db/accounts.py:70/436`、`db/system_config.py:264` | 扫码登录把登录态写进 **CDP profile**，不写这张表；缺的不是"读"，是"从哪写" |
+| 3 | `XHS_COOKIE` / `XHS_USER_ID` 在 `.env.example` 从第一天就声明，而 `backend/config/settings.py` 里**没有任何 cookie 字段** | `.env.example:10-11` | 与 S4b 的 `auto_publish` 同一族：**声明了但无读者的键** |
+| 4 | `auth_scope` 已声明、Gateway 也已强制（`_check_scopes`），但生产里 `granted_scopes` **恒为 `None`**，而 `None` 的 Gateway 语义是 *unchecked* —— S3 的 docstring 自己写着 *"nothing in this repo owns a publish grant yet"* | `gateway.py:200-205`、`execution.py:~302` | `xhs.publish` 的 `auth_scope=("xhs:write",)` **从 S1 起就是装饰**：有无权限走同一条路 |
+
+**改动（8 改 3 新）**
+
+| 文件 | 改动 |
+|---|---|
+| `services/xhs_credentials.py` | **新建**：`XhsCredential`（account_id / cookie / user_id / source + `usable` + `scopes`）、`load_credential`（**唯一所有者**：两级来源 + fail-closed 边界）、`granted_scopes`（薄读，供 dispatcher）、`_read_stored`（默认读 `account_credentials`）、`_read_deployment`（默认读 `XHS_COOKIE`/`XHS_USER_ID`）、`_carries` |
+| `config/settings.py` | `XHSPlatformSettings` 加 `cookie` / `user_id`（env_prefix `XHS_` ⇒ 正是 `.env.example` 声明的那两个键） |
+| `tools/xhs/trending.py` | `_get_client` 从"没有 cookie 可给"改成"解析这个账号的凭据再给"；工厂与 `_require_readable` 的 docstring 同步改口径 |
+| `creator_agent/execution.py` | `gateway_publish_dispatcher` 的 `granted_scopes` 默认从 `None`（=unchecked）改成**按 `request.account_id` 解析**；新增 `scope_resolver` 缝；模块 docstring"两条缝"→"三条缝" |
+| `creator_agent/advisor.py` | `_execute_publish` 新增**第四道拒绝**（凭据），排在 `thread_id` / artifact / content-hash 三道**之前**；`_required_publish_scopes()` 从 registry **读**声明而非复述；构造器新增 `credentials` 缝 + `CredentialLoader` 别名 |
+| `creator_agent/repository.py` | `ActionCredentialUnavailableError`（带 `account_id` / `required_scopes` / `reason`） |
+| `api/errors.py` | `ErrorCode.CREATOR_ACTION_CREDENTIAL_UNAVAILABLE` + `CreatorActionCredentialUnavailableError`（**409**） |
+| `api/routes/creator_agent.py` | `/execute` 接上 409 映射 |
+| `creator_agent/__init__.py` | 导出新错误 |
+| `docs/tool-runtime.md` | 「已知残留」两条结清（orphan 由 S4a 结清、读路径未鉴权由本片结清）并写下**新残留**；门禁说明的"当前唯一 orphan"改成"为空" |
+| `tests/unit/services/test_xhs_credentials.py` | **新建，19 用例** |
+
+**设计决定**
+
+1. **一个所有者，两个读者**：cookie 与 scope 来自**同一个** `XhsCredential`，所以"这次平台调用带了凭据"与"它的 scope 被授予"不可能互相矛盾（S4b 的 `publish_is_dry_run` 同一手法）。
+2. **账号自己的凭据是终局**：账号有行就绝不回退到部署级 —— **哪怕那一行不可用**。回退会以"调用方没点名的另一个身份"去读/发布，那是凭据解析唯一不能发明的失败。
+3. **一行是陈述，一个空环境变量不是**：账号行存在但值为空 ⇒ 那是该账号被清空的凭据，仍是它的答案；`XHS_COOKIE` 为空 ⇒ 没人配过部署凭据，于是 `source` 返回 `""` 而不是"consulted 过 environment"。这条不对称是刻意的（写进模块 docstring）。
+4. **fail-closed 落在边界上**（复用 S2 的教训）：**任何** reader（含注入的）抛异常 ⇒ 不可用凭据且**不回退** —— "读不到账号有没有自己的凭据"是未知，未知不是"可以用别人身份"的许可。
+5. **"没有账号库" ≠ "读不到账号库"**：`is_pool_ready()` 为假（`db/accounts` 是 Postgres-only、无内存回落）是**配置事实**，部署级凭据仍适用；读失败才落边界。两条代码路径分开。
+6. **可用性 = 存在 且 形状对**：`usable` 用 `XHSCookieParser.is_valid`（要 `a1` 且有材料）。给一个"能解析但无登录材料"的 cookie 会让 HTTP 客户端进入"配了但每次都失败"的状态 —— 那正是 `can_read` 存在的意义。
+7. **一份可用凭据同时授予 read + write**：凭据**就是**账号的身份证据（写它的是同一次扫码登录，它也绑定了该账号的浏览器 profile）。从"浏览器可达"推 write 会让授权随 Chrome 进程停不停而翻转，而**可达性不是授权**；可达性留在原处（publisher 解析 endpoint，工具在浏览器不在时吵闹地失败）。规则只有一条：`usable ⇒ (xhs:read, xhs:write)`。
+8. **凭据检查是第四道"Gateway 之前的拒绝"，且排最前**：S3 立下的结构是"每道拒绝都在 Gateway 之前"，本片加第四道。排最前不是因为它便宜，而是因为**授权不依赖 artifact** —— 把答案建立在 artifact 读之上，会让无授权的账号被告知"你的内容有问题"，并让判决依赖于 store 是否可达（M13 杀的就是这条）。
+9. **必需的 scope 从 registry 读，不复述**：`_required_publish_scopes()` 读 `xhs.publish` 声明的 `auth_scope`。写死字面量是同一条要求的第二份陈述，而且**漂移是静默的**：Gateway 仍强制*声明*的那个，executor 却按另一个拒绝。
+10. **拒绝是 409 不是 403**：403 留给 Policy Engine（一条规则说"不行"）；这里是"调用方被允许、能力可执行，但**账号**拿不出凭据"，与 `ActionPublishContentUnavailableError` 同族，也同样保证"Gateway 没被碰到、没有 receipt"。
+11. **dispatcher 的默认从 `None` 改成"解析"**：`None` 的 Gateway 语义是 *unchecked*，而**未检查的要求与没有要求无法区分** —— 这正是 S3 那份 docstring 诚实地承认的状态，本片结掉它。`granted_scopes` 参数保留为显式覆写（测试用）。
+12. **主链发布（S4a 那条）本片不接 scope 检查**：`_publish_gateway_account_id` 在账号未指定时**故意返回 `""`**（S4a 的决定，避免把未归属的发布挪进 `account:default` 冷却桶），而 `""` 解析不出授权 —— 在那里加检查等于**替待决问题 1 做裁决**（主链隐式账号 vs `account_id` 必填）。留给 S5b。
+13. **读路径不接 scope 检查**：`_require_readable` 已是这条路径的诚实通道（`XHSAuthError` → Gateway 记 `ok=False` → 调用方降级）。再加一道会**把运行期条件变成接线异常**（`PermissionDeniedError` 是 raise，会穿过 `trend_scout` 的降级分支炸掉节点），失败模式反而更差。凭据缺失是运行时条件，不是接线错误。
+
+**不做的事（本轮明确不碰）**
+
+- **不给 `account_credentials` 写写入者**：把扫码登录拿到的 `web_session` 落进加密表是**登录流程**的改动（1900 行的 `xhs_login` + 一个新的 upsert API），属"凭据供给"而非"凭据所有权"。本片把它**钉成事实并写进残留**：今天唯一真能提供凭据的是部署级 `XHS_COOKIE`；per-account 那一行读路径已通、优先级已定，在登录流程开始写它之前是空的。
+- 不动 `XHSClient` 第一层吞异常（`get_trending`/`search_posts` 的既有契约）—— 那是另一条残留。
+
+**★ 绊线改形（按设计变红，改形不删）**
+
+凭据拒绝**排在最前**，于是"每道拒绝都在 Gateway 之前"那组既有用例的**账号前提**变了：
+`test_action_publish_execution.py` 的 `_advisor()` 工厂与 `test_action_publish_payload.py` 的
+`_advisor_with_decision()` 都改成**给账号一个凭据**（`credentials=_credentialed`，一个合法的
+`a1=…` cookie）—— 因为"发布测试的账号必须是有凭据的账号"才是真实前提，旧 fixture 之所以能跑，
+只是因为这条规则不存在。**断言一条没动**（三条仍断言同样的 `ActionPublishContentUnavailableError`
++ 无 call + 无 receipt）。另一处：
+`TestTheDefaultDispatcherIsTheRealPath::test_it_reaches_the_shared_gateway_and_the_lazily_resolved_tool`
+从"直接调 dispatcher"改成"用 `XHS_COOKIE` 提供凭据后直接调 dispatcher" —— 它现在是**整条生产链**
+的证据：环境 → `xhs_credentials` → scopes → `xhs.publish` 的声明 → Gateway → 工具。
+
+**门禁（四道全绿，提交前实测）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q` | **3255 passed / 3 skipped** —— S4b 的 3227 + **28** = 19 + 5 + 1 + 2 + 1，恰等于新用例数（零既有用例被删，两条断言按上节改形） |
+| `ruff check .` / `format --check .` | **505 files**（+2 新文件），All checks passed |
+| `uv run mypy backend --python-version 3.12` | **204 source files, no issues**（+1 新模块） |
+| P1b 基线 | `drift within threshold` |
+| `tool_runtime_gate.py` | **OK**（orphan 仍为空；`named by agents: 10`） |
+| 前端 | 本片**未改前端**，未跑（S4b 已记录：前端门禁需先 `npm install`） |
+
+**突变自检：17/17 killed**，每条从原始字节起算、每条被具名断言杀掉；**step 0** 先把 23 个具名
+击杀者在未改动树上跑一遍（全绿）→ 没有任何 "killed" 可能来自本来就红的测试。
+
+| # | 突变 | 击杀者 |
+|---|---|---|
+| M1 | `usable` = 存在而非形状对 | `test_a_cookie_without_login_material_is_not_usable` + `...at_the_scope_check` |
+| M2 | 不可用也授予两个 scope | 同上 + `...refused_before_the_gateway` |
+| M3 | 账号凭据不可用 ⇒ 回退部署级 | `test_an_unusable_account_credential_is_not_overridden` + `...no_stored_material_is_empty` |
+| M4 | reader 抛异常 ⇒ 回退部署级 | `test_a_raising_reader_yields_an_unusable_credential` |
+| M5 | 默认 reader 去掉"无 pool"守卫 | `test_a_missing_account_store_is_not_a_reader_failure` |
+| M6 | 默认 reader 不再按白名单过滤 | `test_only_allow_listed_rows_count_as_the_accounts_credential` |
+| M7 | 读工厂解析了凭据却交出空值 | `test_a_resolved_credential_reaches_the_client` |
+| M8 | `_require_readable` 永不触发 | `...gets_a_client_that_cannot_read` + `...refuses_to_report_an_empty_platform` |
+| M9 | dispatcher 交 `None`（=S3 原状） | `...stops_the_publish_at_the_scope_check` |
+| M10 | executor 永远找不到缺失 scope | `...refused_before_the_gateway` + 路由 409 用例 |
+| M11 | 凭据拒绝变成"一刀切" | `test_a_credentialed_account_still_publishes` + `test_an_unreadable_artifact_is_refused` |
+| M12 | 必需 scope 写成字面量 `("xhs:read",)` | `...required_scope_is_read_from_the_capability…` + `...refused_before_the_gateway` |
+| M13 | 凭据检查挪到 artifact 读之后 | `test_entitlement_is_answered_without_reading_the_artifact` |
+| M14 | 路由不再映射凭据拒绝 | `tests/unit/api/test_creator_agent.py::test_a_publish_without_a_credential_returns_its_own_409` |
+| M15 | 409 改成 403 | 同上 |
+| M16 | `XHS_WRITE_SCOPE` 漂移成 `"xhs:publish"` | `...scope_vocabulary_mirrors_the_catalogs_declarations` + `...at_the_scope_check` |
+| M17 | 部署级凭据读成空 | `test_the_deployment_credential_is_the_single_account_fallback` + `...reaches_the_shared_gateway…` |
+
+**修订：S5 拆成 S5a / S5b**（本片侦察时定）。票面那一行把两件正交的事捆在一起 —— **授权**
+（谁可以调、凭什么）与**溯源 + 审计 + 文档**（我们记了什么）。合成一片会让"授权接对了没有"与
+"audit 记全了没有"互相掩盖（与 S4 → S4a/S4b 的拆分理由同一逻辑）。S5a 做授权（本片：改生产行为，
+单独一片才可归因）；S5b 做 `DecisionRecord` immutable 收尾 + 持久化"被拒"审计 + 协议文档 +
+501 兜底与待决问题 1/3 的裁决。
+
+**下一片（S5b）的入口条件**：① `DecisionRecord` immutable 收尾 —— `apply_feedback` 目前**在位改写**
+记录（`backend/db/creator_agent.py:1182-1183` 内存分支与 `:1220-1221` Postgres 分支各一处），
+与 `DecisionDatasetEntry` 的 "read-only projection of one **immutable** Decision Record snapshot"
+自相矛盾；② 持久化"被拒"审计 —— S2 的 403 与 S4b 的 `cancelled` 至今只有日志/state，
+`workflow_events` 的 `kind="action"` **至今无发射者**（S2 的裁决明写"与 immutable DecisionRecord
+收尾同批"）；③ `docs/publish-action-protocol.md` —— 现在有了最后一块料（授权来源与 scope）；
+④ **待决问题 1 仍在**（本片刻意没替它裁决，见设计决定 12）；⑤ 501 兜底清掉（`CREATOR_ACTION_CAPABILITY_NOT_WIRED`
+已无生产者）；⑥ 本片留下的残留：`account_credentials` 仍无写入者。

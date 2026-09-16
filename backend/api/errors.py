@@ -32,6 +32,7 @@ class ErrorCode(StrEnum):
     CREATOR_ACTION_CAPABILITY_NOT_WIRED = "ERROR_CREATOR_ACTION_CAPABILITY_NOT_WIRED"
     CREATOR_ACTION_POLICY_DENIED = "ERROR_CREATOR_ACTION_POLICY_DENIED"
     CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE = "ERROR_CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE"
+    CREATOR_ACTION_CREDENTIAL_UNAVAILABLE = "ERROR_CREATOR_ACTION_CREDENTIAL_UNAVAILABLE"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -301,6 +302,28 @@ class CreatorActionPublishContentUnavailableError(APIError):
             code=ErrorCode.CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE,
             message=reason or "Creator action has no publishable content",
             details={"action_id": action_id},
+            status_code=409,
+        )
+
+
+class CreatorActionCredentialUnavailableError(APIError):
+    """The account holds no credential for the capability being executed.
+
+    409, like the content refusal above and for the same reason: nothing is
+    missing in the wiring -- the capability is executable and the caller is
+    allowed to ask -- the *account* cannot act, because no usable credential
+    was resolved for it.  403 stays reserved for the policy engine, which is a
+    rule saying no rather than a precondition that is not met.
+
+    ``required_scopes`` names what the capability declares it needs, so a
+    caller can tell which grant to provision without reading the catalog.
+    """
+
+    def __init__(self, *, account_id: str, required_scopes: tuple[str, ...], reason: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_CREDENTIAL_UNAVAILABLE,
+            message=reason or "Creator action account has no usable credential",
+            details={"account_id": account_id, "required_scopes": list(required_scopes)},
             status_code=409,
         )
 

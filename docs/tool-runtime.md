@@ -140,7 +140,8 @@ L1 只描述**调用形状**，不描述**运行时权限**：`side_effect` / `a
    源文件 —— 全部报错，绝不跳过。在没读懂的代码上报告"0 处不一致"是假通过，
    而假通过比吵闹的失败更糟。
 4. **目录覆盖度。** agent 提到但目录里没有 → 失败；目录里有但没人用 → **只报告**
-   （当前唯一一个是 `xhs.publish`，它的调用者在 P2a）。与 prompt 覆盖度门禁同口径：
+   （当前**为空**：`xhs.publish` 的调用者由 P2a-S4a 接上，门禁里那条 orphan 断言也随之
+   改成 `orphans == ()`）。与 prompt 覆盖度门禁同口径：
    对计划中的工作失败的门禁，最后会被人关掉。
 
 **为什么只覆盖 `backend/agents/**`：** `backend/api/routes/workflow.py` 仍有一处
@@ -166,6 +167,8 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
 - **L1 参数类型是原样反射的**：LangChain 工具给 JSON-schema 的 `string`，普通函数
   给注解名（`dict[str, Any]`）。没有归一化 —— P2c 真要把 schema 交给模型调工具时
   需要一个统一口径。
-- **`xhs.publish` 有声明、没有调用者**（P2a）。
-- **读路径结构性未鉴权**：`XHSClient._get_client` 从不传 Cookie，CDP 登录态只用于
-  发布。凭据整备归 P2a。
+- **`account_credentials` 没有写入者**：读它在 `services/xhs_credentials`（P2a-S5a），
+  但扫码登录把登录态写进 CDP profile（per-account Chrome user-data-dir），并没有写
+  这张表。所以**今天唯一真的能提供凭据的来源是部署级的 `XHS_COOKIE`**
+  （`.env.example` 里声明、P2a-S5a 之前无人读）；per-account 那一行读路径是通的、
+  也是优先的，但在登录流程开始写它之前一直是空的。写它属于后续任务。
