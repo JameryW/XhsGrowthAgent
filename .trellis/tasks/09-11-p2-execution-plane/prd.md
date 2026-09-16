@@ -48,7 +48,7 @@
 |---|---|---|
 | **S1** ✅ [#614] | **执行租约的数据面**：owner identity（实例 id + 启动时刻）+ 租约记录（thread_id → owner / acquired_at / heartbeat_at / expires_at / state）+ `acquire` / `renew` / `release` / `expire_scan`。**只写不读** —— 今天的 `_background_tasks` 照旧决定一切，对外零行为变更 | 低-中 |
 | **S2** ✅ [#615] | **状态推导改读租约**：`has_active_task` 由租约回答；`/status` `/list` 的 `orphan` 语义从"本进程没有任务"变成"**租约已过期**"。事实 15 的绊线按设计改形 | 中（改可观测语义） |
-| **S3** | **过期租约的接管**：启动扫描 + 周期扫描，从 checkpoint 续跑。**接管只能恢复执行循环、不能替人做决定**（见待决 3） | 高（会重跑工作） |
+| **S3** ✅ [#616] | **过期租约的接管**：启动扫描 + 周期扫描，从 checkpoint 续跑。**接管只能恢复执行循环、不能替人做决定**（见待决 3） | 高（会重跑工作） |
 | **S4** | **长任务移出 API 进程**：按事实 9、13 逐点分类，把 CDP 会话与重型任务挪出编排进程。**凭证据开闸**（裁定 1）—— 无证据则降级为文档 + 分类清单 | 高 |
 | **S5** | **契约的表述**：`docs/execution-plane.md` —— 租约的**保证与非保证**、单进程现实 vs 文档拓扑、无 DB 时的语义、接管的安全边界、逐点分类清单 | 小 |
 
@@ -299,3 +299,125 @@ harness 自身的一处观察：M13–M20 的 `tail` 最后 8 行被 `StarletteD
 - **单进程部署假设**：事实 6（`Dockerfile:81` 无 `--workers`）。上面"8/9 守卫不改"的取舍、以及"存储坏掉答 not held"的方向，都建立在这个前提上。多进程拓扑（`docs/deployment.md` 里的终态）下需要重新论证 —— 那时 8/9 应当改读**租约 OR 本进程**，而 `_lease_is_held` 的失败方向要再讨论。
 - **`owner_id` 目前不参与读取判定**：`thread_is_held` 只问"有没有一个活着的主人"，不问"是不是我"。这是有意的 —— 读取方要的正是"不管是谁"；`owner_id` 的消费者是 `acquire` / `renew` / `release` 的互斥。将来若需要"是不是**我**在跑"（例如 S3 的接管要避免抢自己的租约），需要新读者，不要改这个的语义。
 - **`expire_scan` 仍无生产调用者**：S2 不引入它 —— 读者自己算 staleness 正是为了不依赖它。它仍然是 S3（接管）的组件。
+
+### S3 —— 过期租约的接管（分支 `feat/p2b-s3-takeover-scan`，commit `465b55d0`，PR [#616](https://github.com/JameryW/XhsGrowthAgent/pull/616)）
+
+**定性**：S1 让「谁在跑这个 thread」成为**可陈述的事实**，S2 让租约成为**读者的答案**；S3 让租约第一次**导致行为** —— 启动扫描 + 周期扫描找出停止续租的行，从 checkpoint 把 thread 接回来。接管会**重跑工作**，所以本片的难点不是"怎么接"，而是**两条边界**：
+
+1. **接管必须让失去租约的旧主人停下**。否则租约不是闸门：旧主人照旧写自己的 checkpoint，接管又在同一份 checkpoint 上起第二个写者 —— 红线 4 被违反，而"租约已互斥"这句话变成装饰。
+2. **接管只能恢复执行循环、不能替人做决定**（红线 2 + 裁定 3）。`publisher` 会真的发小红书；每个 `interrupt()` 门等的是某个人的回答，`ainvoke(None)` 会替那个人答 `None`。
+
+**改动表**（实测：6 改 7 新，tracked +179/−19，新文件 1548 行）
+
+| 文件 | +/− | 内容 |
+|---|---|---|
+| `backend/graph/takeover_safety.py` | **新 130 行** | 节点安全分类的**穷举注册表**（照 `RETRY_POLICIES` 先例）：SAFE 13 / NEEDS_HUMAN 10 / IRREVERSIBLE 1，**未知名 `KeyError`**（默认值会替"没人分类过"的节点答 `safe`，那是这里唯一危险的答案）。`_SEVERITY` 把"哪个更严重"排一次；`takeover_verdict` 只分类**待跑**节点 |
+| `backend/api/routes/_takeover.py` | **新 253 行** | 扫描本体。`_consider`（:105）三分支：**拒绝**（待跑集含非 SAFE）/ **跳过**（无 checkpoint、无待跑节点、状态读不出、拿不到租约）/ **接管**（`acquire` 授予 → `_start_resume_task`）。`takeover_scan`（:155）、`_merge_status`（:189，单一写者）、`takeover_scheduler`（:219，**先睡再扫**）、`startup_takeover_scan`（:235）、`initial_status`/`_status_defaults`（:57/:81） |
+| `backend/api/routes/_runner.py` | +48/−0 | **自栅栏** `_fence_on_lost_lease`（:352）+ 接线（:420–423）+ `CancelledError` 分支守卫（:473–478） |
+| `backend/db/execution_leases.py` | +48/−18 | 修 `_acquire_in_memory` 与 `_ACQUIRE_SQL` 的**语义分歧**（:295 补 `existing.state is LeaseState.HELD`）；docstring 第四条不变量扩为第五条（"失去租约会让它描述的工作停下"）；`renew`/`_ACQUIRE_SQL` 补前向引用注释 |
+| `backend/config/settings.py` | +6/−0 | `takeover_enabled: bool = True` / `takeover_interval_seconds: float = 60.0`（:91–92） |
+| `backend/api/app.py` | +61/−0 | lifespan 接线（:1332–1366：写初始状态 → 启动扫描 → 起周期任务）+ shutdown 取消（:1469–1472）+ `/health` 的 `execution_takeover` 白名单 13 字段（:1597–1615, :1632） |
+| `tests/unit/graph/test_takeover_safety.py` | **新 227 行 / 32 用例** | 注册表穷举且严格 / 拒绝集就是裁定点名的那个 / verdict 只看待跑集 / **前提测试**：进 `publisher` 的唯一来源是 `publish_gate` |
+| `tests/unit/api/test_takeover_scan.py` | **新 616 行 / 29 用例** | 候选集 / 租约闸门 / 拒绝什么 / 跳过什么 / 只决策一次 / 报告形状 / `app.state` 状态桶 / 调度器 / 启动扫描 / **扫描自己从不调图** / 状态键集 / 调度器先等 |
+| `tests/unit/api/test_lease_fence.py` | **新 159 行 / 5 用例** | 心跳自己结束 = 栅栏（`CancelledError`）；`end_lease` 取消心跳 = **不**栅栏；事件先于取消送达；已完成的 run 不被取消；**被栅栏的 run 不落状态** |
+| `tests/unit/api/test_takeover_health.py` | **新 95 行 / 3 用例** | `/health` 的接管摘要、降级可见（`durability="none"`）、`None` 与缺失可区分（"没接线" vs "接了线没找到"） |
+| `tests/unit/api/test_takeover_wiring.py` | **新 68 行 / 2 用例** | **接线本身**：真启动一次 lifespan，断言周期任务已排（名字 `execution-takeover-scan`）且启动扫描已跑过（`run_count=1`、`last_source="startup"`）、`/health` 从外面能看到；以及 `WORKFLOW_TAKEOVER_ENABLED=false` 时**一个扫描都不排** |
+| `tests/unit/db/test_execution_leases.py` | +30/−1 | 两条回归钉子：**过期**行与**已释放**行都可从别的 owner 手里接管 |
+| `tests/unit/db/test_execution_leases_reader.py` | +5/−3 | "nothing reads it yet" 式注释已不成立，改写 |
+
+**两条边界的落点**
+
+**(1) 自栅栏：让"结束方式"当裁判**
+
+`renew` 的 docstring 把这件事留给了 S3：S1 记下"租约丢了"然后继续干活。在没有任何东西对租约采取行动时这无害，现在有害 —— 如果本实例已经不再拥有那一行，那就是别人拥有了它，唯一还能保住红线 4 的做法是**在下一次写之前停下**。
+
+`_fence_on_lost_lease` 用 `heartbeat.add_done_callback` 监听心跳结束，但它必须区分**两种结束**，否则会在每个 run 正常完成时把它取消掉：
+
+| 心跳怎么结束 | 含义 | 动作 |
+|---|---|---|
+| 被 `end_lease` 取消（`task.cancelled()` 为真） | 本 run 正常收尾 | **什么都不做** |
+| 自己结束（`renew` 答 `False`） | 那一行不再是我们的 | 置事件 + **cancel 宿主 task** |
+
+`CancelledError` 分支里第一句是 `if lease_lost.is_set(): raise` —— **被栅栏的 run 一个状态都不写**。写 `cancelled` 会擦掉刚发生的那次接管：现在持有这一行的是别人。
+
+**:423 的一处取舍**：同步执行的 run 也会被栅栏，代价是调用方正在等的 HTTP 响应被中断。仍然是两个结果里更好的那个 —— **一个被中断的请求好过同一份 checkpoint 上的第二个写者**。
+
+**(2) 待跑集就够：前提被单独钉住**
+
+只分类 `state.next`（待跑节点），不分类"从它们可达的一切"。这不只是省事，而是**充分**的：进入 `publisher` 的**唯一**来源是 `publish_gate`（`builder` 的 `publish_gate_outcome` 映射，`evaluator_gate` 那条分支的 verdict 虽然拼写 "publisher"，目标被重映射到 `publish_gate`），而 `publish_gate` 自己就是 NEEDS_HUMAN。所以"会以重新发帖收尾的 resume"**必须先停在某个门上，而门会拦住它**。
+
+这条前提**不是注释**：`test_the_only_way_into_the_publisher_is_a_gate` 从 `build_graph()` 的 `edges` + `branches` 里读出所有进入 `publisher` 的边并断言来源恰为 `{"publish_gate"}`。**将来谁加第二条进 `publisher` 的边，这条测试就红**，前提必须重新论证。
+
+**只处理"新过期"的租约（幂等在这里）**
+
+`expire_scan()` 是唯一把行翻成 `expired` 的写者，且**只返回刚转的行** —— 所以 "所有过期租约" 每周期重读一遍会让同一次拒绝被反复重判、把时间线刷满重复事件。按**每次过期决策一次**同时也正是诚实的节奏：**没有人在行动之前，什么都不会变**。
+
+**为什么拒绝也要落库**
+
+每次决策都写一条 `workflow_events`（`kind="takeover"`）并进 `app.state.takeover_status.last_decisions`（有界 20）—— 让"扫描看过并拒绝了"与"扫描从来没看见它"保持**可区分**，与 S2 为它的 declared gap 立的口径同源（`_status_defaults` 是工厂而不是模块常量，否则两个状态桶会是同一个桶）。
+
+**★ 顺手修掉的真缺陷：两个后端对同一个问题给出不同答案**
+
+| 症状 | 根因 | 修法 |
+|---|---|---|
+| 内存后端**拒绝**接管一个已过期 / 已释放的租约，SQL 后端**授予** | `_acquire_in_memory` 用 `not existing.is_stale(now=now)` 判"还有活主人"，而 `is_stale` 的定义是"**held 且过期**" —— 对 `expired`/`released` 行返回 `False`，`not False` 就得 `True`，于是拒绝。`_ACQUIRE_SQL` 的判据是 `state <> 'held'`，两者语义分歧 | `:295` 补 `existing.state is LeaseState.HELD and`，与 SQL 对齐；两条回归钉子钉住（`test_takes_over_an_expired_lease_from_another_owner` / `test_takes_over_a_released_lease_from_another_owner`） |
+
+S1 时这没暴露，因为**没有调用者**会去接管一个已经过期的行；S3 的 `expire_scan` 调用是第一个走这条路的代码。
+
+**门禁（全部在本片最终代码上跑）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q`（全量） | **3411 passed, 3 skipped**（基线 3338 **+73** = 5 个新文件 71 用例 + `test_execution_leases` +2，**逐条对上**） |
+| `ruff check .` | All checks passed |
+| `ruff format --check .` | **519 files** already formatted（+1 新文件） |
+| `mypy backend --python-version 3.12` | Success: no issues found in **207** source files |
+| `scripts/gates/tool_runtime_gate.py` | P1c-S5 tool runtime: OK |
+| `context_compiler_baseline.py --compare --drift-pct 5` | drift within threshold: OK |
+
+**突变自检：26 条，`killed=26 survived=0 timeouts=0 anchor_failures=0 restore=OK`**
+
+harness 沿用 S1/S2 三条硬化（**锚点前置批检** —— 跑 step 0 **之前**验每条锚点唯一；**看门狗** —— 超时先恢复源码；**收尾哈希核验**），本片又加了一条：**文件被重写成字节级同一份**（EOL 机械装置必须先证明无损，否则混行尾的树会被悄悄整文件改写）。step 0 = 109 passed。
+
+**本片两轮都是 0 存活**（首轮 25 条，补了 app.py 接线那条后 26 条）。唯一一次发现的缺口是**在设计阶段问出来的**，不是突变逼出来的：lifespan 接线（`if takeover_enabled:` 到起周期任务）当时**没有任何测试**，于是补了 `test_takeover_wiring.py`（真启动一次 lifespan），它的击杀证据就是 `AP-scan-never-started`。
+
+| # | 突变 | 具名击杀者 | 判定证据（实测） |
+|---|---|---|---|
+| TS01 | 跳过 SAFE 的判据取反 | `test_safe_pending_work_may_resume` | 13 failed（`assert False is True`） |
+| TS02 | `NEEDS_HUMAN` 与 `IRREVERSIBLE` 严重度对调 | `test_the_worst_hazard_is_the_one_reported` | 2 failed |
+| TS03 | `publisher` 降级为 NEEDS_HUMAN | `test_the_publisher_is_irreversible_not_merely_unsafe` | 8 failed |
+| TS04 | 未知名**默认 safe** | `test_an_unknown_node_raises_instead_of_defaulting` | 2 failed（`Failed: DID NOT RAISE`） |
+| TS05 | `review_gate` 改成 SAFE | `test_every_interrupt_node_needs_a_human` | 5 failed |
+| TS06 | `evaluator_gate` 改成 SAFE | `test_the_named_exception_is_the_parked_evaluator_loop` | 2 failed |
+| TK01 | **租约闸门删掉** | `TestTheLeaseGate::test_a_candidate_it_cannot_acquire_is_skipped` | 2 failed |
+| TK02 | **不拒绝任何人** | `TestWhatItRefuses::test_a_pending_gate_is_refused_with_a_reason` | 3 failed |
+| TK03 | 空待跑集也照跑 | `TestWhatItSkips::test_a_run_with_nothing_pending_is_skipped` | 1 failed |
+| TK04 | 空 checkpoint 也照跑 | `TestWhatItSkips::test_no_checkpoint_is_skipped` | 1 failed |
+| TK05 | `last_taken_over` 记成 refused | `TestTheAppStatus::test_the_status_records_the_pass` | 1 failed |
+| TK06 | 决策日志改成留**最旧**的 | `TestTheAppStatus::test_the_decision_log_is_bounded` | 1 failed |
+| TK07 | `run_count` 不累加 | `TestTheStatusKeySet::test_the_run_count_accumulates` | 1 failed |
+| TK08 | 调度器不等待 | `TestTheSchedulerWaits::test_it_does_not_scan_until_the_interval_has_passed` | 1 failed |
+| TK09 | 周期扫描冒充启动扫描 | `TestTheScheduler::test_it_runs_passes_until_cancelled` | 1 failed |
+| TK10 | `newly_expired` 恒 0 | `TestCandidates::test_an_expired_lease_is_the_candidate` | 3 failed |
+| TK11 | 关闭开关也报 scheduled | `TestTheStatusKeySet::test_a_fresh_bucket_says_which_state_it_is_in` | 1 failed |
+| TK12 | 拒绝**不留痕** | `TestItDecidesOnce::test_a_refused_expiry_is_not_re_decided` | 3 failed |
+| TK13 | 拒绝记成 skipped | `TestWhatItRefuses::test_a_pending_gate_is_refused_with_a_reason` | 1 failed |
+| TK14 | 启动扫描的失败不再被吞 | `TestTheStartupPass::test_a_failing_startup_pass_does_not_block_startup` | 1 failed |
+| RN01 | **正常收尾也栅栏** | `TestTheFence::test_a_cancelled_heartbeat_does_not_fence` | 1 failed |
+| RN02 | 被栅栏的 run 照写状态 | `TestAFencedRunWritesNoStatus::test_it_does_not_persist_cancelled` | 1 failed |
+| RN03 | 只发事件、不 cancel 宿主 | `TestTheFence::test_a_heartbeat_that_ends_by_itself_cancels_the_run` | 3 failed（18.0s —— 三条走 5s `wait_for` 超时） |
+| RN04 | 栅栏**完全没接线** | `TestAFencedRunWritesNoStatus::test_it_does_not_persist_cancelled` | 1 failed（8.0s） |
+| EL01 | 去掉 `state is HELD` 子句（退回缺陷） | `TestAcquire::test_takes_over_an_expired_lease_from_another_owner` | 6 failed |
+| AP01 | **lifespan 不排扫描** | `TestABootedService::test_it_schedules_the_scan_and_runs_the_first_pass` | 1 failed |
+
+harness 自身踩到的两处（都已修，登记在此以免下次重犯）：① 收尾核验函数初版**只算哈希不写回内容** —— 于是看门狗路径其实什么都没恢复，`restore=OK` 会是假绿；② 中途用 `os._exit` 退出时 `finally` 不会跑，所以 `abort()` 必须**自己**能恢复，不能依赖作用域。
+
+**残留与诚实登记**
+
+- **SAFE 不等于免费**：13 个 SAFE 节点里多数会调 LLM 或读小红书，重跑要花钱花时间。`SAFE` 的定义是"**过程之外不改变状态**"，不是"没有代价"。若将来要控成本，正确的加法是**重跑预算**（每 thread 每窗口最多接管一次之类），而不是把 SAFE 提级 —— 提级会让接管在崩溃后**永远不干活**。
+- **NEEDS_HUMAN 里有 1 个不是结构性的**：`evaluator_gate` 的理由是 P0-W5 的续跑通道（`PAUSE_REASON_EVALUATOR_FAIL_CLOSED`：`/resume` 把它当作"评估器故意停下的 thread"，只有人能重启）。它**具名**登记在 `_NAMED_WITHOUT_A_SOURCE` 里，且 `test_the_needs_human_set_is_exactly_its_sources` 要求 `NEEDS_HUMAN` 集**恰好**等于"7 个 `interrupt()` 调用者 ∪ 7 个 `derive_status` 会 park 的节点 ∪ 这个具名例外" —— 多一个就是"凭感觉分类"，少一个就是"漏掉的拒绝"。
+- **`choice_gate` / `draft_gate` 不是真 `interrupt()`**（它们在 `interrupt_before` 里），所以"它们会 park"的独立证据是 `derive_status(`next=(gate,)`)` 返回 `awaiting_*`，参数化在 `TestGatesParkAndThereforeRefuse` 上。
+- **接管沿用 `/recover` 的 phase 推断**：`_resume_phase_for_next_nodes` 从 `workflow.py` 直接导入，不新写一套映射 —— 第三个真相源是这里最不需要的东西。
+- **无 DB 时接管不可用，且这个区别可见**：`durability()=="none"` 时租约是内存态，重启后什么都不剩。启动扫描仍会跑（`run_count=1`）但 `last_newly_expired=0`；`/health` 的 `durability` 字段让"没有接管发生"与"没有任何可持久化的东西可以接管"**看起来不一样**（裁定 2）。
+- **单进程部署假设（承接 S2 同一条）**：栅栏与接管扫描都按 `Dockerfile:81` 的无 `--workers` 前提写。多进程拓扑下"失去租约"的判定要重新论证（那时 `renew` 的失败可能只是网络抖动，直接栅栏会误杀在飞工作）。
+- **`takeover_interval_seconds` 被夹到下限 5s**（`app.py:1347`）：配置里写 0 不会退化成忙循环，只会变成 5 秒一扫。
