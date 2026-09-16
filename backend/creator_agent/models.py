@@ -501,6 +501,26 @@ class UserFeedback(FeedbackInput):
 
 
 class DecisionRecord(BaseModel):
+    """One creator decision, pinned to the model revision that produced it.
+
+    A record freezes when it is written.  Everything that **judged** the
+    decision — ``model_revision``, ``goal``/``context``, ``recommendations``,
+    ``excluded_candidates``, ``evidence``, ``evidence_coverage``,
+    ``confidence``, ``status`` and the identity fields — is never rewritten, so
+    a question asked later ("what was this decided on, and against which
+    model?") reads the same answer as the moment it was asked.  The publish
+    executor relies on exactly that: it refuses an ``ActionExecution`` receipt
+    whose ``model_revision`` does not match this record's.
+
+    One thing moves, and only one: ``feedback`` grows (append-only) together
+    with the ``updated_at`` that records when a reaction arrived.  A creator's
+    reaction is not part of the basis the decision was made on — it arrives
+    *after* it — so appending one does not rewrite the judgment.  The single
+    permitted writer is ``backend.db.creator_agent._append_feedback``; both
+    storage adapters route through it so they cannot drift into rewriting
+    different fields.
+    """
+
     decision_id: str
     account_id: str
     audience_id: str
@@ -574,7 +594,12 @@ decode_dataset_cursor = decode_decision_dataset_cursor
 
 
 class DecisionDatasetEntry(BaseModel):
-    """Read-only projection of one immutable Decision Record snapshot."""
+    """Read-only projection of one revision-pinned Decision Record.
+
+    "Immutable" here means the *judgment* — see
+    :class:`DecisionRecord` — not the whole record: the projection carries
+    ``feedback`` too, which is append-only by design.
+    """
 
     decision: DecisionRecord
     learning_signal_ids: list[str] = Field(default_factory=list, max_length=1000)

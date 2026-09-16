@@ -20,6 +20,7 @@ from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.state.enums import WorkflowPhase
+from backend.state.events import ACTION_PUBLISH_REFUSED
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.graph.nodes")
@@ -37,6 +38,13 @@ PUBLISH_CANCELLED = "cancelled"
 SOURCE_HUMAN = "human"
 SOURCE_AUTO_PUBLISH = "auto_publish"
 SOURCE_DRY_RUN = "dry_run"
+
+#: Why a publish was refused, as recorded in the audit event.  Two distinct
+#: facts, because someone diagnosing "why is nothing being posted?" needs to
+#: tell a human's "not this one" (working as designed) from a client speaking a
+#: dialect this gate does not know (a bug to chase).
+REFUSAL_HUMAN = "human_refusal"
+REFUSAL_UNRECOGNISED = "unrecognised_decision"
 
 
 def publish_needs_confirmation(state: XHSGrowthState | dict[str, Any]) -> bool:
@@ -72,6 +80,49 @@ def _skip_reason(state: XHSGrowthState | dict[str, Any]) -> str:
     if options.get("auto_publish") is True or state.get("auto_publish") is True:
         return SOURCE_AUTO_PUBLISH
     return SOURCE_DRY_RUN
+
+
+def _account_id(state: XHSGrowthState | dict[str, Any]) -> str:
+    """The account this run would publish as.
+
+    One rule, two readers: the interrupt shows it to the human being asked, and
+    the audit event records it.  Resolving it twice would let the prompt and the
+    record diverge about whose account the decision was about.
+    """
+    options = state.get("publish_options") or {}
+    return str(options.get("account_id") or state.get("account_id", ""))
+
+
+async def _record_refusal(state: XHSGrowthState, raw: Any) -> None:
+    """Store one ``kind:"action"`` event for a publish this gate refused.
+
+    The refusal used to be durable only as workflow state — ``phase=CANCELLED``
+    plus the confirmation record — which answers "what happened to this thread"
+    but not "how often do we refuse, and why".  The Event store is where the
+    rest of the run's timeline lives (``node`` / ``llm`` / ``human_wait`` /
+    ``tool``), so the refusal goes there too.
+
+    The human's ``comments`` is deliberately **not** included.  It is free text
+    from a creator, and the telemetry rule is the Gateway's: an event says what
+    happened, the bodies belong behind an explicit, sanitised export.  Nothing
+    is lost — the comment still rides ``publish_confirmation`` in state.
+
+    Best-effort by contract: ``emit_events`` swallows storage failures, so a
+    refusal still refuses when telemetry is down.
+    """
+    from backend.state.events import action_perf_entry, emit_events, resolve_thread_id
+
+    await emit_events(
+        resolve_thread_id(state),
+        [
+            action_perf_entry(
+                ACTION_PUBLISH_REFUSED,
+                account_id=_account_id(state),
+                gate="publish",
+                reason=REFUSAL_HUMAN if raw == PUBLISH_CANCELLED else REFUSAL_UNRECOGNISED,
+            )
+        ],
+    )
 
 
 async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
@@ -111,7 +162,6 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
         ).to_dict()
 
     copy = state.get("copy_content") or {}
-    options = state.get("publish_options") or {}
 
     # ``gate="publish"`` is the contract with derive_status: an interrupt whose
     # payload carries it derives AWAITING_PUBLISH rather than falling through to
@@ -122,7 +172,7 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
             "publish_summary": {
                 "title": (copy.get("selected_title") or ""),
                 "has_images": bool((state.get("visual_plan") or {}).get("image_paths")),
-                "account_id": options.get("account_id") or state.get("account_id", ""),
+                "account_id": _account_id(state),
             },
         }
     )
@@ -140,6 +190,9 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
         logger.warning("publish gate: unrecognised decision %r — refusing the publish", raw)
 
     logger.info("publish gate: %s", "confirmed" if confirmed else "cancelled")
+
+    if not confirmed:
+        await _record_refusal(state, raw)
 
     return NodeResult(
         {

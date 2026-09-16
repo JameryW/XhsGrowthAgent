@@ -44,7 +44,8 @@ Policy Engine、能产生外部副作用的执行器、主链接线。
 | S4a ✅ | **主链提交接入 Tool Gateway**：`run_publish` 不再自己构造 `XHSClient`，改为 `self.tools.invoke("xhs.publish", …)`；**`xhs.publish` orphan 消失** → 门禁那条"唯一 orphan 是 xhs.publish"断言会红，**同 PR 更新**。**不改时序**（既不产 intent，也不等确认）：`run_publish` 的调用点、返回形状、下游 8 处消费逐字段不变 | 高 |
 | S4b ✅ | **主链等人类确认**：`WorkflowStatus.AWAITING_PUBLISH` + `machine.py` **两条** gate 识别路径 + 动态 `interrupt`/`Command(resume=…)` + `publish_gate` 节点与路由 + `/resume` **无默认值**分支 + `auto_publish` 从「无人读的键」变成真开关 + 前端可见性。**不产 PublishIntent**（与 S4a 同：主链仍直接 `run_publish`）→ **待决问题 1 未裁决**，理由见 §S4b 的「修订」 | 高 |
 | **S5a（本片）** | **凭据整备**：`services/xhs_credentials.py` 成为"哪个账号的凭据、从哪来"的**唯一所有者**（账号行 → 部署级 `XHS_COOKIE` → 无），可用性 fail-closed；读路径把 cookie 交给 `XHSClient`（P1c 写着"today this guard fires on every call"）；`granted_scopes` 从**恒 `None`（=unchecked）**变成真解析 → `xhs.publish` 的 `auth_scope` 第一次真的生效；executor 加**第四道 Gateway 之前的拒绝**（409）。**拆片理由见 §S5a 的「修订」** | 中-高 |
-| S5b | **收尾**：`DecisionRecord` immutable 收尾 + 持久化"被拒"审计（S2 的 403 与 S4b 的 `cancelled` 至今只有日志/state）+ `docs/publish-action-protocol.md` + 501 兜底 + **待决问题 1/3 的票面裁决** | 中 |
+| S5b ✅ | **记录的忠实性**：`DecisionRecord` 的判据冻结（唯一写入者）+ 持久化"被拒"审计（`kind="action"`，人类拒绝与策略拒绝各一条） | 中 |
+| S5c | **契约的表述**：`docs/publish-action-protocol.md` + 501 兜底（穷举 match 的 fail-closed 默认）+ **待决问题 1/3 的票面裁决** | 小 |
 
 切片顺序的判据：先把**纯数据面**（S1）落定，再落**纯判定**（S2），然后才跨"产生副作用"
 这道坎（S3），最后才动主链（S4）。S3 之前任何一片都不改变生产行为。
@@ -509,9 +510,10 @@ LangGraph 把空载荷读成"没有可恢复的东西"，节点重新 `interrupt
 另一条同类改形在 `tests/integration/test_evaluator_pause_resume.py`：`("publisher",)` →
 `("publish_gate",)`（与 S4a 处理 orphan 绊线同一纪律）。
 
-**S5 已拆成 S5a / S5b，S5a 的交付见 §S5a**（该节末尾列出 S5b 的入口条件）。上面这份清单里的
-① 前半（凭据整备）由 S5a 结掉；**②③④⑤ 与 ① 后半（`DecisionRecord` + 审计）全部仍待 S5b**，
-本片刻意没替③④作答（理由见 §S5a 的设计决定 12）。
+**S5 已拆成 S5a / S5b / S5c**：S5a 做**授权**（§S5a）、S5b 做**记录的忠实性**（§S5b，本片）、
+S5c 做**契约的表述**（协议文档 + 501 兜底 + 待决问题 1/3 的裁决，入口条件见 §S5b 末尾）。
+上面这份清单里的 ①（凭据 + `DecisionRecord`）与 ②（审计）**已全部结清**；③④⑤ 仍待 S5c ——
+本片仍刻意没替待决问题 1 作答（理由见 §S5a 的设计决定 12）。
 
 ### S5a — 凭据整备（`feat/p2a-s5a-credential-provisioning`）
 
@@ -626,3 +628,108 @@ LangGraph 把空载荷读成"没有可恢复的东西"，节点重新 `interrupt
 收尾同批"）；③ `docs/publish-action-protocol.md` —— 现在有了最后一块料（授权来源与 scope）；
 ④ **待决问题 1 仍在**（本片刻意没替它裁决，见设计决定 12）；⑤ 501 兜底清掉（`CREATOR_ACTION_CAPABILITY_NOT_WIRED`
 已无生产者）；⑥ 本片留下的残留：`account_credentials` 仍无写入者。
+
+### S5b — 记录的忠实性（`feat/p2a-s5b-record-fidelity`）
+
+**范围**：让"记下来的东西不会事后变"这件事**真的成立**，两半 —— ① `DecisionRecord` 的**判据冻结**
+（`apply_feedback` 是唯一写入者，且只动 `feedback` / `updated_at`）；② **"被拒"落审计**
+（`kind="action"`，人类拒绝与策略拒绝各一条）。**不做**：`docs/publish-action-protocol.md`、
+501 兜底、待决问题 1/3 的裁决（归 S5c）。
+
+**侦察：票面对 ① 的定性要修正，对 ② 的定性要补充**
+
+| # | 事实 | 位置 | 含义 |
+|---|---|---|---|
+| 1 | "immutable" 有**三处说法、一处实现**，而 `DecisionRecord` **自己的 docstring 一个字都没有** | 说法：`creator_agent/models.py:577`（`DecisionDatasetEntry`）、`api/routes/creator_agent.py:284`、`creator_agent/advisor.py:454`；实现：`apply_feedback` 整行 `UPDATE payload_json` | 不是"实现写错了"，是**一个没有名字、也没有断言的不变量** |
+| 2 | **没有任何消费者依赖 `payload_json` 字节稳定**：数据集用 `REPEATABLE READ` 只承诺"**单次读内**稳定"，两个 feedback 过滤器跑在**纯投影**里（SQL 只过滤 account / audience / status） | `db/creator_agent.py:820-847`、`dataset.py:58-64` | 所以 A1（feedback 拆表）是**为一句 docstring 造表**；真正缺的是把**可变的边界**说准并钉住 |
+| 3 | `EVENT_KINDS` 的 `"action"` 从 P1a 起就在"forward-looking set"里，注释自己写着 *"later slices will start emitting"* —— **至今零发射者**；而 `EVENT_KINDS` 本身**除了自己的 `__all__` 没有任何读者** | `db/workflow_events.py:126-128` | 与 `auth_scope` 同一族（**声明 ≠ 执行**）。本片给它装上发射者，并把"发射的 kind 必须在声明里"变成断言 |
+| 4 | S2 的 403 与 S4b 的 `cancelled` 各自只有**半条**痕迹：403 有响应体 + warning 日志，`cancelled` 有 `phase=CANCELLED` + `publish_confirmation` | `creator_agent/advisor.py:404`、`agents/nodes/publish_gate.py` | 两者都回答"**这条线程**怎么了"，都不回答"我们**拒了多少、为什么拒**" |
+| 5 | 发射范式已存在且只有一种：构造 entry + `emit_events(resolve_thread_id(state), [entry])` | `agents/nodes/_base.py:163`（`record_human_wait`）、`agents/base.py:592`（`_tool_event_sink`）、`agents/nodes/blogger_gate.py:103` | 不需要新机制，只需要新 kind 与一个新构造器 |
+
+**改动（7 改 1 新）**
+
+| 文件 | 改动 |
+|---|---|
+| `creator_agent/models.py` | `DecisionRecord` **补上 docstring**（冻结集 vs 追加集，并点名唯一写入者）；`DecisionDatasetEntry` 的 "immutable snapshot" 收窄为 "revision-pinned" |
+| `db/creator_agent.py` | 新增 `_append_feedback(decision, feedback)` —— **唯一写入者**；内存与 Postgres 两个适配器都改走它（原先是各自重复同样两行赋值） |
+| `creator_agent/advisor.py` | receipt 的 docstring 改口径：判据来自 **revision-pinned** 快照，追加的 feedback 不是它的一部分 |
+| `state/events.py` | 新增 `ACTION_EVENT_KIND` / `ACTION_POLICY_DENIED` / `ACTION_PUBLISH_REFUSED` / `action_perf_entry(...)`；`__all__` 同步 |
+| `api/routes/creator_agent.py` | 新增 `_record_action_refusal(...)`；`plan_creator_action` 在 `ActionPolicyDeniedError` 上发一条 `policy_denied`；数据集路由 docstring 改口径 |
+| `agents/nodes/publish_gate.py` | 拒绝时发一条 `publish_refused`；新增 `_account_id()`（**一处规则两个读者**）；新增 `REFUSAL_HUMAN` / `REFUSAL_UNRECOGNISED` |
+| `tests/unit/creator_agent/test_decision_record_fidelity.py` | **新建，8 用例** |
+| 三个既有测试文件 | 追加 16 条（gate 7 / events 6 / api 3） |
+
+**设计决定**
+
+1. **选 A3（把边界说准并钉住），不选 A1/A2**：A1 把 feedback 拆成独立表、A2 每次 feedback 产生新 revision 行 —— 两者都改**存储形状**，而实测**没有任何消费者依赖 payload 字节稳定**（事实 2）。为一句 docstring 造表，等于把"文档不准"升级成"迁移风险"。真正缺的是把可变的边界**命名 + 断言**。
+2. **可变边界只有两个字段，且理由要写出来**：`feedback`（追加）与 `updated_at`（它跟随 reaction 到达的时刻）。理由是**反应不参与判据** —— 它在决定**之后**才到，所以追加它不重写判决。这句话是新 docstring 的核心，也是"immutable"三处说法里唯一站得住的口径。
+3. **`_append_feedback` 是唯一写入者，且"唯一"可测**：两个适配器原先各写两行相同赋值（两处漂移的机会）。抽成一个函数后，"唯一"从注释变成断言（源码里 `decision.feedback.append` 恰好一次 + 恰好两个调用点）。
+4. **不变量用"推导"而不是"复述"**：冻结集 = `DecisionRecord.model_fields` 减去两个追加字段，并有一条测试断言比较**覆盖了全部字段** —— 以后新增字段会被默认纳入比较，而不是被静默忽略。
+5. **审计用既有的 `action` kind，不新造**：它已经在 `EVENT_KINDS` 里躺了五个切片，注释也写着是留给后续的。新造一个 kind 只会让"声明集"与"实际集"继续分叉。
+6. **发射点选在"最后还知道线程"的地方**：策略拒绝在 **route** 层发（`state/events.py` 明确把 routes 列为合法写者），因为 advisor 抛异常时已失去"这是哪条工作流"的上下文；人类拒绝在**节点**里发，因为拒绝是节点当场做的决定。
+7. **两个拒绝理由不合并**：`human_refusal`（按设计工作）与 `unrecognised_decision`（版本错位，是要追的 bug）是不同事实，合成一个字符串就把要追的东西藏进噪声里。
+8. **自由文本不进遥测**：人类的 `comments` 明确**不作为** `action_perf_entry` 的参数 —— Gateway trace sink 同一条规则（"事件说发生了什么，正文属于一次显式、已脱敏的导出"）。评论没丢，它仍在 `publish_confirmation` 里。
+9. **`account_id` 一处规则两个读者**：`_account_id()` 同时喂 interrupt 的 `publish_summary` 与审计事件，否则"问的是哪个账号"与"记的是哪个账号"可以不一致。
+10. **拒绝的持久化是 best-effort，拒绝本身不是**：`emit_events` 的存储失败被吞（P1a-S2 契约），所以遥测挂掉时拒绝照常生效；而"没有线程可归属"时**不发明一个**线程。
+11. **发射的 kind 必须落在声明里**：一条断言把 `ACTION_EVENT_KIND` 与 `EVENT_KINDS` 互钉 —— S5a 对 `auth_scope` 那条教训（**声明 ≠ 执行**）的直接应用。
+
+**不做的事（本轮明确不碰）**
+
+- **不把 feedback 拆表、不给 `DecisionRecord` 造"真正的不可变"**（理由见设计决定 1）。
+- **不改 `EVENT_KINDS` 本身**：它是声明集，本片的职责是让 `action` 不再空着，不是重排它。**附带残留**：`EVENT_KINDS` 除本片新增的互钉断言外**仍无任何读者**——声明集仍然没有执行者。
+- 不动 `docs/tool-runtime.md` 的两条残留（`account_credentials` 无写入者、`XHSClient` 第一层吞异常）。
+
+**★ 实测推翻的两条（原以为 vs 实测）**
+
+1. **`policy_id` 不是 `GateBlock.reason`**：原以为事件里的 `policy_id` 会是 `"publish_cooldown"`，实测是 `"policy.action.risk_cooldown"`（`GateBlock.reason` 才是 `publish_cooldown`）。断言按实测值钉 —— 这正好印证 `CreatorActionPolicyDeniedError` docstring 那句"`policy_id` 是稳定句柄"：它指的是**策略枚举**，不是人类可读的原因。
+2. **"没有 `thread_id` 的发布意图会被策略拒绝"不可达**：`ActionIntentRequest` 的 `_validate_publish_payload(require_thread=True)` 在**创建边界**就要求它（存储侧 `ActionIntent` 仍可空，那是为了让 pre-S3 的行仍可读）。于是"无线程"分支是**守卫**而不是活口 —— 处置是①把那个 422 写成断言（"策略引擎根本跑不到"），②直接对 `_record_action_refusal` 断言"把缺失原样传下去、绝不发明线程"，并在它的 docstring 里写明这是给"以后能被拒绝、却没有工作流的能力"准备的。
+
+**门禁（四道全绿，提交前实测）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q` | **3279 passed / 3 skipped** —— S5a 的 3255 + **24** = 8 + 7 + 6 + 3，恰等于新用例数 |
+| `ruff check .` / `format --check .` | **506 files**（+1 新文件），All checks passed |
+| `uv run mypy backend --python-version 3.12` | **204 source files, no issues**（无新模块） |
+| P1b 基线 | `drift within threshold` |
+| `tool_runtime_gate.py` | **OK**（orphan 仍为空；`named by agents: 10`） |
+| 前端 | 本片**未改前端**，未跑 |
+
+**已知 flaky 一次**：首次全量里 `tests/unit/services/test_ripple_service.py::TestWaitForCompletionWithSSE::test_stale_sse_zero_progress_falls_back_to_time_estimate` 红；隔离复跑绿（0.65s），重跑全量 **3279 passed** 绿。是已登记的时钟依赖 flaky，非本片回归。
+
+**突变自检：17/17 killed**，每条从原始字节起算；**step 0** 先把 17 个具名击杀者在未改动树上跑一遍（`17 passed`）→ 没有任何 "killed" 可能来自本来就红的测试。
+
+| # | 突变 | 击杀者 |
+|---|---|---|
+| M1 | `_append_feedback` 丢掉它承诺的 `updated_at` | `TestTheJudgmentIsFrozen::test_the_reaction_is_appended_and_dated` |
+| M2 | 反应插到队首而不是追加 | `...::test_reactions_keep_arriving_at_the_end` |
+| M3 | helper 顺手改写一个**判据**字段（`confidence`） | `...::test_a_reaction_does_not_rewrite_what_judged_the_decision` |
+| M4 | Postgres 适配器**又内联**自己的 append | `TestThereIsExactlyOneWriter::test_only_the_helper_mutates…` + `...both_storage_adapters_go_through_it` |
+| M5 | 内存适配器又内联自己的 append | 同上两条 |
+| M6 | 幂等重试报告"我创建了东西" | `TestAnIdempotentRetryIsATotalNoOp::test_the_same_reaction_twice…` |
+| M7 | `ACTION_EVENT_KIND` 改名（声明与发射漂移） | `TestTheActionEntry::test_the_kind_is_one_the_event_store_declares` |
+| M8 | 保留键写在 `fields` **之前**（可被覆盖） | `TestTheActionEntry::test_a_field_cannot_spoof_a_reserved_key` |
+| M9 | entry 忘记自己的 `kind` | 同上 + `...round_trips_through_the_store` |
+| M10 | 确认也记一条拒绝 | `TestTheRefusalIsRecorded::test_a_confirmation_records_no_refusal` |
+| M11 | 所有拒绝都记成"人类拒绝" | `...::test_an_unrecognised_decision_is_recorded_as_its_own_reason` |
+| M12 | 从 state 里漏自由文本进事件 | `...::test_a_human_refusal_leaves_an_audit_event`（**键集/全等断言是承重的那条**；`...carries_no_free_text` 拦不住空值，见下） |
+| M13 | 账号解析不再读 `publish_options` | `...::test_the_record_names_the_account_the_prompt_named` + `TestInterruptPayload::test_payload_reports…` |
+| M14 | route 不再记录拒绝 | `tests/unit/api/test_creator_agent.py::test_a_denied_publish_is_recorded_against_its_thread` |
+| M15 | route 把策略拒绝记成人类拒绝 | 同上 |
+| M16 | recorder 无线程时**发明**一个线程 | `...::test_the_recorder_passes_an_absent_thread_through` |
+| M17 | recorder 丢掉收到的账号 | `...::test_a_denied_publish_is_recorded_against_its_thread` |
+
+**两条要单记的 harness 结论**
+
+- **M4 的锚点第一版不唯一**：`_append_feedback(decision, feedback)` 在文件里出现 **2 次**（两个适配器），而且**缩进不同也救不了** —— 搜 12 个空格时会在 16 空格那行的第 4 个字符处匹配。锚点必须扩到**第三行**（`await cur.execute(` vs `_mem_decisions[key] =`）才唯一。**"锚点失败"与"存活"必须分开报告**（S4b 立的规矩，本片又验一次）。
+- **harness 的击杀判定方向写反了**：pytest **返回 0 = 用例通过 = 突变存活**，第一版写成 `returncode == 0 → killed`，于是 16 条全被报成"存活"，而日志摘要全是 `1 failed`。**"存活"必须与日志摘要对读**，不能只看自己算出来的布尔值 —— 这是"别只看退出码"那条纪律的一个新变体。
+- **本片记账的一处自纠（提交前发现）**：账本初稿把新用例写成 "23 = 8 + 6 + 6 + 3"、全量 3278；提交前重数（`git show origin/main:<file>` 与工作树逐名对比）得 gate 实为 **7** 条 → 合计 **24**，3279。**pass 增量恒等于新用例数**这条判据正是靠"对不上"发现的 —— 对不上时先怀疑**自己的分解**，再怀疑树。（顺带：用 `^\s*def test_` 数用例会把带 `async def` 的文件数成 1 条，必须带 `(?:async\s+)?`。）
+
+**修订：① 与 ② 同片；③⑤④ 归 S5c。** S2 在「待决问题 2」的裁决里明写：持久化"被拒"审计"留给 S5，**与 immutable DecisionRecord 收尾同批**"。上一轮我曾按"授权与溯源正交"提议把 ① 和 ② 再拆一次，**本片实测后撤回** —— 两者确实没有共同字段，但**票面已裁定的批次**比我的切片口味更该被尊重，而且审计**已经被推迟过一次**，再推一次正是那条裁决要防的漂移。③（协议文档）⑤（501）④（待决 1/3）的共同点是"**契约怎么表述**"而不是"记下了什么"，所以合成 S5c。
+
+**下一片（S5c）的入口条件**
+
+① `docs/publish-action-protocol.md` —— 料已齐（S5a 的授权来源与 scope + S5b 的两类拒绝与审计字段集）；
+② **501 兜底** —— `ActionCapabilityNotWiredError`（`creator_agent/repository.py:98`）**全仓无 `raise`**，route 的 `except`（`api/routes/creator_agent.py:428-429`）永不触发；根因在 `advisor.py:482-511` 的 `execute_action` 用 `else` 把剩下的一切都当成 `REQUEST_MORE_EVIDENCE`。**修法**：换成对 `ActionCapability` 的**穷举 match**，`case _:` 里 raise → ① 让那条 except 变活；② 把 fail-closed 默认装回去（新能力默认拒绝而非默认成功）。既有测试只是**直接构造错误对象**断 501 —— 断的是**形状不是路径**，要改成走 `execute_action` 的路径测试；
+③ **待决问题 1** —— 仍无产 `ActionIntent` 的调用者，**裁决没有落点**；S5c 若仍无落点，就明确记为"延后"，而不是继续挂一条看起来待办的行；
+④ 本片残留：`EVENT_KINDS` **仍无读者**（除了本片新增的互钉断言）；`account_credentials` 仍无写入者。

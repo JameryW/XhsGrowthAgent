@@ -451,10 +451,12 @@ class CreatorAdvisor:
     async def execute_action(self, account_id: str, action_id: str) -> ActionExecution:
         """Execute one confirmed intent with a deterministic local executor.
 
-        The receipt is built from the immutable Decision Record snapshot and is
-        persisted by the repository.  The repository repeats the confirmation
-        and source-existence checks while holding its adapter lock/transaction,
-        so a concurrent cancellation cannot slip through between these reads.
+        The receipt is built from the revision-pinned Decision Record snapshot
+        (its *judgment* — see :class:`DecisionRecord`; the record's append-only
+        feedback is not part of it) and is persisted by the repository.  The
+        repository repeats the confirmation and source-existence checks while
+        holding its adapter lock/transaction, so a concurrent cancellation
+        cannot slip through between these reads.
         """
         normalized_account_id = account_id.strip()
         normalized_action_id = action_id.strip()

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
-from backend.api.routes.creator_agent import router
+from backend.api.routes.creator_agent import _record_action_refusal, router
 from backend.creator_agent import (
     ActionCapability,
     CreatorModelDefinition,
@@ -22,6 +22,8 @@ from backend.creator_agent import (
     FeedbackOutcome,
 )
 from backend.db import creator_agent as creator_agent_db
+from backend.db.workflow_events import list_events
+from backend.state.events import ACTION_EVENT_KIND, ACTION_POLICY_DENIED
 
 
 @pytest.fixture(autouse=True)
@@ -677,3 +679,140 @@ def test_evidence_proposal_route_is_read_only_and_account_scoped(client, monkeyp
         assert bad_confidence.json()["error"]["code"] == "ERROR_VALIDATION"
     finally:
         creative_memory_db._reset_memory_store()
+
+
+def _blocked_publish(monkeypatch) -> None:
+    """Make the risk gate refuse every publish, the way a cooldown would."""
+    from backend.services.xhs_risk_gate import GateBlock
+
+    def _block(*_args, **_kwargs) -> GateBlock:
+        return GateBlock(
+            reason="publish_cooldown",
+            risk_code="publish_cooldown",
+            message="发布冷却中。",
+            retry_after_seconds=42,
+        )
+
+    monkeypatch.setattr("backend.services.xhs_risk_gate.check_publish_allowed", _block)
+
+
+def _own_any_account(monkeypatch) -> None:
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+
+
+def _seed_model_and_decision(client) -> str:
+    assert client.put("/api/creator-agent/model", json=_model_payload()).status_code == 200
+    return client.post(
+        "/api/creator-agent/decisions",
+        json={
+            "account_id": "account-a",
+            "audience_id": "audience-a",
+            "goal": "选耐用品",
+            "candidates": [
+                {"candidate_id": "a", "label": "A", "signals": {"durability": 0.9}},
+                {"candidate_id": "b", "label": "B", "signals": {"durability": 0.2}},
+            ],
+        },
+    ).json()["data"]["decision_id"]
+
+
+def test_a_denied_publish_is_recorded_against_its_thread(client, monkeypatch):
+    """P2a-S5b: the 403 used to be the only durable trace of a denial.
+
+    P2a-S2 decided visibility would come from the response body plus a warning
+    log, and deferred the durable record to the same slice as the Decision
+    Record work.  This is that record: a refusal in the thread's own timeline,
+    so "why was nothing published for this run?" is a read, not an inference.
+    """
+    _own_any_account(monkeypatch)
+    _blocked_publish(monkeypatch)
+    decision_id = _seed_model_and_decision(client)
+
+    denied = client.post(
+        "/api/creator-agent/actions",
+        json={
+            "account_id": "account-a",
+            "decision_id": decision_id,
+            "action_kind": "publish",
+            "idempotency_key": "api-publish-denied-1",
+            "artifact_ref": "artifact://publish_payload/latest",
+            "content_hash": "a" * 64,
+            "thread_id": "thread-audit-1",
+        },
+    )
+
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "ERROR_CREATOR_ACTION_POLICY_DENIED"
+    events = asyncio.run(list_events("thread-audit-1"))
+    (entry,) = [event for event in events if event.get("kind") == ACTION_EVENT_KIND]
+    assert entry["action"] == ACTION_POLICY_DENIED
+    assert entry["account_id"] == "account-a"
+    assert entry["action_kind"] == "publish"
+    # The policy's stable handle, not the GateBlock's human-readable reason:
+    # that is the whole point of putting policy_id on the error.
+    assert entry["policy_id"] == "policy.action.risk_cooldown"
+    assert entry["retry_after_seconds"] == 42
+    assert entry["reason"]
+    assert entry["timestamp"]
+
+
+def test_the_recorder_passes_an_absent_thread_through(monkeypatch):
+    """Pinned directly, because no route can reach this today.
+
+    A publish payload requires ``thread_id``, and publishing is the only
+    capability the policy engine speaks about — so the empty-thread path is a
+    guard for what comes next, not a live hole.  The property it must hold is
+    narrow and worth stating: pass the absence along; never invent an id to
+    file a refusal under.
+    """
+    seen: list[str] = []
+
+    async def _emit(thread_id: str, _entries) -> int:
+        seen.append(thread_id)
+        return 0
+
+    monkeypatch.setattr("backend.state.events.emit_events", _emit)
+
+    asyncio.run(_record_action_refusal("account-a", None, ACTION_POLICY_DENIED))
+
+    assert seen == [""]
+
+
+def test_a_publish_with_no_thread_is_refused_before_it_can_be_denied(client, monkeypatch):
+    """The attribution boundary, verified rather than assumed.
+
+    ``ActionIntentRequest`` requires ``thread_id`` for a publish payload (while
+    ``ActionIntent`` keeps it optional so pre-S3 rows stay readable), so a
+    publish denial can never reach the policy engine without a thread to file
+    it under.  The empty-thread guard in the recorder is therefore the
+    forward-looking case — a capability a future policy can deny without a
+    workflow behind it — not a live hole.
+    """
+    _own_any_account(monkeypatch)
+    _blocked_publish(monkeypatch)
+    seen: list[str] = []
+
+    async def _emit(thread_id: str, _entries) -> int:
+        seen.append(thread_id)
+        return 0
+
+    monkeypatch.setattr("backend.state.events.emit_events", _emit)
+    decision_id = _seed_model_and_decision(client)
+
+    refused = client.post(
+        "/api/creator-agent/actions",
+        json={
+            "account_id": "account-a",
+            "decision_id": decision_id,
+            "action_kind": "publish",
+            "idempotency_key": "api-publish-denied-2",
+            "artifact_ref": "artifact://publish_payload/latest",
+            "content_hash": "a" * 64,
+        },
+    )
+
+    assert refused.status_code == 422
+    assert seen == []  # refused before the policy engine ever ran

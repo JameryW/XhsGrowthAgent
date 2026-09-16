@@ -13,8 +13,14 @@ dev/CI use.
 
 from __future__ import annotations
 
+import pytest
+
 from backend.db.workflow_events import append_events, list_events
 from backend.state.events import (
+    ACTION_EVENT_KIND,
+    ACTION_POLICY_DENIED,
+    ACTION_PUBLISH_REFUSED,
+    action_perf_entry,
     has_inline_perf_log,
     inline_perf_log,
     load_perf_log,
@@ -130,3 +136,72 @@ def test_legacy_marker_is_listed_as_a_dead_state_key():
     from backend.state.hydration import STATE_LEVEL_DEAD_KEYS
 
     assert LEGACY_PERF_LOG_KEY in STATE_LEVEL_DEAD_KEYS
+
+
+ACTION_THREAD = "xhs_test_events_action"
+
+
+class TestTheActionEntry:
+    """P2a-S5b: the refusal entry, and the declaration it has to match."""
+
+    def test_the_kind_is_one_the_event_store_declares(self):
+        """``"action"`` has been in ``EVENT_KINDS`` since P1a as part of the
+        forward-looking set, with no emitter — the same shape of gap as a
+        declared-but-never-passed scope.  Pin the two together so a rename on
+        either side cannot leave every refusal under an undeclared kind."""
+        from backend.db.workflow_events import EVENT_KINDS
+
+        assert ACTION_EVENT_KIND in EVENT_KINDS
+
+    def test_a_field_cannot_spoof_a_reserved_key(self):
+        """``fields`` is caller-supplied, so it is written first and the
+        reserved keys last — a caller cannot file its refusal as a node event."""
+        entry = action_perf_entry(
+            ACTION_PUBLISH_REFUSED,
+            account_id="account-a",
+            timestamp="t1",
+            kind="node",
+            gate="publish",
+        )
+        assert entry == {
+            "kind": ACTION_EVENT_KIND,
+            "action": ACTION_PUBLISH_REFUSED,
+            "account_id": "account-a",
+            "timestamp": "t1",
+            "gate": "publish",
+        }
+
+    def test_the_action_name_itself_cannot_be_passed_as_a_field(self):
+        """Stronger than the reserved-key rule: ``action`` is positional, so a
+        duplicate is a TypeError rather than a silently-overridden value."""
+        with pytest.raises(TypeError):
+            action_perf_entry(ACTION_PUBLISH_REFUSED, action="something_else")
+
+    def test_the_timestamp_defaults_to_now_and_the_account_may_be_absent(self):
+        entry = action_perf_entry(ACTION_POLICY_DENIED)
+        assert entry["timestamp"]
+        assert entry["account_id"] == ""
+
+    def test_the_vocabulary_is_closed_and_distinct(self):
+        """Two action names, because a policy denial and a human refusal are
+        different facts — one reason string would make them indistinguishable."""
+        vocabulary = {ACTION_POLICY_DENIED, ACTION_PUBLISH_REFUSED}
+        assert vocabulary == {"policy_denied", "publish_refused"}
+
+    async def test_the_entry_round_trips_through_the_store(self):
+        """Its shape is a contract with whoever reads the timeline back out."""
+        await append_events(
+            ACTION_THREAD,
+            [
+                action_perf_entry(
+                    ACTION_POLICY_DENIED,
+                    account_id="account-a",
+                    policy_id="publish_cooldown",
+                    retry_after_seconds=42,
+                )
+            ],
+        )
+        events = await list_events(ACTION_THREAD)
+        assert [event["kind"] for event in events] == [ACTION_EVENT_KIND]
+        assert events[0]["policy_id"] == "publish_cooldown"
+        assert events[0]["retry_after_seconds"] == 42

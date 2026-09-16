@@ -14,14 +14,17 @@ status-machine tests).
 
 from __future__ import annotations
 
+import json
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.agents.nodes.publish_gate import (
     PUBLISH_CANCELLED,
     PUBLISH_CONFIRMED,
+    REFUSAL_HUMAN,
+    REFUSAL_UNRECOGNISED,
     SOURCE_AUTO_PUBLISH,
     SOURCE_DRY_RUN,
     SOURCE_HUMAN,
@@ -30,9 +33,14 @@ from backend.agents.nodes.publish_gate import (
 )
 from backend.core.error_handling import WorkflowCancelledError
 from backend.state.enums import WorkflowPhase
+from backend.state.events import ACTION_EVENT_KIND, ACTION_PUBLISH_REFUSED
 
 #: Patch the name the node resolves at call time, not langgraph's own symbol.
 INTERRUPT = "backend.agents.nodes.publish_gate.interrupt"
+
+#: Same reason as INTERRUPT: the refusal recorder imports the emitter when it
+#: runs, so patching the origin module is what actually intercepts it.
+EMIT = "backend.state.events.emit_events"
 
 
 def _state(**overrides: Any) -> dict[str, Any]:
@@ -241,3 +249,119 @@ class TestAlreadyTerminalRunIsNotAsked:
         with patch(INTERRUPT) as mock_int, pytest.raises(WorkflowCancelledError):
             await publish_gate_node(_state(phase=WorkflowPhase.PAUSED), store=MagicMock())
         mock_int.assert_not_called()
+
+
+def _without_timestamp(entry: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in entry.items() if key != "timestamp"}
+
+
+class TestTheRefusalIsRecorded:
+    """P2a-S5b: a refusal is durable telemetry, not only a phase change.
+
+    ``phase=CANCELLED`` plus ``publish_confirmation`` answer "what happened to
+    *this* thread".  Neither answers "how often do we refuse, and why", because
+    neither is where the rest of a run's timeline lives.  These tests pin the
+    entry that closes that gap — and, just as importantly, what it does *not*
+    carry.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_human_refusal_leaves_an_audit_event(self):
+        state = _state(publish_options={"account_id": "acct-9"})
+        with (
+            patch(INTERRUPT, return_value={"decision": PUBLISH_CANCELLED}),
+            patch(EMIT, new_callable=AsyncMock) as emit,
+        ):
+            await publish_gate_node(state, store=MagicMock())
+
+        thread_id, entries = emit.await_args[0]
+        assert thread_id == "thread-123"
+        (entry,) = entries
+        assert entry["timestamp"]  # a clock, not a fixture
+        assert _without_timestamp(entry) == {
+            "kind": ACTION_EVENT_KIND,
+            "action": ACTION_PUBLISH_REFUSED,
+            "account_id": "acct-9",
+            "gate": "publish",
+            "reason": REFUSAL_HUMAN,
+        }
+
+    @pytest.mark.asyncio
+    async def test_the_comment_stays_on_the_confirmation_record(self):
+        """The human's comment is still durable — in state, where the protocol
+        puts it.  Telemetry gets the machine-readable facts only (the Gateway's
+        trace rule: an event says what happened; bodies need a sanitised
+        export), so the event carries no extra field to smuggle one into."""
+        resumed = {"decision": PUBLISH_CANCELLED, "comments": "标题不合适"}
+        with (
+            patch(INTERRUPT, return_value=resumed),
+            patch(EMIT, new_callable=AsyncMock) as emit,
+        ):
+            result = await publish_gate_node(_state(), store=MagicMock())
+
+        assert result["publish_confirmation"]["comments"] == "标题不合适"
+        assert set(emit.await_args[0][1][0]) == {
+            "kind",
+            "action",
+            "account_id",
+            "gate",
+            "reason",
+            "timestamp",
+        }
+
+    @pytest.mark.asyncio
+    async def test_a_refusal_event_carries_no_free_text(self):
+        """Stated on its own so an added field fails for *any* key, not only
+        for a value that happens to differ."""
+        resumed = {"decision": PUBLISH_CANCELLED, "comments": "标题不合适"}
+        with (
+            patch(INTERRUPT, return_value=resumed),
+            patch(EMIT, new_callable=AsyncMock) as emit,
+        ):
+            await publish_gate_node(_state(), store=MagicMock())
+
+        assert "标题不合适" not in json.dumps(emit.await_args[0][1], ensure_ascii=False)
+
+    @pytest.mark.asyncio
+    async def test_an_unrecognised_decision_is_recorded_as_its_own_reason(self):
+        """A client speaking an unknown dialect is a bug to chase; a human
+        saying no is not.  One reason string would hide the difference."""
+        with (
+            patch(INTERRUPT, return_value={"decision": "yes"}),
+            patch(EMIT, new_callable=AsyncMock) as emit,
+        ):
+            await publish_gate_node(_state(), store=MagicMock())
+
+        assert emit.await_args[0][1][0]["reason"] == REFUSAL_UNRECOGNISED
+
+    @pytest.mark.asyncio
+    async def test_a_confirmation_records_no_refusal(self):
+        with (
+            patch(INTERRUPT, return_value={"decision": PUBLISH_CONFIRMED}),
+            patch(EMIT, new_callable=AsyncMock) as emit,
+        ):
+            await publish_gate_node(_state(), store=MagicMock())
+
+        emit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_record_names_the_account_the_prompt_named(self):
+        """One resolution, two readers: the question asked and the answer
+        recorded cannot end up about different accounts."""
+        with (
+            patch(INTERRUPT, return_value={"decision": PUBLISH_CANCELLED}) as mock_int,
+            patch(EMIT, new_callable=AsyncMock) as emit,
+        ):
+            await publish_gate_node(_state(account_id="acct-from-state"), store=MagicMock())
+
+        assert mock_int.call_args[0][0]["publish_summary"]["account_id"] == "acct-from-state"
+        assert emit.await_args[0][1][0]["account_id"] == "acct-from-state"
+
+    @pytest.mark.asyncio
+    async def test_a_refusal_with_no_thread_still_refuses(self):
+        """With nothing to attribute it to, the audit is skipped — the refusal
+        itself must not become the thing that fails."""
+        with patch(INTERRUPT, return_value={"decision": PUBLISH_CANCELLED}):
+            result = await publish_gate_node(_state(session_id="", thread_id=""), store=MagicMock())
+
+        assert result["phase"] == WorkflowPhase.CANCELLED
