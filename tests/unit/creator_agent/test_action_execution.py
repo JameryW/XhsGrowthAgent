@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from backend.creator_agent import (
@@ -18,6 +20,7 @@ from backend.creator_agent import (
     EvidenceSource,
 )
 from backend.creator_agent.repository import (
+    ActionCapabilityNotWiredError,
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
 )
@@ -192,3 +195,68 @@ async def test_cancelled_and_foreign_actions_leave_no_receipt():
     assert await advisor.get_action_execution("account-a", cancelled.action_id) is None
     with pytest.raises(ActionIntentMissingError):
         await advisor.execute_action("account-b", cancelled.action_id)
+
+
+class TestAnUnwiredCapabilityIsRefused:
+    """P2a-S5c: the executor's default arm, and the tripwire that keeps it honest.
+
+    Until this slice the dispatch ended in a bare ``else`` that answered *any*
+    other kind with the evidence request's receipt.  That branch is reachable only
+    for a capability the executor does not answer -- which is exactly the case
+    that must not produce a plausible-looking receipt.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_kind_the_executor_does_not_know_is_refused(self):
+        advisor, decision_id = await _advisor_with_decision()
+        action = await _confirmed_action(
+            advisor, decision_id, ActionCapability.SAVE_SHORTLIST, candidate_ids=["a"], key="u"
+        )
+        # ``model_copy`` skips validation, and that is the point: the stored intent
+        # is the only thing the executor reads, so this is how a kind it has never
+        # heard of arrives.  The intent stays CONFIRMED, so the refusal cannot be
+        # explained away by the confirmation check that runs before the dispatch.
+        stored = creator_agent_db._mem_actions[("account-a", action.action_id)]
+        creator_agent_db._mem_actions[("account-a", action.action_id)] = stored.model_copy(
+            update={"action_kind": "archive"}
+        )
+
+        with pytest.raises(ActionCapabilityNotWiredError) as caught:
+            await advisor.execute_action("account-a", action.action_id)
+
+        assert caught.value.action_id == action.action_id
+        # The label survives a value the enum does not declare: that is what keeps
+        # the API's 501 message honest instead of raising a second error while
+        # trying to report the first.
+        assert caught.value.kind_label == "archive"
+        # A refusal is total: no receipt, so nothing durable claims the work.
+        assert await advisor.get_action_execution("account-a", action.action_id) is None
+
+    def test_every_declared_capability_has_its_own_arm(self):
+        """Adding a member without an arm must fail here, not fall into the default.
+
+        Structural on purpose: an ``is`` chain cannot be introspected, and the
+        property worth pinning is "the executor names every capability the protocol
+        declares".  The behavioural half is the test above; together they say that
+        no declared capability can reach the default arm.
+        """
+        source = inspect.getsource(CreatorAdvisor.execute_action)
+        missing = [
+            kind.name
+            for kind in ActionCapability
+            if f"is ActionCapability.{kind.name}" not in source
+        ]
+        assert missing == [], f"no executor branch for {missing} -- it would hit the default arm"
+
+    def test_the_label_reads_the_value_of_a_declared_capability_too(self):
+        """The realistic case, and the reason ``kind_label`` is not one of the two.
+
+        A capability added to the protocol without an executor arrives at the
+        fallback as a *member*, while the defensive case arrives as a raw value.
+        The API's 501 message is built from this in both cases, so it is pinned
+        for a member too -- otherwise "print the value" and "print the repr" look
+        identical on the only input the other tests use.
+        """
+        error = ActionCapabilityNotWiredError("action-1", ActionCapability.PUBLISH)
+        assert error.kind_label == "publish"
+        assert "kind publish" in str(error)

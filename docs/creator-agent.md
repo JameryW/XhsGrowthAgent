@@ -145,9 +145,12 @@ Learning Signal 则从它指向的原始 Decision Record 读取 Evidence payload
 
 ### 创建和解析 Action Intent
 
-Action Intent 是 Decision Record 到未来执行器之间的安全交接层。当前只支持
-`compare_options`、`save_shortlist` 和 `request_more_evidence` 三种非交易能力，
-创建后永远先处于 `pending_confirmation`：
+Action Intent 是 Decision Record 到执行器之间的安全交接层：创建后永远先处于
+`pending_confirmation`，未确认的 intent 无法被 execute。四个能力里，
+`compare_options` / `save_shortlist` / `request_more_evidence` 是本地确定性能力，
+`publish` 是唯一的**副作用**能力（需要 artifact 引用 + 内容哈希，经 Tool Gateway 提交）。
+**协议细节 —— 四条拒绝各在哪一层、执行前检查的顺序、两层幂等键、加一个新能力的步骤 ——
+见 [publish-action-protocol.md](publish-action-protocol.md)。** 下面只讲 HTTP 形状：
 
 ```http
 POST /api/creator-agent/actions

@@ -45,7 +45,7 @@ Policy Engine、能产生外部副作用的执行器、主链接线。
 | S4b ✅ | **主链等人类确认**：`WorkflowStatus.AWAITING_PUBLISH` + `machine.py` **两条** gate 识别路径 + 动态 `interrupt`/`Command(resume=…)` + `publish_gate` 节点与路由 + `/resume` **无默认值**分支 + `auto_publish` 从「无人读的键」变成真开关 + 前端可见性。**不产 PublishIntent**（与 S4a 同：主链仍直接 `run_publish`）→ **待决问题 1 未裁决**，理由见 §S4b 的「修订」 | 高 |
 | **S5a（本片）** | **凭据整备**：`services/xhs_credentials.py` 成为"哪个账号的凭据、从哪来"的**唯一所有者**（账号行 → 部署级 `XHS_COOKIE` → 无），可用性 fail-closed；读路径把 cookie 交给 `XHSClient`（P1c 写着"today this guard fires on every call"）；`granted_scopes` 从**恒 `None`（=unchecked）**变成真解析 → `xhs.publish` 的 `auth_scope` 第一次真的生效；executor 加**第四道 Gateway 之前的拒绝**（409）。**拆片理由见 §S5a 的「修订」** | 中-高 |
 | S5b ✅ | **记录的忠实性**：`DecisionRecord` 的判据冻结（唯一写入者）+ 持久化"被拒"审计（`kind="action"`，人类拒绝与策略拒绝各一条） | 中 |
-| S5c | **契约的表述**：`docs/publish-action-protocol.md` + 501 兜底（穷举 match 的 fail-closed 默认）+ **待决问题 1/3 的票面裁决** | 小 |
+| S5c ✅ | **契约的表述**：`docs/publish-action-protocol.md` + 501 兜底（穷举 match 的 fail-closed 默认）+ **待决问题 1/3 的票面裁决** | 小 |
 
 切片顺序的判据：先把**纯数据面**（S1）落定，再落**纯判定**（S2），然后才跨"产生副作用"
 这道坎（S3），最后才动主链（S4）。S3 之前任何一片都不改变生产行为。
@@ -510,10 +510,10 @@ LangGraph 把空载荷读成"没有可恢复的东西"，节点重新 `interrupt
 另一条同类改形在 `tests/integration/test_evaluator_pause_resume.py`：`("publisher",)` →
 `("publish_gate",)`（与 S4a 处理 orphan 绊线同一纪律）。
 
-**S5 已拆成 S5a / S5b / S5c**：S5a 做**授权**（§S5a）、S5b 做**记录的忠实性**（§S5b，本片）、
-S5c 做**契约的表述**（协议文档 + 501 兜底 + 待决问题 1/3 的裁决，入口条件见 §S5b 末尾）。
-上面这份清单里的 ①（凭据 + `DecisionRecord`）与 ②（审计）**已全部结清**；③④⑤ 仍待 S5c ——
-本片仍刻意没替待决问题 1 作答（理由见 §S5a 的设计决定 12）。
+**S5 已拆成 S5a / S5b / S5c**：S5a 做**授权**（§S5a）、S5b 做**记录的忠实性**（§S5b）、
+S5c 做**契约的表述**（§S5c，本片）—— 三片**全部结清**，P2a 收官。
+上面这份清单里的 ①（凭据 + `DecisionRecord`）、②（审计）、③④⑤（协议文档 / 501 / 待决 1）
+**都已结清**；待决问题 1 的处置见 §S5c 的「裁决」小节（是裁决 + 触发条件，不是待办）。
 
 ### S5a — 凭据整备（`feat/p2a-s5a-credential-provisioning`）
 
@@ -733,3 +733,124 @@ S5c 做**契约的表述**（协议文档 + 501 兜底 + 待决问题 1/3 的裁
 ② **501 兜底** —— `ActionCapabilityNotWiredError`（`creator_agent/repository.py:98`）**全仓无 `raise`**，route 的 `except`（`api/routes/creator_agent.py:428-429`）永不触发；根因在 `advisor.py:482-511` 的 `execute_action` 用 `else` 把剩下的一切都当成 `REQUEST_MORE_EVIDENCE`。**修法**：换成对 `ActionCapability` 的**穷举 match**，`case _:` 里 raise → ① 让那条 except 变活；② 把 fail-closed 默认装回去（新能力默认拒绝而非默认成功）。既有测试只是**直接构造错误对象**断 501 —— 断的是**形状不是路径**，要改成走 `execute_action` 的路径测试；
 ③ **待决问题 1** —— 仍无产 `ActionIntent` 的调用者，**裁决没有落点**；S5c 若仍无落点，就明确记为"延后"，而不是继续挂一条看起来待办的行；
 ④ 本片残留：`EVENT_KINDS` **仍无读者**（除了本片新增的互钉断言）；`account_credentials` 仍无写入者。
+
+### S5c — 契约的表述（`feat/p2a-s5c-contract-and-fallback`）
+
+**范围**：三件事 —— ① 新建 `docs/publish-action-protocol.md`（发布动作协议的**唯一书面出处**）；
+② **501 兜底**：`execute_action` 的分派链从 `else` 改成穷举 + fail-closed `raise`，让
+`ActionCapabilityNotWiredError` 第一次拥有生产者；③ **待决问题 1 的裁决 + 触发条件**
+（票面要求：若无落点就明确记为"延后"，而不是继续挂一条看起来待办的行）。
+附带：把 `docs/creator-agent.md` 里自 P2a-S1 起就过期的能力清单改对，并指向新协议文档。
+
+**侦察：票面对 ② 的定性要更精确**
+
+| # | 事实 | 位置 | 含义 |
+|---|---|---|---|
+| 1 | `ActionCapabilityNotWiredError` **全仓零 `raise`**，只有 route 一个 `except` | 定义 `creator_agent/repository.py:98`；唯一消费者 `api/routes/creator_agent.py:474-475` | 那条 501 映射**从未执行过** —— 一个"永远不会发生的错误"的 501 契约 |
+| 2 | 根因不在 route，在 `execute_action` 的 `else` | `creator_agent/advisor.py` 的分派链（`else` 落在 :516，`raise` 在 :526） | `else` 把"不是 `REQUEST_MORE_EVIDENCE` 的一切"都答成**另一种能力的 receipt** —— 一份 durable、immutable 的收据可以**声称做过从未发生的工作** |
+| 3 | 四个成员**今天都可达**，所以 `else` 不可达 —— 但它**不是死代码**，是**未被声明的默认语义** | `ActionCapability` 四个成员 :489/:498/:504/:508 各有分支 | 缺陷的形状是"默认分支的语义错了"，只是恰好还没有输入走进去（新能力、版本错位的行会立刻走进去） |
+| 4 | 既有测试只**直接构造错误对象**断 501 | `tests/unit/api/test_creator_agent.py` 原有 501 用例 | 断的是**形状不是路径**：构造错误 → 断言映射，绕过了"执行器真的会 raise 吗" |
+| 5 | `docs/*.md` **全部是 CRLF**；Write 工具新建的文档是 LF | `tool-runtime.md` / `creator-agent.md` / `context-compiler-baseline.md` 实测 | 新文档必须转 CRLF，否则仓库内 EOL 分叉 |
+| 6 | `docs/creator-agent.md` 的能力清单**自 P2a-S1 起就过期** | 写"当前只支持 `compare_options` / `save_shortlist` / `request_more_evidence` 三种非交易能力" | `publish` 已是第 4 个 capability（**唯一有副作用**的），文档没跟上 |
+
+**改动（6 改 1 新 —— 与 `git diff --stat` 数得一致）**
+
+| 文件 | 改动 |
+|---|---|
+| `creator_agent/repository.py` | `ActionCapabilityNotWiredError` 的 `action_kind` 类型钉成 `ActionCapability \| str`（**raw，不收窄**）；新增 `kind_label` 属性（`str(self.action_kind)`） |
+| `creator_agent/advisor.py` | 导入错误类型；`else` → `elif ... REQUEST_MORE_EVIDENCE` + `else: raise ActionCapabilityNotWiredError(action.action_id, action.action_kind)`；注释写明**这条分支唯一能做的事就是拒绝** |
+| `api/routes/creator_agent.py` | 501 映射改读 `exc.kind_label`（原读 `exc.action_kind.value` —— 对 raw `str` 会 `AttributeError`，即把 501 变成 500） |
+| `docs/publish-action-protocol.md` | **新建**（144 行，CRLF） |
+| `docs/creator-agent.md` | 能力清单改为四能力 + `publish` 是唯一副作用能力；加指向协议文档的链接 |
+| `tests/unit/creator_agent/test_action_execution.py` | 追加 **3** 条（`TestAnUnwiredCapabilityIsRefused`：行为 1 + 结构 1 + 标签 1） |
+| `tests/unit/api/test_creator_agent.py` | 追加 **1** 条（走 `execute_action` 路径的 501） |
+
+**设计决定**
+
+1. **穷举而非 `else`**：`else` 对"我还认识什么"的答案是"除 X 以外的一切"，所以它**无法表达"我不认识这个"**。
+   改成分派链逐个具名比较 + `else: raise` 之后，语义变成"我只做我列出来的事"。
+2. **默认分支只许拒绝、不许产出**：这是唯一一条把"不可达"变成"安全默认"的写法。它今天不可达，
+   但明天的第 5 个 capability 会走进去，那时它必须**拒绝**而不是**答复**。
+3. **错误类型必须接受执行器真正持有的东西**：`raise` 的现场只有 `action.action_kind`，
+   而 intent 里的 kind 是 `Any`（创建时校验、读取不校验）。把它收窄成枚举会让**报错本身再抛一个错** →
+   把 501 变成 500。所以类型是 `ActionCapability | str`，`kind_label` 负责可打印形式。
+4. **`StrEnum` 让一个拼写够用**：实测 `str(ActionCapability.PUBLISH) == "publish"`，
+   与 raw 字符串的 `str()` 同形 —— 所以 `getattr(..., "value", ...)` 的兜底分支在**语义上死**（见突变 M6）。
+5. **一条不可内省的不变量用「行为 + 结构」两条测试配对**：`is` 比较链**不能内省**，
+   所以"每个声明成员都有自己的分支"没法用运行时断言表达。配对的第二条用
+   `inspect.getsource(CreatorAdvisor.execute_action)` 逐成员检查字符串 `is ActionCapability.<NAME>`，
+   缺哪个就报哪个 —— `ActionCapability` 是本仓**第一个可枚举契约**，本片也是"结构比对代替实例断言"的首次可枚举用例。
+6. **不做破坏性默认**：没有把 `else` 写成"返回一个通用失败 receipt" —— 那会让审计层多一条**假的**工作记录。
+   拒绝是这条分支唯一不产生记录的动作。
+7. **待决问题 1 是一次裁决，不是一条待办**：实测仍无产 `ActionIntent` 的调用者（主链直接 `run_publish`），
+   所以裁决**没有落点**；按票面要求写成**裁决 + 触发条件**（见下），而不是继续挂一行。
+
+**★ 待决问题 1 的裁决（不是待办）**
+
+> **`account_id` 在 `ActionIntentRequest` 上显式必填，这条不变。** 将来若主链迁移到控制面
+> （改走 `plan_creator_action` / `execute_action` 而不是直接 `run_publish`），迁移**必须显式解析账号**，
+> 且**永不发明账号** —— 与 S4a 的"`""` 而**不是** `"default"`"、S5b 的"**不发明线程**"是同一条规则。
+> **触发条件**：出现第一个产 `ActionIntent` 的调用者时此裁决生效，并需要在那一片刻写清账号的来源。
+
+写进 `docs/publish-action-protocol.md`（而不是只留在这里）的理由：它是**协议的行为**，
+下一个改动这套动作模型的人要先读到它，而不是先读到一份任务账本。
+
+**★ 实测推翻的两条（原以为 vs 实测）**
+
+1. **`kind_label` 的 `value` 兜底分支是冗余写法，不是保险**：原以为
+   `getattr(self.action_kind, "value", str(...))` 能同时服务枚举与字符串两种情况；实测 `ActionCapability`
+   是 `StrEnum` → `str(member) == member.value` → 两个分支在**任何输入上都无法区分**。
+   处置：**删掉冗余分支**（而不是造一条测不出差别的测试），理由是"一条不可分辨的防御分支
+   会让人以为它防住了什么"。同族教训：存可变枚举成员用 `.value`（SQLite/PG 的 `str` 列）、
+   JSON 导出用 pydantic 的 `use_enum_values`，都不是靠 `str()` 碰运气。
+2. **`ruff format --check` 与 `ruff check` 不是同一件事**：我新写的 3 行 f-string 被 `ruff format`
+   合并成一行（约 110 字符）→ `format --check` 报 1 个文件未格式化，而 `ruff check` **干净** ——
+   E501 对**不可拆的字符串字面量不适用**。判据永远是跑 `ruff format --check .`，
+   不能凭"我写的是 3 行"推。
+
+**门禁（四道全绿，提交前实测）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q` | **3283 passed / 3 skipped** —— S5b 的 3279 + **4**（exec +3 / api +1），恰等于新用例数 |
+| `ruff check .` / `format --check .` | **506 files**，All checks passed / already formatted |
+| `uv run mypy backend --python-version 3.12` | **204 source files, no issues**（无新模块） |
+| P1b 基线 | `drift within threshold` |
+| `tool_runtime_gate.py` | **OK**（`named by agents: 10`） |
+| 前端 | 本片**未改前端**，未跑 |
+
+**突变自检：8/8 killed**，每条从原始字节起算；**step 0** 先把 5 个具名击杀者在未改动树上跑一遍（全绿）
+→ 没有任何 "killed" 可能来自本来就红的测试。
+
+| # | 突变 | 击杀者 |
+|---|---|---|
+| M1 | 拿掉 `REQUEST_MORE_EVIDENCE` 的分支（让它掉进默认臂） | `TestAnUnwiredCapabilityIsRefused::test_every_declared_capability_has_its_own_arm` + `...test_a_kind_the_executor_does_not_know_is_refused` |
+| M2 | 默认臂又答另一种 receipt（回到修复前的行为） | 同理两条 + `tests/unit/api/test_creator_agent.py::test_a_capability_without_an_executor_returns_its_own_501` |
+| M3 | 默认臂抛错但**类型不对** | 同上 |
+| M4 | route 读回 `exc.action_kind.value` | api 路径测（raw `str` 无 `.value` → `AttributeError` → 500 而非 501） |
+| M5 | `kind_label` 丢掉非枚举兜底 | `...test_a_kind_the_executor_does_not_know_is_refused`（`kind_label == "archive"`） |
+| M6 | `kind_label` 打印 `repr` | `...test_the_label_reads_the_value_of_a_declared_capability_too`（**本片改过一次**，见下） |
+| M7 | route 不再映射这个错误 | api 路径测 |
+| M8 | route 报固定 kind（不读现场） | api 路径测（`details["action_kind"] == "archive"`） |
+
+**两条要单记的 harness 结论**
+
+- **M6 报 SURVIVED 时，先问"这条突变真的改变行为吗"**：实测 `str(member) != repr(member)`
+  （`'publish'` vs `"<ActionCapability.PUBLISH: 'publish'>"`），所以原版 M6（改 `value` 兜底）
+  **是等价突变** —— 它改的是一个在任何输入上都不可分辨的分支。处置分两步：① 删掉被证明冗余的写法；
+  ② 把 M6 换成**真能改变行为**的 `repr(...)`。**"测试太弱"与"我的写法冗余"必须分开判定**，
+  判据顺序是先看行为是否真的变了。
+- **变异体本身也是代码**：`execute_action` 的 `PUBLISH` 分支里有一句 `assert publish_outcome is not None`。
+  若把它（或它依赖的赋值）删掉，测试会以 **AssertionError** 而不是 `ActionCapabilityNotWiredError` 变红 ——
+  那**不是**一条合格的击杀，因为我们无法区分"错误类型的断言起作用了"与"一句断言碰巧先炸了"。
+  所以**不把这类改动列为突变**；承重的是 M2/M3 —— 它们改变的是**判决**，不是崩溃点。
+
+**P2a 收官登记（本片是最后一片）**
+
+- 主链仍**不经控制面**（`run_publish` 直调）：`plan_creator_action` / `execute_action` 今天是
+  **可用的旁路**而不是主链 —— 这是待决问题 1 的裁决所描述的**现状**，不是缺陷。
+- `EVENT_KINDS` 的 `cost` 与 `error` **仍无发射者**（`error` 走的是 realtime `EventBusService`，
+  `emit_error_event`（`agents/nodes/_base.py:54`）**不是** `workflow_events` 这一层的发射者）；
+  `ripple` 只出现在 S2 迁入的历史条目里；声明集除自身的 `__all__` 仍无读者。
+- `account_credentials` **仍无写入者**（S5a 明确的刻意为：那是登录流的职责）。
+- **票面元数据结清**：`commit` / `pr_url` 已填。`commit` 存的是**分支提交 `50130a40`**，理由是：本仓合并是 merge commit（非 squash），该 SHA 合并后是 `main` 的祖先，而它的 subject（`feat(p2a-s5c): …`）正是 `git log origin/main` 里能 `grep` 到的那条 —— merge commit 自己的 subject 是通用的 "Merge pull request #613"，信息量更少。**先例不可信**：P1 票面的 `commit` 是 `a5161b94…`，本仓 `git log` 报 **bad object**（dead SHA）。`status` / `completedAt` 按先例**不动**（P1 已交付却仍是 `in_progress`）—— 「开工前先 `git log origin/main | grep`」这条纪律**不因票面字段而豁免**。

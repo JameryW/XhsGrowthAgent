@@ -816,3 +816,54 @@ def test_a_publish_with_no_thread_is_refused_before_it_can_be_denied(client, mon
 
     assert refused.status_code == 422
     assert seen == []  # refused before the policy engine ever ran
+
+
+def test_a_capability_without_an_executor_returns_its_own_501(client, monkeypatch):
+    """P2a-S5c at the API boundary.
+
+    P2a-S1 created the error and its code, and nothing raised it: the mapping was
+    only ever covered by constructing the error object directly, which is a test
+    of the shape rather than of the path.  The condition here is the one the
+    executor can actually meet -- a confirmed intent naming a capability the
+    dispatcher does not answer -- so the 501 is proven end to end, and with it
+    the absence of a receipt.
+    """
+    _own_any_account(monkeypatch)
+    decision_id = _seed_model_and_decision(client)
+    action = client.post(
+        "/api/creator-agent/actions",
+        json={
+            "account_id": "account-a",
+            "decision_id": decision_id,
+            "action_kind": "compare_options",
+            "candidate_ids": ["a", "b"],
+            "idempotency_key": "api-unwired-1",
+        },
+    ).json()["data"]
+    assert (
+        client.post(
+            f"/api/creator-agent/actions/{action['action_id']}/resolve",
+            json={"account_id": "account-a", "disposition": "confirmed"},
+        ).status_code
+        == 200
+    )
+
+    stored = creator_agent_db._mem_actions[("account-a", action["action_id"])]
+    creator_agent_db._mem_actions[("account-a", action["action_id"])] = stored.model_copy(
+        update={"action_kind": "archive"}
+    )
+
+    refused = client.post(
+        f"/api/creator-agent/actions/{action['action_id']}/execute",
+        json={"account_id": "account-a"},
+    )
+
+    assert refused.status_code == 501
+    assert refused.json()["error"]["code"] == "ERROR_CREATOR_ACTION_CAPABILITY_NOT_WIRED"
+    assert "archive" in refused.json()["error"]["message"]
+    assert refused.json()["error"]["details"]["action_kind"] == "archive"
+    missing = client.get(
+        f"/api/creator-agent/actions/{action['action_id']}/execution",
+        params={"account_id": "account-a"},
+    )
+    assert missing.status_code == 404
