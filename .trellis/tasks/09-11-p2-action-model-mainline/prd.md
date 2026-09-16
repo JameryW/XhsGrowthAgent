@@ -853,3 +853,4 @@ S5c 做**契约的表述**（§S5c，本片）—— 三片**全部结清**，P2
   `emit_error_event`（`agents/nodes/_base.py:54`）**不是** `workflow_events` 这一层的发射者）；
   `ripple` 只出现在 S2 迁入的历史条目里；声明集除自身的 `__all__` 仍无读者。
 - `account_credentials` **仍无写入者**（S5a 明确的刻意为：那是登录流的职责）。
+- **票面元数据结清**：`commit` / `pr_url` 已填。`commit` 存的是**分支提交 `50130a40`**，理由是：本仓合并是 merge commit（非 squash），该 SHA 合并后是 `main` 的祖先，而它的 subject（`feat(p2a-s5c): …`）正是 `git log origin/main` 里能 `grep` 到的那条 —— merge commit 自己的 subject 是通用的 "Merge pull request #613"，信息量更少。**先例不可信**：P1 票面的 `commit` 是 `a5161b94…`，本仓 `git log` 报 **bad object**（dead SHA）。`status` / `completedAt` 按先例**不动**（P1 已交付却仍是 `in_progress`）—— 「开工前先 `git log origin/main | grep`」这条纪律**不因票面字段而豁免**。

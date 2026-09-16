@@ -15,8 +15,8 @@
   "branch": "feat/p2a-s5c-contract-and-fallback",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
-  "pr_url": null,
+  "commit": "50130a400b0c3cb263e9ff22c97f89d067a5fca2",
+  "pr_url": "https://github.com/JameryW/XhsGrowthAgent/pull/613",
   "subtasks": [
     "S1 action-protocol: ActionCapability.PUBLISH + publish payload + key-level three-state serializer + not-wired 501",
     "S2 policy-engine: deterministic fail-closed verdict between plan_action and resolve_action",
@@ -26,7 +26,7 @@
     "S5a DONE (feat/p2a-s5a-credential-provisioning): services/xhs_credentials.py owns 'which account's credential, sourced from where' -- the account's own account_credentials row first, the deployment XHS_COOKIE second (declared in .env.example since day one, unread until now), nothing third; fail-closed at the reader boundary, and 'no account store' separated from 'unreadable account store'. One answer, two readers: the cookie goes to XHSClient (the read factory's docstring admitted it had none to hand over, so _require_readable fired on every call) and the scopes go to the Tool Gateway, so xhs.publish's declared auth_scope stops being decorative (every production caller passed granted_scopes=None, which the Gateway reads as UNCHECKED -- S3's own docstring said 'nothing in this repo owns a publish grant yet'). The executor gains a FOURTH pre-Gateway refusal (409, its own error code) placed FIRST because entitlement does not depend on the artifact. NOT done, deliberately: no writer for account_credentials (that is the login flow's job, recorded as a residue), no scope check on the mainline publish (its account may be '' by design, so a check there would prejudge open question 1), and no scope check on the read path (PermissionDeniedError raises, which would turn a runtime condition into a wiring exception and break the degradation branch). S5 is SPLIT: this is the authorisation half; provenance/audit/docs stay for S5b.",
     "S5 SPLIT (see prd.md)",
     {
-      "title": "S5b DONE (af7b8f35 -> )",
+      "title": "S5b DONE (af7b8f35 -> dd1101c1)",
       "status": "done"
     },
     {
