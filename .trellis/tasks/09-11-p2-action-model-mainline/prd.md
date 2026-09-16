@@ -41,11 +41,16 @@ Policy Engine、能产生外部副作用的执行器、主链接线。
 | **S1（本片）** | **Action 协议扩展**：`ActionCapability.PUBLISH` + publish 专属载荷（`artifact_ref` + `content_hash`）+ 校验分支；`execute_action` 对 PUBLISH 显式"未接线"报错。**不产生任何副作用** | 中（改既有协议） |
 | S2 | **Policy Engine**（新模块，deterministic 无 LLM）：输入 publish 意图 + 账号/内容快照 → `PolicyVerdict(allow/deny, policy_id, reason)`；复用 `xhs_risk_gate` 既有判据；**fail-closed（读不懂 = 拒绝）**。插在 `plan_action` 之后、人类确认之前 | 中 |
 | S3 | **Action Executor 接 Tool Gateway**：PUBLISH 分支经 `ToolGateway` 调 `xhs.publish`（`PassStyle.INVOKE`）；幂等键接上后**解锁 catalog 的 `RetryPolicy`**；receipt 落 `note_id`/`url`。**这是第一次让 Action 产生外部副作用** | 高 |
-| S4 | **主链接入**：`PublisherAgent`/`publisher_node` 改为产出 PublishIntent + 等确认；**`xhs.publish` orphan 消失** → tool runtime 门禁那条"唯一 orphan 是 xhs.publish"断言会红，**同 PR 更新** | 高 |
+| **S4a（本片）** | **主链提交接入 Tool Gateway**：`run_publish` 不再自己构造 `XHSClient`，改为 `self.tools.invoke("xhs.publish", …)`；**`xhs.publish` orphan 消失** → 门禁那条"唯一 orphan 是 xhs.publish"断言会红，**同 PR 更新**。**不改时序**（既不产 intent，也不等确认）：`run_publish` 的调用点、返回形状、下游 8 处消费逐字段不变 | 高 |
+| S4b | **主链等人类确认**：`WorkflowStatus.AWAITING_PUBLISH` + `machine.py` 分支 + `interrupt`/`Command(resume=…)`，`PublisherAgent` 产出 PublishIntent 并停在那里；同时裁决 **待决问题 1**（`ActionIntentRequest.account_id` 必填 vs 主链隐式账号） | 高 |
 | S5 | **凭据整备** + DecisionRecord immutable 收尾 + `docs/publish-action-protocol.md` | 中 |
 
 切片顺序的判据：先把**纯数据面**（S1）落定，再落**纯判定**（S2），然后才跨"产生副作用"
 这道坎（S3），最后才动主链（S4）。S3 之前任何一片都不改变生产行为。
+
+**S4 → S4a / S4b 的拆分理由**（S4a 侦察时定）："接 Gateway"与"等人类确认"正交 —— 前者
+只改提交路径（返回形状逐字段不变、下游 8 处消费零影响），后者改控制流（新增状态 + 中断/恢复）。
+合成一片会让"迁移不改契约"这条红线**无法单独验证**（提交没变但控制流变了时，红了不知道是谁的错）。
 
 ## 红线
 
@@ -270,3 +275,69 @@ M6 对应的那条 pin 是**本片补的**：`_PUBLISH_SAFETY_NET_S = 900.0` 初
 **交付前独立抽验**（提交前重跑，不只转述上表）：M2 / M4 / M6 各一条，覆盖三个不同机制（结论被埋 / 默认路径是壳 / 预算倒挂），**3/3 killed**，且失败**原因**与登记一致 —— M2 → `assert 'payload' not in {...'payload': {...}}`、M4 → `assert 'stub' == 'note-9'`、M6 → `assert spec.timeout_s is not None, "publish must carry its own net"`。抽验脚本放仓库外，每条先重写原始字节、跑完还原，`git status` 与突变前**逐项一致**。
 
 **下一片（S4）的入口条件**：① `PublisherAgent` 产 PublishIntent，`xhs.publish` 的 orphan 消失，`tool_runtime_gate.py` 那条 orphan 断言**同 PR 更新**；② `ActionIntentRequest.account_id` 目前**显式必填**，而主链里 `PublisherAgent` 只有隐式账号 → 落地时要显式传，或放宽为可推导（**待决问题 1**，S1 定、S4 必踩）；③ `compute_publish_id`（内容级去重）与 `ActionIntent.idempotency_key`（请求级）的关系要在票面写明（**待决问题 3**）；④ 501 兜底要么改成拒绝、要么删掉（见上面的新发现）。
+
+### S4a — 主链提交接入 Tool Gateway（`feat/p2a-s4a-mainline-gateway`）
+
+**范围**：让 `xhs.publish` 这个 orphan 消失 —— 主链的真实发布不再自己构造 `XHSClient`，改经 `PublisherAgent.tools.invoke("xhs.publish", …)`（P1c 纪律：副作用只经 Tool Gateway）。**刻意不碰时序**：`run_publish` 的调用点不动、不产 PublishIntent、不等确认。侦察结论是 **S4 可拆且应当拆** —— "接 Gateway"与"等确认"两件事正交：前者改提交，后者改控制流；合在一起会让"返回形状逐字段不变"这条红线无法单独验证。所以本片 = S4a，S4b 只留等确认（+ 待决问题 1）。
+
+侦察（子代理逐条核实）得到三条必须先处理的既成事实：
+
+1. **主链至今不传 `account_id`** —— S2 钉的"按账号发布冷却无生产写入者"缺陷有**两条**路径，S3 只关了控制面那一条，**主链（`run_publish` → `XHSClient.publish_post`）是另一条**。两条同源于 `XHSPublisher.publish_note`，所以本片一接上，这条缺陷的两半才算都关掉。
+2. **`xhs.publish` 工具把 CDP endpoint 写死为 `settings.platform.cdp_endpoint`** —— 而主链是按账号解析（`get_account_cdp_endpoint`）。**直迁会让多账号发布静默回退到全局 profile**（多账号共用一个登录态）。这一条是"迁移会引入回归"的实证：旧代码里 `XHSClient` 的这个参数由主链显式构造，工具里却无处可传。
+3. **`BaseAgent.tools` 是 property**（`agents/base.py:135` → `shared_gateway()`），`PublisherAgent` 此前完全绕过它。
+
+改动（4 改 2 测）：
+
+| 文件 | 改动 |
+|---|---|
+| `tools/xhs/publisher.py` | `_get_publisher(cdp_endpoint: str = "")`：**显式值优先，留空回落到全局配置**（控制面路径传空，行为不变）；工具签名加 `cdp_endpoint` |
+| `agents/publisher.py` | 类体加 `tool_capabilities = ("xhs.publish",)`；新增 `_publish_gateway_account_id` 与 `_result_from_gateway`；`run_publish(state, store, *, agent=None)`；提交段改为一次 `runtime.tools.invoke(...)`；删掉 `XHSClient(...)` 构造与 `finally: await client.close()` |
+| `tests/unit/agents/test_run_publish.py` | 打桩缝从 `XHSClient` 换成 `backend.tools.xhs.publisher._get_publisher`（**只桩浏览器层**）；+4 用例 |
+| `tests/unit/agents/test_publisher_account.py` | 同上迁移；断言从 ctor kwargs 换成"工具真的收到了什么" |
+| `tests/unit/tools/test_xhs_publisher.py` | **+3 用例**：新增 `TestGetPublisherEndpointSelection`（见设计决定 4） |
+| `tests/unit/tools/runtime/test_audit.py` | orphan 断言**改形**（见下） |
+
+**四个设计决定**
+
+1. **★ `_publish_gateway_account_id` 与 `_publish_account_id` 必须不是同一个函数**：前者**没指定就返回 `""`**，后者回退 `"default"`。理由分成两半 —— `compute_publish_id` 需要一个**稳定字符串去 hash**，把它从 `"default"` 改成 `""` 会**重键所有存量幂等记录**（等于一夜之间放开所有重复发布防护），所以**幂等记录里的键不动**；而把 `"default"` 交给**平台层**则会把这批未归属发布移进 `account:default` 桶，**改变一个今天正常工作的护栏的语义**。两个调用点要的东西不同，所以是两个函数，不是一个函数两个参数。方向两边都有断言：`test_unattributed_publish_sends_an_empty_account_id`（"绝不传 default"）。**这条是本片新补的**：初版只有注释写了这个不变量、**没有任何断言**（"注释里写了不变量却没断言的常量 = 突变必存活"），补上后 M8 才被杀死。
+2. **★ `_result_from_gateway` 是整片风险的归属地**：Gateway 说的是 `ok` / `error_kind`，`publish_result` 契约说的是 `status` / `error`，翻译只能发生在**这一个函数**里 —— 泄露出去就会碰到下游 8 处消费（`analyst.py:136-298`、`calibrator.py:107`、`analytics.py:569`、`free.py:420-454`、`workflow.py:2839-2945`、`hydration.py:270`、`omp_bridge.py:1880`）。三个分支各自的语义经过挑选：`ok` → 原样 dict；`DOMAIN` → 平台自己的 payload **原样返回**（其中的 `unknown`/`pending` 是"提交出去了、答案丢了"，护栏必须继续 armed）；其余 → `TIMEOUT` 判 `unknown`、其他判 `failed`。
+3. **★ 两处契约翻译是"接受"而不是"修掉"**（判据：**迁移不改契约**，但"契约"的边界要划清）：
+   - **超时文案**：`TimeoutError("page load timed out")` 经 Gateway 归一化成 `"timeout after 900s"`，方法名不再出现。**接受** —— 超时是**运行时**测量的、也由运行时命名；旧文案里带方法名只是"异常文本原样透传"的副产物。测试从"断言文案"改成**断言判决**（`status == "unknown"` + `error_type == publish_result_unknown`），因为它才是让护栏继续 armed 的那个东西。
+   - **`RuntimeError: cookie expired, login required` 带类型前缀**：`classify_publish_error` 是**子串匹配**（`api/errors.py:495`），`"cookie"` 仍在文本里 → `auth_expired` 与旧契约**逐字相同**，不需要剥前缀。这条不改代码，只补一条用例钉住（`test_platform_verdict_survives_the_gateway_round_trip`）。
+4. **★ 每一层都要有一个"它真的是生产路径"的测试（M11 的产物）**：突变自检里 **M11（工具忽略传进来的 `cdp_endpoint`）第一次跑是存活的** —— 先问"这条突变改的代码真的被执行了吗"，答案是**没有**：`_get_publisher` 正是所有测试**整体替换**的那个函数，于是它的**函数体（以及"显式 endpoint 优先于全局"这条规则）在任何测试里都没有被执行过**。这是**真覆盖缺口**，不是伪突变：`test_cdp_endpoint_proceeds_with_empty_cookie` 之类的断言只能证明"主链把 endpoint 交给了工厂"，证不了"工厂用了它"。补法是新增 `TestGetPublisherEndpointSelection`（**只桩 `XHSPublisher`**，让选择逻辑真跑），M11 随即被杀。
+
+**★ 那条钉 orphan 的绊线按设计响了，并且被"改形"而不是删掉**：`test_audit.py::test_the_only_orphan_is_the_publisher` 的 docstring 原文写着 *"Pinned deliberately: when P2a wires a publisher, this test fails and the orphan list gets revisited instead of quietly growing."* —— 它在 S4a 准时变红。处理：`test_only_the_four_tool_users_are_listed` → **five**（加 `publisher.py`）；`test_the_only_orphan_is_the_publisher` → **`test_no_capability_is_left_without_an_agent`**（断言 `orphans == ()`），docstring 保留绊线来历与"它被关掉"这件事。**没有删掉它** —— 性质从"某个 orphan 的名字"变成"不存在没有调用者的能力"，后者才是长期该守的东西。
+
+**门禁（四道全绿，提交前实测）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q` | **3151 passed / 3 skipped** —— S3 的 3144 + **7**，恰等于本片新增用例数（`test_run_publish` **+4** + `test_xhs_publisher` **+3**）→ **零既有用例被删改**（唯二"改动"的两条是上面那条绊线的改形，属预期信号） |
+| `ruff check .` / `format --check .` | **499 files**，All checks passed |
+| `uv run mypy backend --python-version 3.12` | **202 source files**，no issues |
+| P1b 基线 | `drift within threshold`（L0–L5 prompt 逐字节不变） |
+| `tool_runtime_gate.py` | OK；**`publisher.py declared=1 invoked=1 ok`，orphan 行消失**（`named by agents: 10`，`orphans == ()`） |
+
+**突变自检：13/13 killed**，每条**从原始字节起算**、每条被**具名断言**杀掉，覆盖 13 个不同机制：
+
+| # | 突变 | 被谁杀 |
+|---|---|---|
+| M1 | 删掉 `tool_capabilities` 声明 | `tool_runtime_gate`（`declared=0` → UNDECLARED）+ `test_the_agent_layer_is_clean` + `test_publisher_declares_its_capability` |
+| M2 | 调用点 capability 名写错 | 门禁（UNDECLARED + UNUSED 同时出现）+ 同上 |
+| M12 | 声明里 capability 名写错 | 门禁（`UNDECLARED=['xhs.publish'] UNUSED=['xhs.publish_note']`）+ 同上 |
+| M3 | 不传 `account_id` | `test_uses_selected_account_cdp_profile` |
+| M13 | 丢 `account_id` 的 state 级回退 | `test_falls_back_to_global_when_no_account` |
+| M8 | 未归属发布回退成 `"default"` | `test_unattributed_publish_sends_an_empty_account_id` |
+| M4 | 不传按账号解析的 `cdp_endpoint` | `test_per_account_cdp_endpoint_passed_to_client` |
+| M11 | 工具忽略收到的 `cdp_endpoint` | `TestGetPublisherEndpointSelection::test_an_explicit_endpoint_wins_over_the_global_one` |
+| M5 | `ok` 结果退化成裸 status（丢 post_id） | `test_browser_definite_failure_releases_guard` |
+| M6 | 超时判成 `failed` 而非 `unknown` | `test_timeout_after_submit_action_marks_unknown_not_failed` |
+| M7 | 丢掉平台结论（DOMAIN 分支失效） | `test_browser_timeout_after_click_marks_unknown_and_keeps_guard` |
+| M9 | 不传 `idempotency_key` | `test_real_publish_reaches_the_gateway_with_the_whole_payload` |
+| M10 | 不传 `thread_id` | 同 M9 |
+
+M1/M2/M12 的**第一击杀者都是门禁**（不是 pytest）：这正是"声明与调用逐模块一致"该有的样子 —— 编译期规则比运行期用例更早发现问题。抽验按纪律做了：**M11 那一条不是"抽验通过"，而是"抽验推翻了记录"** —— 首次全跑的存活项经追问"突变体真的被执行了吗"定位到真覆盖缺口，补测后重跑全组才得 13/13（登记的是重跑结果，不是首次结果）。
+
+**打桩缝的选择（唯一的实质副作用）**：patch `backend.tools.xhs.publisher._get_publisher`，**只桩浏览器层** —— 工具自己的载荷归一化、catalog 按名解析、Gateway 的 timeout/retry/scope/tracing 全都**真跑**。旧测试桩的是 `XHSClient`，等价于把"平台层"整个换成替身，同时顺带把 Gateway 一起绕过去了。这也解释了一个数字：这两个文件的耗时 **125.8s → 4.3s**，原来它们**真的在碰浏览器**。
+
+**下一片（S4b）的入口条件**：① `WorkflowStatus` 现在**没有** `AWAITING_PUBLISH`（侦察已确认），要新增取值 + `machine.py` 分支 + `interrupt`/`Command(resume=…)`；② `ActionIntentRequest.account_id` **显式必填** vs 主链隐式账号（**待决问题 1**，S4a 未碰因为在 S4a 里主链根本不产 intent）；③ `review_gate` 人工关卡已存在，但它与"等发布确认"是两回事，不要复用成同一状态；④ 501 兜底要么改成拒绝、要么删掉（S3 遗留）。

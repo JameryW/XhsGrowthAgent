@@ -92,6 +92,60 @@ def _publish_account_id(state: Mapping[str, Any]) -> str:
     )
 
 
+def _publish_gateway_account_id(state: Mapping[str, Any]) -> str:
+    """The account id to hand the platform layer — **empty when unspecified**.
+
+    Deliberately *not* ``_publish_account_id``: that one falls back to
+    ``"default"`` because ``compute_publish_id`` needs a stable string to
+    hash, and changing it would silently re-key every existing idempotency
+    record.  Handing ``"default"`` to the platform layer here would be a
+    different mistake: it moves every unattributed publish out of the
+    CDP-endpoint cool-down bucket and into ``account:default``, i.e. it
+    changes the semantics of a guard that already works today.
+    """
+    publish_options = state.get("publish_options") or {}
+    return str(publish_options.get("account_id") or state.get("account_id") or "").strip()
+
+
+def _result_from_gateway(result: Any) -> dict[str, Any]:
+    """One Gateway result, read back into this function's publish_result shape.
+
+    The Gateway speaks ``ok`` / ``error_kind``; the publish_result contract
+    speaks ``status`` / ``error``.  Translating here — rather than letting
+    the Gateway's vocabulary leak — is what keeps everything downstream
+    (unknown detection, error classification, the idempotency record,
+    ContentHistory) byte-for-byte unchanged by this migration.
+    """
+    from backend.tools.runtime.models import ErrorKind
+
+    if getattr(result, "ok", False):
+        value = getattr(result, "value", None)
+        return dict(value) if isinstance(value, Mapping) else {"status": "published"}
+
+    error_kind = getattr(result, "error_kind", None)
+    domain = getattr(result, "domain", None)
+    if error_kind is ErrorKind.DOMAIN and isinstance(domain, Mapping):
+        # The platform answered.  Its own ``status`` is the thing the
+        # idempotency guard is armed or released on, so it survives
+        # untouched -- including "unknown"/"pending", which mean a submit
+        # went out and the answer was lost.
+        payload = {str(key): value for key, value in domain.items()}
+        payload.setdefault("status", "failed")
+        return payload
+
+    # No answer at all.  A timeout here cancels a browser flow that may
+    # already have been mid-submit, so it is "unknown" rather than
+    # "failed": the guard stays armed instead of inviting a duplicate post.
+    error = str(getattr(result, "error", "") or "")
+    return {
+        "post_id": "",
+        "post_url": "",
+        "published_at": "",
+        "status": "unknown" if error_kind is ErrorKind.TIMEOUT else "failed",
+        "error": error or "publish failed",
+    }
+
+
 def compute_publish_id(state: Mapping[str, Any]) -> str:
     """Deterministic idempotency key: hash(account + content + images + window).
 
@@ -349,6 +403,18 @@ class PublisherAgent(BaseAgent):
     agent_name = "publisher"
     prompt_file = "publisher.yaml"
 
+    #: The mainline reaches the platform through the Gateway, like every
+    #: other agent (P1c-S3).  Declared because the P1c-S5 gate compares
+    #: this tuple against the capability literals the module invokes:
+    #: adding the invocation without the declaration fails the gate with
+    #: ``undeclared``, and declaring it without invoking fails with
+    #: ``unused``.  Both directions are load-bearing.
+    #: NOTE: no type annotation here on purpose.  The P1c-S5 gate reads the
+    #: declaration with ``ast.Assign``; an annotated class attribute is an
+    #: ``ast.AnnAssign`` and is invisible to it, which fails the gate with
+    #: ``UNDECLARED``.  Same spelling as every other agent.
+    tool_capabilities = ("xhs.publish",)
+
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         # 获取配置
         from backend.config.settings import Settings
@@ -393,10 +459,15 @@ class PublisherAgent(BaseAgent):
                 "phase": WorkflowPhase.PUBLISHING,
             }
 
-        return await run_publish(state, store)
+        return await run_publish(state, store, agent=self)
 
 
-async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) -> dict[str, Any]:
+async def run_publish(
+    state: XHSGrowthState | dict[str, Any],
+    store: BaseStore,
+    *,
+    agent: BaseAgent | None = None,
+) -> dict[str, Any]:
     """Execute the real (non-dry-run) publish against Xiaohongshu.
 
     Extracted from PublisherAgent.execute so failed-publish retries (the
@@ -532,16 +603,9 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         {**publish_options, "force_publish": False} if force_publish else None
     )
 
-    # 调用真实发布服务
-    from backend.services.xhs_client import XHSClient, XHSPost
-
-    client = XHSClient(
-        cookie="",
-        user_id="",
-        use_browser=True,
-        headless=False,
-        cdp_endpoint=cdp_endpoint,
-    )
+    # 调用真实发布服务 —— 经 Tool Gateway，和任何其他 agent 一样（P1c-S3）。
+    # 直接构造 XHSClient 会把 timeout / retry / scope / tracing 全绕过。
+    runtime = agent if agent is not None else PublisherAgent()
 
     try:
         # 从 visual_plan 提取图片路径
@@ -564,20 +628,35 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
             image_paths = [cover_path]
             logger.info("无素材图，已生成文字封面: %s", cover_path)
 
-        # 构造发布数据
-        post = XHSPost(
-            title=copy.get("selected_title", ""),
-            body=copy.get("body_text", ""),
-            hashtags=copy.get("hashtags", []),
-            image_paths=image_paths,
-            category=cast(str, plan.get("category", "")),
-            location=cast(str, plan.get("location", "")),
-            is_private=False,
-            scheduled_time=_normalize_scheduled_time(plan.get("suggested_timing", "")),
-        )
+        # 构造发布数据 —— 与旧 XHSPost 字段逐一对应。
+        payload: dict[str, Any] = {
+            "title": copy.get("selected_title", ""),
+            "body": copy.get("body_text", ""),
+            "hashtags": copy.get("hashtags", []),
+            "image_paths": image_paths,
+            "category": cast(str, plan.get("category", "")),
+            "location": cast(str, plan.get("location", "")),
+            "is_private": False,
+            "scheduled_time": _normalize_scheduled_time(plan.get("suggested_timing", "")),
+            # 记账用：给了 account_id，按账号的发布冷却才有生产写入者
+            # （S2 钉的缺口；S3 只关了控制面那一条路径，主链是另一条）。
+            "account_id": _publish_gateway_account_id(state),
+            # 请求级幂等键 = 主链自己的内容级 publish_id。两者不是一层东西：
+            # publish_id 跨请求去重（主链幂等护栏），idempotency_key 是运行时
+            # 重试护栏的输入与排查关联 id（待决问题 3）。
+            "idempotency_key": publish_id,
+            # 按账号解析出的浏览器 profile —— 不给它，多账号发布会静默
+            # 回到全局 endpoint（工具的默认值）。
+            "cdp_endpoint": cdp_endpoint,
+        }
 
-        # 执行发布（真实提交动作 — 之后的一切超时都是"结果不明"而非确定失败）
-        result = await client.publish_post(post)
+        # 执行发布（真实提交动作 —— 之后的一切超时都是结果不明，而非确定失败）
+        tool_result = await runtime.tools.invoke(
+            "xhs.publish",
+            payload,
+            thread_id=str(state.get("session_id") or state.get("thread_id") or ""),
+        )
+        result = _result_from_gateway(tool_result)
 
         raw_status = str(result.get("status") or "unknown")
         # P0-W4 (F2): the browser layer swallows its own exceptions into a result
@@ -685,9 +764,6 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
                     "error": str(e),
                 },
             )
-
-    finally:
-        await client.close()
 
     # 记录到长期记忆
     account_id = state.get("account_id", "default")

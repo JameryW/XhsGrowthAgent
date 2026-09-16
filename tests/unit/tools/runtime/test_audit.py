@@ -279,12 +279,13 @@ class TestTheRealAgentLayer:
         assert audit.unknown == ()
         assert audit.ok
 
-    def test_only_the_four_tool_users_are_listed(self) -> None:
+    def test_only_the_five_tool_users_are_listed(self) -> None:
         listed = {usage.module for usage in self._audit_repo().usages}
         assert listed == {
             "analyst.py",
             "content_strategist.py",
             "copywriter.py",
+            "publisher.py",
             "trend_scout.py",
         }
 
@@ -292,13 +293,19 @@ class TestTheRealAgentLayer:
         for usage in self._audit_repo().usages:
             assert usage.ok, f"{usage.module}: undeclared={usage.undeclared} unused={usage.unused}"
 
-    def test_the_only_orphan_is_the_publisher(self) -> None:
-        """``xhs.publish`` has no agent caller until P2a.
+    def test_no_capability_is_left_without_an_agent(self) -> None:
+        """Every declared capability has an agent caller.
 
-        Pinned deliberately: when P2a wires a publisher, this test fails and
-        the orphan list gets revisited instead of quietly growing.
+        This test used to be ``test_the_only_orphan_is_the_publisher`` and
+        pinned ``orphans == ("xhs.publish",)`` -- a deliberate tripwire:
+        "when P2a wires a publisher, this fails and the orphan list gets
+        revisited instead of quietly growing".  It fired in P2a-S4a, which is
+        that orphan *closing*: the mainline publish stopped building its own
+        ``XHSClient`` and now goes through ``self.tools.invoke``.  The pin did
+        its job, so it is retargeted at the property that matters from here
+        on -- a capability with no agent caller is a capability nothing uses.
         """
-        assert self._audit_repo().orphans == ("xhs.publish",)
+        assert self._audit_repo().orphans == ()
 
     def test_the_default_directory_is_the_agents_package(self) -> None:
         assert DEFAULT_AGENTS_DIR.name == "agents"
