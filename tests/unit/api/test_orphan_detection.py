@@ -1,8 +1,16 @@
-"""Tests for orphan-running detection (DB running, no live in-process task).
+"""Tests for orphan-running detection (DB running, but nobody holds the lease).
 
-After deploy/restart the in-process task registry is empty, so DB rows left
-at status="running" are orphans. /list and /status detect this lazily and
-surface the row as stale with orphan=True (no DB mutation on read).
+After deploy/restart the process that held the lease is gone and nothing renews
+it, so DB rows left at status="running" are orphans. /list and /status detect
+this lazily and surface the row as stale with orphan=True (no DB mutation on
+read).
+
+P2b-S2 moved the judgement to the execution lease; these cases exercise it
+through the real readers. None of them seeds a lease, so every "orphan" case
+here is the lease-is-absent case, and the one "not an orphan" case below
+(test_list_running_row_active_task_not_orphan) passes because the *process*
+registry is OR-ed in as a fallback -- which is the property that keeps a live
+run from being reported as stale when the lease store cannot be reached.
 """
 
 from __future__ import annotations
@@ -170,6 +178,11 @@ class TestStatusOrphanDetection:
         data = resp.json()["data"]
         assert data["orphan"] is True
         assert data["status"] == "stale"
+        # P2b-S2: the same lease read also decides checkpoint_lost. Asserted here
+        # because "orphan" alone comes from a different site -- a fallback that
+        # simply assumed a live task would keep orphan correct and still report
+        # a thread with no process behind it as neither lost nor recoverable.
+        assert data["checkpoint_lost"] is True
 
 
 # ── Helpers ──
@@ -191,3 +204,69 @@ async def _seed_active_task(thread_id: str) -> asyncio.Task[None]:
     _runner._background_tasks[thread_id] = task
     await started.wait()
     return task
+
+
+# ── S2: the live /status branch answers running vs stale from the lease ──
+
+_LEASE_OTHER = "other-host:4242:deadbeef"
+_DB_UPSERT = "backend.api.routes.workflow._db_upsert"
+
+
+def _running_snapshot(thread_id: str) -> MagicMock:
+    """State with a session but no gate: derive_status reaches its lease branch."""
+    snap = MagicMock()
+    snap.values = {"session_id": thread_id, "account_id": "acct", "phase": "scouting"}
+    snap.next = ("trend_scout",)
+    snap.tasks = ()
+    snap.interrupts = ()
+    snap.metadata = {}
+    return snap
+
+
+class TestStatusLiveBranchReadsTheLease:
+    """/status over live graph state: only the lease distinguishes the two answers."""
+
+    def _get(self, thread_id: str, row: WorkflowRow) -> dict:
+        graph = MagicMock()
+        graph.store = MagicMock()
+        graph.aget_state = AsyncMock(return_value=_running_snapshot(thread_id))
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=row),
+            patch(_DB_GET_SRC, new_callable=AsyncMock, return_value=row),
+            patch(_GET_ACCOUNT, new_callable=AsyncMock, return_value=_owned_account()),
+            patch(_DB_UPSERT, new_callable=AsyncMock, return_value=row),
+        ):
+            resp = _client_with_graph(graph).get(f"/api/workflow/status/{thread_id}")
+        assert resp.status_code == 200, resp.text
+        return resp.json()["data"]
+
+    def test_a_foreign_lease_flips_stale_to_running(self, monkeypatch) -> None:
+        """Same state twice; a lease held elsewhere is the only difference.
+
+        This is the S2 behaviour in one assertion pair. Without the lease the
+        route reports stale + orphan -- "nobody is running it", which is what it
+        used to mean. With a foreign lease it must report running and drop the
+        orphan flag: the run belongs to the workflow, not to whichever process
+        happens to be answering. A branch still reading its own registries
+        cannot tell these two apart, and that is the whole point of the slice.
+        """
+        from backend.db import execution_leases as leases
+
+        thread_id = "lease_live"
+        row = _make_row(thread_id, status="running")
+        _clear_tasks()
+
+        monkeypatch.setattr(leases, "is_pool_ready", lambda: False)
+        leases._reset_memory_store()
+
+        before = self._get(thread_id, row)
+        assert before["status"] == "stale"
+        assert before["orphan"] is True
+
+        with patch.object(leases, "_instance_id", _LEASE_OTHER):
+            assert asyncio.run(leases.acquire(thread_id)) is True
+
+        after = self._get(thread_id, row)
+        assert after["status"] == "running"
+        assert after["orphan"] is False

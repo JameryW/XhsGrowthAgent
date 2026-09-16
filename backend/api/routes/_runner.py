@@ -45,6 +45,52 @@ _background_tasks: dict[str, asyncio.Task[Any]] = {}
 _last_status: dict[str, WorkflowStatus] = {}
 
 
+def process_has_active_task(thread_id: str) -> bool:
+    """Whether *this* process is running this thread.
+
+    The serialization question, not the ownership one. Callers use it to avoid
+    starting a second task or retry in this process, so it must answer from the
+    thing that actually holds the Task.
+    """
+    return (thread_id in _background_tasks and not _background_tasks[thread_id].done()) or (
+        thread_id in _active_sync_executions
+    )
+
+
+async def _lease_is_held(thread_id: str) -> bool:
+    """Best-effort lease read. A broken store answers "not held", not "held"."""
+    try:
+        from backend.db.execution_leases import thread_is_held
+    except Exception as exc:  # pragma: no cover - import cannot fail in practice
+        logger.warning("execution lease import failed: %s", exc)
+        return False
+    try:
+        return await thread_is_held(thread_id)
+    except Exception as exc:
+        logger.warning("execution lease check failed for %s: %s", thread_id, exc)
+        return False
+
+
+async def has_active_execution(thread_id: str) -> bool:
+    """Whether any instance is running this thread -- the status-derivation answer.
+
+    The lease is the durable half: it is the only fact that outlives the process
+    running the work, which is what turns "running vs stale" into a question
+    about the workflow rather than about whoever happens to be reading it.
+
+    The process-local registries are OR-ed in rather than replaced. They are
+    what actually holds the Task, and when the lease store is unreachable the
+    lease cannot know about this process -- losing that would report a live run
+    as stale. The OR only ever widens "running", so a wrong answer can suppress
+    an orphan report but can never invent one; and the callers that decide
+    whether to *start* work use :func:`process_has_active_task` instead, so it
+    cannot cause a second execution either.
+    """
+    if await _lease_is_held(thread_id):
+        return True
+    return process_has_active_task(thread_id)
+
+
 def _fields_differ(fields: dict[str, Any], existing: Any) -> bool:
     """True if any field in ``fields`` differs from the existing WorkflowRow.
 
@@ -324,10 +370,9 @@ async def _run_graph_and_persist(
     if is_sync:
         _active_sync_executions.add(thread_id)
 
-    # P2b-S1: observational lease. Nothing reads it yet -- ``has_active`` below
-    # still comes from the in-process registries -- so this changes no answer
-    # this function gives. It exists so that "who is running this thread"
-    # survives the process that happens to be running it.
+    # P2b-S1/S2: the lease is now a reader. ``has_active_execution`` below
+    # answers from it first and falls back to this process's registries, so
+    # "who is running this thread" no longer depends on which process asks.
     lease_heartbeat: asyncio.Task[None] | None = None
     with contextlib.suppress(Exception):
         from backend.db.execution_leases import start_lease
@@ -338,9 +383,7 @@ async def _run_graph_and_persist(
         result = await graph.ainvoke(input_data, config)
 
         snapshot = await graph.aget_state(config)
-        has_active = (
-            thread_id in _background_tasks and not _background_tasks[thread_id].done()
-        ) or (thread_id in _active_sync_executions)
+        has_active = await has_active_execution(thread_id)
         derived = derive_status(snapshot, has_active_task=has_active)
 
         await _emit_status_transition(
