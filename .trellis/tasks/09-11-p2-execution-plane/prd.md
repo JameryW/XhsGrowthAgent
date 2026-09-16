@@ -46,7 +46,7 @@
 
 | 切片 | 内容 | 风险 |
 |---|---|---|
-| **S1** | **执行租约的数据面**：owner identity（实例 id + 启动时刻）+ 租约记录（thread_id → owner / acquired_at / heartbeat_at / expires_at / state）+ `acquire` / `renew` / `release` / `expire_scan`。**只写不读** —— 今天的 `_background_tasks` 照旧决定一切，对外零行为变更 | 低-中 |
+| **S1** ✅ 已交付 | **执行租约的数据面**：owner identity（实例 id + 启动时刻）+ 租约记录（thread_id → owner / acquired_at / heartbeat_at / expires_at / state）+ `acquire` / `renew` / `release` / `expire_scan`。**只写不读** —— 今天的 `_background_tasks` 照旧决定一切，对外零行为变更 | 低-中 |
 | **S2** | **状态推导改读租约**：`has_active_task` 由租约回答；`/status` `/list` 的 `orphan` 语义从"本进程没有任务"变成"**租约已过期**"。事实 15 的绊线按设计改形 | 中（改可观测语义） |
 | **S3** | **过期租约的接管**：启动扫描 + 周期扫描，从 checkpoint 续跑。**接管只能恢复执行循环、不能替人做决定**（见待决 3） | 高（会重跑工作） |
 | **S4** | **长任务移出 API 进程**：按事实 9、13 逐点分类，把 CDP 会话与重型任务挪出编排进程。**凭证据开闸**（裁定 1）—— 无证据则降级为文档 + 分类清单 | 高 |
@@ -107,4 +107,78 @@
 
 ## 执行记录
 
-（待各切片追加：每片的改动表、实测推翻的假设、门禁数字、突变表、残留登记。）
+### S1 —— 执行租约的数据面（分支 `feat/p2b-s1-execution-lease`）
+
+**定性**：把「谁在跑这个 thread」从**进程内的事实**变成**可陈述、可过期、可交接的事实**。S1 只建数据面并接上生产的**写入点**，**不接任何读者** —— 今天 `_background_tasks` 照旧决定一切，对外零行为变更。
+
+**改动表**
+
+| 文件 | 变更 | 内容 |
+|---|---|---|
+| `backend/db/execution_leases.py` | **+530（新）** | owner identity（`host:pid:rand` + 启动时刻）、租约记录、`acquire` / `renew` / `release` / `expire_scan` / `get_lease` / `list_leases` / `start_lease` / `end_lease` / `ensure_tables` / `durability`、`_reset_memory_store`。Postgres 优先、模块内回退（照 `db/workflow_events.py:62-71` 先例，**不进** `db/workflows.py` —— 事实 10：那里 0 处 `is_pool_ready`，守卫被推给调用方） |
+| `backend/api/routes/_runner.py` | +17 | `:327-336` 在 `is_sync` 分叉后、`try` 之前 `await start_lease(thread_id)`；`:486-492` 在 `finally` 的 `_background_tasks.pop` 之后 `await end_lease(...)`。两处都在 `contextlib.suppress(Exception)` 内 —— 观测性租约不得成为新的失败点 |
+| `backend/api/app.py` | +4 | `ensure_tables` 进 lifespan 的 `ensure_coros`（与 `ensure_evaluator_config()` 并列） |
+| `tests/unit/db/test_execution_leases.py` | **+284（新，29 用例）** | 用 monkeypatch `_utcnow` 的**假时钟**，不睡真时间；`_reset_memory_store()` 由本文件 autouse fixture 负责（`tests/conftest.py` 没有全局钩子，也不该加） |
+| `tests/unit/api/test_runner_lease_wiring.py` | **+104（新，2 用例）** | 证明接线真实且**只观测** |
+
+**为什么 `cli/main.py` 不动**：`_run_graph_and_persist` **只被 `api/routes/*` 调用**（workflow 6 / review 2 / optimization 2 / blogger 1），CLI 不经过它（它是同步 CLI，走 `sync creator-stats`）。S1 的接线点因此天然只覆盖 API 进程。
+
+**S1 把三条红线落成的可判定形状**（红线的解释权在本片，登记于此）
+
+1. **「不得让同一份 checkpoint 在不同进程给出不同答案」** → **每一行租约自带 `ttl_seconds` 列，所有过期判定读行自身的预算**，而不是读取方的。否则同一行会对长 TTL 的读者「活着」、对短 TTL 的读者「死了」 —— 那正是本片要消灭的性质。
+2. **「租约失效不得导致两份执行同时写同一 thread」** → 唯一实现处是 `_ACQUIRE_SQL` 的 `WHERE`：**只有「现任者心跳新鲜」时才拒绝 acquire**。S1 **忽略** `acquire` 的返回值（纯观测），S3 才拿它当门。
+3. **「`heartbeat` 不得是没人读的键」** → `heartbeat_at` 的读者是 `expire_scan → is_stale`，两者在 S1 就都有真实调用者（`_acquire_in_memory` 调 `is_stale`；`expire_scan` 进 `__all__` 并被测试调用）；写入点是生产路径，由接线测试钉住。**红线 5 与「只写不读」的张力就是这样解的**：读者的**定义**在 S1 落地并可测，读者的**接线**在 S2/S3。
+
+**被测试逼出来的两个真缺陷**（都是「测试抓出代码」，不是「测试写错了」）
+
+| 症状 | 根因 | 修法 |
+|---|---|---|
+| `test_takes_over_a_silent_lease` 红 | `acquire` 用**新来者的 TTL** 判断现任是否已过期 | `ttl_seconds` 存进租约行；`_ACQUIRE_SQL` / `_EXPIRE_SQL` 只引用 `execution_leases.ttl_seconds`；补 `test_the_lease_carries_its_own_budget`、`test_renew_adopts_the_current_budget` |
+| 接线测试读到 `RELEASED`（应为 `HELD`） | 内存回退的 `get_lease` **交出内部可变对象**，`end_lease` 随后把它改成 `RELEASED`；PG 路径每行新建对象 → **两后端语义不一致** | `_snapshot()`（`dataclasses.replace`）；`get_lease` / `list_leases` 一律返回快照；补 `test_reads_hand_back_a_snapshot` |
+
+另有一处**自己发现**的过度设计：`expire_scan` 原用「先探测再标记」的绕法防重复上报，而「只上报一次」已由**状态迁移**（`held`→`expired`）＋ `is_stale` 只看 `HELD` 保证 → 改成直白的「先算名单、再统一置 `EXPIRED`」，补 `test_reports_an_expiry_once` 钉住。
+
+**门禁（全部在本片最终代码上跑）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q`（全量） | **3314 passed, 3 skipped**（基线 3283 **+31** = 29 + 2 新用例，**逐条对上**） |
+| `ruff check .` | All checks passed |
+| `ruff format --check .` | 509 files already formatted |
+| `mypy backend --python-version 3.12` | Success: no issues found in **205** source files（+1） |
+| `scripts/gates/tool_runtime_gate.py` | P1c-S5 tool runtime: OK |
+| `context_compiler_baseline.py --compare --drift-pct 5` | drift within threshold: OK |
+
+**突变自检：21 条，`killed=21 survived=0 timeouts=0 anchor_failures=0`，`restore=OK`**
+
+harness 规矩沿用 S4b/S5b：**step 0** 在未改动树上跑全部具名击杀者（必须 0；本片 step 0 = **31 passed, exit=0**）；每条突变**从原文重新开始**且锚点必须唯一（不唯一记 `ANCHOR-FAIL`，**不得**记成 survived）；`run_killers` **原样回 pytest 退出码**（0 = 用例通过 = **存活**）；`TimeoutExpired` 映射成 99 单列，免得「超时」被读成「存活」。
+
+| # | 突变 | 具名击杀者 | 判定证据 |
+|---|---|---|---|
+| M1 | `is_stale` 不看 state（已释放的租约也能过期） | `TestExpireScan`（`test_ignores_a_released_lease`） | `expire_scan() == ['t1'] != []` |
+| M2 | 读交出存储对象而非快照 | `TestReads::test_reads_hand_back_a_snapshot` | 读到 `RELEASED`（应为 `HELD`） |
+| M3 | `expire_scan` 只报告不置态 | `TestExpireScan`（`test_flips_only_the_silent_held_lease`） | state 仍 `HELD` |
+| M4 | `end_lease` 从不停心跳 | `TestHeartbeatTask::test_end_stops_the_heartbeat_and_releases` | `wait_for(..., 5.0)` 的 `TimeoutError` |
+| M5 | `release` 不看 owner | `TestRenewAndRelease::test_release_leaves_another_owners_lease_alone` | `release() is True`（应 `False`） |
+| M6 | `renew` 不看 owner | `TestRenewAndRelease::test_renew_reports_false_once_the_lease_moved_on` | `renew() is True`（应 `False`） |
+| M7 | `renew` 能复活已释放的租约 | `TestRenewAndRelease::test_a_released_lease_cannot_be_renewed_back_to_life` | `renew() is True`（应 `False`） |
+| M8 | `acquire` 用**调用方**预算判现任 | `TestAcquire::test_takes_over_a_silent_lease` | `acquire() is False`（应 `True`） |
+| M9 | `acquire` 无条件授予 | `TestAcquire::test_refuses_a_live_lease_from_another_owner` | `acquire() is True`（应 `False`） |
+| M10 | `durability` 永远声称 durable | `TestDurabilityIsAReadableFact::test_none_without_postgres` | 得 `DURABLE`（应 `NONE`） |
+| M11 | `renew` 不采纳当前预算 | `TestRenewAndRelease::test_renew_adopts_the_current_budget` | `ttl_seconds == 1.0`（应 `30.0`） |
+| M12 | TTL 掉出策略包络 | `TestLeaseBudget::test_the_lease_budget_stays_inside_its_policy_envelope` | `30.0` 不在 `[60, 300]` |
+| M12b | 心跳间隔不再由另两者推导 | `TestLeaseBudget::test_ttl_and_heartbeat_are_one_decision` | `assert 135.0 == 90.0` |
+| M13 | `acquire` 接受空 thread_id | `TestAcquire::test_empty_thread_id_is_never_leased` | `acquire("") is True`（应 `False`） |
+| M14 | `list_leases` 忽略 state 过滤 | `TestReads::test_list_orders_by_heartbeat_and_filters_by_state` | `['early','late'] != ['late']` |
+| M15 | 租约被拒仍起心跳 | `TestHeartbeatTask::test_start_returns_none_when_refused` | 返回了 pending `Task`（应 `None`） |
+| M16 | 实例 id 丢掉 pid | `TestLeaseBudget::test_instance_identity_names_the_process` | `'38960' not in 'JameryW:ac4c792c'` |
+| M17 | 心跳不察觉租约已丢 | `TestHeartbeatTask::test_heartbeat_stops_when_the_lease_is_lost` | `wait_for(heartbeat, 5.0)` 的 `TimeoutError` |
+| M18 | `renew` 不动 `heartbeat_at` | `TestRenewAndRelease::test_renew_moves_the_anchor_it_owns` | 锚点未 +5s |
+| M19 | runner 从不上租约 | `test_runner_holds_the_lease_while_the_graph_runs` | "the runner never acquired a lease" |
+| M20 | runner 不再容忍租约存储损坏 | `test_runner_still_runs_when_the_lease_store_fails` | `RuntimeError` 未被 `suppress` 吸收 |
+
+**残留与诚实登记**
+
+- **S1 是只写不读**：`acquire` 的返回值在生产被丢弃；`expire_scan` / `is_stale` / `list_leases` 在生产**暂无读者**（按计划 S2/S3 才接）。这不是缺口，是切片边界 —— 登记在此以免被读成「做了一半」。
+- **一次未能定根的观察**（如实登记，不编根因）：定位过一个「pytest 下 `end_lease` 挂起」的现象，最终判定为**探针/环境**而非代码 —— 裸 asyncio 下同形式 **6/6 通过**（含内联 `wait_for` + 活跃心跳）；真实文件单独跑 **3/3 通过**（0.5–0.7s）；三条有界 teardown 用例各自单独跑 **2/2 通过**；现象只出现在我写的临时探针里（已删除），且对「多加一个 task / 多一行 print」敏感（典型时序 Heisenbug）。相邻还有一次 >90s 的「挂起」伴随**机器仅剩 0.07GB 可用内存**。⇒ 没有拿到确定性根因。缓解已内置：测试里 `end_lease` 的 teardown **一律有界**（`wait_for(..., 5.0)`），忘停心跳会表现为**失败**而不是无声挂起（M4/M17 的击杀形态即为此）。
+- `EVENT_KINDS` 仍无读者、`account_credentials` 仍无写入者 —— P2a 的既有残留，与本片无关。

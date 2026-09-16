@@ -1234,6 +1234,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from backend.db.evaluator_config import (
                 ensure_tables as ensure_evaluator_config,
             )
+            from backend.db.execution_leases import (
+                ensure_tables as ensure_execution_leases,
+            )
             from backend.db.public_telemetry import ensure_tables as ensure_public_telemetry
             from backend.db.quality_evaluations import (
                 ensure_tables as ensure_quality_evaluations,
@@ -1261,6 +1264,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ensure_console_users(),
                 ensure_system_config(),
                 ensure_evaluator_config(),
+                ensure_execution_leases(),
                 ensure_quality_evaluations(),
                 ensure_creator_stats(),
                 ensure_creative_memory(),

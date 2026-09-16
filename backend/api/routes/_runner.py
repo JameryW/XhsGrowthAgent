@@ -324,6 +324,16 @@ async def _run_graph_and_persist(
     if is_sync:
         _active_sync_executions.add(thread_id)
 
+    # P2b-S1: observational lease. Nothing reads it yet -- ``has_active`` below
+    # still comes from the in-process registries -- so this changes no answer
+    # this function gives. It exists so that "who is running this thread"
+    # survives the process that happens to be running it.
+    lease_heartbeat: asyncio.Task[None] | None = None
+    with contextlib.suppress(Exception):
+        from backend.db.execution_leases import start_lease
+
+        lease_heartbeat = await start_lease(thread_id)
+
     try:
         result = await graph.ainvoke(input_data, config)
 
@@ -473,3 +483,10 @@ async def _run_graph_and_persist(
         # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
         if _background_tasks.get(thread_id) is asyncio.current_task():
             _background_tasks.pop(thread_id, None)
+        # P2b-S1: best-effort lease teardown. A cancelled task may not reach
+        # this await at all; the lease then goes silent and expires, which is
+        # the property being built rather than a gap in it.
+        with contextlib.suppress(Exception):
+            from backend.db.execution_leases import end_lease
+
+            await end_lease(thread_id, lease_heartbeat)
