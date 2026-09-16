@@ -49,8 +49,8 @@
 | **S1** ✅ [#614] | **执行租约的数据面**：owner identity（实例 id + 启动时刻）+ 租约记录（thread_id → owner / acquired_at / heartbeat_at / expires_at / state）+ `acquire` / `renew` / `release` / `expire_scan`。**只写不读** —— 今天的 `_background_tasks` 照旧决定一切，对外零行为变更 | 低-中 |
 | **S2** ✅ [#615] | **状态推导改读租约**：`has_active_task` 由租约回答；`/status` `/list` 的 `orphan` 语义从"本进程没有任务"变成"**租约已过期**"。事实 15 的绊线按设计改形 | 中（改可观测语义） |
 | **S3** ✅ [#616] | **过期租约的接管**：启动扫描 + 周期扫描，从 checkpoint 续跑。**接管只能恢复执行循环、不能替人做决定**（见待决 3） | 高（会重跑工作） |
-| **S4** | **长任务移出 API 进程**：按事实 9、13 逐点分类，把 CDP 会话与重型任务挪出编排进程。**凭证据开闸**（裁定 1）—— 无证据则降级为文档 + 分类清单 | 高 |
-| **S5** | **契约的表述**：`docs/execution-plane.md` —— 租约的**保证与非保证**、单进程现实 vs 文档拓扑、无 DB 时的语义、接管的安全边界、逐点分类清单 | 小 |
+| **S4** ✅ [#617] | **长任务移出 API 进程**：按事实 9、13 逐点分类，把 CDP 会话与重型任务挪出编排进程。**凭证据开闸**（裁定 1）—— 无证据则降级为文档 + 分类清单 | 高 |
+| **S5** ✅ [#617] | **契约的表述**：`docs/execution-plane.md` —— 租约的**保证与非保证**、单进程现实 vs 文档拓扑、无 DB 时的语义、接管的安全边界、逐点分类清单 | 小 |
 
 **本任务明确不做**（父任务克制原则 + 各自归属）：
 
@@ -421,3 +421,76 @@ harness 自身踩到的两处（都已修，登记在此以免下次重犯）：
 - **无 DB 时接管不可用，且这个区别可见**：`durability()=="none"` 时租约是内存态，重启后什么都不剩。启动扫描仍会跑（`run_count=1`）但 `last_newly_expired=0`；`/health` 的 `durability` 字段让"没有接管发生"与"没有任何可持久化的东西可以接管"**看起来不一样**（裁定 2）。
 - **单进程部署假设（承接 S2 同一条）**：栅栏与接管扫描都按 `Dockerfile:81` 的无 `--workers` 前提写。多进程拓扑下"失去租约"的判定要重新论证（那时 `renew` 的失败可能只是网络抖动，直接栅栏会误杀在飞工作）。
 - **`takeover_interval_seconds` 被夹到下限 5s**（`app.py:1347`）：配置里写 0 不会退化成忙循环，只会变成 5 秒一扫。
+
+### S4 + S5 —— 凭证据开闸：降级为契约文档（分支 `feat/p2b-s4-s5-execution-plane-doc`，commit `e50ee542`，PR [#617](https://github.com/JameryW/XhsGrowthAgent/pull/617)）
+
+**定性**：裁定 1 把 S4 做成**证据依赖**的切片 —— 有「长任务占住编排进程」的可观测证据就移进程，没有就降级为文档 + 逐点分类清单。实测**拿不到**，所以本片交的不是迁移，而是**契约**：把执行平面的保证边界写成可读、且能被门禁钉住的东西。S5 本来就是这份文档，S4 的降级产出与它重合，故合并为一片（一片一个 PR）。
+
+**四条证据（逐条实测）**
+
+| # | 证据 | 位置 | 反驳了什么 |
+|---|---|---|---|
+| A | 34 条执行点逐行分类，长任务**全部**由 `asyncio.create_task` 起 | 文档 §6 全表（34/34 锚点逐行核实通过） | 「占住进程」的机制不存在：它们在 await 上跑，占的是 thread |
+| B | 「请求内同步跑完整条工作流」的路径**存在但非默认** | `workflow.py:822` `if req.async_mode:`、`:846` `else:` → `:850` `_run_graph_and_persist`；模型默认在 `workflow.py:502` | 唯一"真占住请求"的形状是可选路径，不是默认形状 |
+| C | 长任务时长有界，且界可静态读出 | 通用工具网 `tools/runtime/catalog.py:513` `timeout_s=120.0`；发布 `:92` `_PUBLISH_SAFETY_NET_S = 900.0`；Ripple `:82` `_RIPPLE_SAFETY_NET_S = 3600.0` | 「占用」的签名是**无界**；这里有界，且界都落在等外部上 |
+| D | 本机无真实运行样本 | `.xhs/checkpoints.sqlite` **0 行**；`history/*.json` 全是 21 字节测试残留 | 「实测占用」这一档证据拿不到（不假装有） |
+
+**改动表**（实测：2 新 2 改，+314/−0；既有代码零改动）
+
+| 文件 | +/− | 内容 |
+|---|---|---|
+| `docs/execution-plane.md` | **新 207 行** | §0 结论（四条证据 + 降级裁定）/ §1 三件套（租约·栅栏·接管）/ §2 保证与非保证 / §3 单进程现实 vs 文档拓扑 / §4 无 DB 语义 / §5 接管安全边界 / §6 34 条逐点分类 + 9 条接线点 / §7 边界之外 / §8 文档怎么防止腐烂 |
+| `tests/unit/scripts/test_docs_anchors.py` | **新 105 行 / 3 用例** | 抽出文档里被标记括住的表，逐行断言 token 逐字出现在 `file:line`；断言标记成对；断言行数下限（43 / 3）。**本仓首次有测试读 `docs/`**（此前无先例，已确认） |
+| `README.md` | +1 | 文档清单加一行入口 |
+| `README.zh-CN.md` | +1 | 同上 |
+
+**§7 —— 本片唯一的新结论（不是 S1–S3 的复述）**
+
+`_run_graph_and_persist`（`_runner.py:390`）是唯一取租约的地方（全仓 `start_lease(` 只在 `:418` 出现），它有 12 个调用点，S1–S3 的全部承诺落在这 12 条路径上。仓里另有**两个修复路径**直接写 checkpoint 且**不取租约**：
+
+- `workflow.py:2218` `async def _run_retry()`（ripple-retry）
+- `workflow.py:2947` `async def _run_publish_retry()`（publish-retry）
+
+后果是精确的，不是笼统的「不够健壮」：**它们没有租约行** ⇒ `expire_scan()` 永远看不到 ⇒ **接管扫描不可能接管它们**；而 `_run_retry` **连任务注册表都没进**（`:2302` 起了任务之后没有 `_runner._background_tasks[thread_id] = task`，对比 `:2991` 的 publish-retry 有）⇒ 进程重启后 `/recover` 也看不见它。于是这两个路径在重启时**既不会被迁移、也不会被接管** —— 而它们恰恰是「上一次没走完」时最可能被调用到的路径。
+
+**为什么只登记不修**：两种修法都会改变行为（改走统一入口会改相位推进与事件发射的时序；单独加租约会引入新的拒租分支与失败模式），而裁定 1 的闸门没开。修法按代价排序列在文档 §7 末尾，留给下一任务。
+
+**门禁**
+
+| 门禁 | 结果 |
+|---|---|
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | **520 files** already formatted（上一片 519，+1） |
+| `uv run mypy backend --python-version 3.12` | Success: no issues found in **207** source files |
+| `context_compiler_baseline.py --compare --drift-pct 5` | drift within threshold —— OK |
+| `scripts/gates/tool_runtime_gate.py` | catalogue coverage named by agents: 10 —— OK |
+| `pytest -q` | **3414 passed / 3 skipped**（基线 3411 ⇒ **+3**，恰好等于新文件的 3 条用例） |
+
+**突变自检 6/6（`survived=0`、`timeouts=0`、`anchor_failures=0`、`restore=OK`）**
+
+这个交付物的价值全在「它会红」，所以两个方向都覆盖：**文档说谎** 与 **代码位移**。
+
+| ID | 突变 | 击杀者 | 结果 |
+|---|---|---|---|
+| DA01 | 文档把 `analyst.py:287` 改成 `:288` | `test_every_published_anchor_still_points_at_its_token` | 1 failed |
+| DA02 | 文档把 token `# The gate.` 改成 `# The gate!` | 同上 | 1 failed |
+| DA03 | 删掉一个 `anchor-table:end` 标记 | `test_the_doc_is_here_and_its_marker_pairs_are_balanced` | 1 failed |
+| DA04 | 删掉 analyst 那一整行 | `test_every_published_anchor_still_points_at_its_token`（行数下限 43） | 1 failed |
+| DA05 | 把否定断言的锚点换成一个**真的含该 token** 的文件 | `test_every_published_absence_is_still_absent` | 1 failed |
+| DA06 | **真的往 `execution_leases.py` 顶部插一行**（源码位移） | `test_every_published_anchor_still_points_at_its_token` | 1 failed |
+
+每条都死在**预期的那条断言**上，`rc=1`（真测试失败，不是 `rc=4` 的用法错误 ⇒ 无假击杀）。两条 harness 侧观察：
+
+1. **DA03 只有标记配对那条抓住** —— 被删的结束标记后面还有第二个 `end`，非贪婪正则把两张表一起吞了，所以**行数下限（43）没有触发**。「标记配对」与「行数下限」覆盖的是两个不同失效面，缺一会漏。
+2. **只测文档自洽是不够的** —— DA06 是唯一「代码动、文档必须红」的例子，而它正是这份门禁存在的理由本身。
+
+harness 是本片新写的（6 条），沿用了 S3 硬化的五条：锚点前置批检（跑 step 0 之前）、逐条子进程 + 超时、收尾 `restore=OK` 哈希核验且核验函数**真的写回内容**、`ORIGINALS` 放模块级（`os._exit` 跳过 `finally`），外加一条**启动时拒绝脏树**（防止上一次崩溃留下的突变体被当成"原始版本"读进来）。
+
+**残留与诚实登记**
+
+- **门禁钉住「文档写了什么」，不钉「文档说对了什么」**：DA01/DA02/DA06 证明它能在**行号漂移**与**token 消失**时变红；它无法证明 §7 的推理是对的。这是**声明的**缺口 —— 那条推理的证据是 `grep`（全仓 `start_lease(` 一处、`workflow.py` 零处 `start_lease`），并且已作为**否定断言**进门禁表。
+- **§7 的两个绕过点没有行为测试**：本片不改它们，所以也没有为它们写测试。若下一任务修它们，测试要跟着来 —— 同 S3 的 lifespan 接线教训：**没测过的部分，突变报不出来**。
+- **`workflow.py:2302` 的「未注册」是用 `grep` 定的**（三个注册写点 `:440`/`:835`/`:2991`），不是运行时断言。同一判据被复制时的老纪律：真闸门补行为测试，只读形态可以只登记。
+- **本片新增了一条「文档即门禁」的样式，行数下限是精确值**（43 / 3）而不是宽松阈值：加行不红、**丢行必红** —— 后者是逐行检查看不见的失效面（丢的那行根本不在表里，无从检查）。
+- **单进程部署假设（承接 S2、S3 同一条）**：文档 §3 把「接管今天只在『新进程扫到旧进程留下的死行』这一种情形下真正做事」写成为部署形态的函数。多进程拓扑下这段要重写，而不是复用。
+- **`docs/**` 与 `tests/unit/scripts/` 的 EOL 都是 CRLF**：新写文件默认 LF，落盘后按目录惯例归一化（**先归一化再校验**，不要写「含 CRLF 就跳过」）。
