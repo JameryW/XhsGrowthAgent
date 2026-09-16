@@ -60,7 +60,7 @@
 
 | 切片 | 内容 | 风险 |
 |---|---|---|
-| **S1** | **Plan 的只读导出**：`Plan` / `PlanStep` 对象 + **穷举模板注册表**（`WorkflowMode` → 节点序列 / 依赖），由一个**只读**函数从 `build_graph()` 的边导出并与注册表**双向比对**。执行路径**零改动**（没有执行代码读它）。判据 = 结构比对门禁，照 `test_conditional_edge_wiring.py` 的手法 | 低 |
+| **S1** ✅ | **Plan 的只读导出**：`Plan` / `PlanStep` 对象 + **穷举模板注册表**（`WorkflowMode` → 入口 / 词表 / 排除边），由一个**只读**函数从 `build_graph()` 的边导出并与注册表**双向比对**。执行路径**零改动**（没有执行代码读它）。判据 = 结构比对门禁，照 `test_conditional_edge_wiring.py` 的手法。**已交付**（见本节末的 S1 小节） | 低 |
 | **S2** | **边来自 Plan**：`build_graph()` 的 18 条 `add_conditional_edges` 改由注册表/Plan 生成，**逐边等价**；靠现有结构门禁 + `test_routers.py` 钉住。入口路由（事实 4）是这一步的正题：目的地从"读不出的 `str`"变成"可读出的声明" | 中 |
 | **S3** | **Goal 是一等输入**：`/start` 的 26 键字面量 + `if workflow_mode == "brief"` 特例 → `Goal` → 编译；**11 个模式读取点收敛到一处**（事实 3），未知模式**拒绝**而不是静默按 trend | 中-高 |
 | **S4** | **`workflow.py` 分层**：7 个巨型端点（47% 行）按 api / application / runtime / artifacts / actions 拆；先立边界再挪代码，**纯搬移**、无行为变更 | 中 |
@@ -94,3 +94,67 @@
 1. **Plan 的粒度**：`PlanStep` 应该对齐**节点**（`trend_scout`、`content_strategist`…）还是对齐**能力**（P1c 的 ToolSpec capability）？前者与今天的 `builder.branches` 一一对应、S1 可零风险导出；后者才通向"由 Goal 编译"，但会引入第二套命名。S1 先按**节点**做（可导出即可验证），把能力粒度留到 S3 再定。
 2. **未知 Goal / 未知模式的行为**：今天静默按 `trend`（事实 3、5）。改成拒绝会**改变行为**（新 4xx 路径），需要一次明确的裁定；本片默认在 S3 里按"拒绝 + 具名错误"处理。
 3. **S5 是否应该是文档**：如果 S1–S4 暴露出"确实需要非模板图"的证据，S5 就不再是文档，而是那条路径本身（P2b 的 S4 就是这种形状）。**按证据走，不按计划走。**
+
+## S1 交付 —— Plan 的只读导出 + 穷举模板注册表
+
+**交付物**：`backend/graph/plan.py`（478 行）+ `tests/unit/graph/test_plan_registry.py`（304 行 / 24 用例）。
+
+### 做了什么
+
+1. **`Plan` / `PlanStep`**：一份计划 = 某个模式下这次 run 可能访问的节点，以及它们之间的边。
+2. **`PLAN_TEMPLATES: dict[WorkflowMode, ModeTemplate]`** —— 穷举注册表，每个模式声明 `entry`（`orchestrator_router` 对一次新 run 给出的起点）、`destinations`（该模式下它能给出的**全部**答案）、`excludes`（图里有、但该模式**走不到**的边，每条注明是哪个 router 决定的）。`get_plan_template` 对未知模式 **`raise KeyError`** —— 照 `RETRY_POLICIES`（`error_handling.py:23`）与 `TAKEOVER_HAZARDS`（`takeover_safety.py:56`）的先例，默认值会替「没人分类过」的模式答一个值。
+3. **`export_plan(mode)`** —— 只读地从 `build_graph()` 导出；`PlanExportError` 而不是产出一份丢掉解析不了的边的计划。
+4. **`plan_registry_complaints()`** —— 9 类双向投诉，空 dict = 一致。
+5. **执行路径零改动**：`build_graph()` 一行未改，没有 router 引用它，没有任何生产代码 import 它。
+
+### ★ 与票面 S1 行文的偏离（登记，不是悄悄改）
+
+票面写「`WorkflowMode` → **节点序列 / 依赖**」。实现改成「`entry` + `destinations` + `excludes`」，**节点集由图导出**而不是手写节点表。
+
+理由是本片实测的一条事实：**图是 mode-blind 的**。从 `orchestrator` 起 24/24 节点可达；从两个模式的入口起各 **22** 个，而且两个集合**完全相同**（`reachable_nodes()`；差的 2 个是 `orchestrator`/`analyst`，因为回到根的唯一入边来自 `analyst` 自己，与模式无关）。⇒ 模式归属**不可能**从图导出，只能**声明**；而手写 24 个节点的归属是一份**没有任何东西能佐证**的声明。改成「入口 + orchestrator 词表 + 逐条排除边」之后，声明面缩到很小，且**每一条都能被现成的行为测试佐证**：三个 ripple router 与两个 gate 的模式分支已有测试（`tests/unit/graph/test_routers.py:601`/`:633`/`:669`、`tests/unit/test_brief_mode_status.py:47`/`:80`），入口则由本片新增的用例**真的去调** `orchestrator_router` 核验。
+
+**附带收益**：`orchestrator_router` 的 **brief 分支此前没有任何测试**（`brief_analyzer` 只在三个 ripple router 与节点层被断言过）。`test_the_entry_is_what_the_router_answers_for_an_idle_run` 现在覆盖它。
+
+### ★ 本片找到的缺陷（登记不修）
+
+**`orchestrator_router` 在 brief 模式、`phase=creating` 时返回 `"copywriter"`（`routers.py:93`），而 `builder.py:168-174` 的 orchestrator 路径映射没有这个键。**
+
+`WorkflowPhase.CREATING` 不是终态（`_check_terminal` 对它返回 `None`），所以这条分支确实可达；一旦可达，langgraph 解析不出目的地 —— 这正是 P1d 记录过的那种失败（`builder.py:194-200` 的注释：router 返回值在 path_map 里查不到 → `KeyError`，而事故恰好发生在没人看的那条路径上）。它今天**潜伏**的唯一原因是：没有任何实测路径会带着 `phase=creating` 走到 `orchestrator`。
+
+**为什么只登记不修**：修它要往 orchestrator 的映射里加一个键，那是**改变行为**（决定了 brief 模式在 `phase=creating` 该跑哪个节点），而 S1 的契约是零改动。所以记在 `UNRESOLVED_ROUTER_VALUES`，并配一条**反向**断言：映射一旦补上，`plan_registry_complaints()` 会报 `exemption_no_longer_applies`、`test_state_graph_and_registry_agree` 当场红 ⇒ 强制显式删掉这条豁免，而不是让它变成长在树上的过期注释。
+
+### ★ 另一处实测不对称：路径映射的 key 不是目的地
+
+`Branch.ends` 是**路径映射本身**（`{router 答案: 节点}`），读成序列拿到的是**答案**，不是**目的地**。全图 18 条分支里**恰好一行**两者不同：`evaluator_gate` 的 `"publisher" → publish_gate`（`builder.py:394`）。
+
+既有接线测试读的是 key（`test_conditional_edge_wiring.py:115`，函数名叫 `test_each_target_is_a_registered_node_or_the_end_sentinel`）—— 对它检查的东西是**对的**（router 的答案必须是 key），但**目的地这一侧从未被校过**。于是一个按 key 导出的实现会在 18 条分支里的 17 条上看起来完全正常，却在第 18 条上：① 发表一条图走不了的边（`evaluator_gate → publisher`，**绕过人工发布授权闸门**）；② 让 `publish_gate` 失去唯一的入边，从而**整个掉出计划**。
+
+### 判据（票面 S1 行）如何被满足
+
+| 票面判据 | 本片怎么落 |
+|---|---|
+| 注册表 ↔ 图**双向**比对 | 正向 3 类（`entry_not_a_graph_node` / `excluded_hop_not_in_graph` / `decider_is_not_the_router_at_that_source`）+ 词表双向 2 类（声明了但路由器不答 / 路由器答了但映射解析不出）+ 反向 2 类（`hop_dead_in_every_mode` / `node_dead_in_every_mode`）+ 豁免 2 类（未登记的不可解答案 / 过期豁免） |
+| 注册表声明的每个节点必须在图里 | `entry_not_a_graph_node`；并且 `export_plan` 同时 `raise PlanExportError`（拒绝而不产出残缺计划 —— 「默认分支只许拒绝、不许产出」） |
+| 图里每条边必须在注册表里有归属 | `hop_dead_in_every_mode`：一条**没有任何模式能走**的边 = 注册表漏了一块 |
+| **一条非平凡用例证明检查器不是空转** | 8 条「检查器能发现」的用例（`monkeypatch.setitem` 注入做过手脚的模板），加 1 条**非空转核心**：`test_evaluator_gate_leads_to_the_publish_gate` 先断言图里的 key 确实是 `"publisher"`，再断言导出的是 `publish_gate` —— 按 key 读的实现在这条上必红 |
+
+### 门禁与自检
+
+| 项 | 结果 |
+|---|---|
+| `ruff check .` | 干净 |
+| `ruff format --check .` | **522 files** already formatted（基线 520 + 本片 2 个新文件） |
+| `mypy backend --python-version 3.12` | **208** source files，no issues（基线 207 + `plan.py`） |
+| `context_compiler_baseline.py --compare --drift-pct 5` | drift within threshold |
+| `tool_runtime_gate.py` | P1c-S5 tool runtime: OK |
+| `pytest -q` | **3438 passed, 3 skipped**（基线 3414 + 24 个新用例；新用例数 **恒等于** pass 增量） |
+| 突变自检 | **22/22 击杀、0 存活**、restore=OK；1 条（M14 `|=` vs last-wins）实测为**等价突变**并登记理由 |
+
+**突变自检的两个中间发现**（都是"存活≠测试弱"那一类的正确处置）：
+
+- **M11 存活两次，最后查出是死代码。** 它删掉 `followed_by` 的 `dst in node_set` 过滤。第二次存活才是结论：这个条件**永远为真**，因为计划本身就是"从根经 kept 边可达的集合"，所以计划节点的一条 kept 出边必然落在计划内（或落在 `__end__`）。它是一段**看起来在守不变量、其实守不到任何东西**的代码 ⇒ **删掉条件**，而不是为它补测试（不变量本身仍由 `test_the_export_never_invents_a_hop_the_graph_lacks` 断言）。`preceded_by` 的同名过滤**保留** —— M10 杀掉了它，说明它是承重的（前驱可以落在计划外：trend 模式下 `viral_matcher` 的另一条入边来自它到不了的 `brief_gate`）。
+- **M14 是等价突变。** trend 的计划（22）是 brief 的（24）的**真子集**，所以 `|=` 与 last-wins 得到同一个集合；而这条包含关系本身被 `test_the_two_modes_do_not_get_the_same_plan` 钉住 ⇒ **改突变不改测试**，登记理由。
+
+### S1 明确未做
+
+没有一条边来自 Plan；`build_graph()` 未改一行；没有任何生产代码 import 这个模块；`_NON_LITERAL_ROUTERS` 仍然是 `{"orchestrator_router"}`（收窄它是 S2 的正题）。
