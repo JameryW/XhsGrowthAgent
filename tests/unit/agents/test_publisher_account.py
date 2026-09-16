@@ -35,9 +35,9 @@ def _browser_settings(monkeypatch):
 
 
 def _mock_client(post_id="p1"):
-    """Mock XHSClient with async publish_post/close."""
+    """A stub XHSPublisher: the browser layer is the only thing faked here."""
     client = MagicMock()
-    client.publish_post = AsyncMock(
+    client.publish_note = AsyncMock(
         return_value={
             "post_id": post_id,
             "post_url": "u",
@@ -50,10 +50,33 @@ def _mock_client(post_id="p1"):
 
 
 def _patch_client(monkeypatch, client):
-    """Patch XHSClient to return `client`; returns a mock capturing call kwargs."""
-    ctor = MagicMock(side_effect=lambda **kw: client)
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", ctor)
-    return ctor
+    """Stub the publisher factory; returns the client carrying what it was built with.
+
+    Stubbing ``_get_publisher`` rather than the tool or the Gateway is what
+    keeps the whole capability path (payload normalisation, catalog lookup,
+    verdict reporting) under test -- only the browser is fake.
+    """
+    seen: dict[str, str] = {}
+    calls: list[str] = []
+
+    def _factory(cdp_endpoint: str = ""):
+        seen["cdp_endpoint"] = cdp_endpoint
+        calls.append(cdp_endpoint)
+        return client
+
+    monkeypatch.setattr("backend.tools.xhs.publisher._get_publisher", _factory)
+    client.cdp_seen = seen
+    client.factory_calls = calls
+    return client
+
+
+def _no_publisher(monkeypatch):
+    """Fail loudly if anything tries to reach the browser layer."""
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("this path must never build a publisher")
+
+    monkeypatch.setattr("backend.tools.xhs.publisher._get_publisher", _boom)
 
 
 def _mock_history(monkeypatch):
@@ -81,7 +104,7 @@ def _mock_cdp_endpoint(monkeypatch, endpoint=""):
 
 @pytest.mark.asyncio
 async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, monkeypatch):
-    """account_id in publish_options → per-account CDP endpoint is passed to XHSClient."""
+    """account_id in publish_options → per-account CDP endpoint reaches the browser layer."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
     _mock_account_active(monkeypatch, is_active=True)
@@ -91,10 +114,11 @@ async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, 
 
     result = await PublisherAgent().execute(state, store=mock_store)
 
-    kwargs = m_client.call_args.kwargs
-    assert kwargs["cookie"] == ""
-    assert kwargs["user_id"] == ""
-    assert kwargs["cdp_endpoint"] == "http://127.0.0.1:9225"
+    # The endpoint is per-account, and it is what selects the browser profile.
+    assert m_client.cdp_seen["cdp_endpoint"] == "http://127.0.0.1:9225"
+    # ...and the account itself travels with it -- the platform layer needs it
+    # for per-account bookkeeping (P2a-S2's missing writer).
+    assert client.publish_note.await_args.kwargs["account_id"] == "acc_1"
     assert result["publish_result"]["post_id"] == "p1"
 
 
@@ -111,10 +135,12 @@ async def test_falls_back_to_global_when_no_account(_browser_settings, mock_stor
 
     await PublisherAgent().execute(state, store=mock_store)
 
-    kwargs = m_client.call_args.kwargs
-    assert kwargs["cookie"] == ""
-    assert kwargs["user_id"] == ""
-    assert kwargs["cdp_endpoint"] == "http://global:9223"
+    assert m_client.cdp_seen["cdp_endpoint"] == "http://global:9223"
+    # No account in publish_options -> the state-level account_id still reaches
+    # the platform layer.  Only when neither is set does it get "" -- never
+    # "default", which would move unattributed posts into an "account:default"
+    # bucket and silently change a guardrail that works today.
+    assert client.publish_note.await_args.kwargs["account_id"] == "test_account"
 
 
 @pytest.mark.asyncio
@@ -137,25 +163,23 @@ async def test_generates_text_cover_when_no_images(_browser_settings, mock_store
     assert kwargs["title"] == "t"
     assert kwargs["key_points"] == ["p1", "p2", "p3"]
     assert kwargs["color_palette"] == ["#FFE4E1", "#FFDAB9", "#FFFACD"]
-    post = client.publish_post.await_args.args[0]
-    assert post.image_paths == ["/tmp/generated-cover.png"]
+    submit = client.publish_note.await_args.kwargs
+    assert submit["image_paths"] == ["/tmp/generated-cover.png"]
 
 
 @pytest.mark.asyncio
 async def test_missing_cdp_endpoint_when_account_unconfigured(
     _browser_settings, mock_store, monkeypatch
 ):
-    """Selected account has no CDP endpoint → fail fast with no XHSClient built."""
+    """Selected account has no CDP endpoint → fail fast without ever building a publisher."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_empty"})
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="")
     monkeypatch.setattr("backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "")
-    m_client = MagicMock()
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", m_client)
+    _no_publisher(monkeypatch)
 
     result = await PublisherAgent().execute(state, store=mock_store)
 
-    m_client.assert_not_called()
     pr = result["publish_result"]
     assert pr["status"] == "failed"
     assert pr["error_type"] == "missing_cdp_endpoint"
@@ -169,15 +193,14 @@ async def test_missing_cdp_endpoint_when_account_unconfigured(
 
 @pytest.mark.asyncio
 async def test_inactive_account_fails_fast(_browser_settings, mock_store, monkeypatch):
-    """Selected account is_active=False → fail fast, no XHSClient built."""
+    """Selected account is_active=False → fail fast, no publisher built."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_off"})
     _mock_account_active(monkeypatch, is_active=False)
-    m_client = MagicMock()
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", m_client)
+    _no_publisher(monkeypatch)
 
+    # must not attempt to publish with a deactivated account
     result = await PublisherAgent().execute(state, store=mock_store)
 
-    m_client.assert_not_called()  # must not attempt to publish with a deactivated account
     pr = result["publish_result"]
     assert pr["status"] == "failed"
     assert pr["error_type"] == "account_inactive"
@@ -222,20 +245,18 @@ async def test_state_dry_run_overrides_publish_options(mock_store, monkeypatch):
     state["dry_run"] = True  # top-level dry_run from /start
     _mock_history(monkeypatch)
 
-    # If the guard fails, the publisher would try to construct XHSClient and
+    # If the guard fails, the agent would try to build a publisher and
     # call get_account — we mock them to ensure the test fails loudly if the
     # real-publish branch is reached.
     get_account_mock = AsyncMock(return_value=MagicMock(is_active=True))
     monkeypatch.setattr("backend.db.accounts.get_account", get_account_mock)
-    client = _mock_client()
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", lambda **kw: client)
+    _no_publisher(monkeypatch)
 
     result = await PublisherAgent().execute(state, store=mock_store)
 
     assert result["publish_result"]["status"] == "mock_published"
     # Real-publish branch must NOT have been entered
     get_account_mock.assert_not_awaited()
-    client.publish_post.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -248,9 +269,9 @@ async def test_selected_account_expired_cookie_classified(
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9225")
 
     client = MagicMock()
-    client.publish_post = AsyncMock(side_effect=RuntimeError("cookie expired, login required"))
+    client.publish_note = AsyncMock(side_effect=RuntimeError("cookie expired, login required"))
     client.close = AsyncMock()
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", lambda **kw: client)
+    _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
     result = await PublisherAgent().execute(state, store=mock_store)

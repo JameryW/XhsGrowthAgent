@@ -15,8 +15,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.tools.publisher")
 
 
-def _get_publisher() -> XHSPublisher:
-    """获取 XHSPublisher 实例"""
+def _get_publisher(cdp_endpoint: str = "") -> XHSPublisher:
+    """获取 XHSPublisher 实例.
+
+    ``cdp_endpoint`` 为空时回落到全局配置 —— 这就是控制面路径（P2a-S3 的
+    Action Executor）今天的做法，不要动它。主链会**按账号**解析出 endpoint
+    （``get_account_cdp_endpoint``）并显式传入：多账号发布靠这个参数区分浏览器
+    profile，把全局值写死在这里会让多账号发布静默回到第一个账号的登录态。
+    """
     from backend.config.settings import Settings
     from backend.services.xhs_publisher import XHSPublisher
 
@@ -24,7 +30,7 @@ def _get_publisher() -> XHSPublisher:
     return XHSPublisher(
         cookie="",
         headless=False,
-        cdp_endpoint=settings.platform.cdp_endpoint,
+        cdp_endpoint=(cdp_endpoint or "").strip() or settings.platform.cdp_endpoint,
     )
 
 
@@ -40,6 +46,7 @@ async def xhs_publisher(
     is_private: bool = False,
     account_id: str = "",
     idempotency_key: str = "",
+    cdp_endpoint: str = "",
 ) -> dict[str, Any]:
     """发布小红书笔记.
 
@@ -53,6 +60,8 @@ async def xhs_publisher(
         scheduled_time: 定时发布时间
         is_private: 是否仅自己可见
         account_id: 发布所属账号（用于按账号记账的发布冷却）
+        cdp_endpoint: 目标浏览器 profile 的 CDP 地址。留空 = 用全局配置；
+            主链按账号解析后显式传入（多账号发布靠它）
         idempotency_key: 请求级幂等键。**本工具不用它去重**——它是运行时
             重试护栏的输入（见 ``RetryPolicy.requires_idempotency_key``），
             以及运营排查用的关联 id；内容级去重由发布主链的
@@ -78,7 +87,7 @@ async def xhs_publisher(
         image_paths = []
     logger.info(f"Publishing note: {title}")
 
-    publisher = _get_publisher()
+    publisher = _get_publisher(cdp_endpoint)
     try:
         result = await publisher.publish_note(
             title=title,

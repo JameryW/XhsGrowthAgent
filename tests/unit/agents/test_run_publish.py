@@ -42,7 +42,7 @@ def _browser_settings(monkeypatch):
 
 def _mock_client(post_id="p1"):
     client = MagicMock()
-    client.publish_post = AsyncMock(
+    client.publish_note = AsyncMock(
         return_value={
             "post_id": post_id,
             "post_url": "u",
@@ -55,9 +55,25 @@ def _mock_client(post_id="p1"):
 
 
 def _patch_client(monkeypatch, client):
-    ctor = MagicMock(side_effect=lambda **kw: client)
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", ctor)
-    return ctor
+    """Stub only the browser layer; the tool, the Gateway and the catalog all run.
+
+    Patching the publisher *factory* (rather than the Gateway or the tool) is
+    what makes these tests exercise the real capability path: ``xhs.publish``
+    still normalises its own payload and still reports its verdict through
+    ``DomainOutcome``, so a contract change breaks here instead of in prod.
+    """
+    seen: dict[str, str] = {}
+    calls: list[str] = []
+
+    def _factory(cdp_endpoint: str = ""):
+        seen["cdp_endpoint"] = cdp_endpoint
+        calls.append(cdp_endpoint)
+        return client
+
+    monkeypatch.setattr("backend.tools.xhs.publisher._get_publisher", _factory)
+    client.cdp_seen = seen
+    client.factory_calls = calls
+    return client
 
 
 def test_resolve_cdp_endpoint_uses_env_when_settings_attr_missing(monkeypatch):
@@ -97,7 +113,7 @@ def _mock_cdp_endpoint(monkeypatch, endpoint=""):
 
 @pytest.mark.asyncio
 async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, monkeypatch):
-    """account_id in publish_options → per-account CDP endpoint passed to XHSClient."""
+    """account_id in publish_options → per-account CDP endpoint reaches the tool."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
     _mock_account_active(monkeypatch)
@@ -107,9 +123,7 @@ async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, 
 
     result = await run_publish(state, store=mock_store)
 
-    kwargs = m_client.call_args.kwargs
-    assert kwargs["cookie"] == ""
-    assert kwargs["user_id"] == ""
+    kwargs = m_client.cdp_seen
     assert kwargs["cdp_endpoint"] == "http://127.0.0.1:9225"
     assert result["publish_result"]["post_id"] == "p1"
 
@@ -127,9 +141,7 @@ async def test_falls_back_to_global_when_no_account(_browser_settings, mock_stor
 
     await run_publish(state, store=mock_store)
 
-    kwargs = m_client.call_args.kwargs
-    assert kwargs["cookie"] == ""
-    assert kwargs["user_id"] == ""
+    kwargs = m_client.cdp_seen
     assert kwargs["cdp_endpoint"] == "http://global:9223"
 
 
@@ -137,7 +149,7 @@ async def test_falls_back_to_global_when_no_account(_browser_settings, mock_stor
 async def test_per_account_cdp_endpoint_passed_to_client(
     _browser_settings, mock_store, monkeypatch
 ):
-    """Selected account with a cdp_port → per-account endpoint passed to XHSClient,
+    """Selected account with a cdp_port → per-account endpoint reaches the tool,
     overriding the global _resolve_cdp_endpoint result."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
@@ -148,7 +160,7 @@ async def test_per_account_cdp_endpoint_passed_to_client(
 
     await run_publish(state, store=mock_store)
 
-    kwargs = m_client.call_args.kwargs
+    kwargs = m_client.cdp_seen
     assert kwargs["cdp_endpoint"] == "http://127.0.0.1:9223"
 
 
@@ -170,13 +182,13 @@ async def test_per_account_empty_endpoint_falls_back_to_global(
 
     await run_publish(state, store=mock_store)
 
-    kwargs = m_client.call_args.kwargs
+    kwargs = m_client.cdp_seen
     assert kwargs["cdp_endpoint"] == "http://global:9223"
 
 
 @pytest.mark.asyncio
 async def test_missing_cdp_endpoint_returns_failed(_browser_settings, mock_store, monkeypatch):
-    """Selected account without CDP endpoint → fail fast, no XHSClient built."""
+    """Selected account without CDP endpoint → fail fast, no publisher built."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_empty"})
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="")  # no per-account CDP profile
@@ -185,7 +197,7 @@ async def test_missing_cdp_endpoint_returns_failed(_browser_settings, mock_store
         lambda _s: "",  # no global CDP either
     )
     m_client = MagicMock()
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", m_client)
+    monkeypatch.setattr("backend.tools.xhs.publisher._get_publisher", lambda *a, **kw: m_client)
 
     result = await run_publish(state, store=mock_store)
 
@@ -210,9 +222,7 @@ async def test_cdp_endpoint_proceeds_with_empty_cookie(_browser_settings, mock_s
 
     result = await run_publish(state, store=mock_store)
 
-    kwargs = m_client.call_args.kwargs
-    assert kwargs["cookie"] == ""
-    assert kwargs["user_id"] == ""
+    kwargs = m_client.cdp_seen
     assert kwargs["cdp_endpoint"] == "http://127.0.0.1:9223"
     assert result["publish_result"]["post_id"] == "p_cdp"
 
@@ -225,9 +235,9 @@ async def test_classifies_auth_error(_browser_settings, mock_store, monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
 
     client = MagicMock()
-    client.publish_post = AsyncMock(side_effect=RuntimeError("cookie expired, login required"))
+    client.publish_note = AsyncMock(side_effect=RuntimeError("cookie expired, login required"))
     client.close = AsyncMock()
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", lambda **kw: client)
+    monkeypatch.setattr("backend.tools.xhs.publisher._get_publisher", lambda *a, **kw: client)
     _mock_history(monkeypatch)
 
     result = await run_publish(state, store=mock_store)
@@ -240,18 +250,18 @@ async def test_classifies_auth_error(_browser_settings, mock_store, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_preserves_publish_service_error(_browser_settings, mock_store, monkeypatch):
-    """publish_post returning a platform error keeps error/recovery in state."""
+    """publish_note returning a platform error keeps error/recovery in state."""
 
     state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
 
     client = MagicMock()
-    client.publish_post = AsyncMock(
+    client.publish_note = AsyncMock(
         return_value={"post_id": "", "status": "failed", "error": "未绑定手机号"}
     )
     client.close = AsyncMock()
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", lambda **kw: client)
+    monkeypatch.setattr("backend.tools.xhs.publisher._get_publisher", lambda *a, **kw: client)
     _mock_history(monkeypatch)
 
     result = await run_publish(state, store=mock_store)
@@ -279,8 +289,8 @@ async def test_never_honors_dry_run(_browser_settings, mock_store, monkeypatch):
 
     result = await run_publish(state, store=mock_store)
 
-    # Real publish ran (publish_post awaited), not the mock path
-    client.publish_post.assert_awaited_once()
+    # Real publish ran (publish_note awaited), not the mock path
+    client.publish_note.assert_awaited_once()
     assert result["publish_result"]["post_id"] == "p_real"
     assert result["publish_result"]["status"] != "mock_published"
 
@@ -303,7 +313,7 @@ async def test_records_history_on_success_only(_browser_settings, mock_store, mo
 
     # Now a failed publish (empty post_id) → record NOT called
     client_fail = MagicMock()
-    client_fail.publish_post = AsyncMock(return_value={"post_id": "", "status": "failed"})
+    client_fail.publish_note = AsyncMock(return_value={"post_id": "", "status": "failed"})
     client_fail.close = AsyncMock()
     _patch_client(monkeypatch, client_fail)
     hist.return_value.record.reset_mock()
@@ -325,7 +335,7 @@ async def test_records_history_when_published_without_post_id(
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
     # post_id="" but status="published" — real-world success shape
     client = _mock_client(post_id="")
-    client.publish_post = AsyncMock(
+    client.publish_note = AsyncMock(
         return_value={
             "post_id": "",
             "post_url": "https://creator.xiaohongshu.com/publish/success",
@@ -355,8 +365,8 @@ async def test_ignores_past_suggested_timing(_browser_settings, mock_store, monk
 
     await run_publish(state, store=mock_store)
 
-    post = client.publish_post.await_args.args[0]
-    assert post.scheduled_time == ""
+    submit = client.publish_note.await_args.kwargs
+    assert submit["scheduled_time"] == ""
 
 
 # ── P0-W4: idempotency key + failed-vs-unknown separation ─────────────────────
@@ -378,7 +388,7 @@ async def test_timeout_after_submit_action_marks_unknown_not_failed(_browser_set
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
 
     client = MagicMock()
-    client.publish_post = AsyncMock(side_effect=TimeoutError("page load timed out"))
+    client.publish_note = AsyncMock(side_effect=TimeoutError("page load timed out"))
     client.close = AsyncMock()
     _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
@@ -388,7 +398,13 @@ async def test_timeout_after_submit_action_marks_unknown_not_failed(_browser_set
     pr = result["publish_result"]
     assert pr["status"] == "unknown"
     assert isinstance(pr["recovery"], dict)  # spec: recovery must stay a dict
-    assert "publish_post" in str(pr["error"]) or "timed out" in str(pr["error"])
+    # The wording of a timeout now belongs to the runtime: the Gateway is what
+    # measured it and what names it ("timeout after <n>s").  The method name
+    # used to appear here only because the exception text was passed through
+    # verbatim.  What must NOT have changed is the verdict -- status "unknown"
+    # and error_type "publish_result_unknown" -- since that is what keeps the
+    # duplicate-post guard armed.
+    assert "timeout" in str(pr["error"]).lower()
 
 
 @pytest.mark.asyncio
@@ -398,7 +414,7 @@ async def test_non_timeout_error_still_marks_failed(_browser_settings, monkeypat
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     client = MagicMock()
-    client.publish_post = AsyncMock(side_effect=RuntimeError("boom"))
+    client.publish_note = AsyncMock(side_effect=RuntimeError("boom"))
     client.close = AsyncMock()
     _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
@@ -415,7 +431,7 @@ async def test_second_real_publish_of_same_content_blocked(_browser_settings, mo
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     client = _mock_client("p_once")
-    ctor = _patch_client(monkeypatch, client)
+    _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
     store = _real_store()
 
@@ -427,9 +443,9 @@ async def test_second_real_publish_of_same_content_blocked(_browser_settings, mo
     assert second["publish_result"]["status"] == "failed"
     assert second["publish_result"]["error_type"] == "duplicate_publish_blocked"
     assert isinstance(second["publish_result"]["recovery"], dict)
-    # publish_post only ran for the first attempt (one client construction).
-    client.publish_post.assert_awaited_once()
-    assert ctor.call_count == 1
+    # publish_note only ran for the first attempt (one publisher built).
+    client.publish_note.assert_awaited_once()
+    assert len(client.factory_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -450,7 +466,7 @@ async def test_unknown_record_blocks_second_publish(_browser_settings, monkeypat
 
     result = await run_publish(state, store=store)
     assert result["publish_result"]["error_type"] == "duplicate_publish_blocked"
-    client.publish_post.assert_not_awaited()
+    client.publish_note.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -474,7 +490,7 @@ async def test_force_publish_bypasses_idempotency_guard(_browser_settings, monke
 
     result = await run_publish(state, store=store)
     assert result["publish_result"]["post_id"] == "p_forced"
-    client.publish_post.assert_awaited_once()
+    client.publish_note.assert_awaited_once()
 
 
 def test_publish_id_is_deterministic_within_window():
@@ -507,8 +523,11 @@ async def test_dry_run_top_level_guard_is_never_bypassed(monkeypatch):
     fake.platform.use_browser = True
     fake.platform.cdp_endpoint = ""
     monkeypatch.setattr("backend.config.settings.Settings", lambda: fake)
-    client = MagicMock()
-    monkeypatch.setattr("backend.services.xhs_client.XHSClient", client)
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("the dry-run path must never build a publisher")
+
+    monkeypatch.setattr("backend.tools.xhs.publisher._get_publisher", _boom)
 
     state = {
         "session_id": "s",
@@ -519,9 +538,9 @@ async def test_dry_run_top_level_guard_is_never_bypassed(monkeypatch):
         "content_plan": {},
         "publish_options": {"dry_run": False},  # user tries to flip it
     }
+    # _boom above is the assertion: building a publisher at all would raise.
     result = await PublisherAgent().execute(state, store=AsyncMock())
 
-    client.assert_not_called()
     assert result["publish_result"]["status"] == "mock_published"
 
 
@@ -632,7 +651,7 @@ def _browser_pre_submit_failure() -> dict:
 
 def _client_returning(payload: dict):
     client = MagicMock()
-    client.publish_post = AsyncMock(return_value=payload)
+    client.publish_note = AsyncMock(return_value=payload)
     client.close = AsyncMock()
     return client
 
@@ -670,7 +689,7 @@ async def test_browser_timeout_after_click_marks_unknown_and_keeps_guard(
     _patch_client(monkeypatch, client2)
     second = await run_publish(state, store=store)
     assert second["publish_result"]["error_type"] == "duplicate_publish_blocked"
-    client2.publish_post.assert_not_awaited()
+    client2.publish_note.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -695,16 +714,26 @@ async def test_browser_definite_failure_releases_guard(_browser_settings, monkey
     _patch_client(monkeypatch, client2)
     second = await run_publish(state, store=store)
     assert second["publish_result"].get("post_id") == "p_retry_ok"
-    client2.publish_post.assert_awaited_once()
+    client2.publish_note.assert_awaited_once()
 
 
 def test_side_effecting_submit_has_no_generic_auto_retry():
     """P0-W3/F2: a framework/tenacity auto-retry around the real submit can
-    DOUBLE-POST on a timeout. Only pre-submit/read phases may auto-retry."""
-    from backend.services.xhs_client import XHSClient
+    DOUBLE-POST on a timeout. Only pre-submit/read phases may auto-retry.
 
-    assert getattr(XHSClient.publish_post, "retry", None) is None
-    assert not hasattr(XHSClient.publish_post, "retry_with")
+    The submit is the ``xhs.publish`` tool now (P2a-S4a), so the guard is
+    checked on the tool *and* on the catalogue: a tenacity decoration on the
+    function is the shape this test always looked for, and ``max_attempts``
+    is the runtime's own answer to the same question. See
+    ``backend/tools/runtime/catalog.py`` for why the key alone is not
+    enough to turn retry on.
+    """
+    from backend.tools.runtime.catalog import build_registry
+    from backend.tools.xhs.publisher import xhs_publisher
+
+    assert getattr(xhs_publisher, "retry", None) is None
+    assert not hasattr(xhs_publisher, "retry_with")
+    assert build_registry().spec("xhs.publish").retry_policy.max_attempts == 1
 
 
 # ── P0-W4 round 2 (F3): force_publish is one-shot ─────────────────────────────
@@ -749,4 +778,117 @@ async def test_force_publish_is_consumed_and_guard_rearmed(_browser_settings, mo
 
     second = await run_publish(state_b, store=store)
     assert second["publish_result"]["error_type"] == "duplicate_publish_blocked"
-    client_b.publish_post.assert_not_awaited()
+    client_b.publish_note.assert_not_awaited()
+
+
+# ── P2a-S4a: the mainline submit goes through the Tool Gateway ───────────────
+
+
+def test_publisher_declares_its_capability():
+    """The P1c-S5 gate reads ``tool_capabilities`` with ``ast.Assign``.
+
+    An annotated class attribute is an ``ast.AnnAssign`` and is invisible to
+    it, which fails the gate with UNDECLARED -- hence the deliberate absence
+    of a type annotation on the declaration.
+    """
+    from backend.agents.publisher import PublisherAgent
+    from backend.tools.runtime.catalog import build_registry
+
+    assert PublisherAgent.tool_capabilities == ("xhs.publish",)
+    assert build_registry().spec("xhs.publish").capability == "xhs.publish"
+
+
+@pytest.mark.asyncio
+async def test_real_publish_reaches_the_gateway_with_the_whole_payload(
+    _browser_settings, monkeypatch
+):
+    """One Gateway invocation of "xhs.publish", carrying account + CDP + key.
+
+    This is the assertion the orphan capability could not make before: the
+    mainline used to build its own ``XHSClient``, so nothing checked that the
+    account id ever reached the platform layer (P2a-S2's defect).
+    """
+    from backend.agents.publisher import compute_publish_id
+    from backend.tools.runtime.gateway import ToolGateway
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_gw"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9226")
+    _patch_client(monkeypatch, _mock_client("p_gw"))
+    _mock_history(monkeypatch)
+
+    captured: list[tuple[str, dict, str]] = []
+    real_invoke = ToolGateway.invoke
+
+    async def _spy(self, capability, payload=None, *, thread_id="", granted_scopes=None):
+        captured.append((capability, dict(payload or {}), thread_id))
+        return await real_invoke(
+            self, capability, payload, thread_id=thread_id, granted_scopes=granted_scopes
+        )
+
+    monkeypatch.setattr(ToolGateway, "invoke", _spy)
+
+    result = await run_publish(state, store=_real_store())
+
+    assert result["publish_result"]["status"] == "published"
+    assert [capability for capability, _, _ in captured] == ["xhs.publish"]
+    _, payload, thread_id = captured[0]
+    assert payload["account_id"] == "acc_gw"
+    assert payload["cdp_endpoint"] == "http://127.0.0.1:9226"
+    assert payload["idempotency_key"] == compute_publish_id(state)
+    assert payload["title"] == "t"
+    # The thread id is how a lost answer ("unknown") is traced back to the run
+    # that submitted it, so it has to travel with the invocation.
+    assert thread_id == "test_session"
+
+
+@pytest.mark.asyncio
+async def test_unattributed_publish_sends_an_empty_account_id(_browser_settings, monkeypatch):
+    """No account anywhere -> the platform layer gets "", never "default".
+
+    P2a-S2 pinned a per-account publish cooldown that had no production
+    writer.  Wiring the mainline in (S4a) must not "fix" that by inventing an
+    account: handing "default" to the platform layer files every unattributed
+    post under "account:default", which silently changes the meaning of a
+    guardrail that works today.  The idempotency *record* keeps "default" --
+    it only needs a stable string to hash, and re-keying it would orphan
+    every existing record.
+    """
+    state = _state(account_id="", publish_options={"dry_run": False})
+    monkeypatch.setattr(
+        "backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "http://global:9228"
+    )
+    client = _mock_client("p_anon")
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+
+    await run_publish(state, store=_real_store())
+
+    assert client.publish_note.await_args.kwargs["account_id"] == ""
+
+
+@pytest.mark.asyncio
+async def test_platform_verdict_survives_the_gateway_round_trip(_browser_settings, monkeypatch):
+    """A platform rejection is a DOMAIN outcome, not a runtime failure.
+
+    It must come back with its own ``status``/``error``/``error_type`` so the
+    idempotency guard can be *released* -- the opposite of a timeout, which
+    must leave it armed.
+    """
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_v"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9227")
+    client = MagicMock()
+    client.publish_note = AsyncMock(
+        return_value={"status": "failed", "error": "cookie expired, login required"}
+    )
+    client.close = AsyncMock()
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+
+    result = await run_publish(state, store=_real_store())
+
+    pr = result["publish_result"]
+    assert pr["status"] == "failed"
+    assert pr["error_type"] == "auth_expired"
+    assert pr["recovery"]["action"] == "reconfigure"

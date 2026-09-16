@@ -144,3 +144,58 @@ class TestXhsPublisherTool:
             )
 
         assert publisher.publish_note.await_args.kwargs["account_id"] == "acc-1"
+
+
+class TestGetPublisherEndpointSelection:
+    """Which browser profile the factory picks -- the one thing it decides.
+
+    Every other test here (and every agent-level publish test) patches
+    ``_get_publisher`` wholesale.  That stubs the seam but also means the body
+    of the factory -- and therefore the "an explicit endpoint wins over the
+    global one" rule -- is never executed by anything.  These patch only
+    ``XHSPublisher``, so the selection logic itself runs.
+
+    The rule matters because it is what keeps multi-account publishing from
+    silently collapsing onto one logged-in browser: the mainline resolves an
+    endpoint per account and hands it over, while the control plane (P2a-S3's
+    Action Executor) passes nothing and must keep getting the global profile.
+    """
+
+    def _capture(self, monkeypatch, global_endpoint: str):
+        import backend.services.xhs_publisher as svc
+
+        fake_settings = MagicMock()
+        fake_settings.platform.cdp_endpoint = global_endpoint
+        monkeypatch.setattr("backend.config.settings.Settings", lambda: fake_settings)
+
+        ctor = MagicMock(return_value=MagicMock())
+        monkeypatch.setattr(svc, "XHSPublisher", ctor)
+        return ctor
+
+    def test_an_explicit_endpoint_wins_over_the_global_one(self, monkeypatch):
+        from backend.tools.xhs.publisher import _get_publisher
+
+        ctor = self._capture(monkeypatch, "http://global:9222")
+
+        _get_publisher("http://127.0.0.1:9225")
+
+        assert ctor.call_args.kwargs["cdp_endpoint"] == "http://127.0.0.1:9225"
+
+    def test_no_endpoint_falls_back_to_the_global_one(self, monkeypatch):
+        from backend.tools.xhs.publisher import _get_publisher
+
+        ctor = self._capture(monkeypatch, "http://global:9222")
+
+        _get_publisher("")
+
+        assert ctor.call_args.kwargs["cdp_endpoint"] == "http://global:9222"
+
+    def test_whitespace_is_not_an_endpoint(self, monkeypatch):
+        """A blank string must not beat the configured global profile."""
+        from backend.tools.xhs.publisher import _get_publisher
+
+        ctor = self._capture(monkeypatch, "http://global:9222")
+
+        _get_publisher("   ")
+
+        assert ctor.call_args.kwargs["cdp_endpoint"] == "http://global:9222"
