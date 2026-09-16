@@ -11,10 +11,13 @@ S1 shipped the data plane write-only, so that "who is running this thread"
 became observable before anything depended on it. S2 turned the first reader
 on: :func:`thread_is_held` now backs the status-derivation path -- ``/status``
 and ``/list`` ask "does any live owner hold this thread" instead of "does
-*this* process have a task". An expired lease still does not trigger a takeover
-(S3).
+*this* process have a task". S3 turned the lease into a cause: the takeover
+scan (``api/routes/_takeover.py``) expires silent leases and resumes the
+threads behind them, while an owner that loses its lease stands down
+(``_runner._fence_on_lost_lease``) so that taking one over cannot produce the
+two writers this task forbids.
 
-Four properties this module owns:
+Five properties this module owns:
 
 - **The lease carries its own budget.** ``ttl_seconds`` is a column, and every
   expiry judgement reads the row's value — never the reader's default.
@@ -25,11 +28,15 @@ Four properties this module owns:
   than stored, so the row cannot hold an expiry that contradicts the heartbeat
   meant to justify it.
 - **The reader judges staleness, it does not read ``state``.** A row can sit
-  at ``held`` long after its owner died: nothing flips a silent row to
-  ``expired`` in the background, because ``expire_scan`` is the only writer of
-  that state and it has no production caller. So asking "is it still
-  renewable" is the question callers actually have. Do not "simplify" this to
-  a state check -- that answers about the past, not the present.
+  at ``held`` long after its owner died: ``expire_scan`` is the only writer of
+  ``expired``, and it runs on the takeover schedule -- periodic, not prompt.
+  So asking "is it still renewable" is the question callers actually have. Do
+  not "simplify" this to a state check -- that answers about the past, not the
+  present.
+- **Losing the lease stops the work it described.** A lease excludes other
+  owners only if the old owner stands down, so the heartbeat's failure path
+  cancels the run it was guarding (``_runner._fence_on_lost_lease``). Without
+  that half, a takeover would be a route to the two concurrent writers above.
 - **No silent degradation.** Without Postgres the lease lives in this process
   and cannot outlive it; :func:`durability` is the single reader that says
   ``none`` there, instead of every caller inventing its own ``try/except``
@@ -193,8 +200,9 @@ CREATE INDEX IF NOT EXISTS idx_execution_leases_expiry
 # when the holder went silent — refused while another owner's heartbeat is
 # fresh. Note which TTL decides that: the incumbent's (execution_leases), not
 # the incoming caller's. That refusal is the only place the "no two writers on
-# one checkpoint" property lives (P2b red line 4); S1 ignores the answer, S3
-# will not.
+# one checkpoint" property lives (P2b red line 4) -- implemented once per
+# backend, so the two must answer alike. S1 ignored it; the takeover scan is
+# its first consumer.
 _ACQUIRE_SQL = """
 INSERT INTO execution_leases (
     thread_id, owner_id, owner_started_at, acquired_at, heartbeat_at,
@@ -276,11 +284,15 @@ def _record_from_row(row: Any) -> LeaseRecord:
 def _acquire_in_memory(thread_id: str, ttl_seconds: float) -> bool:
     now = _utcnow()
     existing = _mem_leases.get(thread_id)
-    # Mirrors the SQL: the incumbent's own budget decides whether it is still
-    # alive. The caller's TTL is what it would apply if it won, not a verdict
-    # about the holder.
+    # Mirrors the SQL, including the clause that is easy to miss: only a
+    # *held* row can be a live owner. ``is_stale`` answers "held and expired",
+    # so ``not is_stale`` is also True for an expired or released row -- and
+    # refusing those would deny a takeover the SQL grants, leaving the two
+    # backends answering the same question differently. The caller's TTL is
+    # what it would apply if it won, not a verdict about the holder.
     if (
         existing is not None
+        and existing.state is LeaseState.HELD
         and existing.owner_id != _instance_id
         and not existing.is_stale(now=now)
     ):
@@ -336,7 +348,8 @@ async def renew(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS) -> bo
 
     ``False`` is the interesting answer: the lease moved on (another owner took
     it over, or it was released) while this instance still believed it was
-    running. S1 only logs it; S3 is where it must stop work.
+    running. S1 only logged it; since S3 the run it guards is cancelled -- see
+    ``_runner._fence_on_lost_lease``.
     """
     if not thread_id:
         return False
@@ -489,8 +502,11 @@ async def start_lease(
     """Acquire the lease and keep renewing it in the background.
 
     Returns the heartbeat task for the caller to stop, or ``None`` when the
-    lease was refused — S1 still runs the workflow either way, because an
-    observational lease must not gate execution.
+    lease was refused. The runner still executes either way: gating execution
+    on this answer would fail closed whenever the store cannot reply, which is
+    how a lease stops being observational (P2b ruling 2). The takeover scan is
+    the caller that does treat a refusal as final, because not resuming is the
+    safe side of that decision.
     """
     if not await acquire(thread_id, ttl_seconds=ttl_seconds):
         return None
