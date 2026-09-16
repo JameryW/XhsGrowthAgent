@@ -22,7 +22,11 @@ from collections.abc import Mapping
 from typing import Any
 
 __all__ = [
+    "ACTION_EVENT_KIND",
+    "ACTION_POLICY_DENIED",
+    "ACTION_PUBLISH_REFUSED",
     "LEGACY_PERF_LOG_KEY",
+    "action_perf_entry",
     "emit_events",
     "has_inline_perf_log",
     "inline_perf_log",
@@ -34,6 +38,55 @@ __all__ = [
 # Checkpoint key telemetry used to occupy. Its *presence* (not its value) is
 # what marks a thread as legacy: post-S2 runs never write it into state.
 LEGACY_PERF_LOG_KEY = "performance_log"
+
+#: Telemetry kind for a *refusal* — an action that was asked for and denied.
+#: Declared in ``backend.db.workflow_events.EVENT_KINDS`` since P1a as part of
+#: the forward-looking set; P2a-S5b is its first emitter (pinned by a test, so
+#: the declaration and the emitter cannot drift apart again).
+ACTION_EVENT_KIND = "action"
+
+#: The refusal vocabulary, in one place: a reader enumerates what a timeline
+#: may contain instead of discovering it per call site.
+ACTION_POLICY_DENIED = "policy_denied"
+ACTION_PUBLISH_REFUSED = "publish_refused"
+
+
+def action_perf_entry(
+    action: str,
+    *,
+    account_id: str = "",
+    timestamp: str | None = None,
+    **fields: Any,
+) -> dict[str, Any]:
+    """Build one ``kind:"action"`` entry recording a refused action.
+
+    Refusals are decisions, and until P2a-S5b the two that matter lived only in
+    an HTTP status and in workflow state: the policy engine denying an intent,
+    and a human answering "not this one" at the publish gate.  An operator
+    asking "why was nothing posted?" had to infer the answer from a log line or
+    from a thread's final phase.  The Event store already carries the rest of a
+    run's timeline (``node`` / ``llm`` / ``human_wait`` / ``tool``), so a
+    refusal belongs in the same place.
+
+    ``action`` is one of :data:`ACTION_POLICY_DENIED` /
+    :data:`ACTION_PUBLISH_REFUSED`; ``fields`` carries the machine-readable
+    specifics (``policy_id``, ``gate``, ``reason``).  Free text is deliberately
+    **not** a parameter: the same rule as the Gateway's trace sink — an event
+    says what happened, the bodies belong behind an explicit, sanitised export.
+    A human's comment therefore stays on the confirmation record, never here.
+
+    Reserved keys are written last so ``fields`` cannot spoof them.  The caller
+    writes the entry with :func:`emit_events`, which is best-effort: telemetry
+    must never fail the thing it is describing.
+    """
+    from datetime import UTC, datetime
+
+    entry: dict[str, Any] = dict(fields)
+    entry["kind"] = ACTION_EVENT_KIND
+    entry["action"] = action
+    entry["account_id"] = account_id
+    entry["timestamp"] = timestamp or datetime.now(UTC).isoformat()
+    return entry
 
 
 def resolve_thread_id(state: Mapping[str, Any] | None) -> str:

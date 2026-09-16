@@ -278,6 +278,24 @@ def _decision_from_row(row: Any) -> DecisionRecord:
     return DecisionRecord.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
 
 
+def _append_feedback(decision: DecisionRecord, feedback: UserFeedback) -> None:
+    """Record one creator reaction on a stored Decision Record.
+
+    The **only** permitted mutation of a stored record, and the only place one
+    happens: ``feedback`` grows by one and ``updated_at`` follows it.  Every
+    field that judged the decision stays exactly as written — see
+    :class:`backend.creator_agent.models.DecisionRecord` for why that matters
+    (``ActionExecution`` provenance, and a dataset that answers the same
+    question the same way tomorrow).
+
+    Both storage adapters call this rather than repeating the two assignments,
+    so they cannot drift into mutating different fields.  Keeping it a function
+    is also what makes "one writer" a testable claim instead of a comment.
+    """
+    decision.feedback.append(feedback)
+    decision.updated_at = feedback.created_at
+
+
 def _relationship_from_row(row: Any) -> RelationshipMemory:
     return RelationshipMemory.model_validate_json(_json_text(_row_value(row, "payload_json", 0)))
 
@@ -1179,8 +1197,7 @@ class DurableCreatorAgentRepository:
                         )
                         _mem_feedback_signals[(account_id, feedback.feedback_id)] = signal.signal_id
                     return decision, relationship.model_copy(deep=True), False
-                decision.feedback.append(feedback)
-                decision.updated_at = feedback.created_at
+                _append_feedback(decision, feedback)
                 relationship = _updated_relationship(relationship, feedback)
                 _mem_decisions[key] = decision.model_copy(deep=True)
                 _mem_relationships[relationship_key] = relationship.model_copy(deep=True)
@@ -1217,8 +1234,7 @@ class DurableCreatorAgentRepository:
                     await self._ensure_learning_signal_on_cursor(cur, decision, existing_feedback)
                 return decision, relationship, False
 
-            decision.feedback.append(feedback)
-            decision.updated_at = feedback.created_at
+            _append_feedback(decision, feedback)
             relationship = _updated_relationship(relationship, feedback)
             await cur.execute(
                 """

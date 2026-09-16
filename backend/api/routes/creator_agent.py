@@ -77,6 +77,7 @@ from backend.creator_agent.repository import (
 )
 from backend.db.creator_agent import get_repository
 from backend.memory.creator_agent_observations import CreativeMemoryObservationSource
+from backend.state.events import ACTION_POLICY_DENIED
 
 router = APIRouter()
 
@@ -127,6 +128,38 @@ def _advisor(*, artifact_store: Any | None = None) -> CreatorAdvisor:
 
 def _model_store() -> CreatorModelStore:
     return CreatorModelStore(get_repository())
+
+
+async def _record_action_refusal(
+    account_id: str, thread_id: str | None, action: str, **fields: Any
+) -> None:
+    """Write one ``kind:"action"`` event for a refused action. Best-effort.
+
+    A refusal is a decision, and the policy engine's denial used to live only
+    in the 403 it produced (P2a-S2's own ruling said so: "可见性由 403 响应体 +
+    warning 日志承担", and the durable audit was deferred to here).  Emitting
+    from the route is deliberate — ``backend.state.events`` names routes as
+    legitimate writers, and this is the last place the refusal is still a fact
+    about a *named workflow* rather than about one HTTP caller.
+
+    A refusal that names no thread is **not** stored, and that is the honest
+    outcome rather than a shortcut: nothing here can invent a thread to
+    attribute it to, and filing it under someone else's timeline would be worse
+    than losing it.  ``emit_events`` already returns 0 for an empty thread id,
+    so the boundary is the existing contract rather than a new special case.
+
+    That case is a guard, not a live hole: ``ActionIntentRequest`` requires
+    ``thread_id`` for a publish payload (``ActionIntent`` keeps it optional so
+    pre-S3 rows stay readable), and publishing is the only capability the
+    policy engine has anything to say about — so today every denial is
+    attributable.  The guard is for the capability that changes that.
+    """
+    from backend.state.events import action_perf_entry, emit_events
+
+    await emit_events(
+        (thread_id or "").strip(),
+        [action_perf_entry(action, account_id=account_id, **fields)],
+    )
 
 
 @router.get("/model")
@@ -281,7 +314,11 @@ async def list_creator_decision_dataset(
     limit: int = Query(default=20, json_schema_extra={"minimum": 1, "maximum": 100}),
     user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[DecisionDatasetPage]:
-    """List immutable decision snapshots with account-scoped pagination."""
+    """List revision-pinned decision records with account-scoped pagination.
+
+    "Revision-pinned" rather than "immutable": the *judgment* never changes,
+    while ``feedback`` is append-only by design — see :class:`DecisionRecord`.
+    """
     normalized_account_id = (account_id or "").strip()
     if not normalized_account_id:
         raise ValidationError("account_id", "account_id cannot be empty")
@@ -351,6 +388,15 @@ async def plan_creator_action(
     except ActionValidationError as exc:
         raise ValidationError(exc.field, exc.reason) from exc
     except ActionPolicyDeniedError as exc:
+        await _record_action_refusal(
+            exc.account_id,
+            request.thread_id,
+            ACTION_POLICY_DENIED,
+            policy_id=exc.policy_id.value,
+            action_kind=request.action_kind.value,
+            reason=exc.reason,
+            retry_after_seconds=exc.retry_after_seconds,
+        )
         raise CreatorActionPolicyDeniedError(
             policy_id=exc.policy_id.value,
             reason=exc.reason,
