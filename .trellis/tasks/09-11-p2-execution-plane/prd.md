@@ -206,19 +206,19 @@ harness 规矩沿用 S4b/S5b：**step 0** 在未改动树上跑全部具名击�
 
 **判据分类：为什么 7 处改、2 处不改**
 
-侦察发现"本进程有没有活任务"这个判据在仓库里**被复制了 9 份**，而同模块内 `:1080`/`:1659` 两份**漏了 `_active_sync_executions`** —— 同一个问题两个答案，是既有缺陷。
+侦察发现"本进程有没有活任务"这个判据在仓库里**被复制了 9 份**，而同模块内 `:1079`/`:1653` 两份**漏了 `_active_sync_executions`** —— 同一个问题两个答案，是既有缺陷。（下表行号一律是**交付后**的 `workflow.py`，即 merge 后 checkout 到的那些行。）
 
 | # | 站点 | 它问的问题 | S2 之后 |
 |---|---|---|---|
-| 1 | `workflow.py:898` `/status` 活图分支 | 这个 thread 在跑吗 | **租约** |
-| 2 | `workflow.py:1080` `/status` DB 兜底 `checkpoint_lost` | 同上 | **租约**（并修掉漏 sync 项） |
-| 3 | `workflow.py:1357` `/resume` | 同上 | **租约** |
-| 4 | `workflow.py:1659` `/resume` `checkpoint_lost` | 同上 | **租约**（并修掉漏 sync 项） |
-| 5 | `workflow.py:1693` `/recover` 闸门 | 同上 | **租约** |
-| 6 | `workflow.py:1913` `/stream` | 同上 | **租约** |
+| 1 | `workflow.py:900` `/status` 活图分支 | 这个 thread 在跑吗 | **租约** |
+| 2 | `workflow.py:1079` `/status` DB 兜底 `checkpoint_lost` | 同上 | **租约**（并修掉漏 sync 项） |
+| 3 | `workflow.py:1353` `/resume` | 同上 | **租约** |
+| 4 | `workflow.py:1653` `/resume` `checkpoint_lost` | 同上 | **租约**（并修掉漏 sync 项） |
+| 5 | `workflow.py:1684` `/recover` 闸门 | 同上 | **租约** |
+| 6 | `workflow.py:1902` `/stream` | 同上 | **租约** |
 | 7 | `workflow.py:389` `_is_orphan_running` | 有没有人在跑它 | **租约**（定义从"本进程没有任务"→"没有人持有"） |
-| 8 | `workflow.py:2463` brief-upload 守卫 | **本进程要不要再起一份任务** | 保持**本进程** |
-| 9 | `workflow.py:2860` publish-retry 守卫 | 同上 | 保持**本进程** |
+| 8 | `workflow.py:2456` brief-upload 守卫 | **本进程要不要再起一份任务** | 保持**本进程** |
+| 9 | `workflow.py:2856` publish-retry 守卫 | 同上 | 保持**本进程** |
 
 **为什么 8/9 不改**（两个方向都会错，于是选范围更窄的那个）
 
@@ -238,7 +238,7 @@ harness 规矩沿用 S4b/S5b：**step 0** 在未改动树上跑全部具名击�
 
 | 症状 | 根因 | 修法 |
 |---|---|---|
-| `/status` 与 `/resume` 的 `checkpoint_lost` 在"同步执行体在跑"时会误报 | 两份内联表达式**漏了 `_active_sync_executions`** —— `:898`/`:1357` 有，`:1080`/`:1659` 没有 | 四处统一到 `has_active_execution`，并把 sync 项写进 `process_has_active_task`，由 `test_a_sync_execution_counts_without_any_lease` 钉住 |
+| `/status` 与 `/resume` 的 `checkpoint_lost` 在"同步执行体在跑"时会误报 | 两份内联表达式**漏了 `_active_sync_executions`** —— `:900`/`:1353` 有，`:1079`/`:1653` 没有 | 四处统一到 `has_active_execution`，并把 sync 项写进 `process_has_active_task`，由 `test_a_sync_execution_counts_without_any_lease` 钉住 |
 
 **绊线改形（改形不删）**
 
@@ -292,10 +292,10 @@ harness 自身的一处观察：M13–M20 的 `tail` 最后 8 行被 `StarletteD
 
 **残留与诚实登记**
 
-- **★ 3 处站点只有结构证据，没有行为区分测试**：`workflow.py:1357`（`/resume` 的 `derived`）、`:1659`（`/resume` 的 `checkpoint_lost`）、`:1913`（`/stream` 的 `derived`）。它们与已钉住的站点是**同一行表达式**（`grep -n "has_active_execution" backend/api/routes/workflow.py` 可一次性列出）。性质：
-  - `:1659` / `:1913` 是**只读字段**（写进响应体，不决定任何执行）；
-  - `:1357` 只决定 `/resume` 采用**哪种恢复形态**（`can_retry_error or can_resume_stale` 的两条分支**都会**起 resume），不是执行闸门。
-  结论：这是**声明的**缺口，不是测出来的缺口（有意的取舍：`/resume` 与 `/stream` 的路由测试成本高于其风险）。若要补，一条 `/resume` 路由测试可同时覆盖 `:1357` 与 `:1659`。
+- **★ 3 处站点只有结构证据，没有行为区分测试**：`workflow.py:1353`（`/resume` 的 `derived`）、`:1653`（`/resume` 的 `checkpoint_lost`）、`:1902`（`/stream` 的 `derived`）。它们与已钉住的站点是**同一行表达式**（`grep -n "has_active_execution" backend/api/routes/workflow.py` 可一次性列出）。性质：
+  - `:1653` / `:1902` 是**只读字段**（写进响应体，不决定任何执行）；
+  - `:1353` 只决定 `/resume` 采用**哪种恢复形态**（`can_retry_error or can_resume_stale` 的两条分支**都会**起 resume），不是执行闸门。
+  结论：这是**声明的**缺口，不是测出来的缺口（有意的取舍：`/resume` 与 `/stream` 的路由测试成本高于其风险）。若要补，一条 `/resume` 路由测试可同时覆盖 `:1353` 与 `:1653`。
 - **单进程部署假设**：事实 6（`Dockerfile:81` 无 `--workers`）。上面"8/9 守卫不改"的取舍、以及"存储坏掉答 not held"的方向，都建立在这个前提上。多进程拓扑（`docs/deployment.md` 里的终态）下需要重新论证 —— 那时 8/9 应当改读**租约 OR 本进程**，而 `_lease_is_held` 的失败方向要再讨论。
 - **`owner_id` 目前不参与读取判定**：`thread_is_held` 只问"有没有一个活着的主人"，不问"是不是我"。这是有意的 —— 读取方要的正是"不管是谁"；`owner_id` 的消费者是 `acquire` / `renew` / `release` 的互斥。将来若需要"是不是**我**在跑"（例如 S3 的接管要避免抢自己的租约），需要新读者，不要改这个的语义。
 - **`expire_scan` 仍无生产调用者**：S2 不引入它 —— 读者自己算 staleness 正是为了不依赖它。它仍然是 S3（接管）的组件。
