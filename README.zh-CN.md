@@ -359,6 +359,7 @@ npm run build
 
 - [前端 UX 与交互规范](./docs/frontend-ux-optimization.md)
 - [部署指南](./docs/deployment.md)
+- [执行平面：租约 / 接管 / 边界](./docs/execution-plane.md)
 - [配置参考](./docs/configuration.md)
 - [API 参考](./docs/api-reference.md)
 - [安全注意事项](./docs/security.md)

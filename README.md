@@ -359,6 +359,7 @@ Further guides:
 
 - [Frontend UX and interaction conventions](./docs/frontend-ux-optimization.md)
 - [Deployment](./docs/deployment.md)
+- [Execution plane: leases, takeover, boundary](./docs/execution-plane.md)
 - [Configuration](./docs/configuration.md)
 - [API reference](./docs/api-reference.md)
 - [Security](./docs/security.md)
