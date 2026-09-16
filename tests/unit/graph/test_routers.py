@@ -1,5 +1,7 @@
 """Unit tests for graph routers."""
 
+import pytest
+
 from backend.graph.routers import (
     blogger_gate_router,
     choice_outcome,
@@ -9,6 +11,7 @@ from backend.graph.routers import (
     draft_gate_router,
     evaluator_outcome,
     orchestrator_router,
+    publish_gate_outcome,
     review_outcome,
     ripple_finalize_router,
     ripple_gate_router,
@@ -837,3 +840,37 @@ class TestShootingPlannerRouter:
         """CANCELLED → __end__."""
         state = {"phase": WorkflowPhase.CANCELLED}
         assert shooting_planner_router(state) == "__end__"
+
+
+class TestPublishGateOutcome:
+    """Tests for publish_gate_outcome — default-refuse on the way to a real publish."""
+
+    @staticmethod
+    def _state(decision, phase=WorkflowPhase.PUBLISHING):
+        return {"phase": phase, "publish_confirmation": {"decision": decision}}
+
+    def test_confirmed_authorises_the_publish(self):
+        """Only the literal confirmation opens the gate."""
+        assert publish_gate_outcome(self._state("confirmed")) == "publisher"
+
+    def test_cancelled_ends_the_run(self):
+        assert publish_gate_outcome(self._state("cancelled", WorkflowPhase.CANCELLED)) == "__end__"
+
+    def test_no_confirmation_ends_the_run(self):
+        assert publish_gate_outcome({"phase": WorkflowPhase.REVIEWING}) == "__end__"
+
+    def test_empty_confirmation_ends_the_run(self):
+        state = {"phase": WorkflowPhase.REVIEWING, "publish_confirmation": {}}
+        assert publish_gate_outcome(state) == "__end__"
+
+    @pytest.mark.parametrize(
+        "decision",
+        ["yes", "Confirmed", "CONFIRMED", "confirmed ", "true", True, 1, None, ""],
+    )
+    def test_unrecognised_decision_is_refused(self, decision):
+        """Version skew must not read as consent — the failure direction is closed."""
+        assert publish_gate_outcome(self._state(decision)) == "__end__"
+
+    def test_terminal_phase_wins_over_a_confirmation(self):
+        """A stale confirmation cannot resurrect a cancelled run."""
+        assert publish_gate_outcome(self._state("confirmed", WorkflowPhase.CANCELLED)) == "__end__"

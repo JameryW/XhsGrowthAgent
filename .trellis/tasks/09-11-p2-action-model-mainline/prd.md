@@ -41,8 +41,8 @@ Policy Engine、能产生外部副作用的执行器、主链接线。
 | **S1（本片）** | **Action 协议扩展**：`ActionCapability.PUBLISH` + publish 专属载荷（`artifact_ref` + `content_hash`）+ 校验分支；`execute_action` 对 PUBLISH 显式"未接线"报错。**不产生任何副作用** | 中（改既有协议） |
 | S2 | **Policy Engine**（新模块，deterministic 无 LLM）：输入 publish 意图 + 账号/内容快照 → `PolicyVerdict(allow/deny, policy_id, reason)`；复用 `xhs_risk_gate` 既有判据；**fail-closed（读不懂 = 拒绝）**。插在 `plan_action` 之后、人类确认之前 | 中 |
 | S3 | **Action Executor 接 Tool Gateway**：PUBLISH 分支经 `ToolGateway` 调 `xhs.publish`（`PassStyle.INVOKE`）；幂等键接上后**解锁 catalog 的 `RetryPolicy`**；receipt 落 `note_id`/`url`。**这是第一次让 Action 产生外部副作用** | 高 |
-| **S4a（本片）** | **主链提交接入 Tool Gateway**：`run_publish` 不再自己构造 `XHSClient`，改为 `self.tools.invoke("xhs.publish", …)`；**`xhs.publish` orphan 消失** → 门禁那条"唯一 orphan 是 xhs.publish"断言会红，**同 PR 更新**。**不改时序**（既不产 intent，也不等确认）：`run_publish` 的调用点、返回形状、下游 8 处消费逐字段不变 | 高 |
-| S4b | **主链等人类确认**：`WorkflowStatus.AWAITING_PUBLISH` + `machine.py` 分支 + `interrupt`/`Command(resume=…)`，`PublisherAgent` 产出 PublishIntent 并停在那里；同时裁决 **待决问题 1**（`ActionIntentRequest.account_id` 必填 vs 主链隐式账号） | 高 |
+| S4a ✅ | **主链提交接入 Tool Gateway**：`run_publish` 不再自己构造 `XHSClient`，改为 `self.tools.invoke("xhs.publish", …)`；**`xhs.publish` orphan 消失** → 门禁那条"唯一 orphan 是 xhs.publish"断言会红，**同 PR 更新**。**不改时序**（既不产 intent，也不等确认）：`run_publish` 的调用点、返回形状、下游 8 处消费逐字段不变 | 高 |
+| **S4b（本片）** | **主链等人类确认**：`WorkflowStatus.AWAITING_PUBLISH` + `machine.py` **两条** gate 识别路径 + 动态 `interrupt`/`Command(resume=…)` + `publish_gate` 节点与路由 + `/resume` **无默认值**分支 + `auto_publish` 从「无人读的键」变成真开关 + 前端可见性。**不产 PublishIntent**（与 S4a 同：主链仍直接 `run_publish`）→ **待决问题 1 未裁决**，理由见 §S4b 的「修订」 | 高 |
 | S5 | **凭据整备** + DecisionRecord immutable 收尾 + `docs/publish-action-protocol.md` | 中 |
 
 切片顺序的判据：先把**纯数据面**（S1）落定，再落**纯判定**（S2），然后才跨"产生副作用"
@@ -341,3 +341,175 @@ M1/M2/M12 的**第一击杀者都是门禁**（不是 pytest）：这正是"声�
 **打桩缝的选择（唯一的实质副作用）**：patch `backend.tools.xhs.publisher._get_publisher`，**只桩浏览器层** —— 工具自己的载荷归一化、catalog 按名解析、Gateway 的 timeout/retry/scope/tracing 全都**真跑**。旧测试桩的是 `XHSClient`，等价于把"平台层"整个换成替身，同时顺带把 Gateway 一起绕过去了。这也解释了一个数字：这两个文件的耗时 **125.8s → 4.3s**，原来它们**真的在碰浏览器**。
 
 **下一片（S4b）的入口条件**：① `WorkflowStatus` 现在**没有** `AWAITING_PUBLISH`（侦察已确认），要新增取值 + `machine.py` 分支 + `interrupt`/`Command(resume=…)`；② `ActionIntentRequest.account_id` **显式必填** vs 主链隐式账号（**待决问题 1**，S4a 未碰因为在 S4a 里主链根本不产 intent）；③ `review_gate` 人工关卡已存在，但它与"等发布确认"是两回事，不要复用成同一状态；④ 501 兜底要么改成拒绝、要么删掉（S3 遗留）。
+
+### S4b — 主链等人类确认（`feat/p2a-s4b-publish-confirmation`）
+
+**范围**：在 AI 质量门与真实发布之间插入一道**人类授权关卡**。在此之前，"内容合格"
+（evaluator 的 verdict）与"授权执行"是**同一个事件** —— 一个 AI 质量门自己决定了不可逆的
+外部动作。本片把它们分开：AI 门之后停下来，等一个明确的人说"发"。
+
+**不做的事**（与 S4a 一致，见下面的「修订」）：不产 PublishIntent，不接 Gateway（S4a 已交付），
+不新建控制面（`ActionIntent` / `ActionResolution` / `ActionExecution` / 4 条路由 / 人类确认在 S1
+就已存在）。**也不给 `run_publish` 的另外两个调用点加关卡** —— `/publish-retry`
+（`api/routes/workflow.py`）与 free 发布（`api/routes/free.py`）**已经是显式人工通道**，在它们
+上加关卡会破坏语义。
+
+侦察（子代理逐条核实）得到六条必须先处理的既成事实：
+
+1. **两种中断范式并存**：`review_gate` / `ripple_gate` / `blogger_gate` / `brief_gate` 用**动态
+   `interrupt()`**（节点体内调用，靠 `Command(resume=…)` 恢复）；`choice_gate` / `draft_gate`
+   用**静态 `interrupt_before`**（编译期声明，靠 `ainvoke(None)` 恢复，**`Command(resume=)`
+   对它无效**）。跨范式抄错会让"恢复"这条通道静默失灵。
+2. **`WorkflowStatus` 是派生值、不是存储值**（`state/machine.py::derive_status`），而且它识别
+   gate 有**两条**独立路径：① `next_nodes` 里含 gate 名（`interrupt_before` 的形状）；②
+   `snapshot.interrupts[0].value.get("gate")` 做字符串映射（动态 `interrupt()` 的形状）。
+   **只加一条 = 有一条路径上 UI 静默错报状态。**
+3. **`auto_publish` 是一个"声明了但无读者"的键**：`POST /start` 与 `POST /api/review/submit`
+   都宣称"审核通过后自动发布"，schema（`state/schema.py`）有它、DB 写它、state 带它，而
+   `backend/graph/**` **从不读它**。
+4. **`dry_run` 有两条来源**（工作流级 `state["dry_run"]` / 决策级 `publish_options["dry_run"]`），
+   原判据内联在 `PublisherAgent.execute`。
+5. **`run_publish` 有 3 个调用点**，其中两个已是显式人工通道（见上）。
+6. **"取消"不是新语义**：`derive_status` 的 Priority 1 与 `_check_terminal` 早已把
+   `phase=CANCELLED` 映射为 `WorkflowStatus.CANCELLED` → "拒绝发布"**不需要新增状态值**，
+   本片只新增 `AWAITING_PUBLISH` 一个。
+
+改动（8 后端 + 5 前端 + 6 测试）：
+
+| 文件 | 改动 |
+|---|---|
+| `agents/nodes/publish_gate.py`（新） | `publish_needs_confirmation`（唯一判据）+ `publish_gate_node`（跳过 / 中断 / 判决三态）。常量 `PUBLISH_CONFIRMED`/`PUBLISH_CANCELLED` + 三个 `source` 标签 |
+| `state/schema.py` | 新增 `publish_confirmation: dict[str, Any]`，**紧跟 `human_feedback`** 并写明为何分键 |
+| `state/machine.py` | `WorkflowStatus.AWAITING_PUBLISH`；`next_nodes` 分支 + `gate_type == "publish"` 分支（既成事实 2 的两条）；docstring 优先级表重编号 |
+| `agents/publisher.py` | 抽出 `publish_is_dry_run(state)`（**一处规则两个读者**），`execute` 内联判据改调用它 |
+| `agents/nodes/__init__.py` | 懒加载导出 `publish_gate_node` |
+| `graph/error_handling.py` | `RETRY_POLICIES` 登记 `"publish_gate": None`（重试包住中断点无意义；`get_retry_policy` 对未登记节点 raise → `test_retry_registry` 会红） |
+| `graph/routers.py` | `publish_gate_outcome`：**默认拒绝**（只认字面量 `"confirmed"`） |
+| `graph/builder.py` | `add_node("publish_gate", …)`（无 retry）；`evaluator_outcome` 的 `"publisher"` 边目标改指 `publish_gate`；新增 `publish_gate` 的条件边 |
+| `api/routes/workflow.py` | `/resume` 新增 `AWAITING_PUBLISH` 分支：**无默认 resume_value**，缺 `decision` 时只回"该发什么"、**不执行任何动作**；有则 `Command(resume=…)` + `source="publish_confirmation"` |
+| 前端 5 处 | `types/workflow.ts`（union 加 `'awaiting_publish'`）、`composables/dashboardHero.ts`（归入既有 amber waiting 桶，**不新增视觉状态**）、`locales/zh-CN.json` + `en.json`（各一条）、`tests/composables/dashboardHero.spec.ts` |
+| 测试 6 文件 | 新增 `tests/unit/agents/nodes/test_publish_gate.py`（36）、`tests/integration/test_publish_gate_flow.py`（10）、`tests/unit/api/test_resume_publish_gate.py`（10）；改形 `tests/unit/state/test_machine.py`（+4）、`tests/unit/state/test_schema.py`（+1）、`tests/unit/graph/test_routers.py`（+14）、`tests/integration/test_evaluator_gate.py`（拓扑绊线改形 +2）、`tests/integration/test_evaluator_pause_resume.py`（下一跳断言改形） |
+
+**九个设计决定**
+
+1. **★ 用动态 `interrupt()`，不用 `interrupt_before=["publish_gate"]`**。两个理由，都不是风格问题：
+   ① `Command(resume=…)` **只对动态中断有效** —— 静态中断要多一条 `ainvoke(None)` 恢复通道，
+   等于给这一个关卡开第二种协议，而 `/resume` 已有 `Command(resume=…)`（brief / ripple /
+   blogger 三处都在用）；② `builder.compile()` 在 `build_graph()` 里，且 **dev / prod 两个分支
+   各写一次** —— `interrupt_before` 会让"这道关卡存在"这件事出现**两处**改动，而 `add_node` 只写
+   一次 → **单入口不漂移**。
+2. **★ `publish_confirmation` 必须与 `human_feedback` 分键**。合并是"两个都是人的决定，那复用
+   一个键吧"这种最自然的重构 —— 而它会让 `publish_gate` 的写入**覆盖 `review_gate` 的判据**：
+   `review_outcome` 正是读 `human_feedback.decision` 路由的。两者语义也正交：`human_feedback`
+   答"这篇内容能不能过"（`approved`/`needs_revision`/`rejected`），发布确认答"这次不可逆的
+   外部动作做不做"。方向两边都有断言：`test_the_gate_writes_its_own_key`（节点不写那个键）
+   + `test_publish_confirmation_is_its_own_key`（schema 里确实是独立字段）。
+3. **★ 失败方向必须是关**。`publish_gate_outcome` 只认字面量 `"confirmed"` 放行，
+   **缺失 / 拼错 / 来自旧客户端的任何别的词一律拒绝**。理由写进了 router 的 docstring：
+   *"一个把无法识别的值读成'继续'的确认关卡，会把每一次版本错配都变成一次未经确认的真实
+   发布。"* 12 个拒绝用例：`None` / `{}` / `decision=None` / `""` / `"yes"` / `"Confirmed"` /
+   `"CONFIRMED"` / `"confirmed "`（尾空格） / `True` / `1` / 裸字符串 `"confirmed"`（**不是本
+   关卡的契约形状**） / `{"approved": True}`（那是 review_gate 的方言）。
+4. **★ 缺默认值是刻意的**。brief / ripple / blogger 的 `resume_value` 都有默认（`skip` /
+   `accept`），因为**那里的默认是"继续一件已经被授权的事"**；这里没有默认，因为**这里的默认
+   会执行那个不可逆的动作**。所以空 body 的 `/resume` 只回"该发什么"，什么都不跑
+   （`test_missing_decision_describes_what_to_send` 同时断言 `mock_run` / `graph.ainvoke` /
+   `graph.aupdate_state` **三个都没被 await**）。
+5. **★ 拒绝置 `phase=CANCELLED`，不是 `ERROR`，也不留在 `PUBLISHING`**。人说"这篇不发"是
+   **决定**，不是故障；而留在 `PUBLISHING` 更糟 —— publisher 被跳过、运行没有后继节点，
+   `derive_status` 会为一条**从未发出的笔记**报 *completed*。于是选 `CANCELLED`，且它**不需要
+   新状态值**（既成事实 6）→ 路由的两条路径（节点写的 phase / 确认值缺失）通向同一结论，
+   docstring 里写明这是有意的。
+6. **★ `auto_publish` 从"无人读的键"变成真的开关 —— 这就是"不做破坏性默认"的落点**。
+   不接它，本片会把每一个走 `/start`（宣称自动发布）的既有工作流变成必须人工点一次：
+   那是**改默认行为**，不是"加一道关卡"。
+7. **★ `publish_is_dry_run` 抽成一处规则、两个读者**。`PublisherAgent.execute` 用它选 mock 路径，
+   关卡用它判"要不要问"。抽出来之后，**关卡与发布者不可能对"东西到底出没出机器"产生分歧** ——
+   这正是"dry run 免问"这条豁免能成立的前提。它也解释了为什么 `auto_publish` 用严格 `is True`
+   而 `dry_run` 用 truthiness：**前者没有孪生读者（一个像 `"true"` 的近似值意味着"没人真的做过
+   这个声明"→ 关门），后者有（`"yes"` 会让发布者走 mock，与关卡的判断一致 → 开门）**。
+8. **`dry_run` 的工作流级来源是两者中更强的一方**（任一为真即真）。一个以 rehearsal 启动的
+   线程必须保持 rehearsal，**即使批准决策要求真实发布** —— 只读 `publish_options`（一个只见过
+   review 路径的人会这么写）会让那个决策**静默翻转**它。这条在 `publish_is_dry_run` 的 docstring
+   里写明，并由真值表里 `{"dry_run": True, "publish_options": {"dry_run": False}}` 钉住。
+9. **`publish_summary` 只做展示、不做判定**。判的是**人**，所以 interrupt 载荷只给够人判断的
+   三样（标题 / 有没有图 / 账号），**不塞评分** —— 塞了会让"确认"看起来像是在认可那个分数。
+   `gate="publish"` 这个值则是**契约**：`derive_status` 靠它（第二条路径）得出 `AWAITING_PUBLISH`。
+
+**修订（与 S4b 计划行的差异，写在票面而不是悄悄缩小范围）**
+
+计划行写的是"`PublisherAgent` 产出 PublishIntent 并停在那里；同时裁决 **待决问题 1**"。
+实际交付的是**等确认**这一半，`PublishIntent` 那一半**没做**，理由是它属于**另一个关切**：
+让主链改走控制面（intent → Policy → Executor）是**架构迁移**，而"不在没有人类授权时发布"是
+**安全性质** —— 后者与前者正交（S4a 拆片的同一条判据），而且**与 S4a 保持一致**（S4a 明确
+"既不产 intent，也不等确认"）。所以：
+
+- 主链的发布路径仍是 `publisher` → `run_publish`（**不经控制面**）。
+- **待决问题 1（`ActionIntentRequest.account_id` 显式必填 vs 主链隐式账号）因此仍未裁决** ——
+  本片没有任何产生 `ActionIntent` 的代码路径，裁决需要一个**真的产 intent 的调用者**才有落点。
+  在票面写明"修订"而不是留一条看起来已完成的计划行。
+
+**门禁（全绿，提交前实测）**
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest -q` | **3227 passed / 3 skipped**（S4a 的 3151 + **76**，恰等于新用例数 `36+9+10+4+1+14+2`）→ **零既有用例被删、零既有断言被弱化**（唯二改动的两条是上面那条拓扑绊线与 pause_resume 的下一跳断言，均为预期信号） |
+| `ruff check .` / `format --check .` | **503 files**（S4a 的 499 + 新测试 3 + 新模块 1），All checks passed |
+| `uv run mypy backend --python-version 3.12` | 203 source files，no issues |
+| P1b 基线 | `drift within threshold`（L0–L5 prompt 逐字节不变） |
+| `tool_runtime_gate.py` | OK（`publisher.py declared=1 invoked=1`，orphan 行仍无 —— 本片不碰工具面） |
+| 前端 | `type-check` clean；`vitest` clean；`i18n:check` consistent |
+
+**突变自检：22/22 killed**，每条**从原始内容起算**（`restore_all()` 在每条之前）、每条被
+**具名断言**杀掉，且**第 0 步先在未改动的树上把 16 个具名击杀者全跑一遍**（否则"被杀"可能
+来自一条本来就红的测试）：
+
+| # | 突变 | 被谁杀 |
+|---|---|---|
+| M1 | `auto_publish` 改成按真值判断（不再是 `is True`） | `test_publish_needs_confirmation_truth_table`（`"true"` / `1` 两例） |
+| M2 | 常备授权只读 `publish_options` | `test_auto_publish_at_workflow_level_does_not_interrupt` |
+| M3 | 常备授权只读工作流级 `state` | `test_auto_publish_in_publish_options_does_not_interrupt` |
+| M4 | 关卡永远问（dry run 不再豁免） | `test_dry_run_at_workflow_level_does_not_interrupt` |
+| M5 | 非 dict 的恢复载荷被读成同意 | `test_everything_but_confirmed_refuses` |
+| M6 | 缺 `decision` 键默认成 confirmed | 同 M5 |
+| M7 | "只要不是 no 就算 yes" | 同 M5 |
+| M8 | 拒绝时 phase 留在 `PUBLISHING` | `test_cancelled_is_a_decision_not_a_fault` |
+| M9 | interrupt 不再声明 `gate="publish"` | `test_payload_reports_what_is_about_to_be_posted` |
+| M10 | interrupt 摘要丢掉标题 | 同 M9 |
+| M11 | 路由接受"任何不是 cancelled 的值" | `TestPublishGateOutcome::test_unrecognised_decision_is_refused` |
+| M12 | 路由忽略终态 phase | `TestPublishGateOutcome::test_terminal_phase_wins_over_a_confirmation` |
+| M13 | evaluator 的边仍直接落到 publisher | `test_evaluator_gate_branch_to_the_publish_gate_and_revise` |
+| M14 | 关卡的 `__end__` 边指向 publisher | `TestConfirmationResumesIntoThePublisher::test_cancelled_ends_the_run_without_publishing` |
+| M15 | 新节点未登记进 `RETRY_POLICIES` | `tests/unit/graph/test_retry_registry.py` |
+| M16 | `derive_status` 删掉 `next_nodes` 分支 | `test_interrupt_at_publish_gate_returns_awaiting_publish` |
+| M17 | `derive_status` 删掉 `gate_type == "publish"` 分支 | `test_dynamic_interrupt_publish_gate_returns_awaiting_publish` |
+| M18 | `AWAITING_PUBLISH` 换成别的字符串 | `test_missing_decision_describes_what_to_send`（断言 `status == "awaiting_publish"`） |
+| M19 | `/resume` 缺 decision 也执行图 | 同 M18 |
+| M20 | `/resume` 把缺的 decision 默认成 confirmed | 同 M18 |
+| M21 | schema 里不声明 `publish_confirmation` | `test_publish_confirmation_is_its_own_key` |
+| M22 | `publish_is_dry_run` 丢掉工作流级来源 | `test_publish_needs_confirmation_truth_table` |
+
+M12 的**首跑是"锚点失败"而不是存活**：它锚在 `if terminal := _check_terminal(state):`，
+而全仓 15 个 router 共享这个形状（`count=15`）→ 收紧到 `publish_gate_outcome` 自己的
+docstring 尾部后单独重跑才得 killed。**登记的是收紧锚点后的结果，不是首跑结果。**
+
+另有一条**先验真伪的副产品**：`Command(resume={})` 在真实图上**根本不会解开中断** —— 
+LangGraph 把空载荷读成"没有可恢复的东西"，节点重新 `interrupt()`，线程原样停在关卡上
+（`phase` 未动、`publish_confirmation` 未写、`next` 仍是 `("publish_gate",)`）。这不是错误，
+而是**对空回答最安全的读法**，且与"拒绝"可区分，所以单独立了一条
+`test_an_empty_resume_leaves_the_gate_waiting` 而不是并进拒绝组。
+
+**那条钉边的拓扑绊线又按设计响了一次（并且同样被改形而不是删掉）**：
+`tests/integration/test_evaluator_gate.py::test_evaluator_gate_branch_to_publisher_and_revise`
+断言 evaluator 分支的 `"publisher"` 端点**指向 `publisher` 节点** —— 这正是本片改掉的那条边。
+处理：改名 `test_evaluator_gate_branch_to_the_publish_gate_and_revise`、断言改
+`== "publish_gate"`（并在注释里说明 verdict 的名字仍叫 `"publisher"`：那是**质量陈述**，
+授权是下一跳），**再加两条**（`publish_gate` 节点存在 / 它的分支到 `publisher` 或 `__end__`）。
+另一条同类改形在 `tests/integration/test_evaluator_pause_resume.py`：`("publisher",)` →
+`("publish_gate",)`（与 S4a 处理 orphan 绊线同一纪律）。
+
+**下一片（S5）的入口条件**：① 凭据整备 + `DecisionRecord` immutable 收尾 + 持久化"被拒"审计
+（本片的拒绝只写 `publish_confirmation` 与 phase，**没有落审计记录** —— 那是 S5 的范围）；
+② `docs/publish-action-protocol.md`；③ **待决问题 1 仍在**（要裁决它得先有产 intent 的调用者）；
+④ 待决问题 3（`compute_publish_id` 内容级 vs `ActionIntent.idempotency_key` 请求级）S4a 只在
+代码注释里半作答，票面**无正式裁决**；⑤ 501 兜底要么改成拒绝要么删掉（S3 遗留）。

@@ -24,6 +24,7 @@ class WorkflowStatus(StrEnum):
     AWAITING_BRIEF = "awaiting_brief"
     AWAITING_RIPPLE_DECISION = "awaiting_ripple_decision"
     AWAITING_BLOGGER_SELECTION = "awaiting_blogger_selection"
+    AWAITING_PUBLISH = "awaiting_publish"
     PAUSED = "paused"
     COMPLETED = "completed"
     ERROR = "error"
@@ -39,11 +40,12 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
     3. Interrupt at review_gate → awaiting_review
     4. Interrupt at choice_gate → awaiting_choice
     5. Interrupt at draft_gate → awaiting_draft
-    6. Error in state → error
-    7. Phase is completed → completed
-    8. Has next nodes but no active task → stale
-    9. Has next nodes with active task → running
-    10. No next nodes + no interrupt → completed
+    6. Interrupt at publish_gate → awaiting_publish
+    7. Error in state → error
+    8. Phase is completed → completed
+    9. Has next nodes but no active task → stale
+    10. Has next nodes with active task → running
+    11. No next nodes + no interrupt → completed
 
     Args:
         snapshot: LangGraph StateSnapshot from graph.aget_state()
@@ -90,6 +92,8 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
                 return WorkflowStatus.AWAITING_RIPPLE_DECISION
             if "blogger_gate" in next_nodes:
                 return WorkflowStatus.AWAITING_BLOGGER_SELECTION
+            if "publish_gate" in next_nodes:
+                return WorkflowStatus.AWAITING_PUBLISH
         # Fallback: determine gate type from interrupt value (dynamic interrupt only)
         if has_interrupt:
             gate_type = None
@@ -109,24 +113,26 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
                 return WorkflowStatus.AWAITING_BLOGGER_SELECTION
             if gate_type == "brief_clarification":
                 return WorkflowStatus.AWAITING_BRIEF
+            if gate_type == "publish":
+                return WorkflowStatus.AWAITING_PUBLISH
             # Unknown gate type with interrupt — fall through to remaining checks
 
-    # Priority 6: Error (only when terminal — phase is ERROR or no next nodes)
+    # Priority 7: Error (only when terminal — phase is ERROR or no next nodes)
     # If there are next nodes, the error may be retried, so treat as RUNNING
     if values.get("error") and (phase == WorkflowPhase.ERROR or not next_nodes):
         return WorkflowStatus.ERROR
 
-    # Priority 7: Completed phase
+    # Priority 8: Completed phase
     if phase == WorkflowPhase.COMPLETED:
         return WorkflowStatus.COMPLETED
 
-    # Priority 8: Has next nodes but no active background task → stale
+    # Priority 9: Has next nodes but no active background task → stale
     if next_nodes and not has_active_task:
         return WorkflowStatus.STALE
 
-    # Priority 9: Has next nodes with active task → running
+    # Priority 10: Has next nodes with active task → running
     if next_nodes:
         return WorkflowStatus.RUNNING
 
-    # Priority 10: No next nodes, no interrupt → completed
+    # Priority 11: No next nodes, no interrupt → completed
     return WorkflowStatus.COMPLETED

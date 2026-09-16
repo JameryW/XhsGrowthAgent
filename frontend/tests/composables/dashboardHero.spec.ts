@@ -14,6 +14,7 @@ describe('getDashboardHero', () => {
     ['idle', 'idle', 'dashboard.hero.idleTitle', 'pink'],
     ['scouting', 'running', 'dashboard.hero.runningTitle', 'cyan'],
     ['creating', 'awaiting_draft', 'dashboard.hero.waitingTitle', 'amber'],
+    ['publishing', 'awaiting_publish', 'dashboard.hero.waitingTitle', 'amber'],
     ['reviewing', 'awaiting_review', 'dashboard.hero.reviewTitle', 'violet'],
     ['completed', 'completed', 'dashboard.hero.completedTitle', 'emerald'],
     ['error', 'error', 'dashboard.hero.errorTitle', 'rose'],

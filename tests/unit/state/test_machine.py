@@ -163,6 +163,53 @@ class TestDeriveStatus:
         )
         assert derive_status(snapshot) == WorkflowStatus.AWAITING_BLOGGER_SELECTION
 
+    def test_interrupt_at_publish_gate_returns_awaiting_publish(self):
+        """next_nodes carries publish_gate → AWAITING_PUBLISH."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.REVIEWING},
+            next=["publish_gate"],
+            interrupts=[],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_PUBLISH
+
+    def test_dynamic_interrupt_publish_gate_returns_awaiting_publish(self):
+        """Dynamic interrupt() carrying gate=publish → AWAITING_PUBLISH.
+
+        publish_gate interrupts from inside the node (like brief_gate and
+        ripple_gate), so this is the shape the real graph produces; the
+        next_nodes branch above is the belt to this pair of braces.
+        """
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "publish"}
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.REVIEWING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_PUBLISH
+
+    def test_near_miss_gate_value_is_not_awaiting_publish(self):
+        """The payload value is a contract — a near miss must not match it."""
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "publish_confirm"}
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.REVIEWING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) != WorkflowStatus.AWAITING_PUBLISH
+
+    def test_non_dict_interrupt_value_is_not_awaiting_publish(self):
+        """A bare string payload is not a gate marker (the node sends a dict)."""
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = "publish"
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.REVIEWING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) != WorkflowStatus.AWAITING_PUBLISH
+
     def test_dynamic_interrupt_draft_gate(self):
         """Dynamic interrupt with gate=draft → AWAITING_DRAFT."""
         interrupt_mock = MagicMock()

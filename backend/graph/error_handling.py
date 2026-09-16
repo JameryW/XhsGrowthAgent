@@ -44,6 +44,9 @@ RETRY_POLICIES: dict[str, RetryPolicy | None] = {
     "shooting_planner": None,
     "revise_content": None,
     "ripple_gate": None,
+    # 发布确认关卡（P2a-S4b）：节点体内是 interrupt()，框架级重试包住一个
+    # 中断点没有意义（重试不会改变人的答复），显式 None。
+    "publish_gate": None,
     "ripple_finalize": None,
     "ripple_late_recheck": None,
     "draft_gate": None,

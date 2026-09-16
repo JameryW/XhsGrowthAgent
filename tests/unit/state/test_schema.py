@@ -46,6 +46,19 @@ def test_state_has_required_fields():
     assert required_keys.issubset(annotations.keys())
 
 
+def test_publish_confirmation_is_its_own_key():
+    """P2a-S4b: the publish authorisation is a field, not a reuse of human_feedback.
+
+    Both are human decisions, so folding them into one key is the tempting
+    refactor — and it would pass every other test, because an update to an
+    undeclared key still lands in the checkpoint. What breaks is the review
+    router: it routes on ``human_feedback.decision``, so a gate writing there
+    would overwrite the verdict it reads. This assertion is here because the
+    declaration in schema.py is the only place that reasoning is visible.
+    """
+    assert "publish_confirmation" in XHSGrowthState.__annotations__
+
+
 def test_dead_fields_stay_deleted():
     """Regression guard for keys that must never re-enter the checkpoint.
 

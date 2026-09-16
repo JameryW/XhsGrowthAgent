@@ -69,6 +69,12 @@ class XHSGrowthState(TypedDict, total=False):
     # Human review
     human_feedback: HumanFeedback
 
+    # 发布授权（P2a-S4b）—— 与 human_feedback 分开，因为它们是两个决定：
+    # human_feedback 回答"这篇内容能不能过"，这里回答"这次不可逆的外部动作
+    # 做不做"。合成一个键会让 publish_gate 的写入覆盖 review_gate 的判据
+    # （review_outcome 正是读 human_feedback.decision 路由）。
+    publish_confirmation: dict[str, Any]
+
     # 创作质量评估 (RQGM agent-as-a-judge 面板) — 发布前 AI 质量关卡
     evaluation_result: EvaluationResult
 

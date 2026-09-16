@@ -1395,6 +1395,7 @@
       "awaiting_draft": "Awaiting Draft",
       "awaiting_brief": "Awaiting Brief",
       "awaiting_blogger_selection": "Awaiting Blogger",
+      "awaiting_publish": "Awaiting Publish",
       "stale": "Stale",
       "paused": "Paused",
       "idle": "Idle"
@@ -1961,6 +1962,7 @@
       "awaiting_brief": "Awaiting brief",
       "awaiting_ripple_decision": "Awaiting Ripple decision",
       "awaiting_blogger_selection": "Awaiting blogger",
+      "awaiting_publish": "Awaiting publish",
       "paused": "Paused",
       "completed": "Completed",
       "error": "Failed",

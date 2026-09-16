@@ -1481,6 +1481,49 @@ async def resume_workflow(
             }
         )
 
+    if derived == WorkflowStatus.AWAITING_PUBLISH:
+        # 发布确认关卡（P2a-S4b）。和前三个 gate 不同的地方只有一处，而它是
+        # 刻意的：brief / ripple / blogger 的 resume_value 都有默认值（skip /
+        # accept），因为那里的默认是"继续一件已经被授权的事"；这里没有默认值，
+        # 因为这里的默认会**执行那个不可逆的动作**。所以缺 decision 时不动作、
+        # 只说明该发什么 —— 空 body 的 /resume 绝不能读成一次发布确认。
+        body = (
+            await request.json()
+            if request.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
+        resume_value = body.get("resume_value")
+        if not isinstance(resume_value, dict) or "decision" not in resume_value:
+            return success(
+                data={
+                    "thread_id": thread_id,
+                    "status": WorkflowStatus.AWAITING_PUBLISH.value,
+                    "message": (
+                        "工作流正在等待发布确认。请以 "
+                        '{"resume_value": {"decision": "confirmed"}} 确认发布，'
+                        '或 {"resume_value": {"decision": "cancelled"}} 取消；'
+                        "不带 decision 的恢复不会发布任何内容。"
+                    ),
+                }
+            )
+
+        result = await _runner._run_graph_and_persist(
+            thread_id,
+            graph,
+            config,
+            Command(resume=resume_value),
+            source="publish_confirmation",
+        )
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "running",
+                "phase": result.get("phase", WorkflowPhase.PUBLISHING)
+                if result
+                else WorkflowPhase.PUBLISHING,
+            }
+        )
+
     next_nodes = tuple(state.next or ())
     if "engagement" in next_nodes:
         return success(
