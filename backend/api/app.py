@@ -1329,6 +1329,42 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logging.getLogger("xhs_growth").warning(f"omp bridge manager not started: {e}")
         app.state.omp_bridge_manager = None
 
+    # P2b-S3: automatic takeover of threads whose owner died mid-flight. The
+    # scan is gated on the lease (`acquire`), so a live owner is never taken
+    # over; what it recovers is work whose lease went silent -- i.e. a process
+    # that was killed. `durability` is reported alongside because without
+    # Postgres the lease is in-memory and a restart leaves nothing behind, so
+    # "no takeover happened" and "there was nothing durable to take over" must
+    # stay distinguishable (P2b ruling 2).
+    from backend.api.routes._takeover import (
+        initial_status,
+        startup_takeover_scan,
+        takeover_scheduler,
+    )
+    from backend.db.execution_leases import durability as lease_durability
+
+    takeover_enabled = bool(getattr(settings.workflow, "takeover_enabled", True))
+    takeover_interval = max(
+        5.0,
+        _finite_float(getattr(settings.workflow, "takeover_interval_seconds", 60.0), 60.0),
+    )
+    app.state.takeover_status = initial_status(
+        enabled=takeover_enabled,
+        durability=lease_durability().value,
+        interval_seconds=takeover_interval,
+    )
+    takeover_task: asyncio.Task[None] | None = None
+    if takeover_enabled:
+        # The first pass catches whatever expired while the service was down.
+        # A thread lost in the restart itself is only picked up on a later
+        # sweep, because its lease is still within TTL.
+        await startup_takeover_scan(app)
+        takeover_task = asyncio.create_task(
+            takeover_scheduler(app, interval_seconds=takeover_interval),
+            name="execution-takeover-scan",
+        )
+    app.state.takeover_scheduler = takeover_task
+
     # Import only enabled accounts in the background.  The scheduler is
     # deliberately started after DB/bootstrap and bridge initialization so it
     # cannot race account table creation or Chrome startup.  A non-positive
@@ -1429,6 +1465,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         creator_stats_scheduler.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await creator_stats_scheduler
+
+    if takeover_task is not None:
+        takeover_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await takeover_task
 
     # Stop omp bridge manager
     if getattr(app.state, "omp_bridge_manager", None):
@@ -1553,6 +1594,25 @@ async def health() -> ApiResponse[Any]:
             "last_cdp_busy_holder",
         )
         scheduler = {key: scheduler_state.get(key) for key in health_fields}
+    takeover_state = getattr(app.state, "takeover_status", None)
+    execution_takeover = None
+    if isinstance(takeover_state, dict):
+        takeover_fields = (
+            "enabled",
+            "durability",
+            "interval_seconds",
+            "status",
+            "run_count",
+            "last_started_at",
+            "last_finished_at",
+            "last_source",
+            "last_newly_expired",
+            "last_taken_over",
+            "last_refused",
+            "last_skipped",
+            "last_error",
+        )
+        execution_takeover = {key: takeover_state.get(key) for key in takeover_fields}
     cdp_sessions: list[dict[str, Any]] = []
     risk_gates: dict[str, Any] | None = None
     with contextlib.suppress(Exception):
@@ -1569,6 +1629,7 @@ async def health() -> ApiResponse[Any]:
             "version": "0.1.0",
             "db": db_status,
             "creator_stats_scheduler": scheduler,
+            "execution_takeover": execution_takeover,
             "cdp_sessions": cdp_sessions,
             "risk_gates": risk_gates,
         }

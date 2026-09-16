@@ -84,6 +84,12 @@ class WorkflowSettings(BaseSettings):
     scout_interval_hours: int = 6
     post_interval_hours: int = 4
     analytics_interval_hours: int = 12
+    # P2b-S3 automatic takeover. A thread lost to a `kill -9` is picked up once
+    # its lease has been silent for LEASE_TTL_SECONDS (90s), so the worst case
+    # after a restart is one TTL plus one interval; a thread that expired while
+    # the service was down is caught by the startup pass instead.
+    takeover_enabled: bool = True
+    takeover_interval_seconds: float = 60.0
 
     model_config = {"env_prefix": "WORKFLOW_", "env_file": ".env", "extra": "ignore"}
 

@@ -349,6 +349,44 @@ def _save_history_file(thread_id: str, state_values: dict[str, Any]) -> None:
         logger.exception("Failed to save history for %s", thread_id)
 
 
+def _fence_on_lost_lease(thread_id: str, heartbeat: asyncio.Task[None]) -> asyncio.Event:
+    """Stop this run the moment the lease behind it goes away.
+
+    ``renew``'s docstring left this to S3: S1 logged a lost lease and kept
+    working. That was harmless while nothing acted on a lease, and it is not
+    harmless now that a scan takes an expired one over -- if this instance no
+    longer owns the row then another instance does, and the only way left to
+    keep red line 4 ("no two writers on one checkpoint") is to stop before the
+    next write.
+
+    What makes this safe to wire up is the distinction it draws: a heartbeat
+    that ends by itself means ``renew`` answered False, i.e. the row stopped
+    being ours. A heartbeat cancelled by ``end_lease`` is this run finishing
+    normally and must not fence anything -- hence ``task.cancelled()`` rather
+    than merely "the heartbeat finished".
+
+    A synchronously-executed run is fenced too. That aborts the HTTP response
+    the caller is waiting on, which is still the better of the two outcomes: an
+    aborted request beats a second writer on the same checkpoint.
+    """
+    lost = asyncio.Event()
+    owner = asyncio.current_task()
+
+    def _on_heartbeat_done(task: asyncio.Task[None]) -> None:
+        if task.cancelled():
+            return
+        logger.warning(
+            "execution lease lost for %s: stopping this run before it writes again",
+            thread_id,
+        )
+        lost.set()
+        if owner is not None and not owner.done():
+            owner.cancel()
+
+    heartbeat.add_done_callback(_on_heartbeat_done)
+    return lost
+
+
 async def _run_graph_and_persist(
     thread_id: str,
     graph: Any,
@@ -378,6 +416,11 @@ async def _run_graph_and_persist(
         from backend.db.execution_leases import start_lease
 
         lease_heartbeat = await start_lease(thread_id)
+
+    # P2b-S3: the lease now fences its own owner. See _fence_on_lost_lease.
+    lease_lost = asyncio.Event()
+    if lease_heartbeat is not None:
+        lease_lost = _fence_on_lost_lease(thread_id, lease_heartbeat)
 
     try:
         result = await graph.ainvoke(input_data, config)
@@ -428,6 +471,11 @@ async def _run_graph_and_persist(
         return result or {}
 
     except asyncio.CancelledError:
+        # P2b-S3: a fence-cancelled run must not write a status. Whoever holds
+        # the lease owns this row now; writing "cancelled" here would erase the
+        # takeover that just started.
+        if lease_lost.is_set():
+            raise
         # Only update DB if this task is still the registered one —
         # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
         if _background_tasks.get(thread_id) is not asyncio.current_task():

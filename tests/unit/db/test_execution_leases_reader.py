@@ -60,8 +60,9 @@ class TestThreadIsHeld:
 
         _advance(clock, leases.LEASE_TTL_SECONDS + 1)
 
-        # Nothing ran expire_scan -- there is no production caller for it -- so
-        # the row still says "held". The reader must not trust that word.
+        # Nothing ran expire_scan here, so the row still says "held". The
+        # reader must not trust that word -- the scan runs on a schedule, not
+        # the moment an owner dies.
         assert (await leases.get_lease("t1")).state is leases.LeaseState.HELD
         assert await leases.thread_is_held("t1") is False
 

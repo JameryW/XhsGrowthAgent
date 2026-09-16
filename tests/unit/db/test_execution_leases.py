@@ -1,4 +1,4 @@
-"""S1 data plane: a lease states who is running a thread, and nothing reads it yet.
+"""Lease data plane: a lease states who is running a thread (P2b-S1).
 
 Two jobs here. The obvious one is that the store behaves on the path it claims
 to support (the no-Postgres fallback, so the tests are hermetic). The other is
@@ -100,6 +100,34 @@ class TestAcquire:
 
     async def test_takes_over_a_silent_lease(self, monkeypatch) -> None:
         await leases.acquire("t1", ttl_seconds=0.0)
+        monkeypatch.setattr(leases, "_instance_id", _OTHER_OWNER)
+
+        assert await leases.acquire("t1") is True
+        assert (await leases.get_lease("t1")).owner_id == _OTHER_OWNER
+
+    async def test_takes_over_an_expired_lease_from_another_owner(self, monkeypatch) -> None:
+        """The state S3's scan actually meets, and the divergence it found.
+
+        The scan calls ``expire_scan`` before it acquires, so the row it is
+        taking over is already ``expired`` by then. ``_ACQUIRE_SQL`` grants that
+        (``state <> 'held'``); the fallback used to refuse it, because it judged
+        the incumbent with ``is_stale`` -- which answers "held and expired", and
+        so is False for an expired row. Same question, two answers.
+        """
+        await leases.acquire("t1", ttl_seconds=0.0)
+        assert await leases.expire_scan() == ["t1"]
+        monkeypatch.setattr(leases, "_instance_id", _OTHER_OWNER)
+
+        assert await leases.acquire("t1") is True
+        record = await leases.get_lease("t1")
+        assert record is not None
+        assert record.owner_id == _OTHER_OWNER
+        assert record.state is leases.LeaseState.HELD
+
+    async def test_takes_over_a_released_lease_from_another_owner(self, monkeypatch) -> None:
+        """The same clause of the SQL, reached by the other non-held state."""
+        await leases.acquire("t1")
+        assert await leases.release("t1") is True
         monkeypatch.setattr(leases, "_instance_id", _OTHER_OWNER)
 
         assert await leases.acquire("t1") is True
