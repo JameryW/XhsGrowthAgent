@@ -84,6 +84,24 @@ def _submit_outcome_is_unknown(result: dict[str, Any], status: str) -> bool:
     return status in ("unknown", "pending")
 
 
+def publish_is_dry_run(state: Mapping[str, Any]) -> bool:
+    """Is this run a rehearsal — nothing that reaches the platform?
+
+    ONE rule, two readers: ``PublisherAgent.execute`` picks the mock path with
+    it, and the publish gate (P2a-S4b) decides whether a fresh human yes is
+    needed with it.  Two sources, either one True wins — the workflow-level
+    flag from ``/start`` and the decision-level one from ``/api/review/submit``.
+
+    The workflow-level flag is deliberately the stronger of the two: a thread
+    started as a dry run must stay one even when the approving decision asks
+    for a real publish.  Reading only ``publish_options`` — which is what a
+    reader who only ever saw the review path would write — would let that
+    decision silently flip it.
+    """
+    publish_options = state.get("publish_options") or {}
+    return bool(state.get("dry_run")) or bool(publish_options.get("dry_run", False))
+
+
 def _publish_account_id(state: Mapping[str, Any]) -> str:
     publish_options = state.get("publish_options") or {}
     return (
@@ -433,7 +451,7 @@ class PublisherAgent(BaseAgent):
         #      to True when the decision omits publish_options).
         # Either being True triggers the mock path.
         publish_options = state.get("publish_options") or {}
-        is_dry_run = bool(state.get("dry_run")) or publish_options.get("dry_run", False)
+        is_dry_run = publish_is_dry_run(state)
 
         if is_dry_run or not use_browser:
             if is_dry_run:

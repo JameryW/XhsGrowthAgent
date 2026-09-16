@@ -1,7 +1,8 @@
 """Integration tests for the evaluator gate (RQGM agent-as-a-judge).
 
 Validates the pre-publish quality-gate chain:
-  review_gate(approved) → evaluator_gate → evaluator_outcome → publisher | revise_content
+  review_gate(approved) → evaluator_gate → evaluator_outcome → publish_gate
+                                                          → publisher | revise_content
 
 Covers:
 1. evaluator_node writes evaluation_result + emits event
@@ -10,7 +11,7 @@ Covers:
 3. evaluator_outcome routing for approved / needs_revision / rejected / missing
 4. revise_content_node preserves evaluation_result.revision_hints into
    human_feedback.revisions for the copywriter
-5. Graph topology wires review_gate → evaluator_gate → publisher
+5. Graph topology wires review_gate → evaluator_gate → publish_gate → publisher
 """
 
 # ruff: noqa: E501, UP031  — long JSON fixtures + %-format avoids {}/f-string clash
@@ -280,7 +281,7 @@ class TestReviseContentPreservesHints:
 
 
 class TestGraphTopologyEvaluatorGate:
-    """build_graph wires review_gate → evaluator_gate → publisher."""
+    """build_graph wires review_gate → evaluator_gate → publish_gate → publisher."""
 
     def test_evaluator_gate_node_exists(self):
         g = build_graph()
@@ -293,13 +294,29 @@ class TestGraphTopologyEvaluatorGate:
         ends = next(iter(review_branch.values())).ends
         assert ends.get("evaluator_gate") == "evaluator_gate"
 
-    def test_evaluator_gate_branch_to_publisher_and_revise(self):
+    def test_evaluator_gate_branch_to_the_publish_gate_and_revise(self):
         g = build_graph()
         ev_branch = g.branches.get("evaluator_gate")
         assert ev_branch is not None
         ends = next(iter(ev_branch.values())).ends
-        assert ends.get("publisher") == "publisher"
+        # The verdict is still *named* "publisher" — it answers a quality
+        # question.  Since P2a-S4b the edge lands on the gate that asks a human
+        # before the irreversible act, because that is a separate decision.
+        assert ends.get("publisher") == "publish_gate"
         assert ends.get("revise_content") == "revise_content"
         # P0-W5 human channel: fail-closed outcomes end the run (the node has
         # already parked the workflow in the existing paused status).
+        assert "__end__" in ends
+
+    def test_publish_gate_node_exists(self):
+        g = build_graph()
+        assert "publish_gate" in g.nodes
+
+    def test_publish_gate_branch_to_publisher_or_end(self):
+        g = build_graph()
+        gate_branch = g.branches.get("publish_gate")
+        assert gate_branch is not None
+        ends = next(iter(gate_branch.values())).ends
+        assert ends.get("publisher") == "publisher"
+        # A refusal ends the run: nothing is published without a confirmation.
         assert "__end__" in ends

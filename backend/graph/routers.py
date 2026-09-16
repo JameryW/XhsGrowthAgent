@@ -285,6 +285,27 @@ def evaluator_outcome(
     return "publisher"
 
 
+def publish_gate_outcome(state: XHSGrowthState) -> Literal["publisher", "__end__"]:
+    """发布确认路由 — 只有明确的确认才放行那次不可逆的发布.
+
+    节点已把人的答复写进 ``publish_confirmation``；这里只读它。**默认拒绝**：
+    确认值缺失、拼错、或是来自旧客户端的任何别的词，一律不放行 —— 一个把
+    无法识别的值读成"继续"的确认关卡，会把每一次版本错配都变成一次未经
+    确认的真实发布。本节点存在的理由就是挡住这个方向，所以它的失败方向
+    必须是关。
+
+    取消时节点已把 phase 置为 CANCELLED，故 `_check_terminal` 在这里也返回
+    __end__；两条路径通向同一结果是有意的 —— 无论读到哪个键，结论一致。
+    """
+    if terminal := _check_terminal(state):
+        return terminal
+
+    confirmation = state.get("publish_confirmation") or {}
+    if str(confirmation.get("decision") or "") == "confirmed":
+        return "publisher"
+    return "__end__"
+
+
 def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:
     """分析后决定是否继续下一个周期
 

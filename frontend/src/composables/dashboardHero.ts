@@ -82,6 +82,7 @@ export function getDashboardHero(input: DashboardHeroInput, t: Translate): Dashb
     input.status === 'awaiting_choice' ||
     input.status === 'awaiting_ripple_decision' ||
     input.status === 'awaiting_blogger_selection' ||
+    input.status === 'awaiting_publish' ||
     input.status === 'paused' ||
     input.status === 'stale'
   ) {

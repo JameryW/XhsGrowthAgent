@@ -27,6 +27,7 @@ export type WorkflowStatus =
   | 'awaiting_brief'
   | 'awaiting_ripple_decision'
   | 'awaiting_blogger_selection'
+  | 'awaiting_publish'
   | 'paused'
   | 'completed'
   | 'error'

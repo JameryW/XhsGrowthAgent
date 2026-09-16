@@ -12,8 +12,10 @@ LangGraph semantics the /resume endpoint depends on:
   1. after the fail-closed END the thread is terminal and carries
      pause_reason="evaluator_fail_closed";
   2. a human "approve" patched with as_node="evaluator_gate" makes the *next*
-     node publisher — the conditional edge (evaluator_outcome) is re-evaluated
-     and upstream agents are not re-run;
+     node the publish path — the conditional edge (evaluator_outcome) is
+     re-evaluated and upstream agents are not re-run.  Since P2a-S4b that next
+     node is publish_gate rather than publisher: the AI verdict answers whether
+     the content MAY be published, the human authorisation is a separate hop;
   3. a human "revise" routes to revise_content with a fresh revision budget.
 
 The state patch comes from the same builder the route uses
@@ -128,15 +130,18 @@ class TestEvaluatorFailClosedPause:
         merged = {**final, **updates}
 
         assert evaluator_requires_human(merged) is False
+        # The router still ANSWERS "publisher" — that verdict is a statement
+        # about content quality.  P2a-S4b only moved the edge's target, see
+        # test_as_node_patch_routes_to_the_publish_gate below.
         assert evaluator_outcome(merged) == "publisher"
         assert updates["pause_reason"] is None
 
 
-class TestResumeApproveGoesStraightToPublisher:
-    """approve → publisher runs; upstream creation agents do NOT re-run."""
+class TestResumeApproveReachesThePublishPath:
+    """approve → the publish path is entered; upstream agents do NOT re-run."""
 
     @pytest.mark.asyncio
-    async def test_as_node_patch_makes_publisher_the_next_node(self):
+    async def test_as_node_patch_routes_to_the_publish_gate(self):
         graph = _compile_test_graph()
         config = {"configurable": {"thread_id": "w5-approve-next"}}
         final = await _drive_to_fail_closed_pause(graph, config)
@@ -146,10 +151,14 @@ class TestResumeApproveGoesStraightToPublisher:
 
         snapshot = await graph.aget_state(config)
         # Empirical LangGraph semantics: the conditional edge is re-evaluated.
-        assert tuple(snapshot.next or ()) == ("publisher",)
+        # evaluator_outcome still ANSWERS "publisher"; P2a-S4b moved the edge's
+        # target one hop on, to the gate that asks a human before the
+        # irreversible act.  Pinned here so a future re-wiring of this edge has
+        # to come through this assertion.
+        assert tuple(snapshot.next or ()) == ("publish_gate",)
 
     @pytest.mark.asyncio
-    async def test_continue_executes_only_publisher_downstream(self):
+    async def test_continue_runs_only_the_publish_path(self):
         graph = _compile_test_graph()
         config = {"configurable": {"thread_id": "w5-approve-run"}}
         final = await _drive_to_fail_closed_pause(graph, config)
@@ -159,6 +168,11 @@ class TestResumeApproveGoesStraightToPublisher:
 
         visited = await _collect_visited(graph, config)
 
+        # This seed is a dry run, so the gate finds a standing authorisation and
+        # passes the run straight through without asking — which is what keeps
+        # this a publish-path test rather than a gate test (the gate's own
+        # behaviour is pinned in test_publish_gate_flow.py).
+        assert "publish_gate" in visited
         assert "publisher" in visited
         for upstream in UPSTREAM_NODES:
             assert upstream not in visited, f"{upstream} re-ran after an approve resume"

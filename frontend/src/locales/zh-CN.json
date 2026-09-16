@@ -1395,6 +1395,7 @@
       "awaiting_draft": "待草稿",
       "awaiting_brief": "待简报",
       "awaiting_blogger_selection": "待选博主",
+      "awaiting_publish": "待确认发布",
       "stale": "已过期",
       "paused": "已暂停",
       "idle": "空闲"
@@ -1961,6 +1962,7 @@
       "awaiting_brief": "等待 Brief",
       "awaiting_ripple_decision": "等待 Ripple 决策",
       "awaiting_blogger_selection": "等待选择博主",
+      "awaiting_publish": "等待确认发布",
       "paused": "已暂停",
       "completed": "已完成",
       "error": "执行失败",

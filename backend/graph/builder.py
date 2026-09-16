@@ -23,6 +23,7 @@ from backend.agents.nodes import (
     copywriter_node,
     evaluator_node,
     orchestrator_node,
+    publish_gate_node,
     publisher_node,
     review_gate_node,
     revise_content_node,
@@ -50,6 +51,7 @@ from backend.graph.routers import (
     draft_gate_router,
     evaluator_outcome,
     orchestrator_router,
+    publish_gate_outcome,
     review_outcome,
     ripple_finalize_router,
     ripple_gate_router,
@@ -110,6 +112,11 @@ def build_graph() -> StateGraph[XHSGrowthState]:
         _artifact_seam(evaluator_node),
         retry_policy=get_retry_policy("evaluator_gate"),
     )
+    # Publish confirmation gate — the human authorisation a real publish needs.
+    # Sits between the quality verdict and the irreversible act; registered with
+    # no retry because its body interrupts and re-running cannot change a
+    # person's answer.
+    builder.add_node("publish_gate", _artifact_seam(publish_gate_node))
     # Publisher — external side-effect node. P0-W3: generic framework auto-retry
     # is forbidden (a retry would re-post); explicit None + /publish-retry with
     # idempotency key + unknown reconciliation is the only retry path.
@@ -381,8 +388,21 @@ def build_graph() -> StateGraph[XHSGrowthState]:
         "evaluator_gate",
         evaluator_outcome,
         {
-            "publisher": "publisher",
+            # The verdict is still spelled "publisher" — it means "this content
+            # MAY be published", which is a quality statement.  The human
+            # authorisation is the next hop, not this one.
+            "publisher": "publish_gate",
             "revise_content": "revise_content",
+            "__end__": END,
+        },
+    )
+
+    # ── 发布确认 → 发布 或 结束（P2a-S4b）──
+    builder.add_conditional_edges(
+        "publish_gate",
+        publish_gate_outcome,
+        {
+            "publisher": "publisher",
             "__end__": END,
         },
     )
