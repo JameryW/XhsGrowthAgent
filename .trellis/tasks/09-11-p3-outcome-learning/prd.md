@@ -59,15 +59,22 @@ if engagement:                                  # ← 恒为 False
 `grep -n '"views"\|"likes"\|"collects"\|"comments"\|"shares"\|"impressions"' backend/agents/publisher.py` → **零命中**。
 唯一的真实发布返回（`agents/publisher.py:818`）只回 `publish_result`（经 `_with_publish_link_metadata` 加了 `workflow_thread_id` / `platform_post_id` / `link_status`）。整个文件对 `publish_result` 的 12 处赋值**全部**是 `error` / `error_type` / `recovery` / `result_known` / `note` / `publish_id` —— 全是错误与恢复元数据，**一个指标都没有**（`grep -rn 'publish_result\[' backend/ --include="*.py"`）。
 
-**证据 1b — 唯一的调用者已经在图上被摘掉了。**
-`backend/graph/builder.py:183-186`：
+**证据 1b — 自动边被摘掉了，但手动入口是完整的（★ 本节在 S1 开工首日被自我更正，理由见第九节）。**
+`backend/graph/builder.py:183-187`：
 
 ```python
 # ── 发布后直接结束（analyst 改为手动触发）──
+builder.add_edge("publisher", END)
+
 # analyst is kept as a node but no longer auto-triggered after publish.
+# It can be reached by resuming the workflow with phase=analyzing.
 ```
 
-`analyst` 是 `backfill_engagement` 的两个调用点之一（另一个是 `routes/free.py:1068` 的 free 模式草稿路径，它同样被 `if engagement:` 门控）。⇒ **主管线里 `backfill_engagement` 没有消费者路径。**
+`analyst` 是 `backfill_engagement` 的两个调用点之一（另一个是 `routes/free.py:1068` 的 free 模式草稿路径，它同样被 `if engagement:` 门控）。
+
+**自动边确实没有了，但手动通路是完整的**：`state/modes.py:162-199` 两张 phase 表**都**写着 `WorkflowPhase.ANALYZING: "analyst"`；`api/routes/_wf_application.py:1818` 是「**手动触发 analyst 节点（发布后手动运行 Ripple 分析）**」的端点，实现为 `aupdate_state({"phase": ANALYZING, "error": None}, as_node="publisher")` + `_start_resume_task(..., input_data=Command(goto=["analyst"]))`（`:1857-1868`），并带 `assert_thread_owned` 鉴权与 `has_analytics` 幂等门（`:1837-1854`）。
+
+⇒ **断点的性质不是「没人跑」，而是「跑了也拿不到」** —— `publish_result` 里根本没有那五个键（证据 1a），手动触发 analyst 读到的仍是同一份发布当刻的 dict。
 
 **证据 1c — 那个枚举值从未被写过。**
 `label_source: str  # "evaluator" | "engagement" | "human_review"`（`db/evaluator_config.py:347`）声明了三个值；实际写入只有两处，都是 `"evaluator"`（`agents/nodes/evaluator.py:149`、`routes/free.py:884`）。
@@ -95,7 +102,7 @@ if engagement:                                  # ← 恒为 False
 
 > **P3 缺的不是「Outcome Learning 闭环」，是闭环里两条已经被设计出来的连接：**
 >
-> 1. **`publish_result` 不带指标，而唯一会读它的回填者（`analyst`）已在 `builder.py:183` 被摘成手动触发** ⇒ 弱标签的投喂路径事实上不存在（不是「还没接」，是「接了一条空管子并且把水泵拆了」）。
+> 1. **`publish_result` 不带指标，而唯一会读它的回填者（`analyst`）读的就是它** ⇒ 弱标签的投喂**在数据上不可能成功**。这一点与「有没有人触发 analyst」无关：analyst 的手动通路是完整的（`_wf_application.py:1818`），但手动跑它读到的仍是同一份发布当刻的 dict，五个指标键一个都不在。（★ 原稿把这条写成「调用者被摘掉 ⇒ 路径不存在」，S1 开工首日实测更正，见第九节。）
 > 2. **真实指标在 `creator_note_stats`，linker 也已经能用显式 id 匹配证明「这次 run 产生了哪条笔记」，但这个证明是纯读投影、不落库、无下游** ⇒ 真数据到学习层的边不存在。
 >
 > 与 P2c 的形状同源：P2c 的结论是「**缺的不是 Planner，是「计划」这个对象**」；P3 的结论是「**缺的不是闭环，是那两条边**」。
@@ -144,13 +151,29 @@ if engagement:                                  # ← 恒为 False
 3. **`evaluator_samples` 是否该由 `creator_note_stats` 反向驱动（即指标变了就重算样本）？**
    实测：`creator_note_stats` 有 `synced_at`、`upsert_note_stats` 是 upsert (`db/creator_stats.py:494`)，所以同一 `note_id` 的指标会**多次更新**（笔记会持续跑量）。
    ⇒ **待 S3 定形后再判**：S3 的第一版按「sync 后回填一次」实现，不做增量重算；重算与否取决于 S3 暴露的重复回填代价。
-4. **`analyst` 节点既然发布后不再自动触发，它今天还有生产用途吗？**
-   实测：`builder.py:186` 说明它是「kept as a node」；但它做的三件事（写 `content_history` 指标、回填弱标签、存 insights）在它不跑时**全部不发生**。
-   ⇒ **S1 必须回答这个**：是恢复触发、还是把它的职责移交给已经存在于别处的能力（真实指标已有 `creator-stats/sync`）。**这是本片最重要的待决项。**
+4. ~~**`analyst` 节点既然发布后不再自动触发，它今天还有生产用途吗？**~~ **★ 已裁定 —— S1 开工首日实测推翻了本条的前提。**
+   实测：analyst **可达**。自动边没了（`builder.py:184` `publisher → END`），但入口在 phase 表里（`modes.py:170/188` 的 `ANALYZING: "analyst"`），且有一个完整的手动端点（`_wf_application.py:1818`，鉴权 + `has_analytics` 幂等门 + `Command(goto=["analyst"])`）。所以「不可达」是错的，本条改问一个更准的问题：**它手动跑起来之后，那三件事有几件真能产出？**
+   逐条实测：① 写 `content_history` 指标 —— 取自 `publish_result`（发布当刻，无指标）⇒ **产出恒 0**；② 回填弱标签 —— 同上，且 `if engagement:`（`analyst.py:279`）恒假 ⇒ **不发生**；③ 存 insights / `ripple_comparison` —— 由 LLM 输出与 `ripple_prediction` 比对得出，**不依赖 `publish_result` 的指标** ⇒ **这条有效**。
+   ⇒ **裁定：不恢复自动触发**（接回 `publisher → analyst` 只会让 ①② 在每个 run 上各做一次恒空动作）；**S1 只登记 ①② 的缺口并让它们可断言**，真指标的回填归 S3。`analyst` 的手动入口与 `creator-stats/sync` 是两件互补的事（前者产 LLM 洞察、后者导入平台事实），**都不删**。
 
 ## 八、本规划轮的交付
 
 - 本文档（`prd.md`）—— 首个规划产物。
 - `task.json` 回填 `branch` / `subtasks` / `relatedFiles`。
-- `check.jsonl` / `implement.jsonl` 替换掉模板示例行（填真实 spec/research 条目）。
+- `check.jsonl` / `implement.jsonl` **保持原样**（仍只有 `_example` 行）—— 实测 P2b / P2c 至今也是如此，**不填 jsonl 是本仓惯例**；账本只回填 `task.json` 的 `branch` / `relatedFiles` / `notes`。（原稿说会填，与惯例不符，一并更正。）
 - 不单独开 PR（随 S1 的 PR 一起进，沿用 P2c 的做法）。
+
+## 九、★ 规划轮的自我更正（S1 开工首日实测）
+
+规划轮的结论里有一条**站不住**，开工第一天就被实测撞破。如实记在这里，而不是悄悄改掉 —— 因为「这条为什么错」本身对后续几片有用。
+
+| | 规划轮写的 | 实测 | 错在哪 |
+|---|---|---|---|
+| **证据 1b** | 「唯一的调用者已经在图上被摘掉了」⇒「主管线里 `backfill_engagement` 没有消费者路径」 | `modes.py:162-199` 两张 phase 表都有 `ANALYZING: "analyst"`；`_wf_application.py:1818` 是完整的手动触发端点（`assert_thread_owned` + `has_analytics` 幂等门 + `Command(goto=["analyst"])`） | **把「自动边被摘」读成了「节点不可达」**。更刺眼的是：`builder.py:187` 那行注释**紧接着就写了** `It can be reached by resuming the workflow with phase=analyzing.` —— 我只读了上半句 |
+| **待决 4** | 「`analyst` 已不可达 ⇒ 它那三件事静默不发生」 | 三件事里 ①② 因数据源缺键而恒 0 / 不发生，③ insights **有效** | **把「数据不可能成功」误述成了「代码不可达」** —— 两者对 S1 该做什么的影响完全相反 |
+
+**教训（与「认声明是否真有执行」同族 —— 只是这次的「声明」是我自己写下的注释）**：
+
+- **一条注释里有转折时，转折之后那半句往往才是约束。** 遇到「X 不再自动发生」这类注释，要读到句号之后。
+- **「没有自动路径」不等于「没有路径」。** 判可达性要看**入口的集合**：`grep` phase 表/映射表的**全部值**（`ANALYZING` 就藏在那里），再找有没有显式的 `Command(goto=[...])`，而不是只检查某一条边还在不在。
+- **诚实呈现**：这条更正让断点的形状从「调度层缺一条边」变成「**数据层缺一个键**」—— 后者更小、更可测，也才真正解释了为什么 `label_source="engagement"` 至今零写入：**不是没人跑，是跑也写不进去。**
