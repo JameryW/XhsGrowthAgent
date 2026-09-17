@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 
 from backend.db.pool import get_pool
 
@@ -499,6 +500,43 @@ class TrainingReport:
     r_squared: float
     applied: bool = False
     note: str = ""
+
+
+# ── The weak-label contract, declared once ──
+
+#: The engagement payload the weak-label path has to receive.  ``_engagement_rate``
+#: below reads exactly these keys (``views`` as the denominator, the rest as the
+#: numerator) and the graph's analyst node is the only writer of a sample's
+#: ``engagement`` column, so one tuple keeps the requirement and the formula from
+#: drifting apart.  ``tests/unit/db/test_weak_label_contract.py`` pins both ends.
+#:
+#: **Nothing produces them today.**  ``agents/publisher.py`` never mentions a
+#: metric key at all, which is why every row's ``engagement`` is NULL and why
+#: ``label_source="engagement"`` has no writer yet.  The gap is registered rather
+#: than hidden: the real numbers live in ``creator_note_stats``, and wiring them
+#: through is a later slice's job.
+WEAK_LABEL_METRIC_KEYS: Final[tuple[str, ...]] = (
+    "views",
+    "likes",
+    "collects",
+    "comments",
+    "shares",
+)
+
+
+def build_weak_label(payload: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Select the weak-label metrics a payload actually carries.
+
+    Only keys that are present are returned, so an empty result is a statement
+    about the *producer* rather than about the caller: empty means the payload
+    carried none of :data:`WEAK_LABEL_METRIC_KEYS`.  That is the state the
+    publish path is in today, and the reason a sample's ``engagement`` stays
+    NULL.  Kept next to the formula that consumes it so the two cannot be edited
+    apart.
+    """
+    if not payload:
+        return {}
+    return {key: payload[key] for key in WEAK_LABEL_METRIC_KEYS if key in payload}
 
 
 def _engagement_rate(engagement: dict[str, Any] | None) -> float | None:
