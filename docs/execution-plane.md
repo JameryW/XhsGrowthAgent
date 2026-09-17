@@ -13,7 +13,7 @@
 | # | 证据 | 为什么它反驳「占用」 |
 | --- | --- | --- |
 | A | 34 条执行点逐行分类（§6），其中的长任务**全部**由 `asyncio.create_task` 起 | 它们在 await 上跑，不阻塞事件循环 —— 占住的是 thread，不是进程 |
-| B | 「请求内同步跑完整条工作流」的路径**存在**（`backend/api/routes/workflow.py:846` 的 `else` 分支 → `:850` 的 `_run_graph_and_persist`）但**非默认**（`workflow.py:502` `async_mode: bool = Field(default=True`） | 唯一真正「占住请求」的形状是可选路径；默认形状不占 |
+| B | 「请求内同步跑完整条工作流」的路径**存在**（`backend/api/routes/workflow.py:860` 的 `else` 分支 → `:864` 的 `_run_graph_and_persist`）但**非默认**（`workflow.py:503` `async_mode: bool = Field(default=True`） | 唯一真正「占住请求」的形状是可选路径；默认形状不占 |
 | C | 长任务的时长有界，且界可静态读出：通用工具网 `backend/tools/runtime/catalog.py:513` `timeout_s=120.0`、发布 `:92` `_PUBLISH_SAFETY_NET_S = 900.0`、Ripple `:82` `_RIPPLE_SAFETY_NET_S = 3600.0` | 「占住」的签名是**无界**；这里有界，且界都落在等外部上 |
 | D | 本机无真实运行样本：`.xhs/checkpoints.sqlite` 0 行，`history/*.json` 全是 21 字节的测试残留 | 没有样本，「实测占用」这一档证据拿不到 |
 
@@ -106,10 +106,10 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | 锚点 | 证据 | 分类 | 备注 |
 | --- | --- | --- | --- |
 | `backend/db/execution_leases.py:513` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:514`；由 `end_lease` 取消，取消即正常收尾 |
-| `backend/api/routes/workflow.py:438` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:440` |
-| `backend/api/routes/workflow.py:833` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:835` |
-| `backend/api/routes/workflow.py:2302` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **不持租约、不注册** —— 见 §7 |
-| `backend/api/routes/workflow.py:2989` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **不持租约**；注册于 `:2991` |
+| `backend/api/routes/workflow.py:439` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:441` |
+| `backend/api/routes/workflow.py:847` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:849` |
+| `backend/api/routes/workflow.py:2319` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **不持租约、不注册** —— 见 §7 |
+| `backend/api/routes/workflow.py:3006` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **不持租约**；注册于 `:3008` |
 | `backend/agents/content_strategist.py:597` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
 | `backend/api/routes/accounts.py:404` | `background_tasks.add_task(sync_after_login, account_id)` | REAL_TASK | Starlette 后台任务，跟响应生命周期走 |
 | `backend/services/creator_stats/client.py:738` | `task = asyncio.create_task(capture(response))` | REAL_TASK | 采集响应，结果进缓存 |
@@ -127,15 +127,15 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/app.py:1362` | `takeover_task = asyncio.create_task(` | IN_PROCESS_LOOP | 接管扫描；开关在 `:1357`，关停在 `:1469` |
 | `backend/api/app.py:1443` | `creator_stats_scheduler = asyncio.create_task(` | IN_PROCESS_LOOP | 采集调度器 |
 | `backend/api/routes/agent.py:89` | `_prewarm_tasks[session_mode] = asyncio.create_task(_warm())` | CACHE_WARMUP | 按会话模式预热 |
-| `backend/api/routes/public_showcase.py:755` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
-| `backend/api/routes/public_showcase.py:841` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
+| `backend/api/routes/public_showcase.py:756` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
+| `backend/api/routes/public_showcase.py:842` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
 | `backend/api/routes/system.py:207` | `_ripple_probe_task = loop.create_task(_run())` | CACHE_WARMUP | 用的是 `loop.create_task` |
 | `backend/api/routes/system.py:326` | `ripple_task = asyncio.create_task(_check_ripple())` | CACHE_WARMUP | 健康检查里的预热 |
 | `backend/api/routes/system.py:327` | `memory_task = asyncio.create_task(_check_memory_store())` | CACHE_WARMUP | 健康检查里的预热 |
 | `backend/agents/analyst.py:287` | `asyncio.create_task(_safe_evolve` | POST_RESPONSE | 演化写回不回流 |
 | `backend/api/routes/free.py:915` | `asyncio.create_task(` | POST_RESPONSE | 响应后收尾 |
 | `backend/memory/calibrator.py:73` | `return asyncio.create_task(` | POST_RESPONSE | 校准写回不回流 |
-| `backend/api/routes/workflow.py:189` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
+| `backend/api/routes/workflow.py:190` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
 | `backend/api/routes/_runner.py:386` | `heartbeat.add_done_callback(_on_heartbeat_done)` | PLANE | 不是新任务：把栅栏登记到租约心跳的结束回调上 |
 | `backend/services/ripple_service.py:214` | `loop.create_task(self._rebuild_client())` | POST_RESPONSE | 重建客户端 |
 | `backend/services/xhs_risk_gate.py:357` | `_persist_task = loop.create_task(_run())` | POST_RESPONSE | 风控快照落盘 |
@@ -168,20 +168,20 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 仓里另有两个**修复路径**，它们直接写 checkpoint，**不取租约**：
 
-- `backend/api/routes/workflow.py:2218` `async def _run_retry()` —— ripple-retry，直接 `graph.aupdate_state`。
-- `backend/api/routes/workflow.py:2947` `async def _run_publish_retry()` —— publish-retry，同样直接 `graph.aupdate_state`。
+- `backend/api/routes/workflow.py:2235` `async def _run_retry()` —— ripple-retry，直接 `graph.aupdate_state`。
+- `backend/api/routes/workflow.py:2964` `async def _run_publish_retry()` —— publish-retry，同样直接 `graph.aupdate_state`。
 
 后果是精确的，不是笼统的「不够健壮」：
 
 - **它们没有租约行** ⇒ `expire_scan()` 永远看不到它们 ⇒ **接管扫描不可能接管它们**。
-- **`_run_retry` 连任务注册表都没进** ⇒ 起了任务之后没有 `_runner._background_tasks[thread_id] = task`（对比 `:2991` 的 publish-retry 有）⇒ 进程重启后，`/recover` 也看不见它。
+- **`_run_retry` 连任务注册表都没进** ⇒ 起了任务之后没有 `_runner._background_tasks[thread_id] = task`（对比 `:3008` 的 publish-retry 有）⇒ 进程重启后，`/recover` 也看不见它。
 - 于是这两个路径在重启时**既不会被迁移、也不会被接管** —— 而它们恰恰是「上一次执行没走完」时最可能被调用到的路径。
 
 **为什么本片不修。** 两种修法都会改变行为：让它们改走 `_run_graph_and_persist` 会改掉相位推进与事件发射的时序；给它们单独加租约会引入新的拒租分支与新的失败模式。裁定 1 的闸门没开（§0），所以 S4 的产出是**登记**，不是**改动**。
 
 **留给下一任务的输入**（按代价从低到高）：
 
-1. 给 `_run_retry` 补注册表写入 —— 一行，与 `:2991` 同形；不改变执行语义，只是让 `/recover` 看得见它。
+1. 给 `_run_retry` 补注册表写入 —— 一行，与 `:3008` 同形；不改变执行语义，只是让 `/recover` 看得见它。
 2. 让这两个路径也走统一入口（或至少取租约）—— 需要先决定拒租时是「照跑」还是「拒绝」，即重新回答一次裁定 2 在修复路径上的适用性。
 
 ## 8. 这份文档怎么防止腐烂
@@ -197,7 +197,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | 位置 | 不该出现的 token | 为什么 |
 | --- | --- | --- |
 | `Dockerfile` | `--workers` | `docs/deployment.md:421` 声明了 `--workers 4`，镜像里没有 ⇒ 声明 ≠ 执行（§3） |
-| `backend/api/routes/workflow.py:2302` | `_background_tasks` | ripple-retry 起了任务却没进注册表（对比 `:2991`）⇒ §7 的第一条后果 |
+| `backend/api/routes/workflow.py:2319` | `_background_tasks` | ripple-retry 起了任务却没进注册表（对比 `:3008`）⇒ §7 的第一条后果 |
 | `backend/api/routes/workflow.py` | `start_lease` | 这个文件里没有任何取租约的地方 ⇒ §7 的前提本身 |
 
 <!-- anchor-absence:end -->

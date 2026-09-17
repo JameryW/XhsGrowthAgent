@@ -244,6 +244,21 @@ def test_missing_and_none_fields_derive_status_safe():
     assert nulled["workflow_mode"] == "trend"
 
 
+def test_a_threads_own_mode_survives_hydration():
+    """The mode on the view is the mode the thread was created with.
+
+    ``"trend"`` is a fallback for *absence*, not a normalisation of what is
+    present: this view is a read-only projection (``context/models.py`` keeps
+    the field a plain ``str`` for the same reason), so rewriting a stored value
+    would make ``/status`` describe a brief thread as a trend one -- and erase
+    the only record that the thread was created before the boundary existed.
+    """
+    assert hydrate_state_view({"workflow_mode": "brief"})["workflow_mode"] == "brief"
+    assert (
+        hydrate_state_view({"workflow_mode": "brand_campaign"})["workflow_mode"] == "brand_campaign"
+    )
+
+
 def test_ripple_payload_keeps_nested_checkpoint_fallback():
     """Pre-S1, /status and /history resolved ripple payloads nested under
     ``content_plan`` ONLY (``_extract_ripple``); that exact order is now owned

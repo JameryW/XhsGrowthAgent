@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.db.pool import get_pool
+from backend.state.modes import DEFAULT_WORKFLOW_MODE, stored_mode
 
 logger = logging.getLogger("xhs_growth.db.workflows")
 
@@ -22,7 +23,7 @@ class WorkflowRow:
     phase: str = "scouting"
     progress_percent: int = 0
     label: str = ""
-    workflow_mode: str = "trend"
+    workflow_mode: str = DEFAULT_WORKFLOW_MODE.value
     showcase_visibility: str = "private"
     public_id: str | None = None
     showcase_featured: bool = False
@@ -373,7 +374,7 @@ def _row_from_dict(d: dict[str, Any]) -> WorkflowRow:
         phase=d.get("phase", "scouting"),
         progress_percent=d.get("progress_percent", 0),
         label=d.get("label", ""),
-        workflow_mode=d.get("workflow_mode", "trend"),
+        workflow_mode=stored_mode(d) or DEFAULT_WORKFLOW_MODE.value,
         showcase_visibility=d.get("showcase_visibility", "private"),
         public_id=d.get("public_id"),
         showcase_featured=bool(d.get("showcase_featured", False)),

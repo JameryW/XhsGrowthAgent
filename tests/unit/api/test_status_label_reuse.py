@@ -260,3 +260,70 @@ class TestStatusTimelineSource:
         assert resp.status_code == 200
         timeline = resp.json()["data"]["agent_timeline"]
         assert [entry["agent"] for entry in timeline] == ["trend_scout"]
+
+
+class TestStatusCarriesTheThreadsMode:
+    """The write-back reads the thread's own mode, through the registry.
+
+    ``/status`` used to read ``values.get("workflow_mode")`` inline, behind an
+    ``if "workflow_mode" not in update_fields`` guard that could never be false
+    (that dict is built a few lines above, from phase/status/progress/error and
+    the label, and never carries the mode). The read now goes through
+    ``backend/state/modes.py`` so the state key is known in one place; what must
+    not change is that the value crosses over **unnormalised** -- a thread
+    created before the S3a boundary keeps whatever it was created with, because
+    rewriting it to the default would erase the only record that it predates the
+    boundary.
+    """
+
+    def _upsert(self, graph: MagicMock) -> MagicMock:
+        with (
+            patch(
+                "backend.api.routes.workflow.assert_thread_owned",
+                new_callable=AsyncMock,
+                return_value="acct-live",
+            ),
+            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch(
+                "backend.api.routes.workflow._db_upsert",
+                new_callable=AsyncMock,
+                return_value=WorkflowRow(thread_id="xhs_acct_abcdef12", label="L"),
+            ) as upsert_mock,
+            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock),
+        ):
+            resp = _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
+
+        assert resp.status_code == 200
+        return upsert_mock
+
+    def test_the_threads_own_mode_is_written_back(self):
+        graph = _live_graph()
+        graph.aget_state.return_value.values = {
+            **graph.aget_state.return_value.values,
+            "workflow_mode": "brief",
+        }
+
+        upsert = self._upsert(graph)
+
+        assert upsert.await_args.kwargs["workflow_mode"] == "brief"
+
+    def test_an_unrecognised_mode_is_carried_through_unnormalised(self):
+        graph = _live_graph()
+        graph.aget_state.return_value.values = {
+            **graph.aget_state.return_value.values,
+            "workflow_mode": "brand_campaign",
+        }
+
+        upsert = self._upsert(graph)
+
+        assert upsert.await_args.kwargs["workflow_mode"] == "brand_campaign"
+
+    def test_a_thread_with_no_mode_does_not_overwrite_the_column(self):
+        # ``_live_graph``'s values carry no workflow_mode at all -- the shape the
+        # old ``if wm:`` test existed for, and the DB column's own
+        # DEFAULT 'trend' still covers it.
+        graph = _live_graph()
+
+        upsert = self._upsert(graph)
+
+        assert "workflow_mode" not in upsert.await_args.kwargs

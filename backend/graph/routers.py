@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from backend.config.settings import Settings
 from backend.state.enums import ContentStatus, WorkflowPhase
+from backend.state.modes import OrchestratorDestination, mode_spec
 from backend.state.schema import XHSGrowthState
 
 
@@ -77,23 +78,20 @@ def _has_actionable_trends(state: XHSGrowthState) -> bool:
     )
 
 
-#: Every value :func:`orchestrator_router` can answer with. Spelled as a
-#: ``Literal`` so the entry edge's path map can be compared against it the way
-#: the other seventeen are compared (``tests/unit/graph/test_conditional_edge_wiring.py``):
-#: this was the only router whose destinations could not be read at all, which
-#: is an awkward property for the one router that is every run's entry.
-OrchestratorDestination = Literal[
-    "trend_scout",
-    "brief_analyzer",
-    "content_strategist",
-    "copywriter",
-    "analyst",
-    "__end__",
-]
+#: Every value :func:`orchestrator_router` can answer with -- imported rather
+#: than declared here, because it is the vocabulary of the phase tables that
+#: produce it (``backend/state/modes.py``). Re-exported so the name its readers
+#: know still resolves; the entry edge's path map is compared against it the way
+#: the other seventeen are compared
+#: (``tests/unit/graph/test_conditional_edge_wiring.py``).
 
 
 def orchestrator_router(state: XHSGrowthState) -> OrchestratorDestination:
     """编排器路由 — 根据当前阶段和工作模式决定下一个节点
+
+    The phase tables this reads are the ``phase_routes`` of the mode's spec
+    (``backend/state/modes.py``), so this is a lookup -- adding a mode is a
+    registry row, not another arm here.
 
     Every value this can return has to be a key in this edge's path map
     (``backend/graph/wiring.py``). It was not: brief mode's ``phase=creating``
@@ -105,38 +103,14 @@ def orchestrator_router(state: XHSGrowthState) -> OrchestratorDestination:
     if terminal := _check_terminal(state):
         return terminal
 
-    phase = state.get("phase", WorkflowPhase.IDLE)
-    mode = state.get("workflow_mode", "trend")
-
-    # Brief mode: route to brief_analyzer instead of trend_scout
-    if mode == "brief":
-        routing: dict[WorkflowPhase, OrchestratorDestination] = {
-            WorkflowPhase.BRIEFING: "brief_analyzer",
-            WorkflowPhase.PLANNING: "content_strategist",
-            WorkflowPhase.CREATING: "copywriter",
-            WorkflowPhase.ANALYZING: "analyst",
-            # Legacy checkpoints may still contain ENGAGING; no interaction
-            # node exists anymore, so terminate instead of restarting work.
-            WorkflowPhase.ENGAGING: "__end__",
-            WorkflowPhase.ERROR: "__end__",
-            WorkflowPhase.COMPLETED: "__end__",
-            WorkflowPhase.IDLE: "brief_analyzer",
-        }
-    else:
-        # Trend mode (existing flow)
-        routing = {
-            WorkflowPhase.SCOUTING: "trend_scout",
-            WorkflowPhase.PLANNING: "content_strategist",
-            WorkflowPhase.ANALYZING: "analyst",
-            # Legacy checkpoints may still contain ENGAGING; no interaction
-            # node exists anymore, so terminate instead of restarting work.
-            WorkflowPhase.ENGAGING: "__end__",
-            WorkflowPhase.ERROR: "__end__",
-            WorkflowPhase.COMPLETED: "__end__",
-            WorkflowPhase.IDLE: "trend_scout",
-        }
-
-    return routing.get(phase, "trend_scout" if mode != "brief" else "brief_analyzer")
+    # The two phase tables this used to hold inline -- one per mode branch --
+    # are now each mode's ``phase_routes`` (``backend/state/modes.py``), so that
+    # adding a mode is a registry row rather than another arm here. Two checks
+    # keep this a lookup rather than a claim: ``plan_registry_complaints``
+    # compares every table against the plan template that mode declares, and
+    # ``test_the_entry_router_reads_the_mode_spec`` proves this function still
+    # consults the registry instead of answering on its own.
+    return mode_spec(state).route(state.get("phase", WorkflowPhase.IDLE))
 
 
 def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_scout", "__end__"]:
@@ -451,8 +425,10 @@ def blogger_gate_router(
     if terminal := _check_terminal(state):
         return terminal
 
-    mode = state.get("workflow_mode", "trend")
-    if mode == "brief":
+    # A mode whose copy is written from its input rather than from a selected
+    # blogger's notes answers before any blogger logic runs (brief mode,
+    # historically).
+    if not mode_spec(state).runs_blogger_selection:
         return "copywriter"
 
     selected_blogger = state.get("selected_blogger") or {}
@@ -486,9 +462,9 @@ def draft_gate_router(
     if state.get("blogger_skipped"):
         return "shooting_planner"
 
-    # Brief mode: skip blogger selection loop
-    mode = state.get("workflow_mode", "trend")
-    if mode == "brief":
+    # No blogger-selection loop in this mode: there is nothing to match, so
+    # skip viral_matcher and go straight on (brief mode, historically).
+    if not mode_spec(state).runs_blogger_selection:
         return "shooting_planner"
 
     return "viral_matcher"
@@ -561,8 +537,9 @@ def ripple_gate_router(
     action = decision.get("action", "accept")
 
     if action == "reangle":
-        mode = state.get("workflow_mode", "trend")
-        return "brief_analyzer" if mode == "brief" else "content_strategist"
+        # One declaration covers all three ripple routers: re-analyze the
+        # input, or re-plan the content.
+        return mode_spec(state).reanalysis_node
     if action == "retopic":
         return "trend_scout"
 
@@ -601,8 +578,9 @@ def ripple_finalize_router(
     action = decision.get("action", "accept")
 
     if action == "reangle":
-        mode = state.get("workflow_mode", "trend")
-        return "brief_analyzer" if mode == "brief" else "content_strategist"
+        # One declaration covers all three ripple routers: re-analyze the
+        # input, or re-plan the content.
+        return mode_spec(state).reanalysis_node
     if action == "retopic":
         return "trend_scout"
 
@@ -625,8 +603,9 @@ def ripple_late_recheck_router(
     action = decision.get("action", "accept")
 
     if action == "reangle":
-        mode = state.get("workflow_mode", "trend")
-        return "brief_analyzer" if mode == "brief" else "content_strategist"
+        # One declaration covers all three ripple routers: re-analyze the
+        # input, or re-plan the content.
+        return mode_spec(state).reanalysis_node
     if action == "retopic":
         return "trend_scout"
 

@@ -82,6 +82,51 @@ class TestCopywriterAgent:
         assert result["phase"] == WorkflowPhase.CREATING
         assert len(result["copy_content"]["title_candidates"]) == 2
 
+    @pytest.mark.asyncio
+    async def test_execute_in_brief_mode_writes_from_the_brief(
+        self, agent, mock_state, mock_store, _mock_de_ai
+    ):
+        """A mode that does not walk the blogger loop writes from its input.
+
+        This is the observable end of ``writes_from_the_brief``: the mode is
+        read from the registry (``backend/state/modes.py``) and a state
+        carrying ``workflow_mode="brief"`` has to take the brief branch. The
+        fixture above carries no mode at all, so the trend answer used to be
+        the only one ever exercised -- every field read out of the registry
+        could have been replaced by a constant and these tests would still
+        have passed.
+        """
+        state = {
+            **mock_state,
+            "workflow_mode": "brief",
+            "brief_content": {"brand_name": "TestBrand", "product_name": "测试产品"},
+        }
+        mock_response = MagicMock()
+        mock_response.content = """```json
+{
+  "title_candidates": ["品牌标题"],
+  "body_text": "品牌正文",
+  "hashtags": ["#品牌"],
+  "hook_type": "情感钩子"
+}
+```"""
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch(
+                "backend.services.creator_stats.suggestions.build_mode_creative_context",
+                new=AsyncMock(return_value=""),
+            ) as mock_stats,
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+
+            await agent.execute(state, store=mock_store)
+
+        assert mock_stats.await_args is not None
+        assert mock_stats.await_args.args[1] == "brief"
+
     @pytest.fixture
     def _mock_de_ai(self):
         """Avoid real LLM polish during copywriter unit tests."""

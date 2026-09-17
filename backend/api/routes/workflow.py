@@ -49,7 +49,7 @@ from backend.db.workflows import (
 from backend.graph.routers import PAUSE_REASON_EVALUATOR_FAIL_CLOSED
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
-from backend.state.enums import ContentStatus, WorkflowPhase
+from backend.state.enums import ContentStatus, WorkflowMode, WorkflowPhase
 from backend.state.hydration import (
     checkpoint_view,
     history_file_view,
@@ -59,6 +59,7 @@ from backend.state.hydration import (
     timeline_entry,
 )
 from backend.state.machine import WorkflowStatus, derive_status
+from backend.state.modes import stored_mode
 
 logger = logging.getLogger(__name__)
 
@@ -508,7 +509,20 @@ class WorkflowStartRequest(BaseModel):
         description="垂类赛道；空字符串=根据历史笔记自动推断，非空=手动指定（优先于推断）",
     )
     execution_mode: str = Field(default="single", description="执行模式: single/continuous")
-    workflow_mode: str = Field(default="trend", description="工作模式: trend/brief")
+    # The boundary that refuses an unknown mode. Typed rather than left a bare
+    # ``str`` because the mode reads downstream each carried their own
+    # ``"trend"`` default, which made an unknown value *behave* as trend without
+    # ever saying so;
+    # this is the only place a mode can enter a run, so refusing here is the
+    # whole fix (see ``backend/state/modes.py``).
+    #
+    # ``WorkflowStatusResponse.workflow_mode`` just below stays a ``str`` on
+    # purpose: it echoes what a stored row holds, including rows written before
+    # this boundary existed, and ``/status`` keeps its full response shape.
+    workflow_mode: WorkflowMode = Field(
+        default=WorkflowMode.TREND,
+        description="工作模式: trend/brief；未知值在请求边界被拒绝（P2c-S3a，不再静默按 trend）",
+    )
     brief_text: str | None = Field(default=None, description="商单 brief 文本内容")
 
 
@@ -739,7 +753,7 @@ async def start_workflow(
         "updated_at": datetime.now(UTC).isoformat(),
     }
 
-    if req.workflow_mode == "brief":
+    if req.workflow_mode == WorkflowMode.BRIEF:
         initial_state["phase"] = WorkflowPhase.BRIEFING
         if req.brief_text:
             # P1a-S4-3: brief_content is refable — seed the body into the
@@ -787,7 +801,7 @@ async def start_workflow(
 
     # Brief mode without text: save initial state to checkpoint but don't start
     # execution yet — the PDF upload will trigger the actual start via aupdate_state.
-    brief_waiting_for_upload = req.workflow_mode == "brief" and not req.brief_text
+    brief_waiting_for_upload = req.workflow_mode == WorkflowMode.BRIEF and not req.brief_text
 
     if brief_waiting_for_upload:
         await graph.aupdate_state(config, initial_state, as_node="orchestrator")
@@ -964,10 +978,13 @@ async def get_workflow_status(
                 update_fields["label"] = cp["selected_topic"]
             elif bc.get("raw_text"):
                 update_fields["label"] = bc["raw_text"][:20] + "…"
-        if "workflow_mode" not in update_fields:
-            wm = values.get("workflow_mode")
-            if wm:
-                update_fields["workflow_mode"] = wm
+        # Carry the thread's own mode onto its row. Read through the registry
+        # (``backend/state/modes.py``) so that this is not a second place that
+        # knows the state key, and read *raw* rather than normalised: a legacy
+        # thread keeps whatever it was created with.
+        stored = stored_mode(values)
+        if stored:
+            update_fields["workflow_mode"] = stored
 
         if _lat:
             with _lat.segment("db"):

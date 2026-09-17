@@ -42,6 +42,7 @@ from backend.db.workflows import (
     update_workflow as db_update,
 )
 from backend.state.hydration import checkpoint_view, showcase_view
+from backend.state.modes import DEFAULT_WORKFLOW_MODE, is_known_mode
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1022,7 +1023,9 @@ def _case_payload(
         "summary": summary,
         "status": status,
         "phase": _phase(state.get("phase", row.phase)),
-        "workflow_mode": row.workflow_mode if row.workflow_mode in {"trend", "brief"} else "trend",
+        "workflow_mode": (
+            row.workflow_mode if is_known_mode(row.workflow_mode) else DEFAULT_WORKFLOW_MODE.value
+        ),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "featured": is_featured,
