@@ -77,8 +77,31 @@ def _has_actionable_trends(state: XHSGrowthState) -> bool:
     )
 
 
-def orchestrator_router(state: XHSGrowthState) -> str:
-    """编排器路由 — 根据当前阶段和工作模式决定下一个节点"""
+#: Every value :func:`orchestrator_router` can answer with. Spelled as a
+#: ``Literal`` so the entry edge's path map can be compared against it the way
+#: the other seventeen are compared (``tests/unit/graph/test_conditional_edge_wiring.py``):
+#: this was the only router whose destinations could not be read at all, which
+#: is an awkward property for the one router that is every run's entry.
+OrchestratorDestination = Literal[
+    "trend_scout",
+    "brief_analyzer",
+    "content_strategist",
+    "copywriter",
+    "analyst",
+    "__end__",
+]
+
+
+def orchestrator_router(state: XHSGrowthState) -> OrchestratorDestination:
+    """编排器路由 — 根据当前阶段和工作模式决定下一个节点
+
+    Every value this can return has to be a key in this edge's path map
+    (``backend/graph/wiring.py``). It was not: brief mode's ``phase=creating``
+    answer, ``"copywriter"``, had no entry for as long as this signature said
+    ``-> str``, so that branch raised ``KeyError`` inside langgraph instead of
+    routing (the P1d shape, on a resume path). The annotation and the map are
+    now compared in both directions, so the two cannot drift apart again.
+    """
     if terminal := _check_terminal(state):
         return terminal
 
@@ -87,7 +110,7 @@ def orchestrator_router(state: XHSGrowthState) -> str:
 
     # Brief mode: route to brief_analyzer instead of trend_scout
     if mode == "brief":
-        routing = {
+        routing: dict[WorkflowPhase, OrchestratorDestination] = {
             WorkflowPhase.BRIEFING: "brief_analyzer",
             WorkflowPhase.PLANNING: "content_strategist",
             WorkflowPhase.CREATING: "copywriter",

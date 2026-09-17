@@ -61,7 +61,7 @@
 | 切片 | 内容 | 风险 |
 |---|---|---|
 | **S1** ✅ | **Plan 的只读导出**：`Plan` / `PlanStep` 对象 + **穷举模板注册表**（`WorkflowMode` → 入口 / 词表 / 排除边），由一个**只读**函数从 `build_graph()` 的边导出并与注册表**双向比对**。执行路径**零改动**（没有执行代码读它）。判据 = 结构比对门禁，照 `test_conditional_edge_wiring.py` 的手法。**已交付**（`43580604` / [#618]，见本节末的 S1 小节） | 低 |
-| **S2** | **边来自 Plan**：`build_graph()` 的 18 条 `add_conditional_edges` 改由注册表/Plan 生成，**逐边等价**；靠现有结构门禁 + `test_routers.py` 钉住。入口路由（事实 4）是这一步的正题：目的地从"读不出的 `str`"变成"可读出的声明" | 中 |
+| **S2** ✅ | **边来自 Plan**：`build_graph()` 的 18 条 `add_conditional_edges` 改由**一张穷举的边表**（`backend/graph/wiring.py` 的 `CONDITIONAL_EDGES`：`source` + `router` + `answers` + `redirects`）生成，**逐边等价**（改写前后同一个 `builder.branches` 内省，差异精确等于 `orchestrator` 新增 `copywriter` 这一条）；入口路由（事实 4）是这一步的正题 —— `orchestrator_router` 拿到 `Literal` 注解，目的地从"读不出的 `str`"变成"可读出的声明"，`_NON_LITERAL_ROUTERS` 收窄到**空集**。**已交付**（`6727834f` / [#619]，见本节末的 S2 小节） | 中 |
 | **S3** | **Goal 是一等输入**：`/start` 的 26 键字面量 + `if workflow_mode == "brief"` 特例 → `Goal` → 编译；**11 个模式读取点收敛到一处**（事实 3），未知模式**拒绝**而不是静默按 trend | 中-高 |
 | **S4** | **`workflow.py` 分层**：7 个巨型端点（47% 行）按 api / application / runtime / artifacts / actions 拆；先立边界再挪代码，**纯搬移**、无行为变更 | 中 |
 | **S5** | **契约与开闸条件**：`docs/planning.md` —— Goal / Plan 的定义、模板与"动态规划"的**开闸条件**（什么证据下才允许生成非模板图）、以及本片**明确不做**的三件事 | 小 |
@@ -157,4 +157,79 @@
 
 ### S1 明确未做
 
-没有一条边来自 Plan；`build_graph()` 未改一行；没有任何生产代码 import 这个模块；`_NON_LITERAL_ROUTERS` 仍然是 `{"orchestrator_router"}`（收窄它是 S2 的正题）。
+没有一条边来自 Plan；`build_graph()` 未改一行；没有任何生产代码 import 这个模块；`_NON_LITERAL_ROUTERS` 仍然是 `{"orchestrator_router"}`（收窄它是 S2 的正题 —— **S2 已把它清空**，见下节）。
+
+## S2 交付 —— 边来自 Plan
+
+**交付物**：`backend/graph/wiring.py`（350 行）+ `tests/unit/graph/test_wiring_registry.py`（320 行 / 24 用例）；`builder.py`（-247 行净）、`routers.py`、`plan.py`、三个既有测试文件的等价改写。
+
+### 做了什么
+
+1. **一张穷举的边表**。18 条条件边从 18 段手写 `add_conditional_edges` 变成 `CONDITIONAL_EDGES` 里的 18 个 `ConditionalEdge(source, router, answers, redirects)`；`build_graph()` 遍历它。构造时拒绝五种"看起来合理其实不是"的形状（答案为空 / 答案重复 / 重定向不在答案里 / 重定向指向自己 / `source` 是 `__end__`），`_by_source` 拒绝**同一节点两条边**（langgraph 不禁止，但本表表达不了 —— 导出按 source 取一条，第二条会无声消失）。
+2. **`answers` 是声明的，不是从注解读出来的**。看着像重复，是故意的：注解和这张表是对同一件事的两份独立陈述，**比对它们**才是其中一份错了能被发现的唯一途径；由一方推导另一方会把比对变成恒真。与 `RETRY_POLICIES` / `TAKEOVER_HAZARDS` 同一种契约。
+3. **`ROUTERS_WITHOUT_AN_EDGE`**：`should_optimize`（被 `shooting_planner_router` 调用的 helper）与 `should_brief_or_optimize`（**没有任何调用者**）—— 两个有 router 形状却没有边的函数，登记而不是删。
+4. **入口路由的目的地可读了**。`orchestrator_router` 由 `-> str` 变成 `-> OrchestratorDestination`（`Literal`），路径映射补上唯一缺的键。
+
+### ★ 逐边等价：这一片的判据怎么被量的
+
+改写**之前**先把 `builder.branches` 完整落盘成 golden snapshot（24 节点 / 7 直边 / 18 分支，含每条映射的键序），改写后逐条比对：
+
+| 项 | 结果 |
+|---|---|
+| 节点集 | 24/24 相同 |
+| 直边集 | 7/7 相同（`StateGraph.edges` 是 set，按集合比） |
+| 18 个 source、注册名（= router `__name__`）与其**顺序** | 全部相同 |
+| 每条边的路径映射 | **仅一处不同**：`orchestrator` 新增 `copywriter -> copywriter` |
+| 注解 | **仅一处变化**：`orchestrator_router` 从 `<class 'str'>` 变成 `Literal[...]` |
+| 计划 | TREND 22 / BRIEF 24 节点、`reachable_nodes` 24 / 22 全部不变 |
+
+顺序之所以保住了：边表**按图原来的安装顺序写**，所以 `branches` 的插入顺序没变。这一条不是装饰 —— 有一条用例（`test_the_table_keeps_the_branch_order_the_graph_had`）把它钉成一个**字面量列表**，而另一条（`test_the_graph_installs_its_branches_in_the_tables_order`）钉"图确实按表走"；两条各自抓住对方看不见的缺陷（前者看不见 builder 怎么遍历，后者看不见表被重排），docstring 写明了为什么不是冗余 —— 这是本片踩到的坑，见下节 M16。
+
+### ★ 关闭 S1 登记的那条豁免
+
+S1 在 `UNRESOLVED_ROUTER_VALUES` 里登记：brief 模式 `phase=creating` 时 `orchestrator_router` 答 `copywriter`，而路径映射没有这个键（P1d 同形）。S1 留了**反向断言**要求本片显式关闭它。本片：
+
+- 在边表里给入口补上 `copywriter`，于是 `copywriter` 成为**brief 专属**的边（TREND 模板登记 `ExcludedHop("orchestrator","copywriter")`：trend 表里根本没有 `CREATING` 键，`creating` 落到 `trend_scout` 兜底）；
+- **删除豁免表与它的两个门类**（`router_answer_no_path_map_entry` 的豁免分支、`exemption_no_longer_applies`）—— 它们的前提"模板可以声明入口答不出的目的地"已经不可能成立，留着就是 S1 自己警告过的那种"长在树上的过期注释"；
+- 换成一条**活**的检查 `entry_vocabulary_disagrees_with_the_edges`：各模式声明词表的**并集必须等于**入口边的答案集，**两个方向都比**。这是 `plan.py` 与 `wiring.py` 的接合点 —— 也是"边来自 Plan"这句话在本片里能被检验的形式：`export_plan` 仍只读图，但图现在由那张表装出来。
+
+### ★ 与票面行文的偏离（登记，不是悄悄改）
+
+票面写"改由注册表/Plan 生成"。实现里的注册表是**一张新的、mode-blind 的边表**，不是 `PLAN_TEMPLATES`。理由是本片实测的事实：**图是 mode-blind 的**（S1 已测：从 `orchestrator` 起 24/24 可达，从两个模式入口起各 22 且两集合完全相同），所以边**不可能**由按模式写的模板导出 —— 方向的真相是反的：**`Plan` 是这张表的投影（经图）**。`PLAN_TEMPLATES` 仍然只声明"哪条边属于哪个模式"，两份声明由 `entry_vocabulary_disagrees_with_the_edges` 接住。
+
+### ★ 登记不修的两处
+
+1. **`should_brief_or_optimize` 没有任何调用者**（`routers.py`）：它答 `viral_matcher` 之后的 hop，而图从那走到 `blogger_scout` 用的是直边，早于边表存在。登记进 `ROUTERS_WITHOUT_AN_EDGE`，并配反向断言：它一旦被接上，`test_the_unused_router_is_called_by_nothing` 当场红，强制来删这条豁免。**这是把边变成数据的直接产物** —— 以前没有任何东西会问"这个 router 有边吗"。
+2. **trend 模式 `phase=creating` 静默兜底到 `trend_scout`**（trend 表没有 `CREATING` 键，事实 5）。本片只把它钉成行为（`test_trend_mode_creating_falls_through_to_the_scout`），不修：给 trend 选一个目的地是另一次行为裁定。
+
+### 判据（票面 S2 行）如何被满足
+
+| 票面判据 | 本片怎么落 |
+|---|---|
+| 18 条 `add_conditional_edges` 改由注册表生成 | `backend/graph/builder.py` 里只剩 1 个 `add_conditional_edges`（循环体内）；18 段手写块删净 |
+| **逐边等价**（同一个 `builder.branches` 内省） | golden snapshot 逐条比对，差异精确等于那一条预期的修复（见上表） |
+| 入口路由（事实 4）是正题 | `OrchestratorDestination`；补上被注解暴露出来的那个键 |
+| `_NON_LITERAL_ROUTERS` 缩小或不变 | **空集** —— 18 条边现在**两个方向**都被读：答案无映射（P1d 的 `KeyError`）与映射里有答不出的键（**死键**，此前从未被检查过） |
+| 靠现有结构门禁 + `test_routers.py` 钉住 | 接线门禁补上反向那一半；`test_routers.py` 补 7 条 brief 分支行为用例（该分支此前零覆盖）；**没有一条既有用例因为本片意外变红** |
+
+### 门禁与自检
+
+| 项 | 结果 |
+|---|---|
+| `ruff check .` | 干净 |
+| `ruff format --check .` | **524 files**（基线 522 + 2 个新文件） |
+| `mypy backend --python-version 3.12` | **209** source files，no issues（基线 208 + `wiring.py`） |
+| 基线对比 / 工具运行时门禁 | drift within threshold / P1c-S5 OK |
+| `pytest -q` | **3474 passed, 3 skipped**（基线 3438 + **36** 个新用例 = 24 + 2 + 3 + 7） |
+| 突变自检 | **22/22 击杀、0 存活**、restore=OK（8/8 文件哈希核验） |
+
+**突变自检首轮 20/22，两条存活都不是"测试太弱"**（这是本片最有价值的两条）：
+
+- **M16（让 builder 反向遍历边表）存活。** 它暴露：我把原来那条"图 vs 表"的顺序断言当成恒真换成了"表的顺序 vs 字面量"，而后者**够不着 `build_graph()` 怎么走这张表**。补法不是二选一，而是**两条都要**：字面量钉表的顺序、图 vs 表钉遍历。**换掉一条恒真的比较，等于把中间那一层缺陷从两道网之间放过去** —— 这正是 S1 的 M11（恒真条件 = 死代码）的同一族，只是这次差一点被我自己的"修好了"掩盖。
+- **M09（把 `!=` 改成单向差集）存活。** 查明两个条件**只在另一种门类已经会报的输入上**不同（模式声明了边没有的答案）。补的是行为断言：那种输入下**两级都要报**，把接合点的双向性从注释变成行为。
+
+其余 20 条从锚点唯一性、答案集截断、重定向被忽略、注册名、brief 表、兜底、排除边、重复 source、少装一条边……逐条毙掉；每条击杀都记录了真实的 node id（`rc=4` 会当场报"BAD-ID"，不会被读成击杀）。
+
+### S2 明确未做
+
+没有一条边按模式分支（边表是 mode-blind 的，模式归属由 `PLAN_TEMPLATES` 声明）；`Goal` 仍未成一等输入（11 个 `workflow_mode` 读取点原样，是 S3 的正题）；`workflow.py` 未拆（S4）；没有写 `docs/planning.md`（S5）。

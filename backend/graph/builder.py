@@ -1,4 +1,10 @@
-"""LangGraph graph builder — defines the complete workflow topology."""
+"""LangGraph graph builder — defines the complete workflow topology.
+
+Nodes, retry policies and the plain edges are declared here. The eighteen
+conditional edges are not: they are data in ``backend/graph/wiring.py``, and
+this function installs them from that table. See that module for why the edge
+set became a declaration rather than eighteen hand-written calls.
+"""
 
 from __future__ import annotations
 
@@ -42,26 +48,7 @@ from backend.agents.nodes.optimization import (
     viral_matcher_node,
 )
 from backend.graph.error_handling import get_retry_policy
-from backend.graph.routers import (
-    blogger_gate_router,
-    choice_outcome,
-    content_analyzer_router,
-    content_strategist_router,
-    copywriter_router,
-    draft_gate_router,
-    evaluator_outcome,
-    orchestrator_router,
-    publish_gate_outcome,
-    review_outcome,
-    ripple_finalize_router,
-    ripple_gate_router,
-    ripple_late_recheck_router,
-    shooting_planner_router,
-    should_continue,
-    should_plan,
-    should_present_choice,
-    visual_designer_router,
-)
+from backend.graph.wiring import CONDITIONAL_EDGES
 from backend.state.artifacts import artifact_seam as _artifact_seam
 from backend.state.schema import XHSGrowthState
 
@@ -161,159 +148,23 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     # ── 入口 ──
     builder.add_edge(START, "orchestrator")
 
-    # ── Orchestrator 条件路由 ──
-    builder.add_conditional_edges(
-        "orchestrator",
-        orchestrator_router,
-        {
-            "trend_scout": "trend_scout",
-            "brief_analyzer": "brief_analyzer",
-            "content_strategist": "content_strategist",
-            "analyst": "analyst",
-            "__end__": END,
-        },
-    )
+    # ── 条件边 ──
+    # Every conditional edge is declared in backend/graph/wiring.py, together
+    # with its router, the answers it may give and the one place where an
+    # answer and its destination differ. Installing them from that table is
+    # what makes the edge set data: a new edge, or a new answer for an existing
+    # router, has to appear there, and the table is compared against the
+    # routers' own Literal annotations in both directions
+    # (tests/unit/graph/test_conditional_edge_wiring.py).
+    for edge in CONDITIONAL_EDGES:
+        builder.add_conditional_edges(edge.source, edge.router, edge.path_map())
 
-    # ── 侦察后判断是否有可操作趋势 ──
-    builder.add_conditional_edges(
-        "trend_scout",
-        should_plan,
-        {
-            "content_strategist": "content_strategist",
-            "trend_scout": "trend_scout",
-            "__end__": END,
-        },
-    )
-
-    # ── 内容创作流水线 ──
-    # content_strategist → [ripple_finalize | ripple_gate | __end__] based on
-    # Ripple mode. Background mode (ripple_pending): skip ripple_gate, go to
-    # ripple_finalize which reads the store-written background result. Blocking
-    # mode: ripple_gate.
-    #
-    # P1d: `__end__` was missing from this map while `content_strategist_router`
-    # returned it (its terminal guard, added so ripple_gate cannot swallow an
-    # error by auto-accepting). LangGraph resolves a router's value through this
-    # map, so the router's documented terminal branch raised `KeyError:
-    # '__end__'` instead of ending the workflow — every content_strategist
-    # failure crashed the graph. Found when P1d let that node fail for the first
-    # time; the four sibling branches below all had the entry.
-    builder.add_conditional_edges(
-        "content_strategist",
-        content_strategist_router,
-        {
-            "ripple_finalize": "ripple_finalize",
-            "ripple_gate": "ripple_gate",
-            "__end__": END,
-        },
-    )
-
-    # ripple_finalize → [copywriter | content_strategist | trend_scout] (user decision)
-    builder.add_conditional_edges(
-        "ripple_finalize",
-        ripple_finalize_router,
-        {
-            "copywriter": "copywriter",
-            "content_strategist": "content_strategist",
-            "brief_analyzer": "brief_analyzer",
-            "trend_scout": "trend_scout",
-            "__end__": END,
-        },
-    )
-
-    # ripple_gate → [copywriter | content_strategist | trend_scout] (user decision)
-    builder.add_conditional_edges(
-        "ripple_gate",
-        ripple_gate_router,
-        {
-            "copywriter": "copywriter",
-            "content_strategist": "content_strategist",
-            "brief_analyzer": "brief_analyzer",
-            "trend_scout": "trend_scout",
-            "__end__": END,
-        },
-    )
-
-    # ── 发布前优化流程 ──
-    # copywriter → [choice_gate | draft_gate | __end__]
-    # Multi-style blogger variants pause at choice_gate for style selection.
-    builder.add_conditional_edges(
-        "copywriter",
-        copywriter_router,
-        {
-            "choice_gate": "choice_gate",
-            "draft_gate": "draft_gate",
-            "__end__": "__end__",
-        },
-    )
-
-    # draft_gate → [viral_matcher | shooting_planner]
-    # (from copywriter → viral_matcher; from blogger_gate → shooting_planner)
-    builder.add_conditional_edges(
-        "draft_gate",
-        draft_gate_router,
-        {
-            "viral_matcher": "viral_matcher",
-            "shooting_planner": "shooting_planner",
-        },
-    )
-
+    # ── 直边 ──
     # viral_matcher → blogger_scout (discover bloggers from viral notes)
     builder.add_edge("viral_matcher", "blogger_scout")
 
     # blogger_scout → blogger_gate (interrupt for user selection)
     builder.add_edge("blogger_scout", "blogger_gate")
-
-    # blogger_gate → [copywriter | draft_gate | __end__]
-    # Brief mode and trend mode with selected blogger notes: copywriter.
-    # Trend mode without selected blogger notes: draft_gate.
-    # Terminal: __end__
-    builder.add_conditional_edges(
-        "blogger_gate",
-        blogger_gate_router,
-        {
-            "copywriter": "copywriter",
-            "draft_gate": "draft_gate",
-            "__end__": "__end__",
-        },
-    )
-
-    # content_analyzer → [choice_gate | version_generator | __end__]
-    # If copywriter generated style variants → choice_gate (style selection)
-    # Otherwise → version_generator (A/B/C generation)
-    builder.add_conditional_edges(
-        "content_analyzer",
-        content_analyzer_router,
-        {
-            "choice_gate": "choice_gate",
-            "version_generator": "version_generator",
-            "__end__": "__end__",
-        },
-    )
-
-    # version_generator → [choice_gate | visual_designer | __end__]
-    # (conditional — only enter choice_gate if multiple versions)
-    builder.add_conditional_edges(
-        "version_generator",
-        should_present_choice,
-        {
-            "choice_gate": "choice_gate",
-            "visual_designer": "visual_designer",
-            "__end__": "__end__",
-        },
-    )
-
-    # choice_gate → [version_generator | visual_designer]
-    # Style selection (first gate) → version_generator for A/B/C
-    # Version selection (second gate) → visual_designer
-    builder.add_conditional_edges(
-        "choice_gate",
-        choice_outcome,
-        {
-            "version_generator": "version_generator",
-            "visual_designer": "visual_designer",
-        },
-    )
 
     # ── 商单 Brief 模式流程 ──
     # brief_analyzer → brief_gate (pause for clarification if needed)
@@ -322,90 +173,9 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     # brief_gate → viral_matcher (search viral posts by brief style)
     builder.add_edge("brief_gate", "viral_matcher")
 
-    # viral_matcher already routes to blogger_scout above (trend and brief modes share this path)
-    # blogger_gate routes based on workflow mode via blogger_gate_router
-
-    # shooting_planner → [content_analyzer | visual_designer | __end__]
-    builder.add_conditional_edges(
-        "shooting_planner",
-        shooting_planner_router,
-        {
-            "content_analyzer": "content_analyzer",
-            "visual_designer": "visual_designer",
-            "__end__": "__end__",
-        },
-    )
-
-    # visual_designer → [ripple_late_recheck | review_gate | __end__]
-    # Background mode with a still-pending Ripple result → ripple_late_recheck
-    # (bounded-polls the store for the late-arriving prediction, may interrupt).
-    # Blocking mode or result already consumed → review_gate directly.
-    # review_gate uses dynamic interrupt() (like ripple_gate): low-risk auto-pass
-    # happens inside the node, so the router never bypasses it.
-    builder.add_conditional_edges(
-        "visual_designer",
-        visual_designer_router,
-        {
-            "ripple_late_recheck": "ripple_late_recheck",
-            "review_gate": "review_gate",
-            "__end__": END,
-        },
-    )
-
-    # ripple_late_recheck → [review_gate | content_strategist | brief_analyzer |
-    # trend_scout | __end__] accept (or poll-timeout fail-open) → review_gate;
-    # reangle → strategist/brief_analyzer; retopic → trend_scout. Mirrors
-    # ripple_finalize_router but accept lands at review_gate (after visual).
-    builder.add_conditional_edges(
-        "ripple_late_recheck",
-        ripple_late_recheck_router,
-        {
-            "review_gate": "review_gate",
-            "content_strategist": "content_strategist",
-            "brief_analyzer": "brief_analyzer",
-            "trend_scout": "trend_scout",
-            "__end__": END,
-        },
-    )
-
-    # ── 人工审核路由 ──
-    # approved → evaluator_gate (AI 质量评估关卡) → publisher | revise_content
-    builder.add_conditional_edges(
-        "review_gate",
-        review_outcome,
-        {
-            "evaluator_gate": "evaluator_gate",
-            "revise_content": "revise_content",
-            "__end__": END,
-        },
-    )
-
-    # ── 创作质量评估路由 (RQGM agent-as-a-judge) ──
-    # P0-W5: __end__ is the fail-closed human channel — the evaluator node has
-    # already parked the workflow in the existing paused status when it decides
-    # a human must look (degraded evaluation or compliance/policy rejection).
-    builder.add_conditional_edges(
-        "evaluator_gate",
-        evaluator_outcome,
-        {
-            # The verdict is still spelled "publisher" — it means "this content
-            # MAY be published", which is a quality statement.  The human
-            # authorisation is the next hop, not this one.
-            "publisher": "publish_gate",
-            "revise_content": "revise_content",
-            "__end__": END,
-        },
-    )
-
-    # ── 发布确认 → 发布 或 结束（P2a-S4b）──
-    builder.add_conditional_edges(
-        "publish_gate",
-        publish_gate_outcome,
-        {
-            "publisher": "publisher",
-            "__end__": END,
-        },
-    )
+    # viral_matcher already routes to blogger_scout above (trend and brief modes
+    # share this path); blogger_gate routes on workflow mode via
+    # blogger_gate_router.
 
     # ── 修改后回到文案 ──
     builder.add_edge("revise_content", "copywriter")
@@ -415,16 +185,6 @@ def build_graph() -> StateGraph[XHSGrowthState]:
 
     # analyst is kept as a node but no longer auto-triggered after publish.
     # It can be reached by resuming the workflow with phase=analyzing.
-
-    # ── 分析后决定是否继续 ──
-    builder.add_conditional_edges(
-        "analyst",
-        should_continue,
-        {
-            "orchestrator": "orchestrator",
-            "__end__": END,
-        },
-    )
 
     return builder
 
