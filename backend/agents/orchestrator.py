@@ -8,6 +8,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.state.modes import mode_spec
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 
@@ -31,10 +32,6 @@ class OrchestratorAgent(BaseAgent):
             # 清除错误，重新开始侦察周期
             return {"phase": WorkflowPhase.SCOUTING, "error": None, "retry_count": 0}
 
-        # 商单模式 → 进入 BRIEFING
-        mode = state.get("workflow_mode", "trend")
-        if mode == "brief":
-            return {"phase": WorkflowPhase.BRIEFING}
-
-        # 默认 → 开始侦察周期
-        return {"phase": WorkflowPhase.SCOUTING}
+        # 起点阶段是模式事实（backend/state/modes.py）：brief → BRIEFING，
+        # trend → SCOUTING。
+        return {"phase": mode_spec(state).initial_phase}

@@ -43,6 +43,7 @@ from backend.models.outputs import (
     normalize_style_variants,
 )
 from backend.models.structured import StructuredOutputError
+from backend.state.modes import mode_spec
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.copywriter")
@@ -166,7 +167,7 @@ class CopywriterAgent(BaseAgent):
         account_id = state.get("account_id", "default")
         plan = state.get("content_plan", {})
         brief = state.get("brief_content") or {}
-        is_brief_mode = state.get("workflow_mode") == "brief" and bool(brief)
+        writes_from_the_brief = not mode_spec(state).runs_blogger_selection and bool(brief)
 
         # ── Creative Memory: 读取 ──
         from backend.memory.creative import CreativeMemory
@@ -208,7 +209,7 @@ class CopywriterAgent(BaseAgent):
             )
             from backend.services.creator_stats.types import CreativeMode
 
-            mode: CreativeMode = "brief" if is_brief_mode else "trend"
+            mode: CreativeMode = "brief" if writes_from_the_brief else "trend"
             stats_ctx = await build_mode_creative_context(account_id, mode, store=store)
             if stats_ctx:
                 memory_context += f"\n{stats_ctx}"
@@ -255,7 +256,7 @@ class CopywriterAgent(BaseAgent):
             hints = "\n".join(f"- {h}" for h in revisions)
             system_prompt += f"\n\n【质量评估修订要求 — 请据此重写】\n{hints}"
 
-        if is_brief_mode:
+        if writes_from_the_brief:
             # Brief mode: build user message from brief_content + blogger references
             selected_blogger = state.get("selected_blogger") or {}
             blogger_notes = state.get("blogger_notes") or []
@@ -386,7 +387,7 @@ class CopywriterAgent(BaseAgent):
         """
         brief = state.get("brief_content") or {}
         plan = state.get("content_plan") or {}
-        is_brief_mode = state.get("workflow_mode") == "brief" and bool(brief)
+        writes_from_the_brief = not mode_spec(state).runs_blogger_selection and bool(brief)
 
         # Build blogger notes context
         notes_context = ""
@@ -396,7 +397,7 @@ class CopywriterAgent(BaseAgent):
             )
 
         # Build context string
-        if is_brief_mode:
+        if writes_from_the_brief:
             context_info = f"""品牌：{brief.get("brand_name", "")}
 产品：{brief.get("product_name", "")}
 卖点：{", ".join((brief.get("selling_points") or [])[:5])}

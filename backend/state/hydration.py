@@ -28,6 +28,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any, Final, TypedDict
 
+from backend.state.modes import DEFAULT_WORKFLOW_MODE
+
 __all__ = [
     "ARTIFACTS_KEY",
     "CHECKPOINT_STAGE_KEYS",
@@ -272,7 +274,7 @@ def hydrate_state_view(values: dict[str, Any]) -> StateView:
         "ripple_prediction": ripple_payload(values, "ripple_prediction"),
         "ripple_pmf": ripple_payload(values, "ripple_pmf"),
         "ripple_comparison": pick(values, "ripple_comparison") or {},
-        "workflow_mode": pick(values, "workflow_mode") or "trend",
+        "workflow_mode": pick(values, "workflow_mode") or DEFAULT_WORKFLOW_MODE.value,
         "brief_content": pick(values, "brief_content") or {},
         "brief_clarification": pick(values, "brief_clarification") or {},
         "shooting_plan": pick(values, "shooting_plan") or {},

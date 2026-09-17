@@ -81,6 +81,7 @@ from backend.graph.builder import build_graph
 from backend.graph.routers import orchestrator_router
 from backend.graph.wiring import EDGES_BY_SOURCE
 from backend.state.enums import WorkflowMode, WorkflowPhase
+from backend.state.modes import WORKFLOW_MODES
 from backend.state.schema import XHSGrowthState
 
 __all__ = [
@@ -93,6 +94,7 @@ __all__ = [
     "export_plan",
     "get_plan_template",
     "graph_nodes",
+    "mode_registry_complaints",
     "orchestrator_destinations",
     "plan_registry_complaints",
     "reachable_nodes",
@@ -409,6 +411,121 @@ def orchestrator_destinations(mode: WorkflowMode) -> dict[WorkflowPhase, str]:
     }
 
 
+#: The three routers that all ask one question -- where does a ``reangle`` send
+#: the run -- and the two hops that exist only when a mode walks the
+#: ``viral_matcher -> blogger_scout -> blogger_gate`` loop. Named constants so the
+#: checks below read as statements about routers rather than about strings.
+_REANGLE_ROUTERS: Final[tuple[str, ...]] = (
+    "ripple_finalize",
+    "ripple_gate",
+    "ripple_late_recheck",
+)
+_BLOGGER_LOOP_HOPS: Final[tuple[tuple[str, str], ...]] = (
+    ("blogger_gate", "draft_gate"),
+    ("draft_gate", "viral_matcher"),
+)
+
+
+def mode_registry_complaints() -> dict[str, list[str]]:
+    """Every way ``WORKFLOW_MODES`` and the plan templates disagree.
+
+    The mode registry (``backend/state/modes.py``) declares what each mode
+    *means*; ``PLAN_TEMPLATES`` declares what each mode *can reach*. They are two
+    independent statements about the same two modes, which is the only reason
+    comparing them can find anything: deriving either one from the other would
+    make every check below true by construction.
+
+    Categories:
+
+    ``mode_without_a_spec``
+        a ``WorkflowMode`` member the registry does not describe.
+    ``spec_entry_disagrees_with_the_template``
+        the node the spec's IDLE route names is not the template's entry.
+    ``phase_routes_disagree_with_the_template``
+        the set of nodes the spec's phase table can route to is not exactly the
+        set the template says this mode reaches through its entry.
+    ``initial_phase_route_is_not_the_entry``
+        ``phase_routes[initial_phase]`` is not the entry. The phase
+        ``OrchestratorAgent`` writes and the node the entry router picks are one
+        decision written down twice, so they are compared rather than assumed.
+    ``reanalysis_node_is_not_a_router_answer``
+        a ``reanalysis_node`` that one of the three ripple routers cannot return.
+    ``blogger_loop_field_disagrees_with_the_template``
+        ``runs_blogger_selection`` and the template's exclusions tell different
+        stories about whether this mode walks the blogger loop. Both directions
+        are complaints: the field describes the loop, so the plan must contain
+        the loop's hops when it is true and exclude them when it is false.
+    """
+    no_spec: list[str] = []
+    bad_entry: list[str] = []
+    bad_routes: list[str] = []
+    bad_initial: list[str] = []
+    bad_reanalysis: list[str] = []
+    bad_loop: list[str] = []
+
+    for mode in WorkflowMode:
+        spec = WORKFLOW_MODES.get(mode)
+        template = PLAN_TEMPLATES.get(mode)
+        if spec is None:
+            no_spec.append(str(mode))
+            continue
+        if template is None:
+            # A missing template is ``plan_registry_complaints``' category.
+            continue
+
+        if spec.entry != template.entry:
+            bad_entry.append(
+                f"{str(mode)}: the phase table's IDLE route is {spec.entry!r} while the "
+                f"template's entry is {template.entry!r}"
+            )
+
+        routed = frozenset(spec.phase_routes.values())
+        if routed != template.destinations:
+            bad_routes.append(
+                f"{str(mode)}: the phase table routes to {sorted(routed)} while the "
+                f"template declares {sorted(template.destinations)}; only on one side: "
+                f"{sorted(routed ^ template.destinations)}"
+            )
+
+        initial_destination = spec.route(spec.initial_phase)
+        if initial_destination != spec.entry:
+            bad_initial.append(
+                f"{str(mode)}: initial_phase {str(spec.initial_phase)!r} routes to "
+                f"{initial_destination!r}, not the entry {spec.entry!r}"
+            )
+
+        for source in _REANGLE_ROUTERS:
+            if spec.reanalysis_node not in EDGES_BY_SOURCE[source].answers:
+                bad_reanalysis.append(
+                    f"{str(mode)}: reanalysis_node {spec.reanalysis_node!r} is not an "
+                    f"answer of {source}"
+                )
+
+        excluded = {(hop.source, hop.target) for hop in template.excludes}
+        for source, target in _BLOGGER_LOOP_HOPS:
+            excluded_here = (source, target) in excluded
+            if excluded_here and spec.runs_blogger_selection:
+                bad_loop.append(
+                    f"{str(mode)}: runs_blogger_selection is True but the template "
+                    f"excludes {source} -> {target}"
+                )
+            elif not excluded_here and not spec.runs_blogger_selection:
+                bad_loop.append(
+                    f"{str(mode)}: runs_blogger_selection is False but the template does "
+                    f"not exclude {source} -> {target}"
+                )
+
+    complaints = {
+        "mode_without_a_spec": no_spec,
+        "spec_entry_disagrees_with_the_template": bad_entry,
+        "phase_routes_disagree_with_the_template": bad_routes,
+        "initial_phase_route_is_not_the_entry": bad_initial,
+        "reanalysis_node_is_not_a_router_answer": bad_reanalysis,
+        "blogger_loop_field_disagrees_with_the_template": bad_loop,
+    }
+    return {key: sorted(rows) for key, rows in complaints.items() if rows}
+
+
 def plan_registry_complaints() -> dict[str, list[str]]:
     """Every way the registry and ``build_graph()`` disagree.
 
@@ -439,6 +556,10 @@ def plan_registry_complaints() -> dict[str, list[str]]:
     ``hop_dead_in_every_mode`` / ``node_dead_in_every_mode``
         the backward direction: something the graph has that no mode's plan
         reaches.
+
+    The mode registry's own half of this -- ``WORKFLOW_MODES`` against the same
+    templates -- is :func:`mode_registry_complaints`, merged into the mapping
+    below so that ``== {}`` stays the whole assertion.
     """
     topology = _topology()
     observed = {mode: orchestrator_destinations(mode) for mode in WorkflowMode}
@@ -515,4 +636,5 @@ def plan_registry_complaints() -> dict[str, list[str]]:
         "hop_dead_in_every_mode": [f"{src} -> {dst}" for src, dst in dead_hops],
         "node_dead_in_every_mode": sorted(topology.nodes - declared_nodes),
     }
-    return {key: sorted(rows) for key, rows in complaints.items() if rows}
+    own = {key: sorted(rows) for key, rows in complaints.items() if rows}
+    return {**mode_registry_complaints(), **own}

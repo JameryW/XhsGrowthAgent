@@ -9,6 +9,7 @@ from starlette.responses import Response
 
 from backend.api.routes.public_showcase import (
     ShowcaseVisibilityUpdate,
+    _case_payload,
     _generate_case_summary,
     _key_checkpoints,
     _public_id,
@@ -30,6 +31,7 @@ def _row(
     visibility: str = "private",
     status: str = "completed",
     featured: bool = False,
+    workflow_mode: str = "trend",
 ) -> WorkflowRow:
     return WorkflowRow(
         thread_id=thread_id,
@@ -37,12 +39,26 @@ def _row(
         status=status,
         phase="completed",
         label="公开案例标题",
-        workflow_mode="trend",
+        workflow_mode=workflow_mode,
         showcase_visibility=visibility,
         showcase_featured=featured,
         created_at="2026-07-16T10:00:00Z",
         updated_at="2026-07-16T10:00:00Z",
     )
+
+
+def test_a_case_payload_publishes_a_mode_it_can_name():
+    """``/cases`` answers with a mode the projection can name.
+
+    The row carries whatever the column holds. A value this build does not know
+    is answered with the declared default instead of being passed through to a
+    frontend that has no branch for it. The inline ``in {"trend", "brief"}``
+    this replaced agreed with that intent for exactly two modes -- and would
+    have demoted every mode added later to trend, silently, which is why the
+    registry owns the question now.
+    """
+    assert _case_payload(_row("t-1", workflow_mode="brief"))["workflow_mode"] == "brief"
+    assert _case_payload(_row("t-2", workflow_mode="brand_campaign"))["workflow_mode"] == "trend"
 
 
 def test_public_result_is_allowlisted_and_redacts_internal_fields():

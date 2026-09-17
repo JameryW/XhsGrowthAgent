@@ -25,6 +25,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.state.modes import DEFAULT_WORKFLOW_MODE
+
 
 class PromptLayer(StrEnum):
     """The L0-L5 stable-prefix layers (architecture review §十八).
@@ -131,7 +133,7 @@ class RunContext(BaseModel):
     thread_id: str
     account_id: str
     niche: str
-    workflow_mode: str = "trend"
+    workflow_mode: str = DEFAULT_WORKFLOW_MODE.value
     phase: str = ""
     topic: str = ""
     values: Mapping[str, Any] = Field(default_factory=dict)
