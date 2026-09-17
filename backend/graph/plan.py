@@ -220,7 +220,7 @@ PLAN_TEMPLATES: Final[dict[WorkflowMode, ModeTemplate]] = {
 #: declared destinations -- has its own check below. An always-empty exemption
 #: table is the same artifact this ticket keeps finding: a note pinned over a
 #: hole that is no longer there. The idiom itself is still in use next door, on
-#: ``wiring.UNWIRED_ROUTERS``.
+#: ``wiring.ROUTERS_WITHOUT_AN_EDGE``.
 
 
 @dataclass(frozen=True, slots=True)
