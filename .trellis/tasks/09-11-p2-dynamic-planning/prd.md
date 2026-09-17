@@ -62,7 +62,8 @@
 |---|---|---|
 | **S1** ✅ | **Plan 的只读导出**：`Plan` / `PlanStep` 对象 + **穷举模板注册表**（`WorkflowMode` → 入口 / 词表 / 排除边），由一个**只读**函数从 `build_graph()` 的边导出并与注册表**双向比对**。执行路径**零改动**（没有执行代码读它）。判据 = 结构比对门禁，照 `test_conditional_edge_wiring.py` 的手法。**已交付**（`43580604` / [#618]，见本节末的 S1 小节） | 低 |
 | **S2** ✅ | **边来自 Plan**：`build_graph()` 的 18 条 `add_conditional_edges` 改由**一张穷举的边表**（`backend/graph/wiring.py` 的 `CONDITIONAL_EDGES`：`source` + `router` + `answers` + `redirects`）生成，**逐边等价**（改写前后同一个 `builder.branches` 内省，差异精确等于 `orchestrator` 新增 `copywriter` 这一条）；入口路由（事实 4）是这一步的正题 —— `orchestrator_router` 拿到 `Literal` 注解，目的地从"读不出的 `str`"变成"可读出的声明"，`_NON_LITERAL_ROUTERS` 收窄到**空集**。**已交付**（`6727834f` / [#619]，见本节末的 S2 小节） | 中 |
-| **S3** | **Goal 是一等输入**：`/start` 的 26 键字面量 + `if workflow_mode == "brief"` 特例 → `Goal` → 编译；**11 个模式读取点收敛到一处**（事实 3），未知模式**拒绝**而不是静默按 trend | 中-高 |
+| **S3a** ✅ | **模式注册表**：11 个模式读取点收敛到**注册表内部的 2 处**（`backend/state/modes.py` 的 `stored_mode` / `mode_spec`），未知模式在**请求边界被拒**（422，点名值 + 备选）、在 state 侧**声明式兜底 + 具名 warning**。**已交付**（`44ad59ff` / [#620]，见本节末的 S3a 小节） | 中 |
+| **S3b** | **Goal 是一等输入**：`/start` 的 26 键字面量 + `if req.workflow_mode == WorkflowMode.BRIEF` 特例 → `Goal` → 编译。依赖 S3a —— 模式得先能被陈述，才谈得上被编译 | 中-高 |
 | **S4** | **`workflow.py` 分层**：7 个巨型端点（47% 行）按 api / application / runtime / artifacts / actions 拆；先立边界再挪代码，**纯搬移**、无行为变更 | 中 |
 | **S5** | **契约与开闸条件**：`docs/planning.md` —— Goal / Plan 的定义、模板与"动态规划"的**开闸条件**（什么证据下才允许生成非模板图）、以及本片**明确不做**的三件事 | 小 |
 
@@ -92,7 +93,7 @@
 ## 待决（需要裁定，先登记不擅自动手）
 
 1. **Plan 的粒度**：`PlanStep` 应该对齐**节点**（`trend_scout`、`content_strategist`…）还是对齐**能力**（P1c 的 ToolSpec capability）？前者与今天的 `builder.branches` 一一对应、S1 可零风险导出；后者才通向"由 Goal 编译"，但会引入第二套命名。S1 先按**节点**做（可导出即可验证），把能力粒度留到 S3 再定。
-2. **未知 Goal / 未知模式的行为**：今天静默按 `trend`（事实 3、5）。改成拒绝会**改变行为**（新 4xx 路径），需要一次明确的裁定；本片默认在 S3 里按"拒绝 + 具名错误"处理。
+2. **未知 Goal / 未知模式的行为**：今天静默按 `trend`（事实 3、5）。改成拒绝会**改变行为**（新 4xx 路径），需要一次明确的裁定；本片默认在 S3 里按"拒绝 + 具名错误"处理。**S3a 已把"模式"这一半照此落地**：请求边界 **422**，state 侧**声明式兜底 + 具名 warning**（在图的节点里 raise 就是 P1d 形状，且会让存量 checkpoint 不可读）—— 两处分工的理由见 S3a 小节。**"Goal"那一半留给 S3b**。
 3. **S5 是否应该是文档**：如果 S1–S4 暴露出"确实需要非模板图"的证据，S5 就不再是文档，而是那条路径本身（P2b 的 S4 就是这种形状）。**按证据走，不按计划走。**
 
 ## S1 交付 —— Plan 的只读导出 + 穷举模板注册表
@@ -233,3 +234,137 @@ S1 在 `UNRESOLVED_ROUTER_VALUES` 里登记：brief 模式 `phase=creating` 时 
 ### S2 明确未做
 
 没有一条边按模式分支（边表是 mode-blind 的，模式归属由 `PLAN_TEMPLATES` 声明）；`Goal` 仍未成一等输入（11 个 `workflow_mode` 读取点原样，是 S3 的正题）；`workflow.py` 未拆（S4）；没有写 `docs/planning.md`（S5）。
+
+## S3a 交付 —— 模式注册表
+
+**交付物**：`backend/state/modes.py`（278 行，新建）+ 4 个新测试文件
+（`tests/unit/state/test_modes.py` 21 用例 · `tests/unit/graph/test_modes_registry.py` 13 ·
+`tests/unit/api/test_workflow_mode_boundary.py` 8 · `tests/unit/db/test_workflow_row_mode.py` 5）
++ `tests/unit/api/test_status_label_reuse.py`（+3）；读取点收敛落在
+`graph/routers.py`、`agents/orchestrator.py`、`agents/copywriter.py`、`api/routes/workflow.py`、
+`graph/plan.py`、`state/hydration.py`、`api/routes/public_showcase.py`、`db/workflows.py`、
+`context/models.py`；`docs/execution-plane.md` 的 15 处锚点重指。
+
+### ★ 一次切片拆分（在实现之前，不是事后追认）
+
+票面的 S3 是一次大切片（Goal + 收敛 + 拒绝，风险"中-高"）。侦察后先取消了一个前提：
+**"模式是隐含在多处分支里的"** 才是"Goal 编译"与"11 处收敛"**共同依赖**的东西 ——
+没有可陈述的模式，就没有可编译的 Goal。于是 S3 拆成 **S3a = 模式注册表**（本片）与
+**S3b = Goal 成一等输入**。票面 S3 行在**实现之前**就已改写（见上面的切片表）。
+
+### 做了什么
+
+1. **`ModeSpec`**：一个模式的全部决策面 —— `initial_phase`（`OrchestratorAgent` 写入的相位）、
+   `phase_routes`（相位 → 入口节点）、`reanalysis_node`（三个 ripple router 的共同答案）、
+   `runs_blogger_selection`（是否走 blogger 循环）。`entry` 是**推导**的（IDLE 路由），
+   不是第二次声明 —— 同一个事实的两种写法会漂移，而 `PLAN_TEMPLATES` 已经带着一份
+   **独立**声明供 `plan.py` 比对。
+2. **两个读者，按"谁有权拒绝"分工**：
+   - `get_mode_spec` —— **严格**，未知值 `raise UnknownWorkflowModeError`（具名错误，报出值 + 备选）。
+     给**从外面来的**值（请求字段、存储行）。
+   - `mode_spec(state)` —— **total**，未知值**兜底到声明默认 + 具名 warning**（带值、带 thread_id）。
+     给**从 checkpoint 读出来的** state。
+   这个不对称是**刻意的**：在图的节点里 raise 就是 P1d 的形状（`KeyError` 落在没人看的那条路径上），
+   且会让本模块出现**之前**持久化的线程变得不可读 —— 撞 P1 红线（存量 checkpoint 可读、永不重写）。
+   所以 state 侧的兜底是**声明的**（`DEFAULT_WORKFLOW_MODE`）与**被报告的**，
+   而不是由函数默认参数隐含的 —— "缺失"与"未知"因此可区分（前者静默、后者报警）。
+3. **请求边界收紧、state 侧不收紧**：`WorkflowStartRequest.workflow_mode` 由 `str` 变成
+   `WorkflowMode`（pydantic 对未知值答 **422** 并列出可接受值）；`CheckpointSnapshot`、
+   响应模型与 `context/models.py` 的 `workflow_mode` **仍是 `str`** ——
+   它们是"存量数据的形状 / 解析后的只读视图"，收紧会把存量线程变成错误。
+4. **9 个决策点收敛**：`routers.py` 6 处（相位表、两个 gate 的循环字段、三个 ripple router 的
+   reanalysis 答案）、`orchestrator.py` 1 处（初始相位）、`copywriter.py` 2 处（`writes_from_the_brief`）。
+5. **`mode_registry_complaints()`**（`graph/plan.py`）：**6 个门类**，把注册表与 S1 的
+   `PLAN_TEMPLATES` 逐条比对（模式无 spec / 入口不一致 / 相位表路由集不一致 / 初始相位不落在入口 /
+   reanalysis 不是 router 的答案 / blogger 循环字段与排除边相反），并**合并进**
+   `plan_registry_complaints()` 的返回值 —— 保持 `== {}` 是全部断言。
+   两份声明**互相独立**是它能发现东西的唯一理由：把一方从另一方推导会把比对变成恒真。
+
+### 判据（票面 S3 行）如何被满足
+
+票面逐字：**新增一个模式只改一处（注册表），`grep -rn 'get("workflow_mode"' backend/`
+的命中数从 11 降到 1–2。**
+
+| 项 | 结果 |
+|---|---|
+| `grep -rn 'get("workflow_mode"' backend/` | **11 → 2**，且两处**都在 `state/modes.py` 内部**（`stored_mode` / `mode_spec`）⇒ **注册表之外的读取点 = 0** |
+| 新增一个模式只改一处 | 加一行 `ModeSpec`；其余 8 个站点自动受益，而 `mode_registry_complaints` 的六类会检查它与图/模板是否自洽 |
+| 未知模式不再静默按 trend | 请求边界：**422**（点名值 + 备选）；state 侧：**声明式兜底 + 具名 warning**（**不 raise**，理由见上） |
+| 检查器非空转 | 六个门类逐个注入人造分歧，全部会响；真实树上 `mode_registry_complaints() == {}` 与 `plan_registry_complaints() == {}` 同时成立 |
+
+### 行为等价性
+
+9 个决策点逐点等价：trend/brief 的相位表、两个 gate 的短路、三个 ripple router 的答案、
+orchestrator 的初始相位、copywriter 的 brief 分支 —— 全部**同表同值**，
+`route()` 的 fallback 复现了原来那句三元兜底表达式。
+`tests/unit/graph` + `tests/unit/state` + `tests/unit/agents` = **812 passed**，
+**既有测试没有一条因为本片意外变红**。
+
+### ★ 偏离与登记
+
+1. **注册表放在 `state/` 层，但不在 `state/__init__.py` 里导出**。依赖方向是
+   `graph/builder.py` → `backend/agents/nodes` → `agents/*` → `state/schema`，
+   所以注册表若落在 `graph/`，会被 `agents` 导入成环。而 `state/__init__.py` 有一个明确设计
+   （只急加载 stdlib 的 enums、其余 `__getattr__` 惰性，避免拖入 langchain），
+   加一个会导入 `pydantic` 的模块会破坏它。⇒ **只加子模块**，调用方直接
+   `from backend.state.modes import ...`。
+2. **DB 列 `TEXT NOT NULL DEFAULT 'trend'` 保留**（`db/workflows.py:80`）：
+   SQL 无法 import 这个模块，**这是唯一结构性的字面量重复**，已在代码里注明。
+3. **`context/models.py` 与三个响应模型不收紧类型**（见"做了什么"第 3 条）。
+4. **`/status` 的写回改成 `stored_mode(values)`**，并**删掉**外层恒真的
+   `if "workflow_mode" not in update_fields` 守卫（那个 dict 四行前刚建成、只含 4 个键）。
+   与 S1-M11 同形：**恒真条件 = 死代码，处置是删条件而不是补测试**。
+
+### 门禁与自检
+
+| 项 | 结果 |
+|---|---|
+| `ruff check .` | 干净 |
+| `ruff format --check .` | **529 files**（基线 525 + 4 个新文件） |
+| `mypy backend --python-version 3.12` | **210** source files，no issues（基线 209 + `modes.py`） |
+| 基线对比 / 工具运行时门禁 | drift within threshold / P1c-S5 OK |
+| `pytest -q` | **3527 passed, 3 skipped**（基线 3524 + **3** 个新用例，见下） |
+| 突变自检 | **26/27 击杀、0 未预期存活、1 条显式登记**、restore=OK（9/9 文件哈希核验） |
+
+**突变自检首轮 23/27**，4 条存活全部指向同一个结构性事实，且**都不是"测试太弱"**：
+
+> 收敛到注册表的 9 个站点里，有 **3 个站点此前只有"默认模式下不炸"的测试** ——
+> 它们的用例 state **根本不带 `workflow_mode`**，所以在"注册表把答案从字面量 `"trend"`
+> 换成读 state"之后，这些站点用哪个答案都不可观测。
+
+处置不是改突变，而是**补读者**（三处都是**行为分支**，不是只读字段）：
+
+- **M22 → `test_execute_in_brief_mode_writes_from_the_brief`**：brief 模式的 state 必须走
+  brief 分支（断言传进创作者中心的那一层拿到 `"brief"`）。
+- **M26 → `test_a_case_payload_publishes_a_mode_it_can_name`**：未知存储值发表为默认值、
+  已知值原样发表。顺带修正首轮的**击杀者选错**：三元式的归属函数是 `_case_payload`，
+  而首轮挑的 `test_public_result_*` 根本不走它（`_public_result` 只吃 state）。
+- **M27 → `test_a_threads_own_mode_survives_hydration`**：视图上的 mode 是线程创建时的 mode
+  —— `"trend"` 是**缺失**的兜底，不是**存在**的归一化。这条直接关系红线。
+- **M23 登记为已知缺口**：`_generate_style_variants` 里的同一表达式只决定**提示词的措辞**
+  （"品牌/产品" vs "选题/角度"），不是行为分支；为它补测试会去断言提示词文本 ——
+  那是把巧合钉成不变量。行为的那一半由 M22 覆盖。
+  **这是"声明的**缺口**、不是测出来的"**。
+
+其余 23 条从默认值、锚点、兜底、严格读、`is_known_mode`、六个门类、三个 ripple router、
+两个 gate、orchestrator、行解码、`/status` 写回逐条毙掉。**`rc` 分档把关**：
+只有 `rc == 1` 算击杀，`rc == 4/5` 是 node id 写错（**假击杀**）、`rc == 2` 是收集错误，后两者都不算。
+
+**harness 自身的三条改进**（本片产出）：
+
+- **锚点检查是"组"属性**：同一段文本出现 N 次、由 N 个条目按**出现序号**覆盖时，
+  判据是**声明序号恰好等于 1..N** —— 写成"每条 `count == occ`"会把自己正确的条目报成坏的
+  （首轮就误报 4 条）。
+- **用 `subprocess.run(timeout=)` 替代进程内看门狗**：超时会 kill 子进程、异常在 `finally`
+  覆盖的帧里抛出 ⇒ 恢复路径**必然执行**，不必走 `os._exit` 那条跳过 `finally` 的危险路径。
+- **开局脏树拒绝**（`git status --porcelain` 必须逐行等于本片声明的文件集）——
+  它在本次运行里**真的拦下过一次**（我补完三个测试文件后忘了更新声明）。
+
+### S3a 明确未做
+
+- **Goal 仍未成一等输入**：`/start` 的 26 键字面量、`if req.workflow_mode == WorkflowMode.BRIEF`
+  特例原样（S3b 的正题）。
+- **没有动 `PLAN_TEMPLATES`**：注册表声明"模式**怎么决策**"，`PLAN_TEMPLATES` 声明
+  "哪条边**属于哪个模式**"，两份声明由 `mode_registry_complaints` 接住。
+- **没有给 trend 模式 `phase=creating` 选目的地**（S2 登记的行为问题）。
+- **`workflow.py` 未拆**（S4）；**`docs/planning.md` 未写**（S5）。
