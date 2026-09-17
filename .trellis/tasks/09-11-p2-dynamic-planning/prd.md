@@ -604,28 +604,40 @@ api 层重新导出实现符号 / 文档锚点漂一行 / 缺席锚点点到「�
 
 所以「纯搬移」不是一句自述，而是**一次性的结构证明 + 永久的行为证据**。
 
-### ★ 同轮撞到的一处既有 flake（登记不修）
+### ★ 同轮撞到的既有 flake：`services/` 的两条「真实浏览器」用例（登记不修）
 
-CI 首次跑 **7/8**，红的是 `Test (py3.12)` 的
-`tests/unit/services/test_chrome_launcher.py::test_stop_chrome_sigterms_live_pid`
-（`AssertionError: assert 'failed' == 'stopped'`）。**与 S4 无关**（同一 commit 的 py3.11 通过），
-根因如下：
+CI 三轮里跑出两种红，**都在 `Test (py3.12)`、都在 `backend/services/**`、且 py3.11 同时全绿**：
 
-- `stop_chrome` 在发 SIGTERM 之前有一道「pidfile 里的 PID 到底是不是这个 profile 的 Chrome」
-  的守卫（`chrome_launcher.py` 的 `_pid_matches_profile`），它读 **`/proc/{pid}/cmdline`**；
-- 这条用例 mock 了 `_pid_alive` 与 `os.kill`，**唯独没 mock `_pid_matches_profile`**
-  （同一文件里另外 3 处用例都 mock 了 —— `:546`/`:783`/`:845`，是漏了这一处）；
-- 于是它的结果取决于宿主上**是否存在 PID 4242 的进程**：不存在 → `FileNotFoundError`
-  → `_pid_matches_profile` 返回 `True` → 用例绿；存在 → 读到 cmdline 且不含该 profile
-  → 返回 `False` → 走「profile 不匹配」分支 → `action="failed"`。
-- **Windows 上 `/proc` 不存在，这条用例永远是绿的** ⇒ 本机全量 5 次 + 全量 3572 用例
-  一次都没复现；Linux runner 上则是概率事件，`py3.11` 与 `py3.12` 落在不同容器里，
-  所以同一 commit 出现「一绿一红」—— 这正是「不同 `/proc`」的指纹。
+| 轮次 | 红的用例 | 报错 |
+|---|---|---|
+| 首轮 | `chrome_launcher.py::test_stop_chrome_sigterms_live_pid` | `assert 'failed' == 'stopped'` |
+| 第三轮（纯文档提交） | `xhs_login.py::TestGetStatus::test_status_confirmed_after_code_status_2` | `LoginError: 刷新二维码失败：未找到登录二维码` |
 
-**只登记不修**：`chrome_launcher` 不在 S4 判据里（票面红线「不顺手做第四件事」）。
-重跑该 job 后 **8/8 全绿**（无代码改动），flake 由此确认。
-修法是一行 `monkeypatch.setattr(cl, "_pid_matches_profile", lambda *_: True)`，
-留给碰 `chrome_launcher` 的那一片 —— 但它是**会阻塞任意 PR** 的 flake，不是纯噪声。
+**两条都是既有 flake，与 S4 无关，而且已经在打 `main`** —— #621（S3b，上一个切片）合并到
+main 之后那次 CI 同样只在 `Test (py3.12)` 红，失败的是同一族
+`xhs_login.py::TestStop::test_stop_idempotent`；更早的 #613 合并也一样。
+也就是说 **`main` 的 CI 本来就是间歇性红的**，本片只是又撞上；纯文档提交也会撞上，
+正是它「与代码无关」的直接证据。
+
+`xhs_login` 那族的报错文本自己写着「小红书 **IP/环境风控**…请切换家庭宽带或手机热点后稍后再试」
+—— 它是**真的会开浏览器连网**的用例，在 CI 里本就依赖宿主网络与风控状态。
+
+`chrome_launcher` 那条的机制已定位：
+
+- `stop_chrome` 发 SIGTERM 之前有一道守卫 ——「pidfile 里的 PID 到底是不是这个 profile 的
+  Chrome」（`chrome_launcher.py` 的 `_pid_matches_profile`），它读 **`/proc/{pid}/cmdline`**；
+- 这条用例 mock 了 `_pid_alive` 与 `os.kill`，**唯独漏了 `_pid_matches_profile`**
+  （同一文件里另外 3 处都 mock 了：`:546` / `:783` / `:845`）；
+- 于是结果取决于宿主上**是否存在 PID 4242 的进程**：不存在 → `FileNotFoundError` → 返回 `True`
+  → 用例绿；存在 → 读到 cmdline 且不含该 profile → 返回 `False` → 走「profile 不匹配」分支
+  → `action="failed"`；
+- **Windows 上 `/proc` 根本不存在，这条用例永远是绿的** ⇒ 本机连跑 5 次 + 全量 3572 用例
+  一次都没复现，这是它直到 CI 才露面的原因。
+
+**只登记不修**（票面红线「不顺手做第四件事」，且两条都不在 S4 判据里）。三次重跑后
+最终 **8/8 全绿**。可考虑的修法：chrome 那条是一行
+`monkeypatch.setattr(cl, "_pid_matches_profile", lambda *_: True)`；`xhs_login` 那族要补 mock
+或把它移出 CI 的必过集。**它们会阻塞任意 PR**，不是纯噪声。
 
 ### S4 明确未做
 
