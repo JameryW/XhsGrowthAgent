@@ -116,7 +116,7 @@ builder.add_edge("publisher", END)
 | 片 | 名称 | 内容 | 规模 |
 |---|---|---|---|
 | **S1** ✅ | **让现状可见 + 止血** | 把「闭环从未启动」变成**仓内会红的判据**；处置 `analyst.py` 那段恒空的回填（它是今天最大的误导源：读起来像在工作） | 已交付 · `5e7b43b5` |
-| **S2** | **link 结果从投影变成事实** | 把 `analytics.py` 里请求内现算的匹配逻辑提到一个**可复用、可测试、可重算**的位置；给 `evaluator_samples` 加 `platform_post_id`（**nullable**，存量行仍可读） | 小 |
+| **S2** ✅ | **link 结果从投影变成事实** | 身份规则收敛成一处 + 匹配逻辑提成**纯函数**；`evaluator_samples.platform_post_id`（**nullable**）配一个**真写入者** —— 判据与两条被推翻的预设见第十一 / 十二节 | 已交付 · `c27b2f1e` |
 | **S3** | **闭合那条边** | `creator-stats/sync` 成功后，用 link 结果把 `creator_note_stats` 的真实指标回填进 `evaluator_samples.engagement`（写 `label_source="engagement"`）；此时 `maybe_evolve` 才第一次可达 | 中 |
 | **S4** | **契约与开闸条件** | `docs/outcome-learning.md`：offline quality 与 online reward 的定义、弱标签的**写入条件**、`maybe_evolve` 的**开闸条件**、以及本片明确不做的事 | 小 |
 
@@ -232,3 +232,92 @@ builder.add_edge("publisher", END)
 ### 回给 S2/S3 的一条线索（S1 顺带实测）
 
 `publish_result` **在 checkpoint 里带着 `platform_post_id`**（`_with_publish_link_metadata` 加的三个身份键之一，且有 `state/hydration.py` 的持久化路径）。所以「真数据到不了学习层」缺的那把键，**在 workflow state 这一侧其实已经存在** —— 断点 2 的「没有可连的键」只成立于 `evaluator_samples` 那一侧（它没有 `platform_post_id` 列，而 `backfill_engagement(thread_id, …)` 吃 `thread_id`）。⇒ S2/S3 有两条候选路径：**(a)** 给 `evaluator_samples` 加 `platform_post_id`；**(b)** 只靠 `thread_id` 从 checkpoint 取 `platform_post_id` 再连 `creator_note_stats`。**S2 侦察时先比较这两条，不要默认 (a)。**
+
+## 十一、S2 侦察（两条预设被推翻）
+
+S2 票面（第 119 行）自带两句预设，开工侦察实测**一句不成立、一句要改口径**。先把它们记在这里，再写 S2 实际的形状。
+
+| # | 票面写的 | 实测 | 判定 |
+|---|---|---|---|
+| **1** | 「给 `evaluator_samples` 加 `platform_post_id`」是闭合断点 ② 的**必要条件** | 加列**不是**连接的必要条件：`backfill_engagement`（`db/evaluator_config.py:455-478`）的 WHERE **只有** `thread_id`；而 `analyst.py:135` 的 `thread_id = state.get("session_id")`、`publisher._with_publish_link_metadata`（`agents/publisher.py:354-361`）写的 `workflow_thread_id` 是**同一个值**、`analytics._extract_post_data`（`api/routes/analytics.py:585-590`）读的也是 `publish["workflow_thread_id"] or session_id or thread_id` ⇒ **三处是同一个键** | 加列的价值**不是**「让真数据连得上」（那个今天就连得上），而是让**反向查询** `note_id → 样本` 变成一次索引命中。票面把它写成了前者，是对收益的高估 |
+| **2** | 「linker 的 `link_status="linked"` 只在请求内投影、从不落库 ⇒ 真数据到不了学习层」 | **free 路径早就落库了**：`api/routes/free.py:1060-1072` 的 `get_analytics` 在真抓到平台指标之后，`is_pool_ready()` 门内**无 `link_status` 条件地**调 `backfill_engagement(f"free:{draft_id}", engagement)` 并 `_schedule_free_evolve` ⇒ 弱标签**确实进过 `evaluator_samples.engagement`** | 缺口不是「没有任何一条路落库」，而是「**workflow 路径**没有一条**确定**的真指标产出来源」（free 靠真抓、workflow 靠读发布当刻的 dict） |
+
+⇒ **S2 的实际形状是三件事，不是两件**：
+
+1. **身份规则单一所有者。** `analytics._normalize_platform_post_id`（`:552-562`）与 `publisher.py:356` 的 `"" if raw_post_id.startswith("mock_") else raw_post_id` 是**同一条规则的两份写法**（后者少了 `workflow:` 前缀那一半）。今天读侧每次比较都 normalize，所以两份写法**碰巧**同键；但「什么算一个显式平台身份」这件事有两个所有者，是下一片（S3 要按 note_id 连库）最先踩的地方。
+2. **匹配逻辑从请求内提出来。** `_merge_imported_posts`（`:823-924`）今天**就地修改入参行**（`workflow[key] = ...` / `workflow["link_status"] = "linked"`）。★ 诚实口径：它**今天恰好是可重算的** —— 决定只依赖 `platform_post_id`，被改的那些字段都不是决定的输入，所以同一批行跑两次结论相同。⇒ 提取的价值不是「修一个 bug」，而是把这个性质从**巧合**变成**结构**：纯函数形式下「可重算」是构造出来的，且能被独立断言，而不是靠「今天的字段集合恰好不参与决定」。
+3. **★ 加列 + 一个真写入者。** 只加列不写，就是本票存在的那个毛病的第三次重演（「结构完整、从未启动」）。写入时机实测是唯一的：`publisher` 出口同时握着 `session_id` 与 `platform_post_id`，且 `evaluator_gate → publish_gate → publisher`（`graph/wiring.py:280-298`）⇒ **样本先落库、publish 之后才有真 id** —— 顺序正好，无需补任何调度。
+
+### 判据（每条都带对照）
+
+| # | 断言 | 钉住的东西 |
+|---|---|---|
+| 1 | `normalize_platform_post_id` 的语义表：`mock_*` / `workflow:*` / 空 → `""`；URL → 末段；裸 id 原样 | 规则的**内容**（换家不改语义） |
+| 2 | `resolve_platform_links` 的表驱动决定：1↔1 → `linked`；重复声明 → 两侧 `ambiguous`；0 匹配 → imported `unmatched`；无 id 的 imported 落 `unmatched` | 匹配的**四种出口**都在表里 |
+| 3 | **纯性**：同一输入调两次结果相等，且入参未被修改 | 「可重算」是结构而非巧合（第 2 件事的正面） |
+| 4 | **单一所有者**：`backend/` 内 `normalize_platform_post_id` 只有一个定义；`analytics.py` 里不再有 `startswith("mock_")` 字面量；且 `_merge_imported_posts` 真的走了新函数（按调用钉） | 第 1 件事不是「搬了个副本」 |
+| 5 | **列存在且 nullable**：DDL 里 `platform_post_id` 可空、`ensure_tables` 里有那条 `ADD COLUMN IF NOT EXISTS`；存量行（`platform_post_id IS NULL`）仍能被读出来 | 红线 2（新 run 新 schema、存量可读） |
+| 6 | **写入者是活的**：`record_publish_identity` 的唯一调用点在 publisher 出口；且**非空平台 id 才写**、无样本时返回 0 而不抛 | 第 3 件事：列不是摆设 |
+| 7 | 阳性对照：把「唯一调用点」扫描器指向一个不含调用者的目录 | 第 6 条不是「扫描器返回空」 |
+| 8 | 阳性对照：normalize 扫描器指向一个自带重复定义的 fixture | 第 4 条不是自证 |
+
+### 明确不做
+
+- **不改 publisher 写侧那条规则**（`publisher.py:356` 保留原字面量）—— 改它会动发布契约（`tests/unit/agents/test_publish_contract_equivalence.py` 钉着 publish result 的键），而读侧单一 normalize 已经保证**两侧比较时同键**。这个分歧被登记，不被顺手抹平。
+- **不动 `get_analytics` 的无门 backfill**（今天每次调用都往 `free:{draft_id}` 写一次）—— 「写几次」是**写入条件**问题，属 S3/S4；S2 只把它登记下来。
+- 不做真实平台重抓（红线：`creator-stats/sync` 的抓取契约不动）。
+
+## 十二、S2 交付（`feat/p3-s2-link-from-projection-to-fact` / `c27b2f1e`）
+
+**一句话**：把「什么算一个显式平台身份」与「哪条笔记属于哪次 run」从两个模块各自现算，收敛成一个纯函数；并让 publish 那一刻解析出的平台身份落到 `evaluator_samples.platform_post_id` —— link 从**请求内的投影**变成**库里的一个事实**。
+
+### 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `backend/services/publish_identity.py`（新） | `normalize_platform_post_id`（逐字从 `analytics` 移入）+ `LinkGroup` / `LinkResolution` / `resolve_platform_links`：纯函数，无 I/O、不修改入参行 |
+| `backend/api/routes/analytics.py` | 删掉私有 normalizer（3 处调用改公共名）；`_merge_imported_posts` 由「请求内现算」改为「调用 resolver → 应用它给的决定」（−51/+28） |
+| `backend/db/evaluator_config.py` | `platform_post_id TEXT` **双路径**落地（`CREATE TABLE` 列名 + `ADD COLUMN IF NOT EXISTS` 升级），**nullable**；新增唯一写入者 `record_publish_identity` |
+| `backend/agents/nodes/publisher.py` | 在节点的唯一出口之后 best-effort 落库（`is_pool_ready()` 门 + 规范化门 + `try/except`），**+37 行纯新增**，未改任何既有分支 |
+| `backend/db/__init__.py` | 新函数登记进惰性导出表 |
+| `tests/unit/services/test_publish_identity.py`（新） | 26 条判据 |
+
+### 判据（26 条，每组都带对照）
+
+| 组 | 条数 | 断言 | 钉住的东西 |
+|---|---|---|---|
+| 规则语义 | 9 | 参数化表：`None` / 空 / 空白 / `mock_*` / `workflow:*` → `""`；裸 id 与两种 URL 形态 → 裸 id | 换家不改语义 |
+| 匹配决定 | 6 | 1↔1 → `linked`；2 workflow 声明 → 两侧 `ambiguous`；1×2 → `ambiguous`；0×1 → `unmatched`；**0×2 → `ambiguous`**；合成 id 不算声明 | 四种出口全在表里，且歧义由**任一侧**多声明决定 |
+| 顺序 | 2 | group 顺序 = imported 侧首次出现顺序；无 id 的行排在 append 末尾 | 与旧实现的输出顺序逐位一致 |
+| 可重算 | 1 | 同一输入调两次结果相等、入参逐字未变、**且不是空转**（同时断言它真的判出了两条 link） | 「可重算」是结构而非巧合 |
+| 单一所有者 | 2 | `normalize_platform_post_id` 在 `backend/` 只有**一处定义**（两种拼写都扫）；analytics 里不再有 `startswith("mock_")`，调用者集合恰是 {analytics, publisher 节点, owner 自己} | 第 1 件事不是搬了个副本 |
+| 列 | 1 | `platform_post_id TEXT` 出现两次（CREATE + ALTER）、无 `NOT NULL`、`ensure_tables` **真的 execute** 了那条 ALTER、`insert_sample` 的 SQL 不含该列 | 红线 2 + 存量行可读 + 旧调用者不破 |
+| 写入者 | 3 | UPDATE 是 latest-by-thread 且参数顺序正确；空 id 不碰 DB；**唯一调用点是 publisher 节点** | 列不是摆设 |
+| 写入者行为 | 2 | 规范化后才落库（`mock_*` 与 URL 两种形态都验）、DB 抛错不冒泡到 publish | 「活的」不只靠扫描 |
+| 扫描器对照 | 3 | 单一所有者扫描器指向含两种写法的 fixture → 2；调用扫描器指向空目录 → ∅；`startswith("mock_")` 的正面对照落在 publisher（写侧故意保留） | 每条「值为零」的主张自带阳性对照 |
+
+### ★ 诚实呈现
+
+1. **我自己写下的 `LinkGroup.status` 第一版是错的。** 「0 个 workflow 声明 + 2 个 imported 声明」在旧代码里走的是 `ambiguous` 分支（`len(candidates) > 1` 那一半），我的第一版会返回 `unmatched` —— 差别是「会不会被静默合并」。写完模块当轮就发现并改正（把条件显式化成 `one_each`），并立刻把它变成一条判据与一条突变（匹配决定组的第 5 行、M03）。这不是「重构顺带修的 bug」，是重构**引入**的 bug，所以它单独占一行。
+2. **加列的收益被下调，如实写进第十一节。** 票面把它写成闭合断点的必要条件；实测不是（`backfill_engagement` 的 WHERE 只有 `thread_id`，而 `analyst` 的 `thread_id`、`publisher` 的 `workflow_thread_id`、`_extract_post_data` 读的是同一个键）。S2 给它保留的真实理由是让 S3 的**反向查询**（`note_id → 样本`）成为一次索引命中。
+3. **没有做「加列 + 留一句注释说以后会有人写」那个版本** —— 那正是本票存在的毛病（结构完整、从未启动）。写入者落在 publisher 的唯一出口：它是今天唯一同时握着 `thread_id` 与 `platform_post_id` 的地方，且 `evaluator_gate → publish_gate → publisher`（`graph/wiring.py:280-298`）保证**样本先存在**。
+4. **不动 publisher 写侧那条 `startswith("mock_")`**（第十一节已登记）：读侧统一 normalize 已保证两侧比较同键，改它要动发布契约（`tests/unit/agents/test_publish_contract_equivalence.py` 钉着 publish result 的键）。这个分歧被**登记**，不被顺手抹平。
+5. **不动 `get_analytics` 的无门 backfill**（每次调用都往 `free:{draft_id}` 写一次）—— 它是「写几次」的**写入条件**问题，归 S3/S4。
+
+### 门禁
+
+`ruff check .` **All checks passed!**（542 files）· `ruff format --check .` **542 files already formatted** · `mypy backend --python-version 3.12` **Success: no issues found in 217 source files** · `context_compiler_baseline.py --compare --drift-pct 5` **drift within threshold** · `tool_runtime_gate.py` **P1c-S5 tool runtime: OK** · 全量 `pytest -q` **3612 passed / 3 skipped**（本片 +26）。
+
+### 突变自检
+
+**14 条突变 14/14 杀死**、`step 0 OK`、`restore=OK`（survived / badid / error / timeout 全 0）：
+
+- **规则 2 条**：`workflow:` 前缀不再被拒（M01）· URL 不再归一成裸 id（M04）。
+- **决定 3 条**：重复声明被折叠成 link（M02）· **0 workflow × 2 imported 被判成 unmatched（M03，就是上面我写错的那条）** · 解析器就地修改入参（M05）。
+- **写入者 6 条**：publisher 出口的调用被摘掉（M06）· 列变 `NOT NULL`（M07）· ALTER 定义了却不再 execute（M08）· 写入者恒返回 0（M09）· 空 id 直达数据库（M10）· 存原始 id 而不规范化（M14）。
+- **读侧 1 条**：`analytics` 不再把自己的行交给 resolver（M11）。
+- **「根参数」2 条**：扫描器忽略被指向的目录 —— `_defined_names`（M12）与 `_call_sites`（M13）各一条，两条都只有阳性对照会红。
+
+### 回给 S3 的一条线索
+
+`evaluator_samples.platform_post_id` 现在会在**每次真实发布**之后被写上（dry run 与失败发布规范化后为空 ⇒ 不写；该线程没有样本则 rowcount=0）。⇒ S3 的 sync 回填不必再去 checkpoint 里重放「这个 thread 发了哪条笔记」，一条 `WHERE platform_post_id = ANY(...)` 就够。**但**要注意 `upsert_note_stats` 是 upsert、同一条笔记的指标会持续更新（第七节待决 3）：S3 的第一版按「sync 后回填一次」实现即可，增量重算留给证据。

@@ -89,6 +89,7 @@ __all__ = [
     "mark_quality_evaluations_stale",
     "migrate_from_accounts",
     "new_quality_evaluation_run",
+    "record_publish_identity",
     "set_active_account",
     "set_config",
     "set_weight",
@@ -180,6 +181,10 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "list_epochs": ("backend.db.evaluator_config", "list_epochs"),
     "list_weights": ("backend.db.evaluator_config", "list_weights"),
     "load_weights": ("backend.db.evaluator_config", "load_weights"),
+    "record_publish_identity": (
+        "backend.db.evaluator_config",
+        "record_publish_identity",
+    ),
     "set_weight": ("backend.db.evaluator_config", "set_weight"),
     "train_weights": ("backend.db.evaluator_config", "train_weights"),
     "close_pool": ("backend.db.pool", "close_pool"),

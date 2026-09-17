@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS evaluator_samples (
     label_source     TEXT NOT NULL,
     engagement       JSONB,
     content_snapshot JSONB,
+    platform_post_id TEXT,
     created_at       TEXT NOT NULL DEFAULT ''
 );
 """
@@ -135,6 +136,14 @@ CREATE TABLE IF NOT EXISTS evaluator_samples (
 # handles upgrades. Safe on new tables (column already present → no-op).
 _ADD_SNAPSHOT_COL_SQL = (
     "ALTER TABLE evaluator_samples ADD COLUMN IF NOT EXISTS content_snapshot JSONB"
+)
+
+# Which platform post a sample judged (P3-S2). Nullable on purpose: every
+# sample written before its run published — and every free-mode sample, which
+# carries a synthetic ``free:<draft_id>`` thread key instead of a real note —
+# keeps NULL and stays readable.
+_ADD_PLATFORM_ID_COL_SQL = (
+    "ALTER TABLE evaluator_samples ADD COLUMN IF NOT EXISTS platform_post_id TEXT"
 )
 
 _CREATE_SAMPLES_INDEX_SQL = """
@@ -161,6 +170,7 @@ async def ensure_tables() -> None:
         await conn.execute(_MIGRATE_GLOBAL_SCOPE_SQL)
         await conn.execute(_CREATE_SAMPLES_SQL)
         await conn.execute(_ADD_SNAPSHOT_COL_SQL)  # upgrade pre-existing tables
+        await conn.execute(_ADD_PLATFORM_ID_COL_SQL)
         await conn.execute(_CREATE_SAMPLES_INDEX_SQL)
         await conn.execute(_CREATE_EPOCHS_SQL)
         await _ensure_default_epoch(conn)
@@ -474,6 +484,39 @@ async def backfill_engagement(thread_id: str, engagement: dict[str, Any]) -> int
             )
             """,
             (json.dumps(engagement), thread_id),
+        )
+        return cur.rowcount
+
+
+async def record_publish_identity(thread_id: str, platform_post_id: str) -> int:
+    """Record which platform post this thread's most recent sample judged.
+
+    Called from the publisher node — the one place that holds both the
+    workflow thread and the published platform id at the same moment (the
+    evaluator gate runs before the publisher, so the sample already exists).
+    This is what turns the link from a request-time projection into a stored
+    fact: the sync-time weak-label backfill can then join imported notes to
+    samples on ``platform_post_id`` instead of replaying checkpoints.
+
+    ``platform_post_id`` must already be normalized by the caller
+    (``backend.services.publish_identity``) — an empty value is a no-op, so a
+    dry run or a failed publish writes nothing. Returns rows updated (0 when
+    there is no sample for the thread). Non-blocking on DB failure.
+    """
+    if not platform_post_id:
+        return 0
+    pool = get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE evaluator_samples
+            SET platform_post_id = %s
+            WHERE id = (
+                SELECT id FROM evaluator_samples
+                WHERE thread_id = %s ORDER BY created_at DESC LIMIT 1
+            )
+            """,
+            (platform_post_id, thread_id),
         )
         return cur.rowcount
 
