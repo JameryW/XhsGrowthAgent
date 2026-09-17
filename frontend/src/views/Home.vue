@@ -132,7 +132,6 @@ const confirmStart = async () => {
   try {
     const result = await workflowStore.startWorkflow(
       formConfig.value.accountId,
-      formConfig.value.phase,
       {
         dryRun: formConfig.value.dryRun,
         autoPublish: formConfig.value.autoPublish,

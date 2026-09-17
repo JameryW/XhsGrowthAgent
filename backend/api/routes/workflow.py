@@ -50,6 +50,7 @@ from backend.graph.routers import PAUSE_REASON_EVALUATOR_FAIL_CLOSED
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
 from backend.state.enums import ContentStatus, WorkflowMode, WorkflowPhase
+from backend.state.goal import BriefInput, Goal
 from backend.state.hydration import (
     checkpoint_view,
     history_file_view,
@@ -499,7 +500,13 @@ def _last_success_node(state: Any) -> str | None:
 
 class WorkflowStartRequest(BaseModel):
     account_id: str = Field(default="default", description="账号 ID")
-    phase: WorkflowPhase = Field(default=WorkflowPhase.SCOUTING, description="起始阶段")
+    # No ``phase`` field, on purpose. A run's start phase is the mode's
+    # (``backend/state/goal.py``'s ``Goal.start_phase``): the graph's entry is
+    # always ``orchestrator`` and that node unconditionally writes the mode's
+    # phase, so a caller-supplied one never chose the entry -- it only made this
+    # endpoint's response and the DB row name a phase the graph was not in.
+    # Removed rather than ignored: pydantic's default ``extra="ignore"`` means a
+    # client still sending it is not refused, only unheard.
     async_mode: bool = Field(default=True, description="异步执行模式")
     dry_run: bool = Field(default=False, description="试运行模式（不实际发布）")
     auto_publish: bool = Field(default=False, description="审核通过后自动发布")
@@ -688,6 +695,32 @@ def _get_ripple_progress(thread_id: str) -> dict[str, Any]:
 # ── Endpoints ──
 
 
+async def _seed_brief_payload(
+    req: WorkflowStartRequest, graph: Any, thread_id: str
+) -> BriefInput | None:
+    """Where a brief run's body goes — or ``None`` when there is no body.
+
+    P1a-S4-3: ``brief_content`` is refable, so the body is seeded into the
+    Artifact Store and only the ref travels in the input state; otherwise the raw
+    text would sit in the initial checkpoint across the whole ``awaiting_brief``
+    pause. The put is best-effort — a store that declines keeps the body inline,
+    never a dangling ref. That pair of destinations is
+    :class:`~backend.state.goal.BriefInput`'s job to model, so this is where the
+    IO happens and nowhere else.
+
+    Trend mode carries no brief at all, and a brief run with no text is waiting
+    for an upload rather than carrying a payload, so both answer ``None``.
+    """
+    if req.workflow_mode != WorkflowMode.BRIEF or not req.brief_text:
+        return None
+
+    from backend.state.artifacts import put_artifact
+
+    body = {"raw_text": req.brief_text, "source_type": "text"}
+    ref = await put_artifact(getattr(graph, "store", None), thread_id, "brief_content", body)
+    return BriefInput(body=body, ref=None if ref is None else dict(ref))
+
+
 @router.post("/start")
 async def start_workflow(
     req: WorkflowStartRequest,
@@ -723,66 +756,27 @@ async def start_workflow(
             ),
         )
 
-    initial_state: dict[str, Any] = {
-        "phase": req.phase,
-        "current_agent": "orchestrator",
-        "error": None,
-        "retry_count": 0,
-        "execution_mode": req.execution_mode,
-        "workflow_mode": req.workflow_mode,
-        "trend_data": {},
-        "content_plan": {},
-        "copy_content": {},
-        "visual_plan": {},
-        "publish_result": {},
-        "analytics": {},
-        "engagement_actions": [],
-        "human_feedback": {},
-        # No "performance_log" seed: P1a-S2 moved telemetry to the Event store,
-        # and seeding the key would mark a new thread as legacy for the
-        # inline-passthrough branch of the telemetry reader.
-        "account_id": req.account_id,
-        "session_id": thread_id,
-        "thread_id": thread_id,
-        "topic": req.topic,
-        "niche": niche_res.niche,
-        "niche_resolution": niche_res.to_dict(),
-        "dry_run": req.dry_run,
-        "auto_publish": req.auto_publish,
-        "created_at": datetime.now(UTC).isoformat(),
-        "updated_at": datetime.now(UTC).isoformat(),
-    }
-
-    if req.workflow_mode == WorkflowMode.BRIEF:
-        initial_state["phase"] = WorkflowPhase.BRIEFING
-        if req.brief_text:
-            # P1a-S4-3: brief_content is refable — seed the body into the
-            # Artifact Store and carry the ref in the input state instead of
-            # parking the raw text inline in the initial checkpoint (it would
-            # otherwise sit there across the whole awaiting_brief pause).
-            # Best-effort: a failed put keeps the body inline, never a
-            # dangling ref.
-            from backend.state.artifacts import put_artifact
-
-            brief_body = {"raw_text": req.brief_text, "source_type": "text"}
-            brief_ref = await put_artifact(
-                getattr(graph, "store", None), thread_id, "brief_content", brief_body
-            )
-            if brief_ref is not None:
-                initial_state["artifacts"] = {"brief_content": dict(brief_ref)}
-            else:
-                initial_state["brief_content"] = brief_body
+    # This run's intent, as one value (``backend/state/goal.py``) — and then the
+    # one place that turns it into the mapping a run starts from. The phase is
+    # the mode's, not the request's; see ``Goal.start_phase`` for why.
+    goal = Goal(
+        account_id=req.account_id,
+        thread_id=thread_id,
+        mode=req.workflow_mode,
+        topic=req.topic,
+        niche=niche_res.niche,
+        niche_resolution=niche_res.to_dict(),
+        execution_mode=req.execution_mode,
+        dry_run=req.dry_run,
+        auto_publish=req.auto_publish,
+        brief=await _seed_brief_payload(req, graph, thread_id),
+        created_at=datetime.now(UTC).isoformat(),
+    )
+    initial_state = goal.compile_initial_state()
+    start_phase_str = goal.start_phase.value
 
     config = {"configurable": {"thread_id": thread_id}}
-    now = datetime.now(UTC).isoformat()
-
-    # Resolve the starting phase to a plain string for DB/progress lookups.
-    start_phase_raw = initial_state["phase"]
-    start_phase_str = (
-        start_phase_raw.value
-        if isinstance(start_phase_raw, WorkflowPhase)
-        else str(start_phase_raw)
-    )
+    now = goal.created_at
 
     # Register workflow in DB (no-op when DB unavailable)
     await _db_upsert(
@@ -799,14 +793,13 @@ async def start_workflow(
         updated_at=now,
     )
 
-    # Brief mode without text: save initial state to checkpoint but don't start
-    # execution yet — the PDF upload will trigger the actual start via aupdate_state.
-    brief_waiting_for_upload = req.workflow_mode == WorkflowMode.BRIEF and not req.brief_text
-
-    if brief_waiting_for_upload:
+    # Brief mode without a body: save the initial state to the checkpoint but do
+    # not start execution — the PDF upload will trigger the actual start via
+    # aupdate_state. The condition is the goal's, not a comparison restated here.
+    if goal.waits_for_brief_upload:
         await graph.aupdate_state(config, initial_state, as_node="orchestrator")
         # Update DB status to awaiting_brief (not "running" — no active task)
-        actual_phase = WorkflowPhase.BRIEFING.value
+        actual_phase = goal.start_phase.value
         await _db_upsert(
             thread_id,
             status="awaiting_brief",
@@ -824,14 +817,6 @@ async def start_workflow(
                 "websocket_url": "/api/realtime/ws",
             }
         )
-
-    # Actual phase may differ from request (brief mode overrides to BRIEFING)
-    actual_start_phase = initial_state["phase"]
-    actual_phase_str: str = (
-        actual_start_phase.value
-        if isinstance(actual_start_phase, WorkflowPhase)
-        else str(actual_start_phase)
-    )
 
     if req.async_mode:
 
@@ -851,8 +836,8 @@ async def start_workflow(
             data={
                 "thread_id": thread_id,
                 "status": "running",
-                "phase": actual_phase_str,
-                "progress_percent": get_progress(actual_phase_str),
+                "phase": start_phase_str,
+                "progress_percent": get_progress(start_phase_str),
                 "sse_url": f"/api/workflow/stream/{thread_id}",
                 "websocket_url": "/api/realtime/ws",
             }
