@@ -604,6 +604,29 @@ api 层重新导出实现符号 / 文档锚点漂一行 / 缺席锚点点到「�
 
 所以「纯搬移」不是一句自述，而是**一次性的结构证明 + 永久的行为证据**。
 
+### ★ 同轮撞到的一处既有 flake（登记不修）
+
+CI 首次跑 **7/8**，红的是 `Test (py3.12)` 的
+`tests/unit/services/test_chrome_launcher.py::test_stop_chrome_sigterms_live_pid`
+（`AssertionError: assert 'failed' == 'stopped'`）。**与 S4 无关**（同一 commit 的 py3.11 通过），
+根因如下：
+
+- `stop_chrome` 在发 SIGTERM 之前有一道「pidfile 里的 PID 到底是不是这个 profile 的 Chrome」
+  的守卫（`chrome_launcher.py` 的 `_pid_matches_profile`），它读 **`/proc/{pid}/cmdline`**；
+- 这条用例 mock 了 `_pid_alive` 与 `os.kill`，**唯独没 mock `_pid_matches_profile`**
+  （同一文件里另外 3 处用例都 mock 了 —— `:546`/`:783`/`:845`，是漏了这一处）；
+- 于是它的结果取决于宿主上**是否存在 PID 4242 的进程**：不存在 → `FileNotFoundError`
+  → `_pid_matches_profile` 返回 `True` → 用例绿；存在 → 读到 cmdline 且不含该 profile
+  → 返回 `False` → 走「profile 不匹配」分支 → `action="failed"`。
+- **Windows 上 `/proc` 不存在，这条用例永远是绿的** ⇒ 本机全量 5 次 + 全量 3572 用例
+  一次都没复现；Linux runner 上则是概率事件，`py3.11` 与 `py3.12` 落在不同容器里，
+  所以同一 commit 出现「一绿一红」—— 这正是「不同 `/proc`」的指纹。
+
+**只登记不修**：`chrome_launcher` 不在 S4 判据里（票面红线「不顺手做第四件事」）。
+重跑该 job 后 **8/8 全绿**（无代码改动），flake 由此确认。
+修法是一行 `monkeypatch.setattr(cl, "_pid_matches_profile", lambda *_: True)`，
+留给碰 `chrome_launcher` 的那一片 —— 但它是**会阻塞任意 PR** 的 flake，不是纯噪声。
+
 ### S4 明确未做
 
 - **`_run_graph_and_persist` 的 12 个调用点各自的 `input_data` 构造**原样（S3b 已登记的同一件事）。
