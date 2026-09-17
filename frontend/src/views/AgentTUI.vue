@@ -1567,7 +1567,6 @@ async function handleStart(topic?: string) {
 
   const result = await startWorkflow({
     account_id: accountId,
-    phase: 'scouting',
     workflow_mode: 'trend',
     ...(topic ? { topic } : {}),
   })

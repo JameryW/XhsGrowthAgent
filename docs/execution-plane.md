@@ -106,10 +106,10 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | 锚点 | 证据 | 分类 | 备注 |
 | --- | --- | --- | --- |
 | `backend/db/execution_leases.py:513` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:514`；由 `end_lease` 取消，取消即正常收尾 |
-| `backend/api/routes/workflow.py:439` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:441` |
-| `backend/api/routes/workflow.py:847` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:849` |
-| `backend/api/routes/workflow.py:2319` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **不持租约、不注册** —— 见 §7 |
-| `backend/api/routes/workflow.py:3006` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **不持租约**；注册于 `:3008` |
+| `backend/api/routes/workflow.py:440` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:441` |
+| `backend/api/routes/workflow.py:832` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:849` |
+| `backend/api/routes/workflow.py:2304` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **不持租约、不注册** —— 见 §7 |
+| `backend/api/routes/workflow.py:2991` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **不持租约**；注册于 `:3008` |
 | `backend/agents/content_strategist.py:597` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
 | `backend/api/routes/accounts.py:404` | `background_tasks.add_task(sync_after_login, account_id)` | REAL_TASK | Starlette 后台任务，跟响应生命周期走 |
 | `backend/services/creator_stats/client.py:738` | `task = asyncio.create_task(capture(response))` | REAL_TASK | 采集响应，结果进缓存 |
@@ -135,7 +135,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/agents/analyst.py:287` | `asyncio.create_task(_safe_evolve` | POST_RESPONSE | 演化写回不回流 |
 | `backend/api/routes/free.py:915` | `asyncio.create_task(` | POST_RESPONSE | 响应后收尾 |
 | `backend/memory/calibrator.py:73` | `return asyncio.create_task(` | POST_RESPONSE | 校准写回不回流 |
-| `backend/api/routes/workflow.py:190` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
+| `backend/api/routes/workflow.py:191` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
 | `backend/api/routes/_runner.py:386` | `heartbeat.add_done_callback(_on_heartbeat_done)` | PLANE | 不是新任务：把栅栏登记到租约心跳的结束回调上 |
 | `backend/services/ripple_service.py:214` | `loop.create_task(self._rebuild_client())` | POST_RESPONSE | 重建客户端 |
 | `backend/services/xhs_risk_gate.py:357` | `_persist_task = loop.create_task(_run())` | POST_RESPONSE | 风控快照落盘 |

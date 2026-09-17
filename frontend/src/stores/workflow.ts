@@ -753,11 +753,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   // ── Actions ──
 
-  async function startWorkflow(accountId: string, phase: WorkflowPhase = 'scouting', options?: { dryRun?: boolean; autoPublish?: boolean; topic?: string; niche?: string; workflowMode?: 'trend' | 'brief'; briefText?: string }) {
+  async function startWorkflow(accountId: string, options?: { dryRun?: boolean; autoPublish?: boolean; topic?: string; niche?: string; workflowMode?: 'trend' | 'brief'; briefText?: string }) {
     if (!offlineStore.isOnline) {
       offlineStore.queueAction(
         `start-${accountId}`,
-        async () => { await startWorkflow(accountId, phase, options) },
+        async () => { await startWorkflow(accountId, options) },
         t('nav.startWorkflow')
       )
       return { thread_id: 'pending', status: 'queued' }
@@ -768,7 +768,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       const result = await workflowApi.startWorkflow({
         account_id: accountId,
-        phase,
         dry_run: options?.dryRun,
         auto_publish: options?.autoPublish,
         topic: options?.topic,
@@ -782,7 +781,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       // Add to workflow states map
       workflowStates.value.set(threadId, {
         thread_id: threadId,
-        phase: result.phase || phase,
+        phase: result.phase,
         status: result.status || 'running',
         progress_percent: result.progress_percent ?? 0,
         next_steps: [],
@@ -808,7 +807,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
       // New workflow starts from 0 — reset high-water mark
       _maxProgress.value = 0
-      updateProgressFromPhase((result.phase || phase) as WorkflowPhase, result.progress_percent)
+      updateProgressFromPhase(result.phase as WorkflowPhase, result.progress_percent)
 
       // Fetch full status from backend
       try {

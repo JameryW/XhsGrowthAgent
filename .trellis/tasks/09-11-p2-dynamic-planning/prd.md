@@ -29,7 +29,7 @@
 | 8 | **`WorkflowPhase` 的 13 个成员里有两个是历史遗留，而「PLANNING」这个词今天指的不是规划** | `state/enums.py:6`；`ENGAGING` 被所有 router 显式映射成 `__end__`（`routers.py:97`/`:110`，注释「no interaction node exists anymore」）；`PLANNING` 的语义是"进入 content_strategist"（`:92`/`:106`） | **两个词撞车**：本片要说的"计划"与 `phase=planning` 不是一回事 |
 | 9 | **`WorkflowPhase` 有两份定义，当前成员逐字相同（13/13）** | `state/enums.py:6`（`StrEnum`）与 `api/generated/models.py:49`（`Enum`） | 是**重复**而不是**漂移** ⇒ 潜伏的漂移面，不是当前缺陷（不夸大：今天没有任何行为分歧） |
 | 10 | **`TaskType` 这个名字已被占，但语义是「模型路由键」** | `config/models.py:6`，成员含 `ROUTING`/`SCOUTING`/…/`MOCK_GEN`，docstring 直说「任务类型 → 模型路由键」 | 评审里六个核心对象中的 **`Task` 尚未存在**；已交付的是 `ArtifactRef`（P1a，`state/artifacts.py:85`）· `RunContext`（P1b，`context/models.py:121`）· `ToolResult`（P1c，`tools/runtime/models.py:281`），`ActionIntent`/`DecisionRecord` 在 `creator_agent/models.py:669`/`:503`。**命名要避开 `TaskType`** |
-| 11 | **「Goal」今天不是对象，而是「哪个端点 + 往 state 里塞了什么」** | 12 个 `_run_graph_and_persist` 调用点分布在 5 个文件（`workflow.py` 7 · `review.py:204`/`:385` · `optimization.py:93`/`:157` · `blogger.py:118`）；`/start` 的 `initial_state` 是字面量 **26 个键**（`workflow.py:712-740`），模式差异是一句 `if req.workflow_mode == "brief":`（`:742`）改 `phase` 并决定正文内联还是进 Artifact Store（`:744-760`） | 输入端没有 Goal，只有"端点 + 字典字面量" |
+| 11 | **「Goal」今天不是对象，而是「哪个端点 + 往 state 里塞了什么」** | 12 个 `_run_graph_and_persist` 调用点分布在 5 个文件（`workflow.py` 7 · `review.py:204`/`:385` · `optimization.py:93`/`:157` · `blogger.py:118`）；`/start` 的 `initial_state` 是字面量 **24 个键**（`workflow.py:726-754`；**票面原写 26，S3b 侦察实测 24**），模式差异是一句 `if req.workflow_mode == WorkflowMode.BRIEF:`（`:756`）改 `phase` 并决定正文内联还是进 Artifact Store（`:758-774`）。**★ 第二个同形（S3b 侦察）**：`execution_mode` 同样是裸 `str`（`:511`）配字面量兜底（`routers.py:320` 的 `state.get("execution_mode", "single")`），而 `ExecutionMode` 枚举（`state/enums.py:53`）明明存在、边界处却不用；`tests/unit/state/test_execution_mode.py` 的头两条断言还因 `StrEnum` 恒真而零信息量 —— 但**票面已裁界**（"拒绝"节第 2 条：不动这条轴），**登记不改** | 输入端没有 Goal，只有"端点 + 字典字面量" |
 | 12 | **`workflow.py` 已经长到 2999 行（票面写 2519，**+480**）**，49 个顶层定义，前 7 个占 **47%** | 最大 7 个：`resume_workflow` 327 行（`:1288`）· `get_workflow_status` 244（`:874`）· `start_workflow` 193（`:678`）· `retry_publish` 179（`:2821`）· `recover_workflow` 159（`:1618`）· `retry_ripple_analysis` 153（`:2159`）· `stream_workflow_progress` 142（`:1835`），合计 1397 行；18 个端点（`@router.`） | 票面的行号已经过期，**返工的第一步是承认它不是 2519** |
 | 13 | **这 7 个端点每一个都同时摸 2–6 层关注点** | 按 7 类探针（DB 写 / 事件 / 状态构造 / 图执行 / 响应体 / artifacts / 租约）统计：`start_workflow` 6、`retry_publish` 6、`get_workflow_status` 4、`retry_ripple_analysis` 4、`stream_workflow_progress` 4、`recover_workflow` 3、`resume_workflow` 2 | 缺的不是目录，是**边界**：同一个函数里既有 HTTP 关注点也有应用层与运行时关注点 |
 | 14 | **拓扑已经有一张现成的结构门禁，是本片最便宜的安全网** | `tests/unit/graph/test_conditional_edge_wiring.py`：用 `builder.branches` 内省，**双向**都比 —— ① 每个 router 的 `Literal` 返回值必须能被 path_map 解析（`:78`）；② 每个 path_map 目标必须是真实节点或 `END`（`:115`）。它自己的 docstring 记录了 P1d 的 `KeyError: '__end__'` 事故 | 「把边变成数据」如果做错，这张网**当场**抓住，不需要新写检查器 |
@@ -63,7 +63,7 @@
 | **S1** ✅ | **Plan 的只读导出**：`Plan` / `PlanStep` 对象 + **穷举模板注册表**（`WorkflowMode` → 入口 / 词表 / 排除边），由一个**只读**函数从 `build_graph()` 的边导出并与注册表**双向比对**。执行路径**零改动**（没有执行代码读它）。判据 = 结构比对门禁，照 `test_conditional_edge_wiring.py` 的手法。**已交付**（`43580604` / [#618]，见本节末的 S1 小节） | 低 |
 | **S2** ✅ | **边来自 Plan**：`build_graph()` 的 18 条 `add_conditional_edges` 改由**一张穷举的边表**（`backend/graph/wiring.py` 的 `CONDITIONAL_EDGES`：`source` + `router` + `answers` + `redirects`）生成，**逐边等价**（改写前后同一个 `builder.branches` 内省，差异精确等于 `orchestrator` 新增 `copywriter` 这一条）；入口路由（事实 4）是这一步的正题 —— `orchestrator_router` 拿到 `Literal` 注解，目的地从"读不出的 `str`"变成"可读出的声明"，`_NON_LITERAL_ROUTERS` 收窄到**空集**。**已交付**（`6727834f` / [#619]，见本节末的 S2 小节） | 中 |
 | **S3a** ✅ | **模式注册表**：11 个模式读取点收敛到**注册表内部的 2 处**（`backend/state/modes.py` 的 `stored_mode` / `mode_spec`），未知模式在**请求边界被拒**（422，点名值 + 备选）、在 state 侧**声明式兜底 + 具名 warning**。**已交付**（`44ad59ff` / [#620]，见本节末的 S3a 小节） | 中 |
-| **S3b** | **Goal 是一等输入**：`/start` 的 26 键字面量 + `if req.workflow_mode == WorkflowMode.BRIEF` 特例 → `Goal` → 编译。依赖 S3a —— 模式得先能被陈述，才谈得上被编译 | 中-高 |
+| **S3b** ✅ | **Goal 是一等输入**：`/start` 的 **24 键**字面量 + `if req.workflow_mode == WorkflowMode.BRIEF` 特例 → `Goal` → 编译。★ 侦察**取消了一个前提**：**`req.phase` 对"这次 run 去哪"从来无效** —— 图入口恒为 `orchestrator`（`builder.py:149` 的 `add_edge(START, "orchestrator")`），而它**无条件**写 `mode_spec(state).initial_phase`（实测：trend 请求 `phase=analyzing` ⇒ 写出 `SCOUTING`；brief 一律 `BRIEFING`），所以 `phase` 只影响 DB 的相位列与 `/start` 响应的 `phase`，**而这两个值恒与图不符**（响应说 analyzing、图从 scouting 跑）。于是"起点相位"收敛为**模式事实**（`ModeSpec.initial_phase`），`WorkflowStartRequest.phase` 随之移除。依赖 S3a —— 模式得先能被陈述，才谈得上被编译。**已交付**（`947ec505` / [#621]，见本节末的 S3b 小节） | 中-高 |
 | **S4** | **`workflow.py` 分层**：7 个巨型端点（47% 行）按 api / application / runtime / artifacts / actions 拆；先立边界再挪代码，**纯搬移**、无行为变更 | 中 |
 | **S5** | **契约与开闸条件**：`docs/planning.md` —— Goal / Plan 的定义、模板与"动态规划"的**开闸条件**（什么证据下才允许生成非模板图）、以及本片**明确不做**的三件事 | 小 |
 
@@ -79,7 +79,7 @@
 ## 拒绝（本任务明确不做）
 
 - **不做自由的图生成**（LLM 按 Goal 现编一张图）。评估的限制条件是"简单任务继续 deterministic workflow，复杂任务才动态规划"，而今天**没有任何复杂任务的样本**证明需要它；本片的产出是让这条路**可开闸**（S5 写下条件），而不是先建一个生成器。
-- **不动 `ExecutionMode`（single/continuous）的语义**（事实 7 的第二条轴）：它与本片的"计划"正交，混在一起会让两件事互相污染。
+- **不动 `ExecutionMode`（single/continuous）的语义**（事实 7 的第二条轴）：它与本片的"计划"正交，混在一起会让两件事互相污染。**S3b 实测发现这条轴上长着与 S3a 之前的 `workflow_mode` 一模一样的病**（请求模型是裸 `str`、路由处有 `"single"` 字面量兜底、枚举在边界不生效）—— 因为**票面在这里已经裁过界**，本片**登记不改**；将来若要收，照 S3a 的两读者形状（边界严格 422、state 侧 total + 具名 warning 兜底）即可，不需要新设计。
 - **不合并 `WorkflowPhase` 的两份定义**（事实 9）：它们今天逐字一致、没有行为分歧，而动 `api/generated/**` 属于生成物边界之外的事。**登记为潜伏的漂移面**，不改。
 
 ## 验收
@@ -93,7 +93,7 @@
 ## 待决（需要裁定，先登记不擅自动手）
 
 1. **Plan 的粒度**：`PlanStep` 应该对齐**节点**（`trend_scout`、`content_strategist`…）还是对齐**能力**（P1c 的 ToolSpec capability）？前者与今天的 `builder.branches` 一一对应、S1 可零风险导出；后者才通向"由 Goal 编译"，但会引入第二套命名。S1 先按**节点**做（可导出即可验证），把能力粒度留到 S3 再定。
-2. **未知 Goal / 未知模式的行为**：今天静默按 `trend`（事实 3、5）。改成拒绝会**改变行为**（新 4xx 路径），需要一次明确的裁定；本片默认在 S3 里按"拒绝 + 具名错误"处理。**S3a 已把"模式"这一半照此落地**：请求边界 **422**，state 侧**声明式兜底 + 具名 warning**（在图的节点里 raise 就是 P1d 形状，且会让存量 checkpoint 不可读）—— 两处分工的理由见 S3a 小节。**"Goal"那一半留给 S3b**。
+2. **未知 Goal / 未知模式的行为**：今天静默按 `trend`（事实 3、5）。改成拒绝会**改变行为**（新 4xx 路径），需要一次明确的裁定；本片默认在 S3 里按"拒绝 + 具名错误"处理。**S3a 已把"模式"这一半照此落地**：请求边界 **422**，state 侧**声明式兜底 + 具名 warning**（在图的节点里 raise 就是 P1d 形状，且会让存量 checkpoint 不可读）—— 两处分工的理由见 S3a 小节。**"Goal"那一半留给 S3b** —— S3b 的落点是**起点相位**：`Goal.start_phase` 由模式导出、客户端不可指定（`WorkflowStartRequest.phase` 已移除；`extra="ignore"` 实测保证老客户端传它**不会 422**，只是被忽略）。**未知 Goal 的其余面**（未知 `execution_mode`）**已登记不改**，理由同上节"拒绝"第 2 条。
 3. **S5 是否应该是文档**：如果 S1–S4 暴露出"确实需要非模板图"的证据，S5 就不再是文档，而是那条路径本身（P2b 的 S4 就是这种形状）。**按证据走，不按计划走。**
 
 ## S1 交付 —— Plan 的只读导出 + 穷举模板注册表
@@ -368,3 +368,107 @@ orchestrator 的初始相位、copywriter 的 brief 分支 —— 全部**同表
   "哪条边**属于哪个模式**"，两份声明由 `mode_registry_complaints` 接住。
 - **没有给 trend 模式 `phase=creating` 选目的地**（S2 登记的行为问题）。
 - **`workflow.py` 未拆**（S4）；**`docs/planning.md` 未写**（S5）。
+## S3b 交付 —— Goal 成一等输入
+
+**交付物**：`backend/state/goal.py`（155 行，新建）+ 2 个新测试文件
+（`tests/unit/state/test_goal.py` **23** 用例 · `tests/unit/api/test_start_goal.py` **16** 用例）；
+`backend/api/routes/workflow.py` 的 `/start` 改为由 `Goal` 编译；前端 4 处
+（`types/workflow.ts` · `stores/workflow.ts` · `views/AgentTUI.vue` · `views/Home.vue`）
+随之不再传 `phase`。
+
+### ★ 侦察取消了一个前提：`req.phase` 从来不影响「这次 run 去哪」
+
+票面把 S3b 写成"26 键字面量 + BRIEF 特例 → Goal → 编译"。侦察先推翻了两件小事：
+
+1. **字面量是 24 键，不是 26**（票面事实 11 的行号也已过期 —— 那是 S3a 改动造成的偏移）。
+2. **`WorkflowStartRequest.phase` 对图完全无效**。图入口恒为 `orchestrator`
+   （`builder.py:149` 的 `add_edge(START, "orchestrator")`），而它跳过自己的前两个分支后
+   **无条件**返回 `mode_spec(state).initial_phase`（`orchestrator.py:38`）。实测：
+   trend 请求 `phase=analyzing` ⇒ 写 `SCOUTING`；brief 一律写 `BRIEFING`。
+   于是客户端指定的起点相位**只有两个读者**：DB 的相位列与 `/start` 响应的 `phase`
+   —— 而**这两个值恒与图不符**（响应说 analyzing、图从 scouting 跑；前端
+   `stores/workflow.ts` 还拿这个响应的值去初始化 UI 的相位）。
+
+⇒ 起点相位因此收敛回**模式事实**（`ModeSpec.initial_phase`）：图里 orchestrator 读的、
+`Goal` 编译的、DB 行与响应写的，**是同一个字段**。`Goal.start_phase` 是它的唯一陈述。
+
+### 做了什么
+
+1. **`Goal`**（`backend/state/goal.py`）：一次 run 的意图 —— 模式、执行模式、目标
+   （`topic` / `niche` / `niche_resolution` / `brief`）、开关（`dry_run` / `auto_publish`）、
+   thread 与创建时刻。冻结 dataclass；**不进 state、不进图**（不撞"新 run 新 schema、
+   存量 checkpoint 不重写"）。
+2. **`compile_initial_state()`** 是**全仓唯一**构造那 24 键的地方（原来是路由里的字面量）。
+   逐键等价，含"不 seed `performance_log`"那条 P1a-S2 的理由。**一处精度收敛**：原来
+   `created_at` / `updated_at` / DB 行的 `now` 是**三次** `datetime.now()`，现在同一个值
+   —— 一次 run 只被创建一次，三个值互相差几微秒从来不是设计。
+3. **`BriefInput`** 把"正文进 Artifact Store 还是内联"这对目的地变成一个值（`body` +
+   可选 `ref`），`as_state_fragment()` 是唯一的落键处。`put_artifact` 的 IO 留在路由
+   （`_seed_brief_payload`）—— 编译器不做 IO。
+4. **`waits_for_brief_upload`** 替掉路由里的
+   `req.workflow_mode == WorkflowMode.BRIEF and not req.brief_text`。
+5. **`WorkflowStartRequest.phase` 移除**，前端 4 处同步。**向后兼容是实测的**：
+   pydantic 默认 `extra="ignore"`，老客户端继续传 `phase` 得到 200，且**结果与不传完全相同**
+   （`test_a_client_still_sending_one_is_not_refused` / `..._changes_nothing`）。
+6. 顺带删掉两处 `isinstance(phase, WorkflowPhase)` 的字符串化守卫和一次重复的相位计算
+   （`Goal.start_phase` 恒是具体成员）。
+
+### 判据
+
+票面没给 S3b 单独判据（S3 那条是**模式侧**的收敛，已由 S3a 兑现）。本片按同一精神取了
+三条可复核的口径：
+
+| 项 | 结果 |
+|---|---|
+| 模式判断离开流程 | `grep -n 'WorkflowMode.BRIEF' backend/api/routes/workflow.py` **2 → 1**，剩下那一处是 `_seed_brief_payload` 的**输入门**（"这个模式有没有 brief 正文可放"），不再改相位、不再决定是否启动 |
+| 字面量消失 | `grep -n 'initial_state: dict\[str, Any\] = {' backend/api/routes/workflow.py` → **0**；`grep -rn 'req\.phase' backend/` → **0** |
+| run 的起点只有一处陈述 | `Goal.start_phase` → `ModeSpec.initial_phase`；图输入、DB 行、响应三者由同一个值导出，且"请求说什么都不影响"被 `test_a_trend_run_starts_at_scouting_however_it_asked` 钉住 |
+
+### 行为等价性
+
+24 键**逐键等价**：键集做**双向**比对（`== SEEDED_KEYS` 与 `sorted(...) == sorted(...)`），
+而 `SEEDED_KEYS` 是从被替换的字面量**转录**的、不是从被测对象导入的 —— 否则它就是恒真。
+值逐键断言（`test_every_value_is_the_one_the_literal_wrote`）。
+
+**改动的唯一可观测差异**：`trend` + 显式传非默认 `phase` 的请求，其 DB 相位列与响应
+`phase` 从"客户端值"变成 `scouting` —— **这正是修掉那个矛盾**（原来响应与 DB 都和图不一致）。
+
+### ★ 登记不改（票面已裁界）
+
+**`execution_mode` 是同一个病的第二个实例**：`WorkflowStartRequest.execution_mode` 是裸
+`str`（`:511`），`routers.py:320` 有 `state.get("execution_mode", "single")` 字面量兜底，
+`ExecutionMode` 枚举（`state/enums.py:53`）在边界处不用，而
+`tests/unit/state/test_execution_mode.py` 的头两条断言
+（`ExecutionMode.SINGLE == "single"`）因 `StrEnum` 而**恒真、零信息量**。
+但票面"拒绝"节第 2 条明确**不动这条轴**（它与本片的"计划"正交）⇒ 本片**只登记不修**。
+将来若要收，照 S3a 的两读者形状即可（边界严格 422、state 侧 total + 具名 warning 兜底），
+不需要新设计。
+
+### S3b 明确未做
+
+- **`_run_graph_and_persist` 的另外 11 个调用点**（`review.py:204`/`:385` ·
+  `optimization.py:93`/`:157` · `blogger.py:118` · `workflow.py` 的 resume/retry 路径）
+  各自的 `input_data` 构造**原样** —— `Goal` 让它们**可以**被收，但那是另一片。
+- **`Goal` 不写进 state**：它是输入端的值，编译完就结束，所以没有任何 checkpoint schema 变化。
+- **DB 的相位列与响应形状不变**（都还是 `str`）。
+- `workflow.py` 未拆（S4）；`docs/planning.md` 未写（S5）。
+
+### 突变自检
+
+18 条突变 · **18 击杀 / 0 存活 / 0 bad-id / 0 error / restore=OK**（每条都先跑 step 0：
+未改动树上全部击杀者必须为绿，否则"击杀"可能来自本来就是红的用例）。覆盖两个新增文件的
+起点相位、等待条件、brief 的两种落点、24 键的增删、模式传递、时间戳一致性，以及请求边界上
+"把 `phase` 加回去"这条反向断言。
+
+首轮 **17/18**，唯一存活的 **M03 是击杀者挑错，不是覆盖缺口**：
+`test_trend_starts_at_scouting` 测的是 `Goal.start_phase` **属性**，而 M03 改的是
+`compile_initial_state()` 发出的**键值** —— 用例根本没有经过被突变那一层。换成直接读编译结果的
+`test_the_phase_reaches_the_state_as_a_concrete_phase` 后击杀。与 S2/S3a 记的是同一个坑：
+**击杀者必须真的走被突变那一层**，属性级用例杀不死同一事实在编译器里的突变。
+
+**同轮撞到并修好的一处真实回归**：`workflow.py` 的行号变动让
+`docs/execution-plane.md` 的 5 处 `file:line` 锚点（三条 `create_task`、一条
+`_run_publish_retry`、一条 `ensure_future`）全部失效 —— 由 S3a 立的
+`tests/unit/scripts/test_docs_anchors.py` 在**全量 pytest** 里当场抓住，已按
+"离原行号最近的出现"重指。**这就是那个门禁存在的理由**：锚点腐烂不会自己报错，
+而一个坏的锚点比没有锚点更糟，因为读者会信它。

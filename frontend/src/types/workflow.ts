@@ -49,7 +49,11 @@ export type Urgency =
 // Start request
 export interface WorkflowStartRequest {
   account_id: string
-  phase?: WorkflowPhase
+  // No ``phase``: a run's start phase is its mode's, decided on the backend
+  // (``backend/state/goal.py``). The graph's entry is always ``orchestrator``
+  // and that node unconditionally writes the mode's phase, so a phase sent here
+  // never chose anything -- it only made the response and the DB row name a
+  // phase the run was not in.
   dry_run?: boolean
   auto_publish?: boolean
   topic?: string
