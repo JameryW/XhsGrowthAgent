@@ -7,9 +7,9 @@ import pytest
 
 from backend.state.machine import WorkflowStatus
 
-_POOL_READY = "backend.api.routes.workflow.is_pool_ready"
-_DB_GET = "backend.api.routes.workflow.db_get"
-_DB_UPDATE = "backend.api.routes.workflow.db_update"
+_POOL_READY = "backend.api.routes._wf_runtime.is_pool_ready"
+_DB_GET = "backend.api.routes._wf_runtime.db_get"
+_DB_UPDATE = "backend.api.routes._wf_runtime.db_update"
 
 
 class TestOnTaskDone:
@@ -18,7 +18,7 @@ class TestOnTaskDone:
     @pytest.mark.asyncio
     async def test_callback_records_task_done_at(self):
         """Done callback schedules DB update with task_done_at."""
-        from backend.api.routes.workflow import _on_task_done
+        from backend.api.routes._wf_runtime import _on_task_done
 
         thread_id = "test_thread_done_at"
 
@@ -31,7 +31,7 @@ class TestOnTaskDone:
     @pytest.mark.asyncio
     async def test_callback_marks_stale_when_db_running(self):
         """Done callback marks STALE when DB row still shows running."""
-        from backend.api.routes.workflow import _on_task_done
+        from backend.api.routes._wf_runtime import _on_task_done
 
         thread_id = "test_thread_stale"
 
@@ -58,7 +58,7 @@ class TestOnTaskDone:
     async def test_callback_records_error_on_exception(self):
         """Done callback records task_error when task raised exception."""
         from backend.api.routes._runner import _background_tasks
-        from backend.api.routes.workflow import _on_task_done
+        from backend.api.routes._wf_runtime import _on_task_done
 
         thread_id = "test_task_error"
 
@@ -99,7 +99,7 @@ class TestOnTaskDone:
     async def test_callback_does_not_leak_raw_exception_text(self):
         """Done callback must not leak raw str(e) (paths/SQL) to DB columns."""
         from backend.api.routes._runner import _background_tasks
-        from backend.api.routes.workflow import _on_task_done
+        from backend.api.routes._wf_runtime import _on_task_done
 
         thread_id = "test_task_error_leak"
 
@@ -142,7 +142,7 @@ class TestOnTaskDone:
     @pytest.mark.asyncio
     async def test_callback_ignores_cancelled_error(self):
         """Done callback does not record error for CancelledError."""
-        from backend.api.routes.workflow import _on_task_done
+        from backend.api.routes._wf_runtime import _on_task_done
 
         thread_id = "test_task_cancelled"
 

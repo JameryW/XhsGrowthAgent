@@ -411,7 +411,7 @@ def test_ripple_retry_writeback_goes_through_write_seam():
     with (
         patch("backend.services.ripple_service.RippleService") as mock_service,
         patch(
-            "backend.api.routes.workflow.asyncio.create_task",
+            "backend.api.routes._wf_application.asyncio.create_task",
             side_effect=_fake_create_task,
         ),
     ):
@@ -525,8 +525,12 @@ def test_status_label_and_history_save_resolve_refd_brief():
     client = _build_client(app, graph)
 
     with (
-        patch("backend.api.routes.workflow._db_upsert", new_callable=AsyncMock, return_value=None),
-        patch("backend.api.routes.workflow._save_history_file") as save_mock,
+        patch(
+            "backend.api.routes._wf_application._db_upsert",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch("backend.api.routes._wf_application._save_history_file") as save_mock,
     ):
         resp = client.get("/api/workflow/status/t1")
 
@@ -554,8 +558,12 @@ def test_start_brief_mode_prestores_brief_body():
             "backend.services.niche_resolver.resolve_account_niche",
             new_callable=AsyncMock,
         ) as niche_mock,
-        patch("backend.api.routes.workflow.is_pool_ready", return_value=False),
-        patch("backend.api.routes.workflow._db_upsert", new_callable=AsyncMock, return_value=None),
+        patch("backend.api.routes._wf_application.is_pool_ready", return_value=False),
+        patch(
+            "backend.api.routes._wf_application._db_upsert",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
         patch(
             "backend.api.routes._runner._run_graph_and_persist",
             new_callable=AsyncMock,

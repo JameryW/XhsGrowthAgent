@@ -17,10 +17,10 @@ from fastapi.testclient import TestClient
 from backend.api.routes import _runner
 from backend.api.routes.workflow import router
 
-_START_RESUME = "backend.api.routes.workflow._start_resume_task"
-_DB_UPSERT = "backend.api.routes.workflow._db_upsert"
-_POOL_READY = "backend.api.routes.workflow.is_pool_ready"
-_DB_GET = "backend.api.routes.workflow.db_get"
+_START_RESUME = "backend.api.routes._wf_application._start_resume_task"
+_DB_UPSERT = "backend.api.routes._wf_application._db_upsert"
+_POOL_READY = "backend.api.routes._wf_application.is_pool_ready"
+_DB_GET = "backend.api.routes._wf_application.db_get"
 
 
 def _make_snapshot(values: dict, next_nodes=(), tasks=()):

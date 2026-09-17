@@ -64,7 +64,7 @@
 | **S2** ✅ | **边来自 Plan**：`build_graph()` 的 18 条 `add_conditional_edges` 改由**一张穷举的边表**（`backend/graph/wiring.py` 的 `CONDITIONAL_EDGES`：`source` + `router` + `answers` + `redirects`）生成，**逐边等价**（改写前后同一个 `builder.branches` 内省，差异精确等于 `orchestrator` 新增 `copywriter` 这一条）；入口路由（事实 4）是这一步的正题 —— `orchestrator_router` 拿到 `Literal` 注解，目的地从"读不出的 `str`"变成"可读出的声明"，`_NON_LITERAL_ROUTERS` 收窄到**空集**。**已交付**（`6727834f` / [#619]，见本节末的 S2 小节） | 中 |
 | **S3a** ✅ | **模式注册表**：11 个模式读取点收敛到**注册表内部的 2 处**（`backend/state/modes.py` 的 `stored_mode` / `mode_spec`），未知模式在**请求边界被拒**（422，点名值 + 备选）、在 state 侧**声明式兜底 + 具名 warning**。**已交付**（`44ad59ff` / [#620]，见本节末的 S3a 小节） | 中 |
 | **S3b** ✅ | **Goal 是一等输入**：`/start` 的 **24 键**字面量 + `if req.workflow_mode == WorkflowMode.BRIEF` 特例 → `Goal` → 编译。★ 侦察**取消了一个前提**：**`req.phase` 对"这次 run 去哪"从来无效** —— 图入口恒为 `orchestrator`（`builder.py:149` 的 `add_edge(START, "orchestrator")`），而它**无条件**写 `mode_spec(state).initial_phase`（实测：trend 请求 `phase=analyzing` ⇒ 写出 `SCOUTING`；brief 一律 `BRIEFING`），所以 `phase` 只影响 DB 的相位列与 `/start` 响应的 `phase`，**而这两个值恒与图不符**（响应说 analyzing、图从 scouting 跑）。于是"起点相位"收敛为**模式事实**（`ModeSpec.initial_phase`），`WorkflowStartRequest.phase` 随之移除。依赖 S3a —— 模式得先能被陈述，才谈得上被编译。**已交付**（`947ec505` / [#621]，见本节末的 S3b 小节） | 中-高 |
-| **S4** | **`workflow.py` 分层**：7 个巨型端点（47% 行）按 api / application / runtime / artifacts / actions 拆；先立边界再挪代码，**纯搬移**、无行为变更 | 中 |
+| **S4** ✅ | **`workflow.py` 分层**：3001 → **254 行**（-91.5%），6 层落进 5 个新模块 + 1 个新门禁；7 个巨型端点实测 1352 行（45.1%）**全部降到百行以内**（现在最大的函数 14 行）。**先立边界再挪代码**，纯搬移：搬移当刻用 AST 逐符号证明等价（55 符号 + 18 handler 签名），此后以 `/status` 形状快照 + 3572 用例钉住行为。★ 层名**不是**从既有门禁继承的（设计阶段的归因是错的，已撤回）；★ 最大风险是 ~125 处 patch 目标会静默失效，已按调用点重接线并加「不重新导出」断言。**已交付**（`a2904172` / [#622]，见本节末的 S4 小节） | 中 |
 | **S5** | **契约与开闸条件**：`docs/planning.md` —— Goal / Plan 的定义、模板与"动态规划"的**开闸条件**（什么证据下才允许生成非模板图）、以及本片**明确不做**的三件事 | 小 |
 
 ## 红线（不可回退约束）
@@ -472,3 +472,179 @@ orchestrator 的初始相位、copywriter 的 brief 分支 —— 全部**同表
 `tests/unit/scripts/test_docs_anchors.py` 在**全量 pytest** 里当场抓住，已按
 "离原行号最近的出现"重指。**这就是那个门禁存在的理由**：锚点腐烂不会自己报错，
 而一个坏的锚点比没有锚点更糟，因为读者会信它。
+
+## S4 交付 —— `workflow.py` 分层
+
+**交付物**：`backend/api/routes/workflow.py` **3001 行 → 254 行**（-91.5%），按 **6 层**落进 5 个新模块，另加一个新门禁。**共 37 个文件**（31 改 + 6 新）。
+
+| 层 | 模块 | 行数 | 装什么 |
+|---|---|---|---|
+| api | `workflow.py` | 254 | router + 18 个薄 handler + 转出的请求/响应模型 |
+| application | `_wf_application.py` | 1876 | 16 个端点实现 |
+| runtime | `_wf_runtime.py` | 406 | 任务注册表 / resume / takeover / 孤儿判定 |
+| actions | `_wf_actions.py` | 371 | **唯二绕过 `_run_graph_and_persist` 的 retry** |
+| artifacts | `_wf_artifacts.py` | 251 | 历史文件 / checkpoint 快照 / 文档渲染与抽取 |
+| models | `_wf_models.py` | 195 | 9 个 pydantic 模型 |
+
+其余 31 个改动文件：2 处生产导入点（`_takeover.py:142` 的 `_resume_phase_for_next_nodes` /
+`_start_resume_task`、`_runner.py:455` 的 `get_progress`）、**24 个测试文件**（~125 处 patch /
+import 重接线，含 `test_hydration.py` 的 `_DEAD_STATE_MODULES`）、2 处陈旧注释
+（`state/artifacts.py`、`frontend/.../types.ts`）、2 份文档的 **14 个 `file:line` 锚点**
+（`docs/execution-plane.md` 9 处 + 缺席表 5 行新增 + `docs/tool-runtime.md` 2 处）。
+
+### ★ 更正一处本片自己写下的记法：层名不是从既有门禁继承的
+
+设计阶段一度把六个层名归因于「既有门禁里已经写着的五个名字」。**这是错的，已核实并撤回**：
+
+```
+git grep -n '_wf_application\|_wf_runtime\|_wf_artifacts\|_wf_actions\|_wf_models' ec64fa86
+→ 零命中
+```
+
+真实来源是两条：五个角色名（api / application / runtime / artifacts / actions）
+**来自票面 S4 行本身**；`models` 是**本片加的第六层**，理由是结构性的而非口味 ——
+handler 的签名注解与实现的注解都要模型，模型放 `application` 就 `api ↔ application` **成环**，
+而模型是「类型不依赖行为」的天然叶子。（`from __future__ import annotations` 让注解在运行时
+是字符串，所以这个环只由 pydantic 的**真求值**造成 —— 它会真炸，不是隐患。）
+
+顺带一提，`actions` 也**不是**口味分类：它是 `docs/execution-plane.md` §7 登记的两条
+**不持租约写入者**（`_run_retry` / `_run_publish_retry`）。把它们单放一层，是把「唯二绕过统一
+执行入口的路径」从一条注释变成**一个目录事实**。
+
+### 做了什么
+
+1. **先立边界，再挪代码。** 源文件里**每个符号都是顶层定义**，所以可以**逐行原样切片、零缩进变化** ——
+   这既是「纯搬移」成立的前提，也是它能被机器检查的原因。
+2. **端点一分为二**：装饰器 + 签名 + docstring 逐字留在 api 层的薄 handler 上，函数体原样搬进
+   `_wf_application` / `_wf_actions`；handler 只有一条 `return await _wf_<layer>.<同名>(...)`。
+   同名是设计 —— 签名与 docstring 因此可以直接逐字段比对。
+3. **零外部调用者的私有符号**（`_extract_ripple` / `_failed_node` 等）跟着唯一的调用者走，
+   不新建「工具层」。
+4. **四个改名导入不再复制**：`from backend.db.workflows import get_workflow as db_get` 这类
+   别名随代码去了调用点所在的层，api 层不再持有它们。
+
+### 判据（票面 S4 行）如何被满足
+
+**① 行数口径可复核** —— 7 个巨型端点的实测行数（AST `end_lineno - lineno + 1`）：
+
+| 端点 | 旧 | 新 |
+|---|---|---|
+| `resume_workflow` | 327 | 5 |
+| `get_workflow_status` | 247 | 5 |
+| `retry_publish` | 179 | 14（其中 10 行是 docstring） |
+| `recover_workflow` | 159 | 14 |
+| `retry_ripple_analysis` | 153 | 5 |
+| `start_workflow` | 145 | 5 |
+| `stream_workflow_progress` | 142 | 13 |
+
+合计 **1352 行 = 3001 行的 45.1%**，全部降到**百行以内**；`workflow.py` 现在最大的函数是
+**14 行的 `workflow_account_totals`**。
+★ 票面写的是「1397 of 2999 = 47%」，与实测差 **45 行** —— 差在「函数行数」是否把装饰器与
+函数之间的空行算进去。本片一律以 AST 为准，实测数记在这里。
+
+**② `/status` 响应形状与拆分前逐字段相同** —— 用**同一个探针 + 同一份 fixture** 在 `ec64fa86`
+的 `git worktree` 与分层后的树上各跑一次，**`diff` 为空**（envelope 5 键 + 41 个顶层字段的完整
+嵌套形状：2 层深度 + 列表元素形状）。探针留在仓里（`test_workflow_layering.py::_status_shape`），
+结果冻成 `_STATUS_SHAPE` 常量。在拆分前的树上跑时**只做了一处替换**：patch 目标后缀
+`_wf_application` → `workflow`（那一版只有一个模块）—— 探针、fixture、断言全部逐字相同。
+值的另一半早已被 `test_legacy_read_faces.py` 逐字段钉住（legacy fixture 的每个大字段 byte-equal）；
+本片钉的是**形状**，正是票面的措辞。
+
+### ★ 本片最大的一处风险，与它的守卫
+
+搬走 3000 行会留下约 125 处 `patch("backend.api.routes.workflow.X")`。
+**`patch` 按「被 patch 的模块的命名空间」解析** ⇒ 目标必须落在**真正读 X 的那一层**。
+搬走读点而把同名属性留在原处 = `patch` **成功且什么都不影响** —— 静默失效，测试照绿。
+
+- 重接线按**调用点**挑层（application → actions → runtime → artifacts → models 的优先序），
+  而不是按符号的定义位置；
+- 逐个用例判定「这条测试的哪条代码路径在读它」：`db_update` 被 application 与 runtime
+  **同时**读 ⇒ `test_workflow_stale.py` 指 runtime、`test_publish_retry.py` 指 actions；
+  `_start_resume_task` 被 runtime 的 `_resume_past_evaluator_pause` 与 application 的
+  `resume_workflow` 端点体**同时**读 ⇒ 为 legacy 路径单独留 `_START_RESUME_LEGACY`，
+  两条路径各自可定位；
+- 新增 `test_the_api_layer_does_not_re_export_the_implementation_symbols`：**api 层一旦重新
+  导出实现符号，上述老 patch 目标会「复活」成静默空转** ⇒ 把这份**缺席**断言下来
+  （只排除 handler 与实现**同名**的那些 —— 那是设计，不是泄漏）。
+
+### 门禁与自检
+
+四道门禁全绿：`ruff check` 通过 · `ruff format --check` **538 files**（S3b 的 532 + 6 = 5 个新层
+文件 + 1 个新测试）· `mypy backend` **216 source files**（211 + 5，测试不在 mypy 范围）· 基线对比
+`drift within threshold` · 工具运行时门禁 OK。**全量 `pytest` 3572 passed / 3 skipped**
+（S3b 的 3566 + 6 = 新门禁的 6 条用例，数字恒等）。前端 `npm run type-check` 通过。
+
+新门禁 `tests/unit/api/test_workflow_layering.py` 的 6 条：**形状快照** + 5 条边界 ——
+路由清单（handler 名 + 方法 + 路径，**源码装饰器与 FastAPI 实际注册两侧都比**，只比路径会漏掉
+「两个 handler 互换装饰器」）、每条 handler 恰好一条 forward、handler 与实现签名/docstring 的
+AST 等同、模块 docstring 里发布的层表与实际文件一一对应、api 层不重新导出实现符号。
+
+### 突变自检
+
+17 条突变 · **17 击杀 / 0 存活 / 0 bad-id / 0 error / restore=OK**（每条先跑 step 0：未改动树上
+所有击杀者必须为绿；锚点前置检查 17 条各**唯一**）。
+
+覆盖：handler 多一条语句 / forward 指向另一个名字 / forward 伸进更低的层 / handler 签名漂移 /
+handler docstring 漂移 / **实现侧 docstring 漂移**（反向）/ 删掉层表的一行 / 删装饰器 / 改路径 /
+两个 handler 互换装饰器 / 加一条表外路由 / `/status` 多一个字段 / `/status` 改字段类型 /
+api 层重新导出实现符号 / 文档锚点漂一行 / 缺席锚点点到「有该 token 的那一行」/
+从 `start_lease` 缺席表里删掉新增的一行。
+
+首轮 **16/17**，唯一存活的 **M17 是覆盖缺口、不是等价突变**：缺席表的行数下限还停在 `>= 3`，
+而本片把它从 **3 行扩到 8 行**（`start_lease` 从「这个文件里没有」改成「这六个文件里都没有」），
+于是删掉其中任一新行**没人发现**。修法是**补下限而不是补测试**（`>= 8`，与锚点表的 `>= 43`
+同一纪律：**下限就是文档实际发布的条数**），并在注释里注明是被突变找到的。这条缺口是本片自己
+制造的 —— 表格长了下限没跟着长，是「加行」这个动作的固定副作用。
+
+★ 「纯搬移」这个主张要**分两半**说：
+- 前半（一次性、机器可证）：搬走的每个符号在两侧 `ast.dump` 等同（**55 个符号 + 18 个 handler
+  签名**；端点比对剥掉 `decorator_list`，因为装饰器**按设计**留在 handler 上）。这一步的脚本
+  **没有留在仓里** —— 它钉的是「搬移那一刻」的等价，留成长期门禁会变成钉住死字节；
+- 后半（永久）：`/status` 形状快照 + 全量 3572 用例。
+
+所以「纯搬移」不是一句自述，而是**一次性的结构证明 + 永久的行为证据**。
+
+### ★ 同轮撞到的既有 flake：`services/` 的两条「真实浏览器」用例（登记不修）
+
+CI 三轮里跑出两种红，**都在 `Test (py3.12)`、都在 `backend/services/**`、且 py3.11 同时全绿**：
+
+| 轮次 | 红的用例 | 报错 |
+|---|---|---|
+| 首轮 | `chrome_launcher.py::test_stop_chrome_sigterms_live_pid` | `assert 'failed' == 'stopped'` |
+| 第三轮（纯文档提交） | `xhs_login.py::TestGetStatus::test_status_confirmed_after_code_status_2` | `LoginError: 刷新二维码失败：未找到登录二维码` |
+
+**两条都是既有 flake，与 S4 无关，而且已经在打 `main`** —— #621（S3b，上一个切片）合并到
+main 之后那次 CI 同样只在 `Test (py3.12)` 红，失败的是同一族
+`xhs_login.py::TestStop::test_stop_idempotent`；更早的 #613 合并也一样。
+也就是说 **`main` 的 CI 本来就是间歇性红的**，本片只是又撞上；纯文档提交也会撞上，
+正是它「与代码无关」的直接证据。
+
+`xhs_login` 那族的报错文本自己写着「小红书 **IP/环境风控**…请切换家庭宽带或手机热点后稍后再试」
+—— 它是**真的会开浏览器连网**的用例，在 CI 里本就依赖宿主网络与风控状态。
+
+`chrome_launcher` 那条的机制已定位：
+
+- `stop_chrome` 发 SIGTERM 之前有一道守卫 ——「pidfile 里的 PID 到底是不是这个 profile 的
+  Chrome」（`chrome_launcher.py` 的 `_pid_matches_profile`），它读 **`/proc/{pid}/cmdline`**；
+- 这条用例 mock 了 `_pid_alive` 与 `os.kill`，**唯独漏了 `_pid_matches_profile`**
+  （同一文件里另外 3 处都 mock 了：`:546` / `:783` / `:845`）；
+- 于是结果取决于宿主上**是否存在 PID 4242 的进程**：不存在 → `FileNotFoundError` → 返回 `True`
+  → 用例绿；存在 → 读到 cmdline 且不含该 profile → 返回 `False` → 走「profile 不匹配」分支
+  → `action="failed"`；
+- **Windows 上 `/proc` 根本不存在，这条用例永远是绿的** ⇒ 本机连跑 5 次 + 全量 3572 用例
+  一次都没复现，这是它直到 CI 才露面的原因。
+
+**只登记不修**（票面红线「不顺手做第四件事」，且两条都不在 S4 判据里）。三次重跑后
+最终 **8/8 全绿**。可考虑的修法：chrome 那条是一行
+`monkeypatch.setattr(cl, "_pid_matches_profile", lambda *_: True)`；`xhs_login` 那族要补 mock
+或把它移出 CI 的必过集。**它们会阻塞任意 PR**，不是纯噪声。
+
+### S4 明确未做
+
+- **`_run_graph_and_persist` 的 12 个调用点各自的 `input_data` 构造**原样（S3b 已登记的同一件事）。
+- **`review.py` / `optimization.py` / `blogger.py` 未分层** —— 它们也调 `_run_graph_and_persist`，
+  但不在本片判据里。
+- **api 层的行为一个字没改**：没有加中间件、没有加日志、没有统一的异常包装。
+- **`workflow.py` 不保留任何向后兼容的再导出**（有意，理由见上）。因此 `backend/api/routes/__init__.py`
+  的 `workflow_router` 惰性入口是这一决定唯一下游影响面，实测未动。
+- `docs/planning.md` 未写（S5）。

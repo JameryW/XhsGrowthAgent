@@ -9,11 +9,8 @@ from fastapi.testclient import TestClient
 
 from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
-from backend.api.routes.workflow import (
-    _account_id_from_thread,
-    _resolve_status_account_id,
-    router,
-)
+from backend.api.routes._wf_application import _account_id_from_thread, _resolve_status_account_id
+from backend.api.routes.workflow import router
 
 
 def _client(graph: MagicMock) -> TestClient:
@@ -67,13 +64,13 @@ class TestStatusEndpointAccountId:
 
         with (
             patch(
-                "backend.api.routes.workflow.assert_thread_owned",
+                "backend.api.routes._wf_application.assert_thread_owned",
                 new_callable=AsyncMock,
                 return_value="acct-live",
             ),
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=False),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=False),
             patch(
-                "backend.api.routes.workflow._db_upsert",
+                "backend.api.routes._wf_application._db_upsert",
                 new_callable=AsyncMock,
                 return_value=None,
             ),

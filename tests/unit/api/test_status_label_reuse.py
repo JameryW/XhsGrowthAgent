@@ -59,17 +59,19 @@ class TestStatusLabelReusesUpsertRow:
 
         with (
             patch(
-                "backend.api.routes.workflow.assert_thread_owned",
+                "backend.api.routes._wf_application.assert_thread_owned",
                 new_callable=AsyncMock,
                 return_value="acct-live",
             ),
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
-                "backend.api.routes.workflow._db_upsert",
+                "backend.api.routes._wf_application._db_upsert",
                 new_callable=AsyncMock,
                 return_value=upsert_row,
             ) as upsert_mock,
-            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock) as db_get_mock,
+            patch(
+                "backend.api.routes._wf_application.db_get", new_callable=AsyncMock
+            ) as db_get_mock,
         ):
             resp = _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
 
@@ -87,17 +89,19 @@ class TestStatusLabelReusesUpsertRow:
         # degrade to empty label, not crash, and not call db_get.
         with (
             patch(
-                "backend.api.routes.workflow.assert_thread_owned",
+                "backend.api.routes._wf_application.assert_thread_owned",
                 new_callable=AsyncMock,
                 return_value="acct-live",
             ),
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
-                "backend.api.routes.workflow._db_upsert",
+                "backend.api.routes._wf_application._db_upsert",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
-            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock) as db_get_mock,
+            patch(
+                "backend.api.routes._wf_application.db_get", new_callable=AsyncMock
+            ) as db_get_mock,
         ):
             resp = _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
 
@@ -121,17 +125,19 @@ class TestStatusLabelReusesUpsertRow:
 
         with (
             patch(
-                "backend.api.routes.workflow.assert_thread_owned",
+                "backend.api.routes._wf_application.assert_thread_owned",
                 new_callable=AsyncMock,
                 return_value="acct-live",
             ),
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
-                "backend.api.routes.workflow._db_upsert",
+                "backend.api.routes._wf_application._db_upsert",
                 new_callable=AsyncMock,
                 return_value=upsert_row,
             ),
-            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock) as db_get_mock,
+            patch(
+                "backend.api.routes._wf_application.db_get", new_callable=AsyncMock
+            ) as db_get_mock,
         ):
             resp = _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
 
@@ -163,17 +169,17 @@ class TestStatusLabelReusesUpsertRow:
 
         with (
             patch(
-                "backend.api.routes.workflow.assert_thread_owned",
+                "backend.api.routes._wf_application.assert_thread_owned",
                 new_callable=AsyncMock,
                 return_value="acct-live",
             ),
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
-                "backend.api.routes.workflow._db_upsert",
+                "backend.api.routes._wf_application._db_upsert",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
-            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock),
+            patch("backend.api.routes._wf_application.db_get", new_callable=AsyncMock),
         ):
             resp = _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
 
@@ -193,17 +199,17 @@ class TestStatusTimelineSource:
     def _get(self, graph: MagicMock):
         with (
             patch(
-                "backend.api.routes.workflow.assert_thread_owned",
+                "backend.api.routes._wf_application.assert_thread_owned",
                 new_callable=AsyncMock,
                 return_value="acct-live",
             ),
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
-                "backend.api.routes.workflow._db_upsert",
+                "backend.api.routes._wf_application._db_upsert",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
-            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock),
+            patch("backend.api.routes._wf_application.db_get", new_callable=AsyncMock),
         ):
             return _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
 
@@ -279,17 +285,17 @@ class TestStatusCarriesTheThreadsMode:
     def _upsert(self, graph: MagicMock) -> MagicMock:
         with (
             patch(
-                "backend.api.routes.workflow.assert_thread_owned",
+                "backend.api.routes._wf_application.assert_thread_owned",
                 new_callable=AsyncMock,
                 return_value="acct-live",
             ),
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
-                "backend.api.routes.workflow._db_upsert",
+                "backend.api.routes._wf_application._db_upsert",
                 new_callable=AsyncMock,
                 return_value=WorkflowRow(thread_id="xhs_acct_abcdef12", label="L"),
             ) as upsert_mock,
-            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock),
+            patch("backend.api.routes._wf_application.db_get", new_callable=AsyncMock),
         ):
             resp = _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
 

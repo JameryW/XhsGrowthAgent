@@ -87,7 +87,12 @@ def test_every_published_anchor_still_points_at_its_token():
 
 def test_every_published_absence_is_still_absent():
     rows = _rows(_ABSENCE_BLOCK)
-    assert len(rows) >= 3, f"the absence table lost rows: {len(rows)}"
+    # Same discipline as the anchor table above: the floor is the count the doc
+    # actually publishes.  It was 3 until P2c-S4, which spread the ``start_lease``
+    # absence over the six api-layer files -- a floor left behind at 3 would have
+    # let any of the five new rows be dropped without a word.  (Found by mutation:
+    # deleting one of them survived.)
+    assert len(rows) >= 8, f"the absence table lost rows: {len(rows)}"
 
     complaints: list[str] = []
     for anchor, token in rows:

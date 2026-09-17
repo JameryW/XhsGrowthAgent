@@ -23,14 +23,9 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.api.deps import get_current_user
-from backend.api.routes.workflow import (
-    CheckpointSnapshot,
-    WorkflowStartRequest,
-    WorkflowStatusResponse,
-)
-from backend.api.routes.workflow import (
-    router as workflow_router,
-)
+from backend.api.routes._wf_models import CheckpointSnapshot, WorkflowStatusResponse
+from backend.api.routes.workflow import WorkflowStartRequest
+from backend.api.routes.workflow import router as workflow_router
 from backend.state.enums import WorkflowMode
 from backend.state.modes import DEFAULT_WORKFLOW_MODE
 

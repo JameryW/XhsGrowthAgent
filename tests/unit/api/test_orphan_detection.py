@@ -30,9 +30,9 @@ from backend.api.routes.workflow import router
 from backend.db.accounts import AccountRow
 from backend.db.workflows import WorkflowRow
 
-_POOL_READY = "backend.api.routes.workflow.is_pool_ready"
-_DB_LIST = "backend.api.routes.workflow.db_list"
-_DB_GET = "backend.api.routes.workflow.db_get"
+_POOL_READY = "backend.api.routes._wf_application.is_pool_ready"
+_DB_LIST = "backend.api.routes._wf_application.db_list"
+_DB_GET = "backend.api.routes._wf_application.db_get"
 _ACTIVE_ACCOUNT = "backend.api.account_scope.get_active_account"
 # assert_thread_owned looks up the workflow row via a function-level import
 # inside account_scope — patch at the source module (no DB in tests).
@@ -209,7 +209,7 @@ async def _seed_active_task(thread_id: str) -> asyncio.Task[None]:
 # ── S2: the live /status branch answers running vs stale from the lease ──
 
 _LEASE_OTHER = "other-host:4242:deadbeef"
-_DB_UPSERT = "backend.api.routes.workflow._db_upsert"
+_DB_UPSERT = "backend.api.routes._wf_application._db_upsert"
 
 
 def _running_snapshot(thread_id: str) -> MagicMock:

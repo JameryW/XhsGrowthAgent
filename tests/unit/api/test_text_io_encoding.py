@@ -24,13 +24,13 @@ HISTORY_NAME = "encoding-roundtrip"
 @pytest.fixture
 def history_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the writer and the reader at one temporary history directory."""
-    from backend.api.routes import _runner, workflow
+    from backend.api.routes import _runner, _wf_artifacts
 
     registry = tmp_path / "registry"
     history = registry / "history"
     history.mkdir(parents=True)
     monkeypatch.setenv("XHS_REGISTRY_PATH", str(registry))
-    monkeypatch.setattr(workflow, "_HISTORY_DIR", history)
+    monkeypatch.setattr(_wf_artifacts, "_HISTORY_DIR", history)
     _runner._LAST_HISTORY_WRITE.pop(HISTORY_NAME, None)
     return history
 
@@ -48,11 +48,11 @@ def test_history_writer_emits_exact_utf8_bytes(history_dir: Path) -> None:
 
 def test_history_round_trips_chinese_through_production_readers(history_dir: Path) -> None:
     """Write through the runner, read back through the workflow loader."""
-    from backend.api.routes import _runner, workflow
+    from backend.api.routes import _runner, _wf_artifacts
 
     _runner._save_history_file(HISTORY_NAME, {"note_title": CHINESE, "phase": "creating"})
 
-    loaded: dict[str, Any] | None = workflow._load_history_file(HISTORY_NAME)
+    loaded: dict[str, Any] | None = _wf_artifacts._load_history_file(HISTORY_NAME)
 
     # The reader's `except Exception` turns an undecodable file into None, so a
     # codec mismatch here would present as missing history, not as an error.
@@ -68,12 +68,12 @@ def test_history_reader_accepts_utf8_written_without_the_platform_codec(history_
     """
     import json
 
-    from backend.api.routes import workflow
+    from backend.api.routes import _wf_artifacts
 
     payload = json.dumps({"note_title": CHINESE, "phase": "completed"}, ensure_ascii=False)
     (history_dir / f"{HISTORY_NAME}.json").write_bytes(payload.encode("utf-8"))
 
-    loaded = workflow._load_history_file(HISTORY_NAME)
+    loaded = _wf_artifacts._load_history_file(HISTORY_NAME)
 
     assert loaded is not None
     assert loaded["note_title"] == CHINESE

@@ -30,7 +30,7 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.memory import InMemoryStore
 
-from backend.api.routes.workflow import build_evaluator_pause_resume_updates
+from backend.api.routes._wf_runtime import build_evaluator_pause_resume_updates
 from backend.graph.builder import build_graph
 from backend.graph.routers import (
     PAUSE_REASON_EVALUATOR_FAIL_CLOSED,

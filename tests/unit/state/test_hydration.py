@@ -12,11 +12,8 @@ import ast
 from pathlib import Path
 from typing import Any
 
-from backend.api.routes.workflow import (
-    CheckpointSnapshot,
-    WorkflowStatusResponse,
-    _snapshot_to_checkpoint,
-)
+from backend.api.routes._wf_artifacts import _snapshot_to_checkpoint
+from backend.api.routes._wf_models import CheckpointSnapshot, WorkflowStatusResponse
 from backend.state.artifacts import REFABLE_FIELDS
 from backend.state.hydration import (
     CHECKPOINT_STAGE_KEYS,
@@ -41,6 +38,14 @@ _DEAD_STATE_MODULES = (
     Path("backend/graph/routers.py"),
     Path("backend/graph/builder.py"),
     Path("backend/api/routes/workflow.py"),
+    # P2c-S4 split workflow.py into layers: the routes' state-key reads live in
+    # these now, so the guard has to follow them or it would silently stop
+    # covering the code it was written for.
+    Path("backend/api/routes/_wf_application.py"),
+    Path("backend/api/routes/_wf_runtime.py"),
+    Path("backend/api/routes/_wf_artifacts.py"),
+    Path("backend/api/routes/_wf_actions.py"),
+    Path("backend/api/routes/_wf_models.py"),
     Path("backend/api/routes/_runner.py"),
     Path("backend/api/routes/public_showcase.py"),
     Path("backend/cli/main.py"),

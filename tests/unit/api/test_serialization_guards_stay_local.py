@@ -39,7 +39,7 @@ from backend.db.workflows import WorkflowRow
 
 _OWNED = AccountRow(id="acc1", name="acc1", is_active=True, owner_user_id="user-test")
 _OTHER_INSTANCE = "other-host:4242:deadbeef"
-_START_RESUME = "backend.api.routes.workflow._start_resume_task"
+_START_RESUME = "backend.api.routes._wf_application._start_resume_task"
 
 
 @pytest.fixture(autouse=True)

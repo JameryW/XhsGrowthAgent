@@ -139,7 +139,7 @@ async def _consider(graph: Any, thread_id: str, source: str) -> dict[str, Any]:
     if not await acquire(thread_id):
         return {"thread_id": thread_id, "outcome": "skipped", "reason": "lease_refused"}
 
-    from backend.api.routes.workflow import _resume_phase_for_next_nodes, _start_resume_task
+    from backend.api.routes._wf_runtime import _resume_phase_for_next_nodes, _start_resume_task
     from backend.state.hydration import recover_view
 
     view = recover_view(state.values)

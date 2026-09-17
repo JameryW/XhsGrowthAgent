@@ -452,7 +452,7 @@ async def _run_graph_and_persist(
         elif final_status == "error":
             progress = 0
         else:
-            from backend.api.routes.workflow import get_progress
+            from backend.api.routes._wf_artifacts import get_progress
 
             progress = get_progress(final_phase)
 

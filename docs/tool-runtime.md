@@ -144,7 +144,7 @@ L1 只描述**调用形状**，不描述**运行时权限**：`side_effect` / `a
    改成 `orphans == ()`）。与 prompt 覆盖度门禁同口径：
    对计划中的工作失败的门禁，最后会被人关掉。
 
-**为什么只覆盖 `backend/agents/**`：** `backend/api/routes/workflow.py` 仍有一处
+**为什么只覆盖 `backend/agents/**`：** `backend/api/routes/_wf_actions.py` 仍有一处
 刻意的直调（ripple-retry 路由绕过 health-check/fallback，见「已知残留」），它属
 API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才能让白名单是一个可以
 讲清楚的东西。
@@ -161,7 +161,7 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
 
 ## 已知残留
 
-- **`backend/api/routes/workflow.py:~2184`** 的 ripple-retry 路由仍直调
+- **`backend/api/routes/_wf_actions.py:101`** 的 ripple-retry 路由仍直调
   `RippleService.submit_and_wait` —— 刻意绕开 health-check 与 fallback。属 API
   层，门禁不覆盖它；迁移属于后续任务。
 - **L1 参数类型是原样反射的**：LangChain 工具给 JSON-schema 的 `string`，普通函数

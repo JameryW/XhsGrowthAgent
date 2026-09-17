@@ -89,7 +89,7 @@ def resume(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     async def _fake(thread_id, graph, config, phase, *, input_data=None):
         started.append({"thread_id": thread_id, "phase": str(phase), "input_data": input_data})
 
-    monkeypatch.setattr("backend.api.routes.workflow._start_resume_task", _fake)
+    monkeypatch.setattr("backend.api.routes._wf_runtime._start_resume_task", _fake)
     return started
 
 

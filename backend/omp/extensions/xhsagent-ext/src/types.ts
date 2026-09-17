@@ -1,4 +1,4 @@
-/** API response types matching backend/api/routes/workflow.py */
+/** API response types matching backend/api/routes/_wf_models.py */
 
 export interface WorkflowStartResponse {
   thread_id: string;
