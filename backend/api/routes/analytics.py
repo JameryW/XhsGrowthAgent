@@ -6,7 +6,6 @@ import asyncio
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -18,6 +17,10 @@ from backend.api.responses import ApiResponse, success
 from backend.config.settings import Settings
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
+from backend.services.publish_identity import (
+    normalize_platform_post_id,
+    resolve_platform_links,
+)
 from backend.services.quality_consistency import (
     QUALITY_CONSISTENCY_CONTRACT,
     quality_consistency_v2_enabled,
@@ -549,19 +552,6 @@ def _serialize_analytics_rate_units(
         period_summary["engagement_rate_unit"] = "fraction"
 
 
-def _normalize_platform_post_id(value: Any) -> str:
-    """Normalize a platform post identifier without accepting synthetic IDs."""
-    raw = str(value or "").strip()
-    if not raw or raw.startswith("mock_") or raw.startswith("workflow:"):
-        return ""
-    if "://" in raw:
-        parsed = urlparse(raw)
-        path_id = parsed.path.rstrip("/").rsplit("/", 1)[-1]
-        if path_id:
-            raw = path_id
-    return raw
-
-
 def _extract_post_data(
     wf_state: dict[str, Any], account_id: str | None = None
 ) -> dict[str, Any] | None:
@@ -588,7 +578,7 @@ def _extract_post_data(
         or wf_state.get("thread_id")
         or ""
     ).strip()
-    platform_post_id = _normalize_platform_post_id(
+    platform_post_id = normalize_platform_post_id(
         publish.get("platform_post_id") or publish.get("post_id")
     )
     # Synthetic/session ids are display keys only; only an explicit platform
@@ -792,7 +782,7 @@ def _imported_notes_as_posts(notes: list[Any]) -> list[dict[str, Any]]:
         posts.append(
             {
                 "id": d.get("note_id", ""),
-                "platform_post_id": _normalize_platform_post_id(d.get("note_id", "")),
+                "platform_post_id": normalize_platform_post_id(d.get("note_id", "")),
                 "workflow_thread_id": "",
                 "link_status": "unmatched",
                 "account_id": d.get("account_id", ""),
@@ -831,7 +821,9 @@ async def _merge_imported_posts(
 
     Missing/synthetic workflow ids never collapse an imported note.  A single
     matching workflow is marked ``linked``; duplicate workflow claims are
-    surfaced as ``ambiguous`` and remain separate.
+    surfaced as ``ambiguous`` and remain separate.  The decision itself is a
+    pure function (``backend.services.publish_identity``) so it can be
+    replayed outside a request; this function only applies it.
     """
     if imported_notes is None:
         try:
@@ -847,33 +839,16 @@ async def _merge_imported_posts(
     else:
         imported = imported_notes
 
-    by_platform_id: dict[str, list[dict[str, Any]]] = {}
-    for post in posts:
-        # Workflow rows must opt in with an explicit platform id.  Falling
-        # back to ``id`` would turn the synthetic ``workflow:<thread>``
-        # display key into a false Creator Center link.
-        platform_id = _normalize_platform_post_id(post.get("platform_post_id"))
-        if platform_id:
-            by_platform_id.setdefault(platform_id, []).append(post)
-
     imported_posts = _imported_notes_as_posts(imported)
-    imported_by_platform: dict[str, list[dict[str, Any]]] = {}
-    unmatched_imported: list[dict[str, Any]] = []
-    for ip in imported_posts:
-        platform_id = _normalize_platform_post_id(ip.get("platform_post_id") or ip.get("id"))
-        if platform_id:
-            imported_by_platform.setdefault(platform_id, []).append(ip)
-        else:
-            unmatched_imported.append(ip)
+    # Workflow rows must opt in with an explicit platform id.  Falling back to
+    # ``id`` would turn the synthetic ``workflow:<thread>`` display key into a
+    # false Creator Center link — the resolver enforces that on both sides.
+    resolution = resolve_platform_links(posts, imported_posts)
 
-    # Resolve each normalized platform identity as a group.  Grouping the
-    # imported side as well as the workflow side prevents URL-vs-id variants
-    # from silently dropping a second Creator Center claim.
-    for platform_id, candidates in imported_by_platform.items():
-        matches = by_platform_id.get(platform_id, [])
-        if len(matches) == 1 and len(candidates) == 1:
-            workflow = matches[0]
-            imported_note = candidates[0]
+    for group in resolution.groups:
+        if group.status == "linked":
+            workflow = posts[group.workflow_indices[0]]
+            imported_note = imported_posts[group.imported_indices[0]]
             # Creator Center is the authoritative post-publication fact
             # source.  Keep workflow identity/title metadata, but replace the
             # live checkpoint's potentially stale metrics with the imported
@@ -911,16 +886,18 @@ async def _merge_imported_posts(
 
         # Zero/one/many workflows combined with multiple imported claims are
         # all explicit ambiguity or unmatched states; never collapse rows.
-        if len(matches) > 1 or len(candidates) > 1:
-            for workflow in matches:
-                workflow["link_status"] = "ambiguous"
-            for imported_note in candidates:
+        if group.status == "ambiguous":
+            for workflow_index in group.workflow_indices:
+                posts[workflow_index]["link_status"] = "ambiguous"
+            for imported_index in group.imported_indices:
+                imported_note = imported_posts[imported_index]
                 imported_note["link_status"] = "ambiguous"
-                if len(matches) == 1:
-                    imported_note["workflow_thread_id"] = matches[0].get("workflow_thread_id", "")
-        posts.extend(candidates)
+                if len(group.workflow_indices) == 1:
+                    imported_note["workflow_thread_id"] = posts[group.workflow_indices[0]].get(
+                        "workflow_thread_id", ""
+                    )
 
-    posts.extend(unmatched_imported)
+    posts.extend(imported_posts[index] for index in resolution.appended_imported)
     return posts
 
 
