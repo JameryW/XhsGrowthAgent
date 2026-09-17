@@ -15,9 +15,9 @@ from fastapi.testclient import TestClient
 
 from backend.api.routes.workflow import router
 
-_RUN_PUBLISH = "backend.api.routes.workflow.run_publish"
-_DB_UPSERT = "backend.api.routes.workflow._db_upsert"
-_EVENT_BUS = "backend.api.routes.workflow.EventBusService"
+_RUN_PUBLISH = "backend.api.routes._wf_actions.run_publish"
+_DB_UPSERT = "backend.api.routes._wf_actions._db_upsert"
+_EVENT_BUS = "backend.api.routes._wf_actions.EventBusService"
 
 
 def _make_graph(values: dict, store=None):
@@ -100,7 +100,7 @@ def test_returns_retrying_and_schedules_task(app_and_client):
         patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
         patch(_DB_UPSERT, new_callable=AsyncMock),
         patch(_EVENT_BUS) as mock_bus_cls,
-        patch("backend.api.routes.workflow.asyncio.create_task", side_effect=fake_create_task),
+        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
     ):
         mock_bus_cls.get_instance.return_value = MagicMock()
         resp = client.post("/api/workflow/publish-retry/thr1")
@@ -143,7 +143,7 @@ def test_publish_success_without_post_id_marks_completed(app_and_client):
         patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
         patch(_DB_UPSERT, new_callable=AsyncMock) as mock_db,
         patch(_EVENT_BUS) as mock_bus_cls,
-        patch("backend.api.routes.workflow.asyncio.create_task", side_effect=fake_create_task),
+        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
     ):
         mock_bus_cls.get_instance.return_value = MagicMock()
         client.post("/api/workflow/publish-retry/thr1")
@@ -254,7 +254,7 @@ def test_forced_retry_clears_force_publish_in_checkpoint(app_and_client):
         patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value=run_result),
         patch(_DB_UPSERT, new_callable=AsyncMock),
         patch(_EVENT_BUS) as mock_bus_cls,
-        patch("backend.api.routes.workflow.asyncio.create_task", side_effect=fake_create_task),
+        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
     ):
         mock_bus_cls.get_instance.return_value = MagicMock()
         client.post("/api/workflow/publish-retry/thr1", json={"force": True})
@@ -277,7 +277,7 @@ def test_unknown_publish_without_force_is_refused(app_and_client):
     with (
         patch(_RUN_PUBLISH, new_callable=AsyncMock) as mock_rp,
         patch(
-            "backend.api.routes.workflow.reconcile_unknown_publish",
+            "backend.api.routes._wf_actions.reconcile_unknown_publish",
             new_callable=AsyncMock,
             return_value={"status": "uncertain"},
         ),

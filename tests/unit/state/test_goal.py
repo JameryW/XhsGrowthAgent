@@ -28,7 +28,7 @@ from backend.state.goal import BriefInput, Goal
 from backend.state.modes import get_mode_spec
 
 #: The key set ``/start`` seeded before this slice, transcribed from the literal
-#: it replaced (``backend/api/routes/workflow.py``) rather than imported from the
+#: it replaced (``backend/api/routes/_wf_application.py``) rather than imported from the
 #: thing under test. Transcribing is the point: a key that stops being seeded
 #: then fails here instead of quietly changing what a run starts with.
 SEEDED_KEYS = frozenset(

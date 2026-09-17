@@ -25,7 +25,8 @@ from langgraph.types import Command
 from backend.api.app import app
 from backend.api.deps import get_current_user
 from backend.api.routes import _runner as runner_module
-from backend.api.routes import workflow as workflow_module
+from backend.api.routes import _wf_application as application_module
+from backend.api.routes import _wf_runtime as runtime_module
 from backend.db.accounts import AccountRow
 from backend.db.workflows import WorkflowRow
 from backend.graph.routers import (
@@ -94,9 +95,9 @@ def client(mock_graph):
     """Test client with mocked graph and an authenticated user."""
     app.state.graph = mock_graph
     original_bg_tasks = runner_module._background_tasks.copy()
-    original_last_status = workflow_module._last_status.copy()
+    original_last_status = runtime_module._last_status.copy()
     runner_module._background_tasks.clear()
-    workflow_module._last_status.clear()
+    runtime_module._last_status.clear()
 
     async def _user():
         return {"id": "user-test", "username": "tester"}
@@ -132,8 +133,8 @@ def client(mock_graph):
     app.dependency_overrides.pop(get_current_user, None)
     runner_module._background_tasks.clear()
     runner_module._background_tasks.update(original_bg_tasks)
-    workflow_module._last_status.clear()
-    workflow_module._last_status.update(original_last_status)
+    runtime_module._last_status.clear()
+    runtime_module._last_status.update(original_last_status)
     if hasattr(app.state, "graph"):
         delattr(app.state, "graph")
 
@@ -1171,7 +1172,7 @@ class TestWorkflowAPIIntegration:
             captured["source"] = source
             return {"phase": WorkflowPhase.CREATING.value, "session_id": thread_id_arg}
 
-        monkeypatch.setattr(workflow_module._runner, "_run_graph_and_persist", fake_run)
+        monkeypatch.setattr(runner_module, "_run_graph_and_persist", fake_run)
 
         response = client.post(f"/api/workflow/resume/{thread_id}")
 
@@ -1223,7 +1224,7 @@ class TestWorkflowAPIIntegration:
             captured["phase"] = phase
             return None
 
-        monkeypatch.setattr(workflow_module, "_start_resume_task", _noop_start)
+        monkeypatch.setattr(application_module, "_start_resume_task", _noop_start)
 
         response = client.post(f"/api/workflow/resume/{thread_id}")
 

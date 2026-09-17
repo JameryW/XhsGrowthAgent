@@ -32,7 +32,8 @@ from langgraph.store.memory import InMemoryStore
 from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
 from backend.api.routes import _runner
-from backend.api.routes.workflow import WorkflowStartRequest, get_progress
+from backend.api.routes._wf_artifacts import get_progress
+from backend.api.routes.workflow import WorkflowStartRequest
 from backend.api.routes.workflow import router as workflow_router
 from backend.state.enums import WorkflowMode
 
@@ -74,17 +75,17 @@ def _start_env(run_mock: AsyncMock, upsert_mock: AsyncMock):
 
     with (
         patch(
-            "backend.api.routes.workflow.resolve_required_account_id",
+            "backend.api.routes._wf_application.resolve_required_account_id",
             new_callable=AsyncMock,
             return_value="acc1",
         ),
         patch(
-            "backend.api.routes.workflow.require_owned_account",
+            "backend.api.routes._wf_application.require_owned_account",
             new_callable=AsyncMock,
             return_value=None,
         ),
-        patch("backend.api.routes.workflow.is_pool_ready", return_value=False),
-        patch("backend.api.routes.workflow._db_upsert", upsert_mock),
+        patch("backend.api.routes._wf_application.is_pool_ready", return_value=False),
+        patch("backend.api.routes._wf_application._db_upsert", upsert_mock),
         patch("backend.api.routes._runner._run_graph_and_persist", run_mock),
         patch(_NICHE_PATH, new_callable=AsyncMock, return_value=niche_res),
     ):

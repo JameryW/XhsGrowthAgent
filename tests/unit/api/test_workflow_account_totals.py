@@ -28,7 +28,7 @@ class TestWorkflowAccountTotals:
     def test_returns_owned_account_counts(self):
         owned = [MagicMock(id="acct-a"), MagicMock(id="acct-b")]
         with (
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
                 "backend.db.accounts.list_accounts",
                 new_callable=AsyncMock,
@@ -51,7 +51,7 @@ class TestWorkflowAccountTotals:
     def test_status_filter_forwarded(self):
         owned = [MagicMock(id="acct-a")]
         with (
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
                 "backend.db.accounts.list_accounts",
                 new_callable=AsyncMock,
@@ -73,7 +73,7 @@ class TestWorkflowAccountTotals:
 
     def test_empty_owned_accounts(self):
         with (
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=True),
             patch(
                 "backend.db.accounts.list_accounts",
                 new_callable=AsyncMock,
@@ -93,7 +93,7 @@ class TestWorkflowAccountTotals:
     def test_db_unavailable_returns_zeros(self):
         owned = [MagicMock(id="acct-a")]
         with (
-            patch("backend.api.routes.workflow.is_pool_ready", return_value=False),
+            patch("backend.api.routes._wf_application.is_pool_ready", return_value=False),
             patch(
                 "backend.db.accounts.list_accounts",
                 new_callable=AsyncMock,

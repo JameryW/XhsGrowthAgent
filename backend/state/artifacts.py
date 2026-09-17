@@ -290,7 +290,7 @@ SINGLE_BODY_FIELDS: Final[frozenset[str]] = frozenset(
         # P1a-S4-3: brief_content (the raw_text payload dominates its size).
         # No routing meta: no router reads it — the /status DB label reads the
         # small brand/product fields, but only after an up-front resolve_state
-        # (see routes/workflow.py), and every agent consumer hydrates through
+        # (see routes/_wf_application.py), and every agent consumer hydrates through
         # the node seam on the way in.
         "brief_content",
     }

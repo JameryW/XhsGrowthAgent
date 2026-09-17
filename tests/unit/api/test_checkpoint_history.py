@@ -4,11 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.api.routes.workflow import (
-    CheckpointHistoryResponse,
-    CheckpointSnapshot,
-    _snapshot_to_checkpoint,
-)
+from backend.api.routes._wf_artifacts import _snapshot_to_checkpoint
+from backend.api.routes._wf_models import CheckpointHistoryResponse, CheckpointSnapshot
 
 
 def _make_snapshot(
@@ -135,9 +132,9 @@ class TestCheckpointHistoryResponse:
         assert resp.has_more is True
 
 
-_POOL_READY = "backend.api.routes.workflow.is_pool_ready"
-_DB_GET = "backend.api.routes.workflow.db_get"
-_LOAD_HISTORY = "backend.api.routes.workflow._load_history_file"
+_POOL_READY = "backend.api.routes._wf_application.is_pool_ready"
+_DB_GET = "backend.api.routes._wf_application.db_get"
+_LOAD_HISTORY = "backend.api.routes._wf_application._load_history_file"
 
 
 class TestCheckpointHistoryEndpoint:

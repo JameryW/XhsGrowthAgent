@@ -165,12 +165,14 @@ def test_status_live_renders_legacy_checkpoint_inline():
     graph = _graph(_snapshot(fixture, next_nodes=("review_gate",)), store)
 
     with (
-        patch("backend.api.routes.workflow.assert_thread_owned", new_callable=AsyncMock),
-        patch("backend.api.routes.workflow.is_pool_ready", return_value=False),
+        patch("backend.api.routes._wf_application.assert_thread_owned", new_callable=AsyncMock),
+        patch("backend.api.routes._wf_application.is_pool_ready", return_value=False),
         patch(
-            "backend.api.routes.workflow._db_upsert", new_callable=AsyncMock, return_value=None
+            "backend.api.routes._wf_application._db_upsert",
+            new_callable=AsyncMock,
+            return_value=None,
         ) as upsert_mock,
-        patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock) as db_get_mock,
+        patch("backend.api.routes._wf_application.db_get", new_callable=AsyncMock) as db_get_mock,
     ):
         resp = _workflow_client(graph).get("/api/workflow/status/t-legacy-status")
 
@@ -247,8 +249,8 @@ def test_status_history_file_fallback_keeps_pre_p1a_unhydrated_keys():
     graph = _graph(_snapshot({}), store)  # no live checkpoint
 
     with (
-        patch("backend.api.routes.workflow.assert_thread_owned", new_callable=AsyncMock),
-        patch("backend.api.routes.workflow._load_history_file", return_value=dump),
+        patch("backend.api.routes._wf_application.assert_thread_owned", new_callable=AsyncMock),
+        patch("backend.api.routes._wf_application._load_history_file", return_value=dump),
     ):
         resp = _workflow_client(graph).get("/api/workflow/status/t-legacy-dump")
 
@@ -312,8 +314,8 @@ def test_history_route_renders_legacy_checkpoints_inline():
     graph.aget_state_history = lambda *args, **kwargs: _history_snapshots(s1, s2)
 
     with (
-        patch("backend.api.routes.workflow.assert_thread_owned", new_callable=AsyncMock),
-        patch("backend.api.routes.workflow.is_pool_ready", return_value=False),
+        patch("backend.api.routes._wf_application.assert_thread_owned", new_callable=AsyncMock),
+        patch("backend.api.routes._wf_application.is_pool_ready", return_value=False),
     ):
         resp = _workflow_client(graph).get("/api/workflow/history/t-legacy-hist")
 
@@ -356,9 +358,9 @@ def test_recover_retry_failed_routes_off_legacy_scalars():
     graph = _graph(_snapshot(fixture), store)
 
     with (
-        patch("backend.api.routes.workflow.assert_thread_owned", new_callable=AsyncMock),
+        patch("backend.api.routes._wf_application.assert_thread_owned", new_callable=AsyncMock),
         patch(
-            "backend.api.routes.workflow._start_resume_task", new_callable=AsyncMock
+            "backend.api.routes._wf_application._start_resume_task", new_callable=AsyncMock
         ) as resume_mock,
     ):
         resp = _workflow_client(graph).post(
@@ -384,7 +386,7 @@ def test_recover_refuses_midflight_legacy_checkpoint():
     recover must refuse it with the /resume guidance, unchanged."""
     graph = _graph(_snapshot(_legacy_checkpoint()), _no_trip_store())
 
-    with patch("backend.api.routes.workflow.assert_thread_owned", new_callable=AsyncMock):
+    with patch("backend.api.routes._wf_application.assert_thread_owned", new_callable=AsyncMock):
         resp = _workflow_client(graph).post(
             "/api/workflow/recover/t-legacy-refuse", json={"strategy": "skip_to_next"}
         )

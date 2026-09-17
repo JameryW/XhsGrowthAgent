@@ -215,7 +215,7 @@ class TestWorkflowRoutes:
         # field-naming validation error; the endpoint must surface it as a
         # unified 400 response.
         with patch(
-            "backend.api.routes.workflow.resolve_required_account_id",
+            "backend.api.routes._wf_application.resolve_required_account_id",
             AsyncMock(side_effect=ValidationError("account_id", "account_id is required")),
         ):
             response = client.post(
@@ -589,7 +589,7 @@ class TestBriefPdfCostTracking:
         # Provide a perf entry via the helper to prove the extract path drops it
         # (no graph interaction for the perf entry regardless of capture).
         with patch(
-            "backend.api.routes.workflow._extract_pdf_text",
+            "backend.api.routes._wf_application._extract_pdf_text",
             AsyncMock(return_value=("预览文字", {"kind": "llm", "agent": "brief_pdf_extract"})),
         ):
             response = client.post(

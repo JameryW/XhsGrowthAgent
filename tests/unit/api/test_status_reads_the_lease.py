@@ -17,7 +17,7 @@ from datetime import timedelta
 
 import pytest
 
-from backend.api.routes import _runner, workflow
+from backend.api.routes import _runner, _wf_runtime
 from backend.db import execution_leases as leases
 from backend.state.machine import WorkflowStatus, derive_status
 
@@ -183,17 +183,17 @@ class TestOrphanDetection:
         monkeypatch.setattr(leases, "_instance_id", _OTHER_INSTANCE)
         await leases.acquire("t1")
 
-        assert await workflow._is_orphan_running("t1", "running") is False
+        assert await _wf_runtime._is_orphan_running("t1", "running") is False
 
     async def test_no_lease_at_all_is_an_orphan(self) -> None:
-        assert await workflow._is_orphan_running("t1", "running") is True
+        assert await _wf_runtime._is_orphan_running("t1", "running") is True
 
     async def test_a_silent_lease_is_an_orphan(self) -> None:
         await leases.acquire("t1")
         aged = leases._utcnow() + timedelta(seconds=leases.LEASE_TTL_SECONDS + 1)
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(leases, "_utcnow", lambda: aged)
-            assert await workflow._is_orphan_running("t1", "running") is True
+            assert await _wf_runtime._is_orphan_running("t1", "running") is True
 
     async def test_a_row_that_is_not_running_is_never_an_orphan(self) -> None:
-        assert await workflow._is_orphan_running("t1", "completed") is False
+        assert await _wf_runtime._is_orphan_running("t1", "completed") is False

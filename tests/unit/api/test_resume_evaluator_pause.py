@@ -29,8 +29,11 @@ from backend.api.routes.workflow import router
 from backend.graph.routers import PAUSE_REASON_EVALUATOR_FAIL_CLOSED, evaluator_requires_human
 from backend.state.enums import WorkflowPhase
 
-_START_RESUME = "backend.api.routes.workflow._start_resume_task"
-_DB_UPSERT = "backend.api.routes.workflow._db_upsert"
+_START_RESUME = "backend.api.routes._wf_runtime._start_resume_task"
+# The legacy (non-evaluator) restart starts the resume from the endpoint body,
+# which lives in the application layer -- a different namespace to patch.
+_START_RESUME_LEGACY = "backend.api.routes._wf_application._start_resume_task"
+_DB_UPSERT = "backend.api.routes._wf_application._db_upsert"
 
 
 def _paused_evaluator_values(**overrides: Any) -> dict[str, Any]:
@@ -102,11 +105,13 @@ def _client_for(values: dict[str, Any]) -> Iterator[tuple[TestClient, MagicMock]
 
 
 @contextlib.contextmanager
-def _resume_env(values: dict[str, Any]) -> Iterator[tuple[TestClient, MagicMock, AsyncMock]]:
+def _resume_env(
+    values: dict[str, Any], *, start_resume: str = _START_RESUME
+) -> Iterator[tuple[TestClient, MagicMock, AsyncMock]]:
     """Client + fake graph, with the background resume and DB writes stubbed out."""
     with (
         _client_for(values) as (client, graph),
-        patch(_START_RESUME, new_callable=AsyncMock) as mock_resume,
+        patch(start_resume, new_callable=AsyncMock) as mock_resume,
         patch(_DB_UPSERT, new_callable=AsyncMock),
     ):
         yield client, graph, mock_resume
@@ -131,7 +136,9 @@ class TestMissingDecisionIsRejected:
 
     def test_legacy_pause_resume_is_untouched(self):
         """A plain user pause (no pause_reason) keeps the old restart semantics."""
-        with _resume_env(_paused_evaluator_values(pause_reason=None)) as (
+        with _resume_env(
+            _paused_evaluator_values(pause_reason=None), start_resume=_START_RESUME_LEGACY
+        ) as (
             client,
             graph,
             mock_resume,
