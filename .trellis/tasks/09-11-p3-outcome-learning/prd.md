@@ -115,7 +115,7 @@ builder.add_edge("publisher", END)
 
 | 片 | 名称 | 内容 | 规模 |
 |---|---|---|---|
-| **S1** | **让现状可见 + 止血** | 把「闭环从未启动」变成**仓内会红的判据**；处置 `analyst.py` 那段恒空的回填（它是今天最大的误导源：读起来像在工作） | 小 |
+| **S1** ✅ | **让现状可见 + 止血** | 把「闭环从未启动」变成**仓内会红的判据**；处置 `analyst.py` 那段恒空的回填（它是今天最大的误导源：读起来像在工作） | 已交付 · `5e7b43b5` |
 | **S2** | **link 结果从投影变成事实** | 把 `analytics.py` 里请求内现算的匹配逻辑提到一个**可复用、可测试、可重算**的位置；给 `evaluator_samples` 加 `platform_post_id`（**nullable**，存量行仍可读） | 小 |
 | **S3** | **闭合那条边** | `creator-stats/sync` 成功后，用 link 结果把 `creator_note_stats` 的真实指标回填进 `evaluator_samples.engagement`（写 `label_source="engagement"`）；此时 `maybe_evolve` 才第一次可达 | 中 |
 | **S4** | **契约与开闸条件** | `docs/outcome-learning.md`：offline quality 与 online reward 的定义、弱标签的**写入条件**、`maybe_evolve` 的**开闸条件**、以及本片明确不做的事 | 小 |
@@ -177,3 +177,58 @@ builder.add_edge("publisher", END)
 - **一条注释里有转折时，转折之后那半句往往才是约束。** 遇到「X 不再自动发生」这类注释，要读到句号之后。
 - **「没有自动路径」不等于「没有路径」。** 判可达性要看**入口的集合**：`grep` phase 表/映射表的**全部值**（`ANALYZING` 就藏在那里），再找有没有显式的 `Command(goto=[...])`，而不是只检查某一条边还在不在。
 - **诚实呈现**：这条更正让断点的形状从「调度层缺一条边」变成「**数据层缺一个键**」—— 后者更小、更可测，也才真正解释了为什么 `label_source="engagement"` 至今零写入：**不是没人跑，是跑也写不进去。**
+
+## 十、S1 交付（`feat/p3-s1-outcome-label-seam` / `5e7b43b5`）
+
+**一句话**：把「弱标签的投喂在数据上不可能成功」从一句发现变成**仓内会红的判据**，把 `analyst.py` 那段读起来像工作的恒空回填改成说真话，并把五个指标键从散落各处收敛到一处。
+
+### 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `backend/db/evaluator_config.py` | 新增唯一契约 `WEAK_LABEL_METRIC_KEYS: Final[tuple[str, ...]]` 与选择器 `build_weak_label(payload)`；`_engagement_rate` 的五个 `.get()` 字面量**保持不动**，由新测试钉住它与常量一致 |
+| `backend/agents/analyst.py` | 调用点改读契约（**零行为变化**，仍 `if engagement:`）；那条误导性注释改成陈述实测 |
+| `tests/unit/db/test_weak_label_contract.py`（新） | 8 条断言，见下 |
+
+合计 3 files changed, 426 insertions(+), 12 deletions(-)。
+
+**「零行为变化」的口径**：改前是 `{k: publish_result.get(k, 0) for k in (五键字面量) if k in publish_result}`；改后 `build_weak_label(publish_result)` 返回 `{k: payload[k] for k in WEAK_LABEL_METRIC_KEYS if k in payload}`。键集合与取值**逐字等价** —— `if k in payload` 已经保证 `payload[k]` 存在，所以原来的 `get(k, 0)` 默认值分支**永远走不到**；`payload` 为 falsy 时两边都是 `{}`。⇒ 这不是「我判断它等价」，是可逐字对照的同一件事。
+
+### 判据（8 条，每条都带对照）
+
+| # | 断言 | 钉住的东西 |
+|---|---|---|
+| 1 | `WEAK_LABEL_METRIC_KEYS` == `_engagement_rate` 实际读的键（AST 取源码，不 import 私有名） | 契约与公式不能各自漂移 |
+| 2 | `build_weak_label` 全量原样返回、部分只留有的、`None`/`{}` 返回空 | 选择语义本身 |
+| 3 | `analyst` 是 `build_weak_label` 在 `backend/` 里的**唯一调用者** | 本片要建的那条缝（按「调用」钉，不按「没有字面量」钉 —— 后者对一个什么都不问的调用者也成立） |
+| 4 | **登记的缺口**：`publish_result` 能携带的键 ∩ 契约 = ∅，且契约 − 该集合 = 全部五个 | 「闭环从未启动」的根因 |
+| 5 | 生产侧**非空性对照**：`post_id`/`post_url`/`status`/`publish_id` 必须在扫描结果里；真实 `_with_publish_link_metadata({}, {})` 必须返回三个身份键 | 让第 4 条不是「扫描器返回空集」的假绿 |
+| 6 | 生产者扫描器阳性对照：合成 fixture 覆盖扫描器声称支持的**每一种**形态 | 形态覆盖是真的（漏一种 = 假缺口） |
+| 7 | 公式扫描器阳性对照：同名函数读**另一组键**（`impressions`/`saves`） | 第 1 条不是自证 |
+| 8 | `label_source` 的唯一写入者是 `"evaluator"` + 阳性对照 | 缺口的可观测后果（AST 取关键字实参 ⇒ `evaluator_config` 里那句命名 `label_source="engagement"` 的**注释不能满足扫描**） |
+
+第 4/5/6 条的扫描口径：`publish_result` 能携带的键 = 源码里四种形态的并集 —— ① `publish_result = {...}`（含注解赋值）；② 挂在 `"publish_result"` 键下的字典（赋值或内联返回）；③ 传给 `_with_publish_link_metadata(...)` 的字典字面量（该函数按定义收的就是 publish result）；④ `publish_result["..."] = ...` 下标写。今天扫出 **15 个键**（`ab_variant` / `account_id` / `error` / `error_type` / `link_status` / `note` / `platform_post_id` / `post_id` / `post_url` / `publish_id` / `published_at` / `recovery` / `result_known` / `status` / `workflow_thread_id`）——**一个指标键都没有**。
+
+### ★ 诚实呈现：S1 **没有**做的事
+
+1. **第 4 条写的是一句「不可能」，其值今天为 0** ⇒ 它自带不了阳性对照：**把扫描器掏成 `return set()` 它照样绿**。这不是推测 —— 突变自检 M06 就是这条，唯一会红的是第 5 条的非空性对照。所以第 5/6/7/8 条是第 1/4 条的**必要条件**，不是修饰。
+2. **第四节那句「例如构造一个带 `engagement` 的样本行、断言 `maybe_evolve` 走到 `evolved`」没有在 S1 落地。** 理由不是嫌麻烦：今天**构造不出这样的行** —— 唯一能写 `evaluator_samples.engagement` 的 `backfill_engagement` 只被那条恒假的 `if` 调用，要构造就得先有指标，而那正是 S3。⇒ **登记为 S3 的入口条件**：S3 的 PR 必须带「有 `engagement` 的样本行 → `count_labeled_since` ≥ `MIN_EVOLVE_SAMPLES` → `maybe_evolve` 返回 `evolved`」这一条，否则 S3 会重演同一种「结构完整、从未启动」。
+3. **第四节说的「断言 `label_source` 取到 `"engagement"`」在 S1 只钉了一半**：今天「没有写入者」这半钉死了（第 8 条），「写入者出现时写的确实是 `engagement`」那一半归 S3。
+4. **`analyst` 的自动边没有恢复**（第七节待决 4 的裁定）：接回 `publisher → analyst` 只会让 `content_history` 与弱标签回填在每个 run 上各做一次恒空动作。
+
+### 门禁
+
+`ruff check .` **All checks passed!**（540 files）· `ruff format --check .` **540 files already formatted** · `mypy backend --python-version 3.12` **Success: no issues found in 216 source files** · `context_compiler_baseline.py --compare --drift-pct 5` **drift within threshold** · `tool_runtime_gate.py` **P1c-S5 tool runtime: OK** · 全量 `pytest -q` **3586 passed / 3 skipped**（本片 +8）。
+
+### 突变自检
+
+**11 条突变 11/11 杀死**、`restore=OK`（step 0 先用未突变树确认每个 killer 都是绿的）：
+
+- **生产侧 5 条**：publisher 开始写指标键（M01，钉第 4 条）· 契约删掉一个键而公式仍读它（M02）· 选择器改成返回整个 payload（M03）· 选择器掏空（M04）· 公式读一个没声明的键（M05）· `label_source` 出现第二个写入者（M09）。
+- **检查器侧 3 条**（第 4/5/8 条自带不了对照的那一半）：生产者扫描器掏空（M06）· 扫描器悄悄丢掉它声称支持的某个形态（M07）· 标签写入者扫描器掏空（M08）。
+- **缝 1 条**：`analyst` 回到重复五个字面量（M10）。
+- **「根参数」1 条**：扫描器忽略被指向的目录、永远读真实文件（M11）—— 只有阳性对照会红，真实文件仍能重算。
+
+### 回给 S2/S3 的一条线索（S1 顺带实测）
+
+`publish_result` **在 checkpoint 里带着 `platform_post_id`**（`_with_publish_link_metadata` 加的三个身份键之一，且有 `state/hydration.py` 的持久化路径）。所以「真数据到不了学习层」缺的那把键，**在 workflow state 这一侧其实已经存在** —— 断点 2 的「没有可连的键」只成立于 `evaluator_samples` 那一侧（它没有 `platform_post_id` 列，而 `backfill_engagement(thread_id, …)` 吃 `thread_id`）。⇒ S2/S3 有两条候选路径：**(a)** 给 `evaluator_samples` 加 `platform_post_id`；**(b)** 只靠 `thread_id` 从 checkpoint 取 `platform_post_id` 再连 `creator_note_stats`。**S2 侦察时先比较这两条，不要默认 (a)。**
