@@ -20,7 +20,6 @@ from backend.graph import plan as plan_module
 from backend.graph.builder import build_graph
 from backend.graph.plan import (
     PLAN_TEMPLATES,
-    UNRESOLVED_ROUTER_VALUES,
     ExcludedHop,
     ModeTemplate,
     PlanExportError,
@@ -31,6 +30,7 @@ from backend.graph.plan import (
     plan_registry_complaints,
     reachable_nodes,
 )
+from backend.graph.wiring import EDGES_BY_SOURCE, ConditionalEdge
 from backend.state.enums import WorkflowMode, WorkflowPhase
 
 TREND = WorkflowMode.TREND
@@ -51,13 +51,13 @@ def _as_kwargs(mode):
     }
 
 
-def _key_to_target(mode_check: str = "evaluator_gate") -> dict[str, str]:
-    """The raw path map of the branch at ``mode_check``, keys included."""
+def _key_to_target(source_name: str = "evaluator_gate") -> dict[str, str]:
+    """The raw path map of the branch at ``source_name``, keys included."""
     for source, per_source in build_graph().branches.items():
-        if source == mode_check:
+        if source == source_name:
             for branch in per_source.values():
                 return dict(branch.ends or {})
-    raise AssertionError(f"no branch at {mode_check!r}")
+    raise AssertionError(f"no branch at {source_name!r}")
 
 
 class TestTheRegistryAndTheGraphAgree:
@@ -160,39 +160,94 @@ class TestTheCheckNoticesDisagreements:
             TREND,
             destinations=PLAN_TEMPLATES[TREND].destinations | {"publisher"},
         )
-        assert "destination_is_not_a_router_answer" in plan_registry_complaints()
+        complaints = plan_registry_complaints()
+        assert "destination_is_not_a_router_answer" in complaints
+        # Both levels report it, which is what makes the joint an equality
+        # rather than a containment: the per-mode class names the mode, the
+        # joint class names the mismatch, and the joint has to fire here too or
+        # dropping one of its two directions would be invisible.
+        assert "entry_vocabulary_disagrees_with_the_edges" in complaints
 
-    def test_an_unresolvable_router_answer_without_a_registered_exemption(self, monkeypatch):
-        monkeypatch.setattr(plan_module, "UNRESOLVED_ROUTER_VALUES", frozenset())
+    def test_an_unresolvable_router_answer_is_a_complaint(self, monkeypatch):
+        """Kept even though the invariant S2 established makes it unreachable
+        from the registry side -- every answer the entry router gives now has a
+        path-map key. So the disagreement is injected where it can still come
+        from: the *graph* losing a hop the router can answer (a hand-edited
+        build, or a wiring table that dropped an entry).
+
+        A category that cannot be made to fire is an always-true condition
+        wearing a check's clothes, and S1 retired one of those; this is the
+        test that keeps this one from becoming another.
+        """
+        topology = plan_module._topology()
+        monkeypatch.setattr(
+            plan_module,
+            "_topology",
+            lambda: plan_module._Topology(
+                nodes=topology.nodes,
+                hops=frozenset(h for h in topology.hops if h != ("orchestrator", "copywriter")),
+                routers=dict(topology.routers),
+            ),
+        )
         complaints = plan_registry_complaints()
         assert "router_answer_no_path_map_entry" in complaints
         assert any("copywriter" in row for row in complaints["router_answer_no_path_map_entry"])
 
-    def test_a_stale_exemption(self, monkeypatch):
-        """An exemption that has stopped being true is a hole with a note
-        pinned over it, so it has to be a complaint rather than a licence.
-
-        Both ways it can go stale: the answer starts resolving, or the router
-        stops giving it.
+    def test_a_vocabulary_the_modes_do_not_cover(self, monkeypatch):
+        """The joint between this registry and the edge table: the modes say
+        which answers belong to them, the edge says which exist. Dropping one
+        from both modes has to be visible, because an answer no mode claims is
+        an answer nobody has classified.
         """
-        monkeypatch.setattr(
-            plan_module,
-            "UNRESOLVED_ROUTER_VALUES",
-            UNRESOLVED_ROUTER_VALUES | {(TREND, "orchestrator_router", "analyst")},
-        )
+        for mode in (TREND, BRIEF):
+            _replace(
+                monkeypatch,
+                mode,
+                destinations=PLAN_TEMPLATES[mode].destinations - {"analyst"},
+            )
         complaints = plan_registry_complaints()
-        assert "exemption_no_longer_applies" in complaints
-        assert any("resolves now" in row for row in complaints["exemption_no_longer_applies"])
+        assert "entry_vocabulary_disagrees_with_the_edges" in complaints
+        assert any(
+            "analyst" in row for row in complaints["entry_vocabulary_disagrees_with_the_edges"]
+        )
+        # Removing a destination cannot trip the other direction.
+        assert "destination_is_not_a_router_answer" not in complaints
 
-        # `copywriter` is not trend's answer either, so an exemption filed under
-        # the wrong mode is stale in the other way.
-        monkeypatch.setattr(
-            plan_module,
-            "UNRESOLVED_ROUTER_VALUES",
-            UNRESOLVED_ROUTER_VALUES | {(TREND, "orchestrator_router", "copywriter")},
+    def test_an_answer_the_modes_do_not_cover(self, monkeypatch):
+        """The other side of the same joint, and the reason it is an equality
+        rather than a containment: an answer the entry *edge* declares that no
+        mode claims belongs to it would mean a mode reading a value the
+        registry never classified.
+        """
+        entry = EDGES_BY_SOURCE["orchestrator"]
+        monkeypatch.setitem(
+            plan_module.EDGES_BY_SOURCE,
+            "orchestrator",
+            ConditionalEdge(
+                source=entry.source, router=entry.router, answers=(*entry.answers, "publisher")
+            ),
         )
         complaints = plan_registry_complaints()
-        assert any("no longer answers" in row for row in complaints["exemption_no_longer_applies"])
+        assert "entry_vocabulary_disagrees_with_the_edges" in complaints
+        assert any(
+            "publisher" in row for row in complaints["entry_vocabulary_disagrees_with_the_edges"]
+        )
+
+    def test_the_brief_only_hop_off_the_entry_is_classified(self):
+        """S2's own hop. Adding the entry's ``copywriter`` key created a hop
+        that has to be attributed to a mode -- and it is brief-only, because
+        trend mode's table has no CREATING key at all: ``creating`` falls
+        through to the "trend_scout" default.
+        """
+        assert "copywriter" in orchestrator_destinations(BRIEF).values()
+        assert "copywriter" not in orchestrator_destinations(TREND).values()
+
+        assert "copywriter" in export_plan(BRIEF).step("orchestrator").followed_by
+        assert "copywriter" not in export_plan(TREND).step("orchestrator").followed_by
+
+    def test_the_entrys_answers_resolve_through_the_path_map(self):
+        """What S1 registered as unresolvable, resolved."""
+        assert _key_to_target("orchestrator")["copywriter"] == "copywriter"
 
     def test_a_hop_no_mode_can_take(self, monkeypatch):
         """``publisher`` has exactly one ingress; excluding it everywhere makes
@@ -216,11 +271,10 @@ class TestTheExportReadsTheGraphNotItsKeys:
     def test_the_path_map_has_exactly_one_answer_that_is_not_its_node(self):
         """A measurement, kept as a tripwire.
 
-        If this ever gains or loses a row the docstring's fact 1 has to be
-        re-measured -- and if the row disappears because the orchestrator map
-        gained its missing key, the registered
-        ``UNRESOLVED_ROUTER_VALUES`` entry has to go with it (the clean-graph
-        test above will say so).
+        If this ever gains or loses a row, the docstring's fact 1 has to be
+        re-measured. S2 changed the number of *rows* (the orchestrator map
+        gained ``copywriter``) without adding one here, because that entry is
+        the identity -- worth knowing when reading this as a change detector.
         """
         offenders = set()
         for source, per_source in build_graph().branches.items():
@@ -279,9 +333,10 @@ class TestTheExportReadsTheGraphNotItsKeys:
 
 class TestTheDeclaredVocabularyIsTheRouters:
     def test_the_entry_is_what_the_router_answers_for_an_idle_run(self):
-        """``orchestrator_router`` is the one router the wiring test cannot
-        read (a plain ``str`` annotation), and its *brief* branch has no other
-        test at all -- so the entry is corroborated by calling it."""
+        """``orchestrator_router`` answered a plain ``str`` until S2, so the
+        declared entry was the only thing that could be checked against it, and
+        the *brief* branch had no other test at all -- so it is corroborated by
+        calling the router rather than by reading its annotation."""
         for mode in PLAN_TEMPLATES:
             assert orchestrator_destinations(mode)[WorkflowPhase.IDLE] == PLAN_TEMPLATES[mode].entry
 

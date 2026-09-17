@@ -76,6 +76,54 @@ class TestOrchestratorRouter:
         result = orchestrator_router(state)
         assert result == "trend_scout"
 
+    def test_brief_mode_routes_to_its_own_entry_for_idle(self):
+        """Brief mode's IDLE goes to brief_analyzer, not the trend entry."""
+        state = {"phase": WorkflowPhase.IDLE, "workflow_mode": "brief"}
+        assert orchestrator_router(state) == "brief_analyzer"
+
+    def test_brief_mode_routes_to_brief_analyzer_while_briefing(self):
+        state = {"phase": WorkflowPhase.BRIEFING, "workflow_mode": "brief"}
+        assert orchestrator_router(state) == "brief_analyzer"
+
+    def test_brief_mode_routes_to_strategist_while_planning(self):
+        state = {"phase": WorkflowPhase.PLANNING, "workflow_mode": "brief"}
+        assert orchestrator_router(state) == "content_strategist"
+
+    def test_brief_mode_creating_routes_to_the_copywriter(self):
+        """The branch S1 registered as unresolvable, and S2 resolved.
+
+        ``WorkflowPhase.CREATING`` is not terminal, so brief mode really does
+        answer ``copywriter`` here -- while the orchestrator's path map had no
+        such key, which is the P1d failure shape (an answer langgraph cannot
+        resolve: ``KeyError``, on a resume path, where no test was looking). It
+        stayed latent only because nothing observed reaches the orchestrator at
+        that phase. The key exists now; this pins the behaviour it bought, so
+        the hop cannot be removed back into a crash.
+        """
+        state = {"phase": WorkflowPhase.CREATING, "workflow_mode": "brief"}
+        assert orchestrator_router(state) == "copywriter"
+
+    def test_trend_mode_creating_falls_through_to_the_scout(self):
+        """The asymmetry, pinned rather than left to be discovered: the trend
+        table has no CREATING key at all, so the silent fallback answers
+        ``trend_scout``. Registered, not fixed -- choosing a trend destination
+        for that phase is a behaviour decision of its own, and S2's contract is
+        that the entry's vocabulary became readable, not that it changed shape.
+        """
+        state = {"phase": WorkflowPhase.CREATING, "workflow_mode": "trend"}
+        assert orchestrator_router(state) == "trend_scout"
+
+    def test_brief_mode_unknown_phase_falls_through_to_the_brief_entry(self):
+        """The fallback is mode-aware, mirroring the trend default above."""
+        state = {"phase": "unknown_phase", "workflow_mode": "brief"}
+        assert orchestrator_router(state) == "brief_analyzer"
+
+    def test_brief_mode_legacy_engaging_terminates(self):
+        """Legacy checkpoints can still carry ENGAGING; no interaction node
+        exists, so brief mode ends rather than restarting work."""
+        state = {"phase": WorkflowPhase.ENGAGING, "workflow_mode": "brief"}
+        assert orchestrator_router(state) == "__end__"
+
 
 class TestShouldPlan:
     """Tests for should_plan conditional edge."""

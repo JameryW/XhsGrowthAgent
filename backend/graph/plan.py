@@ -41,10 +41,25 @@ mypy 207 / pytest 3414 baseline) rather than assumed:
    that named router really is the one registered at that source -- so an
    exclusion cannot be attributed to a router that has nothing to do with it.
 
+4. The entry router's destinations are readable now. ``orchestrator_router``
+   returned a plain ``str`` through S1 -- the only router whose vocabulary could
+   not be read at all, and it is the one every run enters through -- so this
+   module declared that vocabulary rather than reading it, and corroborated the
+   declaration by *calling* the router. S2 gave the router a ``Literal`` (its
+   path map needed the value that annotation then exposed: brief mode's
+   ``phase=creating`` answers ``"copywriter"`` and there was no such key, the
+   P1d failure shape, latent only because nothing observed reached
+   ``orchestrator`` at that phase). The declaration here stays anyway: it is per
+   *mode*, and the annotation is not -- the union of these two tables is what
+   the wiring table has to equal, which is what
+   ``entry_vocabulary_disagrees_with_the_edges`` checks.
+
 What this module deliberately does *not* do: nothing in the execution path
-reads it. ``build_graph()`` is untouched, no router imports it, and no edge is
-decided by a plan. S1 is the export and the gate; the edges move onto the plan
-in S2.
+reads it. No router imports it and no edge is decided by a plan at run time.
+What S2 changed is one step up from that: the edges are now installed from
+``backend/graph/wiring.py``'s declaration instead of being hand-written into
+``build_graph()``, so the graph this module exports and the modes it declares
+have a single origin. This module still only observes the result.
 
 The check is bidirectional and exhaustive in the same way ``RETRY_POLICIES``
 (``backend/graph/error_handling.py``) and ``TAKEOVER_HAZARDS``
@@ -64,12 +79,12 @@ from langgraph.graph import END
 
 from backend.graph.builder import build_graph
 from backend.graph.routers import orchestrator_router
+from backend.graph.wiring import EDGES_BY_SOURCE
 from backend.state.enums import WorkflowMode, WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
 __all__ = [
     "PLAN_TEMPLATES",
-    "UNRESOLVED_ROUTER_VALUES",
     "ExcludedHop",
     "ModeTemplate",
     "Plan",
@@ -116,11 +131,14 @@ class ExcludedHop:
 class ModeTemplate:
     """What one mode declares about the graph.
 
-    ``destinations`` is the whole vocabulary ``orchestrator_router`` can answer
-    with in this mode, declared rather than read: that router is the one whose
-    return annotation is a plain ``str`` (it is the sole entry in
-    ``_NON_LITERAL_ROUTERS``, ``tests/unit/graph/test_conditional_edge_wiring.py``),
-    so no annotation elsewhere can enumerate it.
+    ``destinations`` is the whole vocabulary ``orchestrator_router`` answers
+    with *in this mode*. It stays declared after S2 made that router's
+    annotation readable, because the two are different questions: the
+    annotation enumerates the entry's vocabulary mode-blind, while a mode's
+    destinations say which of those answers the mode can actually produce. The
+    union over the modes has to equal the entry edge's answers, and that is
+    checked rather than assumed -- see
+    ``entry_vocabulary_disagrees_with_the_edges``.
     """
 
     entry: str
@@ -141,6 +159,14 @@ PLAN_TEMPLATES: Final[dict[WorkflowMode, ModeTemplate]] = {
         destinations=frozenset({"trend_scout", "content_strategist", "analyst", END}),
         excludes=(
             ExcludedHop("orchestrator", "brief_analyzer", "orchestrator_router"),
+            # S2: the entry's ``copywriter`` answer is brief-only. Trend mode's
+            # table has no CREATING key at all -- ``creating`` falls through to
+            # the "trend_scout" default -- so ``copywriter`` stays in this plan
+            # through ``copywriter_router``'s own answers while this hop from
+            # the entry cannot be taken. Newly visible, and only newly
+            # *statable*: the hop did not exist until the entry's path map
+            # gained an entry for ``"copywriter"``.
+            ExcludedHop("orchestrator", "copywriter", "orchestrator_router"),
             # The ripple trio: `reangle` is the only branch that reads the mode,
             # and trend resolves it to content_strategist. Those are the only
             # ingresses into brief_analyzer, so in trend mode brief_analyzer --
@@ -178,23 +204,21 @@ PLAN_TEMPLATES: Final[dict[WorkflowMode, ModeTemplate]] = {
     ),
 }
 
-#: ``(mode, router, answer)`` triples the orchestrator path map cannot resolve,
-#: as measured by calling the router. Registered, not fixed: adding the missing
-#: key to the map in ``builder.py`` would change what a brief-mode thread at
-#: ``phase=creating`` does, and S1's contract is zero change to the execution
-#: path.
+#: Closed in S2, kept as a note rather than a table. S1 registered
+#: ``(BRIEF, "orchestrator_router", "copywriter")`` here because the entry's
+#: path map had no key for it and adding one would have changed behaviour. S2
+#: added the key (the annotation below S1's note made that the honest thing to
+#: do, and it is what closes the P1d-shaped hole), so the entry's vocabulary and
+#: the map's now agree in both directions, and there is nothing left to exempt.
 #:
-#: Read this as a precondition, not an incident. ``WorkflowPhase.CREATING`` is
-#: not terminal, so ``orchestrator_router`` really does answer ``"copywriter"``
-#: there, and ``builder``'s orchestrator map has no such key -- the exact shape
-#: of the P1d failure (a router answer with no map entry: ``KeyError`` inside
-#: langgraph, on a resume path, where no test is looking). Nothing observed
-#: reaches ``orchestrator`` with ``phase=creating`` today, which is the only
-#: reason this is latent. It is recorded here so that "brief mode" and
-#: "creating phase" cannot be looked at together without seeing it.
-UNRESOLVED_ROUTER_VALUES: Final[frozenset[tuple[WorkflowMode, str, str]]] = frozenset(
-    {(WorkflowMode.BRIEF, "orchestrator_router", "copywriter")}
-)
+#: The whole *mechanism* is gone with it, and that is deliberate: with no
+#: exemptions, "a router answer the map cannot resolve" is a complaint rather
+#: than a complaint-minus-list, and the invariant that made the exemption
+#: unnecessary -- the entry edge's answers are exactly the union of the modes'
+#: declared destinations -- has its own check below. An always-empty exemption
+#: table is the same artifact this ticket keeps finding: a note pinned over a
+#: hole that is no longer there. The idiom itself is still in use next door, on
+#: ``wiring.UNWIRED_ROUTERS``.
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,9 +394,14 @@ def export_plan(mode: WorkflowMode | str) -> Plan:
 def orchestrator_destinations(mode: WorkflowMode) -> dict[WorkflowPhase, str]:
     """What ``orchestrator_router`` answers in ``mode``, phase by phase.
 
-    Read by *calling* the router: its annotation is a plain ``str``, so calling
-    it is the only way to enumerate its vocabulary. The router reads state and
-    returns a name -- nothing is written.
+    Read by *calling* the router, not by reading its annotation. Now that the
+    annotation is a ``Literal`` (S2) the two would agree, and that is exactly
+    why the weaker-reading-but-stronger-evidence one is kept: this is the only
+    statement in the module that observes the router rather than restating it,
+    so ``destination_is_not_a_router_answer`` compares a declaration against
+    behaviour instead of against a second reading of the same declaration.
+
+    The router reads state and returns a name -- nothing is written.
     """
     return {
         phase: orchestrator_router(XHSGrowthState(workflow_mode=mode, phase=phase))
@@ -384,7 +413,11 @@ def plan_registry_complaints() -> dict[str, list[str]]:
     """Every way the registry and ``build_graph()`` disagree.
 
     An empty mapping means they agree. Empty categories are omitted, so
-    ``== {}`` is the whole assertion. The categories are:
+    ``== {}`` is the whole assertion. Every category is shown noticing a
+    synthetic disagreement in ``tests/unit/graph/test_plan_registry.py`` --
+    a category that cannot be made to fire is an always-true condition wearing
+    a check's clothes, and S1 retired one of those for that reason. The
+    categories are:
 
     ``mode_without_template``
         a ``WorkflowMode`` member nothing declares.
@@ -395,13 +428,14 @@ def plan_registry_complaints() -> dict[str, list[str]]:
     ``decider_is_not_the_router_at_that_source``
         an exclusion names a router that is not the one registered there.
     ``destination_is_not_a_router_answer``
-        a declared destination the router does not actually return.
-    ``router_answer_no_path_map_entry``
-        a router answer the path map cannot resolve, and which is not a
-        registered :data:`UNRESOLVED_ROUTER_VALUES` entry.
-    ``exemption_no_longer_applies``
-        a registered exemption that resolves now, or that the router stopped
-        answering -- a stale exemption is a hidden hole.
+        a declared destination the router does not actually return (measured by
+        calling it, not by re-reading its annotation).
+    ``entry_vocabulary_disagrees_with_the_edges``
+        the union of the modes' declared destinations is not exactly what the
+        entry *edge* declares it may answer. This is the joint between this
+        module and ``backend/graph/wiring.py``: the modes say which answers
+        belong to them, the edge says which answers exist, and neither may
+        mention one the other has never heard of.
     ``hop_dead_in_every_mode`` / ``node_dead_in_every_mode``
         the backward direction: something the graph has that no mode's plan
         reaches.
@@ -409,6 +443,10 @@ def plan_registry_complaints() -> dict[str, list[str]]:
     topology = _topology()
     observed = {mode: orchestrator_destinations(mode) for mode in WorkflowMode}
     resolvable = frozenset(dst for src, dst in topology.hops if src == _ROOT)
+    entry_answers = frozenset(EDGES_BY_SOURCE[_ROOT].answers)
+    declared_vocabulary = frozenset().union(
+        *(template.destinations for template in PLAN_TEMPLATES.values())
+    )
 
     missing_template: list[str] = []
     bad_entry: list[str] = []
@@ -416,7 +454,14 @@ def plan_registry_complaints() -> dict[str, list[str]]:
     bad_decider: list[str] = []
     unreturned: list[str] = []
     unresolvable: list[str] = []
-    stale: list[str] = []
+    vocabulary: list[str] = []
+
+    if entry_answers != declared_vocabulary:
+        vocabulary.append(
+            f"the {_ROOT} edge answers {sorted(entry_answers)} while the templates "
+            f"declare {sorted(declared_vocabulary)}; only on one side: "
+            f"{sorted(entry_answers ^ declared_vocabulary)}"
+        )
 
     for mode in WorkflowMode:
         template = PLAN_TEMPLATES.get(mode)
@@ -430,11 +475,12 @@ def plan_registry_complaints() -> dict[str, list[str]]:
         answers = set(observed[mode].values())
         for destination in sorted(template.destinations - answers):
             unreturned.append(f"{str(mode)}: {destination!r} is not an answer it gives")
+        # No exemption list any more (S2): a destination the router really gives
+        # while the path map cannot resolve it is a complaint, full stop.
         for destination in sorted(template.destinations - resolvable):
-            if (mode, "orchestrator_router", destination) not in UNRESOLVED_ROUTER_VALUES:
-                unresolvable.append(
-                    f"{str(mode)}: router answers {destination!r} and the path map has no entry"
-                )
+            unresolvable.append(
+                f"{str(mode)}: router answers {destination!r} and the path map has no entry"
+            )
 
         for hop in template.excludes:
             if (hop.source, hop.target) not in topology.hops:
@@ -444,12 +490,6 @@ def plan_registry_complaints() -> dict[str, list[str]]:
                 bad_decider.append(
                     f"{str(mode)}: {hop.source} is routed by {registered!r}, not {hop.decided_by!r}"
                 )
-
-    for mode, router, destination in sorted(UNRESOLVED_ROUTER_VALUES, key=str):
-        if destination in resolvable:
-            stale.append(f"{str(mode)}: {destination!r} resolves now; drop the exemption")
-        elif destination not in set(observed[mode].values()):
-            stale.append(f"{str(mode)}: {router} no longer answers {destination!r}")
 
     plans = {mode: _plan_nodes(template, topology) for mode, template in PLAN_TEMPLATES.items()}
     declared_nodes: set[str] = set()
@@ -470,8 +510,8 @@ def plan_registry_complaints() -> dict[str, list[str]]:
         "excluded_hop_not_in_graph": bad_exclude,
         "decider_is_not_the_router_at_that_source": bad_decider,
         "destination_is_not_a_router_answer": unreturned,
+        "entry_vocabulary_disagrees_with_the_edges": vocabulary,
         "router_answer_no_path_map_entry": unresolvable,
-        "exemption_no_longer_applies": stale,
         "hop_dead_in_every_mode": [f"{src} -> {dst}" for src, dst in dead_hops],
         "node_dead_in_every_mode": sorted(topology.nodes - declared_nodes),
     }
