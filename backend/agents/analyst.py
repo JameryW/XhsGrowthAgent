@@ -260,22 +260,22 @@ class AnalystAgent(BaseAgent):
                 logger.warning(f"更新内容历史互动数据失败: {e}")
 
         # ── Back-fill real engagement onto the evaluator's training sample ──
-        # ponytail: weak label for grader finetuning — attaches publish_result
-        # engagement to the evaluator judgment sample. Non-blocking.
+        # ponytail: weak label for grader finetuning — attaches real engagement
+        # to the evaluator judgment sample. Non-blocking.
+        #
+        # The numbers have to come from ``creator_note_stats``, which is why the
+        # selection below is a no-op today: ``publisher.py`` writes no metric key
+        # into ``publish_result``, so a publish-time read has nothing to hand
+        # over and ``backfill_engagement`` is never reached.  Registered in
+        # ``tests/unit/db/test_weak_label_contract.py`` instead of being left to
+        # read as working code; the real numbers arrive through the sync path.
         if thread_id:
             try:
-                from backend.db.evaluator_config import backfill_engagement
+                from backend.db.evaluator_config import backfill_engagement, build_weak_label
                 from backend.db.pool import is_pool_ready
 
                 if is_pool_ready():
-                    engagement = cast(
-                        "dict[str, Any]",
-                        {
-                            k: publish_result.get(k, 0)
-                            for k in ("views", "likes", "collects", "comments", "shares")
-                            if k in publish_result
-                        },
-                    )
+                    engagement = build_weak_label(publish_result)
                     if engagement:
                         await backfill_engagement(thread_id, engagement)
                         # ── Online co-evolution (RQGM epoch boundary) ──
