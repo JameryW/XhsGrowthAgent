@@ -620,15 +620,22 @@ class TrainingReport:
 
 #: The engagement payload the weak-label path has to receive.  ``_engagement_rate``
 #: below reads exactly these keys (``views`` as the denominator, the rest as the
-#: numerator) and the graph's analyst node is the only writer of a sample's
-#: ``engagement`` column, so one tuple keeps the requirement and the formula from
-#: drifting apart.  ``tests/unit/db/test_weak_label_contract.py`` pins both ends.
+#: numerator), so one tuple keeps the requirement and the formula from drifting
+#: apart.  ``tests/unit/db/test_weak_label_contract.py`` pins both ends.
 #:
-#: **Nothing produces them today.**  ``agents/publisher.py`` never mentions a
-#: metric key at all, which is why every row's ``engagement`` is NULL and why
-#: ``label_source="engagement"`` has no writer yet.  The gap is registered rather
-#: than hidden: the real numbers live in ``creator_note_stats``, and wiring them
-#: through is a later slice's job.
+#: **Where the payload comes from.**  Two writers attach it, and they differ only
+#: in *which rows* they pick — they share ``_ATTACH_WEAK_LABEL_SQL`` for *what*
+#: they write: ``backfill_engagement`` (by thread, reached from ``analyst`` and
+#: from the free-mode analytics route) and ``backfill_engagement_for_posts`` (by
+#: platform post, reached from the creator-stats import).  The import is the only
+#: producer that knows the real numbers: ``analyst`` reads them out of a
+#: publish-time ``publish_result``, which carries identity and status only, so
+#: that path contributes nothing.  ``agents/publisher.py`` still never mentions a
+#: metric key, and that is no longer a gap — see the note below.
+#:
+#: The committed contract, the write conditions and the evolution gate are written
+#: down in ``docs/outcome-learning.md``, whose claims are recomputed by
+#: ``tests/unit/scripts/test_outcome_learning_claims.py``.
 WEAK_LABEL_METRIC_KEYS: Final[tuple[str, ...]] = (
     "views",
     "likes",
