@@ -125,11 +125,34 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 - **主链仍不经控制面**：`publisher` 直接调 `run_publish`（S4a/S4b 的刻意决定），所以
   intent → policy → confirm → execute 这条链今天只在 **API 路径**上。这也意味着
   **待决问题 1 仍无落点**（见下）。
+  - ⚠️ **名字**：计划行把这一环写成 `PublishIntent`，**落地对象叫 `ActionIntent`**
+    （`backend/creator_agent/models.py`）—— `grep -rn PublishIntent backend/` 是**零命中**。
+    下面表里的主张一律用落地名：一条点名了「树里不存在的对象」的主张，会让读者连
+    对的那半句一起怀疑。
 - **`EVENT_KINDS` 的 `cost` / `error` 仍无发射者**：`error` 走的是 realtime
   `EventBusService`，不是 `workflow_events` 这一层；`ripple` 只出现在 S2 迁入的历史条目里。
   `EVENT_KINDS` 本身除自己的 `__all__` 仍**没有读者** —— 声明集仍然没有消费者。
 - **`account_credentials` 表仍无写入者**：读路径（S5a）是通的，但扫码登录把登录态写进 CDP
   profile，没有写这张表。所以今天唯一真能提供凭据的仍是部署级 `XHS_COOKIE`。
+
+**这三条都是关于代码的、可测量的事实**（「还有几个调用点」「还有几个读者」「还有几个写入者」），
+所以它们在这里发布成值，由 `tests/unit/scripts/test_residue_claims.py` 从树上重算。
+**把它们修好而不改这张表，判据会红** —— 这是本节唯一的目的：本仓已经有过一次「登记项被结掉了、
+记录继续声称它开放」的经历（`docs/planning.md` 的 `orchestrator_router` 缺键那条，
+见 `tests/unit/graph/test_routers.py` 的 `test_brief_mode_creating_routes_to_the_copywriter`），
+而当时没有任何机制察觉。散文写的残留就是那个机制缺口。
+
+<!-- claim-table:begin -->
+
+| 主张 | 发布的值 | 复核方式 |
+| --- | --- | --- |
+| `mainline_run_publish_direct_call_sites` | `3` | AST：`backend/**/*.py` 里 `run_publish(...)` 的调用点，**排除函数定义本身** |
+| `action_intent_construction_sites` | `1` | AST：全仓 `ActionIntent(...)` 的构造点；唯一那个在控制面内 |
+| `mainline_action_intent_producers` | `0` | 上一个集合里落在 `backend/creator_agent/` **之外**的个数（上一条是它的阳性对照） |
+| `event_kinds_readers_outside_its_defining_module` | `0` | AST：除 `backend/db/workflow_events.py` 外，import 或引用 `EVENT_KINDS` 的文件数（**注释不算**） |
+| `account_credentials_inserts` | `0` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（DDL / `SELECT` / `DELETE` 都不算） |
+
+<!-- claim-table:end -->
 
 ## 待决问题 1 的裁决（P2a-S5c）
 
