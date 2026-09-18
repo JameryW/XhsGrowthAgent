@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.db.evaluator_config import ENGAGEMENT_LABEL_SOURCE
+
 
 def _make_mock_pool(conn):
     mock_pool = MagicMock()
@@ -383,6 +385,65 @@ async def test_backfill_engagement_updates_latest_sample():
     assert "UPDATE evaluator_samples" in sql_args[0]
     assert sql_args[1][0] == json.dumps({"likes": 50, "comments": 3})
     assert sql_args[1][1] == "t1"
+    # The attach rewrites the provenance too (P3-S3): once the payload is the
+    # platform's numbers, "labelled by the evaluator's own judgment" is false.
+    assert f"label_source = '{ENGAGEMENT_LABEL_SOURCE}'" in sql_args[0]
+
+
+@pytest.mark.asyncio
+async def test_backfill_engagement_for_posts_updates_by_platform_post_id():
+    """The import-driven writer: one statement per post, one shared transaction.
+
+    ``platform_post_id`` is the join key (the publisher node records it), so the
+    selector is the post rather than the thread.  The return value is the summed
+    rowcount, which is what tells a caller whether anything actually arrived --
+    the size of the mapping says nothing on its own, since most imported notes
+    were never judged by this system.
+    """
+    from backend.db.evaluator_config import backfill_engagement_for_posts
+
+    cursor = MagicMock()
+    cursor.rowcount = 2
+    conn = MagicMock()
+    conn.execute = AsyncMock(return_value=cursor)
+    transactions: list[bool] = []
+
+    @asynccontextmanager
+    async def tx(*_args, **_kwargs):
+        transactions.append(True)
+        yield None
+
+    conn.transaction = tx
+    labels = {"note-1": {"views": 5}, "note-2": {"views": 7, "likes": 1}}
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        n = await backfill_engagement_for_posts(labels)
+
+    # Two posts x rowcount 2 -- summed, not counted in posts.
+    assert n == 4
+    assert transactions == [True], "both writes share one transaction"
+    calls = conn.execute.await_args_list
+    assert len(calls) == 2
+    for entry, (post_id, payload) in zip(calls, labels.items(), strict=True):
+        sql, params = entry.args
+        assert "UPDATE evaluator_samples" in sql
+        assert "WHERE platform_post_id = %s" in sql
+        # The label is carried by the shared clause, not spelled out per caller.
+        assert f"label_source = '{ENGAGEMENT_LABEL_SOURCE}'" in sql
+        assert params == (json.dumps(payload), post_id)
+
+
+@pytest.mark.asyncio
+async def test_backfill_engagement_for_posts_skips_blank_ids_and_empty_payloads():
+    """A blank key or an empty payload is not a label; nothing reaches the DB."""
+    from backend.db.evaluator_config import backfill_engagement_for_posts
+
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        n = await backfill_engagement_for_posts({"": {"views": 1}, "note-1": {}})
+
+    assert n == 0
+    conn.execute.assert_not_awaited()
 
 
 def test_apply_override_unknown_key_ignored():

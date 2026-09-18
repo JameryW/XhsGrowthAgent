@@ -34,18 +34,31 @@ and has a test that points it at a place where the thing *is* present --
 reason.  ``tests/unit/scripts/test_planning_claims.py`` is the same shape for the
 same reason.
 
-When the sync path starts writing metrics (P3-S3) check 4 goes red on purpose:
-closing the gap has to be a deliberate edit here and in the ticket's ``prd.md``,
-not something that quietly happens while the guard keeps saying "all clear".
+P3-S3 closed the gap -- from the *import* side, not through ``publish_result``.
+The prediction above ("check 4 goes red on purpose") therefore did not come true:
+the creator-stats sync never builds a publish result, it writes the metrics
+straight onto the matching sample (``backfill_engagement_for_posts``), so a
+publish-time payload still carries identity and status only and check 4 is still
+true and still green.  What did change is the third declared value of
+``label_source``: it has a writer at last, and
+``test_each_label_writer_is_accounted_for`` below replaces the claim that it
+never would.
 """
 
 from __future__ import annotations
 
 import ast
+import inspect
 from pathlib import Path
 
 from backend.agents.publisher import _with_publish_link_metadata
-from backend.db.evaluator_config import WEAK_LABEL_METRIC_KEYS, build_weak_label
+from backend.db import evaluator_config
+from backend.db.evaluator_config import (
+    _ATTACH_WEAK_LABEL_SQL,
+    ENGAGEMENT_LABEL_SOURCE,
+    WEAK_LABEL_METRIC_KEYS,
+    build_weak_label,
+)
 
 REPO = Path(__file__).resolve().parents[3]
 BACKEND = REPO / "backend"
@@ -254,16 +267,24 @@ def test_build_weak_label_selects_what_the_payload_carries():
     assert build_weak_label({}) == {}
 
 
-def test_analyst_asks_the_contract_instead_of_repeating_it():
-    """The seam this slice exists to create: one declaration, one caller.
+def test_every_producer_asks_the_contract_instead_of_repeating_it():
+    """The seam this slice exists to create: one declaration, every producer asks it.
 
     ``analyst`` used to spell the five keys out a second time, which is how a
-    contract and its only consumer drift apart silently.  Now it calls the
-    selector, so a change to the requirement reaches the call site by
-    construction.  Pinned by call, not by the absence of a literal: an absence
-    would also be satisfied by a caller that asks nothing at all.
+    contract and its only consumer drift apart silently.  P3-S3 added the second
+    producer -- the creator-stats import -- and it asks the same selector instead
+    of spelling the keys out again, so a change to the requirement reaches both
+    call sites by construction.  Pinned by call, not by the absence of a literal:
+    an absence would also be satisfied by a caller that asks nothing at all.
+
+    The set is asserted exactly rather than as a subset: a third producer has to
+    be registered here deliberately, and a producer that quietly stops asking the
+    contract fails instead of drifting.
     """
-    assert _callers_of("build_weak_label") == [BACKEND / "agents" / "analyst.py"]
+    assert set(_callers_of("build_weak_label")) == {
+        BACKEND / "agents" / "analyst.py",
+        BACKEND / "services" / "creator_stats" / "pipeline.py",
+    }
     # Positive control, from this file: it calls the selector too, so pointing
     # the same scanner at its own directory has to see it.  ``analyst`` being
     # the *only* caller in ``backend/`` says nothing on its own.
@@ -357,20 +378,49 @@ def test_the_formula_scanner_can_see_a_different_key_set(tmp_path: Path):
     assert _formula_keys(sample) == {"impressions", "saves"}
 
 
-def test_only_the_evaluator_label_has_a_writer(tmp_path: Path):
-    """The observable end of the same break, read from the writers.
+def test_each_label_writer_is_accounted_for(tmp_path: Path):
+    """Two of the three declared ``label_source`` values now have writers.
 
-    ``evaluator_samples.label_source`` documents three values, and the samples
-    path only ever produces one.  ``"engagement"`` appears in this repository
-    today only inside a comment in ``evaluator_config`` -- which is why this scan
-    reads the AST and not the text: a comment must not be able to satisfy a scan
-    for code.
+    Reshaped rather than deleted (P3-S3).  The previous version asserted "only
+    ``evaluator`` has a writer", which the sync path made false; what survives is
+    the part that can still fail.  The two writers are found by different means
+    because they are written differently, and that asymmetry is the point:
+
+    * the *insert* paths pass the label as a keyword argument, so an AST scan for
+      ``label_source=<str>`` sees them -- and still sees exactly one value, because
+      nothing inserts an already-labeled sample;
+    * the *attach* path writes the label inside SQL, where no keyword scan can
+      reach it.  A keyword scan on its own would therefore have kept this file
+      green while the column silently acquired a second writer -- the "guard keeps
+      saying all clear" failure this module exists to prevent.  So the attach is
+      checked against the clause it shares with its sibling, and the clause is
+      checked to carry the declared constant.
     """
     assert set(_keyword_values(BACKEND, "label_source")) == {"evaluator"}
+    assert ENGAGEMENT_LABEL_SOURCE == "engagement"
+    assert f"label_source = '{ENGAGEMENT_LABEL_SOURCE}'" in _ATTACH_WEAK_LABEL_SQL
 
+    # Positive control for the keyword scan, unchanged in spirit: a writer that
+    # does pass the other label as a keyword argument must show up.
     (tmp_path / "writer.py").write_text(
         "async def save(conn, sample):\n"
         '    await conn.execute("insert", sample, label_source="engagement")\n',
         encoding="utf-8",
     )
     assert _keyword_values(tmp_path, "label_source") == ["engagement"]
+
+
+def test_both_attach_paths_share_one_clause():
+    """One statement body, two selectors -- so the writers cannot drift apart.
+
+    ``backfill_engagement`` picks its rows by thread and
+    ``backfill_engagement_for_posts`` by platform post; both must set the same
+    columns to the same values.  Pinning that as "each function names the shared
+    constant" means inlining the payload or the label into either statement is a
+    test failure rather than a silent divergence discovered later by a refit.
+    """
+    for name in ("backfill_engagement", "backfill_engagement_for_posts"):
+        source = inspect.getsource(getattr(evaluator_config, name))
+        assert "_ATTACH_WEAK_LABEL_SQL" in source, (
+            f"{name} no longer attaches through the shared clause"
+        )
