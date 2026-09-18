@@ -184,16 +184,37 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 **留给下一任务的输入**（按代价从低到高）。两条都带**量出来的**代价，不是估的：
 
-1. **给 `_run_retry` 补注册表写入。** 行数是 1（与 `backend/api/routes/_wf_actions.py:363` 同形），
-   但代价不是行数：`_background_tasks` 是 `process_has_active_task()` 的或条件之一，而那个谓词有
-   两个「读到 True 就不干活」的消费者 —— `backend/api/routes/_wf_actions.py:228` 直接回 `skipped`，
-   `backend/api/routes/_wf_application.py:1675` **静默不 resume**。它还经
-   `backend/api/routes/_runner.py:91` OR 进 `has_active_execution`，波及 7 个状态侧消费者。
-   窗口也不是一瞬间：两个 `submit_and_wait` 由 `backend/api/routes/_wf_actions.py:138` 的
-   `asyncio.gather` **并发**消费，`max_wait = ripple_timeout` ⇒ **1800 秒**。
-   ⇒ 所以它是一次**对换**（今天的「并发写 checkpoint、无人管理」换成长达 30 分钟的静默拒绝/跳过；
-   `/resume` 还会先 `cancel()` 掉在飞的那一个，见 `backend/api/routes/_wf_runtime.py:331`），
-   **不是一次修复**。换不换要裁定，而裁定要带着 1800 这个数字做 —— 「一行」不能作为代价。
+1. **给 ripple-retry 补齐兄弟路径有的东西。** 上一版写的是「补注册表写入 —— 一行」，**形状也算错了**：
+   两条修复路径的差异是 5 个性质，其中 **4 个是缺口**（末行的租约是 §7 的原始事实，两条都缺）：
+
+   | 性质 | `backend/api/routes/_wf_actions.py:38` `retry_ripple_analysis` | `backend/api/routes/_wf_actions.py:193` `retry_publish` |
+   | --- | --- | --- |
+   | 串行化守卫 `process_has_active_task` | **0** | 1（`backend/api/routes/_wf_actions.py:228`） |
+   | `add_done_callback` | **0** | 1（`backend/api/routes/_wf_actions.py:362`） |
+   | `_background_tasks[...] =` | **0** | 1（`backend/api/routes/_wf_actions.py:363`） |
+   | 被起协程的自身清理（`finally` 里 `pop`） | **0** | 1（`backend/api/routes/_wf_actions.py:357` 的 `finally`，`:359` 的 `pop`） |
+   | 租约 `start_lease` | 0 | 0 |
+
+   它也不是「四个独立的一行」，有三个耦合：
+
+   - **注册表 ⇒ 别人的判断。** 补上它会让 `process_has_active_task` 在窗口内答 True，而那个谓词有
+     两个「读到 True 就不干活」的消费者 —— `backend/api/routes/_wf_actions.py:228` 直接回 `skipped`，
+     `backend/api/routes/_wf_application.py:1675` **静默不 resume**。它还经
+     `backend/api/routes/_runner.py:91` OR 进 `has_active_execution`，波及 7 个状态侧消费者。
+     窗口不是一瞬间：两个 `submit_and_wait` 由 `backend/api/routes/_wf_actions.py:138` 的
+     `asyncio.gather` **并发**消费，`max_wait = ripple_timeout` ⇒ **1800 秒**。
+     ⇒ 这是一次**对换**（今天的「并发写 checkpoint、无人管理」换成长达 30 分钟的静默拒绝/跳过；
+     `/resume` 还会先 `cancel()` 掉在飞的那一个，见 `backend/api/routes/_wf_runtime.py:331`），
+     **不是一次修复**。
+   - **守卫：缺的不是一个键，是整条守卫。** `retry_ripple_analysis` 里 `process_has_active_task`
+     出现 **0** 次。而 `backend/api/routes/_wf_actions.py:222` 的注释写着「工作流正在跑（**含正在重试**）
+     时不允许再触发」⇒ 让兄弟路径看见「正在重试」**原本就是意图**，不是一处遗漏。
+   - **回调：没有守卫就不能照抄。** `_on_task_done` 在任务正常结束而库里仍是 `running` 时把状态写成
+     **`stale`**（`backend/api/routes/_wf_runtime.py:99`）。有守卫的路径能安全用它，没有守卫的路径
+     照抄会把**真的在跑**的工作流标成 stale。
+
+   ⇒ 所以「换不换」前面还有两问，且**有顺序**：**守卫答什么，回调要不要**。
+   裁定要带着 1800 秒与这两问一起做 ——「一行」既不是代价，也不是形状。
 2. **让这两个路径也走统一入口（或至少取租约）。** 需要先决定拒租时是「照跑」还是「拒绝」，
    即重新回答一次裁定 2 在修复路径上的适用性。今天的形状是：`backend/api/routes/_wf_actions.py` 里
    `start_lease` 调用 **0** 处，直接 `aupdate_state` **3** 处。
@@ -217,6 +238,10 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_runner.py:91` | `process_has_active_task` | OR 进 `has_active_execution` 的那一处 |
 | `backend/api/routes/_wf_actions.py:138` | `asyncio.gather` | 两个 submit 的并发消费点 ⇒ 窗口是 1 个 timeout |
 | `backend/api/routes/_wf_actions.py:95` | `ripple_timeout` | 窗口的那个 1800.0 |
+| `backend/api/routes/_wf_actions.py:222` | `含正在重试` | 兄弟路径的守卫注释 —— 意图的出处 |
+| `backend/api/routes/_wf_actions.py:362` | `add_done_callback` | publish-retry 有；ripple-retry 没有 |
+| `backend/api/routes/_wf_actions.py:359` | `_background_tasks.pop` | 自身清理，只在未被替换时执行 |
+| `backend/api/routes/_wf_runtime.py:99` | `stale` | done 回调把仍 `running` 的库标成 stale —— 没守卫就不能照抄 |
 
 <!-- anchor-table:end -->
 
@@ -232,6 +257,12 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | `ripple_retry_task_registrations` | `0` | 起该任务的那个函数里有没有把 task 存进 `_background_tasks` |
 | `publish_retry_task_registrations` | `1` | 同上 |
 | `ripple_retry_submits_are_concurrent` | `true` | 两个 submit 的结果是否被**同一个** `asyncio.gather` 消费 |
+| `ripple_retry_serialization_guards` | `0` | 该处理器里 `process_has_active_task` 的调用点数 |
+| `publish_retry_serialization_guards` | `1` | 同上 |
+| `ripple_retry_done_callbacks` | `0` | 该处理器里 `add_done_callback` 的调用点数 |
+| `publish_retry_done_callbacks` | `1` | 同上 |
+| `ripple_retry_self_cleanups` | `0` | 它起的协程里有没有「`finally` 中移除注册表条目」 |
+| `publish_retry_self_cleanups` | `1` | 同上 |
 
 <!-- claim-table:end -->
 
@@ -264,7 +295,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 **散文里的行号是第二档，它的上界要说清。** 上面三张表只覆盖被括起来的部分；散文里还有一批
 `file:line`，它们没有 token 可比，只保证**解析得到、且在范围内**。这一档由
-`tests/unit/scripts/test_execution_plane_claims.py` 检查：带路径的按仓根解析，裸 `:N` 归属到
+`tests/unit/scripts/test_execution_plane_claims.py` 检查：带路径的按仓根解析（含 `:A-B` 区间 —— **两端都查**），裸 `:N` 归属到
 **同一节内最近一次出现的完整路径** —— 这是**推断**，不是保证（换个文件之后它会静默指错），
 所以**新写的引用一律写全路径**。
 
@@ -274,9 +305,9 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 | 主张 | 值 | 怎么重算 |
 | --- | --- | --- |
-| `line_number_references_in_this_document` | `102` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
-| `line_numbers_pinned_by_marked_tables` | `56` | 标记表里第一格本身就是 `路径:行号` 的行数 |
-| `bare_line_number_references_in_this_document` | `16` | 其中不带路径的处数 —— 只能被「节内归属」推断，是这一档已知的欠账 |
+| `line_number_references_in_this_document` | `114` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
+| `line_numbers_pinned_by_marked_tables` | `60` | 标记表里第一格本身就是 `路径:行号` 的行数 |
+| `bare_line_number_references_in_this_document` | `17` | 其中不带路径的处数 —— 只能被「节内归属」推断，是这一档已知的欠账 |
 
 <!-- claim-table:end -->
 
@@ -284,3 +315,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 上一版的开头写着「本文件里的每条 `file:line` 都由 `test_docs_anchors.py` 钉住」，而当时的真实覆盖
 是 51/84；同一个 §7 里还引用着一个**不可能存在**的行号（3008，而那个文件只有 371 行），它的真实
 位置是 §7 锚点表里的那一行。**机制的自述不会因为机制存在就变准** —— 自述也是承袭来的文字。
+
+**这三个数会随每一片新增引用而变，这不是缺陷，而是它的用法。** S4 这一片往 §7 加了 13 处引用，
+三个数就从 102 / 56 / 16 走到 114 / 60 / 17，而判据在同一次运行里把这三行判红：
+自述数字只有在**有人替它算**的时候才是自述，否则它和上一版开头那句话是同一种东西。
