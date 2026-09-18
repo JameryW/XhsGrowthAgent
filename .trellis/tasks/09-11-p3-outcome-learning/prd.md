@@ -117,7 +117,7 @@ builder.add_edge("publisher", END)
 |---|---|---|---|
 | **S1** ✅ | **让现状可见 + 止血** | 把「闭环从未启动」变成**仓内会红的判据**；处置 `analyst.py` 那段恒空的回填（它是今天最大的误导源：读起来像在工作） | 已交付 · `5e7b43b5` |
 | **S2** ✅ | **link 结果从投影变成事实** | 身份规则收敛成一处 + 匹配逻辑提成**纯函数**；`evaluator_samples.platform_post_id`（**nullable**）配一个**真写入者** —— 判据与两条被推翻的预设见第十一 / 十二节 | 已交付 · `c27b2f1e` |
-| **S3** | **闭合那条边** | `creator-stats/sync` 成功后，用 link 结果把 `creator_note_stats` 的真实指标回填进 `evaluator_samples.engagement`（写 `label_source="engagement"`）；此时 `maybe_evolve` 才第一次可达 | 中 |
+| **S3** ✅ | **闭合那条边** | `creator-stats/sync` 成功后把 `creator_note_stats` 的真实指标回填进 `evaluator_samples.engagement`（写 `label_source="engagement"`），此时 `maybe_evolve` 才第一次可达 —— **票面的「用 link 结果」与「`label_source` 是新增语义」两句都被实测推翻**（缺口是缺一个生产者），见第十三节 | 已交付 · `24453cf9` |
 | **S4** | **契约与开闸条件** | `docs/outcome-learning.md`：offline quality 与 online reward 的定义、弱标签的**写入条件**、`maybe_evolve` 的**开闸条件**、以及本片明确不做的事 | 小 |
 
 > **S1 的判据必须能区分「从未启动」与「跑过但是 0」** —— 这两件事今天在所有真实数据上都同形（与 P2c-S5 那条「**值为 0 的主张自带不了阳性对照**」同族）。S1 的门禁要**指向有该东西的地方**（例如构造一个带 `engagement` 的样本行、断言 `label_source` 取到 `"engagement"`、断言 `maybe_evolve` 走到 `evolved` 而不是 `below threshold`），否则它会是一条永远绿的网。
@@ -321,3 +321,98 @@ S2 票面（第 119 行）自带两句预设，开工侦察实测**一句不成�
 ### 回给 S3 的一条线索
 
 `evaluator_samples.platform_post_id` 现在会在**每次真实发布**之后被写上（dry run 与失败发布规范化后为空 ⇒ 不写；该线程没有样本则 rowcount=0）。⇒ S3 的 sync 回填不必再去 checkpoint 里重放「这个 thread 发了哪条笔记」，一条 `WHERE platform_post_id = ANY(...)` 就够。**但**要注意 `upsert_note_stats` 是 upsert、同一条笔记的指标会持续更新（第七节待决 3）：S3 的第一版按「sync 后回填一次」实现即可，增量重算留给证据。
+## 十三、S3 侦察（票面口径被推翻）
+
+票面第 120 行把 S3 写成「用 **link 结果**把真指标回填进 `evaluator_samples.engagement`（写 `label_source="engagement"`）」，
+S1 又把「带 `engagement` 的样本行 → `count_labeled_since` ≥ `MIN_EVOLVE_SAMPLES` → `maybe_evolve` 返回 `evolved`」
+登记为 S3 的入口条件。开工侦察实测：**缺口既不是「先有鸡还是先有蛋」，也不是「缺一把键」，是缺一个生产者。**
+
+| # | 票面 / 登记里写的 | 实测 | 判定 |
+|---|---|---|---|
+| **1** | 「用 **link 结果**回填」 | link 结果（`resolve_platform_links`）是 `analyst` 的**读侧**投影：它的产出是「哪两行配对」，而 `creator-stats/sync` **从不构造 `publish_result`、也从不消费 link 结果**。sync 真正需要的是两件事 —— 一个**生产者**（谁把指标写下去）与一个**连接键**（凭什么找到那一行） | 「用 link 结果」是借来的措辞：本片没有 linker 的消费者 |
+| **2** | S1 登记「今天**构造不出**这样的行」 | **登记是写实的**。`publish_result` 由**发布时刻**构造（发布步骤之后才发布 ⇒ 无指标键），且 `RECOVERY` 里没有任何节点回头重建 state | S1 的判定成立，本片不改写它 |
+| **3** | 隐含前提「sync 侧没有 id ↔ 指标配对」 | **sync 侧今天就有完整配对，只是把指标丢在地上**：`api/routes/analytics.py:771-809`（`_imported_notes_as_posts`）已经从 `NoteStats` 造出 `{id, platform_post_id, likes, comments, collects, shares, views, ...}`，并且**已经在 `:785` 走 `normalize_platform_post_id` 归一** | 数据齐、键齐、规则齐 ⇒ 只差一次 UPDATE |
+| **4** | 「写 `label_source="engagement"`」被写成本片的主要产出 | `label_source` 在写入前**全仓零读者**：训练池 `fetch_labeled_samples`（`evaluator_config.py:726`）按 `engagement IS NOT NULL` 筛（`:806` / `:811`），`count_labeled_since`（`:986`）同理（`:1068` / `:1074`） | 只写 `engagement` 就能让本片可观测（计数 + 演进）；`label_source="engagement"` 是**票面替下游设想的键** |
+| **5** | 「`label_source` 出现第二个值」读起来像新增语义 | `label_source='evaluator'` **在数据库里本来就是假的**：`insert_sample`（`:367`）在**评估时刻**写下它，`engagement` 由**另一次 UPDATE** 补上 | 写入者改写它是**修正**，不是新增语义 |
+
+⇒ **S3 的实际形状是两个落点，不是一个。** 两者都由实测决定，不是选择：
+
+1. **生产者的落点是唯一的**：sync 的三个入口（`pipeline.py` 的 `sync_from_payload:571` / `sync_from_creator_center:757` / `sync_account_stats:839`）**都落到 `import_bundle`**，而 `persist_bundle`（`:448`）的**唯一调用者**也是它 ⇒ 在 `import_bundle` 里、`persist` 之后接一次，就是全覆盖；接在别的任何地方都会漏掉另外两个入口。
+2. **连接键不必二选一**：S2 已经把 `platform_post_id` 写进 sample（`record_publish_identity`，publisher 节点唯一出口），所以本片在一次 join 里可以**同时**用精确的 `platform_post_id` 与兼容的 `thread_id`。选前者是因为它是同一件事的更强形态：`session_id == thread_id`（`state/goal.py:143-144`）说明三处本来就是**同一个键**，而 post id 是**发布事实本身**；且 `account_id` 两侧同源（`resolve_required_account_id`，`_wf_application.py:157`），连接不会因账户键错过。
+
+### ★ 顺带实测：free 路径与本片不是同一件事
+
+`api/routes/free.py:1060-1072` 的无门 backfill **今天就在写 `engagement`**（每次 `get_analytics` 都往 `free:{draft_id}` 写一次）。它不是本片要修的缺口，而是「**写几次**」的**写入条件**问题（S2 第十一节已登记）。但它决定了一件事：**「`engagement` 有写入者」在今天已经局部成立** ⇒ 本片的判据必须把「谁写的」与「写了之后学习层能不能看见」**分开**断言，否则会拿 free 的局部成立当成 workflow 路径也成立。
+
+## 十四、S3 交付（`feat/p3-s3-sync-weak-label-backfill` / `24453cf9`）
+
+**一句话**：把「弱标签闭环从未启动过一次」从一句登记变成**一次真的通电** —— 在 `creator-stats/sync` 的唯一收口上，让导入的真实指标落到判断过那条笔记的样本上，并让 `maybe_evolve` **第一次**返回 `evolved`。
+
+### 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `backend/db/evaluator_config.py` | 新增 `ENGAGEMENT_LABEL_SOURCE: Final[str] = "engagement"` 与**共享子句** `_ATTACH_WEAK_LABEL_SQL`（两个写入者只在「选哪些行」上不同，不在「写什么」上不同）；`backfill_engagement` 改用它（并因此**修正** provenance）；新增 `backfill_engagement_for_posts(engagement_by_post_id)` —— 按 `platform_post_id` 选行、一个事务、返回**行数和**而非 post 数 |
+| `backend/services/creator_stats/pipeline.py` | `import_bundle` 的唯一出口、`persist_bundle` 之后接线 `_attach_real_weak_labels(bundle)`；生产侧归一 `note_id`（`normalize_platform_post_id` 仍是规则唯一所有者）、payload 走 `build_weak_label`（与 `analyst` 共用一个声明）；标签落地即 fire-and-forget 地调一次 `maybe_evolve` |
+| `backend/db/__init__.py` | 惰性导出表登记 `backfill_engagement_for_posts` |
+| `tests/unit/services/creator_stats/test_weak_label_backfill.py`（新） | 8 条，含票面指定的入口条件 |
+| `tests/unit/db/test_evaluator_config.py` | +2 新、1 条加强（原来的 `label_source` 断言补上） |
+| `tests/unit/db/test_weak_label_contract.py` | 改形 3 处（**不删**）：第 4 条**没有**变红（sync 不构造 publish result，见下） |
+| `tests/unit/services/test_publish_identity.py` | 改形 1 处：`normalize_platform_post_id` 多了第三个读者 |
+
+### 判据（27 条，每组都带对照）
+
+| 组 | 条 | 断言 | 钉住的东西 |
+|---|---|---|---|
+| 端到端 | 8 | 见下 | 票面的入口条件 + 反向对照 |
+| db 层 | 3 | 每条 post 一条语句且 `WHERE platform_post_id = %s`、共享子句含 label、参数是 `(payload, post_id)`；两次 rowcount=2 **相加为 4**；空 key / 空 payload 一条语句都不发 | 「按行数而不是按 post 数」与「一个事务」是真的 |
+| 契约 | 4 | 关键字扫描仍恰好 `{"evaluator"}`（**并说明它看不见 SQL 里的写者**）、`ENGAGEMENT_LABEL_SOURCE == "engagement"`、子句必须carry 它；两个写入者的源码都必须出现 `_ATTACH_WEAK_LABEL_SQL`；`build_weak_label` 的调用者**精确**集合 = {`analyst`, `creator_stats/pipeline`} | 唯一契约没有第二个声明 |
+| 身份 | 12 | 既有 S2 判据改形（期望集合扩到四项） | 第三位消费者被**报告**而非被放宽 |
+
+★ **第 4 条（登记的缺口）没有变红，而且这是对的**：它断言的是「`publish_result` 能携带的键 ∩ 契约 = ∅」。sync 从不构造 publish result —— 它把指标直接写进匹配到的样本 —— 所以那句话**今天仍然为真**。S1 预言的「S3 让检查 4 变红」没有发生，因为 S3 从**另一端**闭合；它由本片的第 8 条替换（「`label_source` 的第三个声明值终于有写入者」）。
+
+端到端 8 条的分工：
+
+| # | 断言 | 对照 |
+|---|---|---|
+| 1 | 导入把真实指标贴到判断过该笔记的样本上，键集合 `== set(WEAK_LABEL_METRIC_KEYS)`、`label_source == "engagement"`、演进被问了一次 | 键集合绑契约而非字面量 |
+| 2 | **对照**：没有任何样本判断过这条笔记 ⇒ 什么都不写、也什么都不问 | 第 1 条不是「反正都会写」 |
+| 3 | URL 形态的 note_id 归一后仍命中（断言实际传下去的键 `== "note-1"`） | 归一发生在生产侧，不是比较侧 |
+| 4 | **对照**：pool 不可用 ⇒ 一条语句都不发 | 第 3 条的命中不是「碰巧没库也过」 |
+| 5 | attach 抛错 ⇒ 导入仍然 `account_synced is True`，且日志有 `weak-label attach skipped` | 标签是 best-effort，笔记已经持久化了 |
+| 6 | ★ **入口条件**：10 行样本 → 导入前计数 `== 0` → 导入后 `== MIN_EVOLVE_SAMPLES` → `maybe_evolve` 返回 `evolved`、`train_weights` 被 `apply=True` 调过、epoch **不**被重建（bias 在带内） | 「两端都是真的」见下 |
+| 7 | **对照**：同样写入路径、少一行 ⇒ `skip` / `below threshold` | 第 6 条不是「反正都会 evolved」 |
+| 8 | **登记而非修复**：样本 `created_at` 早于 epoch ⇒ 标签**确实落库**但 `count_labeled_since == 0` | 窗口是**样本创建时间**（S4 的写入条件问题） |
+
+**第 6 条的口径**（S1 明确要求这条不能 mock 计数器）：行由**被测的生产路径**写下去、由**生产的** `count_labeled_since` 数出来，假 `_Store` 真的变更行、真的按 `engagement IS NOT NULL` 计数。只有 refit 本身（`train_weights` / `avg_bias_score` / epoch）被 stub —— 它是另一件事且有它自己的测试。⇒ 它不是「带 mock 的『已应用』」。
+
+### ★ 诚实呈现
+
+1. **票面 S3 的两句话都被实测推翻，如实写进第十三节。** （a）「用 link 结果回填」：sync 侧没有 linker 的消费者，本片建的是一个**生产者**；（b）「写 `label_source="engagement"`」被当成主要产出：它在写入前**全仓零读者**，所以本片**可观测**的变化只有计数与演进 —— `label_source` 是「票面替下游设想的键」，不是本片能让任何行为改变的东西。
+2. **★ 突变自检发现并修掉了一处真漏洞（本片最重要的一条）。** 第一版端到端 fixture 的 `_Store._attach` 从 **import** 取 `ENGAGEMENT_LABEL_SOURCE` 写进假行 —— 等于**替生产语句回答**。后果：共享子句把 label 半边整个删掉（M1）时，那条「真写入 → 真计数 → `evolved`」的链**照样全绿**，M1 只有 **3 红**、且全在 db 层与关键字断言上；标签值写错（M2）同样只有 3 红。改成**从 SQL 里解析** label（与同一个 fixture 的 `_count` 早就用 `assert "engagement IS NOT NULL" in sql` 读谓词是同一个标准）之后：**M1 → 8 红（其中 5 条来自端到端文件）、M2 → 4 红（含 1 条端到端）**。⇒ 这条漏洞的形态值得记下来：**fixture 替被测语句回答**，是「结构完整、从未启动」的第三种变体（前两种是「有列没写入者」「有分支没生产者」）。
+3. **「`label_source` 现在有两种写法」这个问题没有被"补一条一致性判据"解决。** 关键字实参（insert 路径）与 SQL 子句（attach 路径）确实无法用同一次扫描覆盖；补一条「两种写法必须一致」的判据仍然只是**文本比对**。真正的修法是**让消费端不再替它回答**（第 2 条），这在结构上把「真 SQL 写什么」与「判据看到什么」变成同一个来源。所以本片**没有**新增一致性判据，而是把 `_attach` 提升到与 `_count` 同样的标准 —— 依据是**内部一致性**，不是新原则。
+4. **第 7 条的「一个事务」是**唯一**由 db 层而不是端到端钉住的：假 `_Conn.transaction()` 是无操作（它不模拟回滚），所以「一个事务」只在 db 层被断言。这是**登记**下来的口径，不是漏洞 —— 假 pool 本来就不该模拟事务语义。
+5. **一条声明没有判据，如实登记**：`_attach_real_weak_labels` 的注释说「放在 persist 之后，失败的 persist 不会留下标签」。这句话在「persist 抛错」的语义下**不可证** —— 无论 attach 在 persist 之前还是之后，persist 抛错都会让 attach 不执行。⇒ 它是**意图声明**，不是被测试保证的性质。
+6. **不动 free 路径的无门 backfill**（第十三节）：那是写入条件问题，归 S4。本片只保证它**不会**因为这次改动而改变行为（`backfill_engagement` 的 WHERE 与参数逐字未变，只多了 SET 子句里的 label）。
+7. **`upsert_note_stats` 是 upsert ⇒ 本片按「sync 后回填一次」实现**（S2 回给 S3 的线索已预告）：同一条笔记的指标持续更新时，每次 import 都会把当前值重写一次。增量重算 / 只回填未标签行留给证据。
+
+### 门禁
+
+`ruff check .` **All checks passed!**（543 files）· `ruff format --check .` **543 files already formatted** · `mypy backend --python-version 3.12` **Success: no issues found in 217 source files** · `context_compiler_baseline.py --compare --drift-pct 5` **drift within threshold** · `tool_runtime_gate.py` **P1c-S5 tool runtime: OK** · 全量 `pytest -q` **3623 passed / 3 skipped**（本片 +11）。
+
+### 突变自检
+
+**11 条突变 11/11 杀死**、`restore=OK`、`baseline=green`：
+
+- **共享子句 / provenance 2 条**：子句丢掉 label 半边（**M1 → 8 红**）· 标签值写回 `'evaluator'`（**M2 → 4 红**）。这两条是第 2 条诚实呈现的证据。
+- **选择与计数 3 条**：`WHERE` 退回 `thread_id`（M3 → 6 红）· rowcount 按 post 数而不是按行数（M4 → 2 红）· 不再共享一个事务（M5 → 1 红，唯一只由 db 层钉住的一条）。
+- **声明单一 2 条**：第二个写入者自拼子句（M6 → `test_both_attach_paths_share_one_clause` 红）· 生产侧自拼五个键而不再问契约（M10 → 调用者精确集合红）。
+- **询问阈值 2 条**：`if updated:` 恒真（M7 → 「无人判断」的对照红）· 恒假（M8 → 第 1 条与入口条件红）。
+- **生产侧归一 1 条**：直接用 `note.note_id`（M9 → 端到端 URL 那条 + S2 契约红）。
+- **接线 1 条**：把 `import_bundle` 里那次调用摘掉（M11 → 6 红）。
+
+★ 两条突变被**额外断言了「必须被谁注意到」**（`expect_from`）：M1 与 M2 都必须有红来自**端到端文件**，否则脚本自己判 **TOO-WEAK** 并返回非零。这把第 2 条诚实呈现的修法钉在了**工具**上，而不只是钉在这一轮的一次运行上。
+
+### 回给 S4 的一条线索
+
+弱标签的**写入条件**现在是「每次 sync 都回填一次」，而 `count_labeled_since` 的窗口是**样本创建时间**（`:986` 的 `created_at > epoch`）—— 于是存在一个 S4 必须裁定的错配：**一条今天被标签的老样本，会把计数推高（只要它创建得够晚）或推不动（创建得早，第 8 条）**，而 refit 的样本量与「哪一批标签算数」因此取决于**样本何时被判断**而不是**标签何时到达**。§七待决 3 与本节第 8 条是同一个问题的两面。

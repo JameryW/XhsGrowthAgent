@@ -43,6 +43,7 @@ ANALYTICS = BACKEND / "api" / "routes" / "analytics.py"
 PUBLISHER_AGENT = BACKEND / "agents" / "publisher.py"
 PUBLISHER_NODE = BACKEND / "agents" / "nodes" / "publisher.py"
 EVALUATOR_CONFIG = BACKEND / "db" / "evaluator_config.py"
+CREATOR_STATS_PIPELINE = BACKEND / "services" / "creator_stats" / "pipeline.py"
 
 
 # ── source scans ─────────────────────────────────────────────────────────────
@@ -216,10 +217,16 @@ def test_the_platform_id_rule_has_exactly_one_owner(tmp_path: Path) -> None:
 
 def test_analytics_delegates_the_rule_and_the_match(tmp_path: Path) -> None:
     assert _call_sites("resolve_platform_links", BACKEND) == {ANALYTICS.resolve()}
-    # the owner consumes its own rule too (``resolve_platform_links`` normalizes
-    # both sides), which is what keeps the two sides comparable by construction
+    # The owner consumes its own rule too (``resolve_platform_links`` normalizes
+    # both sides), which is what keeps the two sides comparable by construction.
+    # P3-S3 added the third consumer: the creator-stats import normalizes the
+    # imported ``note_id`` into the same key before joining on it, so the join
+    # cannot disagree with what the publisher stored.  The set stays exact, so the
+    # next consumer has to be registered here deliberately -- this assertion is
+    # what reported the third one, which is the behaviour it is meant to have.
     assert _call_sites("normalize_platform_post_id", BACKEND) == {
         ANALYTICS.resolve(),
+        CREATOR_STATS_PIPELINE.resolve(),
         PUBLISHER_NODE.resolve(),
         PUBLISH_IDENTITY.resolve(),
     }

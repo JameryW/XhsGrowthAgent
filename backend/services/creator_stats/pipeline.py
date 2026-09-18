@@ -453,6 +453,69 @@ async def persist_bundle(bundle: CreatorStatsBundle) -> tuple[int, int, int]:
     return await stats_db.upsert_bundle(bundle.account, bundle.notes)
 
 
+async def _attach_real_weak_labels(bundle: CreatorStatsBundle) -> int:
+    """Attach the imported platform metrics to the samples that judged those notes.
+
+    This is the producer the weak-label seam was missing.  ``analyst`` reads
+    metrics out of a publish-time ``publish_result``, which carries identity and
+    status only, so ``evaluator_samples.engagement`` stayed NULL on every row and
+    ``maybe_evolve`` never left ``below threshold``.  A creator-stats import
+    knows both the post id and the real counts for it.
+
+    The post id is normalized *here*, not at the comparison site, so the join key
+    matches what the publisher stored — ``normalize_platform_post_id`` stays the
+    one owner of "what counts as a platform identity".  The payload goes through
+    ``build_weak_label`` so this producer and the analyst's share one declaration
+    of which keys a weak label is made of.
+
+    Returns rows updated; never raises — an import that has already persisted its
+    notes must not fail because the label attach could not run.
+    """
+    from backend.db.evaluator_config import backfill_engagement_for_posts, build_weak_label
+    from backend.db.pool import is_pool_ready
+    from backend.services.publish_identity import normalize_platform_post_id
+
+    try:
+        if not is_pool_ready():
+            return 0
+        labels_by_post: dict[str, dict[str, Any]] = {}
+        for note in bundle.notes:
+            platform_post_id = normalize_platform_post_id(note.note_id)
+            labels = build_weak_label(note.to_dict())
+            if platform_post_id and labels:
+                labels_by_post[platform_post_id] = labels
+        if not labels_by_post:
+            return 0
+        updated = await backfill_engagement_for_posts(labels_by_post)
+    except Exception:
+        logger.warning("weak-label attach skipped for %s", bundle.account.account_id, exc_info=True)
+        return 0
+    if updated:
+        # A real label just arrived — ask whether the account crossed the refit
+        # threshold.  Fire-and-forget: a refit must not sit on the import's
+        # response (mirrors analyst_node and the free analytics route).
+        _schedule_weak_label_evolve(bundle.account.account_id)
+    return updated
+
+
+async def _safe_weak_label_evolve(account_id: str) -> None:
+    """Fire-and-forget wrapper: never let a traceback escape the task."""
+    try:
+        from backend.db.evaluator_config import maybe_evolve
+
+        await maybe_evolve(account_id)
+    except Exception as e:
+        logger.debug("creator-stats evolve failed (non-blocking): %s", e)
+
+
+def _schedule_weak_label_evolve(account_id: str) -> None:
+    """Schedule the evolution check as a background task (test seam)."""
+    asyncio.create_task(
+        _safe_weak_label_evolve(account_id),
+        name=f"creator_stats_evolve_{account_id}",
+    )
+
+
 async def _sync_imported_account_name(bundle: CreatorStatsBundle) -> None:
     """Mirror a verified public Creator Center nickname onto the account row.
 
@@ -497,6 +560,10 @@ async def import_bundle(
     """
     imported, updated, deleted = await persist_bundle(bundle)
     await _sync_imported_account_name(bundle)
+    # The imported metrics are the only producer that can label a sample with
+    # reality; attach them once the notes are durable, so a failed persist never
+    # leaves a label behind.
+    await _attach_real_weak_labels(bundle)
     analysis = None
     suggestions: dict[str, Any] = {}
     analysis_error: str | None = None

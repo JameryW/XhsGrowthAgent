@@ -33,6 +33,7 @@ __all__ = [
     "activate_system_config",
     "avg_bias_score",
     "backfill_engagement",
+    "backfill_engagement_for_posts",
     "bootstrap_default_user",
     "bootstrap_from_environ",
     "canonicalize_note_stats",
@@ -167,6 +168,10 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "activate_epoch": ("backend.db.evaluator_config", "activate_epoch"),
     "avg_bias_score": ("backend.db.evaluator_config", "avg_bias_score"),
     "backfill_engagement": ("backend.db.evaluator_config", "backfill_engagement"),
+    "backfill_engagement_for_posts": (
+        "backend.db.evaluator_config",
+        "backfill_engagement_for_posts",
+    ),
     "create_epoch": ("backend.db.evaluator_config", "create_epoch"),
     "ensure_evaluator_config_tables": (
         "backend.db.evaluator_config",

@@ -462,12 +462,36 @@ async def fetch_trend(account_id: str | None = None, limit: int = 100) -> list[d
     return rows
 
 
+# ── Attaching real platform metrics (the online reward) ──
+
+#: The label a sample carries once its ``engagement`` column holds real platform
+#: metrics.  Declared once because **two** writers attach such metrics —
+#: ``backfill_engagement`` (selected by thread) and
+#: ``backfill_engagement_for_posts`` (selected by platform post, driven by the
+#: creator-stats import) — and a row whose payload has been filled must not keep
+#: claiming the evaluator's own judgment as the source of its label.
+#: ``tests/unit/db/test_weak_label_contract.py`` pins both writers.
+ENGAGEMENT_LABEL_SOURCE: Final[str] = "engagement"
+
+#: The single statement body every attach path shares.  Which columns are set,
+#: and to what, is therefore decided in exactly one place: the two writers may
+#: differ in *which rows* they pick, never in *what they write*.
+_ATTACH_WEAK_LABEL_SQL = f"engagement = %s, label_source = '{ENGAGEMENT_LABEL_SOURCE}'"
+
+
 async def backfill_engagement(thread_id: str, engagement: dict[str, Any]) -> int:
-    """Back-fill real post-publish engagement onto the most recent sample for a thread.
+    """Attach real post-publish engagement onto the most recent sample for a thread.
 
     Called from analyst_node after publish — attaches the weak label (real likes/
     comments/collects) to the evaluator's original judgment sample. Returns rows
     updated (0 if no sample / DB unavailable).
+
+    Also rewrites ``label_source`` (see :data:`ENGAGEMENT_LABEL_SOURCE`): once
+    the payload is the platform's numbers, the evaluator's own judgment is no
+    longer what the row's label came from.  The free-mode analytics route calls
+    this function too, so it inherits the same correction; the creator-stats
+    import reaches the same kind of row through
+    :func:`backfill_engagement_for_posts` instead.
 
     ponytail: UPDATE latest-by-thread; one thread may have multiple revisions,
     we label the most recent judgment. Non-blocking on DB failure.
@@ -475,9 +499,9 @@ async def backfill_engagement(thread_id: str, engagement: dict[str, Any]) -> int
     pool = get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
-            """
+            f"""
             UPDATE evaluator_samples
-            SET engagement = %s
+            SET {_ATTACH_WEAK_LABEL_SQL}
             WHERE id = (
                 SELECT id FROM evaluator_samples
                 WHERE thread_id = %s ORDER BY created_at DESC LIMIT 1
@@ -519,6 +543,53 @@ async def record_publish_identity(thread_id: str, platform_post_id: str) -> int:
             (platform_post_id, thread_id),
         )
         return cur.rowcount
+
+
+async def backfill_engagement_for_posts(
+    engagement_by_post_id: Mapping[str, Mapping[str, Any]],
+) -> int:
+    """Attach real metrics to every sample that judged one of these platform posts.
+
+    This is the producer the weak-label seam was missing.  ``analyst`` reads
+    metrics out of a publish-time ``publish_result``, which carries identity and
+    status only — so ``engagement`` stayed NULL on every row and ``maybe_evolve``
+    never left ``below threshold``.  A creator-stats import knows both the post
+    id and the real counts for it, and the publisher node has already stored
+    which post each thread judged (:func:`record_publish_identity`), so the join
+    needs no checkpoint replay.
+
+    Keys must already be normalized (``backend.services.publish_identity``) and
+    blank keys are dropped — the value is a weak-label payload, i.e. the keys in
+    :data:`WEAK_LABEL_METRIC_KEYS`.  Returns the total number of rows updated,
+    which is deliberately *not* the number of posts passed in: a post nobody
+    judged updates nothing, and callers that fire an evolution check should look
+    at this number rather than at the size of the mapping.  Non-blocking on DB
+    failure.
+
+    A post judged by more than one sample updates all of them — the label is a
+    fact about the post, not about one revision of the judgment.
+    """
+    pairs = [
+        (post_id, dict(labels))
+        for post_id, labels in engagement_by_post_id.items()
+        if post_id and labels
+    ]
+    if not pairs:
+        return 0
+    pool = get_pool()
+    updated = 0
+    async with pool.connection() as conn, conn.transaction():
+        for platform_post_id, labels in pairs:
+            cur = await conn.execute(
+                f"""
+                UPDATE evaluator_samples
+                SET {_ATTACH_WEAK_LABEL_SQL}
+                WHERE platform_post_id = %s
+                """,
+                (json.dumps(labels), platform_post_id),
+            )
+            updated += int(cur.rowcount or 0)
+    return updated
 
 
 # ── Online weight training (statistical fit, no GPU) ──
