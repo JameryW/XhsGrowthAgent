@@ -118,7 +118,7 @@ builder.add_edge("publisher", END)
 | **S1** ✅ | **让现状可见 + 止血** | 把「闭环从未启动」变成**仓内会红的判据**；处置 `analyst.py` 那段恒空的回填（它是今天最大的误导源：读起来像在工作） | 已交付 · `5e7b43b5` |
 | **S2** ✅ | **link 结果从投影变成事实** | 身份规则收敛成一处 + 匹配逻辑提成**纯函数**；`evaluator_samples.platform_post_id`（**nullable**）配一个**真写入者** —— 判据与两条被推翻的预设见第十一 / 十二节 | 已交付 · `c27b2f1e` |
 | **S3** ✅ | **闭合那条边** | `creator-stats/sync` 成功后把 `creator_note_stats` 的真实指标回填进 `evaluator_samples.engagement`（写 `label_source="engagement"`），此时 `maybe_evolve` 才第一次可达 —— **票面的「用 link 结果」与「`label_source` 是新增语义」两句都被实测推翻**（缺口是缺一个生产者），见第十三节 | 已交付 · `24453cf9` |
-| **S4** | **契约与开闸条件** | `docs/outcome-learning.md`：offline quality 与 online reward 的定义、弱标签的**写入条件**、`maybe_evolve` 的**开闸条件**、以及本片明确不做的事 | 小 |
+| **S4** ✅ | **契约与开闸条件** | `docs/outcome-learning.md`：offline quality 与 online reward 的定义、弱标签的**写入条件**、`maybe_evolve` 的**开闸条件**、以及本片明确不做的事 —— 文档由 `tests/unit/scripts/test_outcome_learning_claims.py` **重算**（3 个 claim 块 / 20 条主张 / 四条闭环 + 四条阳性对照）；S3 留下的「写入条件 × 计数窗口」错配在此**裁定**（取登记不改，理由见文档 §4） | 已交付 · `d0f33c08` |
 
 > **S1 的判据必须能区分「从未启动」与「跑过但是 0」** —— 这两件事今天在所有真实数据上都同形（与 P2c-S5 那条「**值为 0 的主张自带不了阳性对照**」同族）。S1 的门禁要**指向有该东西的地方**（例如构造一个带 `engagement` 的样本行、断言 `label_source` 取到 `"engagement"`、断言 `maybe_evolve` 走到 `evolved` 而不是 `below threshold`），否则它会是一条永远绿的网。
 
@@ -416,3 +416,111 @@ S1 又把「带 `engagement` 的样本行 → `count_labeled_since` ≥ `MIN_EVO
 ### 回给 S4 的一条线索
 
 弱标签的**写入条件**现在是「每次 sync 都回填一次」，而 `count_labeled_since` 的窗口是**样本创建时间**（`:986` 的 `created_at > epoch`）—— 于是存在一个 S4 必须裁定的错配：**一条今天被标签的老样本，会把计数推高（只要它创建得够晚）或推不动（创建得早，第 8 条）**，而 refit 的样本量与「哪一批标签算数」因此取决于**样本何时被判断**而不是**标签何时到达**。§七待决 3 与本节第 8 条是同一个问题的两面。
+
+## 十五、S4 侦察（纯文档片：这个仓怎么把文档变门禁）
+
+票面第 121 行只给了一行：「`docs/outcome-learning.md`：offline quality 与 online reward 的定义、弱标签的**写入条件**、`maybe_evolve` 的**开闸条件**、以及本片明确不做的事」。⇒ 本片**不写生产代码**，要侦察的只有两件事：**这份文档该用什么形状被钉住**，以及**要发布的事实今天能不能被测出来**。
+
+### 1. 本仓「文档变门禁」的两种先例（形状由内容决定，不由偏好决定）
+
+| 先例 | 发布什么 | 钉法 | 为什么不能用另一种 |
+|---|---|---|---|
+| `tests/unit/scripts/test_docs_anchors.py`（钉 `docs/execution-plane.md`） | **位置**（「这段代码在 `path:line`」） | 逐条 `file:line` 锚点 + **行数下限** | 位置没有可重算的值；且**行只被检查、不被枚举** ⇒ 删一行不留痕迹 ⇒ 必须有下限兜底 |
+| `tests/unit/scripts/test_planning_claims.py`（钉 `docs/planning.md`） | **事实**（「这个键集是这五个」） | `claim-table` 标记块内的 `{claim_id: 可调用}` 表，从代码**重算**后与发布值比对 | 事实用位置钉会**反向失效**：行挪了就红、数字改了却绿 —— 恰好把信噪比搞反 |
+
+S4 发布的是事实（键集、写入者个数、阈值、窗口列），所以走第二条。
+
+★ **第 3 条闭环让「行数下限」变得不必要。** `test_planning_claims.py` 的第三条检查是「每个复核者都在文档里」—— 复核者集合**本身就是枚举**，所以删掉一行会立刻表现为**孤儿复核者**。⇒ S4 的判据不需要下限；这条差异写进了文档 §6，否则下一个读者会以为漏了兜底。
+
+★ **文档侧只引用符号，不发布 `file:line`。** 符号改名是**可见的**（import 失败、`ruff`、`mypy` 都会报），数字变了才是**静默的**。这与第三节的红线同源。
+
+### 2. S4 要发布的事实，逐条实测（不是从代码里抄）
+
+| 主张 | 实测值 | 测法 |
+|---|---|---|
+| `weak_label_metric_keys` | `collects, comments, likes, shares, views` | `sorted(WEAK_LABEL_METRIC_KEYS)` |
+| `offline_quality_dimensions` | 9 维（`ai_taste` … `visual`） | `sorted(WEIGHTED_DIMENSIONS)` |
+| `offline_quality_weights_sum_to_one` | `true` | `abs(sum(DEFAULT_DIMENSION_WEIGHTS.values()) - 1.0) < 1e-9` |
+| `online_reward_source_exposes_every_contract_key` | `true` | 契约键 ⊆ `NoteStats` 字段名集合 |
+| `engagement_label_source` | `engagement` | `ENGAGEMENT_LABEL_SOURCE` |
+| `evaluator_label_source_writers` | `evaluator` | AST 扫 `backend/` 里 `label_source=<字面量>` 的**关键字实参**取值集合 |
+| `attach_writers` | `backfill_engagement, backfill_engagement_for_posts` | 源码里出现 `_ATTACH_WEAK_LABEL_SQL` 的函数名集合 |
+| `import_bundle_call_sites` | `3` | AST 数 `import_bundle(...)` 的调用点 |
+| `attach_calls_in_import_bundle` | `1` | AST 数 `import_bundle` 体内对 `_attach_real_weak_labels` 的调用 |
+| `min_evolve_samples` | `10` | `MIN_EVOLVE_SAMPLES` |
+| `evolution_outcomes` | `error, evolved, skip` | AST：`maybe_evolve` 体内 `action` 的**两种**形状 |
+| `count_window_is_the_samples_creation_time` | `true` | `count_labeled_since` 的 SQL 含 `engagement IS NOT NULL AND created_at > %s` |
+| `count_ignores_when_the_label_arrived` | `true` | 同一 SQL **不**含 `label_source` |
+
+★ **两处扫描的坑，都是实测撞出来的，写进了判据的 docstring**：
+
+1. **`label_source` 有两种写法**：insert 路径传**关键字实参**（两个写入者，`agents/nodes/evaluator.py:149` 与 `api/routes/free.py:884`），attach 路径把值写进**共享 SQL 子句**（`ENGAGEMENT_LABEL_SOURCE`）。⇒ **一次全文扫描必然漏掉一半** ⇒ 两条主张，不是一条。这正是 P3-S3 突变自检抓到的失效形态。
+2. **`action` 的取值有两种形状**：字典字面量（`{"action": "skip"}` + `reason`）与下标赋值（`report["action"] = "evolved"`），而 `maybe_evolve` **两种都用**。只扫一种会报出一个**看起来完整**的子集 —— 实测只扫下标时只得 `error, evolved`，漏掉 `skip`。
+
+### 3. S4 必须裁定的一件事
+
+§十四 末尾（S3 回给 S4 的线索）已经写明：**写入条件**是「每次 sync 都回填一次」（`backfill_engagement_for_posts` 的 `WHERE` **只有** `platform_post_id = %s`），而**计数窗口**是**样本创建时间** ⇒ 一条**今天被标签的老样本**会把标签写进去、却不推高计数。
+
+裁定取 **(c) 登记不改**，理由与取证方式写在 `docs/outcome-learning.md` §4：**(a)（把窗口换成「标签到达时间」）会让口径从保守变成激进** —— `creator_note_stats` 是 upsert，同一条笔记每同步一次写一次，若窗口=标签到达时间，则**重复回填会被算成新标签** ⇒ 计数虚高 ⇒ 可能拿**尚未成熟**的样本池去重拟合。**晚只是延迟，错会污染权重。**
+
+## 十六、S4 交付（`feat/p3-s4-outcome-learning-contract` / `d0f33c08`）
+
+**一句话**：把 P3 的三件事 —— **两条学习信号各是什么**、**真实数字在什么条件下才允许写进样本**、**攒够了在什么条件下才允许动权重** —— 写成一份**由判据重算、改一个数字就红**的文档，并把 S3 留下的那处错配**裁定下来**（取「登记不改」并给出取证方式）。
+
+### 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `docs/outcome-learning.md`（新，167 行） | 六节：§0 结论（闭环此前**从未启动**）· §1 两条信号 + 弱标签是桥 · §2 写入条件 · §3 开闸条件 · §4 **一处错配的裁定与理由** · §5 明确不做（8 行，每行带证据缺口）· §6 本文件如何被钉住。3 个 `claim-table` 块，共 **20 条主张** |
+| `tests/unit/scripts/test_outcome_learning_claims.py`（新，384 行 / 8 条） | 四条闭环 + 四条阳性对照 |
+| `backend/db/evaluator_config.py`（−8 / +15） | **更正四处被 S3 变成假话的注释**：`WEAK_LABEL_METRIC_KEYS` 上方原本写着「the analyst node is the only writer」「**Nothing produces them today.**」「`label_source="engagement"` has no writer yet」「wiring them through is a later slice's job」—— S3 之后这四句全是假的（写入者有两个、生产者已经在、`label_source` 的第三个值已经有写入者）。改成「两个写入者共用 `_ATTACH_WEAK_LABEL_SQL`；只有导入侧知道真实数字；`publisher.py` 仍不提指标键，**但那不再是缺口**」，并指向本节的文档与判据 |
+
+★ **本片可观测的行为变化为零。** 只有一段注释、一份新文档、一组新判据；没有任何生产路径、契约或数据库形状被改动。这是 S4 的应然形状：它是**契约片**，不是行为片。
+
+### 判据（8 条）
+
+四条闭环（缺一条这张表就退化成注释）：
+
+| # | 断言 |
+|---|---|
+| 1 | **每个已发布的主张都能重算出发布的值** —— 代码改了而文档没改就红 |
+| 2 | **每个已发布的主张都有复核者** —— 想加一行，必须先写清它怎么被重算 |
+| 3 | **每个复核者都在文档里** —— 删一行会留下**孤儿复核者**，当场红（所以不需要行数下限） |
+| 4 | **标记配平** —— 丢一个 `claim-table` 标记会让整块行从上面三条里消失 |
+
+四条阳性对照 —— ★ 因为**断言「某物不存在」的主张自带不了对照**：把扫描器掏成 `return False` 它照样绿。所以这类扫描器都参数化，并各自指向一个「**有该物**」的 fixture：
+
+| # | 对照 | 指向哪里 |
+|---|---|---|
+| 5 | 关键字扫描必须看得见一个写入者 | fixture 写 `label_source="human_review"`（真树里没有的值） |
+| 6 | 共享子句扫描是**按出现**而不是按函数名 | fixture 里两个函数提它、第三个不提 |
+| 7 | `_sql_omits` 的**两个方向**都要动 | fixture 里两个子串**都在** ⇒ 同一 helper 必须答 `False` |
+| 8 | 调用扫描器在自己的目录里看得见调用 | 指向本文件自己 |
+
+### ★ 诚实呈现
+
+1. **★ 判据抓到的第一个问题，是我自己写的表格会骗人。** 两条「断言某物不存在」的主张，一条按**语义**极性发布 `true`（`count_ignores_when_the_label_arrived`），另一条按**子串在场**极性发布 `false`（`attach_selector_does_not_skip_labeled_rows`）—— 而文档正文写的是「它**不**跳过已经带上标签的行」。⇒ 表格里那个 `false` 会把读者引到**相反**的结论。修法不是改数字，是**给方向起名**：两者统一走 `_sql_omits(path, name, needle)`，让 id、发布值、扫描方向三者指向一致。首跑就是这条红的（`publishes 'true' but recomputes to 'false'`）。
+2. **块数是 3 不是 4，而这个错是我自己的常数被锚点断言拦下的。** 突变 harness 第一版按「4 个块」写 `hits=4`，注入时 `outcome-learning.md: anchor occurs 3x, wanted 4` 当场中止 —— **锚点断言比我的记忆可靠**。（8 + 7 + 5 = 20 条主张，与文档一致。）
+3. **§4 取「登记不改」不是偷懒，是因为 (a) 更危险。** 把窗口换成「标签到达时间」看起来像「修好了错配」，但 `creator_note_stats` 是 **upsert**（同一条笔记每同步一次写一次）⇒ 重复回填会被算成**新标签** ⇒ 计数**虚高** ⇒ 可能拿**尚未成熟**的样本池去重拟合权重。**晚只是延迟，错会污染权重。** 取证方式已写进文档：要重开这条，先证明「同一行被重复回填是可识别的」（例如记录回填次数或标签版本）。
+4. **`free` 路径的无门 backfill 仍未动**（§五 6 / §十三 / 文档 §5），它被写进「明确不做」并带上理由：它**今天能工作**，而改它要动一个不在本片契约内的调用点。
+5. **一处口径没能被钉住，如实登记**：`docs/outcome-learning.md` §1 那句「`views` 是分母，其余四个是分子」是**读出来的语义**，判据只钉了「键集合 == 契约」与「`NoteStats` 供得上每一个键」。公式本身的正确性由 `_engagement_rate` 自己的测试负责，不在本片。
+
+### 门禁
+
+`ruff check .` **All checks passed!**（544 files）· `ruff format --check .` **544 files already formatted** · `mypy backend --python-version 3.12` **Success: no issues found in 217 source files** · `context_compiler_baseline.py --compare --drift-pct 5` **drift within threshold** · `tool_runtime_gate.py` **P1c-S5 tool runtime: OK** · 全量 `pytest -q` **3631 passed / 3 skipped**（本片 +8）。
+
+### 突变自检
+
+**17 条突变 17/17 杀死**、`baseline=green`、`restore=YES`：
+
+- **文档侧 7 条**：改一个发布的数字（M01）· 集合里删一个成员（M02）· 加一行没有复核者的（M03）· 删一行留孤儿（M04）· 同一个 id 发布两次（M05 → 4 红）· **只改一个结束标记（M06）** · **把一个块的两个标记都改掉、配平但行消失（M07）**。M06 与 M07 是一对：前者考**配平**，后者考**「配平了也不安全」**。
+- **代码侧 8 条**：阈值挪动（M08）· 导入无条件问阈值（M09）· 选择器开始跳过已标签行（M10）· 计数窗口不再按创建时间筛（M11）· 计数开始按「标签何时到达」筛（M12）· insert 写入者改值（M13）· 导入多一次 attach 调用（M14）· engagement 标签常量改名（M15）。
+- **检查器侧 2 条**：`_sql_omits` 掏成 `return False`（M16）· `_string_constants` 掏成空串（M17）。两条都**只有阳性对照会红**（各 2 红：一条来自第 7 条对照，一条来自被掏空后值翻面的 `count_window_is_the_samples_creation_time`）—— 这正是第 7 条对照存在的理由。
+
+★ 每条突变都断言了**必须由谁注意到**（`expect_from` = 完整的 `path::test_name`）与**必须出现哪个主张名**（`expect_mentions`）。不满足即判 **TOO WEAK** 并非零退出 —— 上一片的教训是「只要变红就算杀死」会被邻居满足。
+
+★ 沙箱会把命令执行两次 ⇒ harness 用**排他锁**；无论成功失败都在 `finally` 里按**字节快照**还原全部被改文件，并比对 sha256。
+
+### P3 收官
+
+四片全部交付：**S1** `5e7b43b5`（#624）· **S2** `c27b2f1e`（#625）· **S3** `24453cf9`（#626）· **S4** `d0f33c08`（#@@PR@@）。父票 `09-11-runtime-upgrade` 的 P3 分支至此结清。
