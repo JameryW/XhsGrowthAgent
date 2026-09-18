@@ -2,7 +2,10 @@
 
 > P2b 的交付面。它回答一个问题：**一次工作流执行在进程重启、多实例、以及没有 Postgres 的时候，究竟被承诺了什么。**
 >
-> 本文件里的每条 `file:line` 都由 `tests/unit/scripts/test_docs_anchors.py` 钉住 —— 改动那些行会让测试变红，而不是让文档悄悄过期（见 §8）。
+> 本文件里的 `file:line` 分两档被钉住：**被标记表括起来的**（§6 / §6.1 / §7 / §8）逐字断言某个
+> token 出现在那一行；**散文里的**没有 token 可比，只保证解析得到、且在范围内。两档分别由
+> `tests/unit/scripts/test_docs_anchors.py` 与 `tests/unit/scripts/test_execution_plane_claims.py`
+> 检查 —— 改动那些行会让测试变红，而不是让文档悄悄过期（见 §8）。
 
 ## 0. 结论：S4 按裁定 1 降级
 
@@ -13,7 +16,7 @@
 | # | 证据 | 为什么它反驳「占用」 |
 | --- | --- | --- |
 | A | 34 条执行点逐行分类（§6），其中的长任务**全部**由 `asyncio.create_task` 起 | 它们在 await 上跑，不阻塞事件循环 —— 占住的是 thread，不是进程 |
-| B | 「请求内同步跑完整条工作流」的路径**存在**（`backend/api/routes/_wf_application.py:271` 的 `else` 分支 → `:275` 的 `_run_graph_and_persist`）但**非默认**（`_wf_models.py:31` `async_mode: bool = Field(default=True`） | 唯一真正「占住请求」的形状是可选路径；默认形状不占 |
+| B | 「请求内同步跑完整条工作流」的路径**存在**（`backend/api/routes/_wf_application.py:271` 的 `else` 分支 → `:275` 的 `_run_graph_and_persist`）但**非默认**（`backend/api/routes/_wf_models.py:31` `async_mode: bool = Field(default=True`） | 唯一真正「占住请求」的形状是可选路径；默认形状不占 |
 | C | 长任务的时长有界，且界可静态读出：通用工具网 `backend/tools/runtime/catalog.py:513` `timeout_s=120.0`、发布 `:92` `_PUBLISH_SAFETY_NET_S = 900.0`、Ripple `:82` `_RIPPLE_SAFETY_NET_S = 3600.0` | 「占住」的签名是**无界**；这里有界，且界都落在等外部上 |
 | D | 本机无真实运行样本：`.xhs/checkpoints.sqlite` 0 行，`history/*.json` 全是 21 字节的测试残留 | 没有样本，「实测占用」这一档证据拿不到 |
 
@@ -40,7 +43,7 @@
 
 **不保证**
 
-1. **租约不阻止执行。** `backend/db/execution_leases.py:496` `start_lease` 拿不到租约时返回 `None`，**runner 照样跑**。这不是疏漏，是裁定 2：把执行挂在租约的回答上，会在存储答不上来的时候 fail-closed，而那正是租约从「观测」变成「闸门」的方式。唯一把拒绝当终局的是接管扫描（`_takeover.py:136` 的闸门），因为「不恢复」是那个决定的**安全侧**。
+1. **租约不阻止执行。** `backend/db/execution_leases.py:496` `start_lease` 拿不到租约时返回 `None`，**runner 照样跑**。这不是疏漏，是裁定 2：把执行挂在租约的回答上，会在存储答不上来的时候 fail-closed，而那正是租约从「观测」变成「闸门」的方式。唯一把拒绝当终局的是接管扫描（`backend/api/routes/_takeover.py:136` 的闸门），因为「不恢复」是那个决定的**安全侧**。
 2. **租约默认不是持久的。** 见 §4。
 3. **租约只覆盖写 checkpoint 的那一条路径。** 见 §7 —— 这是本文件最该被读到的一句。
 
@@ -84,7 +87,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 只分类**待跑节点**（`state.next`），不按可达集：进 `publisher` 的唯一来源是 `publish_gate`，而它自己是 `needs_human`，这条前提由 `build_graph()` 的边直接钉住（见 §8 提到的测试）。
 
-`_takeover.py:105` `_consider` 留了两条跳过：没有 `state.values`（租约活着但 checkpoint 没了 ⇒ 交给 `/recover` 的 `checkpoint_lost` 诊断）、`state.next` 为空（跑完或报错退出 ⇒ 那是人的 `/recover` 路径）。
+`backend/api/routes/_takeover.py:105` `_consider` 留了两条跳过：没有 `state.values`（租约活着但 checkpoint 没了 ⇒ 交给 `/recover` 的 `checkpoint_lost` 诊断）、`state.next` 为空（跑完或报错退出 ⇒ 那是人的 `/recover` 路径）。
 
 **已知代价（S2 登记，这里重申）**：崩溃后 TTL 窗口内（90s 量级），`/recover` 会拒绝恢复，因为死进程的租约还没到期。这是刻意的取舍 —— 另一个方向（把「查不到活任务」也当作可以恢复）会在存储故障时起第二份执行。
 
@@ -174,19 +177,67 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 后果是精确的，不是笼统的「不够健壮」：
 
 - **它们没有租约行** ⇒ `expire_scan()` 永远看不到它们 ⇒ **接管扫描不可能接管它们**。
-- **`_run_retry` 连任务注册表都没进** ⇒ 起了任务之后没有 `_runner._background_tasks[thread_id] = task`（对比 `:3008` 的 publish-retry 有）⇒ 进程重启后，`/recover` 也看不见它。
+- **`_run_retry` 连任务注册表都没进** ⇒ 起了任务之后没有 `_runner._background_tasks[thread_id] = task`（对比 `backend/api/routes/_wf_actions.py:363` 的 publish-retry 有）⇒ 进程重启后，`/recover` 也看不见它。
 - 于是这两个路径在重启时**既不会被迁移、也不会被接管** —— 而它们恰恰是「上一次执行没走完」时最可能被调用到的路径。
 
 **为什么本片不修。** 两种修法都会改变行为：让它们改走 `_run_graph_and_persist` 会改掉相位推进与事件发射的时序；给它们单独加租约会引入新的拒租分支与新的失败模式。裁定 1 的闸门没开（§0），所以 S4 的产出是**登记**，不是**改动**。
 
-**留给下一任务的输入**（按代价从低到高）：
+**留给下一任务的输入**（按代价从低到高）。两条都带**量出来的**代价，不是估的：
 
-1. 给 `_run_retry` 补注册表写入 —— 一行，与 `:3008` 同形；不改变执行语义，只是让 `/recover` 看得见它。
-2. 让这两个路径也走统一入口（或至少取租约）—— 需要先决定拒租时是「照跑」还是「拒绝」，即重新回答一次裁定 2 在修复路径上的适用性。
+1. **给 `_run_retry` 补注册表写入。** 行数是 1（与 `backend/api/routes/_wf_actions.py:363` 同形），
+   但代价不是行数：`_background_tasks` 是 `process_has_active_task()` 的或条件之一，而那个谓词有
+   两个「读到 True 就不干活」的消费者 —— `backend/api/routes/_wf_actions.py:228` 直接回 `skipped`，
+   `backend/api/routes/_wf_application.py:1675` **静默不 resume**。它还经
+   `backend/api/routes/_runner.py:91` OR 进 `has_active_execution`，波及 7 个状态侧消费者。
+   窗口也不是一瞬间：两个 `submit_and_wait` 由 `backend/api/routes/_wf_actions.py:138` 的
+   `asyncio.gather` **并发**消费，`max_wait = ripple_timeout` ⇒ **1800 秒**。
+   ⇒ 所以它是一次**对换**（今天的「并发写 checkpoint、无人管理」换成长达 30 分钟的静默拒绝/跳过；
+   `/resume` 还会先 `cancel()` 掉在飞的那一个，见 `backend/api/routes/_wf_runtime.py:331`），
+   **不是一次修复**。换不换要裁定，而裁定要带着 1800 这个数字做 —— 「一行」不能作为代价。
+2. **让这两个路径也走统一入口（或至少取租约）。** 需要先决定拒租时是「照跑」还是「拒绝」，
+   即重新回答一次裁定 2 在修复路径上的适用性。今天的形状是：`backend/api/routes/_wf_actions.py` 里
+   `start_lease` 调用 **0** 处，直接 `aupdate_state` **3** 处。
+
+下面两张表把上面这些**位置**与**数值**钉住（前者的机制同 §6；后者由
+`tests/unit/scripts/test_execution_plane_claims.py` 从代码重算）。
+
+<!-- anchor-table:begin -->
+
+| 位置 | 必须出现的 token | 为什么 |
+| --- | --- | --- |
+| `backend/api/routes/_runner.py:390` | `_run_graph_and_persist` | 唯一取租约的执行入口 |
+| `backend/api/routes/_runner.py:418` | `start_lease` | 全仓唯一的 `start_lease(` 调用点 |
+| `backend/api/routes/_wf_actions.py:97` | `_run_retry` | ripple-retry |
+| `backend/api/routes/_wf_actions.py:319` | `_run_publish_retry` | publish-retry |
+| `backend/api/routes/_wf_actions.py:181` | `asyncio.create_task` | ripple-retry 起任务处 —— 它**没有**注册表写入 |
+| `backend/api/routes/_wf_actions.py:363` | `_background_tasks` | publish-retry 有；这是 ripple-retry 缺的那一行 |
+| `backend/api/routes/_runner.py:48` | `process_has_active_task` | 串行化谓词（与状态谓词是两个问题） |
+| `backend/api/routes/_wf_actions.py:228` | `process_has_active_task` | 消费者 1：publish-retry 守卫 |
+| `backend/api/routes/_wf_application.py:1675` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
+| `backend/api/routes/_runner.py:91` | `process_has_active_task` | OR 进 `has_active_execution` 的那一处 |
+| `backend/api/routes/_wf_actions.py:138` | `asyncio.gather` | 两个 submit 的并发消费点 ⇒ 窗口是 1 个 timeout |
+| `backend/api/routes/_wf_actions.py:95` | `ripple_timeout` | 窗口的那个 1800.0 |
+
+<!-- anchor-table:end -->
+
+<!-- claim-table:begin -->
+
+| 主张 | 值 | 怎么重算 |
+| --- | --- | --- |
+| `process_has_active_task_consumers_outside_the_runner` | `2` | `backend/**` 里该谓词的调用点，排除它自己的定义模块 |
+| `status_consumers_of_has_active_execution` | `7` | 同上，换成 `has_active_execution` |
+| `run_graph_and_persist_call_sites` | `12` | 该函数的调用点数 |
+| `start_lease_call_sites_under_backend` | `1` | 全仓 `start_lease(` 的调用点数 |
+| `ripple_retry_max_wait_seconds` | `1800.0` | `ripple_timeout` 的字面值 |
+| `ripple_retry_task_registrations` | `0` | 起该任务的那个函数里有没有把 task 存进 `_background_tasks` |
+| `publish_retry_task_registrations` | `1` | 同上 |
+| `ripple_retry_submits_are_concurrent` | `true` | 两个 submit 的结果是否被**同一个** `asyncio.gather` 消费 |
+
+<!-- claim-table:end -->
 
 ## 8. 这份文档怎么防止腐烂
 
-§6、§6.1 与 §8 末尾的表都由成对的 HTML 注释标记括起来（一类叫 `anchor-table`，一类叫 `anchor-absence`；标记本身只以名字在这里出现，不逐字复述，否则它会被自己的解析器数一遍）。`tests/unit/scripts/test_docs_anchors.py` 会：
+§6、§6.1、§7 与 §8 末尾的表都由成对的 HTML 注释标记括起来（一类叫 `anchor-table`，一类叫 `anchor-absence`；标记本身只以名字在这里出现，不逐字复述，否则它会被自己的解析器数一遍）。`tests/unit/scripts/test_docs_anchors.py` 会：
 
 1. 抽出所有被括起来的表，逐行取 `file:line` 与 token，断言 **token 逐字出现在那一行**；
 2. 断言标记成对、且表里有足够的行（防静默截断 —— 丢一个结束标记，被它包住的整段会静默退出检查）；
@@ -210,3 +261,26 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 这样处理的原因很直白：**文档里的行号会腐烂，而腐烂是静默的。** 把行号变成门禁之后，行号漂移会让 CI 红，而不是让下一个读文档的人照着错的行号去找代码。
 
 同一条纪律在租约侧的先例是 `takeover_safety.py` 的穷举注册表（未知名抛错，而不是回落到一个安全默认值）；在接管侧的先例是 `test_the_only_way_into_the_publisher_is_a_gate`（从 `build_graph()` 的边钉住「前提本身」）。
+
+**散文里的行号是第二档，它的上界要说清。** 上面三张表只覆盖被括起来的部分；散文里还有一批
+`file:line`，它们没有 token 可比，只保证**解析得到、且在范围内**。这一档由
+`tests/unit/scripts/test_execution_plane_claims.py` 检查：带路径的按仓根解析，裸 `:N` 归属到
+**同一节内最近一次出现的完整路径** —— 这是**推断**，不是保证（换个文件之后它会静默指错），
+所以**新写的引用一律写全路径**。
+
+覆盖多少，以及第三档的欠账有多少，本身也是被重算的：
+
+<!-- claim-table:begin -->
+
+| 主张 | 值 | 怎么重算 |
+| --- | --- | --- |
+| `line_number_references_in_this_document` | `102` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
+| `line_numbers_pinned_by_marked_tables` | `56` | 标记表里第一格本身就是 `路径:行号` 的行数 |
+| `bare_line_number_references_in_this_document` | `16` | 其中不带路径的处数 —— 只能被「节内归属」推断，是这一档已知的欠账 |
+
+<!-- claim-table:end -->
+
+★ 这三行是本文件**关于自己**的主张，而它们在这里才第一次被写出来，正因为**它们曾经是错的**：
+上一版的开头写着「本文件里的每条 `file:line` 都由 `test_docs_anchors.py` 钉住」，而当时的真实覆盖
+是 51/84；同一个 §7 里还引用着一个**不可能存在**的行号（3008，而那个文件只有 371 行），它的真实
+位置是 §7 锚点表里的那一行。**机制的自述不会因为机制存在就变准** —— 自述也是承袭来的文字。
