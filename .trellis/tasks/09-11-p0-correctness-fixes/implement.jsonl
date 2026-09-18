@@ -1,5 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/backend/index.md", "reason": "backend 层 Pre-Development Checklist 与规范导航"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "W3 Error taxonomy / W5 fail-closed 必须遵循既有错误处理规范"}
-{"file": ".trellis/spec/backend/workflow-state.md", "reason": "state 新字段(error_class/failed_dimensions/publish_id)须保持 checkpoint 兼容规范"}
-{"file": ".trellis/tasks/09-11-runtime-upgrade/research/p0-claims-verification.md", "reason": "全部 P0 断言的 file:line 证据，实施前逐处核对"}
