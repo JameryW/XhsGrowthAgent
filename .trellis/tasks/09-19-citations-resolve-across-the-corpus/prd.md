@@ -164,3 +164,74 @@ git ls-files '*.md'                    -> 488
 2. **回调要不要**（`_on_task_done` 会把仍 `running` 的工作流标成 `stale`，没有守卫的路径不能照抄）。
 
 两条都来自 `docs/execution-plane.md:216`，且**有顺序**。本片与此无关，不顺手回答。
+
+## 9. 执行记录（S1，2026-09-19）
+
+**落地形状**（与 §5 的切片表一一对应）：
+
+| 计划 | 落地 |
+| --- | --- |
+| 规则搬到一个模块 | 新增 `tests/unit/scripts/docs_citation_rule.py`（246 行）：形状、判别式、语料枚举、`_rot` |
+| 新增语料判据文件 | 新增 `tests/unit/scripts/test_docs_citations.py`（313 行）：**9 条用例** = 2 条语料/扫描 + 2 条搬来的规则夹具 + 5 条判别式夹具 |
+| 判据文件改为消费共享规则 | `test_execution_plane_claims.py` 782 → 617 行：`from docs_citation_rule import _PATH_LINE, _cited`；删掉本地重复实现与 3 条用例（1 条被语料扫描取代、2 条规则夹具搬到规则旁边） |
+| 修那处违规 | `docs/tool-runtime.md:190` 裸基名 → 全路径 |
+| 自述修正 | `docs/execution-plane.md` 321 → 334 行，§8 的散文档自述 |
+
+★ **计数换了语义而数字没动**：`_cited` 现在只数**被判为引用**的 token，而 `docs/execution-plane.md`
+的三个自覆盖数（114 / 60 / 17）经复核**一字不变** —— 它那 97 处带路径的引用全部解析得到。
+这是**复核出来的**，不是推出来的（本片最该防的就是「换了语义，数字看着差不多就放过」）。
+
+### 9.1 跑起来才暴露的（原以为 vs 实测）
+
+| # | 原以为 | 实测 |
+| --- | --- | --- |
+| 1 | 5 份文档在引用行号（`deployment` / `security` / `CLAUDE.md` / `exec-plane` / `tool-runtime`） | 判别之后只有 **2** 份 —— 前三份**一个引用都没有**。第一版下界断言（≥5）就是照那个原始数字写的，跑起来当场判红 ⇒ **照原始计数写的下界，会把误报按构造保留下来** |
+| 2 | `_how` 的四条分支「先问树」 | 少了「**有斜杠即路径**」这一支：`backend/api/old/_runner.py:2`（一条漂移的全路径）被报成「裸基名，你是想说 `backend/api/routes/_runner.py` 吧」。夹具（两条路径同处一个合成树、一条真一条假）当场红 |
+| 3 | 修 `tool-runtime.md:190` 只是把引用写全 | **语义也变了**：修完之后紧跟它的裸 `:119` 才第一次被纳入范围检查（此前归属路径解析不到 ⇒ `_size` 返回 `None` ⇒ 静默跳过） |
+| 4 | 语料枚举用 `git ls-files` 才权威 | 走树 **0.02 s**、891 个文件，与 `git ls-files`（2338 个，含点目录）在语料上**完全一致** ⇒ 用文件系统走树，不引入对 git 的依赖，也不受「未跟踪文件」影响 |
+
+### 9.2 量化（2026-09-19 对树实测，权威口径）
+
+| 量 | 值 |
+| --- | --- |
+| 语料（自有 md，路径分量无点开头） | **29**（`docs/` 22 + 仓根 6 + `frontend/` 1） |
+| 原始 backticked `name:digits` token | **122** |
+| 判别为引用 | **118**（剔掉 4 个：`postgres:15` ×2、`localhost:8000`、`host.containers.internal:9223`） |
+| 有引用的文档 | **2** |
+| 树里文件 / 重名基名 | **891** / **94** |
+
+### 9.3 门禁
+
+| 门禁 | 结果 |
+| --- | --- |
+| `pytest tests/ -q` | **3658 passed / 3 skipped**（上一片 3652 ⇒ **+6** = 9 新 − 3 搬走） |
+| `ruff check .` | All checks passed |
+| `ruff format --check .` | **548 files**（+2 = 新文件数） |
+| `mypy backend --python-version 3.12` | **217 source files**（不变 ⇒ 生产代码零改动） |
+| Context Compiler Baseline | OK（drift within threshold） |
+| Tool Runtime Gate | OK |
+| 突变自检 | **18/18 杀死**，零存活 / 零 TOO WEAK / 零 UNWITNESSED / 零 ERROR，`restore=OK` |
+
+突变里最值钱的三条：
+
+- **M16**：把 `docs/tool-runtime.md:190` 的裸基名**改回来** ⇒ 语料扫描红。证明扫描器读的是**真语料**，
+  而不是它自己造出来的样本。
+- **M17**：往 `CLAUDE.md` 塞一条假的 `backend/nope/nowhere.py:3` ⇒ 语料扫描红。证明语料**不止 `docs/`**。
+- **M15**：把 `_PATH_LINE` 收窄成只认 `backend/` ⇒ `docs/execution-plane.md` 的 `114` 主张红。
+  证明 exec-plane 的判据读的**就是**这份共享规则 —— **单一所有者不是口号**。
+
+### 9.4 登记未修（本片不假装它们不存在）
+
+1. **残差**：既无斜杠、名字不在树里、后缀也不在树里出现的 token 会被跳过（例如在别处写的
+   `some_other_repo.py:5`）。这是**故意**的 —— 本仓规范是引用一律写全路径，所以这条残差只覆盖
+   **本来就违反**那段规范的文字；带斜杠的错字一条都跑不掉。
+2. **裸 `:N` 的归属仍是节内推断**（同一节内最近一次出现的完整路径）。换文件之后它会静默指错 ——
+   与上一版相同，未变。
+3. **只有 `docs/execution-plane.md` 有标记表**（`anchor-table` / `anchor-absence`）。其余 28 份
+   没有，本片**不建** —— 建表要求逐条钉 token，那是另一件事。
+
+### 9.5 下一入口
+
+仍是 `docs/execution-plane.md:216` 的那两问，且**有顺序**：**守卫答什么**（`process_has_active_task`
+在 ripple-retry 路径上应当回答什么），然后**回调要不要**（`_on_task_done` 会把仍 `running` 的
+工作流标成 `stale`）。都要带着 **1800 秒**窗口做。本片与此无关，未动。

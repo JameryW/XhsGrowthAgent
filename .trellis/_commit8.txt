@@ -1,0 +1,32 @@
+docs: 让「引用必须解析得到」覆盖整个文档语料，并给出判别式（host:port 不是引用）
+
+问题
+- `docs/execution-plane.md` §8 宣布「新写的引用一律写全路径」，而执行它的机制只覆盖 29 份自有
+  md 里的 1 份 —— 而且已经有一处违规：`docs/tool-runtime.md:190` 用裸基名写引用。
+- 推广时立刻撞上四个形状完全相同的 token，其中三个根本不是引用：`localhost:8000`、
+  `host.containers.internal:9223`、`postgres:15`。今天的规则对四个一律只报 no such file，
+  区分不了「文档写错了」与「文档在说一个端口」—— 所以真正缺的是**判别式**，不是例外表。
+
+设计
+- 判别式从树里推：一个不带斜杠的 token 算引用，当且仅当树里有文件**叫这个名字**，或者树里有
+  文件**是这个类型**（后缀）。后者是推出来的集合而不是白名单，所以 `Dockerfile:81` 走「它就是
+  一个文件」那一支，不会被漏掉。
+- 规则搬进 `tests/unit/scripts/docs_citation_rule.py`（唯一实现），
+  `test_execution_plane_claims.py` 改为 import —— 不允许存在两个「什么算引用」的答案。
+- 两侧都有夹具：同一段文字放进一个「有这些文件名」的合成树里，判决必须翻转。
+
+迁移了什么
+- 新增 `tests/unit/scripts/docs_citation_rule.py`、`tests/unit/scripts/test_docs_citations.py`（9 条用例）
+- `tests/unit/scripts/test_execution_plane_claims.py` 删掉本地重复实现（3 条用例：1 条被语料扫描取代、
+  2 条规则夹具搬到规则旁边），保留它自己的覆盖率主张（114 / 60 / 17 不变）
+- `docs/tool-runtime.md:190` 裸基名 → 全路径。这是唯一的内容改动，而且**不是排版**：修完之后紧跟
+  它的那个裸 `:119` 才第一次被纳入范围检查（此前它的归属路径解析不到，静默跳过）
+- `docs/execution-plane.md` §8 自述修正：责任区从「本文件」改成语料，写出判别式与已知残差，并说明
+  为什么**不**在这里复述语料的份数与引用处数
+
+门禁
+- pytest tests/ -q：3658 passed / 3 skipped（上一片 3652 ⇒ +6 = 9 新用例 − 3 条搬走）
+- ruff check .：All checks passed
+- ruff format --check .：548 files（+2 = 新文件数）
+- mypy backend --python-version 3.12：217 source files（不变 ⇒ 生产代码零改动）
+- context compiler baseline / tool runtime gate：OK
