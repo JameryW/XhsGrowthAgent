@@ -164,6 +164,8 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
 - **`backend/api/routes/_wf_actions.py:101`** 的 ripple-retry 路由仍直调
   `RippleService.submit_and_wait` —— 刻意绕开 health-check 与 fallback。属 API
   层，门禁不覆盖它；迁移属于后续任务。
+  - 同文件 `:119` 还有**第二处**（PMF 那一支）；本节原先只点了第一处。两处都在
+    `_run_retry()` 里，都走 `ripple.submit_and_wait`，都不经 Gateway。
 - **L1 参数类型是原样反射的**：LangChain 工具给 JSON-schema 的 `string`，普通函数
   给注解名（`dict[str, Any]`）。没有归一化 —— P2c 真要把 schema 交给模型调工具时
   需要一个统一口径。
@@ -172,3 +174,23 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
   这张表。所以**今天唯一真的能提供凭据的来源是部署级的 `XHS_COOKIE`**
   （`.env.example` 里声明、P2a-S5a 之前无人读）；per-account 那一行读路径是通的、
   也是优先的，但在登录流程开始写它之前一直是空的。写它属于后续任务。
+
+**可重算的部分发布成值（下面的表），量不出来的那一条不编谓词。**
+
+「L1 参数类型是原样反射的、没有归一化」**不是树的形状，是一个设计判断** —— 它可以被读出来、
+被争论，但没法被一个扫描器证实或证伪。按 `docs/planning.md` 的先例（量不出来的主张宁标
+「未重量」也不写一个恒真的检查），它**留在上面的散文里、不进表**。给一条设计判断编一个
+恒真的谓词，等于给自己发一张写着「已复核」的收据。
+
+<!-- claim-table:begin -->
+
+| 主张 | 发布的值 | 复核方式 |
+| --- | --- | --- |
+| `api_route_modules_importing_ripple_service` | `3` | AST：`backend/api/routes/*.py` 里 import `RippleService` 的文件数 |
+| `ripple_service_direct_call_sites_in_api_routes` | `2` | 正则：这几个文件里 `ripple.submit_and_wait(` 的出现次数（`_wf_actions.py:101` 与 `:119`） |
+| `tool_gate_allowed_prefix` | `backend.tools.runtime.` | 读 `backend/tools/runtime/audit.py` 的 `_ALLOWED_PREFIX` —— 门禁只覆盖这一个包，本节第一条的前提 |
+| `account_credentials_inserts` | `0` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（与 `publish-action-protocol.md` 同一条事实，**刻意的重复**：两份文档各自要被单独读懂） |
+
+<!-- claim-table:end -->
+
+L1 归一化那一条**未重量**；表里没有它的行，不是漏了，是不给它编谓词（理由见上）。
