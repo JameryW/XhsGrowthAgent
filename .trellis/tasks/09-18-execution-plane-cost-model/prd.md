@@ -131,3 +131,68 @@ _wf_actions.py:97/_run_retry, :319/_run_publish_retry  ✅
 
 - **§7 第 1 条该不该真的去做（注册 ripple-retry 任务）？** 本片只把代价钉住，不做对换。
   裁定要在「并发写 checkpoint」与「30 分钟静默拒绝/跳过」之间选，本片两面都留了数字。
+
+## 9. 执行记录（S1，2026-09-18）
+
+**落地**：`docs/execution-plane.md` 八处改动 + 新建 `tests/unit/scripts/test_execution_plane_claims.py`
+（**10 条用例**）。**生产代码零改动**（只改 `docs/**` 与 `tests/**`）。
+
+**发布的主张与实测值**（§7 八个 + §8 三个，全部由判据从代码重算）：
+
+| id | 值 | 出现在 |
+|---|---|---|
+| `process_has_active_task_consumers_outside_the_runner` | `2` | §7 |
+| `status_consumers_of_has_active_execution` | `7` | §7 |
+| `run_graph_and_persist_call_sites` | `12` | §7 |
+| `start_lease_call_sites_under_backend` | `1` | §7 |
+| `ripple_retry_max_wait_seconds` | `1800.0` | §7 |
+| `ripple_retry_task_registrations` | `0` | §7 |
+| `publish_retry_task_registrations` | `1` | §7 |
+| `ripple_retry_submits_are_concurrent` | `true` | §7 |
+| `line_number_references_in_this_document` | `102` | §8 |
+| `line_numbers_pinned_by_marked_tables` | `56` | §8 |
+| `bare_line_number_references_in_this_document` | `16` | §8 |
+
+**修掉的引用腐烂**：`:3008` ×2（文件只有 371 行）· `_wf_models.py:31` / `_takeover.py:136` /
+`_takeover.py:105`（裸文件名，从仓根解析不到）· §0 自称「每条 `file:line` 都由
+`test_docs_anchors.py` 钉住」而实测 51/84 ⇒ **机制的自述也是承袭来的文字**。
+
+**§7 第 1 条重写后的形状**：行数确实是 1，但代价不是行数。`_background_tasks` 是
+`process_has_active_task()` 的或条件 ⇒ 两个消费者读到 True 都不干活（`:228` 回 `skipped`、
+`:1675` 静默不 resume），且经 `_runner.py:91` 波及 `has_active_execution` 的 7 个状态侧消费者；
+窗口 1800 秒（两个 submit 由 `:138` 的 `gather` 并发）⇒ 它是**对换**，不是修复。
+
+**突变自检：17/17 杀死**（零存活、零 TOO WEAK；每条指名见证者，突变前重写、之后复验基线仍绿）：
+
+发布值漂移（×6，含零值主张被写成非零）· 丢弃一行主张（孤儿重算器）· 发布一条没有重算器的行 ·
+删掉一个 `claim-table:end` · **把 `:3008` 原样放回** · 引用丢掉目录 · 行号越界一格
+（由既有 `test_docs_anchors.py` 抓）· 消费者扫描忘了排除定义模块 · 并发扫描被写死成常量 ·
+注册扫描不再找那一次存储 · 解析规则被掏空成常量 · 裸引用按类别分组（归属错文件）。
+
+★ **解析规则的第一版就有 bug，而且是跑真文档时抓到的**：它把同一行的所有路径与所有裸引用分两批
+处理，于是 §0 那行（`_wf_application.py:271` → `:275` → `_wf_models.py:31`）里的 `:275` 被归给了
+**后面**那个 195 行的文件。修法是按位置排序；并把「裸引用归属同行的前一个路径」写成**带区分力**的
+夹具（`:9` 在 11 行文件里合法、在 3 行文件里越界）⇒ 归属错的规则无法沉默通过。
+
+★ **模式不带扩展名白名单**：早一版列了扩展名，于是静默漏掉 `Dockerfile:81`。**看不见的引用
+不可能红**，而白名单正是引用藏身的地方。
+
+**门禁**（2026-09-18）：
+
+| 门禁 | 结果 |
+|---|---|
+| `pytest tests/ -q` | **3648 passed / 3 skipped** —— 上一片 3638 ⇒ **+10 = 恰好 10 条新用例**，零既有用例被改动 |
+| `ruff check .` | All checks passed |
+| `ruff format --check .` | **546 files**（545 ⇒ **+1**，就是新文件） |
+| `mypy backend --python-version 3.12` | 217 source files（不变） |
+| Context Compiler Baseline | drift within threshold |
+| Tool Runtime Gate | OK |
+
+★ 两条免费的强断言又都对上：**passed 增量 = 新用例数**，**ruff 文件数增量 = 新文件数**。
+
+**工具侧的一处事故（记在这里因为它是可复现的）**：
+`git checkout -- docs/execution-plane.md tests/unit/scripts/test_execution_plane_claims.py` ——
+其中一个路径**未跟踪**，git 在 pathspec 阶段就整体失败、**什么都没回退**，而我据此以为「改动已丢」
+并差点重做。⇒ **`git checkout --` 的成败必须看退出码，不能看随后的 `git status`**：未跟踪文件
+根本不出现在 diff 里，「工作树干净」与「命令没执行」长得一模一样。本片改完**立刻提交**，
+就是为了让这类误判不再有代价。

@@ -3,7 +3,7 @@
   "name": "execution-plane-cost-model",
   "title": "§7 的代价模型要能被重算，全文行号要能被解析",
   "description": "docs/execution-plane.md §7 的「留给下一任务的输入」把一次行为对换写成「一行、不改变执行语义」；同一节还引用了不可能存在的 :3008。本片把 §7 的代价模型变成可重算的判据，并让全文每个行号引用都必须能解析。",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,16 +11,19 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "feat/execution-plane-claims",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "e7ba2b6c",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
-  "relatedFiles": [],
-  "notes": "",
+  "relatedFiles": [
+    "docs/execution-plane.md",
+    "tests/unit/scripts/test_execution_plane_claims.py"
+  ],
+  "notes": "S1 已交付（本片独立 PR）。改的是 docs/execution-plane.md 八处 + 新增 tests/unit/scripts/test_execution_plane_claims.py（10 条用例），生产代码零改动。发布 11 条主张（§7 八个数值 + §8 三个本文档自我覆盖数），三向闭环，突变自检 17/17 杀死。四道门禁全绿：3648 passed / 3 skipped（+10 = 新用例数）、ruff 546 files（+1 = 新文件数）、mypy 217、baseline OK、tool gate OK。★ 核心产出是把「补一行、不改变执行语义」改成可重算的对换模型：消费者 2（定义模块外）+ 状态侧 7 + 窗口 1800s（两个 submit 是 gather 并发）。★ 顺带修掉 4 类引用腐烂（`:3008`×2、3 处裸文件名、§0 自述 51/84）。★ 待决裁定未动：注册 ripple-retry 任务是「并发写 checkpoint」⇄「30 分钟静默拒绝/跳过」的对换，两面数字都留在 §7，裁定要带着 1800 做。",
   "meta": {}
 }
