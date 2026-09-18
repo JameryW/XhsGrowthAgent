@@ -41,6 +41,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from docs_citation_rule import _PATH_LINE, _cited
+
 REPO = Path(__file__).resolve().parents[3]
 DOC = REPO / "docs" / "execution-plane.md"
 BACKEND = REPO / "backend"
@@ -57,13 +59,9 @@ _ANCHOR_TABLES = re.compile(
 # meaning.  Header and separator rows have no backticks, so they drop.
 _ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|", re.MULTILINE)
 
-# The two shapes a cited line number takes.  They are disjoint: the first needs
-# at least one path character before the colon, the second has none.  The first
-# also accepts a range (`path:357-359`), because prose uses ranges and a pattern
-# that cannot see one would silently skip both ends -- the same hole an extension
-# whitelist made for `Dockerfile:81`.
-_PATH_LINE = re.compile(r"`([A-Za-z0-9_./-]+):(\d+)(?:-(\d+))?`")
-_BARE_LINE = re.compile(r"`:(\d+)`")
+# The citation rule lives in ``docs_citation_rule.py``: it stopped being about this
+# document when it started sweeping the corpus.  ``_PATH_LINE`` and ``_cited`` come
+# from there, so there is exactly one answer to "what counts as a citation".
 
 
 def _render(value: Any) -> str:
@@ -271,88 +269,7 @@ def _started_coroutine_cleans_up(path: Path, handler: str) -> int:
     return 0
 
 
-# ── document scans ───────────────────────────────────────────────────────────
-
-
-def _cited(text: str) -> tuple[list[tuple[str, str, str | None]], list[int]]:
-    """Every cited line number in *text*: ``path``/start/end triples, and bare lines.
-
-    A range counts as one citation here and as two checked ends in :func:`_rot` --
-    the count answers "how much prose cites the tree", the check answers "does it
-    still point there".
-    """
-    return _PATH_LINE.findall(text), [int(n) for n in _BARE_LINE.findall(text)]
-
-
-def _size(root: Path, relative: str) -> int | None:
-    target = root / relative
-    if not target.is_file():
-        return None
-    return len(target.read_text(encoding="utf-8", errors="replace").splitlines())
-
-
-def _citations(line: str) -> list[tuple[int, str, re.Match[str]]]:
-    """Every citation on one line, **in the order it appears**.
-
-    Order is the whole semantics of a bare ``:N``: it means the path that precedes
-    it *in the line*.  A line can cite two files -- §0 does, ``..._wf_application.py:271
-    ... :275 ... _wf_models.py:31`` -- so collecting every path first and every
-    bare number second attributes the bare one to the wrong file.  (This test
-    caught exactly that in its own first version: it reported ``:275`` as past the
-    end of a 195-line file that the line only mentions *after* it.)
-    """
-    items = [(match.start(), "path", match) for match in _PATH_LINE.finditer(line)]
-    items += [(match.start(), "bare", match) for match in _BARE_LINE.finditer(line)]
-    return sorted(items, key=lambda item: item[0])
-
-
-def _rot(text: str, root: Path) -> list[str]:
-    """Every way a cited line number can fail to resolve, as readable complaints.
-
-    Five forms, all of them real: a path that is not there (``_takeover.py:136`` --
-    a basename where the line above it has the full path), a line past the end
-    (``:3008`` in a 371-line file), a bare reference attributed past the end, a
-    bare reference with no path before it to attribute it to, and a range whose
-    ends disagree with the file.
-    """
-    problems: list[str] = []
-    section = ""
-    last: str | None = None
-    for number, line in enumerate(text.splitlines(), start=1):
-        if line.startswith("## "):
-            section, last = line.strip(), None
-        for _, kind, match in _citations(line):
-            if kind == "path":
-                path, start, end = match.group(1), int(match.group(2)), match.group(3)
-                last = path
-                size = _size(root, path)
-                if size is None:
-                    problems.append(f":{number} {path}:{start} -> no such file")
-                    continue
-                if end is None:
-                    if not 0 < start <= size:
-                        problems.append(f":{number} {path}:{start} -> past the end ({size} lines)")
-                    continue
-                stop = int(end)
-                if start > stop:
-                    problems.append(f":{number} {path}:{start}-{stop} -> the range runs backwards")
-                    continue
-                for cited in (start, stop):
-                    if not 0 < cited <= size:
-                        problems.append(
-                            f":{number} {path}:{start}-{stop} -> {cited} is past the end "
-                            f"({size} lines)"
-                        )
-                        break
-                continue
-            bare = int(match.group(1))
-            if last is None:
-                problems.append(f":{number} :{bare} -> bare, no path before it in {section!r}")
-                continue
-            size = _size(root, last)
-            if size is not None and not 0 < bare <= size:
-                problems.append(f":{number} :{bare} -> {last} past the end ({size} lines)")
-    return problems
+# ── the marked tables ─------------------------------------------------------------
 
 
 def _pinned_rows(text: str) -> list[str]:
@@ -423,9 +340,11 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
     ),
     "publish_retry_self_cleanups": lambda: _started_coroutine_cleans_up(ACTIONS, "retry_publish"),
     # §8 -- how much of this document its own tables actually cover
-    "line_number_references_in_this_document": lambda: sum(len(part) for part in _cited(_DOC_TEXT)),
+    "line_number_references_in_this_document": lambda: sum(
+        len(part) for part in _cited(_DOC_TEXT, REPO)
+    ),
     "line_numbers_pinned_by_marked_tables": lambda: len(_pinned_rows(_DOC_TEXT)),
-    "bare_line_number_references_in_this_document": lambda: len(_cited(_DOC_TEXT)[1]),
+    "bare_line_number_references_in_this_document": lambda: len(_cited(_DOC_TEXT, REPO)[1]),
 }
 
 
@@ -467,20 +386,6 @@ def test_no_recalculator_is_left_behind_by_the_document():
     """The backward direction: a dropped row shows up as an orphaned checker."""
     missing = sorted(set(_CLAIMS) - set(_published()))
     assert not missing, f"these claims have a recalculator but are published nowhere: {missing}"
-
-
-def test_every_cited_line_number_in_this_document_resolves():
-    """The second tier: resolvable and in range, for every reference in the document.
-
-    The count itself is not repeated here: the document publishes it, and a copy in
-    a docstring is a second writer that nobody recomputes.
-    """
-    problems = _rot(_DOC_TEXT, REPO)
-    detail = "\n  ".join(problems)
-    assert not problems, (
-        "docs/execution-plane.md cites line numbers that do not resolve. Write the full "
-        f"repo-relative path -- a bare basename resolves against nothing:\n  {detail}"
-    )
 
 
 # ── the difference itself ────────────────────────────────────────────────────
@@ -625,75 +530,6 @@ def test_the_concurrency_scan_answers_false_for_sequential_submits(tmp_path: Pat
     )
     assert _submits_are_concurrent(gathered, "_run_retry") is True
     assert _submits_are_concurrent(sequential, "_run_retry") is False
-
-
-def test_the_line_number_rule_reports_all_four_ways_a_reference_rots(tmp_path: Path):
-    """Positive control for the resolvability rule itself.
-
-    A rule that returned ``[]`` would keep every reference in the document "fine".  The fixture
-    is a miniature of the real document's damage, one section per failure mode:
-    a basename with no directory, a line past the end, a bare reference past the
-    end, and a bare reference with nothing before it to attribute it to.
-    """
-    root = _pkg(tmp_path)
-    _write(root, "backend/api/routes/_takeover.py", "x = 1\ny = 2\n")
-    _write(root, "backend/api/routes/_wf_actions.py", "\n".join(f"line {n}" for n in range(1, 12)))
-    text = (
-        "## 1. first\n"
-        "\n"
-        "`_takeover.py:2` is a basename\n"
-        "\n"
-        "## 2. second\n"
-        "\n"
-        "`backend/api/routes/_takeover.py:9` is past the end\n"
-        "\n"
-        "## 3. third\n"
-        "\n"
-        "`backend/api/routes/_wf_actions.py:4` is fine, then `:99` is not\n"
-        "\n"
-        "## 4. fourth\n"
-        "\n"
-        "`:3` has nothing before it\n"
-    )
-    problems = _rot(text, root)
-    assert len(problems) == 4, f"every failure mode must be reported: {problems}"
-    assert any("no such file" in p for p in problems), problems
-    assert any("past the end (2 lines)" in p for p in problems), problems
-    assert any("_wf_actions.py past the end (11 lines)" in p for p in problems), problems
-    assert any("no path before it" in p for p in problems), problems
-    # and the healthy half of the same fixture is silent -- a rule that flagged
-    # every reference would satisfy the four assertions above and prove nothing
-    healthy = _rot("## 1. first\n\n`backend/api/routes/_takeover.py:2` is fine\n", root)
-    assert healthy == [], healthy
-
-
-def test_a_bare_reference_belongs_to_the_path_before_it_on_its_own_line(tmp_path: Path):
-    """A line can cite two files; the bare number belongs to the first one.
-
-    This is the rule's own first bug, and it was found by running it against the
-    real document: §0 cites ``_wf_application.py:271`` then ``:275`` then
-    ``_wf_models.py:31`` on one line, and a version that collected every path
-    first and every bare number second attributed ``:275`` to the 195-line file
-    the line only mentions *afterwards*.
-
-    The fixture **discriminates**: ``:9`` resolves inside the 11-line file but is
-    past the end of the 3-line one, so a misattributing rule cannot stay silent
-    here.  The second half pins the direction -- the complaint must name the file
-    the number actually follows.
-    """
-    root = _pkg(tmp_path)
-    _write(root, "backend/api/routes/_wf_application.py", "\n".join(f"l{n}" for n in range(1, 12)))
-    _write(root, "backend/api/routes/_wf_models.py", "\n".join(f"l{n}" for n in range(1, 4)))
-    line = (
-        "`backend/api/routes/_wf_application.py:4` then `:9` "
-        "then `backend/api/routes/_wf_models.py:2`\n"
-    )
-    assert _rot("## 1. one line, two files\n\n" + line, root) == [], "both references resolve"
-
-    past = line.replace("`:9`", "`:99`")
-    problems = _rot("## 1. one line, two files\n\n" + past, root)
-    assert len(problems) == 1, problems
-    assert "_wf_application.py past the end (11 lines)" in problems[0], problems[0]
 
 
 def test_the_done_callback_scan_can_see_a_callback(tmp_path: Path):
