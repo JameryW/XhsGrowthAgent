@@ -2,6 +2,7 @@
 
 > 票 `09-19-ripple-retry-serialization` · 分支 `feat/ripple-retry-serialization` · 基线 `47ed1666`
 > 前置：`docs/execution-plane.md` §7（由 #631 钉代价、#632 钉形状）
+> 交付：PR **#634** · commit `044c179f`（PR 号回填这一笔）
 
 ## 0. 这一片要回答什么
 
