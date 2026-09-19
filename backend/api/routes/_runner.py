@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from langgraph.store.base import BaseStore
     from langgraph.types import StateSnapshot
 
+    from backend.db.execution_leases import AcquireOutcome
     from backend.db.workflows import WorkflowRow
 
 from backend.realtime import EventBusService
@@ -388,8 +390,22 @@ def _fence_on_lost_lease(thread_id: str, heartbeat: asyncio.Task[None]) -> async
     return lost
 
 
+@dataclass(frozen=True, slots=True)
+class LeaseFence:
+    """What a lease-holding block sees: which answer, and where the fence fires.
+
+    ``outcome`` is what ``start_lease`` decided; ``lost`` is the event the fence
+    sets. They belong together because a caller's first question is "do I have
+    the row, and if somebody else does, what now" -- and the answer differs by
+    caller, so this helper reports the pair instead of ruling on it.
+    """
+
+    outcome: AcquireOutcome
+    lost: asyncio.Event
+
+
 @contextlib.asynccontextmanager
-async def _execution_lease(thread_id: str) -> AsyncIterator[asyncio.Event]:
+async def _execution_lease(thread_id: str) -> AsyncIterator[LeaseFence]:
     """Hold this thread's lease for the block, and fence on losing it.
 
     **The single place a lease is taken.** Three executors use it: the unified
@@ -398,28 +414,45 @@ async def _execution_lease(thread_id: str) -> AsyncIterator[asyncio.Event]:
     point -- a second copy is how the two drift, and the lease is the only fact
     about a thread that outlives the process running it.
 
-    A refusal is neither an error nor a gate (P2b ruling 2): ``start_lease``
-    answers ``None`` when it cannot get the row, and the block runs anyway --
-    with no fence, because there is nothing to fence. Gating here would fail
-    closed whenever the store cannot reply, which is how a lease stops being
-    observational.
+    The block always runs (P2b ruling 2), but *what it yields* says which answer
+    the store gave. UNKNOWN -- a store that cannot reply, or one that will not
+    import -- and GRANTED are not gates. HELD_BY_LIVE_OWNER is: it is evidence
+    that another instance is mid-write, so a caller about to write has to stand
+    down. This helper deliberately rules on none of that. It reports, its three
+    callers decide, and they do not all decide alike.
 
-    The yielded event is set when the lease was lost, so a caller catching
+    ``lost`` is set when the lease was lost, so a caller catching
     ``CancelledError`` can tell a fence-cancel from a user cancel. The fence
     target is ``asyncio.current_task()`` (see :func:`_fence_on_lost_lease`), so
     a caller need not be in ``_background_tasks`` to be fenced.
     """
+    from backend.db.execution_leases import AcquireOutcome
+
+    # UNKNOWN is the starting value because it is the answer to "we could not
+    # ask": a store that will not import is as unable to reply as one that will
+    # not connect, and both have to leave the block runnable (ruling 2).
+    outcome = AcquireOutcome.UNKNOWN
     heartbeat: asyncio.Task[None] | None = None
-    with contextlib.suppress(Exception):
+    hold = None
+    try:
         from backend.db.execution_leases import start_lease
 
-        heartbeat = await start_lease(thread_id)
+        hold = await start_lease(thread_id)
+    except Exception:
+        hold = None
+    if hold is not None:
+        # Read *outside* the guard on purpose: a ``start_lease`` answering with
+        # the wrong shape is a bug here or in a test's stand-in, and folding it
+        # into UNKNOWN would turn that into "we could not ask" -- the fixture
+        # answering for the code under test.
+        outcome = hold.outcome
+        heartbeat = hold.heartbeat
 
     lost = asyncio.Event()
     if heartbeat is not None:
         lost = _fence_on_lost_lease(thread_id, heartbeat)
     try:
-        yield lost
+        yield LeaseFence(outcome=outcome, lost=lost)
     finally:
         # Best-effort teardown. A cancelled task may not reach this await at
         # all; the lease then goes silent and expires, which is the property
@@ -454,7 +487,12 @@ async def _run_graph_and_persist(
     # P2b-S1/S2/S3: the lease is the fact ``has_active_execution`` reads first, and
     # it fences its own owner. One implementation, shared with the two repair paths
     # in ``_wf_actions.py`` -- see :func:`_execution_lease`.
-    async with _execution_lease(thread_id) as lease_lost:
+    # The outcome is deliberately not consulted here. This entry's refusal
+    # semantics belong to the endpoints that call it (/recover admits only
+    # error/stale), and gating on the lease would fail closed whenever storage is
+    # unreachable -- P2b ruling 2. The two repair paths in ``_wf_actions.py`` do
+    # consult it; this is where the unified entry's answer differs from theirs.
+    async with _execution_lease(thread_id) as lease:
         try:
             result = await graph.ainvoke(input_data, config)
 
@@ -507,7 +545,7 @@ async def _run_graph_and_persist(
             # P2b-S3: a fence-cancelled run must not write a status. Whoever holds
             # the lease owns this row now; writing "cancelled" here would erase the
             # takeover that just started.
-            if lease_lost.is_set():
+            if lease.lost.is_set():
                 raise
             # Only update DB if this task is still the registered one —
             # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)

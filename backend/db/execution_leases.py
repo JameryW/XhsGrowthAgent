@@ -41,6 +41,11 @@ Five properties this module owns:
   and cannot outlive it; :func:`durability` is the single reader that says
   ``none`` there, instead of every caller inventing its own ``try/except``
   (P2b ruling 2).
+- **A refusal says which refusal.** :func:`acquire_outcome` answers GRANTED,
+  HELD_BY_LIVE_OWNER or UNKNOWN, and the three are different answers rather
+  than three spellings of ``False``: the middle one is evidence about the row,
+  the last is the absence of evidence, and callers act on them differently --
+  one is a gate, the other is not.
 
 Following ``db/workflow_events.py`` and
 ``.trellis/spec/backend/database-guidelines.md``: PostgreSQL in production and
@@ -99,6 +104,26 @@ class LeaseDurability(StrEnum):
     NONE = "none"
 
 
+class AcquireOutcome(StrEnum):
+    """What the store said when asked to grant the lease.
+
+    A ``bool`` answered this question until now, and it carried three different
+    meanings: granted, a live foreign owner refused it, and the store could not
+    be asked at all. The three are not interchangeable to callers -- the second
+    is a fact about the row, the third is the absence of one, and a caller about
+    to write a checkpoint has to act differently on them.
+    """
+
+    #: The row is now this instance's.
+    GRANTED = "granted"
+    #: A foreign owner's heartbeat is inside its own budget. Someone else is
+    #: writing this thread; a caller about to write must stand down.
+    HELD_BY_LIVE_OWNER = "held_by_live_owner"
+    #: The store could not be asked, or the question was empty. Nothing is
+    #: known about the row -- which is not the same as knowing it is free.
+    UNKNOWN = "unknown"
+
+
 @dataclass(slots=True)
 class LeaseRecord:
     """One thread's lease, including the budget it is judged against."""
@@ -121,6 +146,20 @@ class LeaseRecord:
         A released lease is never stale — it was handed back on purpose.
         """
         return self.state is LeaseState.HELD and self.expires_at() <= now
+
+
+@dataclass(frozen=True, slots=True)
+class LeaseHold:
+    """The answer :func:`start_lease` gives: which outcome, and its heartbeat.
+
+    A tuple would carry the same two values and lose the one thing a caller
+    needs at 3am: which is which. ``heartbeat`` is ``None`` unless the outcome
+    is GRANTED -- there is nothing to renew when the row was not taken -- so
+    the pair is not free to vary and is worth naming.
+    """
+
+    outcome: AcquireOutcome
+    heartbeat: asyncio.Task[None] | None
 
 
 def _utcnow() -> datetime:
@@ -202,7 +241,10 @@ CREATE INDEX IF NOT EXISTS idx_execution_leases_expiry
 # the incoming caller's. That refusal is the only place the "no two writers on
 # one checkpoint" property lives (P2b red line 4) -- implemented once per
 # backend, so the two must answer alike. S1 ignored it; the takeover scan is
-# its first consumer.
+# its first consumer, and it treats every non-grant as final. The reason a grant
+# was refused is now a value (``AcquireOutcome``) rather than a bare ``False``:
+# callers that must tell "someone else has it" from "we cannot ask" read it
+# instead of re-deriving it from this WHERE clause.
 _ACQUIRE_SQL = """
 INSERT INTO execution_leases (
     thread_id, owner_id, owner_started_at, acquired_at, heartbeat_at,
@@ -281,7 +323,7 @@ def _record_from_row(row: Any) -> LeaseRecord:
     )
 
 
-def _acquire_in_memory(thread_id: str, ttl_seconds: float) -> bool:
+def _acquire_in_memory(thread_id: str, ttl_seconds: float) -> AcquireOutcome:
     now = _utcnow()
     existing = _mem_leases.get(thread_id)
     # Mirrors the SQL, including the clause that is easy to miss: only a
@@ -290,13 +332,19 @@ def _acquire_in_memory(thread_id: str, ttl_seconds: float) -> bool:
     # refusing those would deny a takeover the SQL grants, leaving the two
     # backends answering the same question differently. The caller's TTL is
     # what it would apply if it won, not a verdict about the holder.
+    #
+    # The three conditions below *are* the definition of HELD_BY_LIVE_OWNER: a
+    # held row, a foreign owner, a heartbeat inside its own budget. The SQL
+    # backend reaches the same three through ``_ACQUIRE_SQL``'s WHERE. This
+    # backend cannot answer UNKNOWN -- it cannot fail -- and that asymmetry is
+    # what naming the outcomes removes.
     if (
         existing is not None
         and existing.state is LeaseState.HELD
         and existing.owner_id != _instance_id
         and not existing.is_stale(now=now)
     ):
-        return False
+        return AcquireOutcome.HELD_BY_LIVE_OWNER
     _mem_leases[thread_id] = LeaseRecord(
         thread_id=thread_id,
         owner_id=_instance_id,
@@ -306,41 +354,66 @@ def _acquire_in_memory(thread_id: str, ttl_seconds: float) -> bool:
         ttl_seconds=ttl_seconds,
         state=LeaseState.HELD,
     )
-    return True
+    return AcquireOutcome.GRANTED
+
+
+async def acquire_outcome(
+    thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS
+) -> AcquireOutcome:
+    """Claim the lease, and say *which* no when it is refused.
+
+    The three answers are evidence, not three spellings of "no":
+
+    - :attr:`AcquireOutcome.GRANTED` -- the row is now this instance's.
+    - :attr:`AcquireOutcome.HELD_BY_LIVE_OWNER` -- a fresh foreign heartbeat.
+      Another instance is writing this thread, so a caller about to write the
+      same checkpoint has to stand down. Both backends agree on this one, and
+      it is the only value the takeover scan and the repair paths treat as
+      final.
+    - :attr:`AcquireOutcome.UNKNOWN` -- the store could not be asked. Ruling 2
+      covers it: keep going, because failing closed whenever storage is
+      unreachable is how a lease stops being observational.
+
+    An empty ``thread_id`` is filed under UNKNOWN rather than given a fourth
+    member. It is a programming-error guard, no caller can act on it, and a
+    distinct value would invite a branch on a case that must not happen. It
+    behaves exactly as it did when this returned a bare ``False``.
+    """
+    if not thread_id:
+        return AcquireOutcome.UNKNOWN
+    if not is_pool_ready():
+        async with _mem_lock:
+            return _acquire_in_memory(thread_id, ttl_seconds)
+    try:
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                _ACQUIRE_SQL,
+                (
+                    thread_id,
+                    _instance_id,
+                    _instance_started_at,
+                    ttl_seconds,
+                ),
+            )
+            granted = await cur.fetchone() is not None
+    except Exception as exc:
+        logger.warning("execution_leases acquire failed for %s: %s", thread_id, exc)
+        return AcquireOutcome.UNKNOWN
+    if granted:
+        return AcquireOutcome.GRANTED
+    logger.warning("execution_leases acquire refused for %s: held by a live owner", thread_id)
+    return AcquireOutcome.HELD_BY_LIVE_OWNER
 
 
 async def acquire(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS) -> bool:
-    """Claim the lease for this instance, returning whether it was granted.
+    """Whether this instance now holds the lease -- the boolean projection.
 
-    ``ttl_seconds`` is the budget this owner would hold it under. ``False``
-    means a live lease belonging to another owner is still there and was not
-    taken; both backends answer that the same way.
+    :func:`acquire_outcome` is where the answer is decided; this is one
+    comparison over it, not a second copy of the decision. Callers that act
+    differently on the two ways of being refused ask for the outcome instead.
     """
-    if not thread_id:
-        return False
-    if not is_pool_ready():
-        async with _mem_lock:
-            granted = _acquire_in_memory(thread_id, ttl_seconds)
-    else:
-        try:
-            pool = get_pool()
-            async with pool.connection() as conn, conn.cursor() as cur:
-                await cur.execute(
-                    _ACQUIRE_SQL,
-                    (
-                        thread_id,
-                        _instance_id,
-                        _instance_started_at,
-                        ttl_seconds,
-                    ),
-                )
-                granted = await cur.fetchone() is not None
-        except Exception as exc:
-            logger.warning("execution_leases acquire failed for %s: %s", thread_id, exc)
-            return False
-    if not granted:
-        logger.warning("execution_leases acquire refused for %s: held by a live owner", thread_id)
-    return granted
+    return await acquire_outcome(thread_id, ttl_seconds=ttl_seconds) is AcquireOutcome.GRANTED
 
 
 async def renew(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS) -> bool:
@@ -498,22 +571,32 @@ async def start_lease(
     *,
     ttl_seconds: float = LEASE_TTL_SECONDS,
     interval_seconds: float = HEARTBEAT_INTERVAL_SECONDS,
-) -> asyncio.Task[None] | None:
+) -> LeaseHold:
     """Acquire the lease and keep renewing it in the background.
 
-    Returns the heartbeat task for the caller to stop, or ``None`` when the
-    lease was refused. The runner still executes either way: gating execution
-    on this answer would fail closed whenever the store cannot reply, which is
-    how a lease stops being observational (P2b ruling 2). The takeover scan is
-    the caller that does treat a refusal as final, because not resuming is the
-    safe side of that decision.
+    Returns a :class:`LeaseHold`: the outcome, and the heartbeat task for the
+    caller to stop when it was GRANTED. The outcome travels with the answer
+    rather than being asked for again -- it is decided here by
+    :func:`acquire_outcome`, and a caller that re-read the store would be asking
+    a different question at a later time.
+
+    GRANTED and UNKNOWN are deliberately not a gate (P2b ruling 2): the runner
+    executes either way, because failing closed whenever the store cannot reply
+    is how a lease stops being observational. HELD_BY_LIVE_OWNER is not in that
+    set -- it is evidence about the row rather than the absence of evidence --
+    so the caller decides. The repair paths stand down; the takeover scan
+    refuses. ``_runner._execution_lease`` carries the accounting for all three.
     """
-    if not await acquire(thread_id, ttl_seconds=ttl_seconds):
-        return None
-    return asyncio.create_task(
-        _heartbeat_until_cancelled(
-            thread_id, interval_seconds=interval_seconds, ttl_seconds=ttl_seconds
-        )
+    outcome = await acquire_outcome(thread_id, ttl_seconds=ttl_seconds)
+    if outcome is not AcquireOutcome.GRANTED:
+        return LeaseHold(outcome=outcome, heartbeat=None)
+    return LeaseHold(
+        outcome=outcome,
+        heartbeat=asyncio.create_task(
+            _heartbeat_until_cancelled(
+                thread_id, interval_seconds=interval_seconds, ttl_seconds=ttl_seconds
+            )
+        ),
     )
 
 
@@ -556,7 +639,9 @@ __all__ = [
     "HEARTBEAT_INTERVAL_SECONDS",
     "HEARTBEAT_MISSES_BEFORE_EXPIRY",
     "LEASE_TTL_SECONDS",
+    "AcquireOutcome",
     "LeaseDurability",
+    "LeaseHold",
     "LeaseRecord",
     "LeaseState",
     "acquire",

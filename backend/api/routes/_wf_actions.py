@@ -12,8 +12,10 @@ hands a nested coroutine to ``asyncio.create_task`` and never looks at it again,
 so no execution-plane surface would otherwise know the thread is being written.
 They therefore hold the lease through ``_runner._execution_lease`` -- the same
 helper the unified entry uses -- which is what puts their writes inside
-``docs/execution-plane.md`` §2's guarantee instead of outside it. A refused lease
-is still not a gate: see that helper for ruling 2.
+``docs/execution-plane.md`` §2's guarantee instead of outside it. A store that
+cannot answer is still not a gate: see that helper for ruling 2. A *live foreign
+owner* is not that kind of refusal -- it is evidence, not the absence of it -- so
+these two paths stand down on it instead of writing over another instance's work.
 """
 
 from __future__ import annotations
@@ -36,11 +38,40 @@ from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 from backend.api.routes._runner import _db_upsert, _execution_lease, _get_as_node
 from backend.api.routes._wf_runtime import _on_task_done
+from backend.db.execution_leases import AcquireOutcome
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
 from backend.state.enums import WorkflowPhase
 
 logger = logging.getLogger(__name__)
+
+
+async def _record_lease_refusal(thread_id: str, *, path: str, account_id: str) -> None:
+    """Record that a repair path stood down, and why, on the thread's timeline.
+
+    The endpoint has already answered 200 ``retrying`` by the time this runs, so
+    the refusal has nowhere else to surface: it cannot be a status code, and it
+    must not be a state write -- not touching this thread is the entire point.
+    ``state/events`` owns the refusal vocabulary for exactly that reason, and
+    :data:`backend.state.events.ACTION_LEASE_REFUSED` is the third entry in it.
+
+    Best-effort on both channels, deliberately: the log always lands, the event
+    may not, and a failed event must never turn a safe refusal into an error.
+    """
+    from backend.state.events import ACTION_LEASE_REFUSED, action_perf_entry, emit_events
+
+    logger.warning("%s refused for %s: a live owner holds the lease", path, thread_id)
+    await emit_events(
+        thread_id,
+        [
+            action_perf_entry(
+                ACTION_LEASE_REFUSED,
+                account_id=account_id,
+                path=path,
+                reason=AcquireOutcome.HELD_BY_LIVE_OWNER.value,
+            )
+        ],
+    )
 
 
 async def retry_ripple_analysis(
@@ -86,6 +117,9 @@ async def retry_ripple_analysis(
     ripple_reason = values.get("ripple_reason", "")
     content_plan = values.get("content_plan") or values.get("content_plan", {})
     ripple_prediction = values.get("ripple_prediction") or {}
+    # Attribution for the refusal event below; the resolved state is the only
+    # place this coroutine can still read it, since the handler has returned.
+    account_id = str(values.get("account_id") or "")
 
     # Check if Ripple previously failed — explicit flags or fallback-looking prediction
     is_fallback_prediction = (
@@ -121,8 +155,14 @@ async def retry_ripple_analysis(
         # 取租约：这是「执行平面」看见这两条路径的唯一通道。栅栏的靶子是
         # asyncio.current_task()（_runner._fence_on_lost_lease），与 _background_tasks
         # 无关 —— 所以本条刻意不进那个槽（每 thread 一槽，写入是换靶子），照样在
-        # 丢租约时被 cancel。取不到时照跑（裁定 2），只是没有栅栏可装而已。
-        async with _execution_lease(thread_id):
+        # 丢租约时被 cancel。
+        # 「问不到」照跑（裁定 2），只是没有栅栏可装；「活着的外部持有者」是另一
+        # 回事——那是证据，不是证据的缺席。继续跑就正是这条租约要禁止的第二个写者，
+        # 而且写的是另一个实例正在改的状态之上算出来的结果。stand down + 留事件。
+        async with _execution_lease(thread_id) as lease:
+            if lease.outcome is AcquireOutcome.HELD_BY_LIVE_OWNER:
+                await _record_lease_refusal(thread_id, path="ripple-retry", account_id=account_id)
+                return
             print(f"[ripple-retry] Started for {thread_id}, topic={topic}", flush=True)
             try:
                 # Bypass health-check/fallback — retry means we want a real simulation
@@ -250,6 +290,9 @@ async def retry_publish(
     if not values or values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
+    # Attribution for the refusal event; same reason as retry_ripple_analysis.
+    account_id = str(values.get("account_id") or "")
+
     # 并发守卫：工作流正在跑（含正在重试）时不允许再触发。
     # 与状态推导不同，这里问的是"本进程要不要再起一份任务"——租约答的是"有没有人
     # 在跑"，两个方向都会错：租约写入是 best-effort，存储故障时会有"活任务却查不到
@@ -349,8 +392,16 @@ async def retry_publish(
 
     async def _run_publish_retry() -> None:
         # 取租约：见 _run_retry 的同段注释（同一个 helper、同一条规则）。
-        async with _execution_lease(thread_id):
+        async with _execution_lease(thread_id) as lease:
             try:
+                if lease.outcome is AcquireOutcome.HELD_BY_LIVE_OWNER:
+                    # 同一个理由，代价更高：publisher 是唯一的不可逆节点，第二个
+                    # 写者在这里意味着重复发一篇笔记。检查放在 try 内是为了让下面
+                    # 的 finally 仍然把 _background_tasks 里那条已完成的条目摘掉。
+                    await _record_lease_refusal(
+                        thread_id, path="publish-retry", account_id=account_id
+                    )
+                    return
                 snap = await graph.aget_state(config)
                 # Read seam: run_publish hashes copy_content/visual_plan subfields
                 # for the publish_id — a ref'd thread must feed it the resolved

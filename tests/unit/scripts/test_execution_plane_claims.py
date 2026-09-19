@@ -58,6 +58,8 @@ RUNNER = BACKEND / "api" / "routes" / "_runner.py"
 ACTIONS = BACKEND / "api" / "routes" / "_wf_actions.py"
 APP = REPO / "backend" / "api" / "app.py"
 MACHINE = BACKEND / "state" / "machine.py"
+LEASES = BACKEND / "db" / "execution_leases.py"
+EVENTS = BACKEND / "state" / "events.py"
 
 _CLAIM_BLOCK = re.compile(r"<!-- claim-table:begin -->(.*?)<!-- claim-table:end -->", re.DOTALL)
 _ANCHOR_TABLES = re.compile(
@@ -482,6 +484,77 @@ def _definitions(path: Path, name: str) -> int:
     )
 
 
+def _enum_members(path: Path, name: str) -> int:
+    """How many members an enum declared in one module has.
+
+    Members are the names assigned in the class body.  Published as 3 for
+    ``AcquireOutcome``: a refusal is one of three answers, and the number is what
+    keeps "three spellings of ``False``" from being a figure of speech.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    target = next(
+        (node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) and node.name == name),
+        None,
+    )
+    assert target is not None, f"{name} not found in {path}"
+    return sum(
+        1
+        for stmt in target.body
+        if isinstance(stmt, ast.Assign) and all(isinstance(t, ast.Name) for t in stmt.targets)
+    )
+
+
+def _tests_for_a_member(path: Path, enum: str, member: str) -> int:
+    """How many comparisons test ``<enum>.<member>`` in one module.
+
+    Counted over ``Compare`` nodes rather than attributes because what the claim
+    is about is "how many call sites branch on this value".  The same member also
+    appears as ``AcquireOutcome.HELD_BY_LIVE_OWNER.value`` where it is written
+    into an event, so an attribute scan would report 3 branches where there are 2.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    total = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        for side in (node.left, *node.comparators):
+            if (
+                isinstance(side, ast.Attribute)
+                and side.attr == member
+                and isinstance(side.value, ast.Name)
+                and side.value.id == enum
+            ):
+                total += 1
+    return total
+
+
+def _refusal_reason_names(path: Path) -> int:
+    """Module-level ``ACTION_*`` string constants that are reasons, not kinds.
+
+    Derived from the shape rather than from a list: the prefix says the name is
+    part of the action vocabulary, a string value says it names something, and the
+    absence of ``KIND`` separates a reason (``ACTION_POLICY_DENIED``) from the
+    event kind reasons are filed under (``ACTION_EVENT_KIND``).  A hand-kept list
+    would have made this claim blind to the next reason added -- which is exactly
+    the reason this slice added.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return sum(
+        1
+        for stmt in tree.body
+        if isinstance(stmt, ast.Assign)
+        and len(stmt.targets) == 1
+        and isinstance(stmt.targets[0], ast.Name)
+        and stmt.targets[0].id.startswith("ACTION_")
+        and "KIND" not in stmt.targets[0].id
+        and isinstance(stmt.value, ast.Constant)
+        and isinstance(stmt.value.value, str)
+    )
+
+
 def _if_tests_mentioning(path: Path, func: str, name: str) -> int:
     """How many ``if`` tests inside *func* name *name*.
 
@@ -674,6 +747,18 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
     "derive_status_mentions_of_has_active_task": lambda: _if_tests_mentioning(
         MACHINE, "derive_status", "has_active_task"
     ),
+    # §2 / §7 -- a refusal that says which refusal, and the callers that read it
+    "acquire_outcome_members": lambda: _enum_members(LEASES, "AcquireOutcome"),
+    "acquire_outcome_definitions_in_the_lease_module": lambda: _definitions(
+        LEASES, "acquire_outcome"
+    ),
+    "execution_lease_call_sites_under_backend": lambda: len(
+        _call_sites(BACKEND, "_execution_lease")
+    ),
+    "repair_paths_that_stand_down_on_a_live_owner": lambda: _tests_for_a_member(
+        ACTIONS, "AcquireOutcome", "HELD_BY_LIVE_OWNER"
+    ),
+    "lease_refusal_reasons_in_the_action_vocabulary": lambda: _refusal_reason_names(EVENTS),
     # §8 -- how much of this document its own tables actually cover
     "line_number_references_in_this_document": lambda: sum(
         len(part) for part in _cited(_DOC_TEXT, REPO)
@@ -1171,3 +1256,53 @@ def test_the_criterion_and_pinning_scans_read_the_tree_they_are_pointed_at(tmp_p
     assert _if_tests_mentioning(module, "derive_status", "has_active_task") == 2
     assert _create_task_targets(module, "_run_retry") == 1
     assert _create_task_targets(module, "_run_retry_orphan") == 0
+
+
+def test_the_lease_reason_scans_can_answer_something_other_than_their_value(
+    tmp_path: Path,
+):
+    """Positive control for the five scans the refusal claims rest on.
+
+    Their published values are 3 / 1 / 3 / 2 / 3 -- every one small enough to be
+    hard-wired.  A ``return 3`` would keep the document green forever while pinning
+    nothing, and the document is the only reader these scans have.  So each is
+    pointed at a module built to **disagree** with the repository and, where it
+    matters, to hold the shape a careless scan would confuse with the one it wants.
+
+    - ``_enum_members`` sees a fourth member: it counts names, so a non-name target
+      in the class body is not a member.
+    - ``_tests_for_a_member`` counts the **branch**, not the attribute.
+      ``HELD_BY_LIVE_OWNER`` appears twice in this fixture and only one occurrence
+      is a comparison -- which is the whole difference between 2 and 3 on the real
+      module.
+    - ``_refusal_reason_names`` drops a non-string constant and drops the kind
+      (``ACTION_EVENT_KIND``), leaving the one reason.
+    - ``_definitions`` separates a name defined twice from a name defined never.
+    """
+    root = _pkg(tmp_path)
+    module = _write(
+        root,
+        "lease_like.py",
+        "class AcquireOutcome(StrEnum):\n"
+        "    GRANTED = 'granted'\n"
+        "    HELD_BY_LIVE_OWNER = 'held_by_live_owner'\n"
+        "    UNKNOWN = 'unknown'\n"
+        "    EXTRA = 'extra'\n"
+        "\n"
+        "async def acquire_outcome(thread_id):\n"
+        "    if lease.outcome is AcquireOutcome.HELD_BY_LIVE_OWNER:\n"
+        "        return AcquireOutcome.HELD_BY_LIVE_OWNER.value\n"
+        "    return None\n"
+        "\n"
+        "async def acquire_outcome(thread_id):\n"
+        "    return None\n"
+        "\n"
+        "ACTION_EVENT_KIND = 'action'\n"
+        "ACTION_POLICY_DENIED = 'policy_denied'\n"
+        "ACTION_NOT_A_STRING = 1\n",
+    )
+    assert _enum_members(module, "AcquireOutcome") == 4
+    assert _tests_for_a_member(module, "AcquireOutcome", "HELD_BY_LIVE_OWNER") == 1
+    assert _refusal_reason_names(module) == 1
+    assert _definitions(module, "acquire_outcome") == 2
+    assert _definitions(module, "acquire") == 0
