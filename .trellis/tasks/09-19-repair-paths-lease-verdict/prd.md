@@ -267,6 +267,7 @@ baseline=clean  restore=YES
 - 第一次跑时父进程没关掉沙箱的删除护栏，`LOCK.unlink` 抛 `SystemExit` ⇒ **23/23 已全部计数、
   树已还原，但摘要行被吞掉、退出码变 1**。修法是把收尾挪到摘要之后并容错 ——
   **「工具自己报的结论」也要能被工具证明**。
+- ★★ **这个脚本已不存在**（2026-09-19 由 #636 补记）：#636 收尾清理仓外临时产物时把它一并删了 ——它只存在于 `C:/Users/jamer/aiworks/`，而那份保留清单当时只登记了 #636 自己的 harness。⇒ **上面这 23/23 是记录，不是可重跑的命令。** 突变自检的完整写法（witness 与 mentions 分开、TOO WEAK 与 SURVIVED 分列、锚点唯一性预检、收尾断言）留在 skill `xhs-recover-trellis-slice-delivery`；同族**可重跑**的实例是 `C:/Users/jamer/aiworks/_mut_lease_reason.py`（#636，27 个突变）。**教训：仓外产物的保留清单要按「谁引用它」推导，不是按「谁刚写的」** —— 后者会把上一片的证据删掉。
 
 ### 8.5 commit / PR
 
