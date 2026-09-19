@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from langgraph.store.base import BaseStore
     from langgraph.types import StateSnapshot
 
-    from backend.db.execution_leases import AcquireOutcome
+    from backend.db.execution_leases import AcquireOutcome, RenewOutcome
     from backend.db.workflows import WorkflowRow
 
 from backend.realtime import EventBusService
@@ -352,7 +352,7 @@ def _save_history_file(thread_id: str, state_values: dict[str, Any]) -> None:
         logger.exception("Failed to save history for %s", thread_id)
 
 
-def _fence_on_lost_lease(thread_id: str, heartbeat: asyncio.Task[None]) -> asyncio.Event:
+def _fence_on_lost_lease(thread_id: str, heartbeat: asyncio.Task[RenewOutcome]) -> asyncio.Event:
     """Stop this run the moment the lease behind it goes away.
 
     ``renew``'s docstring left this to S3: S1 logged a lost lease and kept
@@ -363,10 +363,18 @@ def _fence_on_lost_lease(thread_id: str, heartbeat: asyncio.Task[None]) -> async
     next write.
 
     What makes this safe to wire up is the distinction it draws: a heartbeat
-    that ends by itself means ``renew`` answered False, i.e. the row stopped
+    that ends by itself means ``renew`` gave a non-answer, i.e. the row stopped
     being ours. A heartbeat cancelled by ``end_lease`` is this run finishing
     normally and must not fence anything -- hence ``task.cancelled()`` rather
     than merely "the heartbeat finished".
+
+    Which non-answer it was is read off the task rather than inferred, and it is
+    read for the log only: ``LOST`` and ``UNKNOWN`` both fence here, so the
+    decision below has not changed. What changed is that a storage failure is no
+    longer recorded as a takeover -- the sentence used to be printed for both,
+    which is a claim this code could not back. The ruling that keeps them
+    collapsed, and the budget asymmetry it leaves open, are in
+    ``docs/execution-plane.md`` §2.
 
     A synchronously-executed run is fenced too. That aborts the HTTP response
     the caller is waiting on, which is still the better of the two outcomes: an
@@ -374,12 +382,22 @@ def _fence_on_lost_lease(thread_id: str, heartbeat: asyncio.Task[None]) -> async
     """
     lost = asyncio.Event()
     owner = asyncio.current_task()
+    # Deferred, like every other lease import here: the module pulls the pool,
+    # and this file is on the import path of every route. Runtime, not
+    # TYPE_CHECKING, because the callback below reads a member of it.
+    from backend.db.execution_leases import RenewOutcome
 
-    def _on_heartbeat_done(task: asyncio.Task[None]) -> None:
+    def _on_heartbeat_done(task: asyncio.Task[RenewOutcome]) -> None:
         if task.cancelled():
             return
+        # ``exception`` first: a heartbeat that raised would make ``result()``
+        # re-raise inside a done-callback, where asyncio only logs it. The loop
+        # is written to return rather than raise, so this path is the guard
+        # against that changing silently -- and it fences, like any non-answer.
+        outcome = RenewOutcome.UNKNOWN if task.exception() is not None else task.result()
         logger.warning(
-            "execution lease lost for %s: stopping this run before it writes again",
+            "execution lease %s for %s: stopping this run before it writes again",
+            "lost" if outcome is RenewOutcome.LOST else "unconfirmed",
             thread_id,
         )
         lost.set()
@@ -432,7 +450,7 @@ async def _execution_lease(thread_id: str) -> AsyncIterator[LeaseFence]:
     # ask": a store that will not import is as unable to reply as one that will
     # not connect, and both have to leave the block runnable (ruling 2).
     outcome = AcquireOutcome.UNKNOWN
-    heartbeat: asyncio.Task[None] | None = None
+    heartbeat: asyncio.Task[RenewOutcome] | None = None
     hold = None
     try:
         from backend.db.execution_leases import start_lease

@@ -296,11 +296,11 @@ async def test_the_fence_reaches_a_task_that_is_not_in_the_registry(
     This is the property that lets ripple-retry hold a lease while deliberately
     keeping out of the shared slot (§7.1: the slot is keyed by ``thread_id`` and
     three call sites cancel its occupant).  A heartbeat that ends *not cancelled*
-    means ``renew`` answered False -- i.e. the row is no longer ours.
+    means ``renew_outcome`` gave a non-answer -- i.e. the row is no longer ours.
     """
 
-    async def _already_finished() -> None:
-        return None
+    async def _already_finished() -> leases.RenewOutcome:
+        return leases.RenewOutcome.LOST
 
     heartbeat = asyncio.create_task(_already_finished())
     await asyncio.sleep(0)  # let it finish before the fence registers on it

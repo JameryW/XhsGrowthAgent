@@ -124,6 +124,32 @@ class AcquireOutcome(StrEnum):
     UNKNOWN = "unknown"
 
 
+class RenewOutcome(StrEnum):
+    """What the store said when asked whether this instance still holds it.
+
+    The mirror of :class:`AcquireOutcome`, and the same collapse undone: a
+    ``bool`` answered this too, and ``False`` carried both "the row stopped
+    being ours" and "the store could not be asked".  Both stop the run -- the
+    safe direction here is the *opposite* of ``acquire``'s, because the two
+    questions carry different risks.  A run that starts without a lease risks
+    doing nothing; a run that keeps writing without one risks two writers on
+    one checkpoint (red line 4).  So this enum does not change any decision.
+    What it changes is that the decision is now *nameable*, which is what
+    makes a future "be more tolerant of a hiccup" edit a two-branch edit
+    instead of an invisible one -- and what stops the log from recording a
+    storage failure as a takeover.
+    """
+
+    #: The row is still this instance's, and its heartbeat anchor moved.
+    RENEWED = "renewed"
+    #: The row is no longer ours: another owner's, released, or gone.  This is
+    #: evidence, and the run it guards has to stop before its next write.
+    LOST = "lost"
+    #: The store could not be asked, or the question was empty.  Nothing is
+    #: known about the row -- which is not the same as knowing we lost it.
+    UNKNOWN = "unknown"
+
+
 @dataclass(slots=True)
 class LeaseRecord:
     """One thread's lease, including the budget it is judged against."""
@@ -155,11 +181,13 @@ class LeaseHold:
     A tuple would carry the same two values and lose the one thing a caller
     needs at 3am: which is which. ``heartbeat`` is ``None`` unless the outcome
     is GRANTED -- there is nothing to renew when the row was not taken -- so
-    the pair is not free to vary and is worth naming.
+    the pair is not free to vary and is worth naming. Its task result is the
+    :class:`RenewOutcome` the loop stopped on, which is how the fence learns
+    which non-answer ended it.
     """
 
     outcome: AcquireOutcome
-    heartbeat: asyncio.Task[None] | None
+    heartbeat: asyncio.Task[RenewOutcome] | None
 
 
 def _utcnow() -> datetime:
@@ -416,28 +444,31 @@ async def acquire(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS) -> 
     return await acquire_outcome(thread_id, ttl_seconds=ttl_seconds) is AcquireOutcome.GRANTED
 
 
-async def renew(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS) -> bool:
-    """Refresh this instance's lease, returning whether it still holds it.
+async def renew_outcome(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS) -> RenewOutcome:
+    """Refresh this instance's lease, and say which answer the store gave.
 
-    ``False`` is the interesting answer: the lease moved on (another owner took
-    it over, or it was released) while this instance still believed it was
-    running. S1 only logged it; since S3 the run it guards is cancelled -- see
-    ``_runner._fence_on_lost_lease``.
+    Same shape as :func:`acquire_outcome`, and for the same reason: the three
+    answers are not interchangeable to the caller. ``LOST`` is a fact about the
+    row; ``UNKNOWN`` is the absence of one, and the two arriving as a single
+    ``False`` is what let a storage failure be read as a takeover.
+
+    Both are still stop signals (:func:`renew` projects them to ``False``, and
+    ``_heartbeat_until_cancelled`` stops on either), because red line 4 -- one
+    writer per checkpoint -- is not something a heartbeat may gamble on. What
+    the name buys is the *option*: the 3-miss budget this module already derives
+    its TTL from is the amount of silence the scanner tolerates before it
+    presumes the owner dead, and the owner itself currently tolerates zero.
+    Widening that is a separate ruling; see ``docs/execution-plane.md`` §2.
+
+    An empty ``thread_id`` answers UNKNOWN rather than a fourth member: it is a
+    caller bug, not a store answer, and it must not be a value a caller learns
+    to branch on.
     """
     if not thread_id:
-        return False
+        return RenewOutcome.UNKNOWN
     if not is_pool_ready():
         async with _mem_lock:
-            current = _mem_leases.get(thread_id)
-            if (
-                current is None
-                or current.state is not LeaseState.HELD
-                or current.owner_id != _instance_id
-            ):
-                return False
-            current.heartbeat_at = _utcnow()
-            current.ttl_seconds = ttl_seconds
-        return True
+            return _renew_in_memory(thread_id, ttl_seconds=ttl_seconds)
     try:
         pool = get_pool()
         async with pool.connection() as conn, conn.cursor() as cur:
@@ -445,8 +476,39 @@ async def renew(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS) -> bo
             renewed = await cur.fetchone() is not None
     except Exception as exc:
         logger.warning("execution_leases renew failed for %s: %s", thread_id, exc)
-        return False
-    return renewed
+        return RenewOutcome.UNKNOWN
+    return RenewOutcome.RENEWED if renewed else RenewOutcome.LOST
+
+
+def _renew_in_memory(thread_id: str, *, ttl_seconds: float) -> RenewOutcome:
+    """The no-Postgres branch, split out so the memory backend's *set* is readable.
+
+    Called only from :func:`renew_outcome` and only while it holds ``_mem_lock``,
+    the same way :func:`_acquire_in_memory` is called. It cannot fail, so it has
+    no ``UNKNOWN`` -- the asymmetry the two backends share, and the reason both
+    branches are named functions instead of inline blocks: a test can read the
+    verbs out of one.
+    """
+    current = _mem_leases.get(thread_id)
+    if current is None or current.state is not LeaseState.HELD or current.owner_id != _instance_id:
+        return RenewOutcome.LOST
+    current.heartbeat_at = _utcnow()
+    current.ttl_seconds = ttl_seconds
+    return RenewOutcome.RENEWED
+
+
+async def renew(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECONDS) -> bool:
+    """Whether this instance still holds the lease -- the boolean projection.
+
+    :func:`renew_outcome` is where the answer is decided; this is one comparison
+    over it, not a second copy of the decision. Both non-answers collapse to
+    ``False`` here, and that collapse is the current ruling rather than an
+    accident (see :class:`RenewOutcome`): the caller that asks this question --
+    ``_runner._fence_on_lost_lease`` -- has to stop the run on either. Callers
+    that need to tell them apart, or to record which one happened, ask for the
+    outcome instead.
+    """
+    return await renew_outcome(thread_id, ttl_seconds=ttl_seconds) is RenewOutcome.RENEWED
 
 
 async def release(thread_id: str) -> bool:
@@ -554,16 +616,31 @@ async def _heartbeat_until_cancelled(
     *,
     interval_seconds: float,
     ttl_seconds: float,
-) -> None:
-    """Renew ``thread_id`` until cancelled or until the lease is lost."""
+) -> RenewOutcome:
+    """Renew ``thread_id`` until cancelled or until an answer other than RENEWED.
+
+    The non-answer is returned rather than merely logged, because it is the only
+    place it exists: ``_runner._fence_on_lost_lease`` decides from *how this task
+    ended*, and a task that returns carries ``.result()``. So the reason travels
+    on the object that already crosses that boundary, and the fence can say which
+    one it was instead of inferring a takeover from a stop.
+
+    Both non-answers stop the loop. That is not symmetry for its own sake -- see
+    :class:`RenewOutcome` -- and naming them here is what keeps a future change to
+    that a change to *one* of them.
+    """
     while True:
         await asyncio.sleep(interval_seconds)
-        if not await renew(thread_id, ttl_seconds=ttl_seconds):
+        outcome = await renew_outcome(thread_id, ttl_seconds=ttl_seconds)
+        if outcome is not RenewOutcome.RENEWED:
             logger.warning(
-                "execution_leases heartbeat stopped for %s: lease no longer held",
+                "execution_leases heartbeat stopped for %s: %s",
                 thread_id,
+                "another owner holds the row"
+                if outcome is RenewOutcome.LOST
+                else "the store could not be asked",
             )
-            return
+            return outcome
 
 
 async def start_lease(
@@ -600,7 +677,7 @@ async def start_lease(
     )
 
 
-async def end_lease(thread_id: str, heartbeat: asyncio.Task[None] | None) -> None:
+async def end_lease(thread_id: str, heartbeat: asyncio.Task[RenewOutcome] | None) -> None:
     """Stop the heartbeat and release the lease.
 
     ``gather(return_exceptions=True)`` waits the heartbeat out without either
@@ -644,6 +721,7 @@ __all__ = [
     "LeaseHold",
     "LeaseRecord",
     "LeaseState",
+    "RenewOutcome",
     "acquire",
     "durability",
     "end_lease",
@@ -654,6 +732,7 @@ __all__ = [
     "list_leases",
     "release",
     "renew",
+    "renew_outcome",
     "start_lease",
     "thread_is_held",
 ]
