@@ -180,4 +180,42 @@ P4 renew on a foreign-owned row    -> renew False，而 thread_is_held True
 
 ## 8. 执行记录
 
-（交付时回填：改动表 · 验收逐条对照 · 门禁 · 突变自检 · commit/PR）
+**改动表**（`git diff --stat 47315fa8..8a75722c` —— 15 个文件 / **+1012 −136**）
+
+| 文件 | ± | 内容 |
+| --- | --- | --- |
+| `backend/db/execution_leases.py` | +131 / −46 | `AcquireOutcome` + `acquire_outcome`；`acquire` 变投影；`LeaseHold` |
+| `backend/api/routes/_runner.py` | +50 / −12 | `LeaseFence`；产出答案、裁定留给三个调用者 |
+| `backend/api/routes/_wf_actions.py` | +56 / −5 | 两条修复路径 stand down + `_record_lease_refusal` |
+| `backend/state/events.py` | +9 / −2 | `ACTION_LEASE_REFUSED` 进封闭词表 |
+| `docs/execution-plane.md` | +69 / −54 | §2 非保证 1 → 两条规则 · §5 第 2 条 · §7 关闭 · 正文与两张表的锚点重映射 47 处 |
+| `tests/unit/db/test_acquire_outcome.py` | +205 | 新文件，8 例 |
+| `tests/unit/api/test_repair_paths_take_the_lease.py` | +110 / −7 | +2 例（活持有者下零 `aupdate_state` / 零 `run_publish`） |
+| `tests/unit/db/test_execution_leases.py` | +19 / −5 | 裁定 B：1 例改强 |
+| `tests/unit/api/test_lease_fence.py` | +9 / −1 | 替身改回真 `LeaseHold` |
+| `tests/unit/state/test_events.py` | +8 / −4 | 词表由 2 名改 3 名 |
+| `tests/unit/scripts/test_execution_plane_claims.py` | +135 | 5 条主张 + 5 个扫描 + 1 条阳性对照 |
+| `.trellis/tasks/09-19-lease-refusal-has-a-reason/**` | +211 | 票面 4 件 |
+
+**验收逐条**（§5）
+
+1. ✅ 两个后端同一场景答**同一成员** —— `test_both_backends_answer_the_same_member`（内存 vs 假池，逐对 `is`）
+2. ✅ 「答的集合不同」不再成立且被钉住 —— 同上 + `test_the_memory_backend_cannot_spell_unknown`（从 `_acquire_in_memory` 的 **AST** 读它引用的成员名）
+3. ✅ 被拒时答案说出是哪一种 —— `test_start_names_the_refusal_it_got`（`HELD_BY_LIVE_OWNER`，且 `heartbeat is None`）
+4. ✅ 活持有者下不写 checkpoint —— `test_a_live_foreign_owner_stops_the_ripple_retry` / `..._stops_the_publish_retry`
+5. ✅ `UNKNOWN` 下仍然跑完（裁定 2 不变）—— `test_a_refused_lease_does_not_gate_the_work`
+6. ✅ 原有用例全绿（3672 → **3683**，**+11** = 8 + 2 + 1；4 处既有用例按裁定 B **改强**、无一处放宽）+ 四道门禁全过
+
+**门禁**
+
+- `ruff check .` 全过 · `ruff format --check .` **550** files（改动前 549 ⇒ +1，恰好是新文件数）· `mypy` 217 source files 无问题
+- `scripts/gates/tool_runtime_gate.py` → `P1c-S5 tool runtime: OK`
+- 全量 pytest **3683 passed / 3 skipped**（`rc=0`）
+
+**突变自检**：`_mut_lease_reason.py` → **27/27 killed**，`baseline=clean  restore=YES`（七个靶子逐文件 sha256 与跑前相同）。
+
+- **首跑是 26/27**：M23（ripple-retry 不再按活持有者分流）报 **TOO WEAK** —— 它的锚点是「12 空格缩进的一整行」，而 publish 分支是**同一行缩进 16 空格** ⇒ 前者是后者的**子串**、`count == 2`，`_apply` 的 `count != 1` 守卫拒绝施改。它被诚实地记成「**根本没测**」而不是免费击杀（这正是那守卫存在的理由），代价是**一整轮**。改成**两行锚点**（含文件自身的 CRLF）后 27/27。
+- 顺带把这条检查提前成 harness 的 `_anchor_problems()`，且它跑在 `LOCK.touch` **之前**（预检失败不留脏锁）。
+- 4 条「把新扫描硬编码成它公布的值」（3 / 1 / 3 / 2）**只有同批进来的阳性对照杀得掉** —— claim 表按构造杀不掉（值确实相等）。这是「**值为 0 的主张自带不了阳性对照**」的推广形态：**一个只能答出它公布值的扫描与常数不可分，而文档是它唯一的读者。**
+
+**commit / PR**：`8a75722c`（切片本体）/ [PR #636](https://github.com/JameryW/XhsGrowthAgent/pull/636)；CI **8/8**。
