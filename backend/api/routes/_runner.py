@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -387,6 +388,48 @@ def _fence_on_lost_lease(thread_id: str, heartbeat: asyncio.Task[None]) -> async
     return lost
 
 
+@contextlib.asynccontextmanager
+async def _execution_lease(thread_id: str) -> AsyncIterator[asyncio.Event]:
+    """Hold this thread's lease for the block, and fence on losing it.
+
+    **The single place a lease is taken.** Three executors use it: the unified
+    runner below, and the two repair paths in ``_wf_actions.py``
+    (``_run_retry`` / ``_run_publish_retry``). Keeping one implementation is the
+    point -- a second copy is how the two drift, and the lease is the only fact
+    about a thread that outlives the process running it.
+
+    A refusal is neither an error nor a gate (P2b ruling 2): ``start_lease``
+    answers ``None`` when it cannot get the row, and the block runs anyway --
+    with no fence, because there is nothing to fence. Gating here would fail
+    closed whenever the store cannot reply, which is how a lease stops being
+    observational.
+
+    The yielded event is set when the lease was lost, so a caller catching
+    ``CancelledError`` can tell a fence-cancel from a user cancel. The fence
+    target is ``asyncio.current_task()`` (see :func:`_fence_on_lost_lease`), so
+    a caller need not be in ``_background_tasks`` to be fenced.
+    """
+    heartbeat: asyncio.Task[None] | None = None
+    with contextlib.suppress(Exception):
+        from backend.db.execution_leases import start_lease
+
+        heartbeat = await start_lease(thread_id)
+
+    lost = asyncio.Event()
+    if heartbeat is not None:
+        lost = _fence_on_lost_lease(thread_id, heartbeat)
+    try:
+        yield lost
+    finally:
+        # Best-effort teardown. A cancelled task may not reach this await at
+        # all; the lease then goes silent and expires, which is the property
+        # being built rather than a gap in it.
+        with contextlib.suppress(Exception):
+            from backend.db.execution_leases import end_lease
+
+            await end_lease(thread_id, heartbeat)
+
+
 async def _run_graph_and_persist(
     thread_id: str,
     graph: Any,
@@ -408,176 +451,159 @@ async def _run_graph_and_persist(
     if is_sync:
         _active_sync_executions.add(thread_id)
 
-    # P2b-S1/S2: the lease is now a reader. ``has_active_execution`` below
-    # answers from it first and falls back to this process's registries, so
-    # "who is running this thread" no longer depends on which process asks.
-    lease_heartbeat: asyncio.Task[None] | None = None
-    with contextlib.suppress(Exception):
-        from backend.db.execution_leases import start_lease
-
-        lease_heartbeat = await start_lease(thread_id)
-
-    # P2b-S3: the lease now fences its own owner. See _fence_on_lost_lease.
-    lease_lost = asyncio.Event()
-    if lease_heartbeat is not None:
-        lease_lost = _fence_on_lost_lease(thread_id, lease_heartbeat)
-
-    try:
-        result = await graph.ainvoke(input_data, config)
-
-        snapshot = await graph.aget_state(config)
-        has_active = await has_active_execution(thread_id)
-        derived = derive_status(snapshot, has_active_task=has_active)
-
-        await _emit_status_transition(
-            derived,
-            thread_id,
-            snapshot=snapshot,
-            store=getattr(graph, "store", None),
-        )
-
-        # Phase/error 取图真实状态（snapshot.values），与 derive_status 同源——
-        # 否则 ainvoke 返回的 result 只是最后节点输出，phase 可能滞后于中断点真实
-        # phase，导致 DB 写入的 phase/progress 与 /status 现算不一致。
-        snapshot_values = snapshot.values or {}
-        final_phase = snapshot_values.get("phase") or (
-            result.get("phase", "unknown") if result else "unknown"
-        )
-        has_error = snapshot_values.get("error") or (result.get("error") if result else None)
-        final_status = _status_to_str(derived, has_error, final_phase)
-
-        # Compute progress: completed → 100, awaiting gates → phase-based, else phase-based
-        if final_status == "completed":
-            progress = 100
-        elif final_status == "error":
-            progress = 0
-        else:
-            from backend.api.routes._wf_artifacts import get_progress
-
-            progress = get_progress(final_phase)
-
-        await _db_upsert(
-            thread_id,
-            phase=final_phase,
-            status=final_status,
-            progress_percent=progress,
-            error=has_error,
-            updated_at=datetime.now(UTC).isoformat(),
-        )
-
-        if final_status in ("completed", "error", "cancelled"):
-            _save_history_file(thread_id, result or {})
-
-        return result or {}
-
-    except asyncio.CancelledError:
-        # P2b-S3: a fence-cancelled run must not write a status. Whoever holds
-        # the lease owns this row now; writing "cancelled" here would erase the
-        # takeover that just started.
-        if lease_lost.is_set():
-            raise
-        # Only update DB if this task is still the registered one —
-        # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
-        if _background_tasks.get(thread_id) is not asyncio.current_task():
-            raise
+    # P2b-S1/S2/S3: the lease is the fact ``has_active_execution`` reads first, and
+    # it fences its own owner. One implementation, shared with the two repair paths
+    # in ``_wf_actions.py`` -- see :func:`_execution_lease`.
+    async with _execution_lease(thread_id) as lease_lost:
         try:
+            result = await graph.ainvoke(input_data, config)
+
             snapshot = await graph.aget_state(config)
-            current_phase = (snapshot.values or {}).get("phase", "unknown")
-            if current_phase == "paused":
-                await _db_upsert(thread_id, status="paused", phase="paused", error=None)
-                await _emit_status_transition(
-                    WorkflowStatus.PAUSED,
-                    thread_id,
-                    snapshot=snapshot,
-                    store=getattr(graph, "store", None),
-                )
-            elif current_phase == "cancelled":
-                # cancel_workflow already set phase+error in graph and DB — skip
-                pass
+            has_active = await has_active_execution(thread_id)
+            derived = derive_status(snapshot, has_active_task=has_active)
+
+            await _emit_status_transition(
+                derived,
+                thread_id,
+                snapshot=snapshot,
+                store=getattr(graph, "store", None),
+            )
+
+            # Phase/error 取图真实状态（snapshot.values），与 derive_status 同源——
+            # 否则 ainvoke 返回的 result 只是最后节点输出，phase 可能滞后于中断点真实
+            # phase，导致 DB 写入的 phase/progress 与 /status 现算不一致。
+            snapshot_values = snapshot.values or {}
+            final_phase = snapshot_values.get("phase") or (
+                result.get("phase", "unknown") if result else "unknown"
+            )
+            has_error = snapshot_values.get("error") or (result.get("error") if result else None)
+            final_status = _status_to_str(derived, has_error, final_phase)
+
+            # Compute progress: completed → 100, awaiting gates → phase-based, else phase-based
+            if final_status == "completed":
+                progress = 100
+            elif final_status == "error":
+                progress = 0
             else:
+                from backend.api.routes._wf_artifacts import get_progress
+
+                progress = get_progress(final_phase)
+
+            await _db_upsert(
+                thread_id,
+                phase=final_phase,
+                status=final_status,
+                progress_percent=progress,
+                error=has_error,
+                updated_at=datetime.now(UTC).isoformat(),
+            )
+
+            if final_status in ("completed", "error", "cancelled"):
+                _save_history_file(thread_id, result or {})
+
+            return result or {}
+
+        except asyncio.CancelledError:
+            # P2b-S3: a fence-cancelled run must not write a status. Whoever holds
+            # the lease owns this row now; writing "cancelled" here would erase the
+            # takeover that just started.
+            if lease_lost.is_set():
+                raise
+            # Only update DB if this task is still the registered one —
+            # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
+            if _background_tasks.get(thread_id) is not asyncio.current_task():
+                raise
+            try:
+                snapshot = await graph.aget_state(config)
+                current_phase = (snapshot.values or {}).get("phase", "unknown")
+                if current_phase == "paused":
+                    await _db_upsert(thread_id, status="paused", phase="paused", error=None)
+                    await _emit_status_transition(
+                        WorkflowStatus.PAUSED,
+                        thread_id,
+                        snapshot=snapshot,
+                        store=getattr(graph, "store", None),
+                    )
+                elif current_phase == "cancelled":
+                    # cancel_workflow already set phase+error in graph and DB — skip
+                    pass
+                else:
+                    await _db_upsert(
+                        thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
+                    )
+                    await _emit_status_transition(
+                        WorkflowStatus.CANCELLED,
+                        thread_id,
+                        snapshot=snapshot,
+                        store=getattr(graph, "store", None),
+                    )
+            except Exception:
                 await _db_upsert(
                     thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
                 )
-                await _emit_status_transition(
-                    WorkflowStatus.CANCELLED,
-                    thread_id,
-                    snapshot=snapshot,
-                    store=getattr(graph, "store", None),
-                )
-        except Exception:
-            await _db_upsert(
-                thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
-            )
-        raise
+            raise
 
-    except Exception as exc:
-        logger.exception("Graph execution failed (source=%s, thread=%s)", source, thread_id)
-        # Only update DB if this task is still the registered one —
-        # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
-        if _background_tasks.get(thread_id) is asyncio.current_task():
-            from backend.core.error_handling import WorkflowCancelledError
+        except Exception as exc:
+            logger.exception("Graph execution failed (source=%s, thread=%s)", source, thread_id)
+            # Only update DB if this task is still the registered one —
+            # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
+            if _background_tasks.get(thread_id) is asyncio.current_task():
+                from backend.core.error_handling import WorkflowCancelledError
 
-            if isinstance(exc, WorkflowCancelledError):
-                # Node detected cancelled/paused phase — preserve the actual phase
-                # from the graph state rather than parsing the exception message
-                snap = None
-                with contextlib.suppress(Exception):
-                    snap = await graph.aget_state(config)
-                if snap:
-                    actual_phase = (snap.values or {}).get("phase", "cancelled")
-                else:
-                    actual_phase = "cancelled"
-                is_paused = actual_phase == "paused"
-                target_phase = "paused" if is_paused else "cancelled"
-                target_status = "paused" if is_paused else "cancelled"
-                with contextlib.suppress(Exception):
-                    await graph.aupdate_state(
-                        config,
-                        {"phase": target_phase, "error": None if is_paused else str(exc)},
-                        as_node=_get_as_node(snap) if snap else None,
-                    )
-                await _db_upsert(
-                    thread_id,
-                    status=target_status,
-                    phase=target_phase,
-                    error=None if is_paused else str(exc),
-                    updated_at=datetime.now(UTC).isoformat(),
-                )
-                await _emit_status_transition(
-                    WorkflowStatus.PAUSED if is_paused else WorkflowStatus.CANCELLED,
-                    thread_id,
-                    snapshot=snap,
-                    store=getattr(graph, "store", None),
-                )
-            else:
-                with contextlib.suppress(Exception):
-                    snapshot = await graph.aget_state(config)
-                    if not _has_native_resume_point(snapshot):
+                if isinstance(exc, WorkflowCancelledError):
+                    # Node detected cancelled/paused phase — preserve the actual phase
+                    # from the graph state rather than parsing the exception message
+                    snap = None
+                    with contextlib.suppress(Exception):
+                        snap = await graph.aget_state(config)
+                    if snap:
+                        actual_phase = (snap.values or {}).get("phase", "cancelled")
+                    else:
+                        actual_phase = "cancelled"
+                    is_paused = actual_phase == "paused"
+                    target_phase = "paused" if is_paused else "cancelled"
+                    target_status = "paused" if is_paused else "cancelled"
+                    with contextlib.suppress(Exception):
                         await graph.aupdate_state(
                             config,
-                            {"phase": "error", "error": str(exc)},
-                            as_node=_get_as_node(snapshot),
+                            {"phase": target_phase, "error": None if is_paused else str(exc)},
+                            as_node=_get_as_node(snap) if snap else None,
                         )
-                await _db_upsert(
-                    thread_id,
-                    status="error",
-                    phase="error",
-                    error=str(exc),
-                    updated_at=datetime.now(UTC).isoformat(),
-                )
-        raise
+                    await _db_upsert(
+                        thread_id,
+                        status=target_status,
+                        phase=target_phase,
+                        error=None if is_paused else str(exc),
+                        updated_at=datetime.now(UTC).isoformat(),
+                    )
+                    await _emit_status_transition(
+                        WorkflowStatus.PAUSED if is_paused else WorkflowStatus.CANCELLED,
+                        thread_id,
+                        snapshot=snap,
+                        store=getattr(graph, "store", None),
+                    )
+                else:
+                    with contextlib.suppress(Exception):
+                        snapshot = await graph.aget_state(config)
+                        if not _has_native_resume_point(snapshot):
+                            await graph.aupdate_state(
+                                config,
+                                {"phase": "error", "error": str(exc)},
+                                as_node=_get_as_node(snapshot),
+                            )
+                    await _db_upsert(
+                        thread_id,
+                        status="error",
+                        phase="error",
+                        error=str(exc),
+                        updated_at=datetime.now(UTC).isoformat(),
+                    )
+            raise
 
-    finally:
-        if is_sync:
-            _active_sync_executions.discard(thread_id)
-        # Only pop if this task is still the registered one —
-        # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
-        if _background_tasks.get(thread_id) is asyncio.current_task():
-            _background_tasks.pop(thread_id, None)
-        # P2b-S1: best-effort lease teardown. A cancelled task may not reach
-        # this await at all; the lease then goes silent and expires, which is
-        # the property being built rather than a gap in it.
-        with contextlib.suppress(Exception):
-            from backend.db.execution_leases import end_lease
-
-            await end_lease(thread_id, lease_heartbeat)
+        finally:
+            if is_sync:
+                _active_sync_executions.discard(thread_id)
+            # Only pop if this task is still the registered one —
+            # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
+            if _background_tasks.get(thread_id) is asyncio.current_task():
+                _background_tasks.pop(thread_id, None)
