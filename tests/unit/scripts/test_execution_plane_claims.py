@@ -27,6 +27,14 @@ So this file pins two things the anchor tables cannot:
    weaker than the table check (no token comparison, because prose does not name
    one) and its limit is published next to the numbers.
 
+3. **Which of the sibling's four properties are copyable.**  §7 offered them as
+   four gaps.  Measured, the registry is why three of them are not: it is keyed
+   by ``thread_id`` -- one slot per thread -- and three call sites cancel
+   whatever sits in that slot, so a retry registering there would not shadow a
+   line, it would displace the workflow's own entry and retarget
+   ``pause``/``cancel``/``resume`` at the retry.  The counts are published so the
+   ruling is re-tested each run instead of re-remembered.
+
 The pattern for "a cited line number" carries **no extension whitelist**: an
 earlier version of it listed extensions and silently skipped ``Dockerfile:81``.
 A scan that cannot see a reference cannot fail on it, and a whitelist is exactly
@@ -117,6 +125,19 @@ def _call_sites(root: Path, callee: str, *, outside: Path | None = None) -> list
             if isinstance(node, ast.Call) and _callee(node) == callee:
                 found.append(f"{_show(path)}:{node.lineno}")
     return sorted(found)
+
+
+def _calls_within(path: Path, callee: str) -> int:
+    """Call sites of *callee* inside **one** module.
+
+    ``_call_sites`` walks a directory, and the two numbers §7 hands the next task
+    are about a single file: how many ``start_lease`` calls and how many direct
+    ``aupdate_state`` writes the two repair paths contain.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return sum(
+        1 for node in ast.walk(tree) if isinstance(node, ast.Call) and _callee(node) == callee
+    )
 
 
 def _stores_into(func: ast.AST, name: str) -> bool:
@@ -269,6 +290,150 @@ def _started_coroutine_cleans_up(path: Path, handler: str) -> int:
     return 0
 
 
+# ── the ruling: what the registry can and cannot absorb ──────────────────────
+# §7's closing section offered "give ``_run_retry`` a registry write" as part of
+# closing the gap.  These three numbers are why it is not a write, it is a
+# trade: the registry holds one task per thread_id, and three functions cancel
+# whoever is in the slot.
+
+_SERIALIZATION_SENTENCE = "工作流正在运行，无法重试。"
+
+
+def _registry_declared_value_type(path: Path) -> str:
+    """The declared type of one entry in the task registry.
+
+    The ruling in §7 turns on the registry holding **one** task per ``thread_id``:
+    that is what makes a second writer displace the first instead of adding to it.
+    Read from the annotation rather than from the prose, so turning the value into
+    a list would show up as a changed claim instead of a stale paragraph.
+    """
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if not isinstance(node, ast.AnnAssign) or not isinstance(node.target, ast.Name):
+            continue
+        if node.target.id != "_background_tasks":
+            continue
+        annotation = node.annotation
+        if not isinstance(annotation, ast.Subscript):
+            raise AssertionError(f"_background_tasks is annotated as {ast.unparse(annotation)}")
+        inner = annotation.slice
+        if not isinstance(inner, ast.Tuple) or len(inner.elts) != 2:
+            raise AssertionError("expected a two-parameter mapping")
+        return ast.unparse(inner.elts[1])
+    raise AssertionError(f"no annotated _background_tasks in {path.name}")
+
+
+def _registry_task_writes(root: Path) -> int:
+    """``_background_tasks[...] = task`` sites across *root*."""
+    total = 0
+    for _path, tree in _trees(root):
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if not isinstance(target, ast.Subscript):
+                    continue
+                base = getattr(target.value, "attr", None) or getattr(target.value, "id", None)
+                if base == "_background_tasks":
+                    total += 1
+    return total
+
+
+def _registry_readers_that_cancel(root: Path) -> int:
+    """Functions that read the registry's occupant and then cancel it.
+
+    ``bg = _background_tasks.get(thread_id)`` followed by ``bg.cancel()`` -- in
+    ``pause_workflow``, ``cancel_workflow`` and ``_start_resume_task``.  They act
+    on whoever is in the slot, which is the whole cost of a second writer.
+    """
+    total = 0
+    for _path, tree in _trees(root):
+        for func in _functions(tree):
+            reads = any(
+                isinstance(sub, ast.Call)
+                and _callee(sub) == "get"
+                and isinstance(sub.func, ast.Attribute)
+                and (getattr(sub.func.value, "attr", None) or getattr(sub.func.value, "id", None))
+                == "_background_tasks"
+                for sub in ast.walk(func)
+            )
+            cancels = any(
+                isinstance(sub, ast.Call) and _callee(sub) == "cancel" for sub in ast.walk(func)
+            )
+            if reads and cancels:
+                total += 1
+    return total
+
+
+def _paths_saying_the_serialization_sentence() -> int:
+    """How many of the two repair paths carry the shared refusal sentence.
+
+    The ruling is that both answer the *same* question, so they answer it in the
+    same words -- a sentence that drifted apart is the cheapest observable sign
+    that the rule did too.  Published as 2.
+    """
+    wanted = {"retry_ripple_analysis", "retry_publish"}
+    tree = ast.parse(ACTIONS.read_text(encoding="utf-8"))
+    saying = 0
+    for func in _functions(tree):
+        if func.name not in wanted:
+            continue
+        if any(
+            isinstance(sub, ast.Constant)
+            and isinstance(sub.value, str)
+            and _SERIALIZATION_SENTENCE in sub.value
+            for sub in ast.walk(func)
+        ):
+            saying += 1
+    return saying
+
+
+# ── the ruling table: the slice's deliverable, read back ─────────────────────
+# §7's four verdicts are what this slice decided, and their values were pinned one
+# at a time without pinning the verdicts themselves: a document that flipped 采纳
+# to 不采纳, leaving the code alone, would have stayed green.  Each row is now
+# paired with the claim that has to agree with it.
+
+_RULING_HEADER = "| 性质 | 裁定 | 依据 |"
+
+# Verdict spellings the table may use -> whether the paired property must exist.
+# An unregistered spelling raises rather than being skipped: a verdict no reader
+# can interpret is the same as no verdict.
+_RULING_VERDICTS: dict[str, bool] = {"采纳": True, "不采纳": False, "连带不采纳": False}
+
+# The 性质 cell, markdown stripped -> the claim id whose value decides the verdict
+_RULING_FACTS: dict[str, str] = {
+    "串行化守卫": "ripple_retry_serialization_guards",
+    "add_done_callback": "ripple_retry_done_callbacks",
+    "_background_tasks[...] =": "ripple_retry_task_registrations",
+    "被起协程的自身清理": "ripple_retry_self_cleanups",
+}
+
+
+def _plain(cell: str) -> str:
+    """A table cell with its markdown emphasis and code ticks removed."""
+    return cell.replace("**", "").replace("`", "").strip()
+
+
+def _ruling_verdicts() -> dict[str, str]:
+    """``性质 -> 裁定``, read from §7's ruling table in document order.
+
+    Anchored on the header row rather than on a marked block: the table is prose
+    (it has no ``path:line`` first cell, so the anchor tables would reject it).
+    """
+    lines = _DOC_TEXT.splitlines()
+    assert lines.count(_RULING_HEADER) == 1, "expected exactly one ruling table"
+    start = lines.index(_RULING_HEADER) + 2  # skip the header and its separator
+    verdicts: dict[str, str] = {}
+    for line in lines[start:]:
+        if not line.startswith("|"):
+            break
+        cells = line.strip().strip("|").split("|")
+        assert len(cells) == 3, f"the ruling table changed shape: {line!r}"
+        verdicts[_plain(cells[0])] = _plain(cells[1])
+    assert verdicts, "the ruling table is empty"
+    return verdicts
+
+
 # ── the marked tables ─------------------------------------------------------------
 
 
@@ -303,17 +468,29 @@ def _paired_claim_ids(published: Mapping[str, str]) -> list[tuple[str, str]]:
     The pairing is read *from the document*, so a row dropped on one side shrinks
     this list silently -- which is why the caller pins its length instead of
     trusting it.  The lease is deliberately not a pair: §7 shows it as two zeros,
-    and zeros on both sides are not a difference.
+    and zeros on both sides are not a difference.  Neither is the guard any more
+    -- see ``_CONVERGED_PROPERTIES`` -- so a convergence is not just tolerated,
+    it is asserted on its own below.
     """
     ids = set(published)
     pairs: list[tuple[str, str]] = []
     for name in sorted(ids):
         if not name.startswith("ripple_retry_"):
             continue
-        twin = "publish_retry_" + name[len("ripple_retry_") :]
+        tail = name[len("ripple_retry_") :]
+        if tail in _CONVERGED_PROPERTIES:
+            continue
+        twin = "publish_retry_" + tail
         if twin in ids:
             pairs.append((name, twin))
     return pairs
+
+
+# Properties the two paths used to differ on and no longer do.  The guard is the
+# one this slice adopted on the ripple-retry side: §7's table stops being a list
+# of gaps and becomes a ruling.  Named explicitly -- and pinned by its own test --
+# so that excluding it does not also excuse it from being checked ever again.
+_CONVERGED_PROPERTIES = {"serialization_guards"}
 
 
 _CLAIMS: dict[str, Callable[[], Any]] = {
@@ -339,6 +516,17 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
         ACTIONS, "retry_ripple_analysis"
     ),
     "publish_retry_self_cleanups": lambda: _started_coroutine_cleans_up(ACTIONS, "retry_publish"),
+    # §7 -- the ruling: which of the sibling's four properties are copyable
+    "registry_task_write_sites_under_backend": lambda: _registry_task_writes(BACKEND),
+    "registry_declared_value_type": lambda: _registry_declared_value_type(RUNNER),
+    "registry_readers_that_cancel_the_occupant": lambda: _registry_readers_that_cancel(BACKEND),
+    "repair_paths_using_the_shared_serialization_sentence": lambda: (
+        _paths_saying_the_serialization_sentence()
+    ),
+    "start_lease_call_sites_in_wf_actions": lambda: _calls_within(ACTIONS, "start_lease"),
+    "direct_aupdate_state_call_sites_in_wf_actions": lambda: _calls_within(
+        ACTIONS, "aupdate_state"
+    ),
     # §8 -- how much of this document its own tables actually cover
     "line_number_references_in_this_document": lambda: sum(
         len(part) for part in _cited(_DOC_TEXT, REPO)
@@ -397,9 +585,9 @@ def test_no_recalculator_is_left_behind_by_the_document():
 
 def test_the_two_repair_paths_differ_on_every_property_the_document_pairs():
     pairs = _paired_claim_ids(_published())
-    assert len(pairs) == 4, (
-        "§7 shows four properties on both repair paths; the document currently pairs "
-        f"{len(pairs)} of them: {pairs}"
+    assert len(pairs) == 3, (
+        "§7 shows three properties that still differ on both repair paths; the document "
+        f"currently pairs {len(pairs)} of them: {pairs}"
     )
     same = [f"{left} == {right}" for left, right in pairs if _same_value(left, right)]
     assert not same, (
@@ -407,6 +595,52 @@ def test_the_two_repair_paths_differ_on_every_property_the_document_pairs():
         f"pairs properties that recompute to equal values: {same}. Either the tree "
         "changed -- then §7's table is wrong -- or the pairing is."
     )
+
+
+def test_the_pair_that_converged_is_the_one_the_slice_ruled_on():
+    """The retired pair, kept as its own claim.
+
+    Dropping a pair from the check above would otherwise also drop it out of
+    every future run: a tree that reverted the adopted guard would look exactly
+    like a tree that never had it.
+    """
+    assert len(_CONVERGED_PROPERTIES) == 1, _CONVERGED_PROPERTIES
+    assert "serialization_guards" in _CONVERGED_PROPERTIES, _CONVERGED_PROPERTIES
+    for name in sorted(_CONVERGED_PROPERTIES):
+        left, right = f"ripple_retry_{name}", f"publish_retry_{name}"
+        assert _same_value(left, right), (
+            f"§7 presents {left} and {right} as the same rule; they recompute to "
+            f"{_render(_CLAIMS[left]())} and {_render(_CLAIMS[right]())}"
+        )
+
+
+def test_the_ruling_table_agrees_with_the_four_published_values():
+    """The verdicts are this slice's deliverable, so they get a reader too.
+
+    Each row pairs a property with the value that decides it: an adopted property
+    has to be there (a non-zero claim), a refused one has to be gone (zero).  The
+    two directions are different edits -- flipping a word here is how the document
+    lies, moving the code is how it goes stale -- so both are pinned, one test
+    each.  A verdict is also required to round-trip through the registered
+    spellings, because a third word would otherwise be silently ignored.
+    """
+    verdicts = _ruling_verdicts()
+    assert set(verdicts) == set(_RULING_FACTS), (
+        "the ruling table and its readers disagree about which properties §7 rules on: "
+        f"{sorted(set(verdicts) ^ set(_RULING_FACTS))}"
+    )
+    for property_name, verdict in verdicts.items():
+        assert verdict in _RULING_VERDICTS, (
+            f"§7 rules {property_name!r} {verdict!r}, which no reader can interpret; "
+            f"registered verdicts: {sorted(_RULING_VERDICTS)}"
+        )
+        claim_id = _RULING_FACTS[property_name]
+        adopted = _RULING_VERDICTS[verdict]
+        value = _CLAIMS[claim_id]()
+        assert bool(value) == adopted, (
+            f"§7 rules {property_name!r} {verdict!r}, so {claim_id} should be "
+            f"{'non-zero' if adopted else 'zero'}; it recomputes to {_render(value)!r}"
+        )
 
 
 def _same_value(left: str, right: str) -> bool:
@@ -615,3 +849,45 @@ def test_the_pairing_scan_finds_both_sides_and_ignores_unpaired_properties():
     assert _paired_claim_ids(sample) == [
         ("ripple_retry_done_callbacks", "publish_retry_done_callbacks")
     ]
+
+
+def test_the_registry_scans_read_the_tree_they_are_pointed_at(tmp_path: Path):
+    """Positive control for the three scans §7's ruling rests on.
+
+    All three answer from ``BACKEND`` in production, so "the scan ignores its
+    argument and reads the real tree" is indistinguishable from the published
+    numbers -- and it would hand every later ruling today's counts.  The fixture
+    therefore disagrees with the repository on all three answers: one write site
+    instead of three, one reader-that-cancels instead of three (with a reader that
+    only reads beside it, which a scan missing the ``cancel()`` half would count),
+    and a list-valued registry instead of a single task.
+    """
+    root = _pkg(tmp_path)
+    runner = _write(
+        root,
+        "api/routes/_runner.py",
+        "_background_tasks: dict[str, list[asyncio.Task[Any]]] = {}\n"
+        "\n"
+        "def pause_workflow(thread_id):\n"
+        "    bg = _background_tasks.get(thread_id)\n"
+        "    if bg is not None:\n"
+        "        bg.cancel()\n"
+        "\n"
+        "def status_of(thread_id):\n"
+        "    return _background_tasks.get(thread_id)\n",
+    )
+    actions = _write(
+        root,
+        "api/routes/_wf_actions.py",
+        "async def retry(thread_id, task, graph, config):\n"
+        "    _background_tasks[thread_id] = asyncio.create_task(task)\n"
+        "    await graph.aupdate_state(config, {})\n",
+    )
+    assert _registry_task_writes(root) == 1, "the write scan did not read its argument"
+    assert _registry_readers_that_cancel(root) == 1, "the reader scan counts a reader"
+    assert _registry_declared_value_type(runner) == "list[asyncio.Task[Any]]", (
+        "the annotation scan did not read the file it was handed"
+    )
+    # The 0-claim beside them needs a control too: one call must be countable.
+    assert _calls_within(actions, "aupdate_state") == 1
+    assert _calls_within(actions, "start_lease") == 0

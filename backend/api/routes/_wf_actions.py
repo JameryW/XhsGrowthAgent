@@ -53,6 +53,21 @@ async def retry_ripple_analysis(
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
+    # 并发守卫：与 retry_publish 同一条规则、同一个谓词、同一句文案。两处问的都是
+    # "本进程要不要再起一份任务"，而租约答的是"有没有人在跑"，两个方向都会错（理由
+    # 见 retry_publish 的同段注释与 tests/unit/api/test_serialization_guards_stay_local.py）。
+    # 范围：只挡"重试撞本进程的执行"，不挡反向的"执行撞重试"——ripple-retry 刻意不写
+    # _runner._background_tasks：那个 dict 每 thread 一槽，写入会顶掉工作流自己的条目，
+    # 把 /pause、/cancel、/resume 的 cancel() 靶子换成重试。
+    if _runner.process_has_active_task(thread_id):
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "工作流正在运行，无法重试。",
+            }
+        )
+
     # P1a-S4-2: content_plan / ripple_prediction live in the Artifact Store on
     # ref'd threads — a raw read sees neither, so the retry would always
     # "skip" for lack of selected_topic. Resolve through the read seam first.

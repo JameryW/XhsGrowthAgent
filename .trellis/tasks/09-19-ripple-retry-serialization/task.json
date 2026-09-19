@@ -1,0 +1,33 @@
+{
+  "id": "ripple-retry-serialization",
+  "name": "ripple-retry-serialization",
+  "title": "ripple-retry 要不要照抄兄弟路径：守卫答什么、回调要不要",
+  "description": "docs/execution-plane.md §7 把两问留给下一任务：ripple-retry 的串行化守卫该答什么、done 回调要不要。本片带着 1800s 窗口把两问裁定掉，并实测登记表是不是可以「补一行」—— 结论是登记表不能补（每 thread 一槽 + 3 个破坏性直接读者）。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-09-19",
+  "completedAt": null,
+  "branch": "feat/ripple-retry-serialization",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/api/routes/_wf_actions.py",
+    "docs/execution-plane.md",
+    "docs/tool-runtime.md",
+    "tests/unit/api/test_serialization_guards_stay_local.py",
+    "tests/unit/scripts/test_execution_plane_claims.py",
+    "tests/unit/scripts/test_docs_citations.py"
+  ],
+  "notes": "S1 delivered on feat/ripple-retry-serialization (base 47ed1666). Ruling recorded in docs/execution-plane.md §7: the serialization guard is ADOPTED (retry_ripple_analysis now answers _runner.process_has_active_task, same predicate and same sentence as retry_publish), while the done callback, the _background_tasks write and the consequent self-cleanup are REFUSED -- the registry is keyed by thread_id (one slot per thread, dict[str, asyncio.Task[Any]]) and three call sites cancel the occupant, so a retry registering there would retarget /pause, /cancel and /resume at itself. The slice's default direction from the previous ticket (\"fill the missing line\") is thereby overturned: it is a target swap, not a missing line. NEW READERS added because the mutation self-check found them missing: the predicate choice had no witness (swapping to has_active_execution kept every case green), the four verdict words in §7 had no reader at all, and the three new registry scans could not prove they read the tree they are pointed at. Gates: ruff check clean / ruff format 548 files / mypy 217 files / context-compiler baseline OK / tool-runtime gate OK. Full pytest 3664 passed + 3 skipped (3667 collected, +3 = the three new cases), zero failures. Mutation self-check 23/23 killed, 0 survivors, 0 collection errors, 0 weak witnesses, restore=OK. Still registered, NOT fixed: the guard is one-directional (an execution can still collide with a retry -- _start_resume_task only cancels what is in the slot), two concurrent ripple-retries do not exclude each other, and neither repair path takes a lease (refusal semantics for a lease are still undecided).",
+  "meta": {}
+}

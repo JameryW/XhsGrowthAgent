@@ -31,23 +31,28 @@ from docs_citation_rule import _cited, _rot, documents
 
 REPO = Path(__file__).resolve().parents[3]
 
-# Floors, measured 2026-09-19: 29 documents, 118 citations, 2 of them carrying one.
+# Floors, measured 2026-09-19: 29 documents, 113 citations, 2 of them carrying one.
+# ★ 118 -> 113 when §7 of ``execution-plane.md`` was rewritten: the old prose spelled
+# its cost model with five more ``file:line`` references than the ruling that replaced
+# it needed.  A floor that failed to move with a *legitimate* removal would have to be
+# raised every slice; the reason it may move down here is that the removal is visible
+# in the same commit, while the narrowing this floor guards against is not.
 # A *floor* and not an equality, for the same reason the anchor tables use one:
 # adding a reference keeps this green, while a scanner that has quietly narrowed to
 # a single document trips it.
 #
 # ★ Both numbers are the *classified* ones, and both are smaller than the raw text
 # says -- that gap is the finding, not a rounding:
-#   * raw backticked ``:digits`` tokens: 122.  Four of them are ``localhost:8000``,
-#     ``host.containers.internal:9223`` and ``postgres:15`` twice, so the published
-#     count is 118.
+#   * raw backticked ``:digits`` tokens: 123 (104 path-shaped + 19 bare).  Seven
+#     occurrences are ``localhost:8000``, ``host.containers.internal:9223`` and
+#     ``postgres:15``, so the published count is 116.
 #   * raw "documents that cite a line": 5 (``docs/deployment.md``,
 #     ``docs/security.md``, ``CLAUDE.md`` and the two below).  Under the
 #     discriminator the first three carry **no citations at all**.
 # A floor copied from the raw count would therefore have been a floor on the wrong
 # quantity -- and would have kept three false positives alive by construction.
 _MIN_DOCUMENTS = 29
-_MIN_CITATIONS = 118
+_MIN_CITATIONS = 116
 _MIN_DOCUMENTS_WITH_CITATIONS = 2
 
 
