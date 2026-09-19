@@ -2,7 +2,7 @@
 
 > 票 `09-19-repair-paths-lease-verdict` · 分支 `feat/repair-paths-lease-verdict` · 基线 `4471e0fa`
 > 前置：`docs/execution-plane.md` §2/§7（#631 钉数值、#632 钉形状、#634 钉守卫与登记表裁定）
-> 交付：PR **#（回填）**
+> 交付：PR **#635** · commit `436f4f73` · CI 8/8
 
 ## 0. 这一片要回答什么
 
@@ -270,4 +270,6 @@ baseline=clean  restore=YES
 
 ### 8.5 commit / PR
 
-（commit 与 PR 号回填）
+- commit：`436f4f73`（`feat/repair-paths-lease-verdict`，基线 `4471e0fa`）
+- PR：**#635** —— CI **8/8 全过**（纯文档提交之前的第一次运行，py3.11 与 py3.12 都绿，无 flake）
+- 门禁四道 + 两道额外，均在**将要提交的这棵树上**跑过；突变自检 `restore=YES` 由收尾 sha256 比对给出
