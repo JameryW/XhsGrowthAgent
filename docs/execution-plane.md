@@ -111,8 +111,8 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/db/execution_leases.py:513` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:514`；由 `end_lease` 取消，取消即正常收尾 |
 | `backend/api/routes/_wf_runtime.py:351` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:353` |
 | `backend/api/routes/_wf_application.py:258` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:260` |
-| `backend/api/routes/_wf_actions.py:181` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **不持租约、不注册** —— 见 §7 |
-| `backend/api/routes/_wf_actions.py:361` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **不持租约**；注册于 `:363` |
+| `backend/api/routes/_wf_actions.py:196` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **不持租约、不注册** —— 见 §7 |
+| `backend/api/routes/_wf_actions.py:376` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **不持租约**；注册于 `:363` |
 | `backend/agents/content_strategist.py:597` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
 | `backend/api/routes/accounts.py:404` | `background_tasks.add_task(sync_after_login, account_id)` | REAL_TASK | Starlette 后台任务，跟响应生命周期走 |
 | `backend/services/creator_stats/client.py:738` | `task = asyncio.create_task(capture(response))` | REAL_TASK | 采集响应，结果进缓存 |
@@ -171,53 +171,51 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 仓里另有两个**修复路径**，它们直接写 checkpoint，**不取租约**：
 
-- `backend/api/routes/_wf_actions.py:97` `async def _run_retry()` —— ripple-retry，直接 `graph.aupdate_state`。
-- `backend/api/routes/_wf_actions.py:319` `async def _run_publish_retry()` —— publish-retry，同样直接 `graph.aupdate_state`。
+- `backend/api/routes/_wf_actions.py:112` `async def _run_retry()` —— ripple-retry，直接 `graph.aupdate_state`。
+- `backend/api/routes/_wf_actions.py:334` `async def _run_publish_retry()` —— publish-retry，同样直接 `graph.aupdate_state`。
 
 后果是精确的，不是笼统的「不够健壮」：
 
 - **它们没有租约行** ⇒ `expire_scan()` 永远看不到它们 ⇒ **接管扫描不可能接管它们**。
-- **`_run_retry` 连任务注册表都没进** ⇒ 起了任务之后没有 `_runner._background_tasks[thread_id] = task`（对比 `backend/api/routes/_wf_actions.py:363` 的 publish-retry 有）⇒ 进程重启后，`/recover` 也看不见它。
+- **`_run_retry` 连任务注册表都没进** ⇒ 起了任务之后没有 `_runner._background_tasks[thread_id] = task`（对比 `backend/api/routes/_wf_actions.py:378` 的 publish-retry 有）。★ **这条的后果是「同进程内看不见它」**：`has_active_execution`（`backend/api/routes/_runner.py:91` 把登记表 OR 进去）与三个直接读槽的动作都答「没人跑」。**但补上登记表并不解决重启那一侧** —— 登记表是进程内的，重启后本来就是空的（`backend/api/routes/_runner.py:40` 的注释就写着这一点）；重启后的可见性只有**租约**能回答，而两条路径都不取租约。上一版把这两件事写成了一条因果。
 - 于是这两个路径在重启时**既不会被迁移、也不会被接管** —— 而它们恰恰是「上一次执行没走完」时最可能被调用到的路径。
 
-**为什么本片不修。** 两种修法都会改变行为：让它们改走 `_run_graph_and_persist` 会改掉相位推进与事件发射的时序；给它们单独加租约会引入新的拒租分支与新的失败模式。裁定 1 的闸门没开（§0），所以 S4 的产出是**登记**，不是**改动**。
+**为什么当时不修。** 两种修法都会改变行为：让它们改走 `_run_graph_and_persist` 会改掉相位
+推进与事件发射的时序；给它们单独加租约会引入新的拒租分支与新的失败模式。裁定 1 的闸门没开（§0），
+所以 S4 的产出是**登记**，不是**改动**。
 
-**留给下一任务的输入**（按代价从低到高）。两条都带**量出来的**代价，不是估的：
+**两问的裁定。** 上一版把两问留给下一任务，并要求带着 1800 秒做。答完之后有一条被顺带推翻：
+「补注册表写入」不是第 4 个缺口 —— 它是**换靶子**。
 
-1. **给 ripple-retry 补齐兄弟路径有的东西。** 上一版写的是「补注册表写入 —— 一行」，**形状也算错了**：
-   两条修复路径的差异是 5 个性质，其中 **4 个是缺口**（末行的租约是 §7 的原始事实，两条都缺）：
+| 性质 | 裁定 | 依据 |
+| --- | --- | --- |
+| 串行化守卫 | **采纳** | `backend/api/routes/_wf_actions.py:237` 的注释把意图写成「工作流正在跑（**含正在重试**）时不允许再触发」；`backend/api/routes/_runner.py:48` 的 docstring 说它答的是「本进程要不要起活」。两处**同一个谓词、同一句文案** |
+| `add_done_callback` | **不采纳** | `_on_task_done` 的两个分支写的都是**工作流**的列：`backend/api/routes/_wf_runtime.py:93-96` 把异常写进 `status=error` 与 `error`，`:97-99` 把仍 `running` 的库标 `stale`。而 ripple-retry 结束**不代表工作流结束** ⇒ 照抄会把暂停/在跑的工作流说成 stale |
+| `_background_tasks[...] =` | **不采纳** | 见下 —— 登记表**每 thread 一槽**，写入是换靶子而不是补一行 |
+| 被起协程的自身清理 | **连带不采纳** | 没有登记就没有要清理的条目 |
 
-   | 性质 | `backend/api/routes/_wf_actions.py:38` `retry_ripple_analysis` | `backend/api/routes/_wf_actions.py:193` `retry_publish` |
-   | --- | --- | --- |
-   | 串行化守卫 `process_has_active_task` | **0** | 1（`backend/api/routes/_wf_actions.py:228`） |
-   | `add_done_callback` | **0** | 1（`backend/api/routes/_wf_actions.py:362`） |
-   | `_background_tasks[...] =` | **0** | 1（`backend/api/routes/_wf_actions.py:363`） |
-   | 被起协程的自身清理（`finally` 里 `pop`） | **0** | 1（`backend/api/routes/_wf_actions.py:357` 的 `finally`，`:359` 的 `pop`） |
-   | 租约 `start_lease` | 0 | 0 |
+**★ 登记表为什么不能补：它的 key 就是 `thread_id`。** `backend/api/routes/_runner.py:42` 声明的是
+`dict[str, asyncio.Task[Any]]` ⇒ **每个 thread 只有一个槽**。仓里有 3 处写入者，而 **3** 处读者读的
+就是槽里的那一个任务并**取消它**：`backend/api/routes/_wf_application.py:663`（`pause_workflow`）、
+`:1209`（`cancel_workflow`）、`backend/api/routes/_wf_runtime.py:331`（`_start_resume_task`）；
+另有一处（`backend/api/routes/_wf_application.py:1516`，`delete_workflow`）在槽被占用时**拒绝删除**。
 
-   它也不是「四个独立的一行」，有三个耦合：
+探针实测（真模块，不是推的）：同一 thread 写两次之后只剩 1 条，槽里是后写的那个，前一个**从登记表里
+消失**，`pause`/`cancel` 的 `cancel()` **打到重试身上**，而工作流照跑 —— 库里写着 `paused`/`cancelled`，
+真的执行还在写同一个 checkpoint。工作流自己的条目也**再不会恢复**：它的自清理有
+`is asyncio.current_task()` 身份守卫（`backend/api/routes/_runner.py:575`），被顶掉之后那个 `pop`
+永远不成立。⇒ 这一行的代价不是上一版估的「30 分钟静默拒绝」，而是**把三个破坏性动作的靶子换掉**。
 
-   - **注册表 ⇒ 别人的判断。** 补上它会让 `process_has_active_task` 在窗口内答 True，而那个谓词有
-     两个「读到 True 就不干活」的消费者 —— `backend/api/routes/_wf_actions.py:228` 直接回 `skipped`，
-     `backend/api/routes/_wf_application.py:1675` **静默不 resume**。它还经
-     `backend/api/routes/_runner.py:91` OR 进 `has_active_execution`，波及 7 个状态侧消费者。
-     窗口不是一瞬间：两个 `submit_and_wait` 由 `backend/api/routes/_wf_actions.py:138` 的
-     `asyncio.gather` **并发**消费，`max_wait = ripple_timeout` ⇒ **1800 秒**。
-     ⇒ 这是一次**对换**（今天的「并发写 checkpoint、无人管理」换成长达 30 分钟的静默拒绝/跳过；
-     `/resume` 还会先 `cancel()` 掉在飞的那一个，见 `backend/api/routes/_wf_runtime.py:331`），
-     **不是一次修复**。
-   - **守卫：缺的不是一个键，是整条守卫。** `retry_ripple_analysis` 里 `process_has_active_task`
-     出现 **0** 次。而 `backend/api/routes/_wf_actions.py:222` 的注释写着「工作流正在跑（**含正在重试**）
-     时不允许再触发」⇒ 让兄弟路径看见「正在重试」**原本就是意图**，不是一处遗漏。
-   - **回调：没有守卫就不能照抄。** `_on_task_done` 在任务正常结束而库里仍是 `running` 时把状态写成
-     **`stale`**（`backend/api/routes/_wf_runtime.py:99`）。有守卫的路径能安全用它，没有守卫的路径
-     照抄会把**真的在跑**的工作流标成 stale。
+**★ 守卫是单向的，这句要一起写。** 它挡「重试撞本进程的执行」，**挡不住**反向的「执行撞重试」——
+后者发生在 `_start_resume_task`，它取消的是**槽里**的东西，而 ripple-retry 刻意不在槽里。所以两个
+写者仍可能在飞。**本片没有修好它** —— 只是把「不写登记表」的**理由**从「来不及」换成了「写了更错」，并把这条方向登记成欠账（见下面「留给下一任务的输入」）。
 
-   ⇒ 所以「换不换」前面还有两问，且**有顺序**：**守卫答什么，回调要不要**。
-   裁定要带着 1800 秒与这两问一起做 ——「一行」既不是代价，也不是形状。
-2. **让这两个路径也走统一入口（或至少取租约）。** 需要先决定拒租时是「照跑」还是「拒绝」，
-   即重新回答一次裁定 2 在修复路径上的适用性。今天的形状是：`backend/api/routes/_wf_actions.py` 里
-   `start_lease` 调用 **0** 处，直接 `aupdate_state` **3** 处。
+**留给下一任务的输入**（一条）。带**量出来的**代价，不是估的：
+
+1. **给这两条路径取租约，或给 ripple-retry 一个自己的键。** 需要先决定拒租时是「照跑」还是
+   「拒绝」，即重新回答一次裁定 2 在修复路径上的适用性。今天的形状是：
+   `backend/api/routes/_wf_actions.py` 里 `start_lease` 调用 **0** 处，直接 `aupdate_state` **3** 处。
+   改完之前，「执行撞重试」这个方向没有闸门。
 
 下面两张表把上面这些**位置**与**数值**钉住（前者的机制同 §6；后者由
 `tests/unit/scripts/test_execution_plane_claims.py` 从代码重算）。
@@ -228,20 +226,21 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | --- | --- | --- |
 | `backend/api/routes/_runner.py:390` | `_run_graph_and_persist` | 唯一取租约的执行入口 |
 | `backend/api/routes/_runner.py:418` | `start_lease` | 全仓唯一的 `start_lease(` 调用点 |
-| `backend/api/routes/_wf_actions.py:97` | `_run_retry` | ripple-retry |
-| `backend/api/routes/_wf_actions.py:319` | `_run_publish_retry` | publish-retry |
-| `backend/api/routes/_wf_actions.py:181` | `asyncio.create_task` | ripple-retry 起任务处 —— 它**没有**注册表写入 |
-| `backend/api/routes/_wf_actions.py:363` | `_background_tasks` | publish-retry 有；这是 ripple-retry 缺的那一行 |
+| `backend/api/routes/_wf_actions.py:112` | `_run_retry` | ripple-retry |
+| `backend/api/routes/_wf_actions.py:334` | `_run_publish_retry` | publish-retry |
+| `backend/api/routes/_wf_actions.py:196` | `asyncio.create_task` | ripple-retry 起任务处 → 它刻意不写登记表 |
+| `backend/api/routes/_wf_actions.py:378` | `_background_tasks` | publish-retry 有；ripple-retry **刻意不写**（见本节对两问的裁定） |
 | `backend/api/routes/_runner.py:48` | `process_has_active_task` | 串行化谓词（与状态谓词是两个问题） |
-| `backend/api/routes/_wf_actions.py:228` | `process_has_active_task` | 消费者 1：publish-retry 守卫 |
+| `backend/api/routes/_wf_actions.py:243` | `process_has_active_task` | 消费者 1：publish-retry 守卫 |
+| `backend/api/routes/_wf_actions.py:62` | `process_has_active_task` | ripple-retry 的守卫：与上一行同一个谓词 |
 | `backend/api/routes/_wf_application.py:1675` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
 | `backend/api/routes/_runner.py:91` | `process_has_active_task` | OR 进 `has_active_execution` 的那一处 |
-| `backend/api/routes/_wf_actions.py:138` | `asyncio.gather` | 两个 submit 的并发消费点 ⇒ 窗口是 1 个 timeout |
-| `backend/api/routes/_wf_actions.py:95` | `ripple_timeout` | 窗口的那个 1800.0 |
-| `backend/api/routes/_wf_actions.py:222` | `含正在重试` | 兄弟路径的守卫注释 —— 意图的出处 |
-| `backend/api/routes/_wf_actions.py:362` | `add_done_callback` | publish-retry 有；ripple-retry 没有 |
-| `backend/api/routes/_wf_actions.py:359` | `_background_tasks.pop` | 自身清理，只在未被替换时执行 |
-| `backend/api/routes/_wf_runtime.py:99` | `stale` | done 回调把仍 `running` 的库标成 stale —— 没守卫就不能照抄 |
+| `backend/api/routes/_wf_actions.py:153` | `asyncio.gather` | 两个 submit 的并发消费点 ⇒ 窗口是 1 个 timeout |
+| `backend/api/routes/_wf_actions.py:110` | `ripple_timeout` | 窗口的那个 1800.0 |
+| `backend/api/routes/_wf_actions.py:237` | `含正在重试` | 兄弟路径的守卫注释 —— 意图的出处 |
+| `backend/api/routes/_wf_actions.py:377` | `add_done_callback` | publish-retry 有；ripple-retry 刻意没有（回调写的是工作流的列） |
+| `backend/api/routes/_wf_actions.py:374` | `_background_tasks.pop` | 自身清理，只在未被替换时执行 |
+| `backend/api/routes/_wf_runtime.py:99` | `stale` | done 回调把仍 `running` 的库标成 stale —— 即使有了守卫也不照抄 |
 
 <!-- anchor-table:end -->
 
@@ -249,7 +248,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 | 主张 | 值 | 怎么重算 |
 | --- | --- | --- |
-| `process_has_active_task_consumers_outside_the_runner` | `2` | `backend/**` 里该谓词的调用点，排除它自己的定义模块 |
+| `process_has_active_task_consumers_outside_the_runner` | `3` | `backend/**` 里该谓词的调用点，排除它自己的定义模块 |
 | `status_consumers_of_has_active_execution` | `7` | 同上，换成 `has_active_execution` |
 | `run_graph_and_persist_call_sites` | `12` | 该函数的调用点数 |
 | `start_lease_call_sites_under_backend` | `1` | 全仓 `start_lease(` 的调用点数 |
@@ -257,12 +256,18 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | `ripple_retry_task_registrations` | `0` | 起该任务的那个函数里有没有把 task 存进 `_background_tasks` |
 | `publish_retry_task_registrations` | `1` | 同上 |
 | `ripple_retry_submits_are_concurrent` | `true` | 两个 submit 的结果是否被**同一个** `asyncio.gather` 消费 |
-| `ripple_retry_serialization_guards` | `0` | 该处理器里 `process_has_active_task` 的调用点数 |
+| `ripple_retry_serialization_guards` | `1` | 该处理器里 `process_has_active_task` 的调用点数 |
 | `publish_retry_serialization_guards` | `1` | 同上 |
 | `ripple_retry_done_callbacks` | `0` | 该处理器里 `add_done_callback` 的调用点数 |
 | `publish_retry_done_callbacks` | `1` | 同上 |
 | `ripple_retry_self_cleanups` | `0` | 它起的协程里有没有「`finally` 中移除注册表条目」 |
 | `publish_retry_self_cleanups` | `1` | 同上 |
+| `registry_task_write_sites_under_backend` | `3` | `_background_tasks[...] = ...` 的赋值点数（AST Store） |
+| `registry_declared_value_type` | `asyncio.Task[Any]` | 登记表声明的槽形状：**每个 thread 一个任务** —— 「写入会顶掉」的前提 |
+| `registry_readers_that_cancel_the_occupant` | `3` | 既读 `_background_tasks.get(` 又调 `.cancel()` 的函数数 |
+| `repair_paths_using_the_shared_serialization_sentence` | `2` | 两条修复路径里含同一句拒绝文案的函数数 |
+| `start_lease_call_sites_in_wf_actions` | `0` | `_wf_actions.py` 内 `start_lease` 的调用点数 —— 两条修复路径都绕过执行入口，所以「0 处」与「不持租约」是同一件事 |
+| `direct_aupdate_state_call_sites_in_wf_actions` | `3` | 同一文件内直接写 checkpoint 的处数 —— 「执行撞重试」那一侧今天没有任何闸门 |
 
 <!-- claim-table:end -->
 
@@ -279,7 +284,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | 位置 | 不该出现的 token | 为什么 |
 | --- | --- | --- |
 | `Dockerfile` | `--workers` | `docs/deployment.md:421` 声明了 `--workers 4`，镜像里没有 ⇒ 声明 ≠ 执行（§3） |
-| `backend/api/routes/_wf_actions.py:181` | `_background_tasks` | ripple-retry 起了任务却没进注册表（对比 `:363`）⇒ §7 的第一条后果 |
+| `backend/api/routes/_wf_actions.py:196` | `_background_tasks` | ripple-retry 起了任务却没进注册表（对比 `:363`）⇒ §7 的第一条后果 |
 | `backend/api/routes/workflow.py` | `start_lease` | 分层后 api 层仍无取租约处 ⇒ §7 的前提本身 |
 | `backend/api/routes/_wf_application.py` | `start_lease` | 16 个端点实现都走 `_runner._run_graph_and_persist`，租约在那里取 |
 | `backend/api/routes/_wf_runtime.py` | `start_lease` | resume / takeover 起的任务借的是 `_run_graph_and_persist` 的租约，本层不自己取 |
@@ -318,8 +323,8 @@ token —— 一个裸基名（`_wf_actions.py` 那一类，报错时给出它�
 
 | 主张 | 值 | 怎么重算 |
 | --- | --- | --- |
-| `line_number_references_in_this_document` | `114` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
-| `line_numbers_pinned_by_marked_tables` | `60` | 标记表里第一格本身就是 `路径:行号` 的行数 |
+| `line_number_references_in_this_document` | `112` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
+| `line_numbers_pinned_by_marked_tables` | `61` | 标记表里第一格本身就是 `路径:行号` 的行数 |
 | `bare_line_number_references_in_this_document` | `17` | 其中不带路径的处数 —— 只能被「节内归属」推断，是这一档已知的欠账 |
 
 <!-- claim-table:end -->
@@ -330,5 +335,5 @@ token —— 一个裸基名（`_wf_actions.py` 那一类，报错时给出它�
 位置是 §7 锚点表里的那一行。**机制的自述不会因为机制存在就变准** —— 自述也是承袭来的文字。
 
 **这三个数会随每一片新增引用而变，这不是缺陷，而是它的用法。** S4 这一片往 §7 加了 13 处引用，
-三个数就从 102 / 56 / 16 走到 114 / 60 / 17，而判据在同一次运行里把这三行判红：
+三个数当场就动了。本片重写 §7 的裁定段、又改了 §7 与 `docs/tool-runtime.md` 里的引用，它们**又**动了一次——每一次判据都在同一次运行里把这三行判红。**这里不复述它们今天的值**：上面那张表是唯一的出处，而复述一个已经被人算过的数，正是本节开头批评的那件事：
 自述数字只有在**有人替它算**的时候才是自述，否则它和上一版开头那句话是同一种东西。
