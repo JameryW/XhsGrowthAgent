@@ -536,11 +536,13 @@ async def thread_is_held(thread_id: str) -> bool:
     """Whether a live owner currently holds this thread.
 
     This is the reader ``heartbeat_at`` was built for, and the reason staleness
-    is computed here instead of read off ``state``: nothing flips a silent row
-    to ``expired`` in the background -- ``expire_scan`` is the only writer of
-    that state and it has no production caller -- so a row can sit at ``held``
-    long after its owner died. Asking "is it still renewable" is the question
-    callers actually have.
+    is computed here instead of read off ``state``: ``state`` lags the heartbeat.
+    ``expire_scan`` is the only writer of ``expired`` and it runs on the takeover
+    schedule (``api/routes/_takeover.py``) -- one pass at startup, then every
+    ``takeover_interval_seconds``, 60s by default, against a 90s TTL. So between
+    an owner's death and the sweep that flips its row, ``state`` still says
+    ``held``, and reading it would answer about the past. Asking "is it still
+    renewable" is the question callers actually have.
     """
     if not thread_id:
         return False

@@ -56,6 +56,8 @@ DOC = REPO / "docs" / "execution-plane.md"
 BACKEND = REPO / "backend"
 RUNNER = BACKEND / "api" / "routes" / "_runner.py"
 ACTIONS = BACKEND / "api" / "routes" / "_wf_actions.py"
+APP = REPO / "backend" / "api" / "app.py"
+MACHINE = BACKEND / "state" / "machine.py"
 
 _CLAIM_BLOCK = re.compile(r"<!-- claim-table:begin -->(.*?)<!-- claim-table:end -->", re.DOTALL)
 _ANCHOR_TABLES = re.compile(
@@ -387,6 +389,130 @@ def _paths_saying_the_serialization_sentence() -> int:
     return saying
 
 
+# ── the census behind §7's criterion ─────────────────────────────────────────
+# §7 used to call the two repair paths "the ones that write checkpoints without a
+# lease".  That describes twenty call sites in seven files, so it pinpoints
+# nothing.  The criterion that does is "the handler hands a nested coroutine to
+# create_task and that coroutine writes".  The scans below are what keeps the set
+# from being restated by hand.
+
+
+def _owner_map(tree: ast.Module) -> dict[int, str]:
+    """Call node -> the dotted name of its enclosing function (``h.nested``)."""
+
+    owner: dict[int, str] = {}
+    stack: list[str] = []
+
+    def walk(node: ast.AST) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            stack.append(node.name)
+            for child in ast.iter_child_nodes(node):
+                walk(child)
+            stack.pop()
+            return
+        if isinstance(node, ast.Call):
+            owner[id(node)] = ".".join(stack) or "<module>"
+        for child in ast.iter_child_nodes(node):
+            walk(child)
+
+    walk(tree)
+    return owner
+
+
+def _writers_outside_the_entry(path: Path, entry: str) -> list[str]:
+    """``path:line`` of checkpoint writes whose host function is not *entry*."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    owner = _owner_map(tree)
+    return sorted(
+        f"{_show(path)}:{node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _callee(node) == "aupdate_state"
+        and owner.get(id(node)) != entry
+    )
+
+
+def _own_task_writers(path: Path) -> int:
+    """Handlers that start a nested coroutine *and* let that coroutine write.
+
+    The criterion, as code: the call handed to ``create_task`` must name a
+    function defined in the same handler's body, and that function must contain a
+    checkpoint write.  A handler that writes inline, or that starts a task which
+    routes through ``_run_graph_and_persist``, is not one of these.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found = 0
+    for handler in _functions(tree):
+        for node in ast.walk(handler):
+            if not (isinstance(node, ast.Call) and _callee(node) == "create_task"):
+                continue
+            if not node.args:
+                continue
+            started = getattr(getattr(node.args[0], "func", None), "id", None)
+            if started is None:
+                continue
+            target = next(
+                (
+                    stmt
+                    for stmt in handler.body
+                    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and stmt.name == started
+                ),
+                None,
+            )
+            if target is None:
+                continue
+            if any(
+                isinstance(x, ast.Call) and _callee(x) == "aupdate_state" for x in ast.walk(target)
+            ):
+                found += 1
+    return found
+
+
+def _definitions(path: Path, name: str) -> int:
+    """How many times *name* is defined in one module."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return sum(
+        1
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
+    )
+
+
+def _if_tests_mentioning(path: Path, func: str, name: str) -> int:
+    """How many ``if`` tests inside *func* name *name*.
+
+    Published as 1: §7 says the change is visible only across priorities 9/10 of
+    ``derive_status``, and those two outcomes are decided by a **single** mention
+    -- priority 10 is reached because priority 9 fell through, not because it
+    tests the flag again.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    target = next((f for f in _functions(tree) if f.name == func), None)
+    assert target is not None, f"{func} not found in {path}"
+    return sum(
+        1 for node in ast.walk(target) if isinstance(node, ast.If) and name in ast.dump(node.test)
+    )
+
+
+def _create_task_targets(path: Path, callee: str) -> int:
+    """``create_task(<callee>(...))`` call sites in one module."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return sum(
+        1
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _callee(node) == "create_task"
+        and node.args
+        and getattr(getattr(node.args[0], "func", None), "id", None) == callee
+    )
+
+
 # ── the ruling table: the slice's deliverable, read back ─────────────────────
 # §7's four verdicts are what this slice decided, and their values were pinned one
 # at a time without pinning the verdicts themselves: a document that flipped 采纳
@@ -467,8 +593,10 @@ def _paired_claim_ids(published: Mapping[str, str]) -> list[tuple[str, str]]:
 
     The pairing is read *from the document*, so a row dropped on one side shrinks
     this list silently -- which is why the caller pins its length instead of
-    trusting it.  The lease is deliberately not a pair: §7 shows it as two zeros,
-    and zeros on both sides are not a difference.  Neither is the guard any more
+    trusting it.  The lease is not a pair either, but for a different reason than it
+    used to be: §7 states it once, as the number of executors that take it (three),
+    so there is no left/right pair to compare -- the convergence is in the claim.
+    Neither is the guard any more
     -- see ``_CONVERGED_PROPERTIES`` -- so a convergence is not just tolerated,
     it is asserted on its own below.
     """
@@ -526,6 +654,25 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
     "start_lease_call_sites_in_wf_actions": lambda: _calls_within(ACTIONS, "start_lease"),
     "direct_aupdate_state_call_sites_in_wf_actions": lambda: _calls_within(
         ACTIONS, "aupdate_state"
+    ),
+    # §7 -- the criterion, and the lease that now covers all three executors
+    "repair_paths_taking_the_lease": lambda: _calls_within(ACTIONS, "_execution_lease"),
+    "lease_helper_definitions_in_the_runner": lambda: _definitions(RUNNER, "_execution_lease"),
+    "end_lease_call_sites_under_backend": lambda: len(_call_sites(BACKEND, "end_lease")),
+    "aupdate_state_call_sites_outside_the_unified_entry": lambda: sum(
+        len(_writers_outside_the_entry(path, "_run_graph_and_persist"))
+        for path, _tree in _trees(BACKEND)
+    ),
+    "checkpoint_writer_files_outside_the_unified_entry": lambda: sum(
+        1
+        for path, _tree in _trees(BACKEND)
+        if _writers_outside_the_entry(path, "_run_graph_and_persist")
+    ),
+    "repair_paths_that_own_their_own_task": lambda: _own_task_writers(ACTIONS),
+    "expire_scan_call_sites_under_backend": lambda: len(_call_sites(BACKEND, "expire_scan")),
+    "takeover_scheduler_start_sites": lambda: _create_task_targets(APP, "takeover_scheduler"),
+    "derive_status_mentions_of_has_active_task": lambda: _if_tests_mentioning(
+        MACHINE, "derive_status", "has_active_task"
     ),
     # §8 -- how much of this document its own tables actually cover
     "line_number_references_in_this_document": lambda: sum(
@@ -639,6 +786,61 @@ def test_the_ruling_table_agrees_with_the_four_published_values():
         value = _CLAIMS[claim_id]()
         assert bool(value) == adopted, (
             f"§7 rules {property_name!r} {verdict!r}, so {claim_id} should be "
+            f"{'non-zero' if adopted else 'zero'}; it recomputes to {_render(value)!r}"
+        )
+
+
+# The second ruling table: same discipline, a different question.  Its header is
+# deliberately not §7's -- that one is asserted to occur exactly once, and a
+# second table wearing the same header would merge two vocabularies into one.
+
+_LEASE_RULING_HEADER = "| 问题 | 裁定 | 依据（可重算） |"
+
+_LEASE_RULING_FACTS: dict[str, str] = {
+    "两条修复路径取租约": "repair_paths_taking_the_lease",
+    "取租约只保留一处实现": "lease_helper_definitions_in_the_runner",
+    "给 ripple-retry 一个自己的键": "ripple_retry_task_registrations",
+}
+
+
+def _lease_ruling_verdicts() -> dict[str, str]:
+    """``问题 -> 裁定``, read from §7's lease table in document order."""
+    lines = _DOC_TEXT.splitlines()
+    assert lines.count(_LEASE_RULING_HEADER) == 1, "expected exactly one lease ruling table"
+    start = lines.index(_LEASE_RULING_HEADER) + 2  # skip the header and its separator
+    verdicts: dict[str, str] = {}
+    for line in lines[start:]:
+        if not line.startswith("|"):
+            break
+        cells = line.strip().strip("|").split("|")
+        assert len(cells) == 3, f"the lease ruling table changed shape: {line!r}"
+        verdicts[_plain(cells[0])] = _plain(cells[1])
+    assert verdicts, "the lease ruling table is empty"
+    return verdicts
+
+
+def test_the_lease_ruling_table_agrees_with_the_values_it_rules_on():
+    """The adopted/refused halves of the lease ruling, both pinned.
+
+    Same shape as the guard ruling above, one table over: an adopted property has
+    to be present (non-zero), a refused one has to be absent (zero).  Without
+    this, §7 could flip 采纳 to 不采纳 while the tree stayed put.
+    """
+    verdicts = _lease_ruling_verdicts()
+    assert set(verdicts) == set(_LEASE_RULING_FACTS), (
+        "the lease ruling table and its readers disagree about which questions it rules on: "
+        f"{sorted(set(verdicts) ^ set(_LEASE_RULING_FACTS))}"
+    )
+    for question, verdict in verdicts.items():
+        assert verdict in _RULING_VERDICTS, (
+            f"§7 rules {question!r} {verdict!r}, which no reader can interpret; "
+            f"registered verdicts: {sorted(_RULING_VERDICTS)}"
+        )
+        claim_id = _LEASE_RULING_FACTS[question]
+        adopted = _RULING_VERDICTS[verdict]
+        value = _CLAIMS[claim_id]()
+        assert bool(value) == adopted, (
+            f"§7 rules {question!r} {verdict!r}, so {claim_id} should be "
             f"{'non-zero' if adopted else 'zero'}; it recomputes to {_render(value)!r}"
         )
 
@@ -891,3 +1093,81 @@ def test_the_registry_scans_read_the_tree_they_are_pointed_at(tmp_path: Path):
     # The 0-claim beside them needs a control too: one call must be countable.
     assert _calls_within(actions, "aupdate_state") == 1
     assert _calls_within(actions, "start_lease") == 0
+
+
+def test_the_criterion_and_pinning_scans_read_the_tree_they_are_pointed_at(tmp_path: Path):
+    """Positive control for the five scans §7's criterion and its rows rest on.
+
+    ``_writers_outside_the_entry`` and ``_own_task_writers`` both take a path and
+    answer 20 / 2 from ``BACKEND`` in production; a version that ignored its
+    argument would reproduce both numbers while pinning nothing -- and it would
+    hand every later ruling today's counts.  The same is true of ``_definitions``,
+    ``_if_tests_mentioning`` and ``_create_task_targets``, whose published values
+    are 1 / 1 / 1 and would survive a hard-wired ``return 1``.  As with the
+    registry scans above, the fixture is built to **disagree** with the repository
+    on every answer, so "the scan read its argument" is what is being tested.
+
+    Each scan has to answer more than one way:
+
+    - ``_writers_outside_the_entry`` drops the entry's own write and keeps the
+      three others -- one inline, one nested in a handler, one orphan.
+    - ``_own_task_writers`` counts the handler whose nested coroutine writes and
+      does **not** count the handler whose nested coroutine routes through the
+      unified entry.  That difference *is* the criterion.  It answers 1 here and 2
+      on the real module, which is the point.
+    - ``_definitions`` separates a name defined twice from one defined once, and
+      reaches a nested definition.
+    - ``_if_tests_mentioning`` answers 2 where two branches test the flag, which is
+      how we know the published 1 is measured rather than assumed.
+    - ``_create_task_targets`` separates its callee from a second one, and answers
+      0 for a callee that is only ever wrapped.
+    """
+    root = _pkg(tmp_path)
+    module = _write(
+        root,
+        "api/routes/mixed.py",
+        "async def _run_graph_and_persist(thread_id):\n"
+        "    await graph.aupdate_state(config, {})\n"
+        "\n"
+        "async def inline_writer(thread_id):\n"
+        "    await graph.aupdate_state(config, {})\n"
+        "\n"
+        "def _start_resume_task(thread_id):\n"
+        "    async def _resume_async() -> None:\n"
+        "        await _run_graph_and_persist(thread_id)\n"
+        "    return asyncio.create_task(_resume_async())\n"
+        "\n"
+        "def retry_ripple_analysis(thread_id):\n"
+        "    async def _run_retry() -> None:\n"
+        "        await graph.aupdate_state(config, {})\n"
+        "    return asyncio.create_task(_run_retry())\n"
+        "\n"
+        "async def _run_retry_orphan() -> None:\n"
+        "    await graph.aupdate_state(config, {})\n"
+        "\n"
+        "def retry_publish(thread_id):\n"
+        "    return asyncio.create_task(_execution_lease(_run_retry_orphan()))\n"
+        "\n"
+        "async def derive_status(thread_id):\n"
+        "    if has_active_task(thread_id):\n"
+        "        return 10\n"
+        "    if not has_active_task(thread_id):\n"
+        "        return 9\n"
+        "    return 0\n"
+        "\n"
+        "def helper(thread_id):\n"
+        "    return 1\n"
+        "\n"
+        "def helper(thread_id):\n"
+        "    return 2\n",
+    )
+    # the three writes that are not the entry's own: :5 inline, :14 nested, :18 orphan
+    outside = _writers_outside_the_entry(module, "_run_graph_and_persist")
+    assert sorted(site.rsplit(":", 1)[1] for site in outside) == ["14", "18", "5"], outside
+    ledger = _own_task_writers(module)
+    assert ledger == 1, f"the criterion scan counted {ledger} handlers, not just the writer"
+    assert _definitions(module, "helper") == 2
+    assert _definitions(module, "_run_retry") == 1
+    assert _if_tests_mentioning(module, "derive_status", "has_active_task") == 2
+    assert _create_task_targets(module, "_run_retry") == 1
+    assert _create_task_targets(module, "_run_retry_orphan") == 0

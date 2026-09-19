@@ -1,11 +1,19 @@
 """Workflow actions layer: the two use cases that bypass the unified entry.
 
 ``retry_ripple_analysis`` and ``retry_publish`` are the only endpoints whose
-side effect does not go through ``_runner._run_graph_and_persist``: each
-starts its own task and writes checkpoints **without taking a lease** --
-the two findings registered in ``docs/execution-plane.md`` §7.  That is not
-a taste-based grouping; it is why they are not in the application layer with
-the other sixteen use cases.
+side effect does not go through ``_runner._run_graph_and_persist``: each starts
+its own task and drives its own execution. That is why they are not in the
+application layer with the other sixteen use cases -- and the reason has to be
+stated precisely, because "writes checkpoints without taking a lease" would also
+describe the other eighteen side-writes the request handlers do.
+
+What makes these two special is that the *execution* is theirs: the handler
+hands a nested coroutine to ``asyncio.create_task`` and never looks at it again,
+so no execution-plane surface would otherwise know the thread is being written.
+They therefore hold the lease through ``_runner._execution_lease`` -- the same
+helper the unified entry uses -- which is what puts their writes inside
+``docs/execution-plane.md`` §2's guarantee instead of outside it. A refused lease
+is still not a gate: see that helper for ruling 2.
 """
 
 from __future__ import annotations
@@ -26,7 +34,7 @@ from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
-from backend.api.routes._runner import _db_upsert, _get_as_node
+from backend.api.routes._runner import _db_upsert, _execution_lease, _get_as_node
 from backend.api.routes._wf_runtime import _on_task_done
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
@@ -110,88 +118,96 @@ async def retry_ripple_analysis(
     ripple_timeout = 1800.0
 
     async def _run_retry() -> None:
-        print(f"[ripple-retry] Started for {thread_id}, topic={topic}", flush=True)
-        try:
-            # Bypass health-check/fallback — retry means we want a real simulation
-            pred_task = ripple.submit_and_wait(
-                {
-                    "skill": "social-media",
-                    "platform": "xiaohongshu",
-                    "event": {
-                        "topic": topic,
-                        "content_type": content_plan.get("content_type", "note"),
-                        "tags": content_plan.get("hashtags", []),
-                        "tone": content_plan.get("content_angle", ""),
-                        "description": content_plan.get("content_angle", ""),
+        # 取租约：这是「执行平面」看见这两条路径的唯一通道。栅栏的靶子是
+        # asyncio.current_task()（_runner._fence_on_lost_lease），与 _background_tasks
+        # 无关 —— 所以本条刻意不进那个槽（每 thread 一槽，写入是换靶子），照样在
+        # 丢租约时被 cancel。取不到时照跑（裁定 2），只是没有栅栏可装而已。
+        async with _execution_lease(thread_id):
+            print(f"[ripple-retry] Started for {thread_id}, topic={topic}", flush=True)
+            try:
+                # Bypass health-check/fallback — retry means we want a real simulation
+                pred_task = ripple.submit_and_wait(
+                    {
+                        "skill": "social-media",
+                        "platform": "xiaohongshu",
+                        "event": {
+                            "topic": topic,
+                            "content_type": content_plan.get("content_type", "note"),
+                            "tags": content_plan.get("hashtags", []),
+                            "tone": content_plan.get("content_angle", ""),
+                            "description": content_plan.get("content_angle", ""),
+                        },
+                        "max_waves": 3,
+                        "simulation_horizon": "12h",
+                        "ensemble_runs": 1,
                     },
-                    "max_waves": 3,
-                    "simulation_horizon": "12h",
-                    "ensemble_runs": 1,
-                },
-                max_wait=ripple_timeout,
-                thread_id=thread_id,
-            )
-            pmf_task = ripple.submit_and_wait(
-                {
-                    "skill": "pmf-validation",
-                    "channel": "content-seeding",
-                    "vertical": "fmcg",
-                    "platform": "xiaohongshu",
-                    "event": {
-                        "name": content_plan.get("selected_topic", ""),
-                        "category": content_plan.get("category", ""),
-                        "description": content_plan.get("content_angle", ""),
-                        "differentiators": content_plan.get("key_points", []),
+                    max_wait=ripple_timeout,
+                    thread_id=thread_id,
+                )
+                pmf_task = ripple.submit_and_wait(
+                    {
+                        "skill": "pmf-validation",
+                        "channel": "content-seeding",
+                        "vertical": "fmcg",
+                        "platform": "xiaohongshu",
+                        "event": {
+                            "name": content_plan.get("selected_topic", ""),
+                            "category": content_plan.get("category", ""),
+                            "description": content_plan.get("content_angle", ""),
+                            "differentiators": content_plan.get("key_points", []),
+                        },
+                        "max_waves": 3,
+                        "simulation_horizon": "12h",
+                        "ensemble_runs": 1,
                     },
-                    "max_waves": 3,
-                    "simulation_horizon": "12h",
-                    "ensemble_runs": 1,
-                },
-                max_wait=ripple_timeout,
-                thread_id=thread_id,
-            )
-            raw_pred, raw_pmf = await asyncio.gather(pred_task, pmf_task)
-            print(f"[ripple-retry] Simulations completed for {thread_id}", flush=True)
+                    max_wait=ripple_timeout,
+                    thread_id=thread_id,
+                )
+                raw_pred, raw_pmf = await asyncio.gather(pred_task, pmf_task)
+                print(f"[ripple-retry] Simulations completed for {thread_id}", flush=True)
 
-            pred = ripple._parse_spread_result(raw_pred)
-            pmf_result = ripple._parse_pmf_result(raw_pmf)
-        except (RippleTimeoutError, TimeoutError):
-            logger.warning("Ripple retry timed out for %s", thread_id)
-            return
-        except Exception as e:
-            print(f"[ripple-retry] FAILED for {thread_id}: {type(e).__name__}: {e}", flush=True)
-            return
+                pred = ripple._parse_spread_result(raw_pred)
+                pmf_result = ripple._parse_pmf_result(raw_pmf)
+            except (RippleTimeoutError, TimeoutError):
+                logger.warning("Ripple retry timed out for %s", thread_id)
+                return
+            except Exception as e:
+                print(f"[ripple-retry] FAILED for {thread_id}: {type(e).__name__}: {e}", flush=True)
+                return
 
-        # Update workflow state with new Ripple results
-        updates: dict[str, Any] = {}
-        ripple_pred_data = pred.get("ripple_prediction")
-        if ripple_pred_data:
-            updates["ripple_prediction"] = ripple_pred_data
-        ripple_pmf_data = pmf_result.get("ripple_pmf")
-        if ripple_pmf_data:
-            updates["ripple_pmf"] = ripple_pmf_data
+            # Update workflow state with new Ripple results
+            updates: dict[str, Any] = {}
+            ripple_pred_data = pred.get("ripple_prediction")
+            if ripple_pred_data:
+                updates["ripple_prediction"] = ripple_pred_data
+            ripple_pmf_data = pmf_result.get("ripple_pmf")
+            if ripple_pmf_data:
+                updates["ripple_pmf"] = ripple_pmf_data
 
-        # Both succeeded — clear fallback flags
-        if ripple_pred_data and ripple_pmf_data:
-            updates["ripple_reason"] = None
-            updates["ripple_fallback"] = None
-        else:
-            reason = pred.get("ripple_reason") or pmf_result.get("ripple_reason") or "unreachable"
-            updates["ripple_reason"] = reason
-            updates["ripple_fallback"] = True
+            # Both succeeded — clear fallback flags
+            if ripple_pred_data and ripple_pmf_data:
+                updates["ripple_reason"] = None
+                updates["ripple_fallback"] = None
+            else:
+                reason = (
+                    pred.get("ripple_reason") or pmf_result.get("ripple_reason") or "unreachable"
+                )
+                updates["ripple_reason"] = reason
+                updates["ripple_fallback"] = True
 
-        if updates:
-            ripple_state = await graph.aget_state(config)
-            # P1a-S4-2: ripple_prediction/ripple_pmf are refable — the write
-            # must go through refify_updates (a bare inline write would be
-            # shadowed by a stale artifact ref on the next resolve). Fresh
-            # resolve gives refify the state the write lands on.
-            fresh_values = await resolve_state(store, thread_id, ripple_state.values or {})
-            refified = await refify_updates(store, thread_id, updates, prev_values=fresh_values)
-            await graph.aupdate_state(config, refified, as_node=_get_as_node(ripple_state))
-            print(
-                f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}", flush=True
-            )
+            if updates:
+                ripple_state = await graph.aget_state(config)
+                # P1a-S4-2: ripple_prediction/ripple_pmf are refable — the write
+                # must go through refify_updates (a bare inline write would be
+                # shadowed by a stale artifact ref on the next resolve). Fresh
+                # resolve gives refify the state the write lands on.
+                fresh_values = await resolve_state(store, thread_id, ripple_state.values or {})
+                refified = await refify_updates(store, thread_id, updates, prev_values=fresh_values)
+                await graph.aupdate_state(config, refified, as_node=_get_as_node(ripple_state))
+                print(
+                    f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}",
+                    flush=True,
+                )
 
     task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
     print(f"[ripple-retry] Task created for {thread_id}: {task.get_name()}", flush=True)
@@ -332,46 +348,50 @@ async def retry_publish(
         )
 
     async def _run_publish_retry() -> None:
-        try:
-            snap = await graph.aget_state(config)
-            # Read seam: run_publish hashes copy_content/visual_plan subfields
-            # for the publish_id — a ref'd thread must feed it the resolved
-            # bodies, not the checkpoint's ref-only view.
-            resolved = await resolve_state(getattr(graph, "store", None), thread_id, snap.values)
-            result = await run_publish(resolved, graph.store)
-            publish_result = result["publish_result"]
-            snap = await graph.aget_state(config)
-            await graph.aupdate_state(
-                config,
-                {
-                    "publish_result": publish_result,
-                    "phase": WorkflowPhase.PUBLISHING,
-                    # P0-W4 (F3): run_publish consumes an explicit force one
-                    # shot and returns the cleared options — write them back so
-                    # the next publish on this thread is guarded again.
-                    **(
-                        {"publish_options": result["publish_options"]}
-                        if result.get("publish_options") is not None
-                        else {}
-                    ),
-                },
-                as_node=_get_as_node(snap),
-            )
-            # ponytail: 真实 XHS 发布成功只 redirect 到 success 页，post_id 从 URL
-            # regex 提取，常为空（line 620）。用 status=="published" 判成功，非 post_id。
-            pub_ok = publish_result.get("status") == "published"
-            await _db_upsert(
-                thread_id,
-                status="completed" if pub_ok else "error",
-                phase=WorkflowPhase.PUBLISHING.value,
-                error=None if pub_ok else publish_result.get("error"),
-            )
-            _emit_retry_event(thread_id, publish_result)
-        except Exception:
-            logger.exception("publish-retry failed for %s", thread_id)
-        finally:
-            if _runner._background_tasks.get(thread_id) is asyncio.current_task():
-                _runner._background_tasks.pop(thread_id, None)
+        # 取租约：见 _run_retry 的同段注释（同一个 helper、同一条规则）。
+        async with _execution_lease(thread_id):
+            try:
+                snap = await graph.aget_state(config)
+                # Read seam: run_publish hashes copy_content/visual_plan subfields
+                # for the publish_id — a ref'd thread must feed it the resolved
+                # bodies, not the checkpoint's ref-only view.
+                resolved = await resolve_state(
+                    getattr(graph, "store", None), thread_id, snap.values
+                )
+                result = await run_publish(resolved, graph.store)
+                publish_result = result["publish_result"]
+                snap = await graph.aget_state(config)
+                await graph.aupdate_state(
+                    config,
+                    {
+                        "publish_result": publish_result,
+                        "phase": WorkflowPhase.PUBLISHING,
+                        # P0-W4 (F3): run_publish consumes an explicit force one
+                        # shot and returns the cleared options — write them back so
+                        # the next publish on this thread is guarded again.
+                        **(
+                            {"publish_options": result["publish_options"]}
+                            if result.get("publish_options") is not None
+                            else {}
+                        ),
+                    },
+                    as_node=_get_as_node(snap),
+                )
+                # ponytail: 真实 XHS 发布成功只 redirect 到 success 页，post_id 从 URL
+                # regex 提取，常为空（line 620）。用 status=="published" 判成功，非 post_id。
+                pub_ok = publish_result.get("status") == "published"
+                await _db_upsert(
+                    thread_id,
+                    status="completed" if pub_ok else "error",
+                    phase=WorkflowPhase.PUBLISHING.value,
+                    error=None if pub_ok else publish_result.get("error"),
+                )
+                _emit_retry_event(thread_id, publish_result)
+            except Exception:
+                logger.exception("publish-retry failed for %s", thread_id)
+            finally:
+                if _runner._background_tasks.get(thread_id) is asyncio.current_task():
+                    _runner._background_tasks.pop(thread_id, None)
 
     task = asyncio.create_task(_run_publish_retry(), name=f"publish-retry-{thread_id}")
     task.add_done_callback(_on_task_done(thread_id))
