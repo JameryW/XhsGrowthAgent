@@ -694,6 +694,56 @@ def _paired_claim_ids(published: Mapping[str, str]) -> list[tuple[str, str]]:
 _CONVERGED_PROPERTIES = {"serialization_guards"}
 
 
+def _misses_the_scanner_tolerates(path: Path) -> int:
+    """How many failed renews the scanner tolerates before it presumes death.
+
+    A named function rather than arithmetic inside a lambda, because the mutation
+    that matters is dropping the ``- 1`` -- and a control that performs the
+    subtraction itself would keep passing while the published value moved.
+    """
+    return _literal_assignment(path, "HEARTBEAT_MISSES_BEFORE_EXPIRY") - 1
+
+
+def _heartbeat_stops_on_every_non_answer(path: Path, func: str) -> bool:
+    """Whether a heartbeat loop stops on every member except the renewing one.
+
+    The ruling is the *shape* of the test, not the number of returns.
+    ``is not RenewOutcome.RENEWED`` stops on ``LOST`` and on ``UNKNOWN`` alike;
+    ``is RenewOutcome.LOST`` stops on the evidenced answer only and lets a store
+    that cannot be asked keep running -- which is ``acquire``'s direction, not
+    this one.  Both spellings are one comparison and both ``return`` once, so a
+    scan that counted returns or comparisons could not tell them apart, and the
+    difference between them is the whole ruling.
+
+    ``is not`` is ``ast.IsNot`` and not ``ast.NotEq`` -- the two are one letter
+    apart in the source and a scan that took ``NotEq`` answered ``False`` for
+    every spelling here, including the right one.  A loop with no comparison
+    against ``RENEWED`` at all also answers ``False``: it is no longer the shape
+    this claim names, which is the thing worth being told about.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    target = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func
+        ),
+        None,
+    )
+    assert target is not None, f"{func} not found in {path}"
+    for node in ast.walk(target):
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1 or not node.comparators:
+            continue
+        sides = [node.left, *node.comparators]
+        compares_renewed = any(
+            isinstance(side, ast.Attribute) and side.attr == "RENEWED" for side in sides
+        )
+        if compares_renewed:
+            return isinstance(node.ops[0], ast.IsNot)
+    return False
+
+
 _CLAIMS: dict[str, Callable[[], Any]] = {
     # §7 -- the cost of "one line"
     "process_has_active_task_consumers_outside_the_runner": lambda: len(
@@ -759,6 +809,15 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
         ACTIONS, "AcquireOutcome", "HELD_BY_LIVE_OWNER"
     ),
     "lease_refusal_reasons_in_the_action_vocabulary": lambda: _refusal_reason_names(EVENTS),
+    # §2 -- the answer a lost lease gives, and who reads it
+    "renew_outcome_members": lambda: _enum_members(LEASES, "RenewOutcome"),
+    "renew_outcome_definitions_in_the_lease_module": lambda: _definitions(LEASES, "renew_outcome"),
+    "renew_call_sites_under_backend": lambda: len(_call_sites(BACKEND, "renew")),
+    "renew_outcome_call_sites_under_backend": lambda: len(_call_sites(BACKEND, "renew_outcome")),
+    "heartbeat_stops_on_every_non_answer": lambda: _heartbeat_stops_on_every_non_answer(
+        LEASES, "_heartbeat_until_cancelled"
+    ),
+    "misses_the_scanner_tolerates": lambda: _misses_the_scanner_tolerates(LEASES),
     # §8 -- how much of this document its own tables actually cover
     "line_number_references_in_this_document": lambda: sum(
         len(part) for part in _cited(_DOC_TEXT, REPO)
@@ -1306,3 +1365,65 @@ def test_the_lease_reason_scans_can_answer_something_other_than_their_value(
     assert _refusal_reason_names(module) == 1
     assert _definitions(module, "acquire_outcome") == 2
     assert _definitions(module, "acquire") == 0
+
+
+def test_the_renew_scans_can_answer_something_other_than_their_value(tmp_path: Path):
+    """Positive control for the six scans the renewal claims rest on.
+
+    Their published values are 3 / 1 / **0** / 2 / **true** / 2.  The last two are
+    the shapes this file exists to distrust, and both are what a careless scan
+    answers by accident:
+
+    - ``renew_call_sites_under_backend`` is 0, so the fixture has to contain a
+      ``renew(`` call for the scan to be shown answering anything at all -- and
+      the two ``renew_outcome(`` calls next to it are there to catch the opposite
+      mistake, a prefix match that would report 3.
+    - ``heartbeat_stops_on_every_non_answer`` is ``true``, which is what a scan
+      looking merely for *a* comparison would say.  The fixture holds the wrong
+      spelling -- ``is RenewOutcome.LOST`` -- so the scan must answer ``False``
+      for it, **and** the right spelling under another name so it must answer
+      ``True``.  One function alone would not discriminate: ``ast.NotEq`` and
+      ``ast.IsNot`` both answer ``False`` for the wrong spelling, and the
+      mutation that swaps them is only visible on the right one.
+    - ``misses_the_scanner_tolerates`` performs the ``- 1`` itself, so the
+      control has to call the same function rather than repeat the arithmetic.
+    """
+    root = _pkg(tmp_path)
+    module = _write(
+        root,
+        "lease_like.py",
+        "HEARTBEAT_MISSES_BEFORE_EXPIRY = 5\n"
+        "\n"
+        "class RenewOutcome(StrEnum):\n"
+        "    RENEWED = 'renewed'\n"
+        "    LOST = 'lost'\n"
+        "    UNKNOWN = 'unknown'\n"
+        "\n"
+        "async def someone_else(thread_id):\n"
+        "    return await renew(thread_id)\n"
+        "\n"
+        "async def _heartbeat_wrong_direction(thread_id):\n"
+        "    outcome = await renew_outcome(thread_id)\n"
+        "    if outcome is RenewOutcome.LOST:\n"
+        "        return outcome\n"
+        "\n"
+        "async def _heartbeat_until_cancelled(thread_id):\n"
+        "    outcome = await renew_outcome(thread_id)\n"
+        "    if outcome is not RenewOutcome.RENEWED:\n"
+        "        return outcome\n"
+        "\n"
+        "async def _heartbeat_until_cancelled(thread_id):\n"
+        "    outcome = await renew_outcome(thread_id)\n"
+        "    return outcome\n",
+    )
+    assert _enum_members(module, "RenewOutcome") == 3
+    assert _misses_the_scanner_tolerates(module) == 4
+    assert _heartbeat_stops_on_every_non_answer(module, "_heartbeat_wrong_direction") is False
+    assert _heartbeat_stops_on_every_non_answer(module, "_heartbeat_until_cancelled") is True
+    # Two definitions, and the scan takes the first -- which is the wrong one.
+    assert _definitions(module, "_heartbeat_until_cancelled") == 2
+    assert _definitions(module, "renew_outcome") == 0
+    # The prefix trap, both ways round: the boolean scan does not see the named
+    # question's calls, and the named scan does not see the boolean one.
+    assert len(_call_sites(root, "renew")) == 1
+    assert len(_call_sites(root, "renew_outcome")) == 3
