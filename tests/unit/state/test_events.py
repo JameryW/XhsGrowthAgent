@@ -18,6 +18,7 @@ import pytest
 from backend.db.workflow_events import append_events, list_events
 from backend.state.events import (
     ACTION_EVENT_KIND,
+    ACTION_LEASE_REFUSED,
     ACTION_POLICY_DENIED,
     ACTION_PUBLISH_REFUSED,
     action_perf_entry,
@@ -183,10 +184,13 @@ class TestTheActionEntry:
         assert entry["account_id"] == ""
 
     def test_the_vocabulary_is_closed_and_distinct(self):
-        """Two action names, because a policy denial and a human refusal are
-        different facts — one reason string would make them indistinguishable."""
-        vocabulary = {ACTION_POLICY_DENIED, ACTION_PUBLISH_REFUSED}
-        assert vocabulary == {"policy_denied", "publish_refused"}
+        """Three action names, because each is a different fact: a policy denied
+        the action, a human refused it at a gate, and a foreign instance already
+        holds the lease. One reason string would make them indistinguishable --
+        and the third is the one a reader needs to tell "we chose not to" from
+        "somebody else is already doing it"."""
+        vocabulary = {ACTION_POLICY_DENIED, ACTION_PUBLISH_REFUSED, ACTION_LEASE_REFUSED}
+        assert vocabulary == {"policy_denied", "publish_refused", "lease_refused"}
 
     async def test_the_entry_round_trips_through_the_store(self):
         """Its shape is a contract with whoever reads the timeline back out."""

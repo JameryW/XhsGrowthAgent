@@ -39,11 +39,16 @@
 **保证**
 
 1. **同一 thread 上不会有两个进程同时被授予。** 授予是一次条件更新（`backend/db/execution_leases.py:295` `and existing.state is LeaseState.HELD` 所对应的 `_ACQUIRE_SQL` 分支），不是「先读再写」。
-2. **失去租约的执行者会停。** `_fence_on_lost_lease` 以**结束方式**当裁判：`task.cancelled()` ⇒ 这是 `end_lease` 正常收尾，不栅栏；非 cancelled ⇒ `renew` 答了 False，即这一行已不属于本进程 ⇒ 置事件并 cancel 宿主。`CancelledError` 分支（`backend/api/routes/_runner.py:510` `if lease_lost.is_set():`）**直接 raise、不写状态** —— 写 `cancelled` 会擦掉刚刚发生的接管。
+2. **失去租约的执行者会停。** `_fence_on_lost_lease` 以**结束方式**当裁判：`task.cancelled()` ⇒ 这是 `end_lease` 正常收尾，不栅栏；非 cancelled ⇒ `renew` 答了 False，即这一行已不属于本进程 ⇒ 置事件并 cancel 宿主。`CancelledError` 分支（`backend/api/routes/_runner.py:548` `if lease.lost.is_set():`）**直接 raise、不写状态** —— 写 `cancelled` 会擦掉刚刚发生的接管。
 
 **不保证**
 
-1. **租约不阻止执行。** `backend/db/execution_leases.py:496` `start_lease` 拿不到租约时返回 `None`，**runner 照样跑**。这不是疏漏，是裁定 2：把执行挂在租约的回答上，会在存储答不上来的时候 fail-closed，而那正是租约从「观测」变成「闸门」的方式。唯一把拒绝当终局的是接管扫描（`backend/api/routes/_takeover.py:136` 的闸门），因为「不恢复」是那个决定的**安全侧**。
+1. **「问不到」不阻止执行，「有人正持有」会 —— 这两件事直到本片才是两个值。**
+   `backend/db/execution_leases.py:569` 的 `start_lease` 返回一个 `LeaseHold`（`AcquireOutcome` + 心跳），三条路各按原因裁定：
+   - `UNKNOWN`（存储答不上来、或模块都导不进来）**runner 照样跑**，没有栅栏可装。这不是疏漏，是裁定 2：把执行挂在租约的回答上，会在存储答不上来的时候 fail-closed，而那正是租约从「观测」变成「闸门」的方式。
+   - `HELD_BY_LIVE_OWNER`（活着的外部持有者）是**证据**，不是证据的缺席 —— 裁定 2 覆盖不到它。两条修复路径因此 **stand down**：不写 checkpoint、不跑 `run_publish`，只留一条 `action` 事件（§7）。统一入口仍然照跑，它的拒绝语义属于 `/recover` 等端点。
+   - 接管扫描两档都当终局（`backend/api/routes/_takeover.py:136` 的闸门），因为「不恢复」是那个决定的**安全侧**。
+   在此之前这三件事被写成一个 `False`：`acquire` 有 **3** 个 `False` 出口而内存后端只有 **1** 个（它不会失败）⇒ 两个后端对同一个问题**答的集合不一样** —— 正是本文件 §0 第一条性质要消灭的形状。
 2. **租约默认不是持久的。** 见 §4。
 3. **租约覆盖三个执行者，不覆盖请求处理器里的旁写。** 一个 `_execution_lease` 实现、三个执行者（统一入口 + 两条修复路径），而二十处旁写不在其中 —— 判据在 §7。这是本文件最该被读到的一句。
 
@@ -71,7 +76,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 ## 4. 没有 Postgres 的时候
 
-`backend/db/execution_leases.py:170` `def durability()` 是唯一回答「这里的租约能不能比这个进程活得久」的读者，`:177` 是它的实现：
+`backend/db/execution_leases.py:209` `def durability()` 是唯一回答「这里的租约能不能比这个进程活得久」的读者，`:216` 是它的实现：
 
 - `durable`：租约在 PG 里，跨进程可见，接管有意义。
 - `none`：租约只在进程内。重启即消失 ⇒ 没有过期行 ⇒ 扫描扫不到东西，也不需要扫。
@@ -83,7 +88,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 一次接管要同时满足两个独立条件，任一不满足就**拒绝**：
 
 1. **节点安全**（`backend/graph/takeover_safety.py:56` `TAKEOVER_HAZARDS`）：穷举注册表，照 `RETRY_POLICIES` 的先例，未知名抛 `KeyError` —— 因为「回落到默认值」等于给一个没人分类过的节点答 `safe`，那是这里唯一错误的答案。分三档：`safe` / `needs_human` / `irreversible`（成员清单以注册表本身为准，本文件不复述，避免两处腐烂）。`publisher` 是唯一 `irreversible` 的节点：它真的向小红书发帖。
-2. **能拿到租约**（`backend/api/routes/_takeover.py:136`）：`acquire` 答 False 有两种含义 —— 活着的外部持有者、或存储根本答不上来 —— **两种都意味着这次扫描不能继续**，且都不重试，直到那一行再次安静下来。
+2. **能拿到租约**（`backend/api/routes/_takeover.py:136`）：`acquire` 的两种拒绝 —— 活着的外部持有者、或存储根本答不上来 —— **两种都意味着这次扫描不能继续**，且都不重试，直到那一行再次安静下来。★ 这两件事现在**分得开了**（`backend/db/execution_leases.py:569` 的 `acquire_outcome` 答得出是哪一个），而这里**刻意不分流**：分流会改变这个决定，而本节论证的是「两档都停」才是安全侧。**「答得出来」与「据此分流」是两件事** —— 所以这一行的判据没有变，变的只是它不再是唯一的选择。
 
 只分类**待跑节点**（`state.next`），不按可达集：进 `publisher` 的唯一来源是 `publish_gate`，而它自己是 `needs_human`，这条前提由 `build_graph()` 的边直接钉住（见 §8 提到的测试）。
 
@@ -108,11 +113,11 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 | 锚点 | 证据 | 分类 | 备注 |
 | --- | --- | --- | --- |
-| `backend/db/execution_leases.py:513` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:514`；由 `end_lease` 取消，取消即正常收尾 |
+| `backend/db/execution_leases.py:595` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:596`；由 `end_lease` 取消，取消即正常收尾 |
 | `backend/api/routes/_wf_runtime.py:351` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:353` |
 | `backend/api/routes/_wf_application.py:258` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:260` |
-| `backend/api/routes/_wf_actions.py:212` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
-| `backend/api/routes/_wf_actions.py:396` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:398` |
+| `backend/api/routes/_wf_actions.py:252` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
+| `backend/api/routes/_wf_actions.py:447` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:449` |
 | `backend/agents/content_strategist.py:597` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
 | `backend/api/routes/accounts.py:404` | `background_tasks.add_task(sync_after_login, account_id)` | REAL_TASK | Starlette 后台任务，跟响应生命周期走 |
 | `backend/services/creator_stats/client.py:738` | `task = asyncio.create_task(capture(response))` | REAL_TASK | 采集响应，结果进缓存 |
@@ -139,7 +144,7 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/free.py:915` | `asyncio.create_task(` | POST_RESPONSE | 响应后收尾 |
 | `backend/memory/calibrator.py:73` | `return asyncio.create_task(` | POST_RESPONSE | 校准写回不回流 |
 | `backend/api/routes/_wf_runtime.py:102` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
-| `backend/api/routes/_runner.py:387` | `heartbeat.add_done_callback(_on_heartbeat_done)` | PLANE | 不是新任务：把栅栏登记到租约心跳的结束回调上 |
+| `backend/api/routes/_runner.py:389` | `heartbeat.add_done_callback(_on_heartbeat_done)` | PLANE | 不是新任务：把栅栏登记到租约心跳的结束回调上 |
 | `backend/services/ripple_service.py:214` | `loop.create_task(self._rebuild_client())` | POST_RESPONSE | 重建客户端 |
 | `backend/services/xhs_risk_gate.py:357` | `_persist_task = loop.create_task(_run())` | POST_RESPONSE | 风控快照落盘 |
 
@@ -153,15 +158,15 @@ TTL 与心跳：`backend/db/execution_leases.py:78` `HEARTBEAT_MISSES_BEFORE_EXP
 
 | 锚点 | 证据 | 分类 | 备注 |
 | --- | --- | --- | --- |
-| `backend/api/routes/_runner.py:433` | `async def _run_graph_and_persist(` | PLANE | 唯一执行入口，12 个调用点 |
-| `backend/api/routes/_runner.py:416` | `heartbeat = await start_lease(thread_id)` | PLANE | **全仓唯一取租约处**，在 `_execution_lease` 里，三个执行者共用 |
-| `backend/api/routes/_runner.py:420` | `lost = _fence_on_lost_lease(thread_id, heartbeat)` | PLANE | 栅栏接线：只有拿到了租约才装 |
-| `backend/api/routes/_runner.py:510` | `if lease_lost.is_set():` | PLANE | 被栅栏的 run 不写状态 |
-| `backend/db/execution_leases.py:170` | `def durability()` | LEASE | 无 PG ⇒ `none` |
-| `backend/db/execution_leases.py:177` | `is_pool_ready()` | LEASE | 唯一判据 |
+| `backend/api/routes/_runner.py:466` | `async def _run_graph_and_persist(` | PLANE | 唯一执行入口，12 个调用点 |
+| `backend/api/routes/_runner.py:440` | `hold = await start_lease(thread_id)` | PLANE | **全仓唯一取租约处**，在 `_execution_lease` 里，三个执行者共用；答案（`LeaseHold`）与心跳一起返回，不重新问一次 |
+| `backend/api/routes/_runner.py:453` | `lost = _fence_on_lost_lease(thread_id, heartbeat)` | PLANE | 栅栏接线：只有拿到了租约才装 |
+| `backend/api/routes/_runner.py:548` | `if lease.lost.is_set():` | PLANE | 被栅栏的 run 不写状态 |
+| `backend/db/execution_leases.py:209` | `def durability()` | LEASE | 无 PG ⇒ `none` |
+| `backend/db/execution_leases.py:216` | `is_pool_ready()` | LEASE | 唯一判据 |
 | `backend/api/app.py:1615` | `execution_takeover = {key: takeover_state.get(key)` | HEALTH | 白名单出口 |
 | `backend/graph/takeover_safety.py:56` | `TAKEOVER_HAZARDS: dict[str, TakeoverHazard] = {` | SAFETY | 穷举注册表 |
-| `backend/api/routes/_takeover.py:136` | `# The gate.` | SAFETY | 两种 False 都不继续 |
+| `backend/api/routes/_takeover.py:136` | `# The gate.` | SAFETY | 两种拒绝都继续当终局 —— 它们现在分得开，这里刻意不分流（§5 第 2 条） |
 
 <!-- anchor-table:end -->
 
@@ -187,7 +192,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 它同时把这 2 处与 18 处旁写分开，而分开它们的理由正是执行平面的理由：**只有这 2 处的执行整段
 落在租约之外**。旁写写的是同一份 checkpoint，但那一次写入是瞬时完成的，不在任何接管窗口里。
 
-**租约。** 两条路径通过 `backend/api/routes/_runner.py:392` 的 `_execution_lease`
+**租约。** 两条路径通过 `backend/api/routes/_runner.py:408` 的 `_execution_lease`
 （一个 `@contextlib.asynccontextmanager`）取租约 —— 与统一入口**同一个实现**：全仓 `start_lease(`
 与 `end_lease(` 仍各只有 **1** 处调用点，只是执行者从 1 个变成 **3** 个。
 
@@ -198,11 +203,11 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | 给 ripple-retry 一个自己的键 | **不采纳** | 它关的是另一个洞：进程内「执行撞重试」，见下面「守卫是单向的」 |
 
 **买到的东西。** 修复先到时，它持有一行**新鲜心跳** ⇒ `expire_scan()` 不会把它翻成 `expired`
-⇒ 接管扫描根本看不到它；即便有人抢在中间调 `acquire`，`backend/db/execution_leases.py:206` 的
+⇒ 接管扫描根本看不到它；即便有人抢在中间调 `acquire`，`backend/db/execution_leases.py:248` 的
 `_ACQUIRE_SQL` 也会因「行是 HELD 且 `heartbeat_at + ttl > now()`」而拒绝。**在此之前这一侧是开着的。**
 
-**栅栏也接得住它。** `backend/api/routes/_runner.py:374` 的取消靶子是 `asyncio.current_task()`，
-**不读登记表** ⇒ 一个刻意不在槽里的任务照样在丢租约时被 cancel，且 `lease_lost` 会让
+**栅栏也接得住它。** `backend/api/routes/_runner.py:376` 的取消靶子是 `asyncio.current_task()`，
+**不读登记表** ⇒ 一个刻意不在槽里的任务照样在丢租约时被 cancel，且 `lease.lost` 会让
 `CancelledError` 分支不写状态。**这是「不需要自己的键也能拿到过期保护」的证据。**
 
 **代价（三条都量过，都要登记）：**
@@ -217,11 +222,9 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
   `backend/api/routes/_takeover.py:127` 直接 `refused`，连 `acquire` 都不到。
   **不量这一条就不能采纳**：它是这次改动最重的风险，而挡住它的是那张已有的穷举注册表。
 
-**★ 留下的那一格：拒租照跑 ⇒「扫描先到」仍然双写。** `_ACQUIRE_SQL` 对**两种**拒绝答同一个
-`False`：活着的外部持有者、以及存储根本答不上来。裁定 2 只对第二种成立（§2 非保证 1），
-但修复路径拿不到能区分它们的信息 —— 于是「扫描先接走、修复后到」这一格只能照跑。
-窗口宽度 = 「`/status` 开始报 stale」（TTL 90s 之后）到「扫描的下一趟接管」之间，
-即一个 `takeover_interval_seconds`（默认 60s）量级。**要关它必须先把两种拒绝分开。**
+**★ 留下的那一格，已由本片关闭。** `_ACQUIRE_SQL` 仍然答不出是哪种拒绝 —— `backend/db/execution_leases.py:248` 的 `WHERE` 把三个条件或在一起，一个 `INSERT ... ON CONFLICT` 的**行数**说不出是哪一格拦下的。分开它们的不是改那句 SQL，而是把判据**重述成合取**：行存在 · `state == held` · `owner_id != 本实例` · 未过期 —— 与内存后端逐字对应，于是 `acquire_outcome` 判得出 `HELD_BY_LIVE_OWNER`，两条修复路径对它就 stand down。
+窗口（「`/status` 开始报 stale」到「扫描的下一趟接管」，即一个 `takeover_interval_seconds`，默认 60s 量级）里「扫描先接走、修复后到 ⇒ 两个写者」不再成立。
+★ **单进程部署形态下这条改动不可观测**：`_ACQUIRE_SQL` 的 `WHERE` 含 `owner_id = EXCLUDED.owner_id` ⇒ 本进程永远能重新授予自己，这一格只有**≥2 个持有者同时活着**时才出现 —— 滚动发布就是。判据在 `tests/unit/db/test_acquire_outcome.py`（两个后端对同一场景答同一个值）与 `tests/unit/api/test_repair_paths_take_the_lease.py`（该档下 `aupdate_state` 零调用、`run_publish` 零调用）。
 
 ### 7.1 兄弟路径那四条性质，以及登记表的裁定（#634）
 
@@ -229,11 +232,11 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 那句的前半句不再成立（见上），四条也各自有了裁定。后果仍然是精确的，不是笼统的「不够健壮」：
 
 - **`_run_retry` 连任务注册表都没进** ⇒ 起了任务之后没有
-  `_runner._background_tasks[thread_id] = task`（对比 `backend/api/routes/_wf_actions.py:398` 的
+  `_runner._background_tasks[thread_id] = task`（对比 `backend/api/routes/_wf_actions.py:449` 的
   publish-retry 有）。★ **这条的后果是「同进程内看不见它」**：`has_active_execution`
-  （`backend/api/routes/_runner.py:92` 把登记表 OR 进去）与三个直接读槽的动作都答「没人跑」。
+  （`backend/api/routes/_runner.py:94` 把登记表 OR 进去）与三个直接读槽的动作都答「没人跑」。
   **但补上登记表并不解决重启那一侧** —— 登记表是进程内的，重启后本来就是空的
-  （`backend/api/routes/_runner.py:41` 的注释就写着这一点）。上一版把这两件事写成了一条因果。
+  （`backend/api/routes/_runner.py:43` 的注释就写着这一点）。上一版把这两件事写成了一条因果。
 - **重启后的可见性只有租约能回答** —— 本片补上了它，所以这一条不再是缺口（见上）。
 
 **两问的裁定。** 上一版把两问留给下一任务，并要求带着 1800 秒做。答完之后有一条被顺带推翻：
@@ -241,12 +244,12 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 
 | 性质 | 裁定 | 依据 |
 | --- | --- | --- |
-| 串行化守卫 | **采纳** | `backend/api/routes/_wf_actions.py:253` 的注释把意图写成「工作流正在跑（**含正在重试**）时不允许再触发」；`backend/api/routes/_runner.py:49` 的 docstring 说它答的是「本进程要不要起活」。两处**同一个谓词、同一句文案** |
+| 串行化守卫 | **采纳** | `backend/api/routes/_wf_actions.py:296` 的注释把意图写成「工作流正在跑（**含正在重试**）时不允许再触发」；`backend/api/routes/_runner.py:51` 的 docstring 说它答的是「本进程要不要起活」。两处**同一个谓词、同一句文案** |
 | `add_done_callback` | **不采纳** | `_on_task_done` 的两个分支写的都是**工作流**的列：`backend/api/routes/_wf_runtime.py:93-96` 把异常写进 `status=error` 与 `error`，`:97-99` 把仍 `running` 的库标 `stale`。而 ripple-retry 结束**不代表工作流结束** ⇒ 照抄会把暂停/在跑的工作流说成 stale |
 | `_background_tasks[...] =` | **不采纳** | 见下 —— 登记表**每 thread 一槽**，写入是换靶子而不是补一行 |
 | 被起协程的自身清理 | **连带不采纳** | 没有登记就没有要清理的条目 |
 
-**★ 登记表为什么不能补：它的 key 就是 `thread_id`。** `backend/api/routes/_runner.py:43` 声明的是
+**★ 登记表为什么不能补：它的 key 就是 `thread_id`。** `backend/api/routes/_runner.py:45` 声明的是
 `dict[str, asyncio.Task[Any]]` ⇒ **每个 thread 只有一个槽**。仓里有 3 处写入者，而 **3** 处读者读的
 就是槽里的那一个任务并**取消它**：`backend/api/routes/_wf_application.py:663`（`pause_workflow`）、
 `:1209`（`cancel_workflow`）、`backend/api/routes/_wf_runtime.py:331`（`_start_resume_task`）；
@@ -255,20 +258,27 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 探针实测（真模块，不是推的）：同一 thread 写两次之后只剩 1 条，槽里是后写的那个，前一个**从登记表里
 消失**，`pause`/`cancel` 的 `cancel()` **打到重试身上**，而工作流照跑 —— 库里写着 `paused`/`cancelled`，
 真的执行还在写同一个 checkpoint。工作流自己的条目也**再不会恢复**：它的自清理有
-`is asyncio.current_task()` 身份守卫（`backend/api/routes/_runner.py:608`），被顶掉之后那个 `pop`
+`is asyncio.current_task()` 身份守卫（`backend/api/routes/_runner.py:646`），被顶掉之后那个 `pop`
 永远不成立。⇒ 这一行的代价不是「30 分钟静默拒绝」，而是**把三个破坏性动作的靶子换掉**。
 
 **★ 守卫是单向的，这句要一起写。** 它挡「重试撞本进程的执行」，**挡不住**反向的「执行撞重试」 ——
 后者发生在 `_start_resume_task`，它取消的是**槽里**的东西，而 ripple-retry 刻意不在槽里。
 **取租约也不关这一格**：`_start_resume_task` 不读租约，它只读登记表。所以两个写者仍可能在飞。
 
-**留给下一任务的输入**（两条）。带**量出来的**代价，不是估的：
+**留给下一任务的输入**（三条）。带**量出来的**代价，不是估的：
 
-1. **把两种拒绝分开。** `acquire` 现在对「活着的外部持有者」与「存储答不上来」答同一个 `False`
-   （`backend/db/execution_leases.py:206` 的 `WHERE` 子句把它们合并了），而裁定 2 只覆盖后者。
-   分开之前，「扫描先到」这一格没有闸门，窗口是一个 `takeover_interval_seconds`（默认 60s）量级。
+1. **`renew` 侧的同形合并，而它的安全方向是反的。** `renew` 有 **4** 个 `False` 出口，其中 `except`
+   那一个的含义是「问不到」，而 `_fence_on_lost_lease`（`backend/api/routes/_runner.py:355`）把它当
+   作「确知丢了」⇒ **一次存储抖动会 cancel 掉一个健康的运行**，而同步跑的 run 被 abort 的是
+   **调用者正在等的那个 HTTP 响应**（§5 末段）。今天两侧都取最保守的一侧，所以**行为上没错**；
+   错的是**这两件事被写成了一个 `False`** —— 将来任何一次「让 `renew` 宽容一点」的改动都会静默地
+   把「存储抖动」与「确知被接管」一起放宽。★ 与 `acquire` 相反：那边「问不到要照跑」，这边
+   「问不到要照停」。**取证方式**：重开这条之前先证明「一次抖动」与「确知被接管」在 `renew` 的
+   返回上可区分；今天这句话没有可讨论的对象。
 2. **ripple-retry 在进程内不可取消。** 关它需要一张**只有 `_start_resume_task` 读**的可取消登记表
    —— 也就是新增一个 cancel 靶子面。publish-retry 因为**在**槽里，这一方向已经关了。
+3. **`release` 也有 4 个 `False` 出口**（空 id · 不是我们的 · `except` · `released` 假），与前两条
+   同形，后果轻 —— `end_lease` 不据此做决定。**未量。**
 
 下面两张表把上面这些**位置**与**数值**钉住（前者的机制同 §6；后者由
 `tests/unit/scripts/test_execution_plane_claims.py` 从代码重算）。
@@ -277,25 +287,25 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 
 | 位置 | 必须出现的 token | 为什么 |
 | --- | --- | --- |
-| `backend/api/routes/_runner.py:392` | `_execution_lease` | 取租约的唯一实现；三个执行者共用它 |
-| `backend/api/routes/_runner.py:433` | `_run_graph_and_persist` | 统一执行入口，12 个调用点 |
-| `backend/api/routes/_runner.py:416` | `start_lease` | 全仓唯一的 `start_lease(` 调用点（在 `_execution_lease` 里） |
-| `backend/api/routes/_wf_actions.py:120` | `_run_retry` | ripple-retry |
-| `backend/api/routes/_wf_actions.py:350` | `_run_publish_retry` | publish-retry |
-| `backend/api/routes/_wf_actions.py:125` | `_execution_lease` | ripple-retry 取租约处 —— 同一实现、同一条规则 |
-| `backend/api/routes/_wf_actions.py:352` | `_execution_lease` | publish-retry 取租约处 |
-| `backend/api/routes/_wf_actions.py:212` | `asyncio.create_task` | ripple-retry 起任务处 → 它刻意不写登记表 |
-| `backend/api/routes/_wf_actions.py:398` | `_background_tasks` | publish-retry 有；ripple-retry **刻意不写**（见 §7.1 对两问的裁定） |
-| `backend/api/routes/_runner.py:49` | `process_has_active_task` | 串行化谓词（与状态谓词是两个问题） |
-| `backend/api/routes/_wf_actions.py:259` | `process_has_active_task` | 消费者 1：publish-retry 守卫 |
-| `backend/api/routes/_wf_actions.py:70` | `process_has_active_task` | ripple-retry 的守卫：与上一行同一个谓词 |
+| `backend/api/routes/_runner.py:408` | `_execution_lease` | 取租约的唯一实现；三个执行者共用它 |
+| `backend/api/routes/_runner.py:466` | `_run_graph_and_persist` | 统一执行入口，12 个调用点 |
+| `backend/api/routes/_runner.py:440` | `start_lease` | 全仓唯一的 `start_lease(` 调用点（在 `_execution_lease` 里） |
+| `backend/api/routes/_wf_actions.py:154` | `_run_retry` | ripple-retry |
+| `backend/api/routes/_wf_actions.py:393` | `_run_publish_retry` | publish-retry |
+| `backend/api/routes/_wf_actions.py:162` | `_execution_lease` | ripple-retry 取租约处 —— 同一实现、同一条规则 |
+| `backend/api/routes/_wf_actions.py:395` | `_execution_lease` | publish-retry 取租约处 |
+| `backend/api/routes/_wf_actions.py:252` | `asyncio.create_task` | ripple-retry 起任务处 → 它刻意不写登记表 |
+| `backend/api/routes/_wf_actions.py:449` | `_background_tasks` | publish-retry 有；ripple-retry **刻意不写**（见 §7.1 对两问的裁定） |
+| `backend/api/routes/_runner.py:51` | `process_has_active_task` | 串行化谓词（与状态谓词是两个问题） |
+| `backend/api/routes/_wf_actions.py:302` | `process_has_active_task` | 消费者 1：publish-retry 守卫 |
+| `backend/api/routes/_wf_actions.py:101` | `process_has_active_task` | ripple-retry 的守卫：与上一行同一个谓词 |
 | `backend/api/routes/_wf_application.py:1675` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
-| `backend/api/routes/_runner.py:92` | `process_has_active_task` | OR 进 `has_active_execution` 的那一处 |
-| `backend/api/routes/_wf_actions.py:166` | `asyncio.gather` | 两个 submit 的并发消费点 ⇒ 窗口是 1 个 timeout |
-| `backend/api/routes/_wf_actions.py:118` | `ripple_timeout` | 窗口的那个 1800.0 |
-| `backend/api/routes/_wf_actions.py:253` | `含正在重试` | 兄弟路径的守卫注释 —— 意图的出处 |
-| `backend/api/routes/_wf_actions.py:397` | `add_done_callback` | publish-retry 有；ripple-retry 刻意没有（回调写的是工作流的列） |
-| `backend/api/routes/_wf_actions.py:394` | `_background_tasks.pop` | 自身清理，只在未被替换时执行 |
+| `backend/api/routes/_runner.py:94` | `process_has_active_task` | OR 进 `has_active_execution` 的那一处 |
+| `backend/api/routes/_wf_actions.py:206` | `asyncio.gather` | 两个 submit 的并发消费点 ⇒ 窗口是 1 个 timeout |
+| `backend/api/routes/_wf_actions.py:152` | `ripple_timeout` | 窗口的那个 1800.0 |
+| `backend/api/routes/_wf_actions.py:296` | `含正在重试` | 兄弟路径的守卫注释 —— 意图的出处 |
+| `backend/api/routes/_wf_actions.py:448` | `add_done_callback` | publish-retry 有；ripple-retry 刻意没有（回调写的是工作流的列） |
+| `backend/api/routes/_wf_actions.py:445` | `_background_tasks.pop` | 自身清理，只在未被替换时执行 |
 | `backend/api/routes/_wf_runtime.py:99` | `stale` | done 回调把仍 `running` 的库标成 stale —— 即使有了守卫也不照抄 |
 
 <!-- anchor-table:end -->
@@ -333,6 +343,11 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `expire_scan_call_sites_under_backend` | `1` | 全仓 `expire_scan(` 的调用点数（在 `takeover_scan` 里，由启动扫描与周期调度到达） |
 | `takeover_scheduler_start_sites` | `1` | `app.py` 里把 `takeover_scheduler` 交给 `create_task` 的处数 —— 「租约真的会被翻成 expired」的那半句 |
 | `derive_status_mentions_of_has_active_task` | `1` | `derive_status` 里 `if` 测试含 `has_active_task` 的分支数 —— 优先级 9/10 两格只由**一处**提及决定（10 是靠 9 落空到达的） |
+| `acquire_outcome_members` | `3` | `AcquireOutcome` 的成员数 —— 拒绝不再是一个 `False` 的三种拼法 |
+| `acquire_outcome_definitions_in_the_lease_module` | `1` | 该模块内 `acquire_outcome` 的定义数 —— 决定只做一次，`acquire` 是它的投影 |
+| `execution_lease_call_sites_under_backend` | `3` | 全仓 `_execution_lease(` 的调用点数 —— 一个实现、三个执行者 |
+| `repair_paths_that_stand_down_on_a_live_owner` | `2` | `_wf_actions.py` 内 `HELD_BY_LIVE_OWNER` 的出现次数 —— 两条修复路径各一处 |
+| `lease_refusal_reasons_in_the_action_vocabulary` | `3` | `state/events.py` 里拒绝名的个数（`ACTION_` 前缀、字符串值、名字不含 `KIND`）—— policy / publish / lease 是三个不同的「不」 |
 
 <!-- claim-table:end -->
 
@@ -349,7 +364,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | 位置 | 不该出现的 token | 为什么 |
 | --- | --- | --- |
 | `Dockerfile` | `--workers` | `docs/deployment.md:421` 声明了 `--workers 4`，镜像里没有 ⇒ 声明 ≠ 执行（§3） |
-| `backend/api/routes/_wf_actions.py:212` | `_background_tasks` | ripple-retry 起了任务却没进注册表（对比 `:398`）⇒ §7 第一条后果的一半 |
+| `backend/api/routes/_wf_actions.py:252` | `_background_tasks` | ripple-retry 起了任务却没进注册表（对比 `:449`）⇒ §7 第一条后果的一半 |
 | `backend/api/routes/workflow.py` | `start_lease` | 分层后 api 层仍无取租约处 ⇒ §7 的前提本身 |
 | `backend/api/routes/_wf_application.py` | `start_lease` | 16 个端点实现都走 `_runner._run_graph_and_persist`，租约在那里取 |
 | `backend/api/routes/_wf_runtime.py` | `start_lease` | resume / takeover 起的任务借的是 `_run_graph_and_persist` 的租约，本层不自己取 |
@@ -388,7 +403,7 @@ token —— 一个裸基名（`_wf_actions.py` 那一类，报错时给出它�
 
 | 主张 | 值 | 怎么重算 |
 | --- | --- | --- |
-| `line_number_references_in_this_document` | `121` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
+| `line_number_references_in_this_document` | `123` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
 | `line_numbers_pinned_by_marked_tables` | `64` | 标记表里第一格本身就是 `路径:行号` 的行数 |
 | `bare_line_number_references_in_this_document` | `16` | 其中不带路径的处数 —— 只能被「节内归属」推断，是这一档已知的欠账 |
 

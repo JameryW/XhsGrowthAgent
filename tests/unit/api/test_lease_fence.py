@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from backend.api.routes import _runner as runner_module
+from backend.db.execution_leases import AcquireOutcome, LeaseHold
 
 
 @pytest.fixture(autouse=True)
@@ -138,7 +139,14 @@ class TestAFencedRunWritesNoStatus:
             async def _ends() -> None:
                 await asyncio.sleep(0)
 
-            return asyncio.create_task(_ends())
+            # A real :class:`LeaseHold`, not a bare task: the helper reads
+            # ``.outcome`` off the answer, so a stand-in with the wrong shape
+            # would mean "no fence" and this test would pass for that reason
+            # instead of the one it is about.
+            return LeaseHold(
+                outcome=AcquireOutcome.GRANTED,
+                heartbeat=asyncio.create_task(_ends()),
+            )
 
         monkeypatch.setattr(runner_module, "_db_upsert", _capture_upsert)
         monkeypatch.setattr("backend.db.execution_leases.start_lease", _start_lease)

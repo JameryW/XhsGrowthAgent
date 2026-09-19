@@ -23,6 +23,7 @@ from typing import Any
 
 __all__ = [
     "ACTION_EVENT_KIND",
+    "ACTION_LEASE_REFUSED",
     "ACTION_POLICY_DENIED",
     "ACTION_PUBLISH_REFUSED",
     "LEGACY_PERF_LOG_KEY",
@@ -49,6 +50,11 @@ ACTION_EVENT_KIND = "action"
 #: may contain instead of discovering it per call site.
 ACTION_POLICY_DENIED = "policy_denied"
 ACTION_PUBLISH_REFUSED = "publish_refused"
+#: A repair path stood down because a live foreign owner holds the thread's
+#: lease. Unlike the two above, no policy refused and no human decided: the
+#: work is simply already being done, by another instance. Filing it under the
+#: same name as "we chose not to" would hide the one fact the operator needs.
+ACTION_LEASE_REFUSED = "lease_refused"
 
 
 def action_perf_entry(
@@ -69,8 +75,9 @@ def action_perf_entry(
     refusal belongs in the same place.
 
     ``action`` is one of :data:`ACTION_POLICY_DENIED` /
-    :data:`ACTION_PUBLISH_REFUSED`; ``fields`` carries the machine-readable
-    specifics (``policy_id``, ``gate``, ``reason``).  Free text is deliberately
+    :data:`ACTION_PUBLISH_REFUSED` / :data:`ACTION_LEASE_REFUSED`, and
+    ``fields`` carries the machine-readable specifics (``policy_id``, ``gate``,
+    ``reason``).  Free text is deliberately
     **not** a parameter: the same rule as the Gateway's trace sink — an event
     says what happened, the bodies belong behind an explicit, sanitised export.
     A human's comment therefore stays on the confirmation record, never here.

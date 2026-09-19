@@ -10,8 +10,10 @@ These tests are the difference between "§7 says it takes a lease" and "it does"
 
 - the lease is **held while the work runs** and **released** when it ends --
   observed from inside the work, not inferred from the endpoint's reply;
-- a **refused** lease does not gate the work (P2b ruling 2): the block runs with
-  no fence, which is why "take a lease" introduces no refusal branch;
+- a **store that cannot answer** does not gate the work (P2b ruling 2): the block
+  runs with no fence. A **live foreign owner** is the other refusal and it is not
+  the same fact -- it is evidence rather than the absence of it, so it *does*
+  gate, and that branch is pinned here too;
 - the lease is released even when the work raises -- the leak is the one new
   failure mode this change could have added, so it is pinned, not argued about;
 - the **fence needs no registry entry**: its cancel target is
@@ -46,10 +48,13 @@ from backend.api.routes import _runner as runner_module
 from backend.api.routes.workflow import router as workflow_router
 from backend.db import execution_leases as leases
 from backend.db.accounts import AccountRow
+from backend.db.workflow_events import list_events
 from backend.db.workflows import WorkflowRow
 from backend.graph.takeover_safety import takeover_verdict
+from backend.state.events import ACTION_LEASE_REFUSED
 
 _OWNED = AccountRow(id="acc1", name="acc1", is_active=True, owner_user_id="user-test")
+_OTHER_OWNER = "other-host:4242:deadbeef"
 _RIPPLE_SERVICE = "backend.services.ripple_service.RippleService.get_instance"
 _RUN_PUBLISH = "backend.api.routes._wf_actions.run_publish"
 _DB_UPSERT = "backend.api.routes._wf_actions._db_upsert"
@@ -261,9 +266,10 @@ async def test_a_refused_lease_does_not_gate_the_work(
         raise RuntimeError("lease store unavailable")
 
     monkeypatch.setattr(leases, "start_lease", _boom)
-    async with runner_module._execution_lease("t1") as lost:
+    async with runner_module._execution_lease("t1") as lease:
         ran = True
-        assert lost.is_set() is False, "a refused lease must not set the lost flag"
+        assert lease.outcome is leases.AcquireOutcome.UNKNOWN
+        assert lease.lost.is_set() is False, "a refused lease must not set the lost flag"
     assert ran, "the block must run even when the store cannot answer"
 
 
@@ -298,16 +304,113 @@ async def test_the_fence_reaches_a_task_that_is_not_in_the_registry(
 
     heartbeat = asyncio.create_task(_already_finished())
     await asyncio.sleep(0)  # let it finish before the fence registers on it
-    monkeypatch.setattr(leases, "start_lease", AsyncMock(return_value=heartbeat))
+    monkeypatch.setattr(
+        leases,
+        "start_lease",
+        AsyncMock(
+            return_value=leases.LeaseHold(
+                outcome=leases.AcquireOutcome.GRANTED, heartbeat=heartbeat
+            )
+        ),
+    )
 
     reached = asyncio.Event()
     with pytest.raises(asyncio.CancelledError):
-        async with runner_module._execution_lease("t1") as lost:
+        async with runner_module._execution_lease("t1") as lease:
             assert runner_module._background_tasks.get("t1") is None
             await asyncio.sleep(0.05)
             reached.set()
-    assert lost.is_set(), "the fence did not fire for a registry-less task"
+    assert lease.lost.is_set(), "the fence did not fire for a registry-less task"
     assert not reached.is_set()
+
+
+# ── a *live foreign owner* is the refusal that does gate ─────────────────────
+
+
+async def _held_by_a_foreign_owner(thread_id: str) -> None:
+    """Plant a fresh foreign lease on *thread_id*, then hand our identity back.
+
+    ``acquire`` has to run *as* the other owner or the row would be ours and the
+    question would never arise.  ``_instance_id`` is restored afterwards, so the
+    endpoint under test really is a second instance; the row is left HELD, and
+    nothing here releases it -- ``release`` refuses a row it does not own, which is
+    itself the guarantee that standing down cannot erase the other owner's record.
+    """
+    ours = leases._instance_id
+    leases._instance_id = _OTHER_OWNER
+    try:
+        assert await leases.acquire(thread_id) is True
+    finally:
+        leases._instance_id = ours
+
+
+def test_a_live_foreign_owner_stops_the_ripple_retry() -> None:
+    """Acceptance 4: no checkpoint write when the refusal is the evidenced one.
+
+    In-process this branch is unreachable -- ``process_has_active_task`` fires
+    first and a same-instance re-acquire is always granted -- so the row is planted
+    as a foreign owner's, which is exactly the deployment the branch exists for: a
+    rolling release, or a second replica.
+    """
+    graph = _ripple_graph()
+    captured: dict[str, Any] = {}
+
+    service = MagicMock()
+    service.submit_and_wait = AsyncMock(return_value={})
+
+    resolve_state, refify_updates = _passthrough_artifacts()
+    with (
+        _client(graph) as client,
+        patch(_RIPPLE_SERVICE, return_value=service),
+        resolve_state,
+        refify_updates,
+        patch("backend.api.routes._wf_actions.asyncio", _AsyncioShim(captured)),
+    ):
+        asyncio.run(_held_by_a_foreign_owner("t1"))
+        resp = client.post("/api/workflow/ripple-retry/t1")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["status"] == "retrying", resp.json()
+        _drive(captured)
+
+    assert service.submit_and_wait.await_count == 0, "the simulation ran for a foreign owner"
+    graph.aupdate_state.assert_not_awaited()
+
+    events = asyncio.run(list_events("t1"))
+    refusals = [event for event in events if event.get("action") == ACTION_LEASE_REFUSED]
+    assert refusals, f"the refusal left no event: {events}"
+    assert refusals[0]["path"] == "ripple-retry"
+    assert refusals[0]["reason"] == "held_by_live_owner"
+
+
+def test_a_live_foreign_owner_stops_the_publish_retry() -> None:
+    """The same rule where the cost is highest: ``publisher`` is irreversible."""
+    graph = _publish_graph()
+    captured: dict[str, Any] = {}
+
+    resolve_state, refify_updates = _passthrough_artifacts()
+    with (
+        _client(graph) as client,
+        patch(_RUN_PUBLISH, new_callable=AsyncMock) as publish,
+        patch(_DB_UPSERT, new_callable=AsyncMock),
+        patch(_EVENT_BUS) as bus,
+        resolve_state,
+        refify_updates,
+        patch("backend.api.routes._wf_actions.asyncio", _AsyncioShim(captured)),
+    ):
+        bus.get_instance.return_value = MagicMock()
+        asyncio.run(_held_by_a_foreign_owner("t1"))
+        resp = client.post("/api/workflow/publish-retry/t1")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["status"] == "retrying", resp.json()
+        _drive(captured)
+
+    publish.assert_not_awaited()
+    graph.aupdate_state.assert_not_awaited()
+
+    events = asyncio.run(list_events("t1"))
+    refusals = [event for event in events if event.get("action") == ACTION_LEASE_REFUSED]
+    assert refusals, f"the refusal left no event: {events}"
+    assert refusals[0]["path"] == "publish-retry"
 
 
 # ── the leak cannot become an automatic re-run ───────────────────────────────

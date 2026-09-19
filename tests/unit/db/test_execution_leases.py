@@ -263,7 +263,9 @@ class TestReads:
 
 class TestHeartbeatTask:
     async def test_start_keeps_the_lease_fresh(self, clock: list[float]) -> None:
-        heartbeat = await leases.start_lease("t1", interval_seconds=0.005)
+        hold = await leases.start_lease("t1", interval_seconds=0.005)
+        assert hold.outcome is leases.AcquireOutcome.GRANTED
+        heartbeat = hold.heartbeat
         assert heartbeat is not None
         try:
             _advance(clock, 5)
@@ -277,7 +279,9 @@ class TestHeartbeatTask:
             await asyncio.wait_for(leases.end_lease("t1", heartbeat), timeout=5.0)
 
     async def test_heartbeat_stops_when_the_lease_is_lost(self, monkeypatch) -> None:
-        heartbeat = await leases.start_lease("t1", interval_seconds=0.005)
+        hold = await leases.start_lease("t1", interval_seconds=0.005)
+        assert hold.outcome is leases.AcquireOutcome.GRANTED
+        heartbeat = hold.heartbeat
         assert heartbeat is not None
 
         # Someone else takes the thread while we are still heartbeating.
@@ -287,7 +291,9 @@ class TestHeartbeatTask:
         assert heartbeat.done()
 
     async def test_end_stops_the_heartbeat_and_releases(self) -> None:
-        heartbeat = await leases.start_lease("t1")
+        hold = await leases.start_lease("t1")
+        assert hold.outcome is leases.AcquireOutcome.GRANTED
+        heartbeat = hold.heartbeat
         assert heartbeat is not None
 
         # Bounded on purpose: a teardown that forgets to cancel the heartbeat
@@ -305,8 +311,16 @@ class TestHeartbeatTask:
 
         assert (await leases.get_lease("t1")).state is leases.LeaseState.RELEASED
 
-    async def test_start_returns_none_when_refused(self, monkeypatch) -> None:
+    async def test_start_names_the_refusal_it_got(self, monkeypatch) -> None:
+        """Ruling B: the reason travels with the answer instead of being dropped.
+
+        The row belongs to someone else and their heartbeat is fresh, so the
+        answer is HELD_BY_LIVE_OWNER rather than a bare "no" -- and
+        ``heartbeat`` stays ``None`` because there is nothing to renew.
+        """
         assert await leases.acquire("t1") is True
         monkeypatch.setattr(leases, "_instance_id", _OTHER_OWNER)
 
-        assert await leases.start_lease("t1") is None
+        hold = await leases.start_lease("t1")
+        assert hold.outcome is leases.AcquireOutcome.HELD_BY_LIVE_OWNER
+        assert hold.heartbeat is None
