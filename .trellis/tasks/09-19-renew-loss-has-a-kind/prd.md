@@ -159,8 +159,11 @@
    「指那一行的名字」与「指那一行开始的块」。
 3. **`release` 的 4 个出口**（§6 第 2 条）。
 
-下面两张表把上面这些**位置**与**数值**钉住（前者同 §6 的机制；后者由
-`tests/unit/scripts/test_execution_plane_claims.py` 从代码重算）。
+上面 §2.2 与 §2.3 的数值都有可重算的判据：扫描侧的容忍 **2** 由
+`misses_the_scanner_tolerates` 重算，拥有者侧「第一个非 `RENEWED` 就停」由
+`heartbeat_stops_on_every_non_answer` 重算，`renew` / `renew_outcome` 的调用点 **0 / 2**
+各一条（三者都在 `tests/unit/scripts/test_execution_plane_claims.py`）。§2.4 的 **19/8/6**
+是**记录**：本片没为它写规则（§6 第 3 条）。
 
 ## 8. 执行记录
 
