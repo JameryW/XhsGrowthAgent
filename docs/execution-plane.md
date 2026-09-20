@@ -38,22 +38,23 @@
 
 **保证**
 
-1. **同一 thread 上不会有两个进程同时被授予。** 授予是一次条件更新（内存后端那三个合取条件 —— `backend/db/execution_leases.py:371` `existing.state is LeaseState.HELD` 是其中一条 —— 对应 SQL 侧的 `_ACQUIRE_SQL`（`:276`）的 `WHERE`），不是「先读再写」。
+1. **同一 thread 上不会有两个进程同时被授予。** 授予是一次条件更新（内存后端那三个合取条件 —— `backend/db/execution_leases.py:383` `existing.state is LeaseState.HELD` 是其中一条 —— 对应 SQL 侧的 `_ACQUIRE_SQL`（`:288`）的 `WHERE`），不是「先读再写」。
 2. **失去租约的执行者会停。** `_fence_on_lost_lease` 以**结束方式**当裁判：`task.cancelled()` ⇒ 这是 `end_lease` 正常收尾，不栅栏；非 cancelled ⇒ 心跳带着它停下时拿到的那个 `RenewOutcome` 结束（见下条 4）⇒ 置事件并 cancel 宿主。`CancelledError` 分支（`backend/api/routes/_runner.py:566` `if lease.lost.is_set():`）**直接 raise、不写状态** —— 写 `cancelled` 会擦掉刚刚发生的接管。
 
 **不保证**
 
 1. **「问不到」不阻止执行，「有人正持有」会 —— 这两件事直到本片才是两个值。**
-   `backend/db/execution_leases.py:569` 的 `start_lease` 返回一个 `LeaseHold`（`AcquireOutcome` + 心跳），三条路各按原因裁定：
+   `backend/db/execution_leases.py:683` 的 `start_lease` 返回一个 `LeaseHold`（`AcquireOutcome` + 心跳），三条路各按原因裁定：
    - `UNKNOWN`（存储答不上来、或模块都导不进来）**runner 照样跑**，没有栅栏可装。这不是疏漏，是裁定 2：把执行挂在租约的回答上，会在存储答不上来的时候 fail-closed，而那正是租约从「观测」变成「闸门」的方式。
    - `HELD_BY_LIVE_OWNER`（活着的外部持有者）是**证据**，不是证据的缺席 —— 裁定 2 覆盖不到它。两条修复路径因此 **stand down**：不写 checkpoint、不跑 `run_publish`，只留一条 `action` 事件（§7）。统一入口仍然照跑，它的拒绝语义属于 `/recover` 等端点。
    - 接管扫描两档都当终局（`backend/api/routes/_takeover.py:136` 的闸门），因为「不恢复」是那个决定的**安全侧**。
    在此之前这三件事被写成一个 `False`：`acquire` 有 **3** 个 `False` 出口而内存后端只有 **1** 个（它不会失败）⇒ 两个后端对同一个问题**答的集合不一样** —— 正是本文件 §0 第一条性质要消灭的形状。
 2. **租约默认不是持久的。** 见 §4。
 3. **租约覆盖三个执行者，不覆盖请求处理器里的旁写。** 一个 `_execution_lease` 实现、三个执行者（统一入口 + 两条修复路径），而二十处旁写不在其中 —— 判据在 §7。这是本文件最该被读到的一句。
-4. **「被接管」与「问不到」现在是两档，但两档都停。** `renew` 的 `False` 拆成了 `RenewOutcome`（`backend/db/execution_leases.py:127`）：`LOST`（这一行已不是本实例的）与 `UNKNOWN`（存储答不上来）。**方向与上一条的 `acquire` 相反**：那边「问不到要照跑」（裁定 2），这边「问不到照停」—— 没有租约就开始的 run，风险是**白干**；丢了租约还在写的 run，风险是**同一个 checkpoint 两个写者**（红线 4）。所以本片**没有改任何决定**：六条既有 `renew` 断言一字未改、仍全绿，改的只是这一行如今说得出来它是哪一种 —— 日志不再把一次存储故障记成一次接管（`backend/api/routes/_runner.py:355` 的那句话过去对两档都印）。
-   ★ **留下的不对称（已量）**：判过期的预算是 `backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXPIRY = 3` ⇒ 扫描侧容忍 **2** 次续租失败才认为拥有者已死，而拥有者自己容忍 **0** 次 —— `backend/db/execution_leases.py:614` 的循环在第一个非 `RENEWED` 上就退出。这条不对称是**登记的**（§7.1 第 1 条），本片不裁定。
-
+4. **「被接管」与「问不到」是两档，而且它们**价格不同**。** `renew` 的 `False` 拆成了 `RenewOutcome`（`backend/db/execution_leases.py:138`）：`LOST`（这一行已不是本实例的）与 `UNKNOWN`（存储答不上来）。**方向与上一条的 `acquire` 相反**：那边「问不到要照跑」（裁定 2），这边「问不到照停」—— 没有租约就开始的 run，风险是**白干**；丢了租约还在写的 run，风险是**同一个 checkpoint 两个写者**（红线 4）。
+   - `LOST` 是**关于行的事实**：零预算，第一次就停。它必须在咨询预算**之前**被决定（`backend/db/execution_leases.py:627` 的循环把这一档写在计数之前），否则放宽预算会**顺带**把「确知被接管」一起放宽。
+   - `UNKNOWN` 是**沉默**，容忍 `backend/db/execution_leases.py:96` `HEARTBEAT_TRANSIENT_FAILURES_TOLERATED` 次**连续**失败（= `HEARTBEAT_MISSES_BEFORE_EXPIRY - 2` = **1**），再一次才停；成功的 `renew` 把计数清零，因为它移动的正是「行变老」的那个锚点。容忍的那一次单独记一行日志 —— 过去「抖动但扛住了」与「什么都没发生」在日志里同形。
+   ★ **两把尺子是同一把，量出来的数不一样（扫描 2 / 拥有者 1）**：行要到 `heartbeat_at + ttl`（= 上次成功续租后一整个 TTL）才**变得可被抢**（`_ACQUIRE_SQL` 的最后一个 `OR` 项），而「检测一次失败」本身要花时间（失败的 `renew` 得先跑完才轮得到计数），所以得留**一整个 interval** 作余量 ⇒ 拥有者能容忍的是 `M - 2`，不是扫描侧的 `M - 1`。**把两个数对齐会让拥有者恰好停在行变老的那一刻。**
 TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXPIRY = 3`、`:84` `LEASE_TTL_SECONDS = 90.0`、`:85` `HEARTBEAT_INTERVAL_SECONDS` ⇒ 心跳 30s，连丢 3 次判过期。
 
 ## 3. 单进程现实 vs 文档拓扑
@@ -78,7 +79,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 
 ## 4. 没有 Postgres 的时候
 
-`backend/db/execution_leases.py:209` `def durability()` 是唯一回答「这里的租约能不能比这个进程活得久」的读者，`:216` 是它的实现：
+`backend/db/execution_leases.py:249` `def durability()` 是唯一回答「这里的租约能不能比这个进程活得久」的读者，`:256` 是它的实现：
 
 - `durable`：租约在 PG 里，跨进程可见，接管有意义。
 - `none`：租约只在进程内。重启即消失 ⇒ 没有过期行 ⇒ 扫描扫不到东西，也不需要扫。
@@ -90,7 +91,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 一次接管要同时满足两个独立条件，任一不满足就**拒绝**：
 
 1. **节点安全**（`backend/graph/takeover_safety.py:56` `TAKEOVER_HAZARDS`）：穷举注册表，照 `RETRY_POLICIES` 的先例，未知名抛 `KeyError` —— 因为「回落到默认值」等于给一个没人分类过的节点答 `safe`，那是这里唯一错误的答案。分三档：`safe` / `needs_human` / `irreversible`（成员清单以注册表本身为准，本文件不复述，避免两处腐烂）。`publisher` 是唯一 `irreversible` 的节点：它真的向小红书发帖。
-2. **能拿到租约**（`backend/api/routes/_takeover.py:136`）：`acquire` 的两种拒绝 —— 活着的外部持有者、或存储根本答不上来 —— **两种都意味着这次扫描不能继续**，且都不重试，直到那一行再次安静下来。★ 这两件事现在**分得开了**（`backend/db/execution_leases.py:569` 的 `acquire_outcome` 答得出是哪一个），而这里**刻意不分流**：分流会改变这个决定，而本节论证的是「两档都停」才是安全侧。**「答得出来」与「据此分流」是两件事** —— 所以这一行的判据没有变，变的只是它不再是唯一的选择。
+2. **能拿到租约**（`backend/api/routes/_takeover.py:136`）：`acquire` 的两种拒绝 —— 活着的外部持有者、或存储根本答不上来 —— **两种都意味着这次扫描不能继续**，且都不重试，直到那一行再次安静下来。★ 这两件事现在**分得开了**（`backend/db/execution_leases.py:683` 的 `acquire_outcome` 答得出是哪一个），而这里**刻意不分流**：分流会改变这个决定，而本节论证的是「两档都停」才是安全侧。**「答得出来」与「据此分流」是两件事** —— 所以这一行的判据没有变，变的只是它不再是唯一的选择。
 
 只分类**待跑节点**（`state.next`），不按可达集：进 `publisher` 的唯一来源是 `publish_gate`，而它自己是 `needs_human`，这条前提由 `build_graph()` 的边直接钉住（见 §8 提到的测试）。
 
@@ -115,7 +116,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 
 | 锚点 | 证据 | 分类 | 备注 |
 | --- | --- | --- | --- |
-| `backend/db/execution_leases.py:672` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:596`；由 `end_lease` 取消，取消即正常收尾 |
+| `backend/db/execution_leases.py:709` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:710`；由 `end_lease` 取消，取消即正常收尾 |
 | `backend/api/routes/_wf_runtime.py:351` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:353` |
 | `backend/api/routes/_wf_application.py:258` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:260` |
 | `backend/api/routes/_wf_actions.py:252` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
@@ -164,8 +165,8 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_runner.py:458` | `hold = await start_lease(thread_id)` | PLANE | **全仓唯一取租约处**，在 `_execution_lease` 里，三个执行者共用；答案（`LeaseHold`）与心跳一起返回，不重新问一次 |
 | `backend/api/routes/_runner.py:471` | `lost = _fence_on_lost_lease(thread_id, heartbeat)` | PLANE | 栅栏接线：只有拿到了租约才装 |
 | `backend/api/routes/_runner.py:566` | `if lease.lost.is_set():` | PLANE | 被栅栏的 run 不写状态 |
-| `backend/db/execution_leases.py:237` | `def durability()` | LEASE | 无 PG ⇒ `none` |
-| `backend/db/execution_leases.py:244` | `is_pool_ready()` | LEASE | 唯一判据 |
+| `backend/db/execution_leases.py:249` | `def durability()` | LEASE | 无 PG ⇒ `none` |
+| `backend/db/execution_leases.py:256` | `is_pool_ready()` | LEASE | 唯一判据 |
 | `backend/api/app.py:1615` | `execution_takeover = {key: takeover_state.get(key)` | HEALTH | 白名单出口 |
 | `backend/graph/takeover_safety.py:56` | `TAKEOVER_HAZARDS: dict[str, TakeoverHazard] = {` | SAFETY | 穷举注册表 |
 | `backend/api/routes/_takeover.py:136` | `# The gate.` | SAFETY | 两种拒绝都继续当终局 —— 它们现在分得开，这里刻意不分流（§5 第 2 条） |
@@ -205,7 +206,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | 给 ripple-retry 一个自己的键 | **不采纳** | 它关的是另一个洞：进程内「执行撞重试」，见下面「守卫是单向的」 |
 
 **买到的东西。** 修复先到时，它持有一行**新鲜心跳** ⇒ `expire_scan()` 不会把它翻成 `expired`
-⇒ 接管扫描根本看不到它；即便有人抢在中间调 `acquire`，`backend/db/execution_leases.py:248` 的
+⇒ 接管扫描根本看不到它；即便有人抢在中间调 `acquire`，`backend/db/execution_leases.py:288` 的
 `_ACQUIRE_SQL` 也会因「行是 HELD 且 `heartbeat_at + ttl > now()`」而拒绝。**在此之前这一侧是开着的。**
 
 **栅栏也接得住它。** `backend/api/routes/_runner.py:376` 的取消靶子是 `asyncio.current_task()`，
@@ -224,7 +225,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
   `backend/api/routes/_takeover.py:127` 直接 `refused`，连 `acquire` 都不到。
   **不量这一条就不能采纳**：它是这次改动最重的风险，而挡住它的是那张已有的穷举注册表。
 
-**★ 留下的那一格，已由本片关闭。** `_ACQUIRE_SQL` 仍然答不出是哪种拒绝 —— `backend/db/execution_leases.py:248` 的 `WHERE` 把三个条件或在一起，一个 `INSERT ... ON CONFLICT` 的**行数**说不出是哪一格拦下的。分开它们的不是改那句 SQL，而是把判据**重述成合取**：行存在 · `state == held` · `owner_id != 本实例` · 未过期 —— 与内存后端逐字对应，于是 `acquire_outcome` 判得出 `HELD_BY_LIVE_OWNER`，两条修复路径对它就 stand down。
+**★ 留下的那一格，已由本片关闭。** `_ACQUIRE_SQL` 仍然答不出是哪种拒绝 —— `backend/db/execution_leases.py:300` 的 `WHERE` 把三个条件或在一起，一个 `INSERT ... ON CONFLICT` 的**行数**说不出是哪一格拦下的。分开它们的不是改那句 SQL，而是把判据**重述成合取**：行存在 · `state == held` · `owner_id != 本实例` · 未过期 —— 与内存后端逐字对应，于是 `acquire_outcome` 判得出 `HELD_BY_LIVE_OWNER`，两条修复路径对它就 stand down。
 窗口（「`/status` 开始报 stale」到「扫描的下一趟接管」，即一个 `takeover_interval_seconds`，默认 60s 量级）里「扫描先接走、修复后到 ⇒ 两个写者」不再成立。
 ★ **单进程部署形态下这条改动不可观测**：`_ACQUIRE_SQL` 的 `WHERE` 含 `owner_id = EXCLUDED.owner_id` ⇒ 本进程永远能重新授予自己，这一格只有**≥2 个持有者同时活着**时才出现 —— 滚动发布就是。判据在 `tests/unit/db/test_acquire_outcome.py`（两个后端对同一场景答同一个值）与 `tests/unit/api/test_repair_paths_take_the_lease.py`（该档下 `aupdate_state` 零调用、`run_publish` 零调用）。
 
@@ -269,13 +270,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 
 **留给下一任务的输入**（三条）。带**量出来的**代价，不是估的：
 
-1. **`renew` 的容忍预算 —— 上一片留下的另一半。** 上一条已由 `09-19-renew-loss-has-a-kind` 结掉：
-   「一次抖动」与「确知被接管」现在在返回上**确实可区分**（`RenewOutcome`），而两档都停（§2 不保证 4）。
-   留着的正是那句话的**对象**：判过期的预算 `HEARTBEAT_MISSES_BEFORE_EXPIRY = 3` 说扫描侧容忍 2 次
-   续租失败，拥有者自己容忍 0 次 ⇒ 拥有者对自己比整个系统对它更严。要动它就得先裁定「一次存储抖动
-   该不该 cancel 一个健康运行」，而**代价已经量出来**：`_fence_on_lost_lease`（`backend/api/routes/_runner.py:355`）
-   会 `owner.cancel()`，同步跑的 run 被 abort 的是**调用者正在等的那个 HTTP 响应**（§5 末段）。
-   **取证方式**：先证明「一次抖动」在日志里可识别（本片刚给了它一个名字），再谈宽容几档。
+1. **`release` 的 4 个 `False` 出口。**（由原第 3 条升上来：原第 1 条已由 `09-20-heartbeat-tolerates-a-hiccup` 结掉 —— `LOST` 零预算立即停，`UNKNOWN` 容忍 `HEARTBEAT_MISSES_BEFORE_EXPIRY - 2` 次连续失败，两者都从同一个常量推导，见 §2 不保证 4。）`release` 的 `False` 现在与**拆之前**的 `renew` 同形（空 id · 不是我们的 · `except` · `released` 假），而它的消费者是 `end_lease`。**未量。**
 2. **ripple-retry 在进程内不可取消。** 关它需要一张**只有 `_start_resume_task` 读**的可取消登记表
    —— 也就是新增一个 cancel 靶子面。publish-retry 因为**在**槽里，这一方向已经关了。
 3. **`release` 也有 4 个 `False` 出口**（空 id · 不是我们的 · `except` · `released` 假），与前两条
@@ -291,11 +286,12 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `backend/api/routes/_runner.py:426` | `_execution_lease` | 取租约的唯一实现；三个执行者共用它 |
 | `backend/api/routes/_runner.py:484` | `_run_graph_and_persist` | 统一执行入口，12 个调用点 |
 | `backend/api/routes/_runner.py:355` | `_fence_on_lost_lease` | 栅栏：读心跳**怎么结束的**，以及它带回来的那一个 |
-| `backend/db/execution_leases.py:127` | `RenewOutcome` | renew 的两个非答案在这里分开 |
-| `backend/db/execution_leases.py:447` | `renew_outcome` | 决定只做一次，`renew` 是它的投影 |
-| `backend/db/execution_leases.py:483` | `_renew_in_memory` | 内存后端的答案集合：没有 `UNKNOWN` |
-| `backend/db/execution_leases.py:614` | `_heartbeat_until_cancelled` | 两档都停的那一处，也是原因出仓的那一处 |
+| `backend/db/execution_leases.py:138` | `RenewOutcome` | renew 的两个非答案在这里分开 |
+| `backend/db/execution_leases.py:459` | `renew_outcome` | 决定只做一次，`renew` 是它的投影 |
+| `backend/db/execution_leases.py:496` | `_renew_in_memory` | 内存后端的答案集合：没有 `UNKNOWN` |
+| `backend/db/execution_leases.py:627` | `_heartbeat_until_cancelled` | 两档都停的那一处，也是原因出仓的那一处 |
 | `backend/db/execution_leases.py:83` | `HEARTBEAT_MISSES_BEFORE_EXPIRY = 3` | §2 那条 TTL 脚注引的常量 —— 这行是**锚点行**，不是「解得到就行」：`:78` 也解得到，而它上面是注释 |
+| `backend/db/execution_leases.py:96` | `HEARTBEAT_TRANSIENT_FAILURES_TOLERATED` | 拥有者的容忍预算 —— 从上面那个常量**推导**（`M - 2`），所以两个数不会各自漂移 |
 | `backend/api/routes/_runner.py:458` | `start_lease` | 全仓唯一的 `start_lease(` 调用点（在 `_execution_lease` 里） |
 | `backend/api/routes/_wf_actions.py:154` | `_run_retry` | ripple-retry |
 | `backend/api/routes/_wf_actions.py:393` | `_run_publish_retry` | publish-retry |
@@ -359,8 +355,9 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `renew_outcome_definitions_in_the_lease_module` | `1` | 该模块内 `renew_outcome` 的定义数 —— 决定只做一次，`renew` 是它的投影 |
 | `renew_call_sites_under_backend` | `0` | 全仓 `renew(` 的调用点数 —— 心跳问的是**具名**的那个问题；这个 `0` 说的是「没有第二个消费者」，不是「没有续租」 |
 | `renew_outcome_call_sites_under_backend` | `2` | 全仓 `renew_outcome(` 的调用点数 —— 投影一处（`renew` 自己）+ 真正读它的那一处（`_heartbeat_until_cancelled`） |
-| `heartbeat_stops_on_every_non_answer` | `true` | 循环的退出判据是一个成员的**补集**（`is not RENEWED`），而不是那个成员本身 —— 写成 `is LOST` 会让 `UNKNOWN` 继续跑，也就把方向翻成了 `acquire` 那一侧 |
-| `misses_the_scanner_tolerates` | `2` | `HEARTBEAT_MISSES_BEFORE_EXPIRY - 1` —— 连丢几次才被判过期；§2 不保证 4 那条不对称的一半（另一半就是上一行：拥有者容忍 0 次） |
+| `transient_failures_the_owner_tolerates` | `1` | `HEARTBEAT_MISSES_BEFORE_EXPIRY - 2`，**从推导重算**而不是读字面量 —— 拥有者容忍几次连续失败就停；扫描侧是 `M - 1`，差的这一个 interval 就是「检测一次失败」本身要花的时间 |
+| `the_budget_never_covers_the_evidenced_answer` | `true` | 读**顺序**：循环在咨询预算**之前**就决定了 `LOST` —— 把预算写在前面（或让它覆盖那一档）就是把「关于行的事实」也拿去容忍，也就是把裁定翻过来 |
+| `misses_the_scanner_tolerates` | `2` | `HEARTBEAT_MISSES_BEFORE_EXPIRY - 1` —— 连丢几次才被判过期；§2 不保证 4 那条不对称的一半 —— 另一半是上面那两条（拥有者 `M - 2`） |
 
 <!-- claim-table:end -->
 
@@ -416,8 +413,8 @@ token —— 一个裸基名（`_wf_actions.py` 那一类，报错时给出它�
 
 | 主张 | 值 | 怎么重算 |
 | --- | --- | --- |
-| `line_number_references_in_this_document` | `135` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
-| `line_numbers_pinned_by_marked_tables` | `70` | 标记表里第一格本身就是 `路径:行号` 的行数 |
+| `line_number_references_in_this_document` | `134` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
+| `line_numbers_pinned_by_marked_tables` | `71` | 标记表里第一格本身就是 `路径:行号` 的行数 |
 | `bare_line_number_references_in_this_document` | `18` | 其中不带路径的处数 —— 只能被「节内归属」推断，是这一档已知的欠账 |
 
 <!-- claim-table:end -->

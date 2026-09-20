@@ -66,6 +66,26 @@ class TestLeaseBudget:
         # never declared dead, short enough that a dead one is noticed promptly.
         assert 60.0 <= leases.LEASE_TTL_SECONDS <= 300.0
 
+    def test_the_owner_budget_is_derived_and_leaves_a_whole_interval(self) -> None:
+        """The owner's tolerance is the scanner's budget minus one interval.
+
+        The row only becomes acquirable once it is stale, one TTL after the last
+        successful renew, so a stop attempted ``tolerated + 1`` intervals after that
+        renew is the last one that still lands in time -- and the interval left over
+        is what pays for detecting a failure at all.  Restating the scanner's
+        ``M - 1`` here would put the stop exactly on the expiry instant.
+        """
+        tolerated = leases.HEARTBEAT_TRANSIENT_FAILURES_TOLERATED
+        stops_after = tolerated + 1  # the miss that stops it
+        misses_before_expiry = leases.HEARTBEAT_MISSES_BEFORE_EXPIRY
+
+        assert tolerated >= 1, f"the budget is dead: {tolerated}"
+        assert stops_after + 1 <= misses_before_expiry, (
+            f"stopping after {stops_after} intervals leaves no margin before "
+            f"expiry at {misses_before_expiry}"
+        )
+        assert tolerated == misses_before_expiry - 2
+
     def test_instance_identity_names_the_process(self) -> None:
         instance_id, started_at = leases.instance_identity()
         assert str(os.getpid()) in instance_id
