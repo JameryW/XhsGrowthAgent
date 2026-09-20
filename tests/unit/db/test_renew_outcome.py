@@ -4,10 +4,11 @@
 stopped being ours" and "the store could not be asked".  The two are not
 interchangeable, and the direction is the **opposite** of ``acquire``'s: a run
 that starts without a lease risks doing nothing, while a run that keeps writing
-without one risks two writers on one checkpoint.  So both non-answers stop the
-run here -- that part is deliberately unchanged, and the six existing ``renew``
-assertions in ``test_execution_leases.py`` are proof of it, still green and still
-unmodified.
+without one risks two writers on one checkpoint.  Both non-answers still stop the
+run -- the six existing ``renew`` assertions in ``test_execution_leases.py`` are
+proof of the part that did not change -- but they stop at **different prices**,
+which is what this file's second half pins: ``LOST`` at once, ``UNKNOWN`` only
+after ``HEARTBEAT_TRANSIENT_FAILURES_TOLERATED`` consecutive misses.
 
 What this file pins, and why each needs a test rather than a sentence:
 
@@ -18,10 +19,11 @@ What this file pins, and why each needs a test rather than a sentence:
   copy of the decision;
 - an empty ``thread_id`` answers UNKNOWN **without asking the store**, which is
   what the bare ``False`` did;
-- ``_heartbeat_until_cancelled`` **stops on either** non-answer and **hands the
-  one it got back out of the task** -- the ruling and the reason, in one place.
-  Without the second half the enum would have no reader, which is the same
-  vacuity as a column with no writer.
+- ``_heartbeat_until_cancelled`` is a **three-row table** -- renew resets the
+  count, lost stops at once, silence stops once the derived budget is spent --
+  and it **hands the one it got back out of the task**, which is the ruling and
+  the reason in one place.  Without the second half the enum would have no
+  reader, which is the same vacuity as a column with no writer.
 """
 
 from __future__ import annotations
@@ -265,3 +267,97 @@ async def test_the_heartbeat_stops_on_either_non_answer_and_says_which(
     other = "the store" if outcome is leases.RenewOutcome.LOST else "another owner holds the row"
     assert said in caplog.text
     assert other not in caplog.text
+
+
+# ── the owner's budget: what it covers, and what it must never cover ────────
+
+
+async def test_a_lost_row_stops_without_consulting_the_budget(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``LOST`` is evidence, so no budget applies to it.
+
+    The budget buys time against *silence*.  Spending it on the one member that
+    is a fact about the row would be the whole ruling backwards, and the way to
+    read that off the tree is the number of questions asked: one.
+    """
+    caplog.set_level(logging.WARNING, logger="xhs_growth.db.execution_leases")
+    asked: list[str] = []
+
+    def _answer(*_args: Any, **_kwargs: Any) -> leases.RenewOutcome:
+        asked.append("asked")
+        return leases.RenewOutcome.LOST
+
+    monkeypatch.setattr(leases, "renew_outcome", AsyncMock(side_effect=_answer))
+
+    heartbeat = asyncio.create_task(
+        leases._heartbeat_until_cancelled("t1", interval_seconds=0.001, ttl_seconds=90.0)
+    )
+
+    assert await asyncio.wait_for(heartbeat, timeout=5.0) is leases.RenewOutcome.LOST
+    assert len(asked) == 1, f"the budget was spent on an evidenced answer: {len(asked)}"
+    assert "tolerated" not in caplog.text
+
+
+async def test_the_owner_spends_the_budget_and_then_stops(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Exactly ``budget`` misses are tolerated, and the next one stops it.
+
+    Every number here is read from the constant rather than restated, because the
+    thing under test is the *relation* between the budget and the number of
+    questions asked.  A test spelling a literal would keep passing after the
+    budget moved -- which is the failure mode the constant exists to prevent.
+    """
+    caplog.set_level(logging.WARNING, logger="xhs_growth.db.execution_leases")
+    budget = leases.HEARTBEAT_TRANSIENT_FAILURES_TOLERATED
+    asked: list[str] = []
+
+    def _answer(*_args: Any, **_kwargs: Any) -> leases.RenewOutcome:
+        asked.append("asked")
+        return leases.RenewOutcome.UNKNOWN
+
+    monkeypatch.setattr(leases, "renew_outcome", AsyncMock(side_effect=_answer))
+
+    heartbeat = asyncio.create_task(
+        leases._heartbeat_until_cancelled("t1", interval_seconds=0.001, ttl_seconds=90.0)
+    )
+
+    assert await asyncio.wait_for(heartbeat, timeout=10.0) is leases.RenewOutcome.UNKNOWN
+    assert len(asked) == budget + 1, f"{len(asked)} asks for a budget of {budget}"
+    # Each of the tolerated misses said so on its own line: without that,
+    # "it hiccuped and kept going" and "nothing happened" read the same.
+    assert caplog.text.count("could not ask for") == budget
+    assert f"miss {budget} of {budget} tolerated" in caplog.text
+    assert "the store could not be asked" in caplog.text
+
+
+async def test_a_renewal_resets_the_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The count is *consecutive*, because a success moves the staleness anchor.
+
+    A cumulative count would drift away from the clock the budget is measured
+    against: one hiccup early in a long run would make every later hiccup free.
+    The script is built so the two readings disagree -- cumulative stops here,
+    consecutive keeps going.
+    """
+    scripted = [
+        leases.RenewOutcome.UNKNOWN,
+        leases.RenewOutcome.RENEWED,
+        leases.RenewOutcome.UNKNOWN,
+    ]
+
+    def _answer(*_args: Any, **_kwargs: Any) -> leases.RenewOutcome:
+        return scripted.pop(0) if scripted else leases.RenewOutcome.RENEWED
+
+    monkeypatch.setattr(leases, "renew_outcome", AsyncMock(side_effect=_answer))
+
+    heartbeat = asyncio.create_task(
+        leases._heartbeat_until_cancelled("t1", interval_seconds=0.001, ttl_seconds=90.0)
+    )
+    await asyncio.sleep(0.05)
+    still_running = not heartbeat.done()
+    heartbeat.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await heartbeat
+
+    assert still_running, "the count is cumulative: one renewal did not clear it"

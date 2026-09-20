@@ -84,6 +84,17 @@ HEARTBEAT_MISSES_BEFORE_EXPIRY = 3
 LEASE_TTL_SECONDS = 90.0
 HEARTBEAT_INTERVAL_SECONDS = LEASE_TTL_SECONDS / HEARTBEAT_MISSES_BEFORE_EXPIRY
 
+# The owner stops itself after this many *consecutive* misses, derived from the
+# same budget for the same reason the TTL is: the two are one decision. The row
+# only becomes acquirable once it is stale (_ACQUIRE_SQL's last OR-term), i.e. a
+# whole TTL after the last successful renew, so the last stop that still lands
+# in time is the one attempted M - 1 intervals after that renew -- and landing
+# in time has to pay for detecting the miss at all, since a failed renew had to
+# run before it could be counted. One full interval pays for that, which leaves
+# M - 2. It is deliberately not the scanner's M - 1: matching the two numbers
+# would put the owner's stop exactly on the instant its own row expires.
+HEARTBEAT_TRANSIENT_FAILURES_TOLERATED = HEARTBEAT_MISSES_BEFORE_EXPIRY - 2
+
 
 class LeaseState(StrEnum):
     """Lifecycle of a lease row.
@@ -129,14 +140,15 @@ class RenewOutcome(StrEnum):
 
     The mirror of :class:`AcquireOutcome`, and the same collapse undone: a
     ``bool`` answered this too, and ``False`` carried both "the row stopped
-    being ours" and "the store could not be asked".  Both stop the run -- the
-    safe direction here is the *opposite* of ``acquire``'s, because the two
-    questions carry different risks.  A run that starts without a lease risks
-    doing nothing; a run that keeps writing without one risks two writers on
-    one checkpoint (red line 4).  So this enum does not change any decision.
-    What it changes is that the decision is now *nameable*, which is what
-    makes a future "be more tolerant of a hiccup" edit a two-branch edit
-    instead of an invisible one -- and what stops the log from recording a
+    being ours" and "the store could not be asked".  Both stop the run -- but
+    at different prices, which is what the split bought: ``LOST`` on the first
+    one, ``UNKNOWN`` only after ``HEARTBEAT_TRANSIENT_FAILURES_TOLERATED``
+    consecutive misses.  The safe direction here is the *opposite* of
+    ``acquire``'s, because the two questions carry different risks.  A run
+    that starts without a lease risks doing nothing; a run that keeps writing
+    without one risks two writers on one checkpoint (red line 4) -- so the
+    budget is derived to expire before the row can be taken, never chosen to
+    taste.  The log can also now say which one it was, instead of recording a
     storage failure as a takeover.
     """
 
@@ -452,13 +464,14 @@ async def renew_outcome(thread_id: str, *, ttl_seconds: float = LEASE_TTL_SECOND
     row; ``UNKNOWN`` is the absence of one, and the two arriving as a single
     ``False`` is what let a storage failure be read as a takeover.
 
-    Both are still stop signals (:func:`renew` projects them to ``False``, and
-    ``_heartbeat_until_cancelled`` stops on either), because red line 4 -- one
-    writer per checkpoint -- is not something a heartbeat may gamble on. What
-    the name buys is the *option*: the 3-miss budget this module already derives
-    its TTL from is the amount of silence the scanner tolerates before it
-    presumes the owner dead, and the owner itself currently tolerates zero.
-    Widening that is a separate ruling; see ``docs/execution-plane.md`` §2.
+    Both are still stop signals (:func:`renew` projects them to ``False``),
+    because red line 4 -- one writer per checkpoint -- is not something a
+    heartbeat may gamble on. What the name buys is that the two can be priced
+    separately: ``LOST`` stops on the first one, while ``UNKNOWN`` gets
+    ``HEARTBEAT_TRANSIENT_FAILURES_TOLERATED`` consecutive misses first.
+    Neither price is picked by hand -- both are derived from the budget this
+    module already derives its TTL from, so the worst case is a stop attempted
+    a whole interval before the row becomes acquirable.
 
     An empty ``thread_id`` answers UNKNOWN rather than a fourth member: it is a
     caller bug, not a store answer, and it must not be a value a caller learns
@@ -625,22 +638,46 @@ async def _heartbeat_until_cancelled(
     on the object that already crosses that boundary, and the fence can say which
     one it was instead of inferring a takeover from a stop.
 
-    Both non-answers stop the loop. That is not symmetry for its own sake -- see
-    :class:`RenewOutcome` -- and naming them here is what keeps a future change to
-    that a change to *one* of them.
+    Three answers, three rows, and the rows are the ruling: ``RENEWED`` resets the
+    count, ``LOST`` stops at once, ``UNKNOWN`` stops once it has missed
+    ``HEARTBEAT_TRANSIENT_FAILURES_TOLERATED`` times *in a row*. See
+    :class:`RenewOutcome` for why the two non-answers are priced differently, and
+    :data:`HEARTBEAT_TRANSIENT_FAILURES_TOLERATED` for why the price is derived
+    rather than chosen.
     """
+    misses = 0
     while True:
         await asyncio.sleep(interval_seconds)
         outcome = await renew_outcome(thread_id, ttl_seconds=ttl_seconds)
-        if outcome is not RenewOutcome.RENEWED:
+        if outcome is RenewOutcome.RENEWED:
+            # A successful renew moves heartbeat_at, which is the anchor the row
+            # goes stale against -- so it resets the count. A cumulative count
+            # would drift away from the clock the budget is measured against.
+            misses = 0
+            continue
+        if outcome is RenewOutcome.LOST:
+            # Evidence about the row rather than silence, and decided *before* the
+            # budget is consulted, so widening it can never cover this one.
             logger.warning(
-                "execution_leases heartbeat stopped for %s: %s",
+                "execution_leases heartbeat stopped for %s: another owner holds the row",
                 thread_id,
-                "another owner holds the row"
-                if outcome is RenewOutcome.LOST
-                else "the store could not be asked",
             )
             return outcome
+        misses += 1
+        if misses > HEARTBEAT_TRANSIENT_FAILURES_TOLERATED:
+            logger.warning(
+                "execution_leases heartbeat stopped for %s: the store could not be asked",
+                thread_id,
+            )
+            return outcome
+        # A tolerated miss gets its own line: without it, "it hiccuped and kept
+        # going" and "nothing happened" are the same in the log.
+        logger.warning(
+            "execution_leases heartbeat could not ask for %s: miss %d of %d tolerated",
+            thread_id,
+            misses,
+            HEARTBEAT_TRANSIENT_FAILURES_TOLERATED,
+        )
 
 
 async def start_lease(
@@ -715,6 +752,7 @@ async def thread_is_held(thread_id: str) -> bool:
 __all__ = [
     "HEARTBEAT_INTERVAL_SECONDS",
     "HEARTBEAT_MISSES_BEFORE_EXPIRY",
+    "HEARTBEAT_TRANSIENT_FAILURES_TOLERATED",
     "LEASE_TTL_SECONDS",
     "AcquireOutcome",
     "LeaseDurability",

@@ -694,6 +694,9 @@ def _paired_claim_ids(published: Mapping[str, str]) -> list[tuple[str, str]]:
 _CONVERGED_PROPERTIES = {"serialization_guards"}
 
 
+_BUDGET_CONSTANT = "HEARTBEAT_TRANSIENT_FAILURES_TOLERATED"
+
+
 def _misses_the_scanner_tolerates(path: Path) -> int:
     """How many failed renews the scanner tolerates before it presumes death.
 
@@ -704,24 +707,53 @@ def _misses_the_scanner_tolerates(path: Path) -> int:
     return _literal_assignment(path, "HEARTBEAT_MISSES_BEFORE_EXPIRY") - 1
 
 
-def _heartbeat_stops_on_every_non_answer(path: Path, func: str) -> bool:
-    """Whether a heartbeat loop stops on every member except the renewing one.
+def _transient_failures_the_owner_tolerates(path: Path) -> int:
+    """How many consecutive misses the owner tolerates before it stops.
 
-    The ruling is the *shape* of the test, not the number of returns.
-    ``is not RenewOutcome.RENEWED`` stops on ``LOST`` and on ``UNKNOWN`` alike;
-    ``is RenewOutcome.LOST`` stops on the evidenced answer only and lets a store
-    that cannot be asked keep running -- which is ``acquire``'s direction, not
-    this one.  Both spellings are one comparison and both ``return`` once, so a
-    scan that counted returns or comparisons could not tell them apart, and the
-    difference between them is the whole ruling.
-
-    ``is not`` is ``ast.IsNot`` and not ``ast.NotEq`` -- the two are one letter
-    apart in the source and a scan that took ``NotEq`` answered ``False`` for
-    every spelling here, including the right one.  A loop with no comparison
-    against ``RENEWED`` at all also answers ``False``: it is no longer the shape
-    this claim names, which is the thing worth being told about.
+    Recomputed from the *derivation* rather than read off a literal, because being
+    derived is the whole point of the constant: a mutation that replaced
+    ``HEARTBEAT_MISSES_BEFORE_EXPIRY - 2`` with a hard-coded ``1`` would keep every
+    value assertion green -- the published value is also 1 -- while breaking exactly
+    the property the constant exists for.  So the shape is asserted as well as the
+    number, and the positive control runs against a fixture whose ``M`` is not 3.
     """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign)
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == _BUDGET_CONSTANT
+        ):
+            value = node.value
+            assert isinstance(value, ast.BinOp), (
+                f"{_BUDGET_CONSTANT} is not derived from anything: {ast.dump(value)}"
+            )
+            assert isinstance(value.op, ast.Sub), ast.dump(value.op)
+            assert isinstance(value.left, ast.Name), ast.dump(value.left)
+            assert isinstance(value.right, ast.Constant), ast.dump(value.right)
+            return _literal_assignment(path, value.left.id) - value.right.value
+    raise AssertionError(f"{_BUDGET_CONSTANT} is never assigned in {path.name}")
 
+
+def _mentions_attr(expr: ast.expr, attr: str) -> bool:
+    """Whether an expression compares against ``<something>.attr``."""
+    return any(isinstance(node, ast.Attribute) and node.attr == attr for node in ast.walk(expr))
+
+
+def _the_budget_never_covers_the_evidenced_answer(path: Path, func: str) -> bool:
+    """Whether the loop decides ``LOST`` *before* it consults the tolerance budget.
+
+    This replaces a claim that read the operator of the comparison against
+    ``RENEWED`` -- "every non-answer stops".  That reading is dead: the loop is a
+    three-row table now, and the row that matters is the one that must stay
+    unreachable by the budget.  Ordering is where that lives.  A budget spent on
+    the member that is *evidence about the row* would be the ruling backwards:
+    silence is what there is to be patient with, not a fact.
+
+    ``False`` when the budget is consulted first, when the loop never mentions it
+    (over-conservative, but not this ruling), and when there is no ``LOST`` branch
+    to find -- a loop with neither is not the shape this claim names.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     target = next(
         (
@@ -732,16 +764,16 @@ def _heartbeat_stops_on_every_non_answer(path: Path, func: str) -> bool:
         None,
     )
     assert target is not None, f"{func} not found in {path}"
+    evidence_at: int | None = None
+    budget_at: int | None = None
     for node in ast.walk(target):
-        if not isinstance(node, ast.Compare) or len(node.ops) != 1 or not node.comparators:
-            continue
-        sides = [node.left, *node.comparators]
-        compares_renewed = any(
-            isinstance(side, ast.Attribute) and side.attr == "RENEWED" for side in sides
-        )
-        if compares_renewed:
-            return isinstance(node.ops[0], ast.IsNot)
-    return False
+        if isinstance(node, ast.If) and _mentions_attr(node.test, "LOST"):
+            evidence_at = node.lineno if evidence_at is None else min(evidence_at, node.lineno)
+        if isinstance(node, ast.Name) and node.id == _BUDGET_CONSTANT:
+            budget_at = node.lineno if budget_at is None else min(budget_at, node.lineno)
+    if evidence_at is None or budget_at is None:
+        return False
+    return evidence_at < budget_at
 
 
 _CLAIMS: dict[str, Callable[[], Any]] = {
@@ -814,8 +846,11 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
     "renew_outcome_definitions_in_the_lease_module": lambda: _definitions(LEASES, "renew_outcome"),
     "renew_call_sites_under_backend": lambda: len(_call_sites(BACKEND, "renew")),
     "renew_outcome_call_sites_under_backend": lambda: len(_call_sites(BACKEND, "renew_outcome")),
-    "heartbeat_stops_on_every_non_answer": lambda: _heartbeat_stops_on_every_non_answer(
-        LEASES, "_heartbeat_until_cancelled"
+    "transient_failures_the_owner_tolerates": lambda: _transient_failures_the_owner_tolerates(
+        LEASES
+    ),
+    "the_budget_never_covers_the_evidenced_answer": lambda: (
+        _the_budget_never_covers_the_evidenced_answer(LEASES, "_heartbeat_until_cancelled")
     ),
     "misses_the_scanner_tolerates": lambda: _misses_the_scanner_tolerates(LEASES),
     # §8 -- how much of this document its own tables actually cover
@@ -1368,31 +1403,33 @@ def test_the_lease_reason_scans_can_answer_something_other_than_their_value(
 
 
 def test_the_renew_scans_can_answer_something_other_than_their_value(tmp_path: Path):
-    """Positive control for the six scans the renewal claims rest on.
+    """Positive control for the scans the renewal claims rest on.
 
-    Their published values are 3 / 1 / **0** / 2 / **true** / 2.  The last two are
-    the shapes this file exists to distrust, and both are what a careless scan
-    answers by accident:
+    Three of them are the shapes this file exists to distrust, and each is what a
+    careless scan answers by accident:
 
     - ``renew_call_sites_under_backend`` is 0, so the fixture has to contain a
       ``renew(`` call for the scan to be shown answering anything at all -- and
-      the two ``renew_outcome(`` calls next to it are there to catch the opposite
-      mistake, a prefix match that would report 3.
-    - ``heartbeat_stops_on_every_non_answer`` is ``true``, which is what a scan
-      looking merely for *a* comparison would say.  The fixture holds the wrong
-      spelling -- ``is RenewOutcome.LOST`` -- so the scan must answer ``False``
-      for it, **and** the right spelling under another name so it must answer
-      ``True``.  One function alone would not discriminate: ``ast.NotEq`` and
-      ``ast.IsNot`` both answer ``False`` for the wrong spelling, and the
-      mutation that swaps them is only visible on the right one.
-    - ``misses_the_scanner_tolerates`` performs the ``- 1`` itself, so the
-      control has to call the same function rather than repeat the arithmetic.
+      the ``renew_outcome(`` calls next to it are there to catch the opposite
+      mistake, a prefix match that would report a larger number.
+    - ``transient_failures_the_owner_tolerates`` is recomputed from a *derivation*,
+      so it runs against a fixture whose ``HEARTBEAT_MISSES_BEFORE_EXPIRY`` is 5
+      and must answer 3: the real tree's 1 cannot tell a recomputation from a
+      hard-coded ``1``, which is exactly the mutation worth catching.
+    - ``the_budget_never_covers_the_evidenced_answer`` reads *ordering*, so the
+      fixture has to hold the wrong order (budget consulted first -- the ruling
+      backwards) and a loop that never mentions the budget at all, both of which
+      must answer ``False``, **and** the right order, which must answer ``True``.
+      Two definitions of that name again, so the scan has to take the first.
+    - ``misses_the_scanner_tolerates`` performs the ``- 1`` itself, so the control
+      has to call the same function rather than repeat the arithmetic.
     """
     root = _pkg(tmp_path)
     module = _write(
         root,
         "lease_like.py",
         "HEARTBEAT_MISSES_BEFORE_EXPIRY = 5\n"
+        "HEARTBEAT_TRANSIENT_FAILURES_TOLERATED = HEARTBEAT_MISSES_BEFORE_EXPIRY - 2\n"
         "\n"
         "class RenewOutcome(StrEnum):\n"
         "    RENEWED = 'renewed'\n"
@@ -1407,10 +1444,25 @@ def test_the_renew_scans_can_answer_something_other_than_their_value(tmp_path: P
         "    if outcome is RenewOutcome.LOST:\n"
         "        return outcome\n"
         "\n"
+        "async def _heartbeat_budget_covers_everything(thread_id):\n"
+        "    misses = 0\n"
+        "    while True:\n"
+        "        outcome = await renew_outcome(thread_id)\n"
+        "        misses += 1\n"
+        "        if misses > HEARTBEAT_TRANSIENT_FAILURES_TOLERATED:\n"
+        "            return outcome\n"
+        "        if outcome is RenewOutcome.LOST:\n"
+        "            return outcome\n"
+        "\n"
         "async def _heartbeat_until_cancelled(thread_id):\n"
-        "    outcome = await renew_outcome(thread_id)\n"
-        "    if outcome is not RenewOutcome.RENEWED:\n"
-        "        return outcome\n"
+        "    misses = 0\n"
+        "    while True:\n"
+        "        outcome = await renew_outcome(thread_id)\n"
+        "        if outcome is RenewOutcome.LOST:\n"
+        "            return outcome\n"
+        "        misses += 1\n"
+        "        if misses > HEARTBEAT_TRANSIENT_FAILURES_TOLERATED:\n"
+        "            return outcome\n"
         "\n"
         "async def _heartbeat_until_cancelled(thread_id):\n"
         "    outcome = await renew_outcome(thread_id)\n"
@@ -1418,12 +1470,23 @@ def test_the_renew_scans_can_answer_something_other_than_their_value(tmp_path: P
     )
     assert _enum_members(module, "RenewOutcome") == 3
     assert _misses_the_scanner_tolerates(module) == 4
-    assert _heartbeat_stops_on_every_non_answer(module, "_heartbeat_wrong_direction") is False
-    assert _heartbeat_stops_on_every_non_answer(module, "_heartbeat_until_cancelled") is True
-    # Two definitions, and the scan takes the first -- which is the wrong one.
+    assert _transient_failures_the_owner_tolerates(module) == 3
+    assert (
+        _the_budget_never_covers_the_evidenced_answer(module, "_heartbeat_budget_covers_everything")
+        is False
+    )
+    assert (
+        _the_budget_never_covers_the_evidenced_answer(module, "_heartbeat_wrong_direction") is False
+    )
+    # The right order, under the name the claim points at -- and the second
+    # definition of that name is the shape that must answer False, so this also
+    # proves the scan takes the first one.
+    assert (
+        _the_budget_never_covers_the_evidenced_answer(module, "_heartbeat_until_cancelled") is True
+    )
     assert _definitions(module, "_heartbeat_until_cancelled") == 2
     assert _definitions(module, "renew_outcome") == 0
     # The prefix trap, both ways round: the boolean scan does not see the named
     # question's calls, and the named scan does not see the boolean one.
     assert len(_call_sites(root, "renew")) == 1
-    assert len(_call_sites(root, "renew_outcome")) == 3
+    assert len(_call_sites(root, "renew_outcome")) == 4
