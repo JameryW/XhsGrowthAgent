@@ -332,6 +332,16 @@ async def _start_resume_task(
     if existing_task and not existing_task.done():
         existing_task.cancel()
 
+    # The slot above holds one task per thread, so a repair path that stays out
+    # of it on purpose is invisible there -- and the lease cannot stand in: a
+    # second holder in this process is granted rather than refused, because the
+    # row's owner_id identifies the process and not the task
+    # (backend/db/execution_leases.py:301, backend/db/execution_leases.py:384).
+    # A detached task is therefore reachable only through its own registry, and
+    # that cancel has to WAIT -- its teardown releases the very row we are about
+    # to take. See cancel_detached_and_wait and docs/execution-plane.md §7.1.
+    await _runner.cancel_detached_and_wait(thread_id)
+
     await _db_upsert(
         thread_id,
         status="running",
