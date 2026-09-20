@@ -60,6 +60,46 @@ def process_has_active_task(thread_id: str) -> bool:
     )
 
 
+# Tasks that deliberately stay OUT of the per-thread slot above. The slot holds
+# one task per thread and three call sites cancel whoever sits in it, so a second
+# registrant would displace the workflow's own entry instead of being found --
+# that ruling (#634) has not changed; see docs/execution-plane.md §7.1.
+#
+# This is *not* a third answer to "is this process busy": nothing OR-s it into
+# process_has_active_task or has_active_execution, and it has exactly one reader.
+# Its question is narrower -- what must the preempting canceller stop, and can it
+# reach it. The lease cannot answer it instead: both backends grant the row to a
+# second holder of the same instance (backend/db/execution_leases.py:301,
+# backend/db/execution_leases.py:384), because owner_id identifies the process and
+# not the task. Today's only writer is ripple-retry in _wf_actions.py.
+_detached_tasks: dict[str, asyncio.Task[Any]] = {}
+
+
+async def cancel_detached_and_wait(thread_id: str) -> None:
+    """Stop this thread's detached task **and wait for it to finish unwinding**.
+
+    The waiting is not a nicer spelling -- it is the condition the handover
+    needs. A cancelled repair coroutine runs :func:`_execution_lease`'s
+    ``finally`` on its way out, and that calls ``end_lease`` -> ``release``,
+    which stamps the row ``released`` matching on ``owner_id`` alone
+    (``backend/db/execution_leases.py:314``). ``owner_id`` is per *instance*, so
+    that write lands on the very row the caller is about to take: the
+    successor's own heartbeat then answers ``LOST`` and its own fence cancels it.
+    Why the lease cannot separate the two tasks by itself is in
+    ``backend/db/execution_leases.py:301`` and ``backend/db/execution_leases.py:384``
+    -- a second holder inside this process is granted, not refused.
+
+    Measured both ways: without the wait the successor's ``renew_outcome`` is
+    ``LOST``; with it, ``RENEWED``. The pair, and the rest of the measurement, is
+    in ``docs/execution-plane.md`` §7.1.
+    """
+    task = _detached_tasks.get(thread_id)
+    if task is None or task.done():
+        return
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
 async def _lease_is_held(thread_id: str) -> bool:
     """Best-effort lease read. A broken store answers "not held", not "held"."""
     try:

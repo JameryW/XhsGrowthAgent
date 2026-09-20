@@ -335,8 +335,14 @@ def _registry_declared_value_type(path: Path) -> str:
     raise AssertionError(f"no annotated _background_tasks in {path.name}")
 
 
-def _registry_task_writes(root: Path) -> int:
-    """``_background_tasks[...] = task`` sites across *root*."""
+def _registry_task_writes(root: Path, name: str = "_background_tasks") -> int:
+    """``<name>[...] = task`` sites across *root*.
+
+    Parameterised because there are now two registries and the whole ruling turns
+    on them staying different: the slot takes whoever is in it and three call
+    sites cancel that, while ``_detached_tasks`` is read by one canceller and by
+    no busy-answerer.  Same shape, two counts, published separately.
+    """
     total = 0
     for _path, tree in _trees(root):
         for node in ast.walk(tree):
@@ -346,17 +352,20 @@ def _registry_task_writes(root: Path) -> int:
                 if not isinstance(target, ast.Subscript):
                     continue
                 base = getattr(target.value, "attr", None) or getattr(target.value, "id", None)
-                if base == "_background_tasks":
+                if base == name:
                     total += 1
     return total
 
 
-def _registry_readers_that_cancel(root: Path) -> int:
+def _registry_readers_that_cancel(root: Path, name: str = "_background_tasks") -> int:
     """Functions that read the registry's occupant and then cancel it.
 
     ``bg = _background_tasks.get(thread_id)`` followed by ``bg.cancel()`` -- in
     ``pause_workflow``, ``cancel_workflow`` and ``_start_resume_task``.  They act
     on whoever is in the slot, which is the whole cost of a second writer.
+
+    The same scan over ``_detached_tasks`` must answer **1**: a new table whose
+    reader set grew into the slot's is the trade this slice declined.
     """
     total = 0
     for _path, tree in _trees(root):
@@ -366,7 +375,7 @@ def _registry_readers_that_cancel(root: Path) -> int:
                 and _callee(sub) == "get"
                 and isinstance(sub.func, ast.Attribute)
                 and (getattr(sub.func.value, "attr", None) or getattr(sub.func.value, "id", None))
-                == "_background_tasks"
+                == name
                 for sub in ast.walk(func)
             )
             cancels = any(
@@ -375,6 +384,109 @@ def _registry_readers_that_cancel(root: Path) -> int:
             if reads and cancels:
                 total += 1
     return total
+
+
+def _grant_paths_that_readmit_the_same_owner(path: Path) -> int:
+    """Backends whose grant admits a second holder *of the same* ``owner_id``.
+
+    This one number is why the slice needs a registry at all.  §7.1 used to say
+    the lease does not close the cell because ``_start_resume_task`` does not read
+    it; measured, reading it would not have helped -- a second holder *inside this
+    process* is granted, because the row's owner is the instance and not the task.
+    Two spellings, one per backend: the SQL's ``OR``-term and the memory backend's
+    negated conjunct.  A tree that lost either would be a tree where the lease
+    *could* be the door, and the claim going red is how that gets noticed.
+    """
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    sql = next(
+        (
+            node.value.value
+            for node in ast.walk(module)
+            if isinstance(node, ast.Assign)
+            and any(getattr(t, "id", None) == "_ACQUIRE_SQL" for t in node.targets)
+            and isinstance(node.value, ast.Constant)
+        ),
+        "",
+    )
+    memory = "\n".join(
+        ast.unparse(func) for func in _functions(module) if func.name == "_acquire_in_memory"
+    )
+    return (1 if "owner_id = EXCLUDED.owner_id" in sql else 0) + (
+        1 if "owner_id != _instance_id" in memory else 0
+    )
+
+
+def the_detached_cancel_waits_for_the_task(path: Path) -> bool:
+    """Whether the canceller awaits **the task it cancelled**, by name.
+
+    The waiting is the correctness condition, not a style choice: the cancelled
+    coroutine's teardown releases the lease row by ``owner_id``, i.e. the row the
+    caller is about to take, and the successor then fences itself.  An ``await``
+    on something else -- a sleep, another task -- would not do, so the scan
+    intersects the names: the receiver of ``.cancel()`` has to appear inside an
+    ``await`` in the same function.
+    """
+    for func in _functions(ast.parse(path.read_text(encoding="utf-8"))):
+        if func.name != "cancel_detached_and_wait":
+            continue
+        cancelled = {
+            node.func.value.id
+            for node in ast.walk(func)
+            if isinstance(node, ast.Call)
+            and _callee(node) == "cancel"
+            and isinstance(node.func.value, ast.Name)
+        }
+        awaited = {
+            sub.id
+            for node in ast.walk(func)
+            if isinstance(node, ast.Await)
+            for sub in ast.walk(node.value)
+            if isinstance(sub, ast.Name)
+        }
+        return bool(cancelled & awaited)
+    raise AssertionError(f"no cancel_detached_and_wait in {path.name}")
+
+
+def _busy_answerers_reading(path: Path, name: str) -> int:
+    """The busy-answerers whose body mentions *name* -- published as 0.
+
+    The other half of the ruling, and the reason it needs its own scan: a
+    predicate is not a canceller, so OR-ing ``_detached_tasks`` into
+    ``process_has_active_task`` would leave every reader count untouched while
+    turning the new table into a third answer to "is this process busy" -- and
+    that one answer widens twelve call sites at once.
+    """
+    wanted = {"process_has_active_task", "has_active_execution"}
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    return sum(
+        1 for func in _functions(module) if func.name in wanted and name in ast.unparse(func)
+    )
+
+
+def the_detached_self_cleanup_is_identity_guarded(path: Path, name: str) -> bool:
+    """Whether the ``finally`` pop sits inside an ``is asyncio.current_task()`` test.
+
+    An unguarded pop removes whichever entry is in the table -- including a
+    **newer** task's.  The table holds one task per thread, so that is the same
+    displacement the slot suffers; the guard is what makes a cleanup belong to
+    the task performing it.
+    """
+    for func in _functions(ast.parse(path.read_text(encoding="utf-8"))):
+        if func.name != name:
+            continue
+        for node in ast.walk(func):
+            if not isinstance(node, ast.Try) or not node.finalbody:
+                continue
+            for statement in node.finalbody:
+                for sub in ast.walk(statement):
+                    if not isinstance(sub, ast.If):
+                        continue
+                    if "current_task" in ast.unparse(sub.test) and any(
+                        isinstance(cmp, ast.Is) for cmp in ast.walk(sub.test)
+                    ):
+                        return True
+        return False
+    raise AssertionError(f"no {name} in {path.name}")
 
 
 def _paths_saying_the_serialization_sentence() -> int:
@@ -697,10 +809,13 @@ def _paired_claim_ids(published: Mapping[str, str]) -> list[tuple[str, str]]:
 
 
 # Properties the two paths used to differ on and no longer do.  The guard is the
-# one this slice adopted on the ripple-retry side: §7's table stops being a list
-# of gaps and becomes a ruling.  Named explicitly -- and pinned by its own test --
-# so that excluding it does not also excuse it from being checked ever again.
-_CONVERGED_PROPERTIES = {"serialization_guards"}
+# one #634 adopted on the ripple-retry side: §7's table stops being a list
+# of gaps and becomes a ruling.  ``self_cleanups`` joined it when this slice gave
+# ripple-retry its own registry -- a table entry is something to remove on the way
+# out, so the property #634 could only mark "连带不采纳" now holds on both paths.
+# Named explicitly -- and pinned by its own test -- so that excluding a pair does
+# not also excuse it from being checked ever again.
+_CONVERGED_PROPERTIES = {"serialization_guards", "self_cleanups"}
 
 
 _BUDGET_CONSTANT = "HEARTBEAT_TRANSIENT_FAILURES_TOLERATED"
@@ -945,6 +1060,23 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
     "registry_task_write_sites_under_backend": lambda: _registry_task_writes(BACKEND),
     "registry_declared_value_type": lambda: _registry_declared_value_type(RUNNER),
     "registry_readers_that_cancel_the_occupant": lambda: _registry_readers_that_cancel(BACKEND),
+    # §7.1 -- the out-of-slot registry, and why a registry is the only door
+    "grant_paths_that_readmit_the_same_owner": lambda: _grant_paths_that_readmit_the_same_owner(
+        LEASES
+    ),
+    "detached_registry_task_write_sites": lambda: _registry_task_writes(BACKEND, "_detached_tasks"),
+    "detached_registry_readers_that_cancel_the_occupant": lambda: _registry_readers_that_cancel(
+        BACKEND, "_detached_tasks"
+    ),
+    "the_detached_cancel_waits_for_the_task": lambda: the_detached_cancel_waits_for_the_task(
+        RUNNER
+    ),
+    "busy_answerers_reading_the_detached_registry": lambda: _busy_answerers_reading(
+        RUNNER, "_detached_tasks"
+    ),
+    "the_detached_self_cleanup_is_identity_guarded": lambda: (
+        the_detached_self_cleanup_is_identity_guarded(ACTIONS, "_run_retry")
+    ),
     "repair_paths_using_the_shared_serialization_sentence": lambda: (
         _paths_saying_the_serialization_sentence()
     ),
@@ -1056,8 +1188,8 @@ def test_no_recalculator_is_left_behind_by_the_document():
 
 def test_the_two_repair_paths_differ_on_every_property_the_document_pairs():
     pairs = _paired_claim_ids(_published())
-    assert len(pairs) == 3, (
-        "§7 shows three properties that still differ on both repair paths; the document "
+    assert len(pairs) == 2, (
+        "§7 shows two properties that still differ on both repair paths; the document "
         f"currently pairs {len(pairs)} of them: {pairs}"
     )
     same = [f"{left} == {right}" for left, right in pairs if _same_value(left, right)]
@@ -1075,8 +1207,9 @@ def test_the_pair_that_converged_is_the_one_the_slice_ruled_on():
     every future run: a tree that reverted the adopted guard would look exactly
     like a tree that never had it.
     """
-    assert len(_CONVERGED_PROPERTIES) == 1, _CONVERGED_PROPERTIES
+    assert len(_CONVERGED_PROPERTIES) == 2, _CONVERGED_PROPERTIES
     assert "serialization_guards" in _CONVERGED_PROPERTIES, _CONVERGED_PROPERTIES
+    assert "self_cleanups" in _CONVERGED_PROPERTIES, _CONVERGED_PROPERTIES
     for name in sorted(_CONVERGED_PROPERTIES):
         left, right = f"ripple_retry_{name}", f"publish_retry_{name}"
         assert _same_value(left, right), (
@@ -1123,7 +1256,11 @@ _LEASE_RULING_HEADER = "| 问题 | 裁定 | 依据（可重算） |"
 _LEASE_RULING_FACTS: dict[str, str] = {
     "两条修复路径取租约": "repair_paths_taking_the_lease",
     "取租约只保留一处实现": "lease_helper_definitions_in_the_runner",
-    "给 ripple-retry 一个自己的键": "ripple_retry_task_registrations",
+    # The cell gained the word 槽 in this slice: the "own key" it refuses is the
+    # *slot's*, and a second table (``_detached_tasks``, §7.1) was opened with a
+    # different reader set.  Keeping the old wording would have merged two
+    # decisions into one row.
+    "给 ripple-retry 一个槽里的键": "ripple_retry_task_registrations",
 }
 
 
@@ -1324,13 +1461,16 @@ def test_the_done_callback_scan_can_see_a_callback(tmp_path: Path):
 
 
 def test_the_self_cleanup_scan_only_counts_a_pop_inside_a_finally(tmp_path: Path):
-    """Positive control for ``ripple_retry_self_cleanups`` (published as 0).
+    """Positive control for ``ripple_retry_self_cleanups`` (published as 1).
 
     The rule reads ``finalbody`` and nothing else, and this fixture is what makes
     that choice visible rather than arbitrary: both halves **contain** a ``pop``,
     and only one of them is a cleanup.  The other pops on the happy path and leaves
     the registry entry behind whenever the task is cancelled -- the single case the
     cleanup exists for.  A scan that walked the whole coroutine would answer 1 / 1.
+    The published value moved to 1 when this slice gave ripple-retry a registry;
+    the fixture still has to answer **0** for it, which is what keeps ``1`` a
+    measurement rather than the constant a broken scan would also return.
     """
     root = _pkg(tmp_path)
     module = _write(
@@ -1354,6 +1494,186 @@ def test_the_self_cleanup_scan_only_counts_a_pop_inside_a_finally(tmp_path: Path
     )
     assert _started_coroutine_cleans_up(module, "retry_publish") == 1
     assert _started_coroutine_cleans_up(module, "retry_ripple_analysis") == 0
+
+
+def test_the_two_registry_scans_can_answer_apart(tmp_path: Path):
+    """Positive control for the two registry counts (published 3 and 1).
+
+    ``detached_registry_task_write_sites`` and
+    ``detached_registry_readers_that_cancel_the_occupant`` are small numbers that a
+    scan reading the **other** table would also produce -- 3 and 1 are exactly the
+    slot's two counts, so the published pair looks right either way.  The fixture
+    carries both tables and makes the counts differ on each axis (writes 2 / 1,
+    cancelling readers 1 / 2), so neither can be satisfied by one hardcoded name.
+    """
+    root = _pkg(tmp_path)
+    _write(
+        root,
+        "api/routes/_wf_actions.py",
+        "def a(thread_id):\n"
+        "    _background_tasks[thread_id] = t1\n"
+        "    _background_tasks[thread_id] = t2\n"
+        "    _detached_tasks[thread_id] = t3\n"
+        "\n"
+        "async def b(thread_id):\n"
+        "    _detached_tasks.get(thread_id).cancel()\n"
+        "\n"
+        "async def c(thread_id):\n"
+        "    _detached_tasks.get(thread_id).cancel()\n"
+        "\n"
+        "async def d(thread_id):\n"
+        "    _background_tasks.get(thread_id).cancel()\n",
+    )
+    assert _registry_task_writes(root, "_background_tasks") == 2
+    assert _registry_task_writes(root, "_detached_tasks") == 1
+    assert _registry_readers_that_cancel(root, "_background_tasks") == 1
+    assert _registry_readers_that_cancel(root, "_detached_tasks") == 2
+
+
+_SQL_PART = '_ACQUIRE_SQL = """\nSELECT 1 WHERE a = 1 OR owner_id = EXCLUDED.owner_id\n"""\n'
+_MEMORY_PART = (
+    "def _acquire_in_memory(thread_id, ttl):\n"
+    "    if existing.owner_id != {other}:\n"
+    "        return HELD\n"
+    "    return GRANTED\n"
+)
+
+
+def test_the_grant_scan_needs_both_backends(tmp_path: Path):
+    """Positive control for ``grant_paths_that_readmit_the_same_owner`` (published 2).
+
+    This claim is the reason the slice exists, so it may not be a count a broken
+    scan also returns.  Three fixtures: both spellings (2), the SQL alone (1), and
+    neither (0) -- the middle one is what catches a scan that matched one spelling
+    and doubled it, or that returned ``2`` as a constant.  The memory conjunct is
+    compared against a **different** name in the third fixture, so matching the
+    receiver rather than re-deriving the question is not enough either.
+    """
+    both = _write(tmp_path, "both.py", _SQL_PART + "\n" + _MEMORY_PART.format(other="_instance_id"))
+    sql_only = _write(
+        tmp_path, "sql_only.py", _SQL_PART + "\n" + _MEMORY_PART.format(other="_other")
+    )
+    neither = _write(tmp_path, "neither.py", _MEMORY_PART.format(other="_other"))
+    assert _grant_paths_that_readmit_the_same_owner(both) == 2
+    assert _grant_paths_that_readmit_the_same_owner(sql_only) == 1
+    assert _grant_paths_that_readmit_the_same_owner(neither) == 0
+
+
+def test_the_wait_scan_reads_the_name_that_was_cancelled(tmp_path: Path):
+    """Positive control for ``the_detached_cancel_waits_for_the_task`` (published true).
+
+    ``true`` is the value a broken scan and a real one both return, so the fixture
+    has to make the scan answer **false**.  Both halves below cancel a task and
+    await *something*; only one awaits the task it cancelled, which is the whole
+    difference the claim is about -- a scan that stopped at "there is an await in
+    here" would call the second one a wait too.
+    """
+    waited = _write(
+        tmp_path,
+        "waited.py",
+        "async def cancel_detached_and_wait(thread_id):\n"
+        "    task.cancel()\n"
+        "    await asyncio.gather(task, return_exceptions=True)\n",
+    )
+    slept = _write(
+        tmp_path,
+        "slept.py",
+        "async def cancel_detached_and_wait(thread_id):\n"
+        "    task.cancel()\n"
+        "    await asyncio.sleep(0)\n",
+    )
+    bare = _write(
+        tmp_path,
+        "bare.py",
+        "async def cancel_detached_and_wait(thread_id):\n    task.cancel()\n",
+    )
+    assert the_detached_cancel_waits_for_the_task(waited) is True
+    assert the_detached_cancel_waits_for_the_task(slept) is False
+    assert the_detached_cancel_waits_for_the_task(bare) is False
+
+
+def test_the_new_table_is_not_a_busy_answerer(tmp_path: Path):
+    """Positive control for ``busy_answerers_reading_the_detached_registry`` (published 0).
+
+    ``0`` is the value a scan that looked at the wrong file would also return, so
+    the fixture puts the reference in and requires the scan to see it.  Both
+    answerers are exercised, one fixture each -- a scan that only knew
+    ``process_has_active_task`` would answer 0 for the second.
+    """
+    never = _write(
+        _pkg(tmp_path / "never"),
+        "api/routes/_runner.py",
+        "def process_has_active_task(thread_id):\n"
+        "    return thread_id in _background_tasks\n"
+        "\n"
+        "async def has_active_execution(thread_id):\n"
+        "    return _background_tasks.get(thread_id) is not None\n",
+    )
+    assert _busy_answerers_reading(never, "_detached_tasks") == 0
+
+    leaked = _write(
+        _pkg(tmp_path / "leaked"),
+        "api/routes/_runner.py",
+        "def process_has_active_task(thread_id):\n"
+        "    return thread_id in _detached_tasks\n"
+        "\n"
+        "async def has_active_execution(thread_id):\n"
+        "    return _background_tasks.get(thread_id) is not None\n",
+    )
+    assert _busy_answerers_reading(leaked, "_detached_tasks") == 1
+
+    both = _write(
+        _pkg(tmp_path / "both"),
+        "api/routes/_runner.py",
+        "def process_has_active_task(thread_id):\n"
+        "    return thread_id in _detached_tasks\n"
+        "\n"
+        "async def has_active_execution(thread_id):\n"
+        "    return thread_id in _detached_tasks\n",
+    )
+    assert _busy_answerers_reading(both, "_detached_tasks") == 2
+
+
+def test_the_self_cleanup_scan_requires_the_identity_guard(tmp_path: Path):
+    """Positive control for ``the_detached_self_cleanup_is_identity_guarded`` (published true).
+
+    Both halves below have a ``finally`` and a ``pop``; only one of them asks
+    whether the entry is still its own.  The unguarded one would delete a newer
+    task's entry, which is exactly what the guard is there to prevent -- so the
+    scan has to answer ``false`` for it.
+    """
+    guarded = _write(
+        tmp_path,
+        "guarded.py",
+        "async def _run_retry():\n"
+        "    try:\n"
+        "        await work()\n"
+        "    finally:\n"
+        "        if _detached_tasks.get(thread_id) is asyncio.current_task():\n"
+        "            _detached_tasks.pop(thread_id, None)\n",
+    )
+    unguarded = _write(
+        tmp_path,
+        "unguarded.py",
+        "async def _run_retry():\n"
+        "    try:\n"
+        "        await work()\n"
+        "    finally:\n"
+        "        _detached_tasks.pop(thread_id, None)\n",
+    )
+    equal_but_wrong = _write(
+        tmp_path,
+        "equal_but_wrong.py",
+        "async def _run_retry():\n"
+        "    try:\n"
+        "        await work()\n"
+        "    finally:\n"
+        "        if _detached_tasks.get(thread_id) == asyncio.current_task():\n"
+        "            _detached_tasks.pop(thread_id, None)\n",
+    )
+    assert the_detached_self_cleanup_is_identity_guarded(guarded, "_run_retry") is True
+    assert the_detached_self_cleanup_is_identity_guarded(unguarded, "_run_retry") is False
+    assert the_detached_self_cleanup_is_identity_guarded(equal_but_wrong, "_run_retry") is False
 
 
 def test_the_pairing_scan_finds_both_sides_and_ignores_unpaired_properties():

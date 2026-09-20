@@ -159,97 +159,115 @@ async def retry_ripple_analysis(
         # 「问不到」照跑（裁定 2），只是没有栅栏可装；「活着的外部持有者」是另一
         # 回事——那是证据，不是证据的缺席。继续跑就正是这条租约要禁止的第二个写者，
         # 而且写的是另一个实例正在改的状态之上算出来的结果。stand down + 留事件。
-        async with _execution_lease(thread_id) as lease:
-            if lease.outcome is AcquireOutcome.HELD_BY_LIVE_OWNER:
-                await _record_lease_refusal(thread_id, path="ripple-retry", account_id=account_id)
-                return
-            print(f"[ripple-retry] Started for {thread_id}, topic={topic}", flush=True)
-            try:
-                # Bypass health-check/fallback — retry means we want a real simulation
-                pred_task = ripple.submit_and_wait(
-                    {
-                        "skill": "social-media",
-                        "platform": "xiaohongshu",
-                        "event": {
-                            "topic": topic,
-                            "content_type": content_plan.get("content_type", "note"),
-                            "tags": content_plan.get("hashtags", []),
-                            "tone": content_plan.get("content_angle", ""),
-                            "description": content_plan.get("content_angle", ""),
+        try:
+            async with _execution_lease(thread_id) as lease:
+                if lease.outcome is AcquireOutcome.HELD_BY_LIVE_OWNER:
+                    await _record_lease_refusal(
+                        thread_id, path="ripple-retry", account_id=account_id
+                    )
+                    return
+                print(f"[ripple-retry] Started for {thread_id}, topic={topic}", flush=True)
+                try:
+                    # Bypass health-check/fallback — retry means we want a real simulation
+                    pred_task = ripple.submit_and_wait(
+                        {
+                            "skill": "social-media",
+                            "platform": "xiaohongshu",
+                            "event": {
+                                "topic": topic,
+                                "content_type": content_plan.get("content_type", "note"),
+                                "tags": content_plan.get("hashtags", []),
+                                "tone": content_plan.get("content_angle", ""),
+                                "description": content_plan.get("content_angle", ""),
+                            },
+                            "max_waves": 3,
+                            "simulation_horizon": "12h",
+                            "ensemble_runs": 1,
                         },
-                        "max_waves": 3,
-                        "simulation_horizon": "12h",
-                        "ensemble_runs": 1,
-                    },
-                    max_wait=ripple_timeout,
-                    thread_id=thread_id,
-                )
-                pmf_task = ripple.submit_and_wait(
-                    {
-                        "skill": "pmf-validation",
-                        "channel": "content-seeding",
-                        "vertical": "fmcg",
-                        "platform": "xiaohongshu",
-                        "event": {
-                            "name": content_plan.get("selected_topic", ""),
-                            "category": content_plan.get("category", ""),
-                            "description": content_plan.get("content_angle", ""),
-                            "differentiators": content_plan.get("key_points", []),
+                        max_wait=ripple_timeout,
+                        thread_id=thread_id,
+                    )
+                    pmf_task = ripple.submit_and_wait(
+                        {
+                            "skill": "pmf-validation",
+                            "channel": "content-seeding",
+                            "vertical": "fmcg",
+                            "platform": "xiaohongshu",
+                            "event": {
+                                "name": content_plan.get("selected_topic", ""),
+                                "category": content_plan.get("category", ""),
+                                "description": content_plan.get("content_angle", ""),
+                                "differentiators": content_plan.get("key_points", []),
+                            },
+                            "max_waves": 3,
+                            "simulation_horizon": "12h",
+                            "ensemble_runs": 1,
                         },
-                        "max_waves": 3,
-                        "simulation_horizon": "12h",
-                        "ensemble_runs": 1,
-                    },
-                    max_wait=ripple_timeout,
-                    thread_id=thread_id,
-                )
-                raw_pred, raw_pmf = await asyncio.gather(pred_task, pmf_task)
-                print(f"[ripple-retry] Simulations completed for {thread_id}", flush=True)
+                        max_wait=ripple_timeout,
+                        thread_id=thread_id,
+                    )
+                    raw_pred, raw_pmf = await asyncio.gather(pred_task, pmf_task)
+                    print(f"[ripple-retry] Simulations completed for {thread_id}", flush=True)
 
-                pred = ripple._parse_spread_result(raw_pred)
-                pmf_result = ripple._parse_pmf_result(raw_pmf)
-            except (RippleTimeoutError, TimeoutError):
-                logger.warning("Ripple retry timed out for %s", thread_id)
-                return
-            except Exception as e:
-                print(f"[ripple-retry] FAILED for {thread_id}: {type(e).__name__}: {e}", flush=True)
-                return
+                    pred = ripple._parse_spread_result(raw_pred)
+                    pmf_result = ripple._parse_pmf_result(raw_pmf)
+                except (RippleTimeoutError, TimeoutError):
+                    logger.warning("Ripple retry timed out for %s", thread_id)
+                    return
+                except Exception as e:
+                    print(
+                        f"[ripple-retry] FAILED for {thread_id}: {type(e).__name__}: {e}",
+                        flush=True,
+                    )
+                    return
 
-            # Update workflow state with new Ripple results
-            updates: dict[str, Any] = {}
-            ripple_pred_data = pred.get("ripple_prediction")
-            if ripple_pred_data:
-                updates["ripple_prediction"] = ripple_pred_data
-            ripple_pmf_data = pmf_result.get("ripple_pmf")
-            if ripple_pmf_data:
-                updates["ripple_pmf"] = ripple_pmf_data
+                # Update workflow state with new Ripple results
+                updates: dict[str, Any] = {}
+                ripple_pred_data = pred.get("ripple_prediction")
+                if ripple_pred_data:
+                    updates["ripple_prediction"] = ripple_pred_data
+                ripple_pmf_data = pmf_result.get("ripple_pmf")
+                if ripple_pmf_data:
+                    updates["ripple_pmf"] = ripple_pmf_data
 
-            # Both succeeded — clear fallback flags
-            if ripple_pred_data and ripple_pmf_data:
-                updates["ripple_reason"] = None
-                updates["ripple_fallback"] = None
-            else:
-                reason = (
-                    pred.get("ripple_reason") or pmf_result.get("ripple_reason") or "unreachable"
-                )
-                updates["ripple_reason"] = reason
-                updates["ripple_fallback"] = True
+                # Both succeeded — clear fallback flags
+                if ripple_pred_data and ripple_pmf_data:
+                    updates["ripple_reason"] = None
+                    updates["ripple_fallback"] = None
+                else:
+                    reason = (
+                        pred.get("ripple_reason")
+                        or pmf_result.get("ripple_reason")
+                        or "unreachable"
+                    )
+                    updates["ripple_reason"] = reason
+                    updates["ripple_fallback"] = True
 
-            if updates:
-                ripple_state = await graph.aget_state(config)
-                # P1a-S4-2: ripple_prediction/ripple_pmf are refable — the write
-                # must go through refify_updates (a bare inline write would be
-                # shadowed by a stale artifact ref on the next resolve). Fresh
-                # resolve gives refify the state the write lands on.
-                fresh_values = await resolve_state(store, thread_id, ripple_state.values or {})
-                refified = await refify_updates(store, thread_id, updates, prev_values=fresh_values)
-                await graph.aupdate_state(config, refified, as_node=_get_as_node(ripple_state))
-                print(
-                    f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}",
-                    flush=True,
-                )
+                if updates:
+                    ripple_state = await graph.aget_state(config)
+                    # P1a-S4-2: ripple_prediction/ripple_pmf are refable — the write
+                    # must go through refify_updates (a bare inline write would be
+                    # shadowed by a stale artifact ref on the next resolve). Fresh
+                    # resolve gives refify the state the write lands on.
+                    fresh_values = await resolve_state(store, thread_id, ripple_state.values or {})
+                    refified = await refify_updates(
+                        store, thread_id, updates, prev_values=fresh_values
+                    )
+                    await graph.aupdate_state(config, refified, as_node=_get_as_node(ripple_state))
+                    print(
+                        f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}",
+                        flush=True,
+                    )
+
+        finally:
+            # Identity-guarded, like publish-retry's: a newer retry may have
+            # replaced this entry, and the old one must not pop the new one's.
+            if _runner._detached_tasks.get(thread_id) is asyncio.current_task():
+                _runner._detached_tasks.pop(thread_id, None)
 
     task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
+    # Out-of-slot registry -- declaration and reasoning in _runner.py; §7.1.
+    _runner._detached_tasks[thread_id] = task
     print(f"[ripple-retry] Task created for {thread_id}: {task.get_name()}", flush=True)
 
     return success(
