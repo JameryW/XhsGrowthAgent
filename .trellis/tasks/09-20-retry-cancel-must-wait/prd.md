@@ -211,7 +211,7 @@ P14：§7 的裁定表里已经有一行「**给 ripple-retry 一个自己的键
 
 ## 8. 执行记录
 
-**S1 · S2 · S3 全部落地**（分支 `feat/retry-cancel-must-wait`）。
+**S1 · S2 · S3 全部落地**（分支 `feat/retry-cancel-must-wait`；commit `73a2ee06` → **PR #641** → CI **首轮 7/8**（`Test (py3.11)` 红在 `tests/unit/services/test_chrome_launcher.py::test_stop_chrome_sigterms_live_pid`；**同 commit 上 py3.12 绿**，重跑后 py3.11 转绿 ⇒ **flake 由重跑证明**，与本片无关）→ merge `274d8c45`，树握手 `180936fe` 两侧相同）。
 
 | 切片 | 落地内容 | 位置 |
 | --- | --- | --- |
