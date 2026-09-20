@@ -12,6 +12,7 @@ assertion is a mutation that survives.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -222,6 +223,27 @@ class TestRenewAndRelease:
     async def test_empty_thread_id_is_never_renewed_or_released(self) -> None:
         assert await leases.renew("") is False
         assert await leases.release("") is False
+
+    async def test_could_not_ask_is_announced_in_the_log(self, monkeypatch, caplog) -> None:
+        """The one non-answer only Postgres can reach, witnessed by what it says.
+
+        Its return value is the same ``False`` as the other two, so an assertion
+        on that value would only re-test the collapse the ruling keeps. What this
+        member really produces is the log line -- and that is also what keeps
+        "we could not ask" identifiable even though the answer is not.
+        """
+        monkeypatch.setattr(leases, "is_pool_ready", lambda: True)
+
+        def _unreachable():
+            raise RuntimeError("pool is gone")
+
+        monkeypatch.setattr(leases, "get_pool", _unreachable)
+
+        with caplog.at_level(logging.WARNING):
+            assert await leases.release("t1") is False
+
+        assert "release failed" in caplog.text
+        assert "pool is gone" in caplog.text
 
 
 class TestExpireScan:

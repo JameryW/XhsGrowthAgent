@@ -529,6 +529,19 @@ async def release(thread_id: str) -> bool:
 
     Another owner's lease is left alone — releasing a lease we do not hold
     would erase the record of whoever does.
+
+    The three ways to answer ``False`` — an empty id, a lease that is not ours,
+    and a store we could not ask — stay collapsed into that one value, because
+    nothing decides on it. The only caller in the package, :func:`end_lease`,
+    drops the answer, so splitting it would mint names that are discarded just
+    as fast. Contrast :func:`acquire_outcome` and :func:`renew_outcome`: there
+    the split is paid for by a decider — the takeover scan, the heartbeat.
+
+    That claim is about today's readers, not about the value, so it is pinned
+    from both sides: one claim counts the readers of this answer, another
+    asserts the two non-answers stay equal. A caller that starts reading the
+    result turns the first one red, which is the signal to give ``release``
+    the same treatment as the other two.
     """
     if not thread_id:
         return False
