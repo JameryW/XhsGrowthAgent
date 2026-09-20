@@ -185,7 +185,7 @@ P9 说那一档零见证。但要问的是**补什么样的见证**：
 
 ## 8. 执行记录
 
-**S1 · S2 · S3 全部落地**（分支 `feat/release-has-no-decider`）。
+**S1 · S2 · S3 全部落地**（分支 `feat/release-has-no-decider`；commit `0840e74e` → **PR #640** → CI 8/8 首轮全绿 → merge `fbc6223d`，树握手 `6d6c06a1` 两侧相同）。
 
 | 切片 | 落地内容 | 位置 |
 | --- | --- | --- |
