@@ -35,6 +35,15 @@ So this file pins two things the anchor tables cannot:
    ``pause``/``cancel``/``resume`` at the retry.  The counts are published so the
    ruling is re-tested each run instead of re-remembered.
 
+4. **An answer nobody reads does not need a vocabulary.**  ``acquire`` and
+   ``renew`` were split because a caller decides on the answer; ``release``'s
+   answer is dropped by its only caller, so ``0`` readers is the *finding*, not
+   an oversight.  Both directions are pinned, one claim each: count the readers,
+   and assert the two non-answers are still one value.  Adding a reader turns the
+   first red, splitting the value turns the second red.  The reason is recomputed
+   rather than estimated -- "the consequence is small" was an estimate that the
+   next slice could not recheck.
+
 The pattern for "a cited line number" carries **no extension whitelist**: an
 earlier version of it listed extensions and silently skipped ``Dockerfile:81``.
 A scan that cannot see a reference cannot fail on it, and a whitelist is exactly
@@ -776,6 +785,139 @@ def _the_budget_never_covers_the_evidenced_answer(path: Path, func: str) -> bool
     return evidence_at < budget_at
 
 
+# ── the answer ``release`` gives, and the readers it does not have ───────────
+# ``release`` is the family's negative case.  ``acquire`` and ``renew`` were split
+# because a caller decides on the answer; ``release``'s answer goes nowhere, so
+# these two claims point in opposite directions -- how many readers it has (adding
+# one has to turn this red) and whether the two non-answers are still one value
+# (splitting them has to turn this red).  That is what makes the ruling
+# self-correcting rather than a paragraph someone has to remember.
+
+_LEASE_MODULE = "backend.db.execution_leases"
+
+
+def _parents(tree: ast.AST) -> dict[int, ast.AST]:
+    """Child id -> parent, the map ``ast.walk`` does not hand you."""
+    return {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+
+
+def _value_is_discarded(call: ast.Call, parents: Mapping[int, ast.AST]) -> bool:
+    """Whether the statement around a call throws its result away.
+
+    ``await release(x)`` sits under an ``Await`` node before it reaches the
+    statement, so the hop is not optional: without it every discarded call reads
+    as consumed, and the count below answers ``1`` instead of ``0`` -- the discard
+    the claim exists to prove is exactly what goes missing.
+    """
+    node: ast.AST = call
+    parent = parents.get(id(node))
+    while isinstance(parent, ast.Await):
+        node = parent
+        parent = parents.get(id(node))
+    return isinstance(parent, ast.Expr)
+
+
+def _imports_of_the_lease_module(path: Path) -> tuple[set[str], bool]:
+    """``(names bound to the module, ``release`` imported by name)`` in *path*."""
+    aliases: set[str] = set()
+    direct = False
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module == "backend.db":
+                aliases |= {a.asname or a.name for a in node.names if a.name == "execution_leases"}
+            elif node.module == _LEASE_MODULE:
+                direct = direct or any(a.name == "release" for a in node.names)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == _LEASE_MODULE:
+                    aliases.add(alias.asname or alias.name.split(".")[0])
+    return aliases, direct
+
+
+def readers_of_the_release_answer(root: Path, module: Path) -> int:
+    """Call sites **under *root*** that actually read ``release``'s answer.
+
+    Counted the way the document states it: every call site outside the lease
+    module, plus the ones inside it whose value is consumed.  ``release`` is not a
+    distinctive name the way ``renew`` is -- ``asyncio.Lock.release``, a Postgres
+    advisory hold and a ``gate.release()`` all live in this tree -- so matching on
+    ``.release`` reports three readers this module does not have.  The receiver has
+    to resolve to the lease module through *its imports*; a receiver that is not a
+    plain name (an inline call, a subscript) is not claimed as one.
+
+    It counts *readers*, not call sites, and that is the whole point: the single
+    call site inside the module drops its answer, which is why this answers ``0``
+    rather than ``1``.  The scope is ``backend/`` -- the tests do read this answer,
+    but a test is not a decider.
+    """
+    target = module.resolve()
+    readers = 0
+    for path, tree in _trees(root):
+        inside = path.resolve() == target
+        aliases, direct = (set(), False) if inside else _imports_of_the_lease_module(path)
+        if not inside and not aliases and not direct:
+            continue
+        parents = _parents(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or _callee(node) != "release":
+                continue
+            func = node.func
+            by_name = isinstance(func, ast.Name) and (inside or (direct and func.id == "release"))
+            by_attribute = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "release"
+                and isinstance(func.value, ast.Name)
+                and func.value.id in aliases
+            )
+            if (by_name or by_attribute) and not _value_is_discarded(node, parents):
+                readers += 1
+    return readers
+
+
+def _release_non_answers(path: Path) -> dict[str, str]:
+    """The expression ``release`` returns for each of its two non-answers."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    fn = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "release"
+        ),
+        None,
+    )
+    assert fn is not None, f"release not found in {path.name}"
+    found: dict[str, str] = {}
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Try):
+            for handler in node.handlers:
+                for sub in ast.walk(handler):
+                    if isinstance(sub, ast.Return) and "could not ask" not in found:
+                        found["could not ask"] = ast.dump(sub.value)
+        if isinstance(node, ast.If) and _mentions_attr(node.test, "owner_id"):
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Return) and "not ours" not in found:
+                    found["not ours"] = ast.dump(sub.value)
+    assert set(found) == {"could not ask", "not ours"}, (
+        f"release no longer has both non-answers: {sorted(found)}"
+    )
+    return found
+
+
+def release_collapses_the_two_non_answers(path: Path) -> bool:
+    """Whether the two non-answers ``release`` can give are still one value.
+
+    The ruling is that they *should* be -- nothing decides on them -- so this is
+    deliberately the opposite shape from the claims #636 and #638 added: those
+    assert two answers differ, this one asserts two answers agree.  Neither
+    reading fails on its own (a ``True`` and a ``False`` are what a broken scan
+    and a correct one each say), so the positive control runs a fixture whose
+    handler answers something else.
+    """
+    returns = _release_non_answers(path)
+    return returns["could not ask"] == returns["not ours"]
+
+
 _CLAIMS: dict[str, Callable[[], Any]] = {
     # §7 -- the cost of "one line"
     "process_has_active_task_consumers_outside_the_runner": lambda: len(
@@ -853,6 +995,9 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
         _the_budget_never_covers_the_evidenced_answer(LEASES, "_heartbeat_until_cancelled")
     ),
     "misses_the_scanner_tolerates": lambda: _misses_the_scanner_tolerates(LEASES),
+    # §2 -- the answer `release` gives, and the readers it does not have
+    "readers_of_the_release_answer": lambda: readers_of_the_release_answer(BACKEND, LEASES),
+    "release_collapses_the_two_non_answers": lambda: release_collapses_the_two_non_answers(LEASES),
     # §8 -- how much of this document its own tables actually cover
     "line_number_references_in_this_document": lambda: sum(
         len(part) for part in _cited(_DOC_TEXT, REPO)
@@ -1490,3 +1635,111 @@ def test_the_renew_scans_can_answer_something_other_than_their_value(tmp_path: P
     # question's calls, and the named scan does not see the boolean one.
     assert len(_call_sites(root, "renew")) == 1
     assert len(_call_sites(root, "renew_outcome")) == 4
+
+
+def test_the_release_scans_can_answer_something_other_than_their_value(tmp_path: Path):
+    """Positive control for the two scans the ``release`` ruling rests on.
+
+    Both publish a value that a broken scan also produces -- ``0`` readers and
+    ``true`` for the collapse -- and a claim table cannot tell those apart, because
+    the published value is exactly what a scan that never looks at anything
+    answers.  So the fixture has to make each one answer the other way.
+
+    The fixture module is the lease module's shape with one thing changed: its
+    handler answers something other than ``False``, so the collapse scan must
+    answer ``False``.  For the reader count it carries readers **and** the traps
+    this tree really has: a discarded call from outside, a discarded call from
+    inside (``end_lease``), a module that defines its own ``release``, and three
+    foreign receivers that are all **reads** -- a bare name (``lock``), an inline
+    attribute chain (``handle.gate``), and a module nothing imports.  Two of them
+    are aimed at two *different* gates: ``unrelated.py`` never imports the lease
+    module, so all it tests is the file-level gate, while ``shadowed.py`` imports
+    it **and** brings a different ``release`` in by name, so it reaches the name
+    check and tests that one.  Both are needed -- a trap an earlier gate already
+    excludes tests that gate, not the one it was written for.  They have to be
+    reads to be traps: a discarded foreign call is invisible to a scan that ignores
+    imports, because the discard alone already keeps it out of the count.  The
+    imports in the fixture are the real ones, because the scan resolves receivers
+    through them instead of by attribute name.
+    """
+    root = _pkg(tmp_path)
+    module = _write(
+        root,
+        "backend/db/execution_leases.py",
+        "async def release(thread_id):\n"
+        "    if not thread_id:\n"
+        "        return False\n"
+        "    if is_pool_ready():\n"
+        "        try:\n"
+        "            await _send(thread_id)\n"
+        "        except Exception as exc:\n"
+        "            logger.warning('release failed for %s: %s', thread_id, exc)\n"
+        "            return 'could not ask'\n"
+        "        return True\n"
+        "    current = _mem_leases.get(thread_id)\n"
+        "    if current is None or current.owner_id != _instance_id:\n"
+        "        return False\n"
+        "    return True\n"
+        "\n"
+        "async def end_lease(thread_id):\n"
+        "    with contextlib.suppress(Exception):\n"
+        "        await release(thread_id)\n"
+        "\n"
+        "async def _audited_release(thread_id):\n"
+        "    return await release(thread_id)\n",
+    )
+    _write(
+        root,
+        "backend/api/routes/reader.py",
+        "from backend.db import execution_leases as leases\n"
+        "\n"
+        "async def read_it(thread_id):\n"
+        "    return await leases.release(thread_id)\n"
+        "\n"
+        "async def drop_it(thread_id):\n"
+        "    await leases.release(thread_id)\n"
+        "\n"
+        "async def foreign(lock, handle):\n"
+        "    if handle:\n"
+        "        return await lock.release()\n"
+        "    return await handle.gate.release()\n",
+    )
+    _write(
+        root,
+        "backend/api/routes/direct.py",
+        "from backend.db.execution_leases import release\n"
+        "\n"
+        "async def read_it(thread_id):\n"
+        "    return await release(thread_id)\n"
+        "\n"
+        "async def drop_it(thread_id):\n"
+        "    await release(thread_id)\n",
+    )
+    _write(
+        root,
+        "backend/api/routes/unrelated.py",
+        "def release(handle):\n    return handle\n\ndef use():\n    return release(object())\n",
+    )
+    # This one *does* import the lease module, so it gets past the file-level gate and
+    # reaches the name check -- which is the only way to arm it.  A trap that an
+    # earlier gate already excludes tests that gate, not the one it was written for;
+    # the first version of this fixture had exactly that shape and the mutation it
+    # was meant to catch survived as an equivalent edit.
+    _write(
+        root,
+        "backend/api/routes/shadowed.py",
+        "from backend.db import execution_leases as leases\n"
+        "from backend.services.gate import release\n"
+        "\n"
+        "async def read_it(thread_id):\n"
+        "    return await release(thread_id)\n"
+        "\n"
+        "async def borrowed(thread_id):\n"
+        "    return await leases.get_lease(thread_id)\n",
+    )
+    returns = _release_non_answers(module)
+    assert returns["could not ask"] != returns["not ours"]
+    assert release_collapses_the_two_non_answers(module) is False
+    # Two readers (one through the alias, one through the direct import) plus the
+    # one inside the module; every trap above contributes nothing.
+    assert readers_of_the_release_answer(root, module) == 3
