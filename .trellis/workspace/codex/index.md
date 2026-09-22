@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 19
 - **Last Active**: 2026-09-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~606 | Active |
+| `journal-1.md` | ~639 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-09-22 | 剩余任务分诊与归档：16→2 | `a94bdabdb` | `main` |
 | 18 | 2026-09-22 | 归档 09-18～09-20 已合并任务 | `9a6b5ad03` | `main` |
 | 17 | 2026-09-22 | P1a/P1b 快照落盘、PR#642 开关与主干同步 | `1493cf50e` | `main` |
 | 16 | 2026-09-13 | P0 正确性修复完成并合并（PR #577），P1a 方案拍板 | `48c4c993` | `main` |
