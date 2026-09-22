@@ -11,6 +11,7 @@ from backend.agents.publisher import PublisherAgent
 
 def _state(**overrides):
     base = {
+        "niche": "test-niche",
         "copy_content": {"selected_title": "t", "body_text": "b", "hashtags": []},
         "content_plan": {},
         "visual_plan": {"image_paths": ["/tmp/x.png"]},
@@ -81,7 +82,7 @@ def _mock_cdp_endpoint(monkeypatch, endpoint=""):
 @pytest.mark.asyncio
 async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, monkeypatch):
     """account_id in publish_options → per-account CDP endpoint is passed to XHSClient."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
     _mock_account_active(monkeypatch, is_active=True)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9225")
@@ -145,7 +146,9 @@ async def test_missing_cdp_endpoint_when_account_unconfigured(
     _browser_settings, mock_store, monkeypatch
 ):
     """Selected account has no CDP endpoint → fail fast with no XHSClient built."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_empty"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_empty"}
+    )
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="")
     monkeypatch.setattr("backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "")
@@ -169,7 +172,9 @@ async def test_missing_cdp_endpoint_when_account_unconfigured(
 @pytest.mark.asyncio
 async def test_inactive_account_fails_fast(_browser_settings, mock_store, monkeypatch):
     """Selected account is_active=False → fail fast, no XHSClient built."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_off"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_off"}
+    )
     _mock_account_active(monkeypatch, is_active=False)
     m_client = MagicMock()
     monkeypatch.setattr("backend.services.xhs_client.XHSClient", m_client)
@@ -192,7 +197,9 @@ async def test_inactive_account_fails_fast(_browser_settings, mock_store, monkey
 @pytest.mark.asyncio
 async def test_dry_run_records_account_id(mock_store, monkeypatch):
     """dry_run → mock result carries the selected account_id."""
-    state = _state(publish_options={"dry_run": True, "account_id": "acc_dry"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": True, "account_id": "acc_dry"}
+    )
     _mock_history(monkeypatch)
 
     result = await PublisherAgent().execute(state, store=mock_store)
@@ -217,7 +224,7 @@ async def test_state_dry_run_overrides_publish_options(mock_store, monkeypatch):
     fake.platform.cdp_endpoint = ""
     monkeypatch.setattr("backend.config.settings.Settings", lambda: fake)
 
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_x"})
     state["dry_run"] = True  # top-level dry_run from /start
     _mock_history(monkeypatch)
 
@@ -242,7 +249,7 @@ async def test_selected_account_expired_cookie_classified(
     _browser_settings, mock_store, monkeypatch
 ):
     """Selected account publish throws auth error → auth_expired."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_x"})
     _mock_account_active(monkeypatch, is_active=True)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9225")
 

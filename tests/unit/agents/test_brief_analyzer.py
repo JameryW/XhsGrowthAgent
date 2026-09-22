@@ -169,13 +169,17 @@ class TestBriefAnalyzerParallelRecalls:
         mock_store = AsyncMock()
         mock_store.asearch = AsyncMock(return_value=[])
 
-        with patch(
-            "backend.memory.creative.CreativeMemory.recall_benchmark",
-            new_callable=AsyncMock,
-        ) as mock_recall_benchmark:
+        with (
+            patch(
+                "backend.memory.creative.CreativeMemory.recall_benchmark",
+                new_callable=AsyncMock,
+            ) as mock_recall_benchmark,
+            pytest.raises(ValueError, match="niche is required"),
+        ):
             await agent.execute(state, mock_store)
 
         mock_recall_benchmark.assert_not_called()
+        mock_model.ainvoke.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_recall_benchmark_called_when_niche_truthy(self):

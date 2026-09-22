@@ -39,3 +39,15 @@ user_template: |
   建议发布时间：{suggested_timing}
   是否启用A/B测试：{enable_ab_test}
   内容分类候选：{categories}
+
+context:
+  version: 1
+  variables:
+    account_niche: l2_account
+    memory_context: l4_memory
+    ripple_context: l5_observation
+    weights_block: l5_observation
+    pass_threshold: l5_observation
+    reject_threshold: l5_observation
+    bias_severity_note: l5_observation
+  required: [weights_block, pass_threshold, reject_threshold, bias_severity_note]

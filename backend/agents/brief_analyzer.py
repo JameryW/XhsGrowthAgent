@@ -6,7 +6,6 @@ import asyncio
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
@@ -79,12 +78,7 @@ class BriefAnalyzerAgent(BaseAgent):
 - notes: 特殊注意事项列表
 - confidence: 解析置信度 (0-1，信息越模糊越低)"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         content = response.content
         if isinstance(content, list):
@@ -154,12 +148,7 @@ class BriefAnalyzerAgent(BaseAgent):
 - options: 2-3个建议选项列表
 - inferred_value: LLM 推断的默认值"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         content = response.content
         if isinstance(content, list):

@@ -28,6 +28,7 @@ class TestContentStrategistAgent:
     def mock_state(self):
         """Standard mock state with trend_data."""
         return {
+            "niche": "test-niche",
             "account_id": "test_account",
             "phase": WorkflowPhase.SCOUTING,
             "trend_data": {
@@ -176,7 +177,7 @@ class TestContentStrategistAgent:
     @pytest.mark.asyncio
     async def test_ripple_predict_skipped_no_topic(self, agent, mock_store):
         """Ripple prediction skipped when no topic."""
-        mock_state = {"account_id": "test", "trend_data": {}}
+        mock_state = {"niche": "test-niche", "account_id": "test", "trend_data": {}}
         mock_response = MagicMock()
         mock_response.content = '{"selected_topic": ""}'
 

@@ -14,7 +14,6 @@ import logging
 import uuid
 from typing import Any, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
@@ -147,12 +146,7 @@ class VersionGeneratorAgent(BaseAgent):
   ]
 }}"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         content = response.content
         if isinstance(content, list):
@@ -245,12 +239,7 @@ class VersionGeneratorAgent(BaseAgent):
 """
 
         # 调用 LLM
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         # 解析响应
         content = response.content

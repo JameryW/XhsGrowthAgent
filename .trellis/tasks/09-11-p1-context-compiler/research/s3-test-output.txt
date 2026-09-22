@@ -1,0 +1,209 @@
+........................................................................ [  3%]
+........................................................................ [  6%]
+........................................................................ [  9%]
+........................................................................ [ 12%]
+........................................................................ [ 15%]
+........................................................................ [ 18%]
+........................................................................ [ 21%]
+........................................................................ [ 24%]
+........................................................................ [ 27%]
+........................................................................ [ 30%]
+.............................................FFFFF...................... [ 33%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 42%]
+........................................................................ [ 45%]
+........................................................................ [ 48%]
+........................................................................ [ 51%]
+........................................................................ [ 54%]
+........................................................................ [ 57%]
+........................................................................ [ 60%]
+...................................................................F.... [ 63%]
+........................................................................ [ 66%]
+........................................................................ [ 69%]
+........................................................................ [ 72%]
+........................................................................ [ 75%]
+........................................................................ [ 78%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 90%]
+........................................FF.............................. [ 93%]
+........FFFss....F............................................s......... [ 96%]
+........................................................................ [ 99%]
+................                                                         [100%]
+================================== FAILURES ===================================
+__________________ TestCliRun.test_run_dry_run_no_api_calls ___________________
+tests\unit\cli\test_main.py:18: in test_run_dry_run_no_api_calls
+    assert result.exit_code == 0
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+_____________________ TestCliRun.test_run_with_account_id _____________________
+tests\unit\cli\test_main.py:24: in test_run_with_account_id
+    assert result.exit_code == 0
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+_______________________ TestCliRun.test_run_with_phase ________________________
+tests\unit\cli\test_main.py:30: in test_run_with_phase
+    assert result.exit_code == 0
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+_____________________ TestCliRun.test_run_displays_panel ______________________
+tests\unit\cli\test_main.py:36: in test_run_displays_panel
+    assert result.exit_code == 0
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+________________ TestCliRun.test_run_dev_mode_true_by_default _________________
+tests\unit\cli\test_main.py:42: in test_run_dev_mode_true_by_default
+    assert result.exit_code == 0
+E   assert 2 == 0
+E    +  where 2 = <Result SystemExit(2)>.exit_code
+________________ test_copywriter_injects_creator_stats_context ________________
+C:\Users\jamer\aiworks\XhsGrowthAgent\tests\unit\services\creator_stats\test_resilience_and_wiring.py:311: in test_copywriter_injects_creator_stats_context
+    await agent.execute(state, store=store)  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\copywriter.py:111: in execute
+    system_prompt = system_prompt.with_observations(ripple_context)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'with_observations'
+_______________ TestWorkflowRoutes.test_start_workflow_success ________________
+C:\Users\jamer\aiworks\XhsGrowthAgent\tests\integration\test_api_routes.py:149: in test_start_workflow_success
+    assert response.status_code == 200
+E   assert 400 == 200
+E    +  where 400 = <Response [400 Bad Request]>.status_code
+------------------------------ Captured log call ------------------------------
+WARNING  xhs_growth.api:middleware.py:25 API Error [8ff95ebf]: ERROR_VALIDATION - ��ָ��������������ǰ�˺����޿��ƶϵ�������Ϣ
+____________ TestWorkflowRoutes.test_start_workflow_default_phase _____________
+C:\Users\jamer\aiworks\XhsGrowthAgent\tests\integration\test_api_routes.py:166: in test_start_workflow_default_phase
+    assert response.status_code == 200
+E   assert 400 == 200
+E    +  where 400 = <Response [400 Bad Request]>.status_code
+------------------------------ Captured log call ------------------------------
+WARNING  xhs_growth.api:middleware.py:25 API Error [59cb2c27]: ERROR_VALIDATION - ��ָ��������������ǰ�˺����޿��ƶϵ�������Ϣ
+_____ TestContinuousModeE2E.test_continuous_loop_terminates_at_cycle_cap ______
+C:\Users\jamer\aiworks\XhsGrowthAgent\tests\integration\test_continuous_e2e.py:115: in test_continuous_loop_terminates_at_cycle_cap
+    assert final_state.get("cycle_count", 0) >= max_cycle_count
+E   AssertionError: assert 1 >= 5
+E    +  where 1 = <built-in method get of dict object at 0x0000022BFD7811C0>('cycle_count', 0)
+E    +    where <built-in method get of dict object at 0x0000022BFD7811C0> = {'phase': <WorkflowPhase.ERROR: 'error'>, 'current_agent': 'analyst', 'error': 'niche is required; specify an account niche before generation', 'error_class': 'transient', ...}.get
+------------------------------ Captured log call ------------------------------
+ERROR    xhs_growth.agents:base.py:360 Agent analyst failed: niche is required; specify an account niche before generation
+Traceback (most recent call last):
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\base.py", line 358, in __call__
+    result = await self.execute(state, store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\analyst.py", line 93, in execute
+    system_prompt = self._build_system_prompt(state)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\base.py", line 162, in _build_system_prompt
+    return prepare_prompt(
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\context\prompts.py", line 112, in prepare_prompt
+    niche = require_niche(state)
+            ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\context\runtime.py", line 20, in require_niche
+    raise ValueError("niche is required; specify an account niche before generation")
+ValueError: niche is required; specify an account niche before generation
+____ TestContinuousModeE2E.test_single_mode_does_not_loop_after_analyzing _____
+C:\Users\jamer\aiworks\XhsGrowthAgent\tests\integration\test_continuous_e2e.py:165: in test_single_mode_does_not_loop_after_analyzing
+    assert final_state.get("phase") in (
+E   AssertionError: assert <WorkflowPhase.ERROR: 'error'> in (<WorkflowPhase.ANALYZING: 'analyzing'>, <WorkflowPhase.COMPLETED: 'completed'>)
+E    +  where <WorkflowPhase.ERROR: 'error'> = <built-in method get of dict object at 0x0000022BFD7B82C0>('phase')
+E    +    where <built-in method get of dict object at 0x0000022BFD7B82C0> = {'phase': <WorkflowPhase.ERROR: 'error'>, 'current_agent': 'analyst', 'error': 'niche is required; specify an account niche before generation', 'error_class': 'transient', ...}.get
+------------------------------ Captured log call ------------------------------
+ERROR    xhs_growth.agents:base.py:360 Agent analyst failed: niche is required; specify an account niche before generation
+Traceback (most recent call last):
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\base.py", line 358, in __call__
+    result = await self.execute(state, store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\analyst.py", line 93, in execute
+    system_prompt = self._build_system_prompt(state)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\base.py", line 162, in _build_system_prompt
+    return prepare_prompt(
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\context\prompts.py", line 112, in prepare_prompt
+    niche = require_niche(state)
+            ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\context\runtime.py", line 20, in require_niche
+    raise ValueError("niche is required; specify an account niche before generation")
+ValueError: niche is required; specify an account niche before generation
+_ TestRevisionCountInterruptPreservation.test_revision_count_persists_across_resume _
+C:\Users\jamer\aiworks\XhsGrowthAgent\tests\integration\test_continuous_e2e.py:281: in test_revision_count_persists_across_resume
+    assert final_state.get("phase") in (
+E   AssertionError: assert <WorkflowPhase.PAUSED: 'paused'> in (<WorkflowPhase.PUBLISHING: 'publishing'>, <WorkflowPhase.COMPLETED: 'completed'>, <WorkflowPhase.ANALYZING: 'analyzing'>)
+E    +  where <WorkflowPhase.PAUSED: 'paused'> = <built-in method get of dict object at 0x0000022BFD7CF080>('phase')
+E    +    where <built-in method get of dict object at 0x0000022BFD7CF080> = {'phase': <WorkflowPhase.PAUSED: 'paused'>, 'current_agent': 'evaluator', 'error': None, 'pause_reason': 'evaluator_fail_closed', ...}.get
+------------------------------ Captured log call ------------------------------
+WARNING  langgraph.checkpoint.serde.jsonplus:jsonplus.py:79 Deserializing unregistered type backend.state.enums.WorkflowPhase from checkpoint. This will be blocked in a future version. Set LANGGRAPH_STRICT_MSGPACK=true to block now, or add to allowed_msgpack_modules to allow explicitly: [('backend.state.enums', 'WorkflowPhase')]
+ERROR    xhs_growth.agents:base.py:360 Agent evaluator failed: niche is required; specify an account niche before generation
+Traceback (most recent call last):
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\base.py", line 358, in __call__
+    result = await self.execute(state, store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\evaluator.py", line 221, in execute
+    system_prompt = self._build_system_prompt(state, extra_context=audience_ctx, ctx=ctx)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\evaluator.py", line 152, in _build_system_prompt
+    return super()._build_system_prompt(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\base.py", line 162, in _build_system_prompt
+    return prepare_prompt(
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\context\prompts.py", line 112, in prepare_prompt
+    niche = require_niche(state)
+            ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\context\runtime.py", line 20, in require_niche
+    raise ValueError("niche is required; specify an account niche before generation")
+ValueError: niche is required; specify an account niche before generation
+WARNING  xhs_growth.graph.nodes:evaluator.py:61 Evaluator failed, degrading to an explicit fail-closed result: niche is required; specify an account niche before generation
+WARNING  xhs_growth.graph.nodes:evaluator.py:105 Evaluator gate fail-closed (degraded/compliance) �� parking workflow e2e-revision-persist as paused for human review instead of publishing
+_______ TestRunEvaluationRoute.test_run_returns_evaluation_and_persists _______
+C:\Users\jamer\aiworks\XhsGrowthAgent\tests\integration\test_evaluation_api.py:118: in test_run_returns_evaluation_and_persists
+    assert data["status"] == "partial"
+E   AssertionError: assert 'degraded' == 'partial'
+E     
+E     - partial
+E     + degraded
+------------------------------ Captured log call ------------------------------
+WARNING  xhs_growth.context.recall:recall.py:131 Memory recall degraded: namespace=audience_preferences error=TypeError
+ERROR    xhs_growth.agents:base.py:360 Agent evaluator failed: niche is required; specify an account niche before generation
+Traceback (most recent call last):
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\base.py", line 358, in __call__
+    result = await self.execute(state, store)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\evaluator.py", line 221, in execute
+    system_prompt = self._build_system_prompt(state, extra_context=audience_ctx, ctx=ctx)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\evaluator.py", line 152, in _build_system_prompt
+    return super()._build_system_prompt(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\agents\base.py", line 162, in _build_system_prompt
+    return prepare_prompt(
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\context\prompts.py", line 112, in prepare_prompt
+    niche = require_niche(state)
+            ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jamer\aiworks\XhsGrowthAgent\backend\context\runtime.py", line 20, in require_niche
+    raise ValueError("niche is required; specify an account niche before generation")
+ValueError: niche is required; specify an account niche before generation
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\jamer\aiworks\XhsGrowthAgent\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/unit/cli/test_main.py::TestCliRun::test_run_dry_run_no_api_calls
+FAILED tests/unit/cli/test_main.py::TestCliRun::test_run_with_account_id - as...
+FAILED tests/unit/cli/test_main.py::TestCliRun::test_run_with_phase - assert ...
+FAILED tests/unit/cli/test_main.py::TestCliRun::test_run_displays_panel - ass...
+FAILED tests/unit/cli/test_main.py::TestCliRun::test_run_dev_mode_true_by_default
+FAILED tests/unit/services/creator_stats/test_resilience_and_wiring.py::test_copywriter_injects_creator_stats_context
+FAILED tests/integration/test_api_routes.py::TestWorkflowRoutes::test_start_workflow_success
+FAILED tests/integration/test_api_routes.py::TestWorkflowRoutes::test_start_workflow_default_phase
+FAILED tests/integration/test_continuous_e2e.py::TestContinuousModeE2E::test_continuous_loop_terminates_at_cycle_cap
+FAILED tests/integration/test_continuous_e2e.py::TestContinuousModeE2E::test_single_mode_does_not_loop_after_analyzing
+FAILED tests/integration/test_continuous_e2e.py::TestRevisionCountInterruptPreservation::test_revision_count_persists_across_resume
+FAILED tests/integration/test_evaluation_api.py::TestRunEvaluationRoute::test_run_returns_evaluation_and_persists
+12 failed, 2377 passed, 3 skipped, 1 warning in 39.22s

@@ -83,6 +83,7 @@ class TestContinuousModeE2E:
             "workflow_mode": "trend",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "test-niche",
             "publish_result": {"note_id": "test123"},
             # Pre-populate analytics WITHOUT an "insights" key so the
             # orchestrator's execute() returns phase=ANALYZING (routing back
@@ -91,15 +92,12 @@ class TestContinuousModeE2E:
             "cycle_count": 0,
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},
             "visual_plan": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
         }
 
         # Run the graph. With continuous mode, it should loop
@@ -144,21 +142,19 @@ class TestContinuousModeE2E:
             "workflow_mode": "trend",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "test-niche",
             "publish_result": {"note_id": "test456"},
             # Pre-populate analytics so orchestrator routes to analyst
             "analytics": {"result": "pending"},
             "cycle_count": 0,
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},
             "visual_plan": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
         }
 
         final_state = await graph.ainvoke(initial_state, config)
@@ -207,10 +203,10 @@ class TestRevisionCountInterruptPreservation:
             "execution_mode": "single",
             "session_id": thread_id,
             "account_id": "test_account",
+            "niche": "test-niche",
             "revision_count": 2,
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {"selected_topic": "test"},
             "copy_content": {"selected_title": "t", "body_text": "b"},
@@ -219,8 +215,6 @@ class TestRevisionCountInterruptPreservation:
             "analytics": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
             "publish_options": {"dry_run": True},
             "dry_run": True,
         }

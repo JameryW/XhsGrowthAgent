@@ -3,7 +3,7 @@
   "name": "p1-kernel-state-layers",
   "title": "sub: p1-kernel-state-layers",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -16,11 +16,11 @@
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
+  "notes": "S1-S4 与体积基准已在工作区。原提交 a5161b94 不在本地对象库（git cat-file 失败），与 P1b 改动叠在同一工作区，无法再拆成独立提交。2026-09-22 全量 unit+integration 通过。",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": "09-11-runtime-upgrade",
   "relatedFiles": [],
-  "notes": "",
   "meta": {}
 }

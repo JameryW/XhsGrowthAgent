@@ -28,6 +28,55 @@ def _check_terminal(state: XHSGrowthState) -> Literal["__end__"] | None:
     return None
 
 
+def _version_count(state: XHSGrowthState) -> int:
+    """Number of live content versions (P1a-S3 routing seam).
+
+    Ref'd threads carry only ``versions_meta`` (the body list lives in the
+    Artifact Store and is NOT in router-visible state — routing predicates
+    consume RuntimeState only); legacy threads carry the inline list. Reading
+    meta first and falling back inline keeps both schemas on one decision.
+    """
+    meta = state.get("versions_meta")
+    if isinstance(meta, list):
+        return len(meta)
+    return len(state.get("content_versions") or [])
+
+
+def _has_blogger_notes(state: XHSGrowthState) -> bool:
+    """Truthiness of blogger_notes (P1a-S3 routing seam) — same meta-first,
+    legacy-inline-fallback contract as :func:`_version_count`."""
+    meta = state.get("blogger_notes_meta")
+    if isinstance(meta, dict):
+        return int(meta.get("count", 0) or 0) > 0
+    return bool(state.get("blogger_notes"))
+
+
+def _has_actionable_trends(state: XHSGrowthState) -> bool:
+    """Truthiness of the actionable-topic chain (P1a-S4-1 routing seam).
+
+    trend_data moved to the Artifact Store in S4-1: ref'd threads carry only
+    the ``trend_summary`` meta (the body lives behind
+    ``artifacts["trend_data"]`` and routers never see the store), while legacy
+    threads still carry the inline dict. Meta-first, inline fallback — the
+    same contract as :func:`_version_count` / :func:`_has_blogger_notes` —
+    keeps both schemas on one decision. The fallback reads the exact alias
+    chain ``should_plan`` has always read inline (``hot_topics or
+    trending_topics or topics``), and ``trend_summary_of`` derives the meta
+    from the same chain, so a ref'd and a legacy thread cannot diverge.
+    """
+    meta = state.get("trend_summary")
+    if isinstance(meta, dict) and meta:
+        return bool(meta.get("has_topics"))
+    trend_data = state.get("trend_data")
+    if not trend_data:
+        return False
+    return bool(
+        trend_data.get("hot_topics")
+        or trend_data.get("trending_topics")
+        or trend_data.get("topics")
+    )
+
+
 def orchestrator_router(state: XHSGrowthState) -> str:
     """编排器路由 — 根据当前阶段和工作模式决定下一个节点"""
     if terminal := _check_terminal(state):
@@ -73,16 +122,12 @@ def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_s
     Error with retry_count < 2 overrides _check_terminal for phase=ERROR,
     allowing the workflow to retry before giving up.
     """
-    # Check for actionable trends FIRST — if we have data, use it even with errors
-    trend_data = state.get("trend_data")
-    if trend_data:
-        has_topics = bool(
-            trend_data.get("hot_topics")
-            or trend_data.get("trending_topics")
-            or trend_data.get("topics")
-        )
-        if has_topics:
-            return "content_strategist"
+    # Check for actionable trends FIRST — if we have data, use it even with
+    # errors. Meta-first seam (P1a-S4-1): ref'd threads carry trend_summary
+    # (body externalized), legacy threads the inline dict; one decision for
+    # both schemas, identical semantics to the pre-S4-1 inline read.
+    if _has_actionable_trends(state):
+        return "content_strategist"
 
     # Error retry takes priority over terminal check — phase=ERROR with
     # retry_count < 2 should retry, not terminate immediately
@@ -288,8 +333,7 @@ def content_analyzer_router(
     if terminal := _check_terminal(state):
         return terminal
 
-    versions = state.get("content_versions", [])
-    if len(versions) > 1:
+    if _version_count(state) > 1:
         return "choice_gate"
 
     return "version_generator"
@@ -321,8 +365,7 @@ def should_present_choice(
     if terminal := _check_terminal(state):
         return terminal
 
-    versions = state.get("content_versions", [])
-    if len(versions) > 1:
+    if _version_count(state) > 1:
         return "choice_gate"
     # Single or no versions — auto-select and skip to visual_designer
     return "visual_designer"
@@ -368,12 +411,11 @@ def blogger_gate_router(
     if mode == "brief":
         return "copywriter"
 
-    blogger_notes = state.get("blogger_notes") or []
     selected_blogger = state.get("selected_blogger") or {}
     has_selected_blogger = isinstance(selected_blogger, dict) and bool(
         selected_blogger.get("user_id")
     )
-    if has_selected_blogger and blogger_notes:
+    if has_selected_blogger and _has_blogger_notes(state):
         return "copywriter"
 
     return "draft_gate"
@@ -420,8 +462,7 @@ def copywriter_router(
     if terminal := _check_terminal(state):
         return terminal
 
-    versions = state.get("content_versions", [])
-    if len(versions) > 1:
+    if _version_count(state) > 1:
         return "choice_gate"
 
     return "draft_gate"

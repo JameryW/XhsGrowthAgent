@@ -29,6 +29,7 @@ class TestAnalystAgent:
     def mock_state(self):
         """Mock state with publish result."""
         return {
+            "niche": "test-niche",
             "account_id": "test_account",
             "phase": WorkflowPhase.PUBLISHING,
             "publish_result": {
@@ -366,6 +367,7 @@ class TestAnalystWriteGather:
         mock_response = MagicMock()
         mock_response.content = '{"insights": ["i1", "i2", "i3"], "recommendations": ["r1", "r2"]}'
         mock_state = {
+            "niche": "test-niche",
             "account_id": "test_account",
             "phase": WorkflowPhase.PUBLISHING,
             "publish_result": {"post_id": "p1"},
@@ -421,6 +423,7 @@ class TestAnalystWriteGather:
         mock_response = MagicMock()
         mock_response.content = '{"insights": ["i1", "i2", "i3"], "recommendations": ["r1", "r2"]}'
         mock_state = {
+            "niche": "test-niche",
             "account_id": "test_account",
             "phase": WorkflowPhase.PUBLISHING,
             "publish_result": {"post_id": "p1"},

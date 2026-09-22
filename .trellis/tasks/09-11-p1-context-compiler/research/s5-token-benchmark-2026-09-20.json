@@ -1,0 +1,92 @@
+{
+  "agents": 14,
+  "mean_legacy_tokens": 575.36,
+  "max_legacy_tokens": 1640,
+  "stable_prefix_contract": "L0-L2 are emitted before L3-L5",
+  "rows": [
+    {
+      "agent": "analyst",
+      "legacy_tokens": 362,
+      "stable_prefix_tokens": 194,
+      "layer_count": 6
+    },
+    {
+      "agent": "blogger_scout",
+      "legacy_tokens": 596,
+      "stable_prefix_tokens": 288,
+      "layer_count": 6
+    },
+    {
+      "agent": "brief_analyzer",
+      "legacy_tokens": 350,
+      "stable_prefix_tokens": 179,
+      "layer_count": 6
+    },
+    {
+      "agent": "content_analyzer",
+      "legacy_tokens": 616,
+      "stable_prefix_tokens": 306,
+      "layer_count": 6
+    },
+    {
+      "agent": "content_strategist",
+      "legacy_tokens": 613,
+      "stable_prefix_tokens": 310,
+      "layer_count": 6
+    },
+    {
+      "agent": "copywriter",
+      "legacy_tokens": 581,
+      "stable_prefix_tokens": 269,
+      "layer_count": 6
+    },
+    {
+      "agent": "evaluator",
+      "legacy_tokens": 1640,
+      "stable_prefix_tokens": 831,
+      "layer_count": 6
+    },
+    {
+      "agent": "orchestrator",
+      "legacy_tokens": 314,
+      "stable_prefix_tokens": 152,
+      "layer_count": 6
+    },
+    {
+      "agent": "publisher",
+      "legacy_tokens": 484,
+      "stable_prefix_tokens": 241,
+      "layer_count": 6
+    },
+    {
+      "agent": "shooting_planner",
+      "legacy_tokens": 501,
+      "stable_prefix_tokens": 251,
+      "layer_count": 6
+    },
+    {
+      "agent": "trend_scout",
+      "legacy_tokens": 447,
+      "stable_prefix_tokens": 235,
+      "layer_count": 6
+    },
+    {
+      "agent": "version_generator",
+      "legacy_tokens": 681,
+      "stable_prefix_tokens": 348,
+      "layer_count": 6
+    },
+    {
+      "agent": "viral_matcher",
+      "legacy_tokens": 480,
+      "stable_prefix_tokens": 258,
+      "layer_count": 6
+    },
+    {
+      "agent": "visual_designer",
+      "legacy_tokens": 390,
+      "stable_prefix_tokens": 192,
+      "layer_count": 6
+    }
+  ]
+}

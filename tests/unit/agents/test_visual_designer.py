@@ -27,6 +27,7 @@ class TestVisualDesignerAgent:
     def mock_state(self):
         """Mock state with content plan and copy."""
         return {
+            "niche": "test-niche",
             "account_id": "test_account",
             "phase": WorkflowPhase.CREATING,
             "content_plan": {
@@ -68,6 +69,7 @@ class TestVisualDesignerAgent:
     async def test_execute_truncates_body_text(self, agent, mock_store):
         """Execute truncates long body text to 200 chars."""
         long_body_state = {
+            "niche": "test-niche",
             "account_id": "test",
             "content_plan": {"selected_topic": "美食"},
             "copy_content": {
@@ -92,6 +94,7 @@ class TestVisualDesignerAgent:
     async def test_execute_handles_empty_copy(self, agent, mock_store):
         """Execute handles empty copy_content."""
         mock_state = {
+            "niche": "test-niche",
             "account_id": "test",
             "content_plan": {"selected_topic": "美食"},
             "copy_content": {},
@@ -113,6 +116,7 @@ class TestVisualDesignerAgent:
     async def test_execute_handles_missing_copy(self, agent, mock_store):
         """Execute handles missing copy_content."""
         mock_state = {
+            "niche": "test-niche",
             "account_id": "test",
             "content_plan": {"selected_topic": "美食"},
         }

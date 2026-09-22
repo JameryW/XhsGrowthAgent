@@ -8,7 +8,8 @@ the heavy model used by trend_scout for real trend analysis).
 Also pins the bare-node LLM cost capture: blogger_gate_node is not a BaseAgent,
 so #491's `_tool_llm_cost` ContextVar is never set in its scope and the direct
 `model.ainvoke` is invisible to `/analytics/costs` unless the node threads a
-local accumulator and merges a kind:"llm" entry into performance_log itself.
+local accumulator and emits a kind:"llm" entry to the Event store itself
+(P1a-S2: telemetry no longer rides the checkpoint's performance_log).
 """
 
 from __future__ import annotations
@@ -25,6 +26,10 @@ from backend.config.models import TaskType
 def _state(**overrides):
     base = {
         "account_id": "test_account",
+        "session_id": "test_thread",
+        # Event-store writes resolve the thread from state; without it the
+        # emitted telemetry has nowhere to go.
+        "thread_id": "test_thread",
         "blogger_candidates": [
             {"user_id": "mock_001", "nickname": "测试博主"},
         ],
@@ -87,11 +92,13 @@ class TestBloggerGateNodeLlmCostCapture:
 
     @pytest.mark.asyncio
     async def test_blogger_gate_node_emits_llm_cost_entry(self):
-        """Selected mock_ blogger → performance_log gets a kind:"llm" entry.
+        """Selected mock_ blogger → the Event store gets a kind:"llm" entry.
 
         The entry must carry agent=="blogger_gate" and cost_usd>0 derived from
         usage_metadata so /analytics/costs sees the deepseek-v4-flash call.
         """
+        from backend.state.events import load_perf_log
+
         mock_model = _mock_model_with_usage(input_tokens=100, output_tokens=50)
 
         def _select_blogger(_payload):
@@ -103,8 +110,10 @@ class TestBloggerGateNodeLlmCostCapture:
         ):
             result = await blogger_gate_node(_state(), store=None)  # type: ignore[arg-type]
 
-        assert "performance_log" in result
-        llm_entries = [e for e in result["performance_log"] if e.get("kind") == "llm"]
+        # P1a-S2: telemetry is no longer part of the node's state update.
+        assert "performance_log" not in result
+        emitted = await load_perf_log("test_thread")
+        llm_entries = [e for e in emitted if e.get("kind") == "llm"]
         assert len(llm_entries) == 1
         entry = llm_entries[0]
         assert entry["agent"] == "blogger_gate"
@@ -139,16 +148,20 @@ class TestBloggerGateNodeLlmCostCapture:
 
         # Notes returned despite capture failure
         assert len(result["blogger_notes"]) == 1
-        # No perf entry merged (capture raised, accumulator stayed empty)
-        assert not result.get("performance_log")
+        # Nothing emitted (capture raised, accumulator stayed empty)
+        from backend.state.events import load_perf_log
+
+        assert await load_perf_log("test_thread") == []
 
     @pytest.mark.asyncio
     async def test_no_candidates_skips_perf_entry(self):
-        """Empty candidates → early return, no LLM call, no performance_log.
+        """Empty candidates → early return, no LLM call, no telemetry.
 
         The no-candidates path returns before _fetch_blogger_notes, so no
-        kind:"llm" entry is emitted and performance_log is absent.
+        kind:"llm" entry reaches the Event store.
         """
+        from backend.state.events import load_perf_log
+
         mock_model = _mock_model_with_usage()
 
         with (
@@ -163,11 +176,12 @@ class TestBloggerGateNodeLlmCostCapture:
         assert result["blogger_skipped"] is True
         assert result["blogger_notes"] == []
         assert "performance_log" not in result
+        assert await load_perf_log("test_thread") == []
         mock_model.ainvoke.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skip_selection_skips_perf_entry(self):
-        """User skips selection → early return, no LLM call, no performance_log.
+        """User skips selection → early return, no LLM call, no telemetry.
 
         The skip path (candidates exist, interrupt returns skip) returns before
         perf_acc is created, so no kind:"llm" entry is emitted. Guards against a

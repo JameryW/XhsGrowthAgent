@@ -41,14 +41,18 @@ class TestBaseAgentErrorState:
         assert result["retry_count"] == 3
 
     async def test_base_agent_failed_perf_entry(self):
-        """A failed call writes a status=failed perf entry (now possible
-        because __call__ returns a dict instead of raising)."""
-        agent = FailingAgent()
-        result = await agent({"retry_count": 0}, store=None)
+        """A failed call emits a status=failed perf entry to the Event store
+        (now possible because __call__ returns a dict instead of raising)."""
+        from backend.state.events import load_perf_log
 
-        assert result["performance_log"][0]["status"] == "failed"
-        assert result["performance_log"][0]["agent"] == "failing_agent"
-        assert result["performance_log"][0]["retries"] == 1
+        agent = FailingAgent()
+        result = await agent({"retry_count": 0, "thread_id": "thread-failed"}, store=None)
+        assert "performance_log" not in result
+
+        emitted = await load_perf_log("thread-failed")
+        assert emitted[0]["status"] == "failed"
+        assert emitted[0]["agent"] == "failing_agent"
+        assert emitted[0]["retries"] == 1
 
     async def test_base_agent_clears_stale_error_on_success(self):
         """Successful execution should clear stale error field."""

@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Degraded recall and fail-fast contracts."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Ruff, typing and regression gates."}
+{"file":".trellis/spec/backend/workflow-state.md","reason":"Hydration and checkpoint separation."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Cross-layer context data flow."}
+{"file":".trellis/tasks/09-11-p1-context-compiler/prd.md","reason":"P1b acceptance criteria."}
+{"file":".trellis/tasks/09-11-p1-context-compiler/info.md","reason":"Frozen design decisions."}
+{"file":".trellis/tasks/09-11-p1-context-compiler/research/consumer-map.md","reason":"Prompt migration map."}

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TASK_TIMEOUT_OVERRIDES, TaskType
+from backend.context.prompts import PreparedPrompt
 from backend.db.evaluator_config import (
     BIAS_SEVERITY_NOTES,
     EvaluatorWeights,
@@ -132,7 +133,9 @@ class EvaluatorAgent(BaseAgent):
         state: XHSGrowthState,
         extra_context: str = "",
         ctx: EvaluationContext | None = None,
-    ) -> str:
+        *,
+        variables: dict[str, str] | None = None,
+    ) -> PreparedPrompt:
         """Override to inject DB weights + epoch bias_severity into the prompt.
 
         ponytail: prompt previously hardcoded weights/thresholds; now synced from
@@ -144,29 +147,22 @@ class EvaluatorAgent(BaseAgent):
         context was resolved yet, e.g. degraded early exits).
         """
         ctx = ctx or EvaluationContext()
-        template = self.prompt_template.get("system", "")
-        # Historical-note evaluation must not silently invent an account niche.
-        # Workflow states retain the legacy default for compatibility, while a
-        # historical state explicitly carries ``niche_context_available``.
-        niche = state.get("niche", "母婴")
-        if state.get("historical_note") and not state.get("niche_context_available"):
-            niche = "未提供赛道（不可推断）"
-        template = template.replace("{account_niche}", niche)
-        template = template.replace("{memory_context}", extra_context)
         # weights block: "copywriting 0.20, visual 0.15, ..."
         weights_block = ", ".join(f"{k} {v:.2f}" for k, v in ctx.weights.dimension_weights.items())
-        template = template.replace("{weights_block}", weights_block)
-        template = template.replace("{pass_threshold}", f"{ctx.weights.pass_threshold:.0f}")
-        template = template.replace("{reject_threshold}", f"{ctx.weights.reject_threshold:.0f}")
-        template = template.replace(
-            "{bias_severity_note}", BIAS_SEVERITY_NOTES.get(ctx.bias_severity, "")
+        return super()._build_system_prompt(
+            state,
+            extra_context=extra_context,
+            variables={
+                "weights_block": weights_block,
+                "pass_threshold": f"{ctx.weights.pass_threshold:.0f}",
+                "reject_threshold": f"{ctx.weights.reject_threshold:.0f}",
+                "bias_severity_note": BIAS_SEVERITY_NOTES.get(ctx.bias_severity, ""),
+            },
         )
-        return template
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         # Lazy import — langchain_core.messages is heavy (~0.16s); only needed
         # when the LLM judge path runs, not on module import.
-        from langchain_core.messages import HumanMessage, SystemMessage
 
         self._reset_llm_perf()
         copy_content = state.get("copy_content") or {}
@@ -207,22 +203,23 @@ class EvaluatorAgent(BaseAgent):
         # resolved context is a LOCAL value (no instance side-effects), so a
         # concurrent evaluation can no longer overwrite this call's weights
         # before _build_system_prompt runs.
-        ctx, memory_context = await asyncio.gather(
+        ctx, memory_result = await asyncio.gather(
             self._resolve_weights(account_id),
             self._recall_memory(
                 store,
                 account_id,
                 query=plan.get("selected_topic", "") or copy_content.get("selected_title", ""),
                 namespace="audience_preferences",
+                thread_id=str(state.get("thread_id") or state.get("session_id") or ""),
                 limit=3,
             ),
         )
-        audience_ctx = ""
-        for ap in memory_context:
-            audience_ctx += f"- {ap.get('preference', '')}\n"
-
-        system_prompt = self._build_system_prompt(state, extra_context=audience_ctx, ctx=ctx)
+        system_prompt = self._build_system_prompt(state, ctx=ctx).with_memory(
+            memory_result,
+            lambda ap: f"【受众偏好参考】\n- {ap.get('preference', '')}",
+        )
         ripple_context = self._build_ripple_context(state)
+        system_prompt = system_prompt.with_observations(f"【Ripple 传播预测】\n{ripple_context}")
 
         user_msg = self.prompt_template["user_template"].format(
             selected_topic=plan.get("selected_topic", ""),
@@ -240,8 +237,8 @@ class EvaluatorAgent(BaseAgent):
             image_urls=visual_plan.get("image_urls", []),
             layout_style=visual_plan.get("layout_style", ""),
             color_palette=visual_plan.get("color_palette", []),
-            ripple_context=ripple_context,
-            memory_context=audience_ctx,
+            ripple_context="",
+            memory_context="",
         )
 
         # ponytail: ainvoke 无内置 wall-clock timeout；provider 不稳时会挂起整个
@@ -249,9 +246,7 @@ class EvaluatorAgent(BaseAgent):
         # 对齐（默认 120s），超时抛 TimeoutError → 返回 degraded（不伪造 100/approved）。
         try:
             response = await asyncio.wait_for(
-                self._llm_ainvoke(
-                    [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)]
-                ),
+                self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg)),
                 timeout=_EVALUATION_LLM_TIMEOUT_S,
             )
         except TimeoutError as e:

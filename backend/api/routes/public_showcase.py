@@ -41,6 +41,7 @@ from backend.db.workflows import (
 from backend.db.workflows import (
     update_workflow as db_update,
 )
+from backend.state.hydration import checkpoint_view, showcase_view
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -296,15 +297,18 @@ def _public_status(status: Any, phase: Any = None) -> str:
 def _public_result(source: dict[str, Any]) -> dict[str, Any]:
     """Project internal state into the stable, public result DTO."""
 
-    brief = source.get("brief_content") or {}
-    trend = source.get("trend_data") or {}
-    plan = source.get("content_plan") or {}
-    copy = source.get("copy_content") or {}
-    visual = source.get("visual_plan") or {}
-    publish = source.get("publish_result") or {}
-    analytics = source.get("analytics") or {}
-    prediction = source.get("ripple_prediction") or {}
-    pmf = source.get("ripple_pmf") or {}
+    _view = showcase_view(source)
+    brief, trend, plan, copy, visual, publish, analytics, prediction, pmf = (
+        _view["brief_content"],
+        _view["trend_data"],
+        _view["content_plan"],
+        _view["copy_content"],
+        _view["visual_plan"],
+        _view["publish_result"],
+        _view["analytics"],
+        _view["ripple_prediction"],
+        _view["ripple_pmf"],
+    )
 
     if not isinstance(brief, dict):
         brief = {}
@@ -696,9 +700,14 @@ async def _fetch_state_uncached(request: Request, thread_id: str) -> dict[str, A
         graph = getattr(request.app.state, "graph", None)
         if graph is not None:
             snapshot = await graph.aget_state({"configurable": {"thread_id": thread_id}})
-            values = getattr(snapshot, "values", None) or {}
-            if isinstance(values, dict) and values:
-                return values
+            raw = getattr(snapshot, "values", None) or {}
+            if isinstance(raw, dict) and raw:
+                # P1a-S4 read seam: copy_content is store-backed on ref'd threads.
+                from backend.state.artifacts import resolve_state
+
+                values = await resolve_state(getattr(graph, "store", None), thread_id, raw)
+                if values:
+                    return values
     except Exception:
         logger.debug("showcase load_state graph failed for %s", thread_id, exc_info=True)
 
@@ -1055,16 +1064,7 @@ def _synthetic_final_checkpoint(state: dict[str, Any]) -> dict[str, Any]:
         "current_agent": state.get("current_agent") or "",
         "created_at": state.get("updated_at") or state.get("created_at"),
         "next_nodes": [],
-        "trend_data": state.get("trend_data") or {},
-        "content_plan": state.get("content_plan") or {},
-        "copy_content": state.get("copy_content") or {},
-        "draft_content": state.get("draft_content") or {},
-        "visual_plan": state.get("visual_plan") or {},
-        "publish_result": state.get("publish_result") or {},
-        "analytics": state.get("analytics") or {},
-        "ripple_prediction": state.get("ripple_prediction") or {},
-        "ripple_pmf": state.get("ripple_pmf") or {},
-        "brief_content": state.get("brief_content") or {},
+        **checkpoint_view(state),
         "error": state.get("error"),
     }
 

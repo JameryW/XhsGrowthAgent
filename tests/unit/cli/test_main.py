@@ -12,33 +12,42 @@ runner = CliRunner()
 class TestCliRun:
     """Tests for 'run' command."""
 
+    def test_run_requires_explicit_niche(self):
+        result = runner.invoke(app, ["run", "--dry-run"])
+        assert result.exit_code != 0
+        assert "niche" in result.output
+
     def test_run_dry_run_no_api_calls(self):
         """run --dry-run should not invoke graph."""
-        result = runner.invoke(app, ["run", "--dry-run"])
+        result = runner.invoke(app, ["run", "--niche", "test-niche", "--dry-run"])
         assert result.exit_code == 0
         assert "DRY RUN" in result.stdout
 
     def test_run_with_account_id(self):
         """run --account-id sets thread prefix."""
-        result = runner.invoke(app, ["run", "--account-id", "test_account", "--dry-run"])
+        result = runner.invoke(
+            app, ["run", "--niche", "test-niche", "--account-id", "test_account", "--dry-run"]
+        )
         assert result.exit_code == 0
         assert "test_account" in result.stdout
 
     def test_run_with_phase(self):
         """run --phase sets starting phase."""
-        result = runner.invoke(app, ["run", "--phase", "planning", "--dry-run"])
+        result = runner.invoke(
+            app, ["run", "--niche", "test-niche", "--phase", "planning", "--dry-run"]
+        )
         assert result.exit_code == 0
         assert "planning" in result.stdout
 
     def test_run_displays_panel(self):
         """run shows startup panel."""
-        result = runner.invoke(app, ["run", "--dry-run"])
+        result = runner.invoke(app, ["run", "--niche", "test-niche", "--dry-run"])
         assert result.exit_code == 0
         assert "小红书增长引擎" in result.stdout
 
     def test_run_dev_mode_true_by_default(self):
         """run defaults to dev=True."""
-        result = runner.invoke(app, ["run", "--dry-run"])
+        result = runner.invoke(app, ["run", "--niche", "test-niche", "--dry-run"])
         assert result.exit_code == 0
 
 

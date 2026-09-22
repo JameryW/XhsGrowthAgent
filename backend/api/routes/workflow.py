@@ -50,6 +50,14 @@ from backend.graph.routers import PAUSE_REASON_EVALUATOR_FAIL_CLOSED
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
 from backend.state.enums import ContentStatus, WorkflowPhase
+from backend.state.hydration import (
+    checkpoint_view,
+    history_file_view,
+    recover_view,
+    ripple_payload,
+    status_view,
+    timeline_entry,
+)
 from backend.state.machine import WorkflowStatus, derive_status
 
 logger = logging.getLogger(__name__)
@@ -646,7 +654,9 @@ def get_progress(phase: str) -> int:
 
 
 def _extract_ripple(values: dict[str, Any], key: str) -> dict[str, Any]:
-    return values.get(key) or values.get("content_plan", {}).get(key) or {}
+    """Legacy ripple payload reader — implementation moved to
+    backend.state.hydration.ripple_payload (single source)."""
+    return ripple_payload(values, key)
 
 
 def _get_ripple_progress(thread_id: str) -> dict[str, Any]:
@@ -683,9 +693,12 @@ async def start_workflow(
     niche_res = await resolve_account_niche(
         req.account_id,
         manual_niche=req.niche,
-        cold_start_default="母婴",
+        cold_start_default="",
         persist=True,
     )
+
+    if not niche_res.niche.strip():
+        raise ValidationError(field="niche", reason="请指定垂类赛道，当前账号尚无可推断的赛道信息")
 
     initial_state: dict[str, Any] = {
         "phase": req.phase,
@@ -694,7 +707,6 @@ async def start_workflow(
         "retry_count": 0,
         "execution_mode": req.execution_mode,
         "workflow_mode": req.workflow_mode,
-        "messages": [],
         "trend_data": {},
         "content_plan": {},
         "copy_content": {},
@@ -703,13 +715,14 @@ async def start_workflow(
         "analytics": {},
         "engagement_actions": [],
         "human_feedback": {},
-        "content_history": [],
-        "performance_log": [],
+        # No "performance_log" seed: P1a-S2 moved telemetry to the Event store,
+        # and seeding the key would mark a new thread as legacy for the
+        # inline-passthrough branch of the telemetry reader.
         "account_id": req.account_id,
         "session_id": thread_id,
         "thread_id": thread_id,
         "topic": req.topic,
-        "niche": niche_res.niche or "母婴",
+        "niche": niche_res.niche,
         "niche_resolution": niche_res.to_dict(),
         "dry_run": req.dry_run,
         "auto_publish": req.auto_publish,
@@ -720,10 +733,22 @@ async def start_workflow(
     if req.workflow_mode == "brief":
         initial_state["phase"] = WorkflowPhase.BRIEFING
         if req.brief_text:
-            initial_state["brief_content"] = {
-                "raw_text": req.brief_text,
-                "source_type": "text",
-            }
+            # P1a-S4-3: brief_content is refable — seed the body into the
+            # Artifact Store and carry the ref in the input state instead of
+            # parking the raw text inline in the initial checkpoint (it would
+            # otherwise sit there across the whole awaiting_brief pause).
+            # Best-effort: a failed put keeps the body inline, never a
+            # dangling ref.
+            from backend.state.artifacts import put_artifact
+
+            brief_body = {"raw_text": req.brief_text, "source_type": "text"}
+            brief_ref = await put_artifact(
+                getattr(graph, "store", None), thread_id, "brief_content", brief_body
+            )
+            if brief_ref is not None:
+                initial_state["artifacts"] = {"brief_content": dict(brief_ref)}
+            else:
+                initial_state["brief_content"] = brief_body
 
     config = {"configurable": {"thread_id": thread_id}}
     now = datetime.now(UTC).isoformat()
@@ -897,9 +922,18 @@ async def get_workflow_status(
         else:
             progress = get_progress(phase)
 
+        # P1a-S4-3: brief_content is out-of-line on ref'd threads — resolve
+        # once up front so the history dump, the DB label and the hydrated
+        # response all see the full inline view (D4). Legacy threads pay no
+        # store round trip (values is a shallow copy of state.values).
+        from backend.state.artifacts import resolve_state
+        from backend.state.events import load_perf_log
+
+        values = await resolve_state(getattr(graph, "store", None), thread_id, state.values)
+
         # Persist completed workflow results to history file
         if phase in ("completed", "error", "cancelled"):
-            _save_history_file(thread_id, state.values)
+            _save_history_file(thread_id, values)
 
         # Update DB
         update_fields: dict[str, Any] = {
@@ -911,7 +945,6 @@ async def get_workflow_status(
             update_fields["error"] = state.values.get("error")
 
         # Update label with content summary (brand name for brief, topic for trend)
-        values = state.values
         if not update_fields.get("label"):
             bc = values.get("brief_content") or {}
             cp = values.get("content_plan") or {}
@@ -947,21 +980,19 @@ async def get_workflow_status(
         if _serialize_seg:
             _serialize_seg.__enter__()
 
-        perf_log = state.values.get("performance_log") or []
+        # P1a-S2: telemetry lives in the Event store; legacy checkpoints still
+        # carry it inline and the reader merges both.
+        perf_log = await load_perf_log(thread_id, values)
+        # P1a-S3/S4-3: the up-front resolve already hydrated the ref'd view —
+        # reuse it for the response payload instead of a second store pass.
+        live_values = values
         # ponytail: filter to node-level entries (kind=="node" or absent for
         # back-compat with pre-kind entries). llm/ripple/human_wait entries
-        # share the list but don't populate the agent_timeline schema.
+        # share the log but don't populate the agent_timeline schema.
         agent_timeline = [
-            AgentTimelineEntry(
-                agent=entry.get("agent", "unknown"),
-                started_at=entry.get("started_at", ""),
-                completed_at=entry.get("completed_at", ""),
-                duration_seconds=entry.get("duration_seconds", 0.0),
-                status=entry.get("status", "success"),
-                error=entry.get("error"),
-            )
-            for entry in perf_log
-            if entry.get("kind", "node") == "node"
+            AgentTimelineEntry(**entry)
+            for entry in (timeline_entry(e) for e in perf_log)
+            if entry is not None
         ]
 
         _resp = success(
@@ -977,33 +1008,14 @@ async def get_workflow_status(
                 updated_at=state.values.get("updated_at"),
                 account_id=_resolve_status_account_id(thread_id, state.values),
                 agent_timeline=agent_timeline,
-                trend_data=state.values.get("trend_data") or {},
-                content_plan=state.values.get("content_plan") or {},
-                copy_content=state.values.get("copy_content") or {},
-                draft_content=state.values.get("draft_content") or {},
-                optimization_analysis=state.values.get("optimization_analysis") or {},
-                content_versions=state.values.get("content_versions") or [],
-                visual_plan=state.values.get("visual_plan") or {},
-                publish_result=state.values.get("publish_result") or {},
-                analytics=state.values.get("analytics") or {},
-                ripple_prediction=_extract_ripple(state.values, "ripple_prediction"),
-                ripple_pmf=_extract_ripple(state.values, "ripple_pmf"),
-                ripple_comparison=state.values.get("ripple_comparison") or {},
                 ripple_progress=_get_ripple_progress(thread_id),
-                workflow_mode=state.values.get("workflow_mode") or "trend",
-                brief_content=state.values.get("brief_content") or {},
-                brief_clarification=state.values.get("brief_clarification") or {},
-                shooting_plan=state.values.get("shooting_plan") or {},
-                blogger_candidates=state.values.get("blogger_candidates") or [],
-                selected_blogger=state.values.get("selected_blogger") or {},
-                blogger_notes=state.values.get("blogger_notes") or [],
-                blogger_candidate_limit=state.values.get("blogger_candidate_limit", 5),
-                blogger_note_limit=state.values.get("blogger_note_limit", 3),
-                reselect_count=state.values.get("reselect_count", 0),
-                ripple_reason=state.values.get("ripple_reason") or "",
                 label=label,
-                pause_reason=state.values.get("pause_reason"),
                 orphan=is_orphan,
+                # RuntimeState scalar (not a stage-view key): read straight from
+                # state exactly as pre-S1 so the evaluator_fail_closed resume
+                # prompt keeps rendering. history-file branch never hydrated it.
+                pause_reason=state.values.get("pause_reason"),
+                **status_view(live_values),
             ).model_dump()
         )
         if _serialize_seg:
@@ -1016,18 +1028,17 @@ async def get_workflow_status(
     saved = _load_history_file(thread_id)
     if saved:
         phase = saved.get("phase", "unknown")
-        perf_log = saved.get("performance_log") or []
+        # History files are dumps of the full state, so a pre-S2 run keeps its
+        # entries inline; a post-S2 run has them in the Event store.
+        from backend.state.artifacts import resolve_state
+        from backend.state.events import load_perf_log
+
+        perf_log = await load_perf_log(thread_id, saved)
+        saved = await resolve_state(getattr(graph, "store", None), thread_id, saved)
         agent_timeline = [
-            AgentTimelineEntry(
-                agent=entry.get("agent", "unknown"),
-                started_at=entry.get("started_at", ""),
-                completed_at=entry.get("completed_at", ""),
-                duration_seconds=entry.get("duration_seconds", 0.0),
-                status=entry.get("status", "success"),
-                error=entry.get("error"),
-            )
-            for entry in perf_log
-            if entry.get("kind", "node") == "node"
+            AgentTimelineEntry(**entry)
+            for entry in (timeline_entry(e) for e in perf_log)
+            if entry is not None
         ]
         return success(
             data=WorkflowStatusResponse(
@@ -1042,27 +1053,9 @@ async def get_workflow_status(
                 updated_at=saved.get("updated_at"),
                 account_id=_resolve_status_account_id(thread_id, saved),
                 agent_timeline=agent_timeline,
-                trend_data=saved.get("trend_data") or {},
-                content_plan=saved.get("content_plan") or {},
-                copy_content=saved.get("copy_content") or {},
-                draft_content=saved.get("draft_content") or {},
-                optimization_analysis=saved.get("optimization_analysis") or {},
-                content_versions=saved.get("content_versions") or [],
-                visual_plan=saved.get("visual_plan") or {},
-                publish_result=saved.get("publish_result") or {},
-                analytics=saved.get("analytics") or {},
-                ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
-                ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
-                ripple_comparison=saved.get("ripple_comparison") or {},
                 ripple_progress={},  # History file has no live Ripple progress
-                ripple_reason=saved.get("ripple_reason") or "",
-                reselect_count=saved.get("reselect_count", 0),
-                blogger_candidates=saved.get("blogger_candidates") or [],
-                selected_blogger=saved.get("selected_blogger") or {},
-                blogger_notes=saved.get("blogger_notes") or [],
-                blogger_candidate_limit=saved.get("blogger_candidate_limit", 5),
-                blogger_note_limit=saved.get("blogger_note_limit", 3),
                 label="",
+                **history_file_view(saved),
             ).model_dump()
         )
 
@@ -1121,9 +1114,20 @@ async def get_workflow_status(
     raise WorkflowNotFoundError(thread_id)
 
 
-def _snapshot_to_checkpoint(snapshot: Any) -> CheckpointSnapshot:
-    """Convert a LangGraph StateSnapshot to a CheckpointSnapshot."""
-    values = snapshot.values or {}
+async def _snapshot_to_checkpoint(
+    snapshot: Any,
+    store: Any = None,
+    thread_id: str = "",
+) -> CheckpointSnapshot:
+    """Convert a LangGraph StateSnapshot to a CheckpointSnapshot.
+
+    P1a-S3: artifact refs are resolved first so /history keeps echoing the
+    full inline stage view (D4) for ref'd threads; legacy threads pass
+    through unchanged.
+    """
+    from backend.state.artifacts import resolve_state
+
+    values = await resolve_state(store, thread_id, snapshot.values or {})
     meta = snapshot.metadata or {}
     checkpoint_id = ""
     if snapshot.config and snapshot.config.get("configurable"):
@@ -1136,21 +1140,7 @@ def _snapshot_to_checkpoint(snapshot: Any) -> CheckpointSnapshot:
         current_agent=values.get("current_agent", ""),
         created_at=snapshot.created_at,
         next_nodes=list(snapshot.next) if snapshot.next else [],
-        trend_data=values.get("trend_data") or {},
-        content_plan=values.get("content_plan") or {},
-        copy_content=values.get("copy_content") or {},
-        draft_content=values.get("draft_content") or {},
-        optimization_analysis=values.get("optimization_analysis") or {},
-        content_versions=values.get("content_versions") or [],
-        visual_plan=values.get("visual_plan") or {},
-        publish_result=values.get("publish_result") or {},
-        analytics=values.get("analytics") or {},
-        ripple_prediction=_extract_ripple(values, "ripple_prediction"),
-        ripple_pmf=_extract_ripple(values, "ripple_pmf"),
-        ripple_comparison=values.get("ripple_comparison") or {},
-        workflow_mode=values.get("workflow_mode") or "trend",
-        brief_content=values.get("brief_content") or {},
-        shooting_plan=values.get("shooting_plan") or {},
+        **checkpoint_view(values),
     )
 
 
@@ -1191,7 +1181,9 @@ async def get_checkpoint_history(
             if count >= limit:
                 has_more = True
                 break
-            checkpoints.append(_snapshot_to_checkpoint(snapshot))
+            checkpoints.append(
+                await _snapshot_to_checkpoint(snapshot, getattr(graph, "store", None), thread_id)
+            )
             count += 1
     except ValueError:
         # No checkpointer configured — fall through to history file fallback
@@ -1218,21 +1210,7 @@ async def get_checkpoint_history(
             current_agent=saved.get("current_agent", ""),
             created_at=saved.get("updated_at") or saved.get("created_at"),
             next_nodes=[],
-            trend_data=saved.get("trend_data") or {},
-            content_plan=saved.get("content_plan") or {},
-            copy_content=saved.get("copy_content") or {},
-            draft_content=saved.get("draft_content") or {},
-            optimization_analysis=saved.get("optimization_analysis") or {},
-            content_versions=saved.get("content_versions") or [],
-            visual_plan=saved.get("visual_plan") or {},
-            publish_result=saved.get("publish_result") or {},
-            analytics=saved.get("analytics") or {},
-            ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
-            ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
-            ripple_comparison=saved.get("ripple_comparison") or {},
-            workflow_mode=saved.get("workflow_mode") or "trend",
-            brief_content=saved.get("brief_content") or {},
-            shooting_plan=saved.get("shooting_plan") or {},
+            **checkpoint_view(saved),
         )
         return success(
             data=CheckpointHistoryResponse(
@@ -1290,7 +1268,9 @@ async def pause_workflow(
 
     await _db_upsert(thread_id, status="paused", phase="paused")
 
-    _runner._emit_status_transition(WorkflowStatus.PAUSED, thread_id)
+    await _runner._emit_status_transition(
+        WorkflowStatus.PAUSED, thread_id, store=getattr(graph, "store", None)
+    )
 
     return success(
         data={
@@ -1681,6 +1661,7 @@ async def recover_workflow(
         )
 
     # ── 定位目标节点 + 构造 input_data ──
+    _rcv = recover_view(state.values)
     target_node: str | None = None
     input_data: Any = None
 
@@ -1691,12 +1672,12 @@ async def recover_workflow(
         if not infer_nodes:
             infer_nodes = _resume_nodes_from_tasks(state.tasks)
         if not infer_nodes and state.values:
-            last_node = state.values.get("_last_node")
+            last_node = _rcv["_last_node"]
             if last_node:
                 infer_nodes = (last_node,)
         prev_phase = _resume_phase_for_next_nodes(
             infer_nodes,
-            state.values.get("prev_phase") or WorkflowPhase.CREATING,
+            _rcv["prev_phase"] or WorkflowPhase.CREATING,
         )
         target_node = infer_nodes[0] if infer_nodes else None
 
@@ -1711,7 +1692,7 @@ async def recover_workflow(
             )
         prev_phase = _resume_phase_for_next_nodes(
             (target_node,),
-            state.values.get("prev_phase") or WorkflowPhase.CREATING,
+            _rcv["prev_phase"] or WorkflowPhase.CREATING,
         )
         input_data = Command(goto=target_node)
 
@@ -1726,7 +1707,7 @@ async def recover_workflow(
         target_node = next_nodes[0]
         prev_phase = _resume_phase_for_next_nodes(
             next_nodes,
-            state.values.get("prev_phase") or WorkflowPhase.CREATING,
+            _rcv["prev_phase"] or WorkflowPhase.CREATING,
         )
         input_data = Command(goto=target_node)
 
@@ -1798,7 +1779,9 @@ async def cancel_workflow(
     if bg_task and not bg_task.done():
         bg_task.cancel()
 
-    _runner._emit_status_transition(WorkflowStatus.CANCELLED, thread_id)
+    await _runner._emit_status_transition(
+        WorkflowStatus.CANCELLED, thread_id, store=getattr(graph, "store", None)
+    )
 
     return success(
         data={
@@ -1839,6 +1822,10 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
 
     async def event_generator() -> Any:
         bus = EventBusService.get_instance()
+
+        # P1a-S4 read seam: the synthetic terminal payload embeds refable
+        # content fields (copy/visual/analytics) — resolve before reading.
+        from backend.state.artifacts import resolve_state
 
         # On reconnect (Last-Event-ID present), replay events the client missed
         # since its last seen seq — scoped to this thread. On fresh connect
@@ -1889,7 +1876,9 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
                         # COMPLETED and CANCELLED both close the stream via
                         # WORKFLOW_COMPLETED; consumers read status from payload.
                         synthetic_type = EventType.WORKFLOW_COMPLETED
-                    values = state.values or {}
+                    values = await resolve_state(
+                        getattr(graph, "store", None), thread_id, state.values or {}
+                    )
                     payload: dict[str, Any] = {
                         "status": derived.value,
                         "phase": values.get("phase", ""),
@@ -2149,7 +2138,13 @@ async def retry_ripple_analysis(
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
-    values = state.values
+    # P1a-S4-2: content_plan / ripple_prediction live in the Artifact Store on
+    # ref'd threads — a raw read sees neither, so the retry would always
+    # "skip" for lack of selected_topic. Resolve through the read seam first.
+    from backend.state.artifacts import refify_updates, resolve_state
+
+    store = getattr(graph, "store", None)
+    values = await resolve_state(store, thread_id, state.values)
     ripple_reason = values.get("ripple_reason", "")
     content_plan = values.get("content_plan") or values.get("content_plan", {})
     ripple_prediction = values.get("ripple_prediction") or {}
@@ -2257,7 +2252,13 @@ async def retry_ripple_analysis(
 
         if updates:
             ripple_state = await graph.aget_state(config)
-            await graph.aupdate_state(config, updates, as_node=_get_as_node(ripple_state))
+            # P1a-S4-2: ripple_prediction/ripple_pmf are refable — the write
+            # must go through refify_updates (a bare inline write would be
+            # shadowed by a stale artifact ref on the next resolve). Fresh
+            # resolve gives refify the state the write lands on.
+            fresh_values = await resolve_state(store, thread_id, ripple_state.values or {})
+            refified = await refify_updates(store, thread_id, updates, prev_values=fresh_values)
+            await graph.aupdate_state(config, refified, as_node=_get_as_node(ripple_state))
             print(
                 f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}", flush=True
             )
@@ -2373,7 +2374,8 @@ async def upload_brief_file(
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    as_node = _get_as_node(await graph.aget_state(config))
+    snap = await graph.aget_state(config)
+    as_node = _get_as_node(snap)
 
     update_values: dict[str, Any] = {
         "brief_content": {
@@ -2381,10 +2383,22 @@ async def upload_brief_file(
             "source_type": source_type,
         },
     }
-    # Merge the LLM cost entry (if any) into performance_log via the
-    # _append_list reducer so /analytics/costs sees the BRIEF_ANALYSIS spend.
+    # P1a-S4-3: brief_content is refable — the write must go through the seam.
+    # A bare inline write would be shadowed by the stale artifact ref on the
+    # next resolve, silently discarding the freshly uploaded text on ref'd
+    # threads (e.g. re-uploading a corrected PDF).
+    from backend.state.artifacts import refify_updates, resolve_state
+
+    store = getattr(graph, "store", None)
+    values = await resolve_state(store, thread_id, snap.values or {})
+    update_values = await refify_updates(store, thread_id, update_values, prev_values=values)
+    # Emit the LLM cost entry (if any) to the Event store so /analytics/costs
+    # sees the BRIEF_ANALYSIS spend. P1a-S2: no longer merged into the
+    # checkpoint via the performance_log reducer.
     if perf_entry is not None:
-        update_values["performance_log"] = [perf_entry]
+        from backend.state.events import emit_events
+
+        await emit_events(thread_id, [perf_entry])
 
     update_kwargs: dict[str, Any] = {"values": update_values}
     if as_node:
@@ -2416,9 +2430,9 @@ async def upload_brief_file(
 async def _extract_pdf_text(content_bytes: bytes) -> tuple[str, dict[str, Any] | None]:
     """Extract text from PDF using pdfplumber, with multimodal LLM fallback.
 
-    Returns the extracted text plus a kind:"llm" performance_log entry when the
+    Returns the extracted text plus a kind:"llm" perf entry when the
     LLM fallback ran (None when pdfplumber succeeded — no LLM call made). The
-    caller merges the entry into state.performance_log via aupdate_state.
+    caller emits the entry to the Event store (P1a-S2).
     """
     try:
         import io
@@ -2449,8 +2463,8 @@ async def _extract_pdf_with_llm(content_bytes: bytes) -> tuple[str, dict[str, An
     """Extract text from PDF using multimodal LLM (for scanned documents).
 
     Captures token usage + cost via llm_perf_entry (best-effort: never breaks
-    extraction) so the upload path can merge it into state.performance_log and
-    the /analytics/costs reader sees the BRIEF_ANALYSIS token spend.
+    extraction) so the upload path can emit it to the Event store and the
+    /analytics/costs reader sees the BRIEF_ANALYSIS token spend.
     """
     import base64
 
@@ -2519,12 +2533,15 @@ async def export_shooting_plan(
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    state = await graph.aget_state(config)
+    from backend.state.artifacts import resolve_state
 
-    if not state.values or state.values.get("session_id") is None:
+    state = await graph.aget_state(config)
+    values = await resolve_state(getattr(graph, "store", None), thread_id, state.values)
+
+    if not values or values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
-    shooting_plan = state.values.get("shooting_plan", {})
+    shooting_plan = values.get("shooting_plan", {})
     if not shooting_plan:
         return success(data={"text": "", "message": "No shooting plan available yet"})
 
@@ -2655,18 +2672,30 @@ async def upload_images(
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
+    from backend.state.artifacts import refify_updates, resolve_state
+
+    store = getattr(graph, "store", None)
     state = await graph.aget_state(config)
-    if not state.values or state.values.get("session_id") is None:
+    values = await resolve_state(store, thread_id, state.values)
+    if not values or values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
-    visual_plan = dict(state.values.get("visual_plan", {}))
+    visual_plan = dict(values.get("visual_plan", {}))
     # Merge with existing paths (avoid duplicates)
     existing = set(visual_plan.get("image_paths", []))
     existing.update(saved_paths)
     visual_plan["image_paths"] = list(existing)
 
+    # Write seam: visual_plan is refable — a bare inline write would be
+    # shadowed by the stale ref body on the next resolve (uploaded paths
+    # silently lost). refify stores the merged body + files the ref; on store
+    # failure it keeps the value inline and tombstones the stale ref.
+    refified = await refify_updates(
+        store, thread_id, {"visual_plan": visual_plan}, prev_values=values
+    )
+
     as_node = _get_state_update_node_without_advancing(state)
-    update_kwargs: dict[str, Any] = {"values": {"visual_plan": visual_plan}}
+    update_kwargs: dict[str, Any] = {"values": refified}
     if as_node:
         update_kwargs["as_node"] = as_node
 
@@ -2697,13 +2726,16 @@ async def trigger_analytics(
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
+    from backend.state.artifacts import resolve_state
+
     state = await graph.aget_state(config)
-    if not state.values or state.values.get("session_id") is None:
+    values = await resolve_state(getattr(graph, "store", None), thread_id, state.values)
+    if not values or values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
     # Only allow when workflow has publish result but no analytics
-    has_publish = bool(state.values.get("publish_result"))
-    has_analytics = bool(state.values.get("analytics"))
+    has_publish = bool(values.get("publish_result"))
+    has_analytics = bool(values.get("analytics"))
     if not has_publish:
         return success(
             data={
@@ -2766,11 +2798,13 @@ async def retry_publish(
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    state = await graph.aget_state(config)
-    if not state.values or state.values.get("session_id") is None:
-        raise WorkflowNotFoundError(thread_id)
+    from backend.state.artifacts import resolve_state
 
-    values = state.values
+    store = getattr(graph, "store", None)
+    state = await graph.aget_state(config)
+    values = await resolve_state(store, thread_id, state.values)
+    if not values or values.get("session_id") is None:
+        raise WorkflowNotFoundError(thread_id)
 
     # 并发守卫：工作流正在跑（含正在重试）时不允许再触发
     has_active = (
@@ -2869,7 +2903,11 @@ async def retry_publish(
     async def _run_publish_retry() -> None:
         try:
             snap = await graph.aget_state(config)
-            result = await run_publish(snap.values, graph.store)
+            # Read seam: run_publish hashes copy_content/visual_plan subfields
+            # for the publish_id — a ref'd thread must feed it the resolved
+            # bodies, not the checkpoint's ref-only view.
+            resolved = await resolve_state(getattr(graph, "store", None), thread_id, snap.values)
+            result = await run_publish(resolved, graph.store)
             publish_result = result["publish_result"]
             snap = await graph.aget_state(config)
             await graph.aupdate_state(

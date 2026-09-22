@@ -21,6 +21,12 @@ backend/
 │   ├── base_agent.py                    # BaseAgent ABC — shared logic for all sub-agents
 │   └── error_handling.py                # AgentError, WorkflowCancelledError, handle_agent_error
 │
+├── context/                             # Context Compiler (recall → compile). Not checkpointed.
+│   ├── models.py                        # RunContext, ContextItem, RetrievalResult, PromptLayer
+│   ├── recall.py                        # Account-scoped recall with hit/empty/degraded
+│   ├── prompts.py                       # YAML segmentation, L0–L5 messages, token budget
+│   └── runtime.py                       # require_niche + request-local RunContext
+│
 ├── agents/                              # Business logic — Agent classes
 │   ├── __init__.py                      # Exports all *Agent classes + BaseAgent
 │   ├── base.py                          # Duplicate BaseAgent (legacy, imports from core)

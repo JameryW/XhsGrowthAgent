@@ -6,12 +6,12 @@ import asyncio
 import logging
 from typing import Any, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.config.settings import Settings
+from backend.context.runtime import require_niche
 from backend.services.ripple_service import RippleTimeoutError
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
@@ -36,7 +36,7 @@ class ContentStrategistAgent(BaseAgent):
         from backend.memory.creative import CreativeMemory
 
         cm = CreativeMemory(account_id, store=store)
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         # 4 independent read-only recalls with disjoint namespaces → one
         # concurrent wave instead of 4 serial ones. Each recall swallows its
         # own exceptions internally (returns [] / None), so gather adds no new
@@ -50,14 +50,11 @@ class ContentStrategistAgent(BaseAgent):
                 account_id,
                 query="content strategy",
                 namespace="performance_insights",
+                thread_id=str(state.get("thread_id") or state.get("session_id") or ""),
                 limit=5,
             ),
         )
         memory_context = ""
-        if insights:
-            memory_context = "\n历史表现洞察：\n"
-            for i in insights:
-                memory_context += f"- {i.get('insight', '')}\n"
 
         # 拼接 creative memory 上下文
         creative_ctx = cm.build_creative_context(styles, plays, [], benchmark)
@@ -74,10 +71,6 @@ class ContentStrategistAgent(BaseAgent):
         except Exception as e:
             logger.debug("creator_stats suggestions skipped: %s", e)
 
-        # 先用基础 prompt 生成初版策略（暂无 Ripple 数据）
-        system_prompt = self._build_system_prompt(state, extra_context=memory_context)
-        system_prompt = system_prompt.replace("{ripple_context}", "")
-
         trend_data: dict[str, Any] = cast(dict[str, Any], state.get("trend_data", {}))
 
         # User-provided topic override. Stored in state["topic"] by /workflow/start
@@ -91,31 +84,28 @@ class ContentStrategistAgent(BaseAgent):
         # 评分结果拼入 extra_context，让 LLM 基于热度/增长/竞争度选话题。
         # topic_scorer 内部已处理实时数据不可用降级（返回 heat_score=50），此处只透传。
         topic_scores_ctx = await self._score_trend_topics(trend_data, niche)
-        if topic_scores_ctx:
-            memory_context += f"\n{topic_scores_ctx}"
         # When the user pinned a topic, inject the user-topic branch so the
         # hard constraint (select from trend candidates) is lifted for this turn.
+        task_hint = ""
         if user_topic:
-            memory_context = (
+            task_hint = (
                 f"\n【用户指定主题】{user_topic}"
                 "\n用户已明确指定选题主题。selected_topic 必须围绕该用户主题为核心，"
-                "趋势数据仅作为借势角度与热点参考，不得用候选话题替换用户主题。" + memory_context
+                "趋势数据仅作为借势角度与热点参考，不得用候选话题替换用户主题。"
             )
-        system_prompt = self._build_system_prompt(state, extra_context=memory_context)
-        system_prompt = system_prompt.replace("{ripple_context}", "")
+        base_prompt = self._build_system_prompt(state, extra_context=memory_context).with_memory(
+            insights,
+            lambda item: f"历史表现洞察：\n- {item.get('insight', '')}",
+        )
+        system_prompt = base_prompt.with_task_hint(task_hint).with_observations(topic_scores_ctx)
 
         user_msg = f"""趋势数据：{trend_data}
 账号定位：{account_id}
 垂类赛道：{niche}
 用户指定主题：{user_topic or "（未指定，从趋势候选中选取）"}
-历史表现洞察：{memory_context}"""
+"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         llm_content = response.content
         if isinstance(llm_content, list):
@@ -133,15 +123,12 @@ class ContentStrategistAgent(BaseAgent):
         elif candidates and content_plan.get("selected_topic") not in candidates:
             chosen = content_plan.get("selected_topic", "")
             logger.info(f"selected_topic '{chosen}' 不在候选集，触发重生成")
-            retry_prompt = self._build_system_prompt(
-                state,
-                extra_context=memory_context
-                + f"\n【纠偏】上一次输出的 selected_topic='{chosen}' 不在候选话题内。"
+            retry_prompt = system_prompt.with_task_hint(
+                f"\n【纠偏】上一次输出的 selected_topic='{chosen}' 不在候选话题内。"
                 f"候选话题为：{candidates}。必须从中选取一个，不得自创或改写措辞。",
             )
-            retry_prompt = retry_prompt.replace("{ripple_context}", "")
             retry_response = await self._llm_ainvoke(
-                [SystemMessage(content=retry_prompt), HumanMessage(content=user_msg)]
+                self._prompt_messages(state, retry_prompt, user_msg)
             )
             retry_content = retry_response.content
             if isinstance(retry_content, list):
@@ -296,15 +283,12 @@ class ContentStrategistAgent(BaseAgent):
                 f"regenerating strategy with Ripple insights"
             )
             ripple_context = self._build_ripple_context(ripple_prediction, ripple_pmf)
-            retry_prompt = self._build_system_prompt(state, extra_context=memory_context)
+            retry_prompt = base_prompt.with_task_hint(task_hint)
             # 将 ripple_context 直接拼入 system prompt
-            retry_prompt = retry_prompt.replace("{ripple_context}", ripple_context)
+            retry_prompt = retry_prompt.with_observations(ripple_context)
 
             retry_response = await self._llm_ainvoke(
-                [
-                    SystemMessage(content=retry_prompt),
-                    HumanMessage(content=user_msg),
-                ]
+                self._prompt_messages(state, retry_prompt, user_msg)
             )
             retry_content = retry_response.content
             if isinstance(retry_content, list):

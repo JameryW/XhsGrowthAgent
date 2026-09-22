@@ -50,3 +50,15 @@ mock_user_template: |
   候选数量限制：{candidate_limit}
 
   请严格输出JSON，不要有任何其他文字。
+
+context:
+  version: 1
+  variables:
+    account_niche: l2_account
+    memory_context: l4_memory
+    ripple_context: l5_observation
+    weights_block: l5_observation
+    pass_threshold: l5_observation
+    reject_threshold: l5_observation
+    bias_severity_note: l5_observation
+  required: [weights_block, pass_threshold, reject_threshold, bias_severity_note]

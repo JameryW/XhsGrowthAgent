@@ -33,7 +33,7 @@ class TestContentStrategistTopicScorer:
         captured_prompts: list[str] = []
 
         async def fake_ainvoke(messages):
-            captured_prompts.append(messages[0].content)
+            captured_prompts.append("\n".join(m.content for m in messages))
             resp = MagicMock()
             resp.content = '{"selected_topic": "探店"}'
             return resp

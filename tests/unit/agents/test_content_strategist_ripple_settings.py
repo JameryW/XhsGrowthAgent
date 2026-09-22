@@ -30,6 +30,7 @@ class TestRippleSettingsFlowThrough:
     @pytest.fixture
     def content_plan_state(self):
         return {
+            "niche": "test-niche",
             "account_id": "test_account",
             "phase": WorkflowPhase.SCOUTING,
             "trend_data": {"trending_topics": ["美食探店"]},

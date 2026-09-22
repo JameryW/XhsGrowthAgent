@@ -6,11 +6,11 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.runtime import require_niche
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -30,7 +30,7 @@ class BloggerScoutAgent(BaseAgent):
 
         keywords = self._extract_keywords(state)
         if not keywords:
-            niche = state.get("niche", "母婴")
+            niche = require_niche(state)
             logger.info(f"No keywords found, using fallback candidates for niche: {niche}")
             return self._hardcoded_fallback_candidates(niche, [], limit)
 
@@ -80,7 +80,7 @@ class BloggerScoutAgent(BaseAgent):
         self, state: XHSGrowthState, keywords: list[str], limit: int
     ) -> dict[str, Any]:
         """Generate mock blogger candidates using LLM when XHS client is unavailable."""
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         brief_content = state.get("brief_content") or {}
         trend_data = dict(state.get("trend_data") or {})
         trend_summary = self._summarize_trend_data(trend_data)
@@ -100,10 +100,7 @@ class BloggerScoutAgent(BaseAgent):
 
         try:
             response = await self._llm_ainvoke(
-                [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=user_prompt),
-                ]
+                self._prompt_messages(state, system_prompt, user_prompt)
             )
 
             content = response.content
@@ -161,7 +158,7 @@ class BloggerScoutAgent(BaseAgent):
             f"只输出JSON，不要输出其他任何内容。"
         )
         try:
-            response = await self._llm_ainvoke([HumanMessage(content=prompt)])
+            response = await self._llm_ainvoke(self._prompt_messages(state, "", prompt))
             content = response.content
             if isinstance(content, list):
                 content = str(content)

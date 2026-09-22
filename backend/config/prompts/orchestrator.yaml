@@ -20,3 +20,16 @@ user_template: |
   待处理互动数：{pending_count}
   是否有内容计划：{has_plan}
   是否有分析报告：{has_report}
+
+context:
+  version: 1
+  variables:
+    state_summary: l3_task
+    account_niche: l2_account
+    memory_context: l4_memory
+    ripple_context: l5_observation
+    weights_block: l5_observation
+    pass_threshold: l5_observation
+    reject_threshold: l5_observation
+    bias_severity_note: l5_observation
+  required: [weights_block, pass_threshold, reject_threshold, bias_severity_note]

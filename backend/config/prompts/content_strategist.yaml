@@ -38,3 +38,15 @@ user_template: |
   趋势数据：{trend_data}
   账号定位：{account_niche}
   历史表现洞察：{performance_insights}
+
+context:
+  version: 1
+  variables:
+    account_niche: l2_account
+    memory_context: l4_memory
+    ripple_context: l5_observation
+    weights_block: l5_observation
+    pass_threshold: l5_observation
+    reject_threshold: l5_observation
+    bias_severity_note: l5_observation
+  required: [weights_block, pass_threshold, reject_threshold, bias_severity_note]

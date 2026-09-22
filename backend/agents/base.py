@@ -23,8 +23,8 @@ if TYPE_CHECKING:
     from backend.state.schema import XHSGrowthState
 
 from backend.config.models import TaskType
-from backend.memory.exceptions import UnknownMemoryNamespaceError
-from backend.memory.store import MemoryManager
+from backend.context.models import RetrievalResult
+from backend.context.prompts import PreparedPrompt, TemplateContext, prepare_prompt
 from backend.models.router import get_model
 
 logger = logging.getLogger("xhs_growth.agents")
@@ -54,6 +54,7 @@ class BaseAgent(ABC):
     def __init__(self) -> None:
         self._model: BaseChatModel | None = None
         self._prompt_template: dict[str, str] | None = None
+        self._context_schema = TemplateContext()
 
     # ── LLM perf entry capture (ContextVar-scoped, P0-W1) ──
 
@@ -70,7 +71,7 @@ class BaseAgent(ABC):
     def _drain_llm_perf() -> list[dict[str, Any]]:
         """Read (and detach) the accumulated llm perf entries for this context.
 
-        Consumers that write ``performance_log`` use this instead of touching
+        Consumers that write telemetry use this instead of touching
         instance state — the returned list is owned by the caller afterwards.
         """
         entries = _llm_perf_var.get() or []
@@ -90,9 +91,9 @@ class BaseAgent(ABC):
         :func:`backend.agents.nodes._base.llm_perf_entry`). Entries accumulate
         on a per-asyncio-task ContextVar (P0-W1; formerly a shared instance
         list that cross-contaminated concurrent workflows); the node wrapper
-        merges them with the node-level entry into ``performance_log``. Reset
-        per execute() via :meth:`_reset_llm_perf`. Best-effort: a capture
-        failure never breaks the call.
+        merges them with the node-level entry and emits the batch to the Event
+        store. Reset per execute() via :meth:`_reset_llm_perf`. Best-effort: a
+        capture failure never breaks the call.
         """
         from datetime import UTC, datetime
 
@@ -147,18 +148,35 @@ class BaseAgent(ABC):
 
             with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-            return {
-                "system": data.get("system", ""),
-                "user_template": data.get("user_template", ""),
-            }
+            self._context_schema = TemplateContext.model_validate(data.get("context", {}))
+            return {key: value for key, value in data.items() if isinstance(value, str)}
         return {"system": "", "user_template": ""}
 
-    def _build_system_prompt(self, state: XHSGrowthState, extra_context: str = "") -> str:
+    def _build_system_prompt(
+        self,
+        state: XHSGrowthState,
+        extra_context: str = "",
+        *,
+        variables: dict[str, str] | None = None,
+    ) -> PreparedPrompt:
         template = self.prompt_template.get("system", "")
-        niche = state.get("niche", "母婴")
-        template = template.replace("{account_niche}", niche)
-        template = template.replace("{memory_context}", extra_context)
-        return template
+        return prepare_prompt(
+            state,
+            template,
+            self._context_schema,
+            memory=extra_context,
+            variables=variables,
+        )
+
+    def _prompt_messages(
+        self,
+        state: XHSGrowthState,
+        prompt: PreparedPrompt | str,
+        task: str,
+    ) -> list[Any]:
+        if isinstance(prompt, str):
+            prompt = prepare_prompt(state, prompt, TemplateContext())
+        return prompt.messages(task)
 
     async def _recall_memory(
         self,
@@ -167,29 +185,20 @@ class BaseAgent(ABC):
         query: str,
         namespace: str,
         limit: int = 5,
-    ) -> list[dict[str, Any]]:
-        if store is None:
-            return []
-        mm = MemoryManager(account_id)
-        ns_map = {
-            "content_history": mm.content_history_ns,
-            "audience_preferences": mm.audience_ns,
-            "performance_insights": mm.insights_ns,
-            "strategy_notes": mm.strategy_ns,
-        }
-        # P0-W2 fail-fast: a typo'd namespace must NOT silently fall back to
-        # performance_insights (that read the wrong memory and looked like a
-        # successful recall). The check sits OUTSIDE the best-effort try so
-        # the except below cannot swallow the programming error.
-        if namespace not in ns_map:
-            raise UnknownMemoryNamespaceError(namespace)
-        ns = ns_map[namespace]
-        try:
-            items = await store.asearch(ns, query=query, limit=limit)
-            return [item.value for item in items]
-        except Exception as e:
-            logger.warning(f"_recall_memory failed (ns={namespace}): {e}")
-            return []
+        *,
+        thread_id: str = "",
+    ) -> RetrievalResult:
+        from backend.context.recall import recall_memory
+
+        (result,) = await recall_memory(
+            store,
+            account_id,
+            {namespace: query},
+            limit=limit,
+            thread_id=thread_id,
+            agent=self.agent_name,
+        )
+        return result
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
         """从 LLM 响应中提取 JSON（增强版，处理多种格式和常见语法错误）"""
@@ -318,11 +327,11 @@ class BaseAgent(ABC):
     async def __call__(self, state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
         """LangGraph node entry point.
 
-        Wraps execute() with node-level timing → appends one performance_log
-        entry per call. On success, the entry rides the returned dict under
-        `performance_log: [entry]`; LangGraph's `_append_list` reducer merges
-        it into state. Recording is best-effort: a timer failure must not
-        break the node (see PRD: 节点级指标).
+        Wraps execute() with node-level timing → appends one performance-log
+        entry per call. On success, the entries are written to the Event store
+        (P1a-S2: telemetry no longer rides the checkpoint, which used to
+        re-serialize it on every superstep). Recording is best-effort: a timer
+        or storage failure must not break the node (see PRD: 节点级指标).
 
         On failure we return an error state update (NOT raise) so LangGraph
         merges it and should_plan/orchestrator routers can read retry_count
@@ -340,7 +349,7 @@ class BaseAgent(ABC):
         # finally below) so entries never survive this call. Set a per-execute
         # tool-LLM-cost accumulator so enrich_with_llm calls made inside tools
         # during execute() can append kind:"llm" entries. Drained + reset below
-        # (both paths) so tool-path token cost reaches performance_log and the
+        # (both paths) so tool-path token cost reaches the Event store and the
         # /analytics/costs reader; the set/reset token isolates per-execute and
         # prevents stale leakage across requests.
         perf_token = _llm_perf_var.set([])
@@ -372,9 +381,9 @@ class BaseAgent(ABC):
                         )
                     ]
                     entries.extend(perf_entries)
-                    result["performance_log"] = entries
+                    await _emit_perf_entries(state, entries)
                 except Exception as timer_err:  # best-effort: never break the node
-                    logger.debug("performance_log failed entry failed: %s", timer_err)
+                    logger.debug("perf event emit failed: %s", timer_err)
                 return result
 
             # Drain tool-path cost captured during execute() BEFORE building the
@@ -397,9 +406,9 @@ class BaseAgent(ABC):
                     )
                 ]
                 entries.extend(perf_entries)
-                result["performance_log"] = entries
+                await _emit_perf_entries(state, entries)
             except Exception as timer_err:  # best-effort: never break the node
-                logger.debug("performance_log node entry failed: %s", timer_err)
+                logger.debug("perf event emit failed: %s", timer_err)
             return result
         finally:
             # Always reset via the tokens so a nested/errored execute never
@@ -409,8 +418,20 @@ class BaseAgent(ABC):
             _llm_perf_var.reset(perf_token)
 
 
+async def _emit_perf_entries(state: Any, entries: list[dict[str, Any]]) -> None:
+    """Write node/llm perf entries to the Event store (P1a-S2).
+
+    Telemetry used to ride the returned state dict under ``performance_log`` so
+    the ``_append_list`` reducer could merge it into the checkpoint. The Event
+    store replaces that: nodes keep their state updates free of telemetry.
+    """
+    from backend.state.events import emit_events, resolve_thread_id
+
+    await emit_events(resolve_thread_id(state), entries)
+
+
 def _now_iso() -> str:
-    """UTC ISO8601 timestamp for performance_log entries."""
+    """UTC ISO8601 timestamp for performance-log entries."""
     from datetime import UTC, datetime
 
     return datetime.now(UTC).isoformat()

@@ -6,11 +6,11 @@ import asyncio
 import logging
 from typing import Any, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.runtime import require_niche
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -106,7 +106,7 @@ class TrendScoutAgent(BaseAgent):
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
         account_id = state.get("account_id", "default")
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         # User-provided topic override: include it in the keyword seed so trend
         # scouting / keyword monitoring revolve around the user's topic, not just
         # the niche. Previously dead data — trend_scout only seeded niche.
@@ -127,15 +127,11 @@ class TrendScoutAgent(BaseAgent):
                 account_id,
                 query="trend insights",
                 namespace="performance_insights",
+                thread_id=str(state.get("thread_id") or state.get("session_id") or ""),
                 limit=3,
             ),
             self._fetch_real_data(niche, account_id=account_id, user_topic=user_topic),
         )
-        memory_context = ""
-        if insights:
-            memory_context = "\n历史趋势洞察：\n"
-            for i in insights:
-                memory_context += f"- {i.get('insight', '')}\n"
 
         # Build data context for the LLM
         data_context = ""
@@ -176,8 +172,29 @@ class TrendScoutAgent(BaseAgent):
             data_context = "\n\n## 无实时数据\n小红书实时数据不可用，基于你的知识生成趋势分析。"
             data_source = "llm_generated"
 
-        system_prompt = self._build_system_prompt(
-            state, extra_context=memory_context + data_context
+        from backend.state.events import emit_events, resolve_thread_id
+
+        await emit_events(
+            resolve_thread_id(state),
+            [
+                {
+                    "kind": "context",
+                    "agent": self.agent_name,
+                    "namespace": "xhs_observations",
+                    "mode": "hit" if real_data else "degraded",
+                    "degraded": not bool(real_data),
+                    "error": "" if real_data else "realtime_data_unavailable",
+                }
+            ],
+        )
+
+        system_prompt = (
+            self._build_system_prompt(state)
+            .with_memory(
+                insights,
+                lambda item: f"历史趋势洞察：\n- {item.get('insight', '')}",
+            )
+            .with_observations(data_context, required=not bool(real_data))
         )
 
         user_msg = f"""账号定位：{account_id}
@@ -186,12 +203,7 @@ class TrendScoutAgent(BaseAgent):
 
 请基于以上数据进行分析，输出 JSON 格式的趋势报告。"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         content = response.content
         if isinstance(content, list):

@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 from backend.api.routes import analytics as analytics_routes
 from backend.api.routes import free as free_routes
 from backend.cli.main import app as cli_app
+from backend.context.models import RetrievalResult
 from backend.db.creator_stats import _reset_memory_store, list_note_stats
 from backend.services.creator_stats.analyze import analyze_notes, deposit_from_analysis
 from backend.services.creator_stats.normalize import (
@@ -281,14 +282,15 @@ async def test_copywriter_injects_creator_stats_context():
     )
 
     captured: dict = {}
+    real_build_prompt = agent._build_system_prompt
 
     def capture_prompt(state, extra_context=""):
         captured["extra"] = extra_context
-        return "sys {ripple_context}"
+        return real_build_prompt(state, extra_context)
 
     agent._build_system_prompt = capture_prompt  # type: ignore[method-assign]
     agent._build_ripple_context = MagicMock(return_value="")  # type: ignore[method-assign]
-    agent._recall_memory = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    agent._recall_memory = AsyncMock(return_value=RetrievalResult(namespace="test"))  # type: ignore[method-assign]
 
     store = AsyncMock()
     store.asearch = AsyncMock(return_value=[])
@@ -332,7 +334,7 @@ async def test_content_strategist_calls_build_mode_creative_context():
     store.aput = AsyncMock()
     store.aget = AsyncMock(return_value=None)
 
-    agent._recall_memory = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    agent._recall_memory = AsyncMock(return_value=RetrievalResult(namespace="test"))  # type: ignore[method-assign]
     agent._score_trend_topics = AsyncMock(return_value="")  # type: ignore[method-assign]
     agent._extract_candidate_topics = MagicMock(return_value=[])  # type: ignore[method-assign]
 

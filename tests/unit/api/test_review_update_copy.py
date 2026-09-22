@@ -2,7 +2,9 @@
 
 Guards:
 - awaiting_review + partial fields → copy_content merged + evaluator called +
-  evaluation_result written back + response.
+  evaluation_result written back + response. The merge is persisted through the
+  artifact write seam (P1a-S4): the body lands in the Artifact Store and the
+  aupdate_state payload carries the ref, not the inline body.
 - not awaiting_review → status="skipped", evaluator never called.
 - evaluator raises → copy_content still saved, evaluation_result empty,
   response carries a warning.
@@ -10,25 +12,30 @@ Guards:
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from langgraph.store.memory import InMemoryStore
 
 from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
 from backend.api.routes.review import router
 from backend.db.accounts import AccountRow
 from backend.db.workflows import WorkflowRow
+from backend.state.artifacts import resolve_state
 
 _EVAL_PATH = "backend.api.routes.review._evaluator"
 
 
-def _make_graph(values: dict, *, next_nodes=(), store=None) -> tuple[MagicMock, MagicMock]:
+def _make_graph(
+    values: dict, *, next_nodes=(), store: InMemoryStore | None = None
+) -> tuple[MagicMock, MagicMock]:
     """Fake compiled graph: aget_state returns a snapshot with .values and .next."""
     graph = MagicMock()
-    graph.store = store if store is not None else MagicMock(name="store")
+    graph.store = store if store is not None else InMemoryStore()
     snapshot = MagicMock()
     snapshot.values = values
     snapshot.next = tuple(next_nodes)
@@ -57,7 +64,7 @@ def _values(**overrides) -> dict:
 
 @pytest.fixture
 def app_and_client():
-    graph, _ = _make_graph(_values(), next_nodes=("review_gate",))
+    graph, _ = _make_graph(_values(), next_nodes=("review_gate",), store=InMemoryStore())
     app = FastAPI()
     app.include_router(router, prefix="/api/review")
     app.state.graph = graph
@@ -82,6 +89,13 @@ def app_and_client():
     app.dependency_overrides.pop(get_current_user, None)
 
 
+def _stored_copy_body(store: InMemoryStore, thread_id: str = "t1") -> dict:
+    """Fetch the stored copy_content body through the real artifact seam."""
+    item = asyncio.run(store.aget(("artifacts", thread_id, "copy_content"), "latest"))
+    assert item is not None, "copy_content body was not stored"
+    return item.value["body"]
+
+
 def test_partial_update_merges_and_runs_evaluator(app_and_client):
     app, client, graph = app_and_client
     eval_result = {"overall_score": 88.0, "decision": "approved", "dimensions": []}
@@ -100,18 +114,31 @@ def test_partial_update_merges_and_runs_evaluator(app_and_client):
     assert body["status"] == "updated"
     assert body["evaluation_result"] == eval_result
 
-    # aupdate_state called twice: copy_content then evaluation_result
+    # aupdate_state called twice: copy_content (write seam) then evaluation_result
     assert graph.aupdate_state.await_count == 2
     first_call = graph.aupdate_state.await_args_list[0]
-    assert first_call.args[1] == {
-        "copy_content": {
-            "selected_title": "新标题",
-            "body_text": "原正文",
-            "hashtags": ["新tag"],
-            "tone": "治愈",
-            "cta": "关注我",
-        }
+    written = first_call.args[1]
+    # The merged body went to the Artifact Store, not inline — the update
+    # carries the ref under values["artifacts"] instead of the body.
+    assert "copy_content" not in written
+    ref = written["artifacts"]["copy_content"]
+    assert ref["ref"] == "artifact://copy_content/latest"
+
+    stored = _stored_copy_body(graph.store)
+    assert stored == {
+        "selected_title": "新标题",
+        "body_text": "原正文",
+        "hashtags": ["新tag"],
+        "tone": "治愈",
+        "cta": "关注我",
     }
+
+    # Resolving the written refs must surface exactly the merged body —
+    # the contract every read surface relies on.
+    resolved = asyncio.run(resolve_state(graph.store, "t1", written))
+    assert resolved["copy_content"]["selected_title"] == "新标题"
+    assert resolved["copy_content"]["tone"] == "治愈"
+
     second_call = graph.aupdate_state.await_args_list[1]
     assert second_call.args[1] == {"evaluation_result": eval_result}
 
@@ -160,11 +187,14 @@ def test_evaluator_failure_degrades_with_warning(app_and_client):
     assert body["evaluation_result"] == {}
     assert "evaluator 降级放行" in body["warning"]
 
-    # copy_content still saved (first aupdate_state call), but only once
-    # (no evaluation_result write since evaluator threw before persisting)
+    # copy_content still saved through the write seam (first aupdate_state
+    # call), but only once (no evaluation_result write since evaluator threw
+    # before persisting)
     assert graph.aupdate_state.await_count == 1
-    saved = graph.aupdate_state.await_args.args[1]
-    assert saved["copy_content"]["body_text"] == "改过的正文"
+    written = graph.aupdate_state.await_args.args[1]
+    assert "copy_content" not in written
+    stored = _stored_copy_body(graph.store)
+    assert stored["body_text"] == "改过的正文"
     # preserved fields kept
-    assert saved["copy_content"]["tone"] == "治愈"
-    assert saved["copy_content"]["selected_title"] == "原标题"
+    assert stored["tone"] == "治愈"
+    assert stored["selected_title"] == "原标题"

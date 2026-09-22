@@ -44,7 +44,6 @@ def _live_graph() -> MagicMock:
         "account_id": "acct-live",
         "phase": "scouting",
         "current_agent": "trend_scout",
-        "performance_log": [],
     }
     state.next = []
     graph.aget_state = AsyncMock(return_value=state)
@@ -116,7 +115,6 @@ class TestStatusLabelReusesUpsertRow:
             "account_id": "acct-live",
             "phase": "planning",
             "current_agent": "content_strategist",
-            "performance_log": [],
             "brief_content": {"brand_name": "BrandFromBrief"},
         }
         upsert_row = WorkflowRow(thread_id="xhs_acct_abcdef12", label="stale-persisted")
@@ -140,3 +138,125 @@ class TestStatusLabelReusesUpsertRow:
         assert resp.status_code == 200
         assert resp.json()["data"]["label"] == "BrandFromBrief"
         db_get_mock.assert_not_awaited()
+
+    def test_live_status_hydrates_pause_reason(self):
+        """P1a-S1 wire-neutrality guard.
+
+        S1 moved the /status stage-key enumeration behind ``**status_view(...)``,
+        but ``pause_reason`` is a RuntimeState scalar that is NOT a stage-view
+        key — the live branch must keep reading it straight from state, exactly
+        as it did pre-S1. If the consolidation drops it, an evaluator_fail_closed
+        parked thread would render ``pause_reason=null`` and the UI would show a
+        plain resume button instead of the required approve/revise prompt. The
+        history-file branch never hydrated pause_reason, so this pins the live
+        path only.
+        """
+        graph = _live_graph()
+        state = graph.aget_state.return_value
+        state.values = {
+            "session_id": "xhs_acct_abcdef12",
+            "account_id": "acct-live",
+            "phase": "paused",
+            "current_agent": "evaluator",
+            "pause_reason": "evaluator_fail_closed",
+        }
+
+        with (
+            patch(
+                "backend.api.routes.workflow.assert_thread_owned",
+                new_callable=AsyncMock,
+                return_value="acct-live",
+            ),
+            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch(
+                "backend.api.routes.workflow._db_upsert",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock),
+        ):
+            resp = _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["pause_reason"] == "evaluator_fail_closed"
+
+
+class TestStatusTimelineSource:
+    """P1a-S2: /status builds agent_timeline from the Event store.
+
+    Telemetry no longer rides the checkpoint, so the live branch must read the
+    Event store instead of ``state.values["performance_log"]``. A legacy
+    checkpoint that still carries the inline list keeps rendering (decision D1:
+    no checkpoint rewrite).
+    """
+
+    def _get(self, graph: MagicMock):
+        with (
+            patch(
+                "backend.api.routes.workflow.assert_thread_owned",
+                new_callable=AsyncMock,
+                return_value="acct-live",
+            ),
+            patch("backend.api.routes.workflow.is_pool_ready", return_value=True),
+            patch(
+                "backend.api.routes.workflow._db_upsert",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("backend.api.routes.workflow.db_get", new_callable=AsyncMock),
+        ):
+            return _client(graph).get("/api/workflow/status/xhs_acct_abcdef12")
+
+    async def test_timeline_comes_from_event_store(self):
+        from backend.db.workflow_events import append_events
+
+        graph = _live_graph()
+        await append_events(
+            "xhs_acct_abcdef12",
+            [
+                {
+                    "kind": "node",
+                    "agent": "copywriter",
+                    "started_at": "2026-09-13T00:00:00+00:00",
+                    "completed_at": "2026-09-13T00:00:02+00:00",
+                    "duration_seconds": 2.0,
+                    "status": "success",
+                    "error": None,
+                    "retries": 0,
+                },
+                # non-node kinds share the store but not the timeline schema
+                {"kind": "llm", "agent": "copywriter", "cost_usd": 0.01},
+            ],
+        )
+
+        resp = self._get(graph)
+
+        assert resp.status_code == 200
+        timeline = resp.json()["data"]["agent_timeline"]
+        assert [entry["agent"] for entry in timeline] == ["copywriter"]
+        assert timeline[0]["status"] == "success"
+
+    def test_legacy_inline_log_still_renders(self):
+        graph = _live_graph()
+        graph.aget_state.return_value.values = {
+            "session_id": "xhs_acct_abcdef12",
+            "account_id": "acct-live",
+            "phase": "scouting",
+            "current_agent": "trend_scout",
+            # Pre-P1a checkpoint: telemetry inline.
+            "performance_log": [
+                {
+                    "kind": "node",
+                    "agent": "trend_scout",
+                    "started_at": "2026-09-13T00:00:00+00:00",
+                    "completed_at": "2026-09-13T00:00:01+00:00",
+                    "status": "success",
+                }
+            ],
+        }
+
+        resp = self._get(graph)
+
+        assert resp.status_code == 200
+        timeline = resp.json()["data"]["agent_timeline"]
+        assert [entry["agent"] for entry in timeline] == ["trend_scout"]

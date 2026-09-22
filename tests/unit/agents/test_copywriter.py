@@ -29,6 +29,7 @@ class TestCopywriterAgent:
     def mock_state(self):
         """Mock state with content plan."""
         return {
+            "niche": "test-niche",
             "account_id": "test_account",
             "phase": WorkflowPhase.PLANNING,
             "content_plan": {
@@ -189,7 +190,7 @@ class TestCopywriterAgent:
     @pytest.mark.asyncio
     async def test_execute_handles_empty_plan(self, agent, mock_store, _mock_de_ai):
         """Execute handles empty content plan."""
-        mock_state = {"account_id": "test", "content_plan": {}}
+        mock_state = {"niche": "test-niche", "account_id": "test", "content_plan": {}}
 
         mock_response = MagicMock()
         mock_response.content = '{"title_candidates": ["默认标题"], "body_text": ""}'
@@ -224,6 +225,7 @@ class TestCopywriterAgent:
     async def test_execute_with_key_points(self, agent, mock_store, _mock_de_ai):
         """Execute includes key points in generation."""
         mock_state = {
+            "niche": "test-niche",
             "account_id": "test",
             "content_plan": {
                 "selected_topic": "美食",
@@ -402,6 +404,7 @@ class TestCopywriterAgent:
         }"""
 
         state = {
+            "niche": "test-niche",
             "account_id": "test",
             "content_plan": {"selected_topic": "美食"},
             "blogger_notes": [{"title": "参考", "body": "正文"}],
@@ -432,6 +435,7 @@ class TestCopywriterAgent:
         empty_response.content = "not json at all"
 
         state = {
+            "niche": "test-niche",
             "account_id": "test",
             "content_plan": {"selected_topic": "美食"},
             "blogger_notes": [{"title": "参考", "body": "正文"}],

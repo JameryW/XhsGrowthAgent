@@ -32,23 +32,28 @@ def _make_snapshot(
 
 
 class TestSnapshotToCheckpoint:
-    """Test _snapshot_to_checkpoint conversion."""
+    """Test _snapshot_to_checkpoint conversion.
 
-    def test_basic_conversion(self):
+    P1a-S3 made the conversion async (it resolves artifact refs through the
+    Artifact Store first); a legacy-values snapshot has no refs and resolves
+    to itself, so these pin the unchanged payload shape through the await.
+    """
+
+    async def test_basic_conversion(self):
         snapshot = _make_snapshot(
             values={"phase": "scouting", "current_agent": "trend_scout"},
             checkpoint_id="cp_42",
             step=3,
             source="trend_scout",
         )
-        cp = _snapshot_to_checkpoint(snapshot)
+        cp = await _snapshot_to_checkpoint(snapshot)
         assert cp.checkpoint_id == "cp_42"
         assert cp.step == 3
         assert cp.source == "trend_scout"
         assert cp.phase == "scouting"
         assert cp.current_agent == "trend_scout"
 
-    def test_with_stage_data(self):
+    async def test_with_stage_data(self):
         snapshot = _make_snapshot(
             values={
                 "phase": "creating",
@@ -58,28 +63,58 @@ class TestSnapshotToCheckpoint:
                 "copy_content": {"selected_title": "AI in 2026"},
             },
         )
-        cp = _snapshot_to_checkpoint(snapshot)
+        cp = await _snapshot_to_checkpoint(snapshot)
         assert cp.trend_data == {"hot_topics": [{"topic": "AI", "heat_score": 90}]}
         assert cp.content_plan == {"selected_topic": "AI trends"}
         assert cp.copy_content == {"selected_title": "AI in 2026"}
 
-    def test_empty_values_defaults(self):
+    async def test_empty_values_defaults(self):
         snapshot = _make_snapshot(values={})
-        cp = _snapshot_to_checkpoint(snapshot)
+        cp = await _snapshot_to_checkpoint(snapshot)
         assert cp.phase == "unknown"
         assert cp.current_agent == ""
         assert cp.trend_data == {}
 
-    def test_next_nodes_preserved(self):
+    async def test_next_nodes_preserved(self):
         snapshot = _make_snapshot(next_nodes=("content_strategist", "copywriter"))
-        cp = _snapshot_to_checkpoint(snapshot)
+        cp = await _snapshot_to_checkpoint(snapshot)
         assert cp.next_nodes == ["content_strategist", "copywriter"]
 
-    def test_missing_config_handles_gracefully(self):
+    async def test_missing_config_handles_gracefully(self):
         snapshot = _make_snapshot()
         snapshot.config = {}
-        cp = _snapshot_to_checkpoint(snapshot)
+        cp = await _snapshot_to_checkpoint(snapshot)
         assert cp.checkpoint_id == ""
+
+    async def test_refd_snapshot_resolves_bodies(self):
+        """A ref'd checkpoint resolves through the store before conversion.
+
+        P1a-S3 equivalence: the /history view of a ref'd snapshot must equal
+        the view of the same state stored inline (D4 — the payload contract
+        does not change with the storage tier).
+        """
+        from langgraph.store.memory import InMemoryStore
+
+        from backend.state.artifacts import put_artifact, refify_updates
+
+        body = {"selected_title": "AI in 2026", "body_text": "全文"}
+        store = InMemoryStore()
+        refified = await refify_updates(store, "t_ref", {"copy_content": body})
+        assert "copy_content" not in refified  # body went out-of-line
+
+        snapshot = _make_snapshot(
+            values={"phase": "creating", "current_agent": "copywriter", **refified}
+        )
+        resolved_cp = await _snapshot_to_checkpoint(snapshot, store, "t_ref")
+
+        inline_snapshot = _make_snapshot(
+            values={"phase": "creating", "current_agent": "copywriter", "copy_content": body}
+        )
+        inline_cp = await _snapshot_to_checkpoint(inline_snapshot)
+
+        assert resolved_cp.copy_content == inline_cp.copy_content
+        assert resolved_cp.copy_content["body_text"] == "全文"
+        assert await put_artifact(store, "t_ref", "copy_content", body) is not None
 
 
 class TestCheckpointHistoryResponse:

@@ -6,7 +6,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
@@ -48,12 +47,7 @@ class ShootingPlannerAgent(BaseAgent):
             }
 
         system_prompt = self._build_system_prompt(state)
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         content = response.content
         if isinstance(content, list):

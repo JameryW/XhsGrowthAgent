@@ -2,8 +2,6 @@
 
 from typing import Annotated, Any, TypedDict
 
-from langgraph.graph.message import add_messages
-
 from backend.state.enums import WorkflowMode, WorkflowPhase
 from backend.state.reducers import append_list as _append_list
 from backend.state.reducers import merge_dict as _merge_dict
@@ -56,9 +54,6 @@ class XHSGrowthState(TypedDict, total=False):
     retry_count: int
     execution_mode: str  # "single" or "continuous" — from ExecutionMode enum
     workflow_mode: WorkflowMode  # "trend" or "brief" — determines pipeline path
-
-    # Message history (LangGraph built-in reducer)
-    messages: Annotated[list[Any], add_messages]
 
     # Stage data
     trend_data: TrendData
@@ -154,9 +149,33 @@ class XHSGrowthState(TypedDict, total=False):
     # 博主笔记获取深度 (默认 3)
     blogger_note_limit: int
 
-    # History
-    content_history: Annotated[list[dict[str, Any]], _append_list]
-    performance_log: Annotated[list[dict[str, Any]], _append_list]
+    # Telemetry (P1a-S2) lives in the Event store, not in the checkpoint —
+    # see backend/state/events.py. Nothing here keeps it in state: every
+    # superstep would have re-serialized the whole log.
+
+    # ── Artifact references (P1a-S3) ──
+    # Large business bodies (copy_content, visual_plan, …) live in the
+    # Artifact Store (backend/state/artifacts.py, namespace
+    # ("artifacts", thread_id, kind)); this mapping holds one ArtifactRef per
+    # state key and is merged on every write. Its absence = legacy full-blob
+    # thread (hydration passthrough). Never read bodies from here — resolve
+    # through backend.state.artifacts.resolve_state.
+    artifacts: Annotated[dict[str, Any], _merge_dict]
+
+    # 摘要化 meta（P1a-S3）：正文外置后路由谓词仍需的长度/真值/列表。
+    # versions_meta 与 content_versions 写序一致、version_id 逐字复制（free-draft
+    # 排序承重教训：任何给路由/UI 的列表必须保全序与 id 稳定）；blogger_notes_meta
+    # 为 {"count": N, "ids": [...]}。replace reducer：每次写入整体替换。
+    versions_meta: Annotated[list[dict[str, Any]], _replace]
+    blogger_notes_meta: Annotated[dict[str, Any], _replace]
+
+    # P1a-S4-1 (additive)：trend_data 正文外置到 Artifact Store 后，should_plan
+    # 路由仍需"是否有可操作话题"的真值。trend_summary 由
+    # artifacts.trend_summary_of 从写入值推导（{"has_topics": bool,
+    # "hot_topic_count": int}，镜像路由的 hot_topics/trending_topics/topics
+    # 别名链）；replace reducer：每次写入整体替换。legacy 线程无此字段，
+    # routers._has_actionable_trends 走 inline fallback。
+    trend_summary: Annotated[dict[str, Any], _replace]
 
     # Metadata
     account_id: str

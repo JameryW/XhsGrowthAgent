@@ -6,11 +6,11 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.runtime import require_niche
 from backend.services.ripple_service import RippleTimeoutError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
@@ -84,29 +84,28 @@ class AnalystAgent(BaseAgent):
                 account_id,
                 query="content performance",
                 namespace="content_history",
+                thread_id=str(state.get("thread_id") or state.get("session_id") or ""),
                 limit=10,
             ),
             self._ripple_report(state),
         )
 
-        system_prompt = self._build_system_prompt(state)
+        system_prompt = self._build_system_prompt(state).with_memory(
+            history,
+            lambda item: f"历史数据：{item}",
+        )
 
         ripple_context = ""
         if ripple_report:
             ripple_context = f"\nRipple 传播预测报告：\n{ripple_report}\n"
+        system_prompt = system_prompt.with_observations(ripple_context)
 
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         user_msg = f"""帖子数据：{publish_result}
-历史数据：{history}
 账号定位：{account_id}
-垂类赛道：{niche}{ripple_context}"""
+垂类赛道：{niche}"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         analytics = self._parse_json_response(cast(str, response.content))
 

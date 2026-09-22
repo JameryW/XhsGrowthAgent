@@ -222,7 +222,12 @@ async def _get_completed_workflows(
                 return None
         if not state.values:
             return None
-        return {**row.to_dict(), "_state": state.values}
+        # P1a-S4 read seam: analytics/copy_content are store-backed on ref'd
+        # threads; the quality-trend readers need the resolved bodies.
+        from backend.state.artifacts import resolve_state
+
+        values = await resolve_state(getattr(graph, "store", None), row.thread_id, state.values)
+        return {**row.to_dict(), "_state": values}
 
     # gather preserves input order, so results stay in created_at DESC order.
     fetched = await asyncio.gather(*(_read_workflow_state(row) for row in rows))
@@ -230,6 +235,21 @@ async def _get_completed_workflows(
 
     _set_cached(cache_key, results)
     return results
+
+
+async def _load_workflow_perf_log(
+    wf: dict[str, Any], state: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Telemetry for one completed workflow, legacy checkpoint or Event store.
+
+    P1a-S2 moved perf entries out of the checkpoint; :func:`load_perf_log`
+    returns the inline list when the checkpoint still carries one (pre-migration
+    threads) and the stored events otherwise.
+    """
+    from backend.state.events import load_perf_log
+
+    thread_id = str(wf.get("thread_id") or state.get("thread_id") or "")
+    return await load_perf_log(thread_id, state)
 
 
 def _period_cutoff_hours(period: str) -> int:
@@ -1007,7 +1027,9 @@ async def get_costs(
 
     for wf in workflows:
         state = wf.get("_state", {})
-        perf_log = state.get("performance_log") or []
+        # P1a-S2: telemetry is in the Event store; legacy checkpoints keep it
+        # inline and the reader merges both.
+        perf_log = await _load_workflow_perf_log(wf, state)
         for entry in perf_log:
             # ponytail: skip node/human_wait entries (no cost_usd); llm/ripple
             # and back-compat entries (no kind) carry cost.
@@ -1152,7 +1174,7 @@ async def get_dashboard(
 
     for wf in cost_workflows:
         state = wf.get("_state", {})
-        perf_log = state.get("performance_log") or []
+        perf_log = await _load_workflow_perf_log(wf, state)
         for entry in perf_log:
             # ponytail: skip node/human_wait entries (no cost_usd); llm/ripple
             # and back-compat entries (no kind) carry cost.

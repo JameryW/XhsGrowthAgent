@@ -408,7 +408,7 @@ class TestEvaluatorAgent:
         ctx = EvaluationContext(weights=weights, bias_severity="strict")
 
         state = {"niche": "美食"}
-        prompt = agent._build_system_prompt(state, extra_context="audience-pref", ctx=ctx)
+        prompt = agent._build_system_prompt(state, extra_context="audience-pref", ctx=ctx).render()
 
         # weights block injected with the custom weight
         assert "copywriting 0.40" in prompt
@@ -428,7 +428,7 @@ class TestEvaluatorAgent:
     def test_build_system_prompt_default_weights_when_unset(self, agent):
         """No ctx → prompt falls back to default weights, no placeholders."""
         state = {"niche": "母婴"}
-        prompt = agent._build_system_prompt(state)
+        prompt = agent._build_system_prompt(state).render()
         assert "copywriting 0.18" in prompt  # default (incl. altruism rebalance)
         assert "altruism 0.09" in prompt
         assert "{weights_block}" not in prompt
@@ -709,7 +709,7 @@ class TestEvaluatorWeightsIsolation:
             )
             if tag_var.get() == "B":
                 b_prompt_built.set()
-            prompts[tag_var.get()] = prompt
+            prompts[tag_var.get()] = prompt.render()
             return prompt
 
         async def _asearch(ns, query="", limit=0, **kwargs):

@@ -13,11 +13,12 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.prompts import PreparedPrompt
+from backend.context.runtime import require_niche
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.copywriter")
@@ -58,6 +59,7 @@ class CopywriterAgent(BaseAgent):
                 account_id,
                 query=recall_query,
                 namespace="content_history",
+                thread_id=str(state.get("thread_id") or state.get("session_id") or ""),
                 limit=3,
             ),
             self._recall_memory(
@@ -65,22 +67,13 @@ class CopywriterAgent(BaseAgent):
                 account_id,
                 query=_audience_pref_query(plan, brief),
                 namespace="audience_preferences",
+                thread_id=str(state.get("thread_id") or state.get("session_id") or ""),
                 limit=3,
             ),
         )
 
         # 构建完整 memory context
         memory_context = ""
-        if past_content:
-            memory_context += "\n历史爆款参考：\n"
-            for pc in past_content:
-                title = pc.get("title", "")
-                rate = pc.get("engagement_rate", "N/A")
-                memory_context += f"- {title} (互动率: {rate})\n"
-        if audience_prefs:
-            memory_context += "\n受众偏好：\n"
-            for ap in audience_prefs:
-                memory_context += f"- {ap.get('preference', '')}\n"
 
         # 拼接 creative memory 上下文
         creative_ctx = cm.build_creative_context(styles, [], materials)
@@ -102,19 +95,28 @@ class CopywriterAgent(BaseAgent):
             logger.debug("creator_stats suggestions skipped: %s", e)
 
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
+        system_prompt = system_prompt.with_memory(
+            past_content,
+            lambda pc: (
+                f"历史爆款参考：\n- {pc.get('title', '')} "
+                f"(互动率: {pc.get('engagement_rate', 'N/A')})"
+            ),
+        ).with_memory(audience_prefs, lambda ap: f"受众偏好：\n- {ap.get('preference', '')}")
 
         # 构建 Ripple 传播预测上下文
         ripple_context = self._build_ripple_context(dict(plan))
-        system_prompt = system_prompt.replace("{ripple_context}", ripple_context)
+        system_prompt = system_prompt.with_observations(ripple_context)
 
         # 注入评估器修订建议（RQGM 协同演化：评估器反馈驱动 writer 改进）
         feedback = state.get("human_feedback") or {}
         revisions = feedback.get("revisions") or []
         if revisions:
             hints = "\n".join(f"- {h}" for h in revisions)
-            system_prompt += f"\n\n【质量评估修订要求 — 请据此重写】\n{hints}"
+            system_prompt = system_prompt.with_task_hint(
+                f"\n\n【质量评估修订要求 — 请据此重写】\n{hints}"
+            )
 
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
 
         if is_brief_mode:
             # Brief mode: build user message from brief_content + blogger references
@@ -144,12 +146,7 @@ class CopywriterAgent(BaseAgent):
 内容类型：{plan.get("content_type", "note")}
 垂类赛道：{niche}"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         copy_content = self._parse_json_response(cast(str, response.content))
 
@@ -235,7 +232,7 @@ class CopywriterAgent(BaseAgent):
         state: XHSGrowthState,
         base_copy: dict[str, Any],
         blogger_notes: list[dict[str, Any]],
-        system_prompt: str,
+        system_prompt: PreparedPrompt | str,
         niche: str,
     ) -> list[dict[str, Any]]:
         """Generate multiple style variants based on blogger reference notes.
@@ -298,10 +295,7 @@ class CopywriterAgent(BaseAgent):
   ]
 }}"""
 
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=variant_prompt),
-        ]
+        messages = self._prompt_messages(state, system_prompt, variant_prompt)
 
         response = await self._llm_ainvoke(messages)
 

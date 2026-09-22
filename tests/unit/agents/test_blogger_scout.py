@@ -27,6 +27,7 @@ class TestBloggerScoutAgent:
     def trend_state(self):
         """State for trend mode with keywords."""
         return {
+            "niche": "test-niche",
             "account_id": "test_account",
             "workflow_mode": WorkflowMode.TREND,
             "phase": WorkflowPhase.CREATING,
@@ -43,6 +44,7 @@ class TestBloggerScoutAgent:
     def brief_state(self):
         """State for brief mode with keywords."""
         return {
+            "niche": "test-niche",
             "account_id": "test_account",
             "workflow_mode": WorkflowMode.BRIEF,
             "phase": WorkflowPhase.CREATING,
@@ -148,6 +150,7 @@ class TestBloggerScoutAgent:
     async def test_execute_no_keywords_returns_empty(self, agent, mock_store):
         """Returns hardcoded fallback candidates when no keywords found."""
         state = {
+            "niche": "test-niche",
             "account_id": "test",
             "workflow_mode": WorkflowMode.TREND,
             "trend_data": {},

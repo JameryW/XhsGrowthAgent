@@ -27,6 +27,7 @@ class TestTrendScoutAgent:
     def mock_state(self):
         """Standard mock state."""
         return {
+            "niche": "test-niche",
             "account_id": "test_account",
             "phase": WorkflowPhase.IDLE,
         }
@@ -91,7 +92,7 @@ class TestTrendScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_with_account_id(self, agent, mock_store):
         """Execute uses account_id from state."""
-        mock_state = {"account_id": "custom_account"}
+        mock_state = {"niche": "test-niche", "account_id": "custom_account"}
         mock_response = MagicMock()
         mock_response.content = '{"trending_topics": []}'
 

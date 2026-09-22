@@ -432,3 +432,91 @@ into typed responses:
   `CreatorActionExecutionNotFoundError` (`404`), including foreign accounts;
 - repeated execution returns the original immutable payload and is not treated
   as a conflict.
+
+## Scenario: Context Compiler memory recall (P1b S2)
+
+`backend.context.recall.recall_memory(store, account_id, queries, *, limit=5,
+thread_id="", agent="", now=None, timeout=10.0)` returns one `RetrievalResult`
+per requested namespace in request order. Namespace reads run concurrently.
+All namespaces are validated before I/O; an unknown namespace raises
+`UnknownMemoryNamespaceError`, including when the store is unavailable.
+Blank account identifiers and nonpositive limits/timeouts fail before I/O.
+
+| Storage outcome | Mode | Behavior |
+| --- | --- | --- |
+| Valid records | `hit` | Rank, deduplicate, retain account scope and provenance |
+| Successful empty search | `empty` | No error |
+| Missing store, timeout, provider failure | `degraded` | Error code/type, no false empty success |
+| Invalid record among valid neighbors | `degraded` | Preserve valid neighbors |
+| Cancellation | Exception | Propagate; never turn into degradation |
+
+Rank is confidence times `0.8 * relevance + 0.2 * freshness`, where freshness
+decays with age over a 30-day scale. Missing timestamps have zero freshness;
+naive timestamps mean UTC. Equal ranks retain store order, and duplicate
+canonical JSON bodies keep their best-ranked record. Original values remain
+available for the transitional Agent adapter; `ContextItem` also carries
+source, timestamp, confidence, account scope and estimated token cost.
+
+Every result emits a best-effort `kind="context"` event keyed by thread,
+with agent, namespace, mode, degraded flag, item count, error type/code and
+timestamp. Queries, memory bodies and provider exception messages must not
+enter these events. `BaseAgent._recall_memory` returns the `RetrievalResult`
+itself (read `.items`; do not iterate the model). Graph callers must pass
+thread_id/session_id.
+
+Wrong: catch a search exception and return `[]` without a result/event.
+Correct: return `RetrievalMode.DEGRADED` and emit the context event, while
+allowing other namespaces to complete. Strategy notes remain a valid namespace
+but are not automatically recalled into unrelated agents.
+
+Required regressions: parallel barrier (no sleeps), partial success, empty
+versus degraded, cancellation, timeout, account/thread isolation, UTC ranking,
+deduplication, malformed records, event redaction and BaseAgent adapter wiring.
+See `tests/unit/context/test_recall.py`.
+
+## Scenario: Context Compiler prompt layers (P1b S3–S4)
+
+Agent prompts go through `backend.context.prompts.prepare_prompt` and
+`PreparedPrompt.messages`. `RunContext` is built inside `artifact_seam` after
+hydration, stored in a ContextVar, and reset on success or failure. It is not
+a checkpoint field.
+
+### Signatures
+
+- `require_niche(state) -> str` — blank/missing niche raises `ValueError`
+  (`"niche is required"`). A historical note with
+  `niche_context_available` false returns `未提供赛道（不可推断）` and must
+  not invent `母婴`.
+- `prepare_prompt(state, template, schema, *, memory="", variables=None, budget=32768) -> PreparedPrompt`
+- `PreparedPrompt.messages(task) -> [SystemMessage, HumanMessage]`
+  — system message is L0–L2 only; human message is L3–L5 plus the task hint.
+- YAML `context` (`TemplateContext`): `version` must be `1`; `variables` maps
+  placeholder names to a `PromptLayer`; unknown keys fail at load.
+
+### Contracts
+
+| Layer | Role | Trim |
+| --- | --- | --- |
+| L0 system | Policy / identity text with no placeholder | Never |
+| L1 tool schema | Empty until Tool Runtime | Never |
+| L2 account | Niche and other account facts | Never |
+| L3 task | User template and this step's task hint | Never |
+| L4 memory | Recall and `{memory_context}` | After L5 |
+| L5 observation | Ripple, live data, evaluator weights | First |
+
+Only declared `{snake_case}` placeholders are substituted. Braces inside
+inserted memory or JSON examples are literal. A segment that mixes layers
+fails. L0–L2 for the same template and niche are byte-stable across task,
+memory, and observation changes. Token estimate is deterministic
+(CJK = 1, ASCII ≈ 1/4, round up). Budget below the required L0–L3 cost
+raises `ValueError` (`Required context exceeds`).
+
+### Wrong vs Correct
+
+Wrong: `state.get("niche", "母婴")` or `template.replace("{account_niche}", ...)`.
+Correct: `require_niche(state)` and `_prompt_messages(state, prepared, task)`.
+
+Required regressions: every prompt YAML keeps the same token multiset as
+legacy substitution, L0–L2 stability, budget order, niche fail-fast,
+historical unknown niche, schema fail-closed, and per-node RunContext
+isolation. See `tests/unit/context/test_prompts.py`.

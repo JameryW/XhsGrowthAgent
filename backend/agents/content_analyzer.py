@@ -6,7 +6,6 @@ import json
 import logging
 from typing import Any, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
@@ -62,12 +61,7 @@ class ContentAnalyzerAgent(BaseAgent):
 
 请分析用户草稿与参考内容之间的差距，并提供优化建议。"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         result = self._parse_json_response(cast(str, response.content))
         optimization_analysis = result.get("optimization_analysis", {})

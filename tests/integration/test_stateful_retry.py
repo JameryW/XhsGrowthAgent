@@ -105,7 +105,6 @@ class TestStatefulRetryE2E:
             "niche": "母婴",
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},
@@ -114,8 +113,6 @@ class TestStatefulRetryE2E:
             "analytics": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
         }
 
         final_state = await graph.ainvoke(initial_state, config)
@@ -170,7 +167,6 @@ class TestStatefulRetryE2E:
             "niche": "母婴",
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},
@@ -179,31 +175,51 @@ class TestStatefulRetryE2E:
             "analytics": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
         }
 
         final_state = await graph.ainvoke(initial_state, config)
 
         # After the transient failure, should_plan retried trend_scout (retry_count
         # was 1 < 2). The retry succeeded with trend_data. should_plan then saw
-        # trend_data.hot_topics → routed to content_strategist.
-        # The workflow progressed past trend_scout (didn't end at __end__ due
-        # to error). Final state has trend_data populated and error cleared.
+        # the actionable-topic signal → routed to content_strategist.
+        # P1a-S4-1: the trend body no longer sits inline in the checkpoint —
+        # the write seam externalizes it to the Artifact Store and leaves the
+        # trend_summary routing meta in RuntimeState. The workflow progressed
+        # past trend_scout (didn't end at __end__ due to error).
         assert final_state is not None
-        # trend_data should be populated (the successful retry returned it)
-        trend_data = final_state.get("trend_data", {})
+        # Routing meta: derived from the successful retry's write — this is
+        # what should_plan consumes (meta-first seam).
+        trend_summary = final_state.get("trend_summary") or {}
+        assert trend_summary.get("has_topics") is True, (
+            f"Expected has_topics=True meta after successful retry, got: {trend_summary}"
+        )
+        # Body out-of-line: filed under artifacts, not inline in the state.
+        ref = (final_state.get("artifacts") or {}).get("trend_data") or {}
+        assert ref.get("ref") == "artifact://trend_data/latest", (
+            f"Expected trend_data ref after successful retry, got: {ref}"
+        )
+        # Data survived externalization: resolve_state returns the body.
+        from backend.state.artifacts import resolve_state
+
+        resolved = await resolve_state(graph.store, thread_id, final_state)
+        trend_data = resolved.get("trend_data") or {}
         assert trend_data.get("hot_topics"), (
             f"Expected trend_data with hot_topics after successful retry, got: {trend_data}"
         )
         # The graph progressed — not stuck in a pure error state
         # (content_strategist runs next, which may also use the model).
-        assert final_state.get("error") is None or final_state.get("trend_data")
+        assert final_state.get("error") is None or trend_summary.get("has_topics")
 
     @pytest.mark.asyncio
     async def test_failure_performance_log_has_failed_entry(self, monkeypatch):
-        """When trend_scout fails, the perf_log gets a status=failed entry
-        (now possible because __call__ returns a dict, not raises)."""
+        """When trend_scout fails, the Event store gets status=failed entries
+        (now possible because __call__ returns a dict, not raises).
+
+        P1a-S2: telemetry no longer rides the checkpoint, so the assertion
+        reads it back from the Event store for this thread.
+        """
+        from backend.state.events import load_perf_log
+
         graph = _compile_test_graph()
         thread_id = "stateful-perf-failed"
         config = {"configurable": {"thread_id": thread_id}}
@@ -221,7 +237,6 @@ class TestStatefulRetryE2E:
             "niche": "母婴",
             "error": None,
             "retry_count": 0,
-            "messages": [],
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},
@@ -230,15 +245,14 @@ class TestStatefulRetryE2E:
             "analytics": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
         }
 
         final_state = await graph.ainvoke(initial_state, config)
+        assert final_state is not None
+        assert "performance_log" not in final_state
 
-        # performance_log should contain at least one status=failed entry
-        # from trend_scout's failed attempts.
-        perf_log = final_state.get("performance_log", [])
+        # At least one status=failed entry from trend_scout's failed attempts.
+        perf_log = await load_perf_log(thread_id, final_state)
         failed_entries = [e for e in perf_log if e.get("status") == "failed"]
         assert len(failed_entries) >= 1, f"Expected at least one failed perf entry, got: {perf_log}"
         # The failed entry should reference trend_scout
@@ -297,7 +311,6 @@ class TestOrchestratorRetryTermination:
             "niche": "母婴",
             "error": "persistent failure",
             "retry_count": 3,
-            "messages": [],
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},
@@ -306,8 +319,6 @@ class TestOrchestratorRetryTermination:
             "analytics": {},
             "engagement_actions": [],
             "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
         }
 
         final_state = await graph.ainvoke(initial_state, config)

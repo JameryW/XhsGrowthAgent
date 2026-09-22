@@ -17,6 +17,7 @@ from backend.agents.publisher import _resolve_cdp_endpoint, run_publish
 
 def _state(**overrides):
     base = {
+        "niche": "test-niche",
         "copy_content": {"selected_title": "t", "body_text": "b", "hashtags": []},
         "content_plan": {},
         "visual_plan": {"image_paths": ["/tmp/x.png"]},
@@ -97,7 +98,7 @@ def _mock_cdp_endpoint(monkeypatch, endpoint=""):
 @pytest.mark.asyncio
 async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, monkeypatch):
     """account_id in publish_options → per-account CDP endpoint passed to XHSClient."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9225")
@@ -138,7 +139,7 @@ async def test_per_account_cdp_endpoint_passed_to_client(
 ):
     """Selected account with a cdp_port → per-account endpoint passed to XHSClient,
     overriding the global _resolve_cdp_endpoint result."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
@@ -156,7 +157,7 @@ async def test_per_account_empty_endpoint_falls_back_to_global(
     _browser_settings, mock_store, monkeypatch
 ):
     """Selected account with no cdp_port binding → global endpoint is used."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="")  # account has no port binding
@@ -176,7 +177,9 @@ async def test_per_account_empty_endpoint_falls_back_to_global(
 @pytest.mark.asyncio
 async def test_missing_cdp_endpoint_returns_failed(_browser_settings, mock_store, monkeypatch):
     """Selected account without CDP endpoint → fail fast, no XHSClient built."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_empty"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_empty"}
+    )
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="")  # no per-account CDP profile
     monkeypatch.setattr(
@@ -200,7 +203,9 @@ async def test_missing_cdp_endpoint_returns_failed(_browser_settings, mock_store
 @pytest.mark.asyncio
 async def test_cdp_endpoint_proceeds_with_empty_cookie(_browser_settings, mock_store, monkeypatch):
     """CDP endpoint present → proceed with empty cookie/user_id."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_cdp"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_cdp"}
+    )
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     client = _mock_client("p_cdp")
@@ -219,7 +224,7 @@ async def test_cdp_endpoint_proceeds_with_empty_cookie(_browser_settings, mock_s
 @pytest.mark.asyncio
 async def test_classifies_auth_error(_browser_settings, mock_store, monkeypatch):
     """publish throws auth error → auth_expired error_type + structured recovery."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_x"})
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
 
@@ -241,7 +246,7 @@ async def test_classifies_auth_error(_browser_settings, mock_store, monkeypatch)
 async def test_preserves_publish_service_error(_browser_settings, mock_store, monkeypatch):
     """publish_post returning a platform error keeps error/recovery in state."""
 
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_x"})
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
 
@@ -269,7 +274,7 @@ async def test_never_honors_dry_run(_browser_settings, mock_store, monkeypatch):
     This is the contract that justifies the extraction: execute's mock branch
     must NOT be reachable from the retry path.
     """
-    state = _state(publish_options={"dry_run": True, "account_id": "acc_1"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": True, "account_id": "acc_1"})
     client = _mock_client("p_real")
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
@@ -287,7 +292,7 @@ async def test_never_honors_dry_run(_browser_settings, mock_store, monkeypatch):
 @pytest.mark.asyncio
 async def test_records_history_on_success_only(_browser_settings, mock_store, monkeypatch):
     """ContentHistory.record called on success (post_id present), skipped on failure."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p_ok")
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
@@ -321,7 +326,7 @@ async def test_records_history_when_published_without_post_id(
     status=="published" must still record to ContentHistory (was skipped when
     gate was post_id-only). Regression for the same bug class as PR #190.
     """
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_1"})
     # post_id="" but status="published" — real-world success shape
     client = _mock_client(post_id="")
     client.publish_post = AsyncMock(
@@ -372,7 +377,7 @@ async def test_timeout_after_submit_action_marks_unknown_not_failed(_browser_set
     """A browser/HTTP timeout during the real submit action means the note may
     have been published anyway — status must be "unknown", never "failed"
     (a false "failed" invites a duplicate publish)."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_t"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_t"})
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
 
@@ -393,7 +398,7 @@ async def test_timeout_after_submit_action_marks_unknown_not_failed(_browser_set
 @pytest.mark.asyncio
 async def test_non_timeout_error_still_marks_failed(_browser_settings, monkeypatch):
     """Non-timeout submit errors keep the old "failed" classification."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_f"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_f"})
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     client = MagicMock()
@@ -410,7 +415,7 @@ async def test_non_timeout_error_still_marks_failed(_browser_settings, monkeypat
 async def test_second_real_publish_of_same_content_blocked(_browser_settings, monkeypatch):
     """After a successful real publish, a second real publish of the same
     (account, content, window) must be blocked before touching the client."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_d"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_d"})
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     client = _mock_client("p_once")
@@ -436,7 +441,7 @@ async def test_unknown_record_blocks_second_publish(_browser_settings, monkeypat
     """A pre-existing "unknown" idempotency record blocks the next real publish."""
     from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
 
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_u"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_u"})
     store = _real_store()
     pid = compute_publish_id(state)
     await store.aput(PUBLISH_IDEMPOTENCY_NS, pid, {"status": "unknown", "publish_id": pid})
@@ -459,7 +464,12 @@ async def test_force_publish_bypasses_idempotency_guard(_browser_settings, monke
     from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
 
     state = _state(
-        publish_options={"dry_run": False, "account_id": "acc_forced", "force_publish": True}
+        publish_options={
+            "niche": "test-niche",
+            "dry_run": False,
+            "account_id": "acc_forced",
+            "force_publish": True,
+        }
     )
     store = _real_store()
     pid = compute_publish_id(state)
@@ -480,17 +490,19 @@ def test_publish_id_is_deterministic_within_window():
     """Same account+content+images inside the window ⇒ same publish_id."""
     from backend.agents.publisher import compute_publish_id
 
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_1"})
     a = compute_publish_id(state)
     b = compute_publish_id(dict(state))
     assert a and a == b
 
     # Different account or different content ⇒ different key.
-    other_acct = _state(publish_options={"dry_run": False, "account_id": "acc_2"})
+    other_acct = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_2"}
+    )
     assert compute_publish_id(other_acct) != a
     other_content = _state(
         copy_content={"selected_title": "完全不同", "body_text": "x", "hashtags": []},
-        publish_options={"dry_run": False, "account_id": "acc_1"},
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_1"},
     )
     assert compute_publish_id(other_content) != a
 
@@ -510,6 +522,7 @@ async def test_dry_run_top_level_guard_is_never_bypassed(monkeypatch):
     monkeypatch.setattr("backend.services.xhs_client.XHSClient", client)
 
     state = {
+        "niche": "test-niche",
         "session_id": "s",
         "account_id": "a",
         "dry_run": True,  # workflow-level dry_run
@@ -536,7 +549,7 @@ async def test_reconcile_unknown_publish_finds_confirmed_record():
         reconcile_unknown_publish,
     )
 
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_r"})
+    state = _state(publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_r"})
     store = _real_store()
     pid = compute_publish_id(state)
     await store.aput(
@@ -553,7 +566,9 @@ async def test_reconcile_unknown_publish_finds_history_match():
     from backend.agents.publisher import reconcile_unknown_publish
     from backend.memory.store import MemoryManager
 
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_r2"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_r2"}
+    )
     store = _real_store()
     mm = MemoryManager("acc_r2")
     await store.aput(
@@ -570,7 +585,9 @@ async def test_reconcile_unknown_publish_finds_history_match():
 async def test_reconcile_unknown_publish_uncertain_without_evidence():
     from backend.agents.publisher import reconcile_unknown_publish
 
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_r3"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_r3"}
+    )
     recon = await reconcile_unknown_publish(state, _real_store())
     assert recon["status"] == "uncertain"
 
@@ -647,7 +664,9 @@ async def _read_record(store, state):
 async def test_browser_timeout_after_click_marks_unknown_and_keeps_guard(
     _browser_settings, monkeypatch
 ):
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_bc"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_bc"}
+    )
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     _patch_client(monkeypatch, _client_returning(_browser_post_click_timeout()))
@@ -676,7 +695,9 @@ async def test_browser_timeout_after_click_marks_unknown_and_keeps_guard(
 async def test_browser_definite_failure_releases_guard(_browser_settings, monkeypatch):
     """A pre-submit rejection is known-failed: retry of the same content is
     allowed (no duplicate note was ever possible)."""
-    state = _state(publish_options={"dry_run": False, "account_id": "acc_bf"})
+    state = _state(
+        publish_options={"niche": "test-niche", "dry_run": False, "account_id": "acc_bf"}
+    )
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     _patch_client(monkeypatch, _client_returning(_browser_pre_submit_failure()))
@@ -718,7 +739,12 @@ async def test_force_publish_is_consumed_and_guard_rearmed(_browser_settings, mo
     store = _real_store()
     state_a = _state(
         copy_content={"selected_title": "A", "body_text": "a", "hashtags": []},
-        publish_options={"dry_run": False, "account_id": "acc_1", "force_publish": True},
+        publish_options={
+            "niche": "test-niche",
+            "dry_run": False,
+            "account_id": "acc_1",
+            "force_publish": True,
+        },
     )
     pid_a = compute_publish_id(state_a)
     await store.aput(PUBLISH_IDEMPOTENCY_NS, pid_a, {"status": "unknown", "publish_id": pid_a})

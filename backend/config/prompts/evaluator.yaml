@@ -90,3 +90,15 @@ user_template: |
 
   【受众偏好参考】
   {memory_context}
+
+context:
+  version: 1
+  variables:
+    account_niche: l2_account
+    memory_context: l4_memory
+    ripple_context: l5_observation
+    weights_block: l5_observation
+    pass_threshold: l5_observation
+    reject_threshold: l5_observation
+    bias_severity_note: l5_observation
+  required: [weights_block, pass_threshold, reject_threshold, bias_severity_note]

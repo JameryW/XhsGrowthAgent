@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.context.runtime import require_niche
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 
@@ -44,7 +44,7 @@ class VisualDesignerAgent(BaseAgent):
         creative_ctx = cm.build_creative_context(styles, [], cover_materials)
         system_prompt = self._build_system_prompt(state, extra_context=creative_ctx)
 
-        niche = state.get("niche", "母婴")
+        niche = require_niche(state)
         body_summary = copy.get("body_text", "")[:200] if copy else ""
         brief_brand = brief.get("brand_name", "") if brief else ""
         brief_requirements = brief.get("style_requirements", "") if brief else ""
@@ -58,12 +58,7 @@ class VisualDesignerAgent(BaseAgent):
 视觉要求：{brief_requirements}
 拍摄要求：{shooting_notes}{shooting_ctx}"""
 
-        response = await self._llm_ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ]
-        )
+        response = await self._llm_ainvoke(self._prompt_messages(state, system_prompt, user_msg))
 
         visual_plan = self._parse_json_response(cast(str, response.content))
 

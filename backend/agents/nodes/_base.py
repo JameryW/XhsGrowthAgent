@@ -13,7 +13,7 @@ from backend.state.schema import XHSGrowthState
 # before execute(); enrich_with_llm appends kind:"llm" entries to it when the
 # calling tool runs inside that scope. Drained and reset by __call__ after
 # execute() so tool-path token cost (e.g. de_ai_taste polish → deepseek-v4-flash)
-# reaches state.performance_log and the /analytics/costs reader. Default None
+# reaches the Event store (P1a-S2) and the /analytics/costs reader. Default None
 # means "not in an agent scope" (omp/manual standalone callers) — capture is
 # skipped and the call still succeeds. Set/reset token isolates per-execute.
 _tool_llm_cost: contextvars.ContextVar[list[dict[str, Any]] | None] = contextvars.ContextVar(
@@ -160,23 +160,29 @@ def _duration_seconds(started_at: str, completed_at: str) -> float:
         return 0.0
 
 
-def record_human_wait(
+async def record_human_wait(
     state: dict[str, Any], gate: str, *, now_iso: str | None = None
 ) -> dict[str, Any]:
-    """Build a human_wait performance_log entry for a gate resume.
+    """Build a human_wait event entry for a gate resume.
 
     `entered_at` is the gate's last preceding node completion — looked up by
-    scanning performance_log for the most recent `kind=="node"` entry whose
-    `completed_at` precedes the gate interrupt. `resumed_at` is now (or the
-    injected `now_iso` for testability). Returns the entry; caller appends it
-    to the state-update dict under `performance_log: [entry]` so the
-    `_append_list` reducer merges it.
+    scanning the thread's telemetry for the most recent `kind=="node"` entry
+    whose `completed_at` precedes the gate interrupt. `resumed_at` is now (or
+    the injected `now_iso` for testability). Returns the entry; the caller
+    writes it to the Event store (P1a-S2 — it is no longer merged into state,
+    so the checkpoint stops carrying telemetry).
+
+    Async because the lookup reads through :func:`load_perf_log`: post-S2
+    threads keep their entries in the Event store, and a legacy thread resumed
+    after the migration has both sources.
     """
     from datetime import UTC, datetime
 
+    from backend.state.events import load_perf_log, resolve_thread_id
+
     if now_iso is None:
         now_iso = datetime.now(UTC).isoformat()
-    perf_log = state.get("performance_log") or []
+    perf_log = await load_perf_log(resolve_thread_id(state), state)
     entered_at = ""
     for entry in reversed(perf_log):
         if entry.get("kind") in ("node", None) and entry.get("completed_at"):
