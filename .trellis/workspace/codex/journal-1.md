@@ -670,3 +670,36 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: owner 豁免关闭最后双任务，全清
+
+**Date**: 2026-09-22
+**Task**: owner 豁免关闭最后双任务，全清
+**Branch**: `main`
+
+### Summary
+
+用户指示跳过签字直接关闭：以豁免（风险接受，非门槛通过）记录 G1-G8 残留风险，归档 07-17/08-05，活跃任务归零。修复被 index.lock 中断的分裂提交并补推；清理 09-11-p1-context-compiler 空 research 残留。远端已同步。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f139d7a1a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
