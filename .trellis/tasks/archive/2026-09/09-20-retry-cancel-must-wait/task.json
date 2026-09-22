@@ -11,7 +11,7 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-09-20",
-  "completedAt": "2026-09-20",
+  "completedAt": "2026-09-22",
   "branch": "feat/retry-cancel-must-wait",
   "base_branch": "main",
   "worktree_path": null,
