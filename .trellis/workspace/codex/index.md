@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
+- **Total Sessions**: 23
 - **Last Active**: 2026-09-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~738 | Active |
+| `journal-1.md` | ~771 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-09-22 | README 双语架构同步 | HEAD | `main` |
 | 22 | 2026-09-22 | 架构升级完成度实质审计 | HEAD | `main` |
 | 21 | 2026-09-22 | owner 豁免关闭最后双任务，全清 | `f139d7a1a` | `main` |
 | 20 | 2026-09-22 | parked 双任务回归复验 | HEAD | `main` |

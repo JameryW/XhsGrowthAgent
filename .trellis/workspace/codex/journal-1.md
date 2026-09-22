@@ -736,3 +736,36 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: README 双语架构同步
+
+**Date**: 2026-09-22
+**Task**: README 双语架构同步
+**Branch**: `main`
+
+### Summary
+
+README 中英事实同步：内核口径、Kernel layers 新节、真实模型路由、visual 路径修正、7 契约文档链接；验收对齐/链接/路径/diff-check 全绿，已提交归档并推送。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
