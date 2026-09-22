@@ -703,3 +703,36 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: 架构升级完成度实质审计
+
+**Date**: 2026-09-22
+**Task**: 架构升级完成度实质审计
+**Branch**: `main`
+
+### Summary
+
+独立复算：PR#577-627 合并提交连续无缺口；9/9 交付物在现主干均存在（state/context/tools-runtime/leases/machine-modes/policy/publish-gate 及 6 份契约文档），tool_runtime_gate 绿。遗留 8 条重核：R1/R6 已由#630-641 关闭（租约+孤儿0），R3 系误登记已撤回，R5 声明性钉断言；R2（3 处直调=协议契约）/R4（零调用者+反向断言）/R7（写侧不合并）/R8（创建时间窗口+保守方向）仍刻意开放且与登记一致。结论：升级交付完成，4 条已知开放残留，无新增缺口。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
