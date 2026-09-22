@@ -3,7 +3,7 @@
   "name": "fix-data-sync-failure",
   "title": "解决数据同步失败",
   "description": "",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "creator-stats-sync",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "JameryW",
   "assignee": "JameryW",
   "createdAt": "2026-08-11",
-  "completedAt": null,
-  "branch": "codex/fix-creator-stats-sync-failure",
+  "completedAt": "2026-09-22",
+  "branch": null,
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-22 复核归档：分页兼容（client.py _page_index 兼容 page/page_num/pageNo 与 0/1 起始）、CDP 超时收敛与 BROWSER_UNAVAILABLE 错误分类（pipeline/analytics）、pool 生命周期收口均已在 main（27ba08ecd/acef12708/8d949c5ff 等）；tests/unit/services/creator_stats 249 passed。验收标准代码项全覆盖，归档。",
   "meta": {}
 }
