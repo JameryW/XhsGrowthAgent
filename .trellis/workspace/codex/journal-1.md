@@ -571,3 +571,36 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 归档 09-18～09-20 已合并任务
+
+**Date**: 2026-09-22
+**Task**: 归档 09-18～09-20 已合并任务
+**Branch**: `main`
+
+### Summary
+
+核验 PR#630-#641 全部 MERGED 后归档 11 个 completed 任务（task.py archive，各自 auto-commit），活跃任务 27→16。uv.lock 附带 5846 行换行符 churn 已 revert 未入库。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9a6b5ad03` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
