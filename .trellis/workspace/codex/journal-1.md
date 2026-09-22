@@ -538,3 +538,36 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: P1a/P1b 快照落盘、PR#642 开关与主干同步
+
+**Date**: 2026-09-22
+**Task**: P1a/P1b 快照落盘、PR#642 开关与主干同步
+**Branch**: `main`
+
+### Summary
+
+本地 P1a+P1b 快照提交 ccac0e03 并推分支建 PR#642；fetch 后发现远端已完整落地 P1a/P1b 及后续演进（runtime-upgrade 全系归档），PR#642 实为过期平行副本。补提交回填后关闭 PR#642、删除分支，本地 main reset 到 origin/main（1493cf50e）。同步后全量门禁 3615 passed / 3 skipped。教训：开工前先 fetch 对齐远端；git untracked-cache 损坏曾隐藏新文件，已禁用。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1493cf50e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
