@@ -461,3 +461,7 @@ owner/运营验收及 Lighthouse/截图归档，任务保持 `in_progress`。
 - vue-tsc type-check 通过；i18n:check 2317 keys 一致。
 - 后端方向 1 相关：test_db_upsert_skip + status 复用 + brief 状态共 54 通过。
 - 外部总闸无变化：三档人工走查、严格空态、漏斗埋点签字、Lighthouse/截图发布归档仍待发布方。任务继续保持 in_progress。
+
+## 25. 2026-09-22 签字催办（G1-G4）
+
+仓外门槛已收敛为催办单 docs/acceptance/signoff-request-2026-09-22.md 的 G1（人工走查）、G2（严格空态）、G3（漏斗埋点）、G4（Lighthouse/截图验收）。证据链复核无腐烂（5 个 acceptance JSON 可解析）。集齐签字后归档本任务。

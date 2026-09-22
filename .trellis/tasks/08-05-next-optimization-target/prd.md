@@ -350,3 +350,7 @@ Ripple health-check ReadTimeout（最终已恢复），并声明这是单窗口 
 - 方向 1 skip-unchanged 回归：test_db_upsert_skip 等 54 通过；main 全量后端此前 3615 passed。
 - 前端 775/775、type-check、i18n（2317 keys）全绿（一次 flaky 环境噪声已排除）。
 - 仍缺的仓外门槛无变化（质量样本签字、漏斗埋点签字、release owner 对截图与 baseline 签字、发布方 Lighthouse）。任务继续保持 in_progress，不得因复验全绿改判。
+
+## 2026-09-22 签字催办（G5-G8，G7 与 07-17 共用 G3）
+
+仓外门槛已收敛为催办单 docs/acceptance/signoff-request-2026-09-22.md 的 G5（方向1对照产品复核）、G6（路由样本质量评审+POLISH 预算决策）、G7（漏斗埋点签字）、G8（baseline 的 SLO 效力）。证据链复核无腐烂。集齐签字后归档本任务。
