@@ -21,6 +21,6 @@
   "children": [],
   "parent": "09-11-runtime-upgrade",
   "relatedFiles": [],
-  "notes": "决策已冻结（2026-09-14，D1'-D6'）。S1-S5 已在工作区落地。2026-09-22 门禁：pytest tests/unit tests/integration 2413 passed / 3 skipped；ruff check+format 干净；mypy backend --python-version 3.12 零错。RetrievalResult 不再覆盖 BaseModel.__iter__。本地对象库曾丢 P1a 提交，P1a 与 P1b 只能作为一个快照保留，未推远程。",
+  "notes": "决策已冻结（2026-09-14，D1'-D6'）。S1-S5 已在工作区落地。2026-09-22 门禁：pytest tests/unit tests/integration 2413 passed / 3 skipped；ruff check+format 干净；mypy backend --python-version 3.12 零错。RetrievalResult 不再覆盖 BaseModel.__iter__。本地对象库曾丢 P1a 提交，P1a 与 P1b 只能作为一个快照保留，未推远程。2026-09-22 快照已提交：ccac0e03（与 P1a 同快照）。待 push + PR。",
   "meta": {}
 }
