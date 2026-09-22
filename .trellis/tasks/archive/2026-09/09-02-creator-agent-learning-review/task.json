@@ -3,7 +3,7 @@
   "name": "creator-agent-learning-review",
   "title": "Creator Agent 学习信号审核闭环",
   "description": "",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-09-02",
-  "completedAt": null,
+  "completedAt": "2026-09-22",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-22 复核归档：实现已在 main（PR #560-#566 及 P2a 后续提交），tests/unit/creator_agent + api + parity 共 179 passed / 2 skipped，ruff 与 mypy（--python-version 3.12）干净。验收标准对实现与测试均已覆盖，归档。",
   "meta": {}
 }
