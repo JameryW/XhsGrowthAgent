@@ -454,3 +454,10 @@ serious/critical=0，性能预算失败=0。该次明确允许当前部署已有
 这补齐了 provider 实调证据，但不替代内容 owner 对 POLISH、MOCK_GEN、VIRAL_MATCHING
 样本的人工质量复核。发布总闸仍只剩真实部署三档明暗主题人工归档、严格空态、漏斗埋点
 owner/运营验收及 Lighthouse/截图归档，任务保持 `in_progress`。
+
+## 24. 2026-09-22 主干回归复验（只读，不改判）
+
+- 前端全量 vitest：70 文件 / 775 测试通过（连跑 3 次；首次另有 1 失败 + 3 未处理错误，均为 localhost:3000 ECONNREFUSED 环境噪声，后续两轮零失败，判 flaky 非回归）。
+- vue-tsc type-check 通过；i18n:check 2317 keys 一致。
+- 后端方向 1 相关：test_db_upsert_skip + status 复用 + brief 状态共 54 通过。
+- 外部总闸无变化：三档人工走查、严格空态、漏斗埋点签字、Lighthouse/截图发布归档仍待发布方。任务继续保持 in_progress。

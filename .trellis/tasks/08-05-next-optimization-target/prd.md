@@ -344,3 +344,9 @@ Ripple health-check ReadTimeout（最终已恢复），并声明这是单窗口 
 
 任务代码和证据材料已完成，仍需产品/内容 owner、运营和 release owner 对质量样本、截图、漏斗
 埋点及单窗口 runtime baseline 做外部签字，因此任务状态保持 `in_progress`。
+
+## 2026-09-22 主干回归复验（只读，不改判）
+
+- 方向 1 skip-unchanged 回归：test_db_upsert_skip 等 54 通过；main 全量后端此前 3615 passed。
+- 前端 775/775、type-check、i18n（2317 keys）全绿（一次 flaky 环境噪声已排除）。
+- 仍缺的仓外门槛无变化（质量样本签字、漏斗埋点签字、release owner 对截图与 baseline 签字、发布方 Lighthouse）。任务继续保持 in_progress，不得因复验全绿改判。
