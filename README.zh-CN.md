@@ -1,6 +1,6 @@
 # 小红书增长引擎
 
-面向小红书（Xiaohongshu / RedNote）的 AI 内容运营工作台，基于 LangGraph 多智能体工作流构建，并在发布前保留人工审核边界。
+面向小红书（Xiaohongshu / RedNote）的 AI 内容运营工作台，按 Kernel-centric 多智能体运行时构建，并在发布前保留人工审核边界。LangGraph 只负责执行任务图；状态、上下文、工具、调度和决策等系统职责由其下方的确定性内核层承担。
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
@@ -160,7 +160,7 @@
                        数据分析 + 用户互动
 ```
 
-工作流支持恢复，并会暴露状态、中间结果、审核决策和性能日志。审核门是明确的产品边界：智能体可以准备和评估内容，但发布动作仍然可见、可控。
+工作流支持恢复，并会暴露状态、中间结果、审核决策和性能日志。审核门是明确的产品边界：智能体可以准备和评估内容，但发布动作仍然可见、可控。发布会先经过确定性策略引擎和人工确认，再由 Tool Gateway 执行，每次执行都会返回不可变回执。
 
 ## Web 工作区
 
@@ -188,9 +188,23 @@ Vue 3 前端围绕创作、审核、增长和账号运营组织：
 
 - **后端：** Python 3.11+、FastAPI、LangGraph、Pydantic、Typer、Uvicorn
 - **前端：** Vue 3、Vite、Pinia、Vue Router、Tailwind CSS、ECharts、xterm.js
-- **持久化：** 开发环境使用 SQLite/内存检查点，生产环境使用 PostgreSQL 和 Redis
+- **持久化：** 开发环境使用 SQLite/内存检查点，生产环境使用 PostgreSQL 和 Redis。工作流遥测写入 `workflow_events` 表，持久调度走执行租约，都不在检查点里。
 - **浏览器自动化：** Playwright，支持按账号隔离浏览器/CDP 会话
 - **可选预测引擎：** Ripple CAS，通过 HTTP 集成
+
+### 内核分层
+
+LangGraph 只执行任务图，系统职责由其下方的确定性内核层承担：
+
+| 分层 | 位置 | 职责 |
+| --- | --- | --- |
+| RuntimeState / Artifact / Event 三层 | `backend/state/` | 小而有界的检查点；大正文进 artifact store；遥测进 event store；所有读面收口 hydration |
+| Context Compiler | `backend/context/` | recall → rerank → dedup → freshness → token budget → compile；L0–L5 稳定 prompt 分层 |
+| Tool Runtime | `backend/tools/runtime/` | Agent 只声明能力；超时、重试、权限、限流、错误与追踪在网关统一收口 |
+| Durable Scheduler | `backend/db/execution_leases.py`、`backend/api/routes/_takeover.py` | 租约获取/心跳/提交/过期，重启后安全接管 |
+| Decision / Action | `backend/creator_agent/policy.py`、`backend/agents/nodes/publish_gate.py` | PublishIntent → 确定性策略 → 人工确认 → 执行器 → 不可变回执 |
+
+设计说明：[架构约定](./docs/architecture-conventions.md)、[任务图规划](./docs/planning.md)、[上下文编译器基线](./docs/context-compiler-baseline.md)、[工具运行时](./docs/tool-runtime.md)、[执行平面](./docs/execution-plane.md)、[发布动作协议](./docs/publish-action-protocol.md)、[结果学习](./docs/outcome-learning.md)。
 
 ### Agent 与工具层
 
@@ -201,21 +215,18 @@ Vue 3 前端围绕创作、审核、增长和账号运营组织：
 | `copywriter` | `hashtag_researcher`、`title_generator` | 笔记文案和版本 |
 | `visual_designer` | `image_prompt_generator`、`layout_recommender` | 封面和视觉方案 |
 | `review_gate` | Human-in-the-loop interrupt | 审核或修改意见 |
-| `publisher` | `xhs_publisher`、`ab_test_manager`、`post_scheduler` | 发布请求和实验设置 |
+| `publisher` | `xhs_publisher`、`ab_test_manager`、`post_scheduler` | 策略门控发布：意图 → 确定性策略 → 人工确认 → 网关执行 + 不可变回执 |
 | `analyst` | `analytics_reader`、`pattern_detector`、`report_generator` | 表现洞察 |
 | `engagement` | `comment_replier`、`dm_handler` | 账号互动动作 |
 
 ### 模型路由
 
-系统按任务类型选择更适合的模型，具体提供商由环境变量配置，无需修改工作流即可调整：
+系统按任务类型选择更适合的模型，具体提供商由环境变量配置，无需修改工作流即可调整。当前默认（见 `backend/config/models.py`）大部分任务走 `astron-code-latest`，窄生成任务走 `deepseek-v4-flash`：
 
 | 任务 | 项目默认路由 |
 | --- | --- |
-| 路由与趋势侦察 | DeepSeek |
-| 策略与文案 | Claude Sonnet 4 |
-| 视觉规划与分析 | GPT-4o |
-| 发布 | Qwen Plus |
-| 用户互动 | DeepSeek |
+| 路由、趋势侦察、策略、文案、视觉规划、分析、发布、用户互动 | `astron-code-latest` |
+| 润色（`TaskType.POLISH`）、Mock 生成（`TaskType.MOCK_GEN`）、爆款匹配（`TaskType.VIRAL_MATCHING`） | `deepseek-v4-flash` |
 
 ## 安装
 
@@ -336,7 +347,7 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 视觉层使用数据驱动的推荐引擎：从小红书帖子中提取模式，按场景保存并过期，再依据内容类型、兼容性、热度、配色和趋势分数推荐布局与风格。
 
-支持美食、旅行、穿搭、美妆、生活方式、健身和家居等场景，相关模型位于 `backend/tools/visual/`，由视觉设计工作流调用。
+支持美食、旅行、穿搭、美妆、生活方式、健身和家居等场景，推荐模型位于 `backend/services/visual_analysis.py`，由视觉设计工作流经 `backend/tools/content/` 调用。
 
 ## 测试与开发
 
@@ -357,6 +368,13 @@ npm run build
 
 更多文档：
 
+- [架构约定](./docs/architecture-conventions.md)
+- [任务图规划](./docs/planning.md)
+- [上下文编译器基线](./docs/context-compiler-baseline.md)
+- [工具运行时](./docs/tool-runtime.md)
+- [结果学习](./docs/outcome-learning.md)
+- [发布动作协议](./docs/publish-action-protocol.md)
+- [测试指南](./docs/testing-guide.md)
 - [前端 UX 与交互规范](./docs/frontend-ux-optimization.md)
 - [部署指南](./docs/deployment.md)
 - [执行平面：租约 / 接管 / 边界](./docs/execution-plane.md)

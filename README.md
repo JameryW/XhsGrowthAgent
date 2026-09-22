@@ -1,6 +1,6 @@
 # XHS Growth Agent
 
-AI-assisted content operations for Xiaohongshu (小红书 / RedNote), built as a LangGraph multi-agent workflow with a human approval boundary.
+AI-assisted content operations for Xiaohongshu (小红书 / RedNote), built as a Kernel-centric multi-agent runtime with a human approval boundary. LangGraph executes the task graph; system responsibilities (state, context, tools, scheduling, decisions) live in deterministic kernel layers underneath.
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
@@ -160,7 +160,7 @@ Trend Scout → Content Strategist → Copywriter + Visual Designer
                                   Analytics + Engagement
 ```
 
-Runs are resumable and expose status, intermediate results, review decisions, and performance logs. The review gate is deliberate: the agent can prepare and evaluate content, but the publishing boundary remains visible and controllable.
+Runs are resumable and expose status, intermediate results, review decisions, and performance logs. The review gate is deliberate: the agent can prepare and evaluate content, but the publishing boundary remains visible and controllable. Publishing runs through a deterministic policy engine and human confirmation before the Tool Gateway executes it, and every execution returns an immutable receipt.
 
 ## Web workspace
 
@@ -188,9 +188,23 @@ The public Showcase and Replay are safe-to-browse entry points. The private work
 
 - **Backend:** Python 3.11+, FastAPI, LangGraph, Pydantic, Typer, Uvicorn
 - **Frontend:** Vue 3, Vite, Pinia, Vue Router, Tailwind CSS, ECharts, xterm.js
-- **Persistence:** SQLite/in-memory checkpoints for development; PostgreSQL and Redis for production deployments
+- **Persistence:** SQLite/in-memory checkpoints for development; PostgreSQL and Redis for production deployments. Workflow telemetry lives in the `workflow_events` table and durable scheduling in execution leases, not in the checkpoint.
 - **Browser automation:** Playwright with per-account browser/CDP session support
 - **Optional prediction engine:** Ripple CAS, connected through an HTTP integration
+
+### Kernel layers
+
+LangGraph executes the task graph; the system responsibilities live in deterministic kernel layers underneath:
+
+| Layer | Location | Responsibility |
+| --- | --- | --- |
+| RuntimeState / Artifact / Event tiers | `backend/state/` | Small bounded checkpoint; large bodies in the artifact store; telemetry in the event store; one hydration seam for all read surfaces |
+| Context Compiler | `backend/context/` | recall → rerank → dedup → freshness → token budget → compile; L0–L5 stable prompt layers |
+| Tool Runtime | `backend/tools/runtime/` | Agents declare capabilities; timeout, retry, permission, rate limit, error, and tracing enforced at the gateway |
+| Durable Scheduler | `backend/db/execution_leases.py`, `backend/api/routes/_takeover.py` | Lease acquire/heartbeat/commit/expiry with safe takeover after restarts |
+| Decision / Action | `backend/creator_agent/policy.py`, `backend/agents/nodes/publish_gate.py` | PublishIntent → deterministic policy → human confirm → executor → immutable receipt |
+
+Design notes: [architecture conventions](./docs/architecture-conventions.md), [task-graph planning](./docs/planning.md), [context-compiler baseline](./docs/context-compiler-baseline.md), [tool runtime](./docs/tool-runtime.md), [execution plane](./docs/execution-plane.md), [publish-action protocol](./docs/publish-action-protocol.md), [outcome learning](./docs/outcome-learning.md).
 
 ### Agent and tool layers
 
@@ -201,21 +215,18 @@ The public Showcase and Replay are safe-to-browse entry points. The private work
 | `copywriter` | `hashtag_researcher`, `title_generator` | Note copy and variants |
 | `visual_designer` | `image_prompt_generator`, `layout_recommender` | Cover and visual plan |
 | `review_gate` | Human-in-the-loop interrupt | Approval or revision feedback |
-| `publisher` | `xhs_publisher`, `ab_test_manager`, `post_scheduler` | Publish request and experiment setup |
+| `publisher` | `xhs_publisher`, `ab_test_manager`, `post_scheduler` | Policy-gated publish: intent → deterministic policy → human confirm → gateway execution + immutable receipt |
 | `analyst` | `analytics_reader`, `pattern_detector`, `report_generator` | Performance insights |
 | `engagement` | `comment_replier`, `dm_handler` | Account engagement actions |
 
 ### Model routing
 
-Task-specific routing lets each stage use the provider best suited to the job. Providers are configured through environment variables and can be changed without rewriting the workflow.
+Task-specific routing lets each stage use the provider best suited to the job. Providers are configured through environment variables and can be changed without rewriting the workflow. Current defaults (see `backend/config/models.py`) route most work to `astron-code-latest`; narrow generation tasks use `deepseek-v4-flash`:
 
 | Task | Default route in the project |
 | --- | --- |
-| Routing and scouting | DeepSeek |
-| Strategy and writing | Claude Sonnet 4 |
-| Visual planning and analysis | GPT-4o |
-| Publishing | Qwen Plus |
-| Engagement | DeepSeek |
+| Routing, scouting, strategy, writing, visual planning, analysis, publishing, engagement | `astron-code-latest` |
+| Polish (`TaskType.POLISH`), mock generation (`TaskType.MOCK_GEN`), viral matching (`TaskType.VIRAL_MATCHING`) | `deepseek-v4-flash` |
 
 ## Installation
 
@@ -336,7 +347,7 @@ Use `/xhs [topic]` to start a workflow and `/xhs-review` to review pending conte
 
 The visual layer uses data-driven recommendations. It extracts patterns from XHS posts, stores scene-level data with expiry, and recommends layouts and styles by content type, compatibility, popularity, palette, and trend score.
 
-Supported scene families include food, travel, fashion, beauty, lifestyle, fitness, and home decor. The recommendation models live under `backend/tools/visual/` and are consumed by the visual designer workflow.
+Supported scene families include food, travel, fashion, beauty, lifestyle, fitness, and home decor. The recommendation models live in `backend/services/visual_analysis.py` and are consumed by the visual designer workflow through `backend/tools/content/`.
 
 ## Testing and development
 
@@ -357,6 +368,13 @@ npm run build
 
 Further guides:
 
+- [Architecture conventions](./docs/architecture-conventions.md)
+- [Task-graph planning](./docs/planning.md)
+- [Context-compiler baseline](./docs/context-compiler-baseline.md)
+- [Tool runtime](./docs/tool-runtime.md)
+- [Outcome learning](./docs/outcome-learning.md)
+- [Publish-action protocol](./docs/publish-action-protocol.md)
+- [Testing guide](./docs/testing-guide.md)
 - [Frontend UX and interaction conventions](./docs/frontend-ux-optimization.md)
 - [Deployment](./docs/deployment.md)
 - [Execution plane: leases, takeover, boundary](./docs/execution-plane.md)
