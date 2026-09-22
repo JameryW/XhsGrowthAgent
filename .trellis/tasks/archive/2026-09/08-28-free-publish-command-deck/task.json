@@ -3,7 +3,7 @@
   "name": "free-publish-command-deck",
   "title": "Expose free publishing controls",
   "description": "",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-08-28",
-  "completedAt": null,
+  "completedAt": "2026-09-22",
   "branch": "codex/free-publish-command-deck",
   "base_branch": "main",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-22 复核归档：AgentTUI 免费命令网格 Publishing 分组（/publish /copy）已落地，回归测试 tests/views/AgentTUI.spec.ts 46/46 通过（含 publishing/manual-copy 可见性用例）。验收通过，归档。",
   "meta": {}
 }
