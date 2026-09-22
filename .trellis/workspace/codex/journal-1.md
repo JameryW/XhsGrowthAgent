@@ -637,3 +637,36 @@ Finished the in-progress anchor-display task: list_drafts carries style_id/play_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: parked 双任务回归复验
+
+**Date**: 2026-09-22
+**Task**: parked 双任务回归复验
+**Branch**: `main`
+
+### Summary
+
+07-17/08-05 虽被仓外总闸 park，复验代码仍绿：前端 775/775（一次 localhost:3000 flaky 环境噪声）、type-check、i18n 2317 keys、后端 upsert 相关 54 通过。复验结论追加进两任务 prd，不改判 in_progress。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
