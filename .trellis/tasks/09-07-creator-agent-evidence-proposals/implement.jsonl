@@ -1,7 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Layering rule: creator_agent core must not import backend/memory or backend/db/creative_memory"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "Typed domain errors vs ERROR_VALIDATION mapping for the new read route"}
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Memory/Postgres dual-adapter parity convention this read inherits"}
-{"file": ".trellis/tasks/09-07-creator-agent-evidence-proposals/research/creative-memory-substrate.md", "reason": "Records which Creative Memory surface is safe (durable enumeration) and which injects cold-start defaults (recall_*)"}
-{"file": "CONTEXT.md", "reason": "Canonical Evidence / Creator Model / Creative Memory boundary terms"}
-{"file": "docs/creator-agent.md", "reason": "Contract doc that must stay synchronized"}
