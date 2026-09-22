@@ -3,7 +3,7 @@
   "name": "free-creation-action-deck",
   "title": "Polish free creation workspace action deck",
   "description": "",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-08-28",
-  "completedAt": null,
+  "completedAt": "2026-09-22",
   "branch": "codex/free-creation-action-deck",
   "base_branch": "codex/free-anchor-display",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-22 复核归档：last_publish/publish_failed 过滤/徽章/概览计数已在 spec 与 list 响应落地；后端 free 路由测试 116 passed。验收通过，归档。",
   "meta": {}
 }
