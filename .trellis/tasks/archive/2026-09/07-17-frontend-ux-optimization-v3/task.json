@@ -3,7 +3,7 @@
   "name": "frontend-ux-optimization-v3",
   "title": "前端用户体验全面优化（展示/工作流/分析/评估）",
   "description": "",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "JameryW",
   "assignee": "JameryW",
   "createdAt": "2026-07-17",
-  "completedAt": null,
+  "completedAt": "2026-09-22",
   "branch": null,
   "base_branch": "feat/analytics-visual-polish",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-22 owner 豁免关闭：G1-G4 签字豁免，接受残留风险（严格空态未验、未获发布方走查/Lighthouse确认），详见 docs/acceptance/signoff-request-2026-09-22.md 豁免记录。归档。",
   "meta": {}
 }
