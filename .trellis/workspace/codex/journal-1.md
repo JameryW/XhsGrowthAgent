@@ -802,3 +802,36 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: 15 个残留分支审计与清理
+
+**Date**: 2026-09-23
+**Task**: 15 个残留分支审计与清理
+**Branch**: `main`
+
+### Summary
+
+10 条 cherry-clean（补丁已在主干）+ 5 条内容核对（探针/showcase 初始化移除/风险能力/前端基建均已等价落地，唯一独有测试文件 import 已死路径作废）。用户确认后删除全部 15 个远端分支并 prune，远端仅剩 main。分析方法：git cherry + merge-base 文件存在性 + 关键符号抽查。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
