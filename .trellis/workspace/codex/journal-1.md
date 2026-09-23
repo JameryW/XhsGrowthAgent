@@ -769,3 +769,36 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: 分支与垃圾清理
+
+**Date**: 2026-09-23
+**Task**: 分支与垃圾清理
+**Branch**: `main`
+
+### Summary
+
+删本地 .workbuddy scratch、924MB 死 venv、logs 旧输出；删远端 64 个已合并分支（开放 PR 为 0），15 个含独有提交的未合并分支保留待定。本地仅 main，远端剩 main+15，工作树干净已同步。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
