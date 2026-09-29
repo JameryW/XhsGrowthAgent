@@ -204,9 +204,7 @@ class _FallbackInvocation:
     def with_structured_output(self, *args: Any, **kwargs: Any) -> _FallbackInvocation:
         return _FallbackInvocation(
             with_retry(self._primary.with_structured_output(*args, **kwargs)),
-            lambda: with_retry(
-                self._fallback_factory().with_structured_output(*args, **kwargs)
-            ),
+            lambda: with_retry(self._fallback_factory().with_structured_output(*args, **kwargs)),
             self._primary_model_id,
             self._fallback_model_id,
         )
