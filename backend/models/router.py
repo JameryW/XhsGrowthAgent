@@ -15,8 +15,14 @@ if TYPE_CHECKING:
     # every import of backend.models.router (pulled by agents.base). Deferred.
     from langchain_core.language_models import BaseChatModel
 
-from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_model_id
-from backend.models.retry import with_retry
+from backend.config.models import (
+    MODEL_FALLBACKS,
+    ModelConfig,
+    ModelProvider,
+    TaskType,
+    resolve_model_id,
+)
+from backend.models.retry import with_fallback, with_retry
 
 # ChatAnthropic / ChatOpenAI are imported lazily inside _create_model (see
 # below). Importing them at module load drags in langchain_anthropic +
@@ -138,7 +144,28 @@ class ModelRouter:
 
         if cache_key not in self._cache:
             config = get_model_config(model_id)
-            self._cache[cache_key] = with_retry(_create_model(config, timeout=task_timeout))
+            primary = with_retry(_create_model(config, timeout=task_timeout))
+            fallback_model_id = MODEL_FALLBACKS.get(model_id)
+            if fallback_model_id:
+                fallback_model: BaseChatModel | None = None
+
+                def create_fallback() -> BaseChatModel:
+                    nonlocal fallback_model
+                    if fallback_model is None:
+                        fallback_config = get_model_config(fallback_model_id)
+                        fallback_model = with_retry(
+                            _create_model(fallback_config, timeout=task_timeout)
+                        )
+                    return fallback_model
+
+                self._cache[cache_key] = with_fallback(
+                    primary,
+                    create_fallback,
+                    primary_model_id=model_id,
+                    fallback_model_id=fallback_model_id,
+                )
+            else:
+                self._cache[cache_key] = primary
         return self._cache[cache_key]
 
     def get_model_for_task(self, task: str) -> BaseChatModel:

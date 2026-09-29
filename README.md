@@ -221,12 +221,14 @@ Design notes: [architecture conventions](./docs/architecture-conventions.md), [t
 
 ### Model routing
 
-Task-specific routing lets each stage use the provider best suited to the job. Providers are configured through environment variables and can be changed without rewriting the workflow. Current defaults (see `backend/config/models.py`) route most work to `astron-code-latest`; narrow generation tasks use `deepseek-v4-flash`:
+Task-specific routing lets each stage use the provider best suited to the job. Providers are configured through environment variables and can be changed without rewriting the workflow. Current defaults (see `backend/config/models.py`) use MiMo V2.6 Flash for general work and DeepSeek V4 Flash for specialized lightweight tasks and transient-failure backup:
 
 | Task | Default route in the project |
 | --- | --- |
-| Routing, scouting, strategy, writing, visual planning, analysis, publishing, engagement | `astron-code-latest` |
+| Routing, scouting, strategy, writing, visual planning, analysis, publishing, engagement, content analysis, version generation, brief analysis, shooting plans, evaluation | `mimo-v2.6-flash` |
 | Polish (`TaskType.POLISH`), mock generation (`TaskType.MOCK_GEN`), viral matching (`TaskType.VIRAL_MATCHING`) | `deepseek-v4-flash` |
+
+If a MiMo call exhausts retries on a rate-limit, server, network, or timeout error, the router fails over to `deepseek-v4-flash`. Authentication and invalid-request errors do not fail over. Set both `XIAOMIMIMO_API_KEY` and `DEEPSEEK_API_KEY` to enable the primary and backup providers.
 
 ## Installation
 

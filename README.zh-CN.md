@@ -221,12 +221,14 @@ LangGraph 只执行任务图，系统职责由其下方的确定性内核层承�
 
 ### 模型路由
 
-系统按任务类型选择更适合的模型，具体提供商由环境变量配置，无需修改工作流即可调整。当前默认（见 `backend/config/models.py`）大部分任务走 `astron-code-latest`，窄生成任务走 `deepseek-v4-flash`：
+系统按任务类型选择模型，提供商通过环境变量配置。当前默认（见 `backend/config/models.py`）通用任务使用 MiMo V2.6 Flash，窄任务使用 DeepSeek V4 Flash；MiMo 遇到可重试故障且重试耗尽后，会切换到 DeepSeek：
 
 | 任务 | 项目默认路由 |
 | --- | --- |
-| 路由、趋势侦察、策略、文案、视觉规划、分析、发布、用户互动 | `astron-code-latest` |
+| 路由、趋势侦察、策略、文案、视觉规划、分析、发布、用户互动、内容分析、版本生成、简报分析、拍摄计划、质量评估 | `mimo-v2.6-flash` |
 | 润色（`TaskType.POLISH`）、Mock 生成（`TaskType.MOCK_GEN`）、爆款匹配（`TaskType.VIRAL_MATCHING`） | `deepseek-v4-flash` |
+
+只有限流、服务端、网络或超时错误在 MiMo 重试耗尽后才会切换；鉴权和无效请求错误会直接返回。启用主模型和备用模型需配置 `XIAOMIMIMO_API_KEY` 与 `DEEPSEEK_API_KEY`。
 
 ## 安装
 

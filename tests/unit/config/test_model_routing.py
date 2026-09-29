@@ -11,16 +11,16 @@ from backend.config.models import (
 
 def test_resolve_model_id_default():
     """默认路由：每个任务类型映射到正确的模型"""
-    assert resolve_model_id(TaskType.WRITING) == "astron-code-latest"
-    assert resolve_model_id(TaskType.SCOUTING) == "astron-code-latest"
-    assert resolve_model_id(TaskType.ANALYSIS) == "astron-code-latest"
-    assert resolve_model_id(TaskType.PUBLISHING) == "astron-code-latest"
+    assert resolve_model_id(TaskType.WRITING) == "mimo-v2.6-flash"
+    assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.6-flash"
+    assert resolve_model_id(TaskType.ANALYSIS) == "mimo-v2.6-flash"
+    assert resolve_model_id(TaskType.PUBLISHING) == "mimo-v2.6-flash"
 
 
 def test_mock_gen_routes_to_light_model():
-    """blogger_scout 虚构候选生成降级轻模型；trend_scout 保持 SCOUTING→astron."""
+    """blogger_scout uses DeepSeek; trend_scout uses the MiMo default."""
     assert resolve_model_id(TaskType.MOCK_GEN) == "deepseek-v4-flash"
-    assert resolve_model_id(TaskType.SCOUTING) == "astron-code-latest"
+    assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.6-flash"
 
 
 def test_resolve_model_id_override():
@@ -34,6 +34,10 @@ def test_get_model_config():
     config = get_model_config("deepseek-v4-flash")
     assert config.provider == ModelProvider.DEEPSEEK
     assert config.model_name == "deepseek-v4-flash"
+
+    mimo_config = get_model_config("mimo-v2.6-flash")
+    assert mimo_config.provider == ModelProvider.XIAOMIMIMO
+    assert mimo_config.model_name == "mimo-v2.6-flash"
 
 
 def test_get_model_config_unknown():

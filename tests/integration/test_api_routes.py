@@ -524,7 +524,7 @@ class TestBriefPdfCostTracking:
         assert len(entries) == 1
         entry = entries[0]
         assert entry["agent"] == "brief_pdf_extract"
-        assert entry["model"] == "astron-code-latest"
+        assert entry["model"] == "mimo-v2.6-flash"
         assert entry["cost_usd"] > 0
         assert entry["input_tokens"] == 100
         assert entry["output_tokens"] == 50

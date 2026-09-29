@@ -98,28 +98,28 @@ class TestModelRegistry:
 class TestResolveModelId:
     """Tests for resolve_model_id function."""
 
-    def test_routing_tasks_use_xunfei(self):
-        """ROUTING and SCOUTING use astron-code-latest."""
-        assert resolve_model_id(TaskType.ROUTING) == "astron-code-latest"
-        assert resolve_model_id(TaskType.SCOUTING) == "astron-code-latest"
+    def test_routing_tasks_use_mimo(self):
+        """ROUTING and SCOUTING use MiMo V2.6 Flash."""
+        assert resolve_model_id(TaskType.ROUTING) == "mimo-v2.6-flash"
+        assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.6-flash"
 
-    def test_strategy_writing_use_xunfei(self):
-        """STRATEGY and WRITING use astron-code-latest."""
-        assert resolve_model_id(TaskType.STRATEGY) == "astron-code-latest"
-        assert resolve_model_id(TaskType.WRITING) == "astron-code-latest"
+    def test_strategy_writing_use_mimo(self):
+        """STRATEGY and WRITING use MiMo V2.6 Flash."""
+        assert resolve_model_id(TaskType.STRATEGY) == "mimo-v2.6-flash"
+        assert resolve_model_id(TaskType.WRITING) == "mimo-v2.6-flash"
 
-    def test_visual_analysis_use_xunfei(self):
-        """VISUAL and ANALYSIS use astron-code-latest."""
-        assert resolve_model_id(TaskType.VISUAL) == "astron-code-latest"
-        assert resolve_model_id(TaskType.ANALYSIS) == "astron-code-latest"
+    def test_visual_analysis_use_mimo(self):
+        """VISUAL and ANALYSIS use MiMo V2.6 Flash."""
+        assert resolve_model_id(TaskType.VISUAL) == "mimo-v2.6-flash"
+        assert resolve_model_id(TaskType.ANALYSIS) == "mimo-v2.6-flash"
 
-    def test_publishing_use_xunfei(self):
-        """PUBLISHING uses astron-code-latest."""
-        assert resolve_model_id(TaskType.PUBLISHING) == "astron-code-latest"
+    def test_publishing_use_mimo(self):
+        """PUBLISHING uses MiMo V2.6 Flash."""
+        assert resolve_model_id(TaskType.PUBLISHING) == "mimo-v2.6-flash"
 
     def test_legacy_engagement_route_remains_resolvable(self):
         """Persisted engagement routing config remains backward compatible."""
-        assert resolve_model_id(TaskType.ENGAGEMENT) == "astron-code-latest"
+        assert resolve_model_id(TaskType.ENGAGEMENT) == "mimo-v2.6-flash"
 
     def test_routing_overrides(self):
         """Routing overrides allow custom model assignments."""
