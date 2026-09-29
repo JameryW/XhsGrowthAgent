@@ -2,8 +2,8 @@
 
 Pins the LLM routing of `_generate_mock_notes`: pure-fiction JSON generation
 goes through TaskType.MOCK_GEN (deepseek-v4-flash, lighter/cheaper), matching
-the sibling blogger_scout agent — NOT TaskType.SCOUTING (astron-code-latest,
-the heavy model used by trend_scout for real trend analysis).
+the sibling blogger_scout agent — NOT TaskType.SCOUTING (mimo-v2.6-flash,
+the default model used by trend_scout for real trend analysis).
 
 Also pins the bare-node LLM cost capture: blogger_gate_node is not a BaseAgent,
 so #491's `_tool_llm_cost` ContextVar is never set in its scope and the direct
@@ -63,7 +63,7 @@ class TestBloggerGateMockNotes:
         """_generate_mock_notes routes via MOCK_GEN (轻模型), not SCOUTING.
 
         Pure-fiction JSON generation matches blogger_scout (PR #468); reverting
-        to SCOUTING (heavy astron model) is a regression this test guards.
+        to SCOUTING (the MiMo default) is a regression this test guards.
         """
         mock_response = MagicMock()
         mock_response.content = (

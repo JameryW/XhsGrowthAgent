@@ -11,16 +11,16 @@ class ModelSettings(BaseSettings):
     dashscope_api_key: str = ""
     xunfei_api_key: str = ""
 
-    # 默认模型分配 — 全部使用 mimo-v2.5-pro
+    # Legacy default model map; runtime routing is defined in backend.config.models.
     model_routing: dict[str, str] = Field(
         default_factory=lambda: {
-            "routing": "mimo-v2.5-pro",
-            "scouting": "mimo-v2.5-pro",
-            "strategy": "mimo-v2.5-pro",
-            "writing": "mimo-v2.5-pro",
-            "visual": "mimo-v2.5-pro",
-            "analysis": "mimo-v2.5-pro",
-            "publishing": "mimo-v2.5-pro",
+            "routing": "mimo-v2.6-flash",
+            "scouting": "mimo-v2.6-flash",
+            "strategy": "mimo-v2.6-flash",
+            "writing": "mimo-v2.6-flash",
+            "visual": "mimo-v2.6-flash",
+            "analysis": "mimo-v2.6-flash",
+            "publishing": "mimo-v2.6-flash",
         }
     )
 

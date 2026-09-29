@@ -91,6 +91,12 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         temperature=0.7,
         max_tokens=4096,
     ),
+    "mimo-v2.6-flash": ModelConfig(
+        provider=ModelProvider.XIAOMIMIMO,
+        model_name="mimo-v2.6-flash",
+        temperature=0.7,
+        max_tokens=4096,
+    ),
     "astron-code-latest": ModelConfig(
         provider=ModelProvider.XUNFEI,
         model_name="astron-code-latest",
@@ -100,28 +106,33 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
     ),
 }
 
+# Primary model → backup model, applied only by ModelRouter after primary retries.
+MODEL_FALLBACKS: dict[str, str] = {
+    "mimo-v2.6-flash": "deepseek-v4-flash",
+}
+
 
 def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | None = None) -> str:
     """根据任务类型解析模型 ID，支持用户覆盖"""
     routing = {
-        TaskType.ROUTING: "astron-code-latest",
-        TaskType.SCOUTING: "astron-code-latest",
-        TaskType.STRATEGY: "astron-code-latest",
-        TaskType.WRITING: "astron-code-latest",
-        TaskType.VISUAL: "astron-code-latest",
-        TaskType.ANALYSIS: "astron-code-latest",
-        TaskType.PUBLISHING: "astron-code-latest",
-        TaskType.ENGAGEMENT: "astron-code-latest",
+        TaskType.ROUTING: "mimo-v2.6-flash",
+        TaskType.SCOUTING: "mimo-v2.6-flash",
+        TaskType.STRATEGY: "mimo-v2.6-flash",
+        TaskType.WRITING: "mimo-v2.6-flash",
+        TaskType.VISUAL: "mimo-v2.6-flash",
+        TaskType.ANALYSIS: "mimo-v2.6-flash",
+        TaskType.PUBLISHING: "mimo-v2.6-flash",
+        TaskType.ENGAGEMENT: "mimo-v2.6-flash",
         # 新增
         # VIRAL_MATCHING fabricates viral-post references (no real XHS search),
         # so a lighter model suffices; optimization_error fallback covers LLM failures.
         TaskType.VIRAL_MATCHING: "deepseek-v4-flash",
-        TaskType.CONTENT_ANALYSIS: "astron-code-latest",
-        TaskType.VERSION_GEN: "astron-code-latest",
-        TaskType.BRIEF_ANALYSIS: "astron-code-latest",
-        TaskType.SHOOTING_PLAN: "astron-code-latest",
-        TaskType.EVALUATION: "astron-code-latest",
-        # 去套话润色是窄转换，用 deepseek-v4-flash（更轻/便宜），草稿生成仍走 WRITING→astron
+        TaskType.CONTENT_ANALYSIS: "mimo-v2.6-flash",
+        TaskType.VERSION_GEN: "mimo-v2.6-flash",
+        TaskType.BRIEF_ANALYSIS: "mimo-v2.6-flash",
+        TaskType.SHOOTING_PLAN: "mimo-v2.6-flash",
+        TaskType.EVALUATION: "mimo-v2.6-flash",
+        # 去套话润色是窄转换，用 deepseek-v4-flash（更轻/便宜），草稿生成仍走 WRITING→MiMo
         TaskType.POLISH: "deepseek-v4-flash",
         # blogger_scout 虚构博主候选（结构化生成），降级轻模型
         TaskType.MOCK_GEN: "deepseek-v4-flash",

@@ -146,14 +146,10 @@ class Settings(BaseSettings):
 
 | TaskType | Model | Provider | 用途 |
 |----------|-------|----------|------|
-| `ROUTING` | deepseek-v4-flash | DeepSeek | 编排决策 |
-| `SCOUTING` | deepseek-v4-flash | DeepSeek | 趋势发现 |
-| `STRATEGY` | claude-sonnet-4-20250514 | Anthropic | 内容策略 |
-| `WRITING` | claude-sonnet-4-20250514 | Anthropic | 文案生成 |
-| `VISUAL` | gpt-4o | OpenAI | 视觉分析 |
-| `ANALYSIS` | gpt-4o | OpenAI | 数据分析 |
-| `PUBLISHING` | qwen-plus | DashScope | 发布执行 |
-| `ENGAGEMENT` | deepseek-v4-flash | DeepSeek | 用户互动 |
+| `ROUTING`, `SCOUTING`, `STRATEGY`, `WRITING`, `VISUAL`, `ANALYSIS`, `PUBLISHING`, `ENGAGEMENT`, `CONTENT_ANALYSIS`, `VERSION_GEN`, `BRIEF_ANALYSIS`, `SHOOTING_PLAN`, `EVALUATION` | mimo-v2.6-flash | Xiaomi MiMo | 通用工作流；可重试故障耗尽重试后切换到 DeepSeek V4 Flash |
+| `POLISH`, `MOCK_GEN`, `VIRAL_MATCHING` | deepseek-v4-flash | DeepSeek | 窄任务的轻量模型路由 |
+
+MiMo 的鉴权、无效请求等不可重试错误不会触发备用模型。启用自动故障切换需同时配置 `XIAOMIMIMO_API_KEY` 和 `DEEPSEEK_API_KEY`。Ripple 模拟有独立的 LLM 配置，不受此路由影响。
 
 ### 模型参数默认值
 
@@ -165,9 +161,8 @@ class ModelConfig:
 ```
 
 **各模型差异:**
-- Claude (WRITING/STRATEGY): temperature=0.7，平衡创意与准确
-- GPT-4o (VISUAL/ANALYSIS): temperature=0.5，偏向准确
-- DeepSeek (ROUTING/SCOUTING): temperature=0.6，快速决策
+- MiMo V2.6 Flash: temperature=0.7，通用默认模型
+- DeepSeek V4 Flash: temperature=0.6，轻量任务及 MiMo 可重试故障的备用模型
 
 ---
 

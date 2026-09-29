@@ -13,13 +13,8 @@ import logging
 import os
 import random
 import time
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    # BaseChatModel only appears in annotations; importing it at module load
-    # pulls langchain_core.language_models → langsmith (~1s) on every import of
-    # backend.models.retry (pulled by router.py). Deferred to TYPE_CHECKING.
-    from langchain_core.language_models import BaseChatModel
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger("xhs_growth.models.retry")
 
@@ -94,7 +89,7 @@ async def _sleep(attempt: int, base: float, max_delay: float) -> None:
 class _RetryChatModel:
     """Delegate-everything wrapper that retries ainvoke/invoke."""
 
-    def __init__(self, model: BaseChatModel) -> None:
+    def __init__(self, model: Any) -> None:
         self._model = model
 
     async def ainvoke(self, *args: Any, **kwargs: Any) -> Any:
@@ -148,12 +143,96 @@ class _RetryChatModel:
         return getattr(self._model, name)
 
 
-def with_retry(model: BaseChatModel) -> BaseChatModel:
+class _FallbackInvocation:
+    """Retry one model, then use a lazily-created backup for transient failures."""
+
+    def __init__(
+        self,
+        primary: Any,
+        fallback_factory: Callable[[], Any],
+        primary_model_id: str,
+        fallback_model_id: str,
+    ) -> None:
+        self._primary = primary
+        self._fallback_factory = fallback_factory
+        self._primary_model_id = primary_model_id
+        self._fallback_model_id = fallback_model_id
+
+    def _log_fallback(self, exc: Exception) -> None:
+        logger.warning(
+            "LLM model %s exhausted retries; switching to %s after %s: %s",
+            self._primary_model_id,
+            self._fallback_model_id,
+            type(exc).__name__,
+            exc,
+        )
+
+    async def ainvoke(self, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return await self._primary.ainvoke(*args, **kwargs)
+        except Exception as exc:
+            if not _is_retryable(exc):
+                raise
+            self._log_fallback(exc)
+            return await self._fallback_factory().ainvoke(*args, **kwargs)
+
+    def invoke(self, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return self._primary.invoke(*args, **kwargs)
+        except Exception as exc:
+            if not _is_retryable(exc):
+                raise
+            self._log_fallback(exc)
+            return self._fallback_factory().invoke(*args, **kwargs)
+
+    def bind(self, *args: Any, **kwargs: Any) -> _FallbackInvocation:
+        return _FallbackInvocation(
+            with_retry(self._primary.bind(*args, **kwargs)),
+            lambda: with_retry(self._fallback_factory().bind(*args, **kwargs)),
+            self._primary_model_id,
+            self._fallback_model_id,
+        )
+
+    def bind_tools(self, *args: Any, **kwargs: Any) -> _FallbackInvocation:
+        return _FallbackInvocation(
+            with_retry(self._primary.bind_tools(*args, **kwargs)),
+            lambda: with_retry(self._fallback_factory().bind_tools(*args, **kwargs)),
+            self._primary_model_id,
+            self._fallback_model_id,
+        )
+
+    def with_structured_output(self, *args: Any, **kwargs: Any) -> _FallbackInvocation:
+        return _FallbackInvocation(
+            with_retry(self._primary.with_structured_output(*args, **kwargs)),
+            lambda: with_retry(
+                self._fallback_factory().with_structured_output(*args, **kwargs)
+            ),
+            self._primary_model_id,
+            self._fallback_model_id,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._primary, name)
+
+
+def with_retry(model: Any) -> Any:
     """Wrap a chat model so ainvoke/invoke retry on transient errors.
 
     Returns a duck-typed object that proxies every attribute to the underlying
-    model but overrides ainvoke/invoke with backoff. Typed as BaseChatModel so
-    existing call sites keep their annotations.
+    model but overrides ainvoke/invoke with backoff. It also wraps LangChain
+    runnables returned by bind/with_structured_output when used with failover.
     """
 
-    return _RetryChatModel(model)  # type: ignore[return-value]
+    return _RetryChatModel(model)
+
+
+def with_fallback(
+    primary: Any,
+    fallback_factory: Callable[[], Any],
+    *,
+    primary_model_id: str,
+    fallback_model_id: str,
+) -> Any:
+    """Use a backup after the primary's retry wrapper exhausts transient retries."""
+
+    return _FallbackInvocation(primary, fallback_factory, primary_model_id, fallback_model_id)

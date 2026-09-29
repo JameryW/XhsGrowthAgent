@@ -226,9 +226,10 @@ Pinia stores with toast notifications:
 ### Model Router (models/router.py)
 
 Routes tasks to LLM providers by `TaskType` via `resolve_model_id`:
-- All agent task types (ROUTING/SCOUTING/STRATEGY/WRITING/VISUAL/ANALYSIS/PUBLISHING/ENGAGEMENT/CONTENT_ANALYSIS/VERSION_GEN/BRIEF_ANALYSIS/SHOOTING_PLAN/EVALUATION) → `astron-code-latest`
-- POLISH (de_ai_taste 去套话润色，窄转换) → `deepseek-v4-flash` (更轻/便宜；草稿生成仍走 WRITING→astron)
-- MOCK_GEN (blogger_scout 虚构 mock_ 博主候选，结构化生成) → `deepseek-v4-flash` (更轻/便宜；trend_scout 仍走 SCOUTING→astron 做真实趋势分析)
+- All general agent task types (ROUTING/SCOUTING/STRATEGY/WRITING/VISUAL/ANALYSIS/PUBLISHING/ENGAGEMENT/CONTENT_ANALYSIS/VERSION_GEN/BRIEF_ANALYSIS/SHOOTING_PLAN/EVALUATION) → `mimo-v2.6-flash`
+- A MiMo call falls back to `deepseek-v4-flash` after retry exhaustion on retryable provider/network errors; authentication and invalid-request errors propagate.
+- POLISH (de_ai_taste 去套话润色，窄转换) → `deepseek-v4-flash` (更轻/便宜；草稿生成仍走 WRITING→MiMo)
+- MOCK_GEN (blogger_scout 虚构 mock_ 博主候选，结构化生成) → `deepseek-v4-flash` (更轻/便宜；trend_scout 仍走 SCOUTING→MiMo 做真实趋势分析)
 - VIRAL_MATCHING (viral_matcher 虚构爆款引用，无真实 XHS 搜索) → `deepseek-v4-flash` (更轻；optimization_error 兜底 LLM 失败)
 
 Provider support: Anthropic, OpenAI, DeepSeek, DashScope (Qwen), XiaomiMiMo, Xunfei.

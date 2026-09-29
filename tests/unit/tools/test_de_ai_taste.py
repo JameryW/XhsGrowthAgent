@@ -102,7 +102,7 @@ async def test_polish_copy_use_llm_false_skips_model():
 
 @pytest.mark.asyncio
 async def test_polish_copy_routes_to_polish_task_type():
-    """polish_copy LLM 路径走 TaskType.POLISH (deepseek-v4-flash)，非 WRITING (astron)。"""
+    """polish_copy LLM 路径走 TaskType.POLISH (deepseek-v4-flash)，非 WRITING (MiMo)。"""
     llm_result = {
         "selected_title": "用了一周，这些点真香",
         "body_text": "自己测下来续航稳。",

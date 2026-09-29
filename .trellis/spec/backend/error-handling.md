@@ -106,6 +106,25 @@ taxonomy is the contract that P1c/P2a retry consolidation must consume.
 - `pause_workflow` also cancels the background task (same as cancel)
 - Resume re-invokes the graph from the last checkpoint
 
+### LLM Model Retry and Provider Failover
+
+`backend.models.retry.with_retry()` retries calls to the same chat model for
+rate limits, server errors, network failures, and timeouts. The model router
+may then use a configured provider fallback after those retries are exhausted:
+
+- Configure model-level fallbacks in `backend/config/models.py`; do not add
+  task-specific fallback policy to agent call sites.
+- Construct the fallback lazily, so missing backup credentials do not affect
+  healthy primary-model calls.
+- Apply the wrapper to plain calls and runnables created with `bind()` or
+  `with_structured_output()`.
+- Only retryable errors can trigger provider fallback. Authentication and
+  non-retryable client errors must propagate unchanged; HTTP 429 is retryable.
+- Keep explicit task routes and caller routing overrides intact. A model only
+  gets fallback behavior when its model ID has an entry in `MODEL_FALLBACKS`.
+- If the backup also fails, let its error propagate; do not silently fabricate
+  a model response.
+
 ### Ripple Service Error Behavior
 
 #### Timeout → Cancel → Recover Pattern
