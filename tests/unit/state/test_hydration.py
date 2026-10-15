@@ -157,6 +157,7 @@ def test_status_view_covers_every_state_sourced_status_field():
         "created_at",
         "updated_at",
         "pause_reason",
+        "is_commercial",
     }
     assert state_sourced_response_fields == STAGE_VIEW_KEYS
 

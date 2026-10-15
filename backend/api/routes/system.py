@@ -515,11 +515,10 @@ async def get_risk_gates(
     from backend.services.cdp_session_lock import snapshot_cdp_sessions
     from backend.services.xhs_risk_gate import (
         get_cooldown_policy,
+        get_engagement_pause_status,
         list_active_cooldowns,
         snapshot_risk_gates,
     )
-
-    from backend.services.xhs_risk_gate import get_engagement_pause_status
 
     gates = snapshot_risk_gates()
     active = list_active_cooldowns(account_id=account_id)

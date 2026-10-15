@@ -130,7 +130,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | --- | --- | --- | --- |
 | `backend/db/execution_leases.py:722` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:723`；由 `end_lease` 取消，取消即正常收尾 |
 | `backend/api/routes/_wf_runtime.py:361` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:353` |
-| `backend/api/routes/_wf_application.py:258` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:260` |
+| `backend/api/routes/_wf_application.py:270` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:272` |
 | `backend/api/routes/_wf_actions.py:268` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
 | `backend/api/routes/_wf_actions.py:465` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:449` |
 | `backend/agents/content_strategist.py:597` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
@@ -161,7 +161,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_wf_runtime.py:102` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
 | `backend/api/routes/_runner.py:447` | `heartbeat.add_done_callback(_on_heartbeat_done)` | PLANE | 不是新任务：把栅栏登记到租约心跳的结束回调上 |
 | `backend/services/ripple_service.py:214` | `loop.create_task(self._rebuild_client())` | POST_RESPONSE | 重建客户端 |
-| `backend/services/xhs_risk_gate.py:357` | `_persist_task = loop.create_task(_run())` | POST_RESPONSE | 风控快照落盘 |
+| `backend/services/xhs_risk_gate.py:605` | `_persist_task = loop.create_task(_run())` | POST_RESPONSE | 风控快照落盘 |
 
 <!-- anchor-table:end -->
 
@@ -333,7 +333,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `backend/api/routes/_runner.py:51` | `process_has_active_task` | 串行化谓词（与状态谓词是两个问题） |
 | `backend/api/routes/_wf_actions.py:320` | `process_has_active_task` | 消费者 1：publish-retry 守卫 |
 | `backend/api/routes/_wf_actions.py:101` | `process_has_active_task` | ripple-retry 的守卫：与上一行同一个谓词 |
-| `backend/api/routes/_wf_application.py:1675` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
+| `backend/api/routes/_wf_application.py:1690` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
 | `backend/api/routes/_runner.py:134` | `process_has_active_task` | OR 进 `has_active_execution` 的那一处 |
 | `backend/api/routes/_wf_actions.py:209` | `asyncio.gather` | 两个 submit 的并发消费点 ⇒ 窗口是 1 个 timeout |
 | `backend/api/routes/_wf_actions.py:152` | `ripple_timeout` | 窗口的那个 1800.0 |

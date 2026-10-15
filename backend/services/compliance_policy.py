@@ -82,9 +82,11 @@ def state_is_commercial(state: dict[str, Any] | None) -> bool:
         return False
     if state.get("is_commercial") is True:
         return True
-    mode = state.get("workflow_mode")
-    mode_text = str(getattr(mode, "value", mode) or "").strip().lower()
-    return mode_text == "brief"
+    # Read mode via the registry (modes.mode_spec) — never state.get("workflow_mode").
+    from backend.state.enums import WorkflowMode
+    from backend.state.modes import mode_spec
+
+    return mode_spec(state).mode is WorkflowMode.BRIEF
 
 
 def state_is_blocking(state: dict[str, Any] | None) -> bool:

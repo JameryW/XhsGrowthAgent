@@ -77,6 +77,7 @@ from backend.db.workflows import (
 from backend.graph.routers import PAUSE_REASON_EVALUATOR_FAIL_CLOSED
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
+from backend.services.compliance_policy import state_is_commercial as _state_is_commercial
 from backend.state.enums import WorkflowMode, WorkflowPhase
 from backend.state.goal import BriefInput, Goal
 from backend.state.hydration import (
@@ -459,6 +460,8 @@ async def get_workflow_status(
                 # state exactly as pre-S1 so the evaluator_fail_closed resume
                 # prompt keeps rendering. history-file branch never hydrated it.
                 pause_reason=state.values.get("pause_reason"),
+                # P0-5: Review publish modal needs commercial flag for disclosure checkbox.
+                is_commercial=_state_is_commercial(live_values),
                 **status_view(live_values),
             ).model_dump()
         )
@@ -499,6 +502,7 @@ async def get_workflow_status(
                 agent_timeline=agent_timeline,
                 ripple_progress={},  # History file has no live Ripple progress
                 label="",
+                is_commercial=_state_is_commercial(saved),
                 **history_file_view(saved),
             ).model_dump()
         )

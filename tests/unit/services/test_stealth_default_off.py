@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import os
+import runpy
 from pathlib import Path
 
 from backend.services.xhs_login import _stealth_injection_enabled
+
+REPO = Path(__file__).resolve().parents[3]
 
 
 def test_stealth_disabled_by_default(monkeypatch) -> None:
@@ -19,15 +21,12 @@ def test_stealth_opt_in(monkeypatch) -> None:
 
 
 def test_fake_useragent_not_in_main_deps() -> None:
-    text = Path("pyproject.toml").read_text(encoding="utf-8")
+    text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
     main = text.split("[project.optional-dependencies]", 1)[0]
     assert "fake-useragent" not in main
 
 
 def test_ci_stealth_gate_script_passes() -> None:
-    import runpy
-    from pathlib import Path
-
-    path = Path("scripts/gates/stealth_default_off.py")
+    path = REPO / "scripts" / "gates" / "stealth_default_off.py"
     ns = runpy.run_path(str(path))
     assert ns["main"]() == 0

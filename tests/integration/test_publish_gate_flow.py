@@ -247,8 +247,10 @@ class TestStandingAuthorisationKeepsTheOldPath:
         assert calls == ["publisher"]
         assert "publish_gate" in visited
         assert tuple(snapshot.next or ()) == (), "the run finished; it never stopped"
-        assert snapshot.values["publish_confirmation"] == {
-            "decision": "confirmed",
-            "source": "auto_publish",
-        }
+        conf = snapshot.values["publish_confirmation"]
+        assert conf["decision"] == "confirmed"
+        assert conf["source"] == "auto_publish"
+        # P0-2 receipt audit fields (confirmer + timestamp) are always present.
+        assert conf["confirmer"] == "system"
+        assert conf["confirmed_at"]
         assert snapshot.values["phase"] == WorkflowPhase.COMPLETED

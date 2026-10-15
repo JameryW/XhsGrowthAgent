@@ -80,6 +80,7 @@ RUNTIME_SCALAR_KEYS: Final[frozenset[str]] = frozenset(
         "updated_at",
         "account_id",
         "workflow_mode",
+        "is_commercial",
     }
 )
 

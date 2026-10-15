@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from backend.services.compliance.lexicon import scan_state_content, scan_text
 
 CORPUS = Path(__file__).resolve().parents[3] / "fixtures" / "compliance" / "lexicon_corpus.json"
