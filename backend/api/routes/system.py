@@ -519,6 +519,8 @@ async def get_risk_gates(
         snapshot_risk_gates,
     )
 
+    from backend.services.xhs_risk_gate import get_engagement_pause_status
+
     gates = snapshot_risk_gates()
     active = list_active_cooldowns(account_id=account_id)
     aid = (account_id or "").strip()
@@ -529,6 +531,8 @@ async def get_risk_gates(
             "cdp_sessions": snapshot_cdp_sessions(),
             "account_id": aid or None,
             "policy": get_cooldown_policy(aid) if aid else None,
+            # P0-3: Settings-visible engagement risk pause (reason + remaining).
+            "engagement_pause": get_engagement_pause_status(aid),
         }
     )
 

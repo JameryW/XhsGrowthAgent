@@ -122,15 +122,18 @@ async def dm_handler(
     sender_id: str,
     reply_content: str,
     account_id: str = "",
+    human_confirmed: bool = False,
 ) -> dict[str, Any]:
     """人工确认后发送一条小红书私信（manual-only）。
 
     仅允许操作员在核对收件人和消息内容后显式调用；不会由工作流 agent 自动触发。
+    默认仅可回复未读/入站白名单内的用户；冷启动新建私信需显式开关 + human_confirmed。
 
     Args:
         message_id: 消息 ID
         sender_id: 发送者用户 ID
         reply_content: 回复内容
+        human_confirmed: 冷启动外发时的逐条人工确认
 
     Returns:
         回复结果: success, reply_id
@@ -145,6 +148,7 @@ async def dm_handler(
         result = await engagement.send_dm(
             target_user_id=sender_id,
             message=reply_content,
+            human_confirmed=human_confirmed,
         )
 
         return {

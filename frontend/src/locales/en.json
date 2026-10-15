@@ -769,7 +769,8 @@
       "dryCardTitle": "Dry Run",
       "dryCardDesc": "Preview without publishing",
       "liveCardTitle": "Live Publish",
-      "liveCardDesc": "Publish to Xiaohongshu"
+      "liveCardDesc": "Publish to Xiaohongshu",
+      "disclosureLabel": "I confirm this commercial brief is disclosed/filed and the copy still includes the collaboration/ad label."
     },
     "stateLost": "The review state was lost after a container restart. Please restart the workflow to regenerate review content.",
     "errorStateLost": "Review State Lost",
@@ -804,6 +805,7 @@
       "dimensionsTitle": "Dimension Details",
       "hintsTitle": "Revision Hints",
       "biasTitle": "Adversarial Bias Check",
+      "lexiconTitle": "Lexicon hits (deterministic scan)",
       "blocking": "BLOCKING",
       "decision": {
         "approved": "Approved",
@@ -2278,6 +2280,8 @@
       "qrLogin": "Scan Login",
       "qrRiskBadge": "Risk cooldown {minutes}m",
       "qrRiskCooldown": "Scan-login cooling down — retry in about {minutes} min; prefer home broadband or mobile hotspot",
+      "engagementPauseBadge": "Engagement paused {minutes}m ({reason})",
+      "engagementPauseHint": "Engagement paused after a risk signal: {reason}; retry in about {minutes} min",
       "qrLoginTitle": "Scan to Log In — Xiaohongshu",
       "qrWaiting": "Scan with the Xiaohongshu app",
       "qrScanned": "Scanned — please confirm on your phone",

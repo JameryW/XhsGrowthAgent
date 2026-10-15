@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Quality-check entry for backend guidelines"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify error codes and non-silent failure paths"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify gate auto sources and receipt audit fields"}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "Verify stealth default-off and engagement risk-stop behavior"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "General code quality bar for review"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer consistency: start API, CLI, publish receipt, Review UI"}
+{"file": ".trellis/tasks/10-15-compliance-risk-baseline/prd.md", "reason": "Acceptance criteria checklist for P0-1..P0-5"}

@@ -235,6 +235,25 @@ class XHSEngagement:
         # Wrap so release notes engagement cool-down for the next session.
         return _EngagementCdpHold(cm, self.account_id, self.cdp_endpoint)
 
+    def _precheck_engagement(self, *, kind: str) -> dict[str, Any] | None:
+        """Account pause + daily quota before any browser attach."""
+        from backend.services.xhs_risk_gate import (
+            check_comment_reply_quota,
+            check_dm_quota,
+            check_engagement_risk_pause,
+        )
+
+        pause = check_engagement_risk_pause(self.account_id)
+        if pause is not None:
+            return self._blocked_result(pause.risk_code, pause.message)
+        if kind == "dm":
+            quota = check_dm_quota(self.account_id)
+        else:
+            quota = check_comment_reply_quota(self.account_id)
+        if quota is not None:
+            return self._blocked_result(quota.risk_code, quota.message)
+        return None
+
     async def reply_to_comment(
         self,
         note_id: str,
@@ -244,10 +263,27 @@ class XHSEngagement:
         """回复评论；遇到登录/风控页面后立即停止且不重试。"""
         from backend.services.cdp_session_lock import CdpSessionBusyError
 
+        blocked = self._precheck_engagement(kind="comment_reply")
+        if blocked is not None:
+            return blocked
+
         try:
             async with await self._hold_cdp(), self._guard.lock:
-                return await self._reply_to_comment_locked(note_id, comment_id, reply_content)
+                result = await self._reply_to_comment_locked(note_id, comment_id, reply_content)
+            if result.get("success"):
+                from backend.services.xhs_risk_gate import note_comment_reply_sent
+
+                note_comment_reply_sent(self.account_id)
+            elif result.get("error_code") == "risk_control":
+                from backend.services.xhs_risk_gate import note_engagement_risk_pause
+
+                note_engagement_risk_pause(self.account_id, reason="risk_control")
+            return result
         except EngagementRiskError as exc:
+            if exc.error_code == "risk_control":
+                from backend.services.xhs_risk_gate import note_engagement_risk_pause
+
+                note_engagement_risk_pause(self.account_id, reason="risk_control")
             return self._blocked_result(exc.error_code, str(exc))
         except CdpSessionBusyError as exc:
             return self._blocked_result("cdp_busy", f"CDP session busy (held by {exc.holder})")
@@ -309,9 +345,36 @@ class XHSEngagement:
             logger.error("回复评论失败: %s", exc, exc_info=True)
             return {"success": False, "status": "failed", "error": str(exc)}
 
-    async def send_dm(self, target_user_id: str, message: str) -> dict[str, Any]:
-        """发送私信；遇到登录/风控页面后立即停止且不重试。"""
+    async def send_dm(
+        self,
+        target_user_id: str,
+        message: str,
+        *,
+        human_confirmed: bool = False,
+    ) -> dict[str, Any]:
+        """发送私信；遇到登录/风控页面后立即停止且不重试。
+
+        Cold-start (新建私信) is blocked unless the target is in the
+        unread/inbound peer cache, or outbound DM is explicitly enabled and
+        this call carries ``human_confirmed=True``.
+        """
         from backend.services.cdp_session_lock import CdpSessionBusyError
+        from backend.services.xhs_risk_gate import (
+            check_dm_target_allowed,
+            note_dm_sent,
+            note_engagement_risk_pause,
+        )
+
+        blocked = self._precheck_engagement(kind="dm")
+        if blocked is not None:
+            return blocked
+        target_block = check_dm_target_allowed(
+            self.account_id,
+            target_user_id,
+            human_confirmed=human_confirmed,
+        )
+        if target_block is not None:
+            return self._blocked_result(target_block.risk_code, target_block.message)
 
         try:
             async with await self._hold_cdp(), self._guard.lock:
@@ -321,10 +384,16 @@ class XHSEngagement:
                     await self._paced(lambda: page.goto(self.DM_URL, wait_until="domcontentloaded"))
                     await self._assert_safe_page(page)
 
-                    new_dm_btn = await page.query_selector("text=新建私信, .new-dm-btn")
-                    if new_dm_btn:
-                        await self._paced(new_dm_btn.click)
-                        await self._assert_safe_page(page)
+                    # Never click 「新建私信」 for inbound replies. Cold-start
+                    # (outbound) only when the caller already passed the
+                    # whitelist/confirm gate above with human_confirmed=True.
+                    from backend.services.xhs_risk_gate import is_inbound_peer
+
+                    if human_confirmed and not is_inbound_peer(self.account_id, target_user_id):
+                        new_dm_btn = await page.query_selector("text=新建私信, .new-dm-btn")
+                        if new_dm_btn:
+                            await self._paced(new_dm_btn.click)
+                            await self._assert_safe_page(page)
                     search_input = await page.query_selector(
                         "input[placeholder*=搜索], .dm-search-input"
                     )
@@ -345,6 +414,7 @@ class XHSEngagement:
                     if send_btn:
                         await self._paced(send_btn.click)
                         await self._assert_safe_page(page)
+                    note_dm_sent(self.account_id)
                     return {"success": True, "message_id": f"dm_{int(time.time())}"}
                 except EngagementRiskError as exc:
                     logger.warning(
@@ -353,6 +423,8 @@ class XHSEngagement:
                         exc.error_code,
                         exc,
                     )
+                    if exc.error_code == "risk_control":
+                        note_engagement_risk_pause(self.account_id, reason="risk_control")
                     return self._blocked_result(exc.error_code, str(exc))
                 except EngagementConfigurationError as exc:
                     logger.warning("engagement unavailable: %s", exc)
@@ -361,6 +433,8 @@ class XHSEngagement:
                     logger.error("发送私信失败: %s", exc, exc_info=True)
                     return {"success": False, "status": "failed", "error": str(exc)}
         except EngagementRiskError as exc:
+            if exc.error_code == "risk_control":
+                note_engagement_risk_pause(self.account_id, reason="risk_control")
             return self._blocked_result(exc.error_code, str(exc))
         except CdpSessionBusyError as exc:
             return self._blocked_result("cdp_busy", f"CDP session busy (held by {exc.holder})")
@@ -380,17 +454,26 @@ class XHSEngagement:
                         ".message-item.unread, .unread-badge"
                     )
                     messages = []
+                    peer_ids: list[str] = []
                     for item in unread_items:
                         sender = await item.query_selector(".sender-name")
                         content = await item.query_selector(".message-preview")
+                        sender_id_attr = await item.get_attribute("data-user-id")
+                        if sender_id_attr:
+                            peer_ids.append(str(sender_id_attr))
                         if sender and content:
                             messages.append(
                                 {
                                     "sender_name": await sender.inner_text(),
+                                    "sender_id": str(sender_id_attr or ""),
                                     "preview": await content.inner_text(),
                                     "is_unread": True,
                                 }
                             )
+                    if peer_ids:
+                        from backend.services.xhs_risk_gate import note_inbound_peers
+
+                        note_inbound_peers(self.account_id, peer_ids)
                     return messages
                 except (EngagementRiskError, EngagementConfigurationError) as exc:
                     logger.warning("message read stopped: %s", exc)

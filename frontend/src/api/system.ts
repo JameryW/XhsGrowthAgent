@@ -87,11 +87,22 @@ export interface HealthCheck {
   active_account?: { id: string; name: string }
 }
 
+export interface EngagementPauseStatus {
+  account_id?: string | null
+  paused: boolean
+  reason?: string | null
+  retry_after_seconds?: number
+  pause_until?: string | null
+  message?: string
+}
+
 export interface RiskGatesResponse {
   risk_gates: RiskGatesSnapshot
   active: ActiveCooldownEntry[]
   cdp_sessions: CdpSessionRow[]
   account_id?: string | null
+  /** P0-3: Settings-visible engagement risk pause (reason + remaining). */
+  engagement_pause?: EngagementPauseStatus
 }
 
 export interface ClearRiskGatesResult {

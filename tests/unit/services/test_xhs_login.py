@@ -1172,9 +1172,12 @@ class TestExceptionLogDiagnostics:
 
         assert any("ValueError: bad envelope" in record.message for record in caplog.records)
 
-    async def test_stealth_fallback_warning_includes_exception_type(self, tmp_path, caplog):
+    async def test_stealth_fallback_warning_includes_exception_type(
+        self, tmp_path, caplog, monkeypatch
+    ):
         from backend.services.xhs_login import XhsLoginSession
 
+        monkeypatch.setenv("XHS_BROWSER_STEALTH", "1")
         session = XhsLoginSession("acc-1", str(tmp_path / "p"))
         context = MagicMock()
         context.add_init_script = AsyncMock()
@@ -1243,10 +1246,12 @@ class TestExceptionLogDiagnostics:
 class TestStealthFallback:
     """_apply_stealth — graceful degradation when playwright-stealth missing."""
 
-    async def test_stealth_falls_back_to_webdriver_hide(self, tmp_path):
+    async def test_stealth_falls_back_to_webdriver_hide(self, tmp_path, monkeypatch):
         """playwright-stealth import fails → manual webdriver hiding init script."""
         from backend.services.xhs_login import XhsLoginSession
 
+        # Stealth is opt-in; enable so the launch fallback path still exercises it.
+        monkeypatch.setenv("XHS_BROWSER_STEALTH", "1")
         mock_module, _, on_calls = _wire_playwright_mock()
         session = XhsLoginSession("acc-1", str(tmp_path / "p"))
 
@@ -1260,6 +1265,20 @@ class TestStealthFallback:
         # add_init_script should have been called with the webdriver hide script.
         # _apply_stealth is called on the context; check it was invoked.
         assert session._context is not None
+        await session.stop()
+
+    async def test_stealth_skipped_by_default(self, tmp_path, monkeypatch):
+        from backend.services.xhs_login import XhsLoginSession
+
+        monkeypatch.delenv("XHS_BROWSER_STEALTH", raising=False)
+        mock_module, _, on_calls = _wire_playwright_mock()
+        session = XhsLoginSession("acc-1", str(tmp_path / "p"))
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            patch.object(session, "_apply_stealth", new_callable=AsyncMock) as stealth,
+        ):
+            await asyncio.gather(session.start(), _fire_create_after_delay(on_calls, 0.05))
+        stealth.assert_not_awaited()
         await session.stop()
 
 

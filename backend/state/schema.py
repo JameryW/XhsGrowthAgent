@@ -195,6 +195,12 @@ class XHSGrowthState(TypedDict, total=False):
     dry_run: bool
     auto_publish: bool
 
+    # P0-5: commercial collaboration flag (brief/商单 → True)
+    is_commercial: bool
+    # Deterministic lexicon scan (P0-4), also mirrored under evaluation_result
+    compliance_scan: dict[str, Any]
+    is_blocking: bool
+
     # User-specified config
     niche: str  # Track/category (e.g. 母婴, 美妆, 穿搭)
     topic: str  # Optional user-provided topic override

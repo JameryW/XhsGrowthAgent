@@ -159,6 +159,17 @@ async def start_workflow(
     # Keep request fields consistent for the rest of the handler.
     req.account_id = account_id
 
+    # P0-2: dual-auto (AUTO_APPROVE_LOW_RISK ∩ auto_publish) is a hard reject.
+    from backend.services.compliance_policy import DualAutoPublishError, assert_not_dual_auto
+
+    try:
+        assert_not_dual_auto(auto_publish=bool(req.auto_publish))
+    except DualAutoPublishError as exc:
+        err = ValidationError("auto_publish", str(exc))
+        # Stable machine code for clients (also present in message text).
+        err.details = {**(err.details or {}), "error_code": exc.error_code}
+        raise err from exc
+
     graph = request.app.state.graph
     thread_id = f"xhs_{req.account_id}_{uuid.uuid4().hex[:8]}"
 

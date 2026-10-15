@@ -63,10 +63,11 @@ class TestStandingAuthorisationSkipsTheGate:
             result = await publish_gate_node(_state(auto_publish=True), store=MagicMock())
         mock_int.assert_not_called()
         assert result["phase"] == WorkflowPhase.PUBLISHING
-        assert result["publish_confirmation"] == {
-            "decision": PUBLISH_CONFIRMED,
-            "source": SOURCE_AUTO_PUBLISH,
-        }
+        conf = result["publish_confirmation"]
+        assert conf["decision"] == PUBLISH_CONFIRMED
+        assert conf["source"] == SOURCE_AUTO_PUBLISH
+        assert conf["confirmer"]
+        assert conf["confirmed_at"]
 
     @pytest.mark.asyncio
     async def test_auto_publish_in_publish_options_does_not_interrupt(self):
@@ -83,10 +84,11 @@ class TestStandingAuthorisationSkipsTheGate:
             result = await publish_gate_node(_state(dry_run=True), store=MagicMock())
         mock_int.assert_not_called()
         assert result["phase"] == WorkflowPhase.PUBLISHING
-        assert result["publish_confirmation"] == {
-            "decision": PUBLISH_CONFIRMED,
-            "source": SOURCE_DRY_RUN,
-        }
+        conf = result["publish_confirmation"]
+        assert conf["decision"] == PUBLISH_CONFIRMED
+        assert conf["source"] == SOURCE_DRY_RUN
+        assert conf["confirmer"]
+        assert conf["confirmed_at"]
 
     @pytest.mark.asyncio
     async def test_dry_run_in_publish_options_does_not_interrupt(self):
@@ -146,6 +148,8 @@ class TestInterruptPayload:
             "title": "露营装备清单",
             "has_images": True,
             "account_id": "acct-9",
+            "is_commercial": False,
+            "requires_disclosure": False,
         }
 
     @pytest.mark.asyncio
@@ -155,7 +159,13 @@ class TestInterruptPayload:
             await publish_gate_node(state, store=MagicMock())
 
         payload = mock_int.call_args[0][0]
-        assert payload["publish_summary"] == {"title": "", "has_images": False, "account_id": ""}
+        assert payload["publish_summary"] == {
+            "title": "",
+            "has_images": False,
+            "account_id": "",
+            "is_commercial": False,
+            "requires_disclosure": False,
+        }
 
     @pytest.mark.asyncio
     async def test_payload_falls_back_to_the_workflow_account(self):
@@ -174,11 +184,12 @@ class TestDecisionHandling:
 
         assert result["phase"] == WorkflowPhase.PUBLISHING
         assert result["current_agent"] == "publish_gate"
-        assert result["publish_confirmation"] == {
-            "decision": PUBLISH_CONFIRMED,
-            "source": SOURCE_HUMAN,
-            "comments": "",
-        }
+        conf = result["publish_confirmation"]
+        assert conf["decision"] == PUBLISH_CONFIRMED
+        assert conf["source"] == SOURCE_HUMAN
+        assert conf["comments"] == ""
+        assert conf["confirmer"]
+        assert conf["confirmed_at"]
 
     @pytest.mark.asyncio
     async def test_cancelled_is_a_decision_not_a_fault(self):
@@ -189,11 +200,12 @@ class TestDecisionHandling:
 
         assert result["phase"] == WorkflowPhase.CANCELLED
         assert result["phase"] != WorkflowPhase.ERROR
-        assert result["publish_confirmation"] == {
-            "decision": PUBLISH_CANCELLED,
-            "source": SOURCE_HUMAN,
-            "comments": "标题不合适",
-        }
+        conf = result["publish_confirmation"]
+        assert conf["decision"] == PUBLISH_CANCELLED
+        assert conf["source"] == SOURCE_HUMAN
+        assert conf["comments"] == "标题不合适"
+        assert conf["confirmer"]
+        assert conf["confirmed_at"]
 
     @pytest.mark.asyncio
     async def test_the_gate_writes_its_own_key(self):

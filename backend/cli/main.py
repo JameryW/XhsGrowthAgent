@@ -61,6 +61,7 @@ def run(
     account_id: str = typer.Option("default", help="账号 ID"),
     phase: str = typer.Option("scouting", help="起始阶段"),
     dry_run: bool = typer.Option(False, help="模拟运行（不调用真实 API）"),
+    auto_publish: bool = typer.Option(False, help="审核通过后自动发布"),
     dev: bool = typer.Option(True, help="开发模式（内存检查点）"),
     verbose: bool = typer.Option(False, help="显示详细日志"),
 ) -> None:
@@ -69,6 +70,15 @@ def run(
 
     # 加载 .env 文件
     load_dotenv(override=True)
+
+    # P0-2: same dual-auto hard reject as POST /start
+    from backend.services.compliance_policy import DualAutoPublishError, assert_not_dual_auto
+
+    try:
+        assert_not_dual_auto(auto_publish=bool(auto_publish))
+    except DualAutoPublishError as exc:
+        console.print(Panel(str(exc), title="❌ 合规硬拒绝", style="red"))
+        raise typer.Exit(2) from exc
 
     console.print(Panel("🚀 小红书增长引擎", style="bold green"))
 
@@ -97,6 +107,8 @@ def run(
                 "account_id": account_id,
                 "session_id": thread_id,
                 "thread_id": thread_id,
+                "dry_run": dry_run,
+                "auto_publish": auto_publish,
                 "created_at": datetime.now(UTC).isoformat(),
                 "updated_at": datetime.now(UTC).isoformat(),
             }

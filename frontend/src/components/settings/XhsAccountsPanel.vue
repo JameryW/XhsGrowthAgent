@@ -10,6 +10,7 @@ import {
   type AccountLoginStatusValue,
 } from '@/api/accounts'
 import { syncAllCreatorStats } from '@/api/analytics'
+import { getRiskGates, type EngagementPauseStatus } from '@/api/system'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -77,6 +78,8 @@ const qrLoginAccountName = ref<string>('')
 
 /** Per-account anti-risk fuse: block re-scan after 300012 / cooldown. */
 const qrRiskBlocks = ref<Record<string, { until: number; message: string; riskCode: string }>>({})
+/** P0-3: engagement risk pause (reason + remaining) from /system/risk-gates. */
+const engagementPauses = ref<Record<string, EngagementPauseStatus & { fetchedAt: number }>>({})
 let riskTickTimer: ReturnType<typeof setInterval> | null = null
 // Force recompute of remaining seconds every 1s while any block is active.
 const riskTick = ref(0)
@@ -96,6 +99,19 @@ function ensureRiskTicker() {
         const next = { ...qrRiskBlocks.value }
         delete next[id]
         qrRiskBlocks.value = next
+      } else {
+        any = true
+      }
+    }
+    for (const [id, pause] of Object.entries(engagementPauses.value)) {
+      const remaining = Math.max(
+        0,
+        Math.ceil((pause.retry_after_seconds || 0) - (now - pause.fetchedAt) / 1000),
+      )
+      if (remaining <= 0) {
+        const next = { ...engagementPauses.value }
+        delete next[id]
+        engagementPauses.value = next
       } else {
         any = true
       }
@@ -224,11 +240,49 @@ async function refreshLoginStatus(accountId: string) {
   }
 }
 
+async function refreshEngagementPauses() {
+  if (store.accounts.length === 0) {
+    engagementPauses.value = {}
+    return
+  }
+  const next: Record<string, EngagementPauseStatus & { fetchedAt: number }> = {}
+  const fetchedAt = Date.now()
+  await Promise.allSettled(
+    store.accounts.map(async (account) => {
+      try {
+        const resp = await getRiskGates(account.id)
+        if (resp.engagement_pause?.paused) {
+          next[account.id] = { ...resp.engagement_pause, fetchedAt }
+        }
+      } catch {
+        // Soft-fail: Settings still works without pause visibility.
+      }
+    }),
+  )
+  engagementPauses.value = next
+  if (Object.keys(next).length > 0) ensureRiskTicker()
+}
+
+function engagementPauseFor(accountId: string): (EngagementPauseStatus & { remainingSeconds: number }) | null {
+  void riskTick.value
+  const pause = engagementPauses.value[accountId]
+  if (!pause?.paused) return null
+  const remaining = Math.max(
+    0,
+    Math.ceil((pause.retry_after_seconds || 0) - (Date.now() - pause.fetchedAt) / 1000),
+  )
+  if (remaining <= 0) return null
+  return { ...pause, remainingSeconds: remaining }
+}
+
 async function refreshAllLoginStatuses() {
   if (store.accounts.length === 0) return
   isRefreshingLoginStatuses.value = true
   try {
-    await Promise.allSettled(store.accounts.map(account => refreshLoginStatus(account.id)))
+    await Promise.allSettled([
+      ...store.accounts.map(account => refreshLoginStatus(account.id)),
+      refreshEngagementPauses(),
+    ])
   } finally {
     isRefreshingLoginStatuses.value = false
   }
@@ -446,6 +500,16 @@ function onQrConfirmed() {
             >
               {{ t('settings.xhsAccounts.qrRiskBadge', {
                 minutes: Math.max(1, Math.ceil((qrRiskFor(account.id)?.remainingSeconds || 60) / 60)),
+              }) }}
+            </span>
+            <span
+              v-if="engagementPauseFor(account.id)"
+              class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 font-medium"
+              :title="engagementPauseFor(account.id)?.message || engagementPauseFor(account.id)?.reason || ''"
+            >
+              {{ t('settings.xhsAccounts.engagementPauseBadge', {
+                minutes: Math.max(1, Math.ceil((engagementPauseFor(account.id)?.remainingSeconds || 60) / 60)),
+                reason: engagementPauseFor(account.id)?.reason || 'risk_control',
               }) }}
             </span>
           </div>
