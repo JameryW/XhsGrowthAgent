@@ -407,10 +407,7 @@ def check_engagement_risk_pause(account_id: str = "") -> GateBlock | None:
     return GateBlock(
         reason="engagement_risk_pause",
         risk_code=reason,
-        message=(
-            f"互动已因风控信号暂停：请 {_remaining(until)} 秒后再试"
-            f"（原因：{reason}）。"
-        ),
+        message=(f"互动已因风控信号暂停：请 {_remaining(until)} 秒后再试（原因：{reason}）。"),
         retry_after_seconds=_remaining(until),
     )
 
@@ -1201,9 +1198,7 @@ def export_risk_gate_state() -> dict[str, Any]:
             "until": until,
             "reason": _engagement_pause_reason.get(aid, "risk_control"),
         }
-    inbound: dict[str, list[str]] = {
-        aid: sorted(peers) for aid, peers in _inbound_peers.items()
-    }
+    inbound: dict[str, list[str]] = {aid: sorted(peers) for aid, peers in _inbound_peers.items()}
     daily: dict[str, Any] = {
         aid: {day: dict(counts) for day, counts in by_day.items()}
         for aid, by_day in _engagement_daily_counts.items()

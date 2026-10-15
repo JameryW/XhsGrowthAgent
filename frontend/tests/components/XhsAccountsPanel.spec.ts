@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import XhsAccountsPanel from '@/components/settings/XhsAccountsPanel.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { syncAllCreatorStats } from '@/api/analytics'
+import { getRiskGates } from '@/api/system'
 import type { Account } from '@/api/accounts'
 
 const toastMock = {
@@ -27,7 +28,17 @@ vi.mock('@/api/analytics', () => ({
   syncAllCreatorStats: vi.fn(),
 }))
 
+vi.mock('@/api/system', () => ({
+  getRiskGates: vi.fn().mockResolvedValue({
+    risk_gates: {},
+    active: [],
+    cdp_sessions: [],
+    engagement_pause: { paused: false },
+  }),
+}))
+
 const mockedSyncAll = vi.mocked(syncAllCreatorStats)
+const mockedGetRiskGates = vi.mocked(getRiskGates)
 
 function account(partial: Partial<Account> = {}): Account {
   return {
@@ -64,6 +75,12 @@ describe('XhsAccountsPanel 手动同步入口', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mockedGetRiskGates.mockResolvedValue({
+      risk_gates: {},
+      active: [],
+      cdp_sessions: [],
+      engagement_pause: { paused: false },
+    })
     const store = useAccountsStore()
     vi.spyOn(store, 'fetchAccounts').mockResolvedValue(undefined)
   })
@@ -91,6 +108,30 @@ describe('XhsAccountsPanel 手动同步入口', () => {
 
     expect(mockedSyncAll).toHaveBeenCalledWith({ period: '30d', analyze: true })
     expect(toastMock.success).toHaveBeenCalledOnce()
+    expect(toastMock.error).not.toHaveBeenCalled()
+  })
+
+  it('挂载时拉取 risk-gates；暂停态展示互动暂停徽章', async () => {
+    const store = useAccountsStore()
+    store.accounts = [account()]
+    mockedGetRiskGates.mockResolvedValue({
+      risk_gates: {},
+      active: [],
+      cdp_sessions: [],
+      account_id: 'acc-1',
+      engagement_pause: {
+        paused: true,
+        reason: 'risk_control',
+        retry_after_seconds: 3600,
+        message: '互动已暂停',
+      },
+    })
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(mockedGetRiskGates).toHaveBeenCalledWith('acc-1')
+    expect(wrapper.text()).toMatch(/互动暂停|risk_control|engagementPause/)
     expect(toastMock.error).not.toHaveBeenCalled()
   })
 

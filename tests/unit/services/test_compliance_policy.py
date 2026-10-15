@@ -42,9 +42,16 @@ def test_state_is_commercial_brief() -> None:
 
 def test_state_is_blocking_from_lexicon() -> None:
     assert state_is_blocking({"compliance_scan": {"is_blocking": True}}) is True
-    assert state_is_blocking(
-        {"evaluation_result": {"dimensions": [{"dimension": "compliance", "is_blocking": True}]}}
-    ) is True
+    assert (
+        state_is_blocking(
+            {
+                "evaluation_result": {
+                    "dimensions": [{"dimension": "compliance", "is_blocking": True}]
+                }
+            }
+        )
+        is True
+    )
 
 
 def test_disclosure_markers() -> None:

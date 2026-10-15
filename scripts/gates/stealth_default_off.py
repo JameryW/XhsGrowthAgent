@@ -20,10 +20,7 @@ def main() -> int:
     errors: list[str] = []
     login_src = LOGIN.read_text(encoding="utf-8")
     # Every call site must be guarded by _stealth_injection_enabled().
-    call_sites = [
-        m.start()
-        for m in re.finditer(r"await\s+self\._apply_stealth\s*\(", login_src)
-    ]
+    call_sites = [m.start() for m in re.finditer(r"await\s+self\._apply_stealth\s*\(", login_src)]
     for pos in call_sites:
         window = login_src[max(0, pos - 400) : pos]
         if "_stealth_injection_enabled" not in window:
