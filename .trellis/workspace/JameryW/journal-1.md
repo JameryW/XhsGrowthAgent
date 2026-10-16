@@ -1003,3 +1003,36 @@ Delivered P1-1..P1-5 on PR #659 (merged). Account health panel, scrape daily bud
 ### Next Steps
 
 - None - task complete
+
+
+## Session 118: P2 compliance closed: learning, niche tiers, signoff board
+
+**Date**: 2026-10-16
+**Task**: P2 compliance closed: learning, niche tiers, signoff board
+**Branch**: `main`
+
+### Summary
+
+PR #661 merged (P2-1..P2-4). Learning recommendations N=5, 医美 niche tier, acceptance signoff board + Settings tab, compliance-p2 spec. Archived task 10-16-compliance-p2-growth-cleanup. Original assessment P0-P2 code track complete; G1-G5 human signoff remains out-of-repo.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fd20b0cd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
