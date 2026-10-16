@@ -53,6 +53,8 @@ export interface PublishOptions {
   dry_run: boolean
   auto_publish?: boolean
   account_id?: string | null
+  /** P0-5 commercial/brief disclosure checkbox — must reach publish_gate. */
+  disclosure_confirmed?: boolean
 }
 
 // Review decision request

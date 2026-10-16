@@ -279,6 +279,14 @@ _browser_action_last_at: dict[str, float] = {}
 _browser_action_last_owner: dict[str, str] = {}
 _publish_last_at: dict[str, float] = {}
 _engagement_last_at: dict[str, float] = {}
+# Engagement risk pause (marker hit → default 6h) + daily quotas + inbound peers.
+_engagement_paused_until: dict[str, float] = {}
+_engagement_pause_reason: dict[str, str] = {}
+_engagement_pause_wall: dict[str, str] = {}
+# account_id -> {day_key: {"dm": n, "comment_reply": n}}
+_engagement_daily_counts: dict[str, dict[str, dict[str, int]]] = {}
+# account_id -> set of inbound/unread peer user ids
+_inbound_peers: dict[str, set[str]] = {}
 # Wall-clock ISO mirrors for durable persistence across restarts.
 _qr_last_attempt_wall: dict[str, str] = {}
 _qr_risk_until_wall: dict[str, str] = {}
@@ -288,6 +296,243 @@ _publish_wall: dict[str, str] = {}
 _engagement_wall: dict[str, str] = {}
 _persist_task: asyncio.Task[None] | None = None
 _hydrated = False
+
+
+def engagement_pause_seconds(account_id: str = "") -> float:
+    """How long to pause engagement after a risk-marker hit (0 disables)."""
+    return _policy_value(
+        account_id,
+        "engagement_pause_seconds",
+        _env_float("XHS_ENGAGEMENT_RISK_PAUSE_SECONDS", 6 * 3600.0),
+    )
+
+
+def dm_daily_limit(account_id: str = "") -> int:
+    """Max outbound DMs per account per UTC day (default 20)."""
+    raw = _policy_value(
+        account_id,
+        "dm_daily_limit",
+        _env_float("XHS_DM_DAILY_LIMIT", 20.0),
+    )
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 20
+
+
+def comment_reply_daily_limit(account_id: str = "") -> int:
+    """Max comment replies per account per UTC day (default 50)."""
+    raw = _policy_value(
+        account_id,
+        "comment_reply_daily_limit",
+        _env_float("XHS_COMMENT_REPLY_DAILY_LIMIT", 50.0),
+    )
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 50
+
+
+def outbound_dm_allowed(account_id: str = "") -> bool:
+    """Cold-start / 新建私信 requires explicit opt-in."""
+    return os.environ.get("XHS_ALLOW_OUTBOUND_DM", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _utc_day_key() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def note_inbound_peers(account_id: str, peer_ids: list[str] | set[str]) -> None:
+    """Merge unread/inbound peer ids into the account whitelist cache."""
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return
+    bucket = _inbound_peers.setdefault(account_id, set())
+    for peer in peer_ids:
+        text = str(peer or "").strip()
+        if text:
+            bucket.add(text)
+    _schedule_persist()
+
+
+def list_inbound_peers(account_id: str) -> list[str]:
+    account_id = (account_id or "").strip()
+    return sorted(_inbound_peers.get(account_id) or set())
+
+
+def is_inbound_peer(account_id: str, peer_id: str) -> bool:
+    account_id = (account_id or "").strip()
+    peer_id = str(peer_id or "").strip()
+    if not account_id or not peer_id:
+        return False
+    return peer_id in (_inbound_peers.get(account_id) or set())
+
+
+def note_engagement_risk_pause(account_id: str, *, reason: str = "risk_control") -> None:
+    """Pause engagement after a platform risk-control marker."""
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return
+    pause_s = engagement_pause_seconds(account_id)
+    if pause_s <= 0:
+        return
+    _engagement_paused_until[account_id] = _now() + pause_s
+    _engagement_pause_reason[account_id] = reason
+    _engagement_pause_wall[account_id] = (
+        datetime.now(UTC) + timedelta(seconds=pause_s)
+    ).isoformat()
+    _schedule_persist()
+
+
+def clear_engagement_risk_pause(account_id: str) -> None:
+    account_id = (account_id or "").strip()
+    _engagement_paused_until.pop(account_id, None)
+    _engagement_pause_reason.pop(account_id, None)
+    _engagement_pause_wall.pop(account_id, None)
+    _schedule_persist()
+
+
+def check_engagement_risk_pause(account_id: str = "") -> GateBlock | None:
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return None
+    until = _engagement_paused_until.get(account_id, 0.0)
+    if until <= _now():
+        return None
+    reason = _engagement_pause_reason.get(account_id) or "risk_control"
+    return GateBlock(
+        reason="engagement_risk_pause",
+        risk_code=reason,
+        message=(f"互动已因风控信号暂停：请 {_remaining(until)} 秒后再试（原因：{reason}）。"),
+        retry_after_seconds=_remaining(until),
+    )
+
+
+def get_engagement_pause_status(account_id: str = "") -> dict[str, Any]:
+    """Settings-facing pause snapshot (reason + remaining seconds)."""
+    account_id = (account_id or "").strip()
+    block = check_engagement_risk_pause(account_id) if account_id else None
+    if block is None:
+        return {
+            "account_id": account_id or None,
+            "paused": False,
+            "reason": None,
+            "retry_after_seconds": 0,
+            "pause_until": None,
+        }
+    return {
+        "account_id": account_id or None,
+        "paused": True,
+        "reason": block.risk_code,
+        "retry_after_seconds": block.retry_after_seconds,
+        "pause_until": _engagement_pause_wall.get(account_id),
+        "message": block.message,
+    }
+
+
+def _daily_counts(account_id: str) -> dict[str, int]:
+    day = _utc_day_key()
+    by_day = _engagement_daily_counts.setdefault(account_id, {})
+    return by_day.setdefault(day, {"dm": 0, "comment_reply": 0})
+
+
+def check_dm_quota(account_id: str = "") -> GateBlock | None:
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return None
+    limit = dm_daily_limit(account_id)
+    if limit <= 0:
+        return GateBlock(
+            reason="dm_daily_limit",
+            risk_code="dm_daily_limit",
+            message="私信日配额为 0，已禁止发送私信。",
+            retry_after_seconds=86400,
+        )
+    used = int(_daily_counts(account_id).get("dm", 0))
+    if used < limit:
+        return None
+    return GateBlock(
+        reason="dm_daily_limit",
+        risk_code="dm_daily_limit",
+        message=f"私信日配额已用尽（{used}/{limit}），请明日再试。",
+        retry_after_seconds=86400,
+    )
+
+
+def check_comment_reply_quota(account_id: str = "") -> GateBlock | None:
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return None
+    limit = comment_reply_daily_limit(account_id)
+    if limit <= 0:
+        return GateBlock(
+            reason="comment_reply_daily_limit",
+            risk_code="comment_reply_daily_limit",
+            message="评论回复日配额为 0，已禁止回复评论。",
+            retry_after_seconds=86400,
+        )
+    used = int(_daily_counts(account_id).get("comment_reply", 0))
+    if used < limit:
+        return None
+    return GateBlock(
+        reason="comment_reply_daily_limit",
+        risk_code="comment_reply_daily_limit",
+        message=f"评论回复日配额已用尽（{used}/{limit}），请明日再试。",
+        retry_after_seconds=86400,
+    )
+
+
+def note_dm_sent(account_id: str) -> None:
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return
+    counts = _daily_counts(account_id)
+    counts["dm"] = int(counts.get("dm", 0)) + 1
+    _schedule_persist()
+
+
+def note_comment_reply_sent(account_id: str) -> None:
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return
+    counts = _daily_counts(account_id)
+    counts["comment_reply"] = int(counts.get("comment_reply", 0)) + 1
+    _schedule_persist()
+
+
+def check_dm_target_allowed(
+    account_id: str,
+    target_user_id: str,
+    *,
+    human_confirmed: bool = False,
+) -> GateBlock | None:
+    """DM only to inbound/unread peers unless outbound + per-message confirm."""
+    account_id = (account_id or "").strip()
+    target_user_id = str(target_user_id or "").strip()
+    if not target_user_id:
+        return GateBlock(
+            reason="dm_target_missing",
+            risk_code="dm_target_missing",
+            message="私信目标用户为空。",
+            retry_after_seconds=0,
+        )
+    if is_inbound_peer(account_id, target_user_id):
+        return None
+    if outbound_dm_allowed() and human_confirmed:
+        return None
+    return GateBlock(
+        reason="dm_target_not_inbound",
+        risk_code="dm_target_not_inbound",
+        message=(
+            "默认禁止新建私信冷启动：目标不在未读/入站白名单。"
+            "开启 XHS_ALLOW_OUTBOUND_DM 并逐条人工确认后才可外发。"
+        ),
+        retry_after_seconds=0,
+    )
 
 
 def _now() -> float:
@@ -757,6 +1002,20 @@ def list_active_cooldowns(*, account_id: str = "") -> list[dict[str, Any]]:
             }
         )
 
+    for aid, until in list(_engagement_paused_until.items()):
+        if not _want_aid(aid) or until <= now:
+            continue
+        rows.append(
+            {
+                "kind": "engagement_risk_pause",
+                "key": aid,
+                "reason": _engagement_pause_reason.get(aid, "risk_control"),
+                "retry_after_seconds": _remaining(until),
+                "message": "互动风控暂停",
+                "pause_until": _engagement_pause_wall.get(aid),
+            }
+        )
+
     rows.sort(key=lambda r: int(r.get("retry_after_seconds") or 0), reverse=True)
     return rows
 
@@ -767,7 +1026,7 @@ def clear_account_cooldowns(
     """Clear cool-downs for one account (or all keys when account_id empty).
 
     ``kinds`` optional filter: browser_action, publish, engagement, sync_auth,
-    qr_risk, qr_attempt. None/empty clears all kinds.
+    qr_risk, qr_attempt, engagement_risk_pause. None/empty clears all kinds.
     """
     account_id = (account_id or "").strip()
     kind_set = {k.strip() for k in (kinds or []) if k and str(k).strip()}
@@ -851,6 +1110,17 @@ def clear_account_cooldowns(
             n += 1
         cleared["qr_attempt"] = n
 
+    if _do("engagement_risk_pause"):
+        n = 0
+        for aid in list(_engagement_paused_until.keys()):
+            if not _match_aid(aid):
+                continue
+            _engagement_paused_until.pop(aid, None)
+            _engagement_pause_reason.pop(aid, None)
+            _engagement_pause_wall.pop(aid, None)
+            n += 1
+        cleared["engagement_risk_pause"] = n
+
     _schedule_persist()
     total = sum(cleared.values())
     return {
@@ -872,13 +1142,20 @@ def snapshot_risk_gates() -> dict[str, Any]:
     qr_risk_active = sum(1 for until in _qr_risk_blocked_until.values() if until > now)
     active = list_active_cooldowns()
     defaults = global_cooldown_defaults()
+    pause_active = sum(1 for until in _engagement_paused_until.values() if until > now)
     return {
         "browser_action_cooldown_seconds": defaults["browser_action_seconds"],
         "publish_cooldown_seconds": defaults["publish_seconds"],
         "engagement_account_cooldown_seconds": defaults["engagement_seconds"],
+        "engagement_risk_pause_seconds": _env_float(
+            "XHS_ENGAGEMENT_RISK_PAUSE_SECONDS", 6 * 3600.0
+        ),
+        "dm_daily_limit": int(_env_float("XHS_DM_DAILY_LIMIT", 20.0)),
+        "comment_reply_daily_limit": int(_env_float("XHS_COMMENT_REPLY_DAILY_LIMIT", 50.0)),
         "active_browser_cooldowns": browser_active,
         "active_sync_auth_blocks": auth_active,
         "active_qr_risk_blocks": qr_risk_active,
+        "active_engagement_risk_pauses": pause_active,
         "durable": _hydrated,
         "browser_action_keys": len(_browser_action_last_at),
         "publish_keys": len(_publish_last_at),
@@ -915,6 +1192,17 @@ def export_risk_gate_state() -> dict[str, Any]:
     policies: dict[str, Any] = {}
     for aid, policy in _policies.items():
         policies[str(aid)] = dict(policy)
+    engagement_pause: dict[str, Any] = {}
+    for aid, until in _engagement_pause_wall.items():
+        engagement_pause[aid] = {
+            "until": until,
+            "reason": _engagement_pause_reason.get(aid, "risk_control"),
+        }
+    inbound: dict[str, list[str]] = {aid: sorted(peers) for aid, peers in _inbound_peers.items()}
+    daily: dict[str, Any] = {
+        aid: {day: dict(counts) for day, counts in by_day.items()}
+        for aid, by_day in _engagement_daily_counts.items()
+    }
     return {
         "browser_action": browser,
         "publish": dict(_publish_wall),
@@ -922,6 +1210,9 @@ def export_risk_gate_state() -> dict[str, Any]:
         "sync_auth": sync_auth,
         "qr_risk": qr_risk,
         "qr_last_attempt": dict(_qr_last_attempt_wall),
+        "engagement_risk_pause": engagement_pause,
+        "inbound_peers": inbound,
+        "engagement_daily_counts": daily,
         "policies": policies,
     }
 
@@ -1001,14 +1292,44 @@ async def hydrate_risk_gates() -> None:
             cleaned[field] = num
         if cleaned:
             _policies[str(aid)] = cleaned
+    for aid, raw in (data.get("engagement_risk_pause") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        until = _mono_deadline_from_wall(str(raw.get("until") or ""))
+        if until is None:
+            continue
+        _engagement_paused_until[str(aid)] = until
+        _engagement_pause_reason[str(aid)] = str(raw.get("reason") or "risk_control")
+        _engagement_pause_wall[str(aid)] = str(raw.get("until") or "")
+    for aid, peers in (data.get("inbound_peers") or {}).items():
+        if not isinstance(peers, list):
+            continue
+        cleaned_peers = {str(p).strip() for p in peers if str(p).strip()}
+        if cleaned_peers:
+            _inbound_peers[str(aid)] = cleaned_peers
+    for aid, by_day in (data.get("engagement_daily_counts") or {}).items():
+        if not isinstance(by_day, dict):
+            continue
+        day_map: dict[str, dict[str, int]] = {}
+        for day, counts in by_day.items():
+            if not isinstance(counts, dict):
+                continue
+            day_map[str(day)] = {
+                "dm": int(counts.get("dm") or 0),
+                "comment_reply": int(counts.get("comment_reply") or 0),
+            }
+        if day_map:
+            _engagement_daily_counts[str(aid)] = day_map
     _hydrated = True
     logger.info(
-        "risk gates hydrated: browser=%s publish=%s engagement=%s auth=%s qr_risk=%s policies=%s",
+        "risk gates hydrated: browser=%s publish=%s engagement=%s auth=%s qr_risk=%s "
+        "engagement_pause=%s policies=%s",
         len(_browser_action_last_at),
         len(_publish_last_at),
         len(_engagement_last_at),
         len(_sync_auth_blocked_until),
         len(_qr_risk_blocked_until),
+        len(_engagement_paused_until),
         len(_policies),
     )
 
@@ -1025,6 +1346,11 @@ def reset_gates_for_tests() -> None:
     _browser_action_last_owner.clear()
     _publish_last_at.clear()
     _engagement_last_at.clear()
+    _engagement_paused_until.clear()
+    _engagement_pause_reason.clear()
+    _engagement_pause_wall.clear()
+    _engagement_daily_counts.clear()
+    _inbound_peers.clear()
     _qr_last_attempt_wall.clear()
     _qr_risk_until_wall.clear()
     _sync_auth_until_wall.clear()
@@ -1042,27 +1368,43 @@ __all__ = [
     "GateBlock",
     "browser_action_cooldown_seconds",
     "check_browser_action_allowed",
+    "check_comment_reply_quota",
+    "check_dm_quota",
+    "check_dm_target_allowed",
     "check_engagement_allowed",
+    "check_engagement_risk_pause",
     "check_publish_allowed",
     "check_qr_start_allowed",
     "check_sync_auth_cooldown",
     "clear_account_cooldowns",
     "clear_cooldown_policy",
+    "clear_engagement_risk_pause",
     "clear_qr_risk_block",
     "clear_sync_auth_failure",
+    "comment_reply_daily_limit",
+    "dm_daily_limit",
     "engagement_account_cooldown_seconds",
+    "engagement_pause_seconds",
     "export_risk_gate_state",
     "get_cooldown_policy",
+    "get_engagement_pause_status",
     "global_cooldown_defaults",
     "hydrate_risk_gates",
+    "is_inbound_peer",
     "is_security_risk_message",
     "list_active_cooldowns",
+    "list_inbound_peers",
     "note_browser_action",
+    "note_comment_reply_sent",
+    "note_dm_sent",
     "note_engagement",
+    "note_engagement_risk_pause",
+    "note_inbound_peers",
     "note_publish",
     "note_qr_attempt",
     "note_qr_risk_block",
     "note_sync_auth_failure",
+    "outbound_dm_allowed",
     "persist_risk_gates",
     "publish_cooldown_seconds",
     "qr_cooldown_seconds",

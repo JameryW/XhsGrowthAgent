@@ -41,6 +41,15 @@
 - 浏览器 profile 目录只保存在部署机器本地，避免提交到仓库或日志。
 - 使用独立创作者账号，降低主账号风险。
 
+### 合规与自动化底线（P0）
+
+- **伪签名已删除**：`XHSSignature` 不再生成伪造 `x-s`/`x-t`。依赖旧 HTTP 加签的调用返回 `signature_unavailable`，不会静默空结果。平台操作走 headed CDP / 浏览器路径。
+- **Stealth 默认关闭**：登录回退路径默认不注入 `playwright-stealth`；仅当显式设置 `XHS_BROWSER_STEALTH=1` 时才注入（可选 `[browser]` 依赖）。
+- **双自动硬拒绝**：`AUTO_APPROVE_LOW_RISK=true` 与 `auto_publish=true` 不能同时开启（`POST /start` 与 `xhs-growth run` 一致）。合规 blocking、商单 `is_commercial`、高风险垂类永不 `auto_low_risk`。
+- **发布回执**：`publish_confirmation` 记录 `confirmer` / `source`（`human` / `auto_*`）/ `confirmed_at`。
+- **私信策略**：默认仅回复未读/入站白名单用户；日配额默认私信 20、评论回复 50；冷启动「新建私信」需 `XHS_ALLOW_OUTBOUND_DM=1` + 逐条 `human_confirmed`。风控标记命中后互动暂停默认 6 小时，Settings `/api/system/risk-gates` 可见原因与剩余时间。
+- **确定性词库**：LLM 评估前扫描违禁词（含 niche 扩展库）；商单 brief 模式置 `is_commercial=true`，发布前须勾选披露确认且文案保留合作/广告标注。
+
 ## API 安全
 
 ### 当前状态

@@ -55,6 +55,7 @@ SEEDED_KEYS = frozenset(
         "niche_resolution",
         "dry_run",
         "auto_publish",
+        "is_commercial",
         "created_at",
         "updated_at",
     }
@@ -122,6 +123,7 @@ class TestTheCompiledState:
         assert state["niche_resolution"] == {"source": "manual"}
         assert state["dry_run"] is False
         assert state["auto_publish"] is False
+        assert state["is_commercial"] is False
         assert state["created_at"] == CREATED_AT
         assert state["updated_at"] == CREATED_AT
 
@@ -174,6 +176,10 @@ class TestTheStartPhaseIsTheModes:
     def test_a_brief_run_starts_at_briefing_even_with_a_body(self) -> None:
         goal = _goal(mode=WorkflowMode.BRIEF, brief=_brief())
         assert goal.compile_initial_state()["phase"] is WorkflowPhase.BRIEFING
+
+    def test_brief_mode_sets_is_commercial(self) -> None:
+        assert _goal(mode=WorkflowMode.BRIEF).compile_initial_state()["is_commercial"] is True
+        assert _goal(mode=WorkflowMode.TREND).compile_initial_state()["is_commercial"] is False
 
     def test_the_spec_comes_from_the_registry(self) -> None:
         assert _goal(mode=WorkflowMode.BRIEF).spec is get_mode_spec(WorkflowMode.BRIEF)

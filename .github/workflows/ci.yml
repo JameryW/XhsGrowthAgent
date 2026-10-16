@@ -139,6 +139,18 @@ jobs:
         # that skips what it does not understand reports a false pass.
         run: python scripts/gates/tool_runtime_gate.py
 
+  compliance-baseline-gate:
+    name: Compliance Baseline Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Stealth default-off + no fake-useragent + no XHSSignature
+        # Offline static checks for P0-1 anti-detect / fake-sign baseline.
+        run: python scripts/gates/stealth_default_off.py
+
   omp-typecheck:
     name: OMP Typecheck
     runs-on: ubuntu-latest

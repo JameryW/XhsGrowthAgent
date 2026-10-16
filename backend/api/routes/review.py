@@ -69,6 +69,10 @@ class PublishOptions(BaseModel):
     dry_run: bool = False
     auto_publish: bool = False
     account_id: str | None = None  # publish as this account; None = global active account
+    # P0-5: commercial brief disclosure checkbox from Review publish confirm.
+    # Must be an explicit field — Pydantic otherwise strips the key and
+    # publish_gate never sees the human confirmation.
+    disclosure_confirmed: bool = False
 
 
 class ReviewDecision(BaseModel):

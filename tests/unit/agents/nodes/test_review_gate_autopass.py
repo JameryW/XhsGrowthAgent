@@ -91,18 +91,14 @@ class TestClassifyPublishRisk:
         state["niche"] = "母婴"
         assert _classify_publish_risk(state) == "medium"
 
-    def test_low_medical_niche_with_disclaimer(self) -> None:
-        """医疗类目有免责声明 → 不升 high（仍需过 medium/low 判定，此处无其他风险 → low）。
-
-        注：高风险类目有免责仅免 high，其他特征仍走 medium/low 链。此处其他特征均 low。
-        """
+    def test_high_risk_niche_never_low(self) -> None:
+        """P0-2: 高风险垂类（医疗等）永不 low，即使有免责声明也不自动放行。"""
         state = _low_risk_state()
         state["niche"] = "医疗"
         state["copy_content"]["body_text"] = (
             "免责声明：本文不构成医疗建议。" + "正文内容足够长以满足最低长度要求。" * 2
         )
-        # 高风险类目有免责 → 不 high；其他特征 low → low
-        assert _classify_publish_risk(state) == "low"
+        assert _classify_publish_risk(state) == "high"
 
     def test_empty_state_defaults_to_medium(self) -> None:
         """空 state：无图、标题正文空 → medium（非 high，无敏感词）。"""

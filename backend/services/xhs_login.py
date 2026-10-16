@@ -40,6 +40,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("xhs_growth.login")
 
+
+def _stealth_injection_enabled() -> bool:
+    """Opt-in stealth only. Default is off (safe); requires XHS_BROWSER_STEALTH=1."""
+    return os.environ.get("XHS_BROWSER_STEALTH", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 # www 站登录浮层自动触发 qrcode/create 的入口页。creator.xiaohongshu.com/login
 # 无二维码 UI（spike 实测），只有 www 站 explore 页弹登录浮层才发 qrcode/create。
 _EXPLORE_URL = "https://www.xiaohongshu.com/explore"
@@ -684,10 +694,15 @@ class XhsLoginSession:
                         "--disable-dev-shm-usage",
                     ],
                 )
-                # 回退路径才需 stealth（connect_over_cdp 连真实 Chrome 不注 stealth——
-                # 注入伪装脚本到已合法浏览器反而是自动化特征，会被 shield 标红，见
-                # xhs_publisher._ensure_page CDP 分支注释）。
-                await self._apply_stealth(self._context)
+                # Stealth is opt-in only (XHS_BROWSER_STEALTH=1). Default path
+                # never injects anti-detect scripts — they are an automation
+                # fingerprint on headed/CDP Chrome. Optional [browser] extra.
+                if _stealth_injection_enabled():
+                    await self._apply_stealth(self._context)
+                else:
+                    logger.info(
+                        "skipping stealth injection (default); set XHS_BROWSER_STEALTH=1 to enable"
+                    )
 
             # Always use a short-lived login page. Reusing an existing business
             # tab (creator publish page, etc.) can navigate/close the operator's

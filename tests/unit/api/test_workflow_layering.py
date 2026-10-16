@@ -512,6 +512,7 @@ _STATUS_SHAPE: dict[str, Any] = {
         "current_agent": "str",
         "draft_content": {"body_text": "str"},
         "error": "None",
+        "is_commercial": "bool",
         "label": "str",
         "next_steps": {"__list_of": "str"},
         "optimization_analysis": {"gaps": {"__list_of": "str"}},

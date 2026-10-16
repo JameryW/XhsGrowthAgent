@@ -250,6 +250,59 @@ class EvaluatorAgent(BaseAgent):
         plan = state.get("content_plan") or {}
         historical_note = bool(state.get("historical_note"))
 
+        # P0-4: deterministic lexicon scan BEFORE any LLM judge call.
+        from backend.services.compliance.lexicon import scan_state_content
+        from backend.services.compliance_policy import (
+            state_is_commercial,
+            text_has_disclosure,
+        )
+
+        lexicon = scan_state_content(dict(state))
+        commercial = state_is_commercial(dict(state))
+        disclosure_missing = False
+        if commercial:
+            title = str(copy_content.get("selected_title") or "")
+            body = str(copy_content.get("body_text") or "")
+            disclosure_missing = not text_has_disclosure(f"{title}\n{body}")
+        blocking_lexicon = lexicon.is_blocking or disclosure_missing
+        lexicon_payload = lexicon.to_dict()
+        if disclosure_missing:
+            lexicon_payload["disclosure_missing"] = True
+            lexicon_payload["is_blocking"] = True
+            lexicon_payload.setdefault("highlight_terms", []).append("合作披露缺失")
+
+        if blocking_lexicon:
+            issues = [f"违禁词命中: {h.term}" for h in lexicon.hits]
+            if disclosure_missing:
+                issues.append("商单文案缺少合作/广告披露标注")
+            return {
+                "evaluation_result": {
+                    "overall_score": None,
+                    "dimensions": [
+                        {
+                            "dimension": "compliance",
+                            "score": 0.0,
+                            "rationale": "确定性词库/披露扫描阻断",
+                            "issues": issues,
+                            "is_blocking": True,
+                            "available": True,
+                            "highlight_terms": lexicon_payload.get("highlight_terms") or [],
+                        }
+                    ],
+                    "decision": ContentStatus.REJECTED,
+                    "status": "ready",
+                    "degraded": False,
+                    "lexicon_scan": lexicon_payload,
+                    "revision_hints": issues,
+                    "bias_warning": "",
+                    "summary": "确定性合规扫描阻断发布: " + "; ".join(issues),
+                    "failed_dimensions": ["compliance"],
+                },
+                "compliance_scan": lexicon_payload,
+                "is_blocking": True,
+                "is_commercial": commercial,
+            }
+
         # 无内容可评估 → 显式降级（P0-W5：不得伪造 100/APPROVED 直通发布，
         # 与评估器异常走同一人工通道）
         if not copy_content and not visual_plan:
@@ -379,13 +432,20 @@ class EvaluatorAgent(BaseAgent):
         result = self._build_evaluation_result(
             raw, historical=historical_note, state=state, ctx=ctx
         )
+        # Always attach the deterministic pre-LLM scan for audit/Review highlight.
+        result["lexicon_scan"] = lexicon_payload
         logger.info(
             "Evaluation done: overall=%s decision=%s bias_warning=%s",
             result["overall_score"],
             result.get("decision"),
             bool(result.get("bias_warning")),
         )
-        return {"evaluation_result": result}
+        return {
+            "evaluation_result": result,
+            "compliance_scan": lexicon_payload,
+            "is_commercial": commercial,
+            "is_blocking": bool(lexicon_payload.get("is_blocking")),
+        }
 
     def evaluator_fingerprint(self, ctx: EvaluationContext | None = None) -> str:
         """Return a stable evaluator/model/prompt/weights fingerprint.

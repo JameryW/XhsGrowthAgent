@@ -782,6 +782,16 @@ const showPublishConfirm = ref(false)
 type PublishMode = 'dry' | 'live' | null
 const publishMode = ref<PublishMode>(null)
 const publishAccountId = ref<string | null>(null)
+/** P0-5: commercial / brief runs require explicit disclosure checkbox. */
+const disclosureConfirmed = ref(false)
+const pendingPublishIsCommercial = computed(() => {
+  const tid = pendingDecisionThreadId.value
+  if (!tid) return false
+  const wf = workflows.value.find(w => w.thread_id === tid)
+  const detail = workflowDetails.value.get(tid)
+  const mode = String(detail?.workflow_mode || wf?.workflow_mode || '').toLowerCase()
+  return mode === 'brief' || detail?.is_commercial === true
+})
 // Celebration effect
 const showCelebration = ref(false)
 
@@ -960,6 +970,7 @@ const requestDecision = async (tid: string, decision: ContentStatus) => {
       reviewAccountId.value || accountsStore.activeAccountId
     // Force explicit mode choice: reset to unset each time the modal opens.
     publishMode.value = null
+    disclosureConfirmed.value = false
     showPublishConfirm.value = true
   } else {
     executeDecision(tid, decision)
@@ -972,7 +983,17 @@ const executeDecision = async (tid: string, decision: ContentStatus) => {
 
   const feedback = buildFeedback(tid, decision)
   const publishOpts = decision === 'approved'
-    ? { dry_run: publishMode.value === 'dry', account_id: publishAccountId.value }
+    ? {
+        dry_run: publishMode.value === 'dry',
+        // Live confirm in this modal is the human publish authorisation —
+        // stamp auto_publish so publish_gate does not interrupt again without
+        // a Settings/Dashboard resume UI for awaiting_publish.
+        auto_publish: publishMode.value === 'live',
+        account_id: publishAccountId.value,
+        ...(pendingPublishIsCommercial.value
+          ? { disclosure_confirmed: disclosureConfirmed.value === true }
+          : {}),
+      }
     : undefined
 
   try {
@@ -1467,6 +1488,21 @@ const handleCancelConfirm = () => {
                       <p class="text-[10px] text-amber-700 leading-relaxed">{{ getEvaluation(wf.thread_id)!.bias_warning }}</p>
                     </div>
 
+                    <!-- P0-4 lexicon highlight terms (deterministic pre-LLM scan) -->
+                    <div
+                      v-if="getEvaluation(wf.thread_id)?.lexicon_scan?.highlight_terms?.length"
+                      class="rounded-md p-2.5 bg-rose-50/70 border border-rose-200"
+                    >
+                      <div class="text-[10px] font-semibold text-rose-700 mb-1.5">{{ t('review.evaluation.lexiconTitle') }}</div>
+                      <div class="flex flex-wrap gap-1">
+                        <span
+                          v-for="term in getEvaluation(wf.thread_id)!.lexicon_scan!.highlight_terms!"
+                          :key="term"
+                          class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-medium"
+                        >{{ term }}</span>
+                      </div>
+                    </div>
+
                     <!-- Dimension details -->
                     <div class="dark-explicit rounded-md p-2.5 bg-white/40 dark:bg-slate-900/55">
                       <div class="text-[10px] font-semibold text-slate-700 mb-1.5">{{ t('review.evaluation.dimensionsTitle') }}</div>
@@ -1731,13 +1767,33 @@ const handleCancelConfirm = () => {
               </div>
             </div>
 
+            <label
+              v-if="pendingPublishIsCommercial"
+              class="flex items-start gap-2 p-3 rounded-lg liquid-glass-inset cursor-pointer"
+            >
+              <input
+                v-model="disclosureConfirmed"
+                type="checkbox"
+                class="mt-0.5 rounded border-slate-300 text-rose-500 focus:ring-rose-400"
+              />
+              <span class="text-xs text-slate-700 leading-relaxed">
+                {{ t('review.publishConfirm.disclosureLabel') }}
+              </span>
+            </label>
+
           </div>
 
           <div class="p-4 md:p-5 border-t border-slate-100 flex gap-2 md:gap-3">
             <NeonButton variant="ghost" class="flex-1" @click="showPublishConfirm = false" :disabled="reviewStore.isLoading">
               {{ t('common.cancel') }}
             </NeonButton>
-            <NeonButton variant="pink" class="flex-1" @click="confirmPublish" :loading="reviewStore.isLoading" :disabled="publishMode === null">
+            <NeonButton
+              variant="pink"
+              class="flex-1"
+              @click="confirmPublish"
+              :loading="reviewStore.isLoading"
+              :disabled="publishMode === null || (pendingPublishIsCommercial && !disclosureConfirmed)"
+            >
               <span class="inline-flex items-center gap-2">
                 <AppIcon name="Send" size="sm" variant="white" />
                 {{ t('review.publishConfirm.confirm') }}

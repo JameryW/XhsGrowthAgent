@@ -769,7 +769,8 @@
       "dryCardTitle": "试运行",
       "dryCardDesc": "预览不实际发布",
       "liveCardTitle": "真实发布",
-      "liveCardDesc": "上线到小红书平台"
+      "liveCardDesc": "上线到小红书平台",
+      "disclosureLabel": "我确认本条商单内容已完成报备/已标注合作或广告披露，且文案未去掉合作标注。"
     },
     "stateLost": "该工作流审核状态因容器重启而丢失，请重新启动工作流以生成审核内容。",
     "errorStateLost": "审核状态丢失",
@@ -804,6 +805,7 @@
       "dimensionsTitle": "维度详情",
       "hintsTitle": "修订建议",
       "biasTitle": "对抗偏倚检测",
+      "lexiconTitle": "违禁词命中（确定性扫描）",
       "blocking": "硬性失败",
       "decision": {
         "approved": "通过",
@@ -2278,6 +2280,8 @@
       "qrLogin": "扫码登录",
       "qrRiskBadge": "风控冷却 {minutes} 分钟",
       "qrRiskCooldown": "扫码登录冷却中，约 {minutes} 分钟后再试；请优先切换家庭宽带或手机热点",
+      "engagementPauseBadge": "互动暂停 {minutes} 分钟（{reason}）",
+      "engagementPauseHint": "互动因风控信号暂停：原因 {reason}，约 {minutes} 分钟后恢复",
       "qrLoginTitle": "扫码登录小红书",
       "qrWaiting": "请用小红书 App 扫码",
       "qrScanned": "已扫码，请在手机上确认",

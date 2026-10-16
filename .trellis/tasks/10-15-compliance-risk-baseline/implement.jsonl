@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline index and pre-dev checklist entry point"}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "CDP/headed browser and risk-stop conventions for engagement and login stealth changes"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Stable error codes for signature_unavailable, dual-auto reject, DM quota/whitelist denials"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "review_gate/publish_gate interrupts, auto sources, and publish receipt fields"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Where to place compliance lexicon service/tools modules"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Persisting inbound peers, daily quotas, risk pause if DB-backed"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "API/CLI/gates/engagement/frontend Review disclosure must stay consistent"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse risk_gate/cooldown patterns instead of new ad-hoc rate limiters"}
+{"file": ".trellis/tasks/10-15-compliance-risk-baseline/prd.md", "reason": "Locked P0 requirements, decisions, and acceptance criteria"}

@@ -130,6 +130,11 @@ class WorkflowStatusResponse(BaseModel):
     pause_reason: str | None = Field(
         default=None, description="原因：为何工作流停在 paused（如 evaluator_fail_closed）"
     )
+    # P0-5: commercial / brief runs require disclosure confirmation before publish.
+    is_commercial: bool = Field(
+        default=False,
+        description="True when the run is a commercial brief (or explicitly flagged)",
+    )
     checkpoint_lost: bool = Field(
         default=False,
         description="Checkpoint lost after container restart",

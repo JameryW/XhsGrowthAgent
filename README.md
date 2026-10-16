@@ -162,6 +162,8 @@ Trend Scout → Content Strategist → Copywriter + Visual Designer
 
 Runs are resumable and expose status, intermediate results, review decisions, and performance logs. The review gate is deliberate: the agent can prepare and evaluate content, but the publishing boundary remains visible and controllable. Publishing runs through a deterministic policy engine and human confirmation before the Tool Gateway executes it, and every execution returns an immutable receipt.
 
+**Compliance defaults (safe-by-default):** fake HTTP signing is removed (`signature_unavailable` instead of silent empty results); browser stealth injection is off unless `XHS_BROWSER_STEALTH=1`; `AUTO_APPROVE_LOW_RISK` and `auto_publish` cannot both be on; DMs are inbound-only by default with daily caps; a deterministic lexicon scan runs before the LLM evaluator; commercial brief runs require disclosure confirmation. Details: [docs/security.md](./docs/security.md).
+
 ## Web workspace
 
 The Vue 3 frontend is organized around creation, review, growth, and account operations:

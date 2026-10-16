@@ -13,6 +13,7 @@ absence of one (see :func:`publish_needs_confirmation`).
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from langgraph.store.base import BaseStore
@@ -93,6 +94,42 @@ def _account_id(state: XHSGrowthState | dict[str, Any]) -> str:
     return str(options.get("account_id") or state.get("account_id", ""))
 
 
+def _receipt_fields(
+    state: XHSGrowthState | dict[str, Any],
+    *,
+    source: str,
+    decision: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Publish receipt: confirmer + source + timestamp (+ optional disclosure)."""
+    decision = decision or {}
+    options = state.get("publish_options") or {}
+    confirmer = (
+        decision.get("confirmed_by")
+        or decision.get("confirmer")
+        or options.get("confirmed_by")
+        or options.get("confirmer")
+        or state.get("confirmed_by")
+        or ("system" if source != SOURCE_HUMAN else "human")
+    )
+    receipt: dict[str, Any] = {
+        "confirmer": str(confirmer),
+        "source": source,
+        "confirmed_at": datetime.now(UTC).isoformat(),
+    }
+    disclosure = decision.get("disclosure_confirmed")
+    if disclosure is None:
+        disclosure = options.get("disclosure_confirmed")
+    if disclosure is not None:
+        receipt["disclosure_confirmed"] = bool(disclosure)
+    return receipt
+
+
+def _commercial_requires_disclosure(state: XHSGrowthState | dict[str, Any]) -> bool:
+    from backend.services.compliance_policy import state_is_commercial
+
+    return state_is_commercial(dict(state))
+
+
 async def _record_refusal(state: XHSGrowthState, raw: Any) -> None:
     """Store one ``kind:"action"`` event for a publish this gate refused.
 
@@ -152,16 +189,53 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
 
     if not publish_needs_confirmation(state):
         reason = _skip_reason(state)
+        # Commercial / brief runs still need disclosure even on auto_publish.
+        if _commercial_requires_disclosure(state):
+            from backend.services.compliance_policy import commercial_disclosure_ok
+
+            # Standing auto_publish cannot bypass disclosure for 商单.
+            probe = {
+                **dict(state),
+                "publish_confirmation": {
+                    **(state.get("publish_confirmation") or {}),
+                    "disclosure_confirmed": (
+                        (state.get("publish_options") or {}).get("disclosure_confirmed") is True
+                        or state.get("disclosure_confirmed") is True
+                    ),
+                },
+            }
+            if not commercial_disclosure_ok(probe):
+                logger.warning(
+                    "publish gate: commercial run missing disclosure — refusing auto path"
+                )
+                return NodeResult(
+                    {
+                        "publish_confirmation": {
+                            "decision": PUBLISH_CANCELLED,
+                            "source": reason,
+                            **_receipt_fields(state, source=reason),
+                            "error_code": "commercial_disclosure_required",
+                            "comments": "商单缺少合作披露勾选或文案标注",
+                        },
+                        "phase": WorkflowPhase.CANCELLED,
+                        "is_blocking": True,
+                    },
+                    "publish_gate",
+                ).to_dict()
         logger.info("publish gate: standing authorisation present (%s), not interrupting", reason)
         return NodeResult(
             {
-                "publish_confirmation": {"decision": PUBLISH_CONFIRMED, "source": reason},
+                "publish_confirmation": {
+                    "decision": PUBLISH_CONFIRMED,
+                    **_receipt_fields(state, source=reason),
+                },
                 "phase": WorkflowPhase.PUBLISHING,
             },
             "publish_gate",
         ).to_dict()
 
     copy = state.get("copy_content") or {}
+    needs_disclosure = _commercial_requires_disclosure(state)
 
     # ``gate="publish"`` is the contract with derive_status: an interrupt whose
     # payload carries it derives AWAITING_PUBLISH rather than falling through to
@@ -173,18 +247,38 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
                 "title": (copy.get("selected_title") or ""),
                 "has_images": bool((state.get("visual_plan") or {}).get("image_paths")),
                 "account_id": _account_id(state),
+                "is_commercial": needs_disclosure,
+                "requires_disclosure": needs_disclosure,
             },
         }
     )
 
     raw: Any = PUBLISH_CANCELLED
     comments = ""
+    decision_dict: dict[str, Any] = {}
     if isinstance(decision, dict):
+        decision_dict = decision
         raw = decision.get("decision", PUBLISH_CANCELLED)
         comments = str(decision.get("comments") or "")
 
     confirmed = raw == PUBLISH_CONFIRMED
-    if not confirmed and raw != PUBLISH_CANCELLED:
+    if confirmed and needs_disclosure:
+        from backend.services.compliance_policy import commercial_disclosure_ok
+
+        probe = {
+            **dict(state),
+            "publish_confirmation": {
+                **decision_dict,
+                "disclosure_confirmed": decision_dict.get("disclosure_confirmed") is True,
+            },
+        }
+        if not commercial_disclosure_ok(probe):
+            logger.warning("publish gate: commercial disclosure missing — refusing")
+            confirmed = False
+            comments = comments or "商单发布前须勾选已报备/已标注，且文案保留合作标注"
+            decision_dict = {**decision_dict, "error_code": "commercial_disclosure_required"}
+
+    if not confirmed and raw != PUBLISH_CANCELLED and "error_code" not in decision_dict:
         # Not silence: an unrecognised value is worth a line, because it means a
         # caller is speaking a dialect this gate does not know.
         logger.warning("publish gate: unrecognised decision %r — refusing the publish", raw)
@@ -194,12 +288,18 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
     if not confirmed:
         await _record_refusal(state, raw)
 
+    receipt = _receipt_fields(state, source=SOURCE_HUMAN, decision=decision_dict)
     return NodeResult(
         {
             "publish_confirmation": {
                 "decision": PUBLISH_CONFIRMED if confirmed else PUBLISH_CANCELLED,
-                "source": SOURCE_HUMAN,
                 "comments": comments,
+                **receipt,
+                **(
+                    {"error_code": decision_dict["error_code"]}
+                    if decision_dict.get("error_code")
+                    else {}
+                ),
             },
             "phase": WorkflowPhase.PUBLISHING if confirmed else WorkflowPhase.CANCELLED,
         },

@@ -1,0 +1,556 @@
+{
+  "positives": [
+    {
+      "id": "pos-00",
+      "text": "今天分享最便宜心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "最便宜"
+    },
+    {
+      "id": "pos-01",
+      "text": "今天分享最低价心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "最低价"
+    },
+    {
+      "id": "pos-02",
+      "text": "今天分享第一心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "第一"
+    },
+    {
+      "id": "pos-03",
+      "text": "今天分享国家级心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "国家级"
+    },
+    {
+      "id": "pos-04",
+      "text": "今天分享世界级心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "世界级"
+    },
+    {
+      "id": "pos-05",
+      "text": "今天分享顶级心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "顶级"
+    },
+    {
+      "id": "pos-06",
+      "text": "今天分享极致心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "极致"
+    },
+    {
+      "id": "pos-07",
+      "text": "今天分享100%有效心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "100%有效"
+    },
+    {
+      "id": "pos-08",
+      "text": "今天分享绝对安全心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "绝对安全"
+    },
+    {
+      "id": "pos-09",
+      "text": "今天分享永久有效心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "永久有效"
+    },
+    {
+      "id": "pos-10",
+      "text": "今天分享包治百病心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "包治百病"
+    },
+    {
+      "id": "pos-11",
+      "text": "今天分享立竿见影心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "立竿见影"
+    },
+    {
+      "id": "pos-12",
+      "text": "今天分享无任何副作用心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "无任何副作用"
+    },
+    {
+      "id": "pos-13",
+      "text": "今天分享根治心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "根治"
+    },
+    {
+      "id": "pos-14",
+      "text": "今天分享彻底治愈心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "彻底治愈"
+    },
+    {
+      "id": "pos-15",
+      "text": "今天分享处方药心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "处方药"
+    },
+    {
+      "id": "pos-16",
+      "text": "今天分享特效药心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "特效药"
+    },
+    {
+      "id": "pos-17",
+      "text": "今天分享抗癌心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "抗癌"
+    },
+    {
+      "id": "pos-18",
+      "text": "今天分享治疗癌症心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "治疗癌症"
+    },
+    {
+      "id": "pos-19",
+      "text": "今天分享替代手术心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "替代手术"
+    },
+    {
+      "id": "pos-20",
+      "text": "今天分享诊断结果心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "诊断结果"
+    },
+    {
+      "id": "pos-21",
+      "text": "今天分享复诊建议心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "复诊建议"
+    },
+    {
+      "id": "pos-22",
+      "text": "今天分享用药剂量心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "用药剂量"
+    },
+    {
+      "id": "pos-23",
+      "text": "今天分享激素替代心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "激素替代"
+    },
+    {
+      "id": "pos-24",
+      "text": "今天分享无痛人流心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "无痛人流"
+    },
+    {
+      "id": "pos-25",
+      "text": "今天分享壮阳心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "壮阳"
+    },
+    {
+      "id": "pos-26",
+      "text": "今天分享丰胸秘方心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "丰胸秘方"
+    },
+    {
+      "id": "pos-27",
+      "text": "今天分享减肥药心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "减肥药"
+    },
+    {
+      "id": "pos-28",
+      "text": "今天分享戒毒药心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "戒毒药"
+    },
+    {
+      "id": "pos-29",
+      "text": "今天分享稳赚不赔心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "稳赚不赔"
+    },
+    {
+      "id": "pos-30",
+      "text": "今天分享保本保息心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "保本保息"
+    },
+    {
+      "id": "pos-31",
+      "text": "今天分享内幕消息心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "内幕消息"
+    },
+    {
+      "id": "pos-32",
+      "text": "今天分享荐股心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "荐股"
+    },
+    {
+      "id": "pos-33",
+      "text": "今天分享必涨心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "必涨"
+    },
+    {
+      "id": "pos-34",
+      "text": "今天分享保证收益心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "保证收益"
+    },
+    {
+      "id": "pos-35",
+      "text": "今天分享日赚千元心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "日赚千元"
+    },
+    {
+      "id": "pos-36",
+      "text": "今天分享无风险理财心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "无风险理财"
+    },
+    {
+      "id": "pos-37",
+      "text": "今天分享躺赚心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "躺赚"
+    },
+    {
+      "id": "pos-38",
+      "text": "今天分享高额返利心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "高额返利"
+    },
+    {
+      "id": "pos-39",
+      "text": "今天分享资金盘心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "资金盘"
+    },
+    {
+      "id": "pos-40",
+      "text": "今天分享传销心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "传销"
+    },
+    {
+      "id": "pos-41",
+      "text": "今天分享加微信心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "加微信"
+    },
+    {
+      "id": "pos-42",
+      "text": "今天分享加V心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "加V"
+    },
+    {
+      "id": "pos-43",
+      "text": "今天分享私聊领心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "私聊领"
+    },
+    {
+      "id": "pos-44",
+      "text": "今天分享刷单心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "刷单"
+    },
+    {
+      "id": "pos-45",
+      "text": "今天分享代孕心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "代孕"
+    },
+    {
+      "id": "pos-46",
+      "text": "今天分享枪支心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "枪支"
+    },
+    {
+      "id": "pos-47",
+      "text": "今天分享色情心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "色情"
+    },
+    {
+      "id": "pos-48",
+      "text": "今天分享赌博心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "赌博"
+    },
+    {
+      "id": "pos-49",
+      "text": "今天分享毒品心得，强烈推荐",
+      "expect_blocking": true,
+      "term": "毒品"
+    }
+  ],
+  "negatives": [
+    {
+      "id": "neg-00",
+      "text": "周末去公园散步拍到了好看的晚霞",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-01",
+      "text": "分享一款温和的日常护肤步骤",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-02",
+      "text": "这件卫衣上身效果很舒服",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-03",
+      "text": "咖啡馆新出的生椰拿铁口感清爽",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-04",
+      "text": "整理了我的书桌收纳小技巧",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-05",
+      "text": "秋天穿搭灵感：米色叠穿",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-06",
+      "text": "阳台种花两个月的变化记录",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-07",
+      "text": "健身新手的一周训练计划",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-08",
+      "text": "周末露营清单与注意事项",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-09",
+      "text": "家常番茄炒蛋的做法笔记",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-10",
+      "text": "旅行随身包里常备的小物件",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-11",
+      "text": "读书笔记：关于专注力的三点",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-12",
+      "text": "猫咪绝育后的护理日常",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-13",
+      "text": "办公室久坐拉伸动作分享",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-14",
+      "text": "手冲咖啡水温与研磨度体验",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-15",
+      "text": "周末市集淘到的二手相机",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-16",
+      "text": "宿舍改造：灯光与窗帘搭配",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-17",
+      "text": "亲子手工：纸风车怎么做",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-18",
+      "text": "地铁通勤听的播客推荐",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-19",
+      "text": "天气转凉，围巾怎么围好看",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-20",
+      "text": "厨房菜刀保养的三个步骤",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-21",
+      "text": "摄影构图：三分法练习作业",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-22",
+      "text": "瑜伽晨练十个基础动作",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-23",
+      "text": "整理抽屉后的前后对比",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-24",
+      "text": "自制柠檬蜂蜜水的比例",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-25",
+      "text": "耳机降噪在地铁的真实体验",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-26",
+      "text": "笔记本键盘清洁方法",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-27",
+      "text": "周末徒步路线与补给建议",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-28",
+      "text": "植物换盆时的土壤选择",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-29",
+      "text": "手帐排版配色灵感板",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-30",
+      "text": "早餐燕麦碗的配料组合",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-31",
+      "text": "相机镜头防潮小窍门",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-32",
+      "text": "宿舍学习角的灯光布置",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-33",
+      "text": "周末烘焙面包失败复盘",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-34",
+      "text": "骑行头盔尺码怎么选",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-35",
+      "text": "阳台晾衣绳收纳改造",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-36",
+      "text": "电影周末观影笔记三则",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-37",
+      "text": "通勤背包分区整理法",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-38",
+      "text": "冬季保湿霜质地对比体验",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-39",
+      "text": "书桌显示器支架安装记录",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-40",
+      "text": "周末图书馆自习打卡",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-41",
+      "text": "拼图完成后的收纳建议",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-42",
+      "text": "耳机线收纳圈的用法",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-43",
+      "text": "厨房调料瓶标签整理",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-44",
+      "text": "雨天出门的伞与鞋搭配",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-45",
+      "text": "周末素描练习：静物杯子",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-46",
+      "text": "植物浇水频率观察日记",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-47",
+      "text": "耳机套更换教程简记",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-48",
+      "text": "书桌线材整理后的通风改善",
+      "expect_blocking": false
+    },
+    {
+      "id": "neg-49",
+      "text": "周末市集手作摊位见闻",
+      "expect_blocking": false
+    }
+  ]
+}

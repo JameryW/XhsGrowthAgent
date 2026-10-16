@@ -128,6 +128,8 @@ class Goal:
             "retry_count": 0,
             "execution_mode": self.execution_mode,
             "workflow_mode": self.mode,
+            # Brief / 商单 runs are commercial by definition (P0-5).
+            "is_commercial": self.mode is WorkflowMode.BRIEF,
             "trend_data": {},
             "content_plan": {},
             "copy_content": {},

@@ -347,7 +347,7 @@ class CreativeMemory:
             if self._has_store:
                 try:
                     ns = self.benchmark_ns(niche)
-                    await self._store.aput(ns, key=niche, value=benchmark)  # type: ignore[union-attr,arg-type]
+                    await self._store.aput(ns, key=niche, value=benchmark)  # type: ignore[union-attr]
                 except Exception as e:
                     logger.warning("benchmark store dual-write failed (durable ok): %s", e)
         except Exception as e:

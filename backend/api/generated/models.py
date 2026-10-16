@@ -215,6 +215,15 @@ class PublishOptions(BaseModel):
         StrictStr | None,
         Field(description="Publish as this account; null falls back to the global active account"),
     ] = None
+    disclosure_confirmed: Annotated[
+        StrictBool | None,
+        Field(
+            description=(
+                "Commercial/brief runs require the operator to confirm disclosure "
+                "(filed/labelled). Forwarded to publish_gate; must not be stripped."
+            )
+        ),
+    ] = False
 
 
 class Evidence(BaseModel):

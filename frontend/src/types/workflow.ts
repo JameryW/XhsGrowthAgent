@@ -355,6 +355,8 @@ export interface WorkflowStateResponse {
   account_id?: string
   agent_timeline: AgentTimelineEntry[]
   workflow_mode?: 'trend' | 'brief'
+  /** P0-5: commercial / brief runs require disclosure confirmation before publish. */
+  is_commercial?: boolean
   brief_content?: BriefContent
   brief_clarification?: BriefClarification
   shooting_plan?: ShootingPlan

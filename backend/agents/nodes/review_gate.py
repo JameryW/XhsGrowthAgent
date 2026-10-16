@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Literal
 
 from langgraph.store.base import BaseStore
@@ -67,14 +66,9 @@ def _auto_approve_enabled() -> bool:
     system_config 通过 activate_system_config() 推入 os.environ，故此处读 env。
     任何读取异常 → False（fail-safe，绝不误开自动发布）。
     """
-    try:
-        return os.environ.get("AUTO_APPROVE_LOW_RISK", "").strip().lower() in (
-            "true",
-            "1",
-            "yes",
-        )
-    except Exception:
-        return False
+    from backend.services.compliance_policy import auto_approve_low_risk_enabled
+
+    return auto_approve_low_risk_enabled()
 
 
 def _classify_publish_risk(
@@ -86,6 +80,8 @@ def _classify_publish_risk(
     - medium：缺图片、标题过短、正文过短、或偏敏感类目
     - low：以上均不满足（有图、标题正文合理、无敏感词、非敏感类目）
     """
+    from backend.services.compliance_policy import state_is_blocking, state_is_commercial
+
     copy = state.get("copy_content") or {}
     visual = state.get("visual_plan") or {}
     niche = state.get("niche") or ""
@@ -96,12 +92,18 @@ def _classify_publish_risk(
 
     text_blob = f"{title}\n{body}"
 
+    # high：commercial / blocking / high-risk niche never auto-approve
+    if state_is_commercial(dict(state)) or state_is_blocking(dict(state)):
+        return "high"
+    if niche in _HIGH_RISK_NICHES:
+        return "high"
+
     # high：敏感词命中
     for word in _SENSITIVE_WORDS:
         if word in text_blob:
             return "high"
 
-    # high：高风险类目无免责声明
+    # high：高风险类目无免责声明（kept for clarity; niche already high above）
     if niche in _HIGH_RISK_NICHES and "免责" not in body and "不构成建议" not in body:
         return "high"
 
@@ -125,7 +127,18 @@ def _classify_publish_risk(
 
 
 def _should_auto_approve(state: XHSGrowthState | dict[str, Any]) -> bool:
-    """低风险 + 配置开 → 自动放行。high 永不放行。"""
+    """低风险 + 配置开 → 自动放行。blocking/commercial/高风险垂类永不放行。"""
+    from backend.services.compliance_policy import (
+        is_high_risk_niche,
+        state_is_blocking,
+        state_is_commercial,
+    )
+
+    as_dict = dict(state)
+    if state_is_blocking(as_dict) or state_is_commercial(as_dict):
+        return False
+    if is_high_risk_niche(str(state.get("niche") or "")):
+        return False
     return _classify_publish_risk(state) == "low" and _auto_approve_enabled()
 
 

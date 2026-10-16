@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Any, cast
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from backend.services.xhs_api import XHSApiEndpoints, XHSApiHeaders, XHSApiParams
-from backend.services.xhs_signature import XHSCookieParser, XHSSignature
+from backend.services.xhs_api import XHSApiEndpoints, XHSApiParams
+from backend.services.xhs_signature import XHSCookieParser
 
 if TYPE_CHECKING:
     from backend.services.xhs_engagement import XHSEngagement
@@ -50,6 +50,27 @@ class XHSApiError(Exception):
     """API 请求失败"""
 
     pass
+
+
+class XHSSignatureUnavailableError(XHSApiError):
+    """HTTP shield signing is intentionally unavailable.
+
+    Fake MD5 signing was removed. Browser/CDP paths remain the supported
+    platform interaction surface. Callers must treat this as a hard failure —
+    never map it to an empty successful payload.
+    """
+
+    error_code = "signature_unavailable"
+
+    def __init__(
+        self,
+        message: str = (
+            "Xiaohongshu HTTP API signing is unavailable "
+            "(error_code=signature_unavailable); use browser/CDP instead"
+        ),
+    ) -> None:
+        super().__init__(message)
+        self.error_code = "signature_unavailable"
 
 
 # ── Data Classes ────────────────────────────────────────────────────────────
@@ -154,39 +175,14 @@ class _HTTPClient:
         params: dict[str, Any] | None = None,
         method: str = "GET",
     ) -> dict[str, Any]:
-        """发送 API 请求"""
-        url = XHSApiEndpoints.full_url(endpoint)
-        headers = XHSApiHeaders.build(cookie=self.cookie)
+        """Send an API request.
 
-        # 添加签名
-        if params:
-            headers = XHSSignature.add_sign_to_headers(params, headers)
-
-        try:
-            if method == "GET":
-                response = await self._http.get(url, headers=headers, params=params or {})
-            else:
-                response = await self._http.post(url, headers=headers, json=params or {})
-
-            # 检查响应
-            if response.status_code == 429:
-                raise XHSRateLimitError("请求频率限制")
-            if response.status_code == 401:
-                raise XHSAuthError("认证失败，Cookie 可能已过期")
-
-            data = response.json()
-
-            # 检查业务状态
-            if not data.get("success"):
-                error_msg = data.get("msg", "Unknown error")
-                raise XHSApiError(f"API error: {error_msg}")
-
-            return cast(dict[str, Any], data.get("data", {}))
-
-        except httpx.TimeoutException as e:
-            raise TimeoutError("API 请求超时") from e
-        except httpx.RequestError as e:
-            raise ConnectionError(f"网络错误: {e}") from e
+        Fake shield signing was removed. Any call that previously relied on
+        forged ``x-s`` / ``x-t`` headers fails closed with
+        :class:`XHSSignatureUnavailableError` instead of a silent empty body.
+        """
+        del endpoint, params, method  # unused — fail before any network I/O
+        raise XHSSignatureUnavailableError()
 
     @retry(
         stop=stop_after_attempt(3),
@@ -347,6 +343,8 @@ class XHSClient:
 
             return topics
 
+        except XHSSignatureUnavailableError:
+            raise
         except Exception as e:
             logger.error(f"获取热门话题失败: {type(e).__name__}: {e}")
             return []
@@ -381,6 +379,8 @@ class XHSClient:
 
             return results
 
+        except XHSSignatureUnavailableError:
+            raise
         except Exception as e:
             logger.error(f"搜索帖子失败: {type(e).__name__}: {e}")
             return []
@@ -412,6 +412,8 @@ class XHSClient:
 
             return comments
 
+        except XHSSignatureUnavailableError:
+            raise
         except Exception as e:
             logger.error(f"获取评论失败: {type(e).__name__}: {e}")
             return []
@@ -434,6 +436,8 @@ class XHSClient:
                     engagement_rate=detail.get("engagement_rate", 0.0),
                     fetched_at=time.strftime("%Y-%m-%d %H:%M:%S"),
                 )
+        except XHSSignatureUnavailableError:
+            raise
         except Exception as e:
             logger.warning(f"获取分析数据失败: {e}")
 
@@ -457,6 +461,9 @@ class XHSClient:
                         "top_posts": posts[:3],
                     }
                 )
+            except XHSSignatureUnavailableError:
+                # Fail closed — never map missing HTTP signing to empty success.
+                raise
             except Exception as e:
                 logger.warning(f"关键词 {keyword} 监控失败: {e}")
 
@@ -475,6 +482,8 @@ class XHSClient:
         try:
             users = await self._http.search_users(keyword=keyword)
             return users[:limit]
+        except XHSSignatureUnavailableError:
+            raise
         except Exception as e:
             logger.error(f"搜索用户失败: {type(e).__name__}: {e}")
             return []
@@ -489,6 +498,8 @@ class XHSClient:
 
         try:
             return await self._http.get_user_info(user_id=user_id)
+        except XHSSignatureUnavailableError:
+            raise
         except Exception as e:
             logger.error(f"获取用户信息失败: {type(e).__name__}: {e}")
             return {}
@@ -515,6 +526,8 @@ class XHSClient:
                 if not has_more:
                     break
             return all_notes[:limit]
+        except XHSSignatureUnavailableError:
+            raise
         except Exception as e:
             logger.error(f"获取用户笔记失败: {type(e).__name__}: {e}")
             return []

@@ -46,6 +46,13 @@ export interface EvaluationResult {
   evaluator_fingerprint?: string
   snapshot_id?: string | null
   contract_version?: string | null
+  /** P0-4 deterministic pre-LLM lexicon scan (highlight terms for Review). */
+  lexicon_scan?: {
+    is_blocking?: boolean
+    highlight_terms?: string[]
+    hits?: Array<{ term: string; category: string; source: string }>
+    [key: string]: unknown
+  }
 }
 
 export type EvaluationStatus =
