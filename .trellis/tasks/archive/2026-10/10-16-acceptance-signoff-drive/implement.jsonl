@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/compliance-p2.md", "reason": "Existing acceptance signoff board contracts to extend with waiver semantics"}
+{"file": "docs/acceptance/signoff-board.json", "reason": "Current board schema and waiver block"}
+{"file": "docs/acceptance/signoff-request-2026-09-22.md", "reason": "Human signoff table and waiver record to keep in sync"}
+{"file": ".trellis/tasks/10-16-acceptance-signoff-drive/prd.md", "reason": "Locked requirements: waived tracking only"}

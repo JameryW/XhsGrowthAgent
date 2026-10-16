@@ -61,17 +61,19 @@
 ## 签字表（结构化看板）
 
 > **机器可读镜像**：[`signoff-board.json`](./signoff-board.json)（Settings「Acceptance」只读渲染同一状态）。
+> **催办清单**：[`signoff-chase-checklist.md`](./signoff-chase-checklist.md)。
 > **本表与 JSON 均不能代替仓外真人签字**；CI/本地全绿不得填入「通过」。
+> **状态语义**：`waived_risk_accepted` = 2026-09-22 风险接受（豁免），**不是**通过；`conclusion` / 签字人留空。建议复审日见 JSON `next_review_at`（默认 2027-01-14）。
 
-| 门槛 | 状态 | 负责人角色 | 签字人 | 日期 | 结论 |
-|---|---|---|---|---|---|
-| G1 三档走查 | pending_human_signoff | release owner / 发布方 | | | |
-| G2 严格空态 | pending_human_signoff | 发布方 | | | |
-| G3/G7 漏斗埋点 | pending_human_signoff | 运营（埋点 owner） | | | |
-| G4 Lighthouse/截图 | pending_human_signoff | 发布方 | | | |
-| G5 方向1对照 | pending_human_signoff | 产品 | | | |
-| G6 路由样本质量 | pending_human_signoff | 产品/内容 owner | | | |
-| G8 baseline 效力 | pending_human_signoff | release owner | | | |
+| 门槛 | 状态 | 负责人角色 | 签字人 | 日期 | 结论 | 建议复审 |
+|---|---|---|---|---|---|---|
+| G1 三档走查 | waived_risk_accepted | release owner / 发布方 | | | | 2027-01-14 |
+| G2 严格空态 | waived_risk_accepted | 发布方 | | | | 2027-01-14 |
+| G3/G7 漏斗埋点 | waived_risk_accepted | 运营（埋点 owner） | | | | 2027-01-14 |
+| G4 Lighthouse/截图 | waived_risk_accepted | 发布方 | | | | 2027-01-14 |
+| G5 方向1对照 | waived_risk_accepted | 产品 | | | | 2027-01-14 |
+| G6 路由样本质量 | waived_risk_accepted | 产品/内容 owner | | | | 2027-01-14 |
+| G8 baseline 效力 | waived_risk_accepted | release owner | | | | 2027-01-14 |
 
 ## 不接受的关闭方式（重申）
 
@@ -90,3 +92,7 @@
 - G1/G4 未获发布方人工走查与公网 Lighthouse 确认。
 
 后续若线上因此出问题，从本记录回溯，不得 reinterpret 为"当时已验收通过"。
+
+**豁免追踪（2026-10-16）**：看板状态统一为 `waived_risk_accepted`；建议全局复审
+`2027-01-14`。催办文案见 [`signoff-chase-checklist.md`](./signoff-chase-checklist.md)。
+本次强化追踪**不**改判任何门槛为通过。

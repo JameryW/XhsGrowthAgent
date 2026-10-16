@@ -91,12 +91,15 @@ UI: selecting high-risk niche on Start shows stricter-lexicon + qualification no
 ### 1. Scope / Trigger
 
 - `docs/acceptance/signoff-board.json`, signoff-request markdown, Settings Acceptance tab.
+- Chase checklist: `docs/acceptance/signoff-chase-checklist.md`.
 
 ### 2. Signatures
 
 ```python
 # backend/services/acceptance_signoff.py
 def load_signoff_board(*, path=None) -> dict: ...
+def is_gate_passed(status: str | None) -> bool: ...
+def is_gate_waived(status: str | None) -> bool: ...
 ```
 
 API: `GET /api/system/acceptance-signoff` (read-only)
@@ -107,14 +110,17 @@ API: `GET /api/system/acceptance-signoff` (read-only)
 |-------|--------|
 | `gates[]` | G1–G5 required; G6+ listed when present |
 | `status` / `owner_role` / `conclusion` | Placeholders allowed |
+| `status=waived_risk_accepted` | Risk acceptance (2026-09-22 waiver) — **not** a pass; UI must not use success/passed styling |
+| `next_review_at` / `chase_action` | Per-gate chase tracking; default review ~90 days from board update |
+| `waiver.next_global_review_at` | Top-level re-review date; `replaces_signoff` always false |
 | `replaces_human_signoff` | Always `false` |
-| `disclaimer` | Explicit: does not replace warehouse-external signoff |
+| `disclaimer` | Explicit: does not replace warehouse-external signoff; waiver ≠ pass; CI green ≠ signoff |
 
 ### 4–7
 
 - Tests: `tests/unit/services/test_acceptance_signoff.py`
-- **Wrong**: Mark gate passed because CI is green.
-- **Correct**: Mirror docs status only; empty conclusion until human signs.
+- **Wrong**: Mark gate passed because CI is green; display `waived_risk_accepted` as passed/success.
+- **Correct**: Mirror docs status only; empty conclusion until human signs; waived stays waived with `next_review_at`.
 
 ---
 

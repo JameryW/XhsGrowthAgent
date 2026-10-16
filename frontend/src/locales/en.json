@@ -2220,15 +2220,20 @@
     "acceptance": {
       "title": "Acceptance signoff board",
       "subtitle": "Read-only mirror of docs/acceptance status. Does not replace out-of-repo human signoff.",
-      "disclaimer": "Documentation status mirror only. Local tests, health checks, or CI green must never be recorded as a gate pass.",
+      "disclaimer": "Documentation status mirror only. waived_risk_accepted means risk accepted — not a pass. Local tests, health checks, or CI green must never be recorded as a gate pass.",
       "loading": "Loading board…",
       "loadFailed": "Could not load the Acceptance board.",
       "conclusionPlaceholder": "(awaiting signoff conclusion)",
+      "nextReviewPlaceholder": "—",
+      "waiverLabel": "Waiver",
+      "waiverNotPass": "Waiver is risk acceptance, not a signed pass. There is no one-click approve.",
+      "nextGlobalReview": "Next global review: {date}",
       "source": "Source: {doc}",
       "cols": {
         "gate": "Gate",
         "status": "Status",
         "owner": "Owner role",
+        "nextReview": "Next review",
         "conclusion": "Conclusion"
       },
       "status": {
@@ -2237,7 +2242,8 @@
         "approved": "Approved",
         "rejected": "Rejected",
         "failed": "Failed",
-        "waived": "Waived (risk accepted)"
+        "waived": "Waived (risk accepted)",
+        "waived_risk_accepted": "Waived (risk accepted)"
       }
     },
     "publicTelemetry": {

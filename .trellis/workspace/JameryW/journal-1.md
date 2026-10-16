@@ -1036,3 +1036,37 @@ PR #661 merged (P2-1..P2-4). Learning recommendations N=5, 医美 niche tier, ac
 ### Next Steps
 
 - None - task complete
+
+
+## Session 119: Acceptance signoff drive: G1-G8 waived tracking
+
+**Date**: 2026-10-16
+**Task**: Acceptance signoff drive: G1-G8 waived tracking
+**Branch**: `cursor/acceptance-signoff-drive-7f3c`
+
+### Summary
+
+Maintained 2026-09-22 risk waiver; board status waived_risk_accepted + next_review_at + chase checklist; Settings UI never styles waived as passed. CI green; PR #663 ready for review.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fd4ba180` | (see git log) |
+| `0bca9959` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
