@@ -10,6 +10,7 @@ import os
 from typing import Any
 
 # High-risk niches never qualify for auto_low_risk approval (review_gate).
+# Keep in sync with lexicon `_NICHE_OVERLAYS` and niche YAML overlays.
 HIGH_RISK_NICHES: frozenset[str] = frozenset(
     {
         "医疗",
@@ -17,8 +18,20 @@ HIGH_RISK_NICHES: frozenset[str] = frozenset(
         "药品",
         "保健",
         "投资",
+        "医美",
     }
 )
+
+# Required-qualification reminders when the operator selects a high-risk niche.
+# Keys must be a subset of HIGH_RISK_NICHES (looked up after exact niche match).
+NICHE_QUALIFICATION_HINTS: dict[str, str] = {
+    "医疗": "医疗垂类需具备相应诊疗/科普资质；禁止功效承诺与处方暗示，文案须附免责声明。",
+    "药品": "药品相关内容需具备药品信息发布资质；禁止疗效保证与未经批准的用药建议。",
+    "保健": "保健品内容需真实资质与合规标识；禁止替代治疗或绝对化功效表述。",
+    "医美": "医美垂类需具备医疗机构/执业资质公示；禁止「零风险」「一次永久」等夸大承诺。",
+    "金融": "金融垂类需具备相应展业资质；禁止保本/稳赚话术，须提示投资风险。",
+    "投资": "投资相关内容需风险揭示与资质合规；禁止收益承诺与诱导跟单。",
+}
 
 # Markers that count as commercial-collaboration disclosure in copy.
 DISCLOSURE_MARKERS: tuple[str, ...] = (
@@ -74,6 +87,30 @@ def assert_not_dual_auto(*, auto_publish: bool) -> None:
 
 def is_high_risk_niche(niche: str | None) -> bool:
     return (niche or "").strip() in HIGH_RISK_NICHES
+
+
+def niche_qualification_hint(niche: str | None) -> str | None:
+    """Return the required-qualification hint for a high-risk niche, if any."""
+    key = (niche or "").strip()
+    if not key:
+        return None
+    return NICHE_QUALIFICATION_HINTS.get(key)
+
+
+def get_niche_compliance_tier(niche: str | None) -> dict[str, Any]:
+    """P2-2: compliance tier + lexicon/qualification notice for Start/Settings UI."""
+    from backend.services.compliance.lexicon import NICHE_OVERLAYS
+
+    key = (niche or "").strip()
+    high = key in HIGH_RISK_NICHES
+    return {
+        "niche": key,
+        "tier": "high" if high else "standard",
+        "is_high_risk": high,
+        "lexicon_stricter": high,
+        "qualification_hint": NICHE_QUALIFICATION_HINTS.get(key) if high else None,
+        "lexicon_overlay": NICHE_OVERLAYS.get(key),
+    }
 
 
 def state_is_commercial(state: dict[str, Any] | None) -> bool:
@@ -142,10 +179,13 @@ __all__ = [
     "DISCLOSURE_MARKERS",
     "DualAutoPublishError",
     "HIGH_RISK_NICHES",
+    "NICHE_QUALIFICATION_HINTS",
     "assert_not_dual_auto",
     "auto_approve_low_risk_enabled",
     "commercial_disclosure_ok",
+    "get_niche_compliance_tier",
     "is_high_risk_niche",
+    "niche_qualification_hint",
     "state_is_blocking",
     "state_is_commercial",
     "text_has_disclosure",

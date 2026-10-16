@@ -8,18 +8,20 @@ import ConsoleUsersPanel from '@/components/settings/ConsoleUsersPanel.vue'
 import XhsAccountsPanel from '@/components/settings/XhsAccountsPanel.vue'
 import SystemConfigPanel from '@/components/settings/SystemConfigPanel.vue'
 import PublicUxTelemetryPanel from '@/components/settings/PublicUxTelemetryPanel.vue'
+import AcceptanceSignoffPanel from '@/components/settings/AcceptanceSignoffPanel.vue'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
-type TabId = 'console-users' | 'xhs-accounts' | 'system-config' | 'public-ux-telemetry'
+type TabId = 'console-users' | 'xhs-accounts' | 'system-config' | 'public-ux-telemetry' | 'acceptance'
 
 const TABS: { id: TabId; labelKey: string; icon: string; descKey: string }[] = [
   { id: 'console-users', labelKey: 'settings.nav.consoleUsers', icon: 'User', descKey: 'settings.nav.consoleUsersDesc' },
   { id: 'xhs-accounts', labelKey: 'settings.nav.xhsAccounts', icon: 'Users', descKey: 'settings.nav.xhsAccountsDesc' },
   { id: 'system-config', labelKey: 'settings.nav.systemConfig', icon: 'Settings', descKey: 'settings.nav.systemConfigDesc' },
   { id: 'public-ux-telemetry', labelKey: 'settings.nav.publicUxTelemetry', icon: 'BarChart3', descKey: 'settings.nav.publicUxTelemetryDesc' },
+  { id: 'acceptance', labelKey: 'settings.nav.acceptance', icon: 'ClipboardCheck', descKey: 'settings.nav.acceptanceDesc' },
 ]
 
 const activeTab = ref<TabId>('xhs-accounts')
@@ -92,7 +94,8 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
         <ConsoleUsersPanel v-if="currentTab.id === 'console-users'" />
         <XhsAccountsPanel v-else-if="currentTab.id === 'xhs-accounts'" />
         <SystemConfigPanel v-else-if="currentTab.id === 'system-config'" />
-        <PublicUxTelemetryPanel v-else />
+        <PublicUxTelemetryPanel v-else-if="currentTab.id === 'public-ux-telemetry'" />
+        <AcceptanceSignoffPanel v-else />
       </main>
     </div>
   </div>

@@ -42,6 +42,19 @@ export const KNOWN_NICHES = [
   '知识',
 ] as const
 
+/** P2-2 high-risk niches (compliance_policy.HIGH_RISK_NICHES) for Settings / Start selects. */
+export const HIGH_RISK_NICHES = [
+  '医疗',
+  '药品',
+  '保健',
+  '医美',
+  '金融',
+  '投资',
+] as const
+
+/** Union of lifestyle + high-risk niches for account bind dropdowns. */
+export const SELECTABLE_NICHES = [...KNOWN_NICHES, ...HIGH_RISK_NICHES] as const
+
 // ── Account CRUD ──
 
 export async function listAccounts(): Promise<Account[]> {

@@ -2,11 +2,12 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  KNOWN_NICHES,
+  SELECTABLE_NICHES,
   resolveAccountNiche,
   type Account,
   type NicheResolution,
 } from '@/api/accounts'
+import { getNicheCompliance, type NicheComplianceTier } from '@/api/system'
 import * as analyticsApi from '@/api/analytics'
 import type {
   CreatorAccountStats,
@@ -47,7 +48,26 @@ const analyze = ref(true)
 const syncError = ref('')
 
 const manualNiche = ref('')
+const nicheCompliance = ref<NicheComplianceTier | null>(null)
+let nicheComplianceToken = 0
 const lastSync = ref<CreatorStatsSyncResult | null>(null)
+
+watch(manualNiche, async (next) => {
+  const value = (next || '').trim()
+  if (!value) {
+    nicheCompliance.value = null
+    return
+  }
+  const token = ++nicheComplianceToken
+  try {
+    const tier = await getNicheCompliance(value)
+    if (token !== nicheComplianceToken) return
+    nicheCompliance.value = tier
+  } catch {
+    if (token !== nicheComplianceToken) return
+    nicheCompliance.value = null
+  }
+}, { immediate: true })
 const accountStats = ref<CreatorAccountStats | null>(null)
 const notes = ref<CreatorNoteStats[]>([])
 const notesTotal = ref(0)
@@ -429,7 +449,7 @@ function pointShare(point: CreatorAggregatePoint): string {
           class="dark-explicit px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 outline-none min-w-[7rem] dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
         >
           <option value="">{{ t('creatorStats.nichePlaceholder') }}</option>
-          <option v-for="n in KNOWN_NICHES" :key="n" :value="n">{{ n }}</option>
+          <option v-for="n in SELECTABLE_NICHES" :key="n" :value="n">{{ n }}</option>
         </select>
         <input
           v-model="manualNiche"
@@ -457,6 +477,17 @@ function pointShare(point: CreatorAggregatePoint): string {
           <AppIcon name="Sparkles" size="xs" variant="purple" />
           <span class="ml-1">{{ t('creatorStats.bindAuto') }}</span>
         </NeonButton>
+      </div>
+      <div
+        v-if="nicheCompliance?.is_high_risk"
+        role="status"
+        class="rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-[11px] leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200 dark-explicit"
+      >
+        <p class="font-semibold">{{ t('home.form.nicheHighRiskTitle') }}</p>
+        <p class="mt-0.5">{{ t('home.form.nicheHighRiskLexicon') }}</p>
+        <p v-if="nicheCompliance.qualification_hint" class="mt-0.5">
+          {{ nicheCompliance.qualification_hint }}
+        </p>
       </div>
     </div>
 

@@ -6,6 +6,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import PreLaunchChecklist from '@/components/PreLaunchChecklist.vue'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import ConfirmStartModal from '@/components/ConfirmStartModal.vue'
+import LearningRecommendationsPanel from '@/components/LearningRecommendationsPanel.vue'
 import type { WorkflowConfig, WorkflowMode } from '@/components/WorkflowStartForm.vue'
 import { useAccountsStore, useWorkflowStore } from '@/stores'
 import { prefetchAgentTuiChunk } from '@/api/agent'
@@ -59,6 +60,13 @@ const handleAccountChange = (accountId: string) => {
   // Keep the summary Hero in sync with the form's internal selection. The form
   // remains the source of truth for the complete submitted configuration.
   formConfig.value.accountId = accountId
+}
+
+const applyRecommendedTopic = (topic: string) => {
+  const next = (topic || '').trim()
+  if (!next) return
+  prefilledTopic.value = next
+  startFormRef.value?.applyTopic?.(next)
 }
 
 // Check for topic and niche query params from analytics
@@ -202,6 +210,12 @@ const confirmStart = async () => {
           <AppIcon name="X" size="sm" variant="cyan" aria-hidden="true" />
         </button>
       </div>
+
+      <!-- P2-1: learning loop recommendations from last N=5 performing posts -->
+      <LearningRecommendationsPanel
+        :account-id="formConfig.accountId"
+        @apply-topic="applyRecommendedTopic"
+      />
 
       <!-- Configuration form -->
       <div class="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(220px,.65fr)] lg:items-start">

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/compliance-baseline.md", "reason": "P0 invariants must hold"}
+{"file": ".trellis/spec/backend/compliance-p1.md", "reason": "P1 invariants must hold"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Start/API/docs consistency"}
+{"file": "docs/outcome-learning.md", "reason": "Claim discipline for learning recommendations"}
+{"file": ".trellis/tasks/10-16-compliance-p2-growth-cleanup/prd.md", "reason": "P2 acceptance checklist"}

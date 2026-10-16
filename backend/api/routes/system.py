@@ -675,3 +675,35 @@ async def delete_risk_gate_policy(
             "effective": defaults,
         }
     return success({**result, "policy": policy})
+
+
+@router.get("/niche-compliance")
+async def get_niche_compliance(
+    niche: Annotated[str, Query(description="垂类名称，如 医美 / 医疗 / 金融")] = "",
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """P2-2: high-risk niche tier + qualification / stricter-lexicon notice."""
+    from backend.services.compliance_policy import (
+        HIGH_RISK_NICHES,
+        get_niche_compliance_tier,
+    )
+
+    del user  # auth gate only
+    tier = get_niche_compliance_tier(niche)
+    return success(
+        {
+            **tier,
+            "high_risk_niches": sorted(HIGH_RISK_NICHES),
+        }
+    )
+
+
+@router.get("/acceptance-signoff")
+async def get_acceptance_signoff(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """P2-3: read-only G1–G8 acceptance board (docs mirror; never replaces human signoff)."""
+    from backend.services.acceptance_signoff import load_signoff_board
+
+    del user  # auth gate only
+    return success(load_signoff_board())

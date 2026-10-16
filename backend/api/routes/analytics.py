@@ -1658,6 +1658,26 @@ async def get_creator_suggestions(
     )
 
 
+@router.get("/creator-stats/{account_id}/learning-recommendations")
+async def get_learning_topic_recommendations(
+    account_id: str,
+    limit: int = Query(
+        5,
+        ge=1,
+        le=20,
+        description="最近有表现笔记窗口（默认 N=5）",
+    ),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """P2-1: Start 页选题推荐 — 基于最近 N 篇有表现的导入笔记（不编造指标）。"""
+    from backend.services.learning_recommendations import get_learning_recommendations
+
+    account_id = (account_id or "").strip()
+    await require_owned_account(str(user["id"]), account_id)
+    payload = await get_learning_recommendations(account_id, limit=limit)
+    return success(data=payload)
+
+
 @router.get("/creator-stats/{account_id}/analysis")
 async def get_creator_analysis(
     account_id: str,

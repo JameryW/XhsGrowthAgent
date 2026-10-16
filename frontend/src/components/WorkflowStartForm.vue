@@ -8,6 +8,7 @@ import BriefFileUpload from '@/components/BriefFileUpload.vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useAccountsStore } from '@/stores/accounts'
 import { prefetchAgentTuiChunk, prewarmAgentSession } from '@/api/agent'
+import { getNicheCompliance, type NicheComplianceTier } from '@/api/system'
 import type { WorkflowPhase } from '@/types/workflow'
 
 const { t } = useI18n()
@@ -83,6 +84,40 @@ function selectNiche(value: string) {
   niche.value = value
   hasManualNiche.value = true
 }
+
+function applyTopic(next: string) {
+  const cleaned = (next || '').trim()
+  if (!cleaned) return
+  if (workflowMode.value === 'free') {
+    freeGoal.value = cleaned
+  } else {
+    topic.value = cleaned
+  }
+}
+
+/** P2-2: high-risk niche → stricter lexicon + qualification reminder. */
+const nicheCompliance = ref<NicheComplianceTier | null>(null)
+let nicheComplianceToken = 0
+
+async function refreshNicheCompliance(nextNiche: string) {
+  const value = (nextNiche || '').trim()
+  if (!value) {
+    nicheCompliance.value = null
+    return
+  }
+  const token = ++nicheComplianceToken
+  try {
+    const tier = await getNicheCompliance(value)
+    if (token !== nicheComplianceToken) return
+    nicheCompliance.value = tier
+  } catch {
+    if (token !== nicheComplianceToken) return
+    // Fail open for UI notice only — backend still enforces high-risk gates.
+    nicheCompliance.value = null
+  }
+}
+
+watch(niche, (next) => { void refreshNicheCompliance(next) }, { immediate: true })
 
 // Load accounts and auto-select the active one. A failed or empty account
 // list surfaces a localized error/empty state with a Settings entry — never a
@@ -216,6 +251,11 @@ const niches = [
   { value: '数码', key: 'tech', icon: 'Smartphone', color: 'indigo' },
   { value: '宠物', key: 'pets', icon: 'PawPrint', color: 'orange' },
   { value: '知识', key: 'knowledge', icon: 'BookOpen', color: 'emerald' },
+  // P2-2 high-risk verticals — selecting these surfaces stricter lexicon notice.
+  { value: '医疗', key: 'medical', icon: 'FlaskConical', color: 'rose' },
+  { value: '医美', key: 'aesthetic', icon: 'Sparkles', color: 'pink' },
+  { value: '金融', key: 'finance', icon: 'DollarSign', color: 'amber' },
+  { value: '投资', key: 'invest', icon: 'TrendingUp', color: 'orange' },
 ]
 
 const availableNiches = computed(() => {
@@ -294,7 +334,7 @@ function useFreePrompt(promptKey: (typeof freePromptExamples)[number]['key']) {
   freeGoal.value = t(`home.form.freePromptExamples.${promptKey}`)
 }
 
-defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
+defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile, applyTopic })
 </script>
 
 <template>
@@ -590,6 +630,17 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         {{ t('home.form.nicheBound', { niche }) }}
       </p>
       <p v-else class="text-xs text-slate-400 mt-2 pl-1">{{ t('home.form.nicheHelp') }}</p>
+      <div
+        v-if="nicheCompliance?.is_high_risk"
+        role="status"
+        class="mt-3 rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200 dark-explicit"
+      >
+        <p class="font-semibold">{{ t('home.form.nicheHighRiskTitle') }}</p>
+        <p class="mt-1">{{ t('home.form.nicheHighRiskLexicon') }}</p>
+        <p v-if="nicheCompliance.qualification_hint" class="mt-1">
+          {{ nicheCompliance.qualification_hint }}
+        </p>
+      </div>
     </div>
 
     <!-- Advanced settings stay collapsed until the user needs them. -->
