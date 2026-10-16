@@ -23,6 +23,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Browser Auth Probes](./browser-auth-probes.md) | Read-only browser-backed login evidence | Active |
 | [Browser Automation Safety](./browser-automation-safety.md) | Headed CDP browser and risk-stop conventions | Active |
+| [Compliance Baseline](./compliance-baseline.md) | P0 dual-auto reject, lexicon, DM quotas, no fake sign / stealth-default-off | Active |
 
 ---
 

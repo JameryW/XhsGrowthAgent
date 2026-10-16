@@ -21,6 +21,17 @@ copy alone is not evidence. The flag is returned only with `scanned` status
 and is explicitly false when that status has no fillable verification control.
 Waiting, confirmed, and expired responses must not carry a stale flag.
 
+## Stealth / anti-detect (P0)
+
+- Do **not** call `_apply_stealth` on the default path. Opt-in only via
+  `XHS_BROWSER_STEALTH=1` (or `true`/`yes`).
+- CI enforces default-off via `scripts/gates/stealth_default_off.py`
+  (Compliance Baseline Gate).
+- Fake HTTP shield signatures (`XHSSignature` / `XHS_WEB` MD5) are **removed**.
+  Cookie parsing (`XHSCookieParser`) remains. HTTP callers that needed a fake
+  sign must raise `signature_unavailable` — never return empty success.
+- See [Compliance Baseline](./compliance-baseline.md) for full contracts.
+
 ## Interaction safeguards
 
 - Serialize operations per account.
@@ -28,6 +39,11 @@ Waiting, confirmed, and expired responses must not carry a stale flag.
 - Detect login shells and platform risk-control pages before and after
   navigation or submission.
 - Stop on a risk-control signal; do not automatically retry the same action.
+  After `_RISK_MARKERS`, pause engagement (default ~6h) and expose status on
+  `GET /api/system/risk-gates` → `engagement_pause` (Settings UI).
+- Daily DM / comment-reply caps apply (env defaults 20 / 50). `send_dm` is
+  inbound-whitelist only unless outbound is explicitly enabled with
+  per-message human confirm.
 - The workflow graph does not perform automatic comment/DM actions. Any
   remaining comment/DM browser action is an explicit operator/tool action.
 - Automatic post-login and scheduled creator-statistics syncs are list-only
