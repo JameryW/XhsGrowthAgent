@@ -970,3 +970,36 @@ Delivered P0-1..P0-5 (fake-sign removed, dual-auto hard reject, DM inbound/quota
 ### Next Steps
 
 - None - task complete
+
+
+## Session 117: P1 compliance: health, scrape budget, privacy, AI label, Redis auth
+
+**Date**: 2026-10-16
+**Task**: P1 compliance: health, scrape budget, privacy, AI label, Redis auth
+**Branch**: `cursor/compliance-p1-spec-7f3c`
+
+### Summary
+
+Delivered P1-1..P1-5 on PR #659 (merged). Account health panel, scrape daily budgets with cache-or-fail + masking, 90d privacy cleanup + audience export/delete, AI content declaration on publish receipt, Redis token store with memory fallback. CI fixed (mypy/anchors/mask/path). Captured contracts in compliance-p1.md; archived task 10-16-compliance-p1-observability-privacy.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b4d528bb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 116
+- **Total Sessions**: 117
 - **Last Active**: 2026-10-16
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~972 | Active |
+| `journal-1.md` | ~1005 | Active |
 | `journal-0.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -22,6 +22,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 117 | 2026-10-16 | P1 compliance: health, scrape budget, privacy, AI label, Redis auth | `b4d528bb` | `cursor/compliance-p1-spec-7f3c` |
 | 116 | 2026-10-16 | P0 compliance baseline: implement, CI green, merge #657, code-spec | `31ec7591`, `e875bdf7` | `cursor/compliance-p0-spec-7f3c` |
 | 115 | 2026-08-09 | creator stats pipeline exception log diagnostics | `8d949c5f` | `main` |
 | 114 | 2026-08-09 | evaluator config exception log diagnostics | `b4357f81` | `main` |

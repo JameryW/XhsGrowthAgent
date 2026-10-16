@@ -24,6 +24,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Browser Auth Probes](./browser-auth-probes.md) | Read-only browser-backed login evidence | Active |
 | [Browser Automation Safety](./browser-automation-safety.md) | Headed CDP browser and risk-stop conventions | Active |
 | [Compliance Baseline](./compliance-baseline.md) | P0 dual-auto reject, lexicon, DM quotas, no fake sign / stealth-default-off | Active |
+| [Compliance P1](./compliance-p1.md) | Account health, scrape budget, privacy retention, AI declaration, Redis auth | Active |
 
 ---
 
