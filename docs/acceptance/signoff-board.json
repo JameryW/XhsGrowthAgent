@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "source_doc": "docs/acceptance/signoff-request-2026-09-22.md",
+  "disclaimer": "This board is a documentation status mirror only. It does NOT replace out-of-repo human signoff. Local tests, health checks, or CI green must never be recorded as gate pass.",
+  "updated_at": "2026-10-16",
+  "gates": [
+    {
+      "id": "G1",
+      "title": "三档明暗主题人工走查",
+      "task": "07-17-frontend-ux-optimization-v3",
+      "owner_role": "release owner / 发布方",
+      "status": "pending_human_signoff",
+      "conclusion": "",
+      "signed_by": "",
+      "signed_at": "",
+      "evidence": ["docs/acceptance/public-ux-screenshot-archive-2026-08-10.json"],
+      "notes": "只读截图归档存在；不能代替人工走查签字。"
+    },
+    {
+      "id": "G2",
+      "title": "严格 live 空态",
+      "task": "07-17-frontend-ux-optimization-v3",
+      "owner_role": "发布方",
+      "status": "pending_human_signoff",
+      "conclusion": "",
+      "signed_by": "",
+      "signed_at": "",
+      "evidence": [],
+      "notes": "live_empty_state_verified=false 仍为当前事实（环境含 1 条已批准 case）。"
+    },
+    {
+      "id": "G3",
+      "title": "真实漏斗埋点验收",
+      "task": "07-17 + 08-05",
+      "owner_role": "运营（埋点 owner）",
+      "status": "pending_human_signoff",
+      "conclusion": "",
+      "signed_by": "",
+      "signed_at": "",
+      "evidence": [],
+      "notes": "G3/G7 共用；有事件量不等于口径正确。"
+    },
+    {
+      "id": "G4",
+      "title": "发布方 Lighthouse / 截图归档验收",
+      "task": "07-17-frontend-ux-optimization-v3",
+      "owner_role": "发布方",
+      "status": "pending_human_signoff",
+      "conclusion": "",
+      "signed_by": "",
+      "signed_at": "",
+      "evidence": [
+        "docs/acceptance/lighthouse-2026-08-10.json",
+        "docs/acceptance/public-ux-screenshot-archive-2026-08-10.json"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "G5",
+      "title": "方向 1 before/after 产品复核",
+      "task": "08-05-next-optimization-target",
+      "owner_role": "产品",
+      "status": "pending_human_signoff",
+      "conclusion": "",
+      "signed_by": "",
+      "signed_at": "",
+      "evidence": ["docs/acceptance/status-polling-before-after-2026-08-10.json"],
+      "notes": ""
+    },
+    {
+      "id": "G6",
+      "title": "轻模型路由样本质量评审",
+      "task": "08-05-next-optimization-target",
+      "owner_role": "产品/内容 owner",
+      "status": "pending_human_signoff",
+      "conclusion": "",
+      "signed_by": "",
+      "signed_at": "",
+      "evidence": ["docs/acceptance/llm-route-benchmark-2026-08-10.json"],
+      "notes": "quality_proxy 仅为 JSON 有效，不是人工内容评审。"
+    },
+    {
+      "id": "G7",
+      "title": "漏斗埋点验收（与 G3 共用）",
+      "task": "07-17 + 08-05",
+      "owner_role": "运营（埋点 owner）",
+      "status": "pending_human_signoff",
+      "conclusion": "",
+      "signed_by": "",
+      "signed_at": "",
+      "evidence": [],
+      "notes": "与 G3 同一门槛；看板分列便于筛选。"
+    },
+    {
+      "id": "G8",
+      "title": "单窗口 runtime baseline 的 SLO 效力",
+      "task": "08-05-next-optimization-target",
+      "owner_role": "release owner",
+      "status": "pending_human_signoff",
+      "conclusion": "",
+      "signed_by": "",
+      "signed_at": "",
+      "evidence": ["docs/acceptance/production-runtime-baseline-2026-08-10.json"],
+      "notes": "声明非长期 SLO；需 release owner 接受或重采。"
+    }
+  ],
+  "waiver": {
+    "recorded_at": "2026-09-22",
+    "summary": "仓库 owner 豁免 G1–G8 签字要求以继续推进；签字表留空即为证据。这不是门槛通过，是风险接受。",
+    "replaces_signoff": false
+  }
+}

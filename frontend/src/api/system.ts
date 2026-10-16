@@ -145,6 +145,53 @@ export async function getRiskGates(accountId?: string): Promise<RiskGatesRespons
   return client.get(`/system/risk-gates${q}`) as unknown as Promise<RiskGatesResponse>
 }
 
+/** P2-2: niche compliance tier for Start / Settings high-risk notices. */
+export interface NicheComplianceTier {
+  niche: string
+  tier: 'high' | 'standard' | string
+  is_high_risk: boolean
+  lexicon_stricter: boolean
+  qualification_hint: string | null
+  lexicon_overlay: string | null
+  high_risk_niches?: string[]
+}
+
+export async function getNicheCompliance(niche: string): Promise<NicheComplianceTier> {
+  return client.get('/system/niche-compliance', {
+    params: { niche },
+  }) as unknown as Promise<NicheComplianceTier>
+}
+
+/** P2-3: read-only Acceptance signoff board (docs mirror). */
+export interface AcceptanceSignoffGate {
+  id: string
+  title: string
+  task?: string
+  owner_role: string
+  status: string
+  conclusion: string
+  signed_by: string
+  signed_at: string
+  evidence?: string[]
+  notes?: string
+}
+
+export interface AcceptanceSignoffBoard {
+  ok: boolean
+  version?: number
+  source_doc?: string
+  disclaimer: string
+  updated_at?: string
+  gates: AcceptanceSignoffGate[]
+  waiver?: Record<string, unknown> | null
+  replaces_human_signoff?: boolean
+  error?: string
+}
+
+export async function getAcceptanceSignoff(): Promise<AcceptanceSignoffBoard> {
+  return client.get('/system/acceptance-signoff') as unknown as Promise<AcceptanceSignoffBoard>
+}
+
 export async function clearRiskGates(payload?: {
   account_id?: string
   kinds?: string[]

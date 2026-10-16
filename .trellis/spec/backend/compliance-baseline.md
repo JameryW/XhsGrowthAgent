@@ -207,7 +207,9 @@ def scan_text(text: str, *, niche: str = "") -> LexiconScanResult: ...
 def scan_state_content(state: dict) -> LexiconScanResult: ...
 ```
 
-Niche overlays: `医疗/保健/药品` → `niche_medical.yaml`; `金融/投资` → `niche_finance.yaml`.
+Niche overlays: `医疗/保健/药品` → `niche_medical.yaml`; `医美` → `niche_aesthetic.yaml`;
+`金融/投资` → `niche_finance.yaml`. High-risk set also includes `医美` (see
+[Compliance P2](./compliance-p2.md)).
 
 ### 3. Contracts
 

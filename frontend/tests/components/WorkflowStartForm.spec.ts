@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import type { Account } from '@/api/accounts'
 import { getActiveAccount, listAccounts } from '@/api/accounts'
+import { getNicheCompliance } from '@/api/system'
 
 vi.mock('@/api/accounts', () => ({
   listAccounts: vi.fn(),
@@ -18,8 +19,21 @@ vi.mock('@/api/agent', () => ({
   prewarmAgentSession: vi.fn().mockResolvedValue({ status: 'warming', mode: 'free' }),
 }))
 
+// P2-2: form fetches niche tier on mount — mock like getRiskGates (no live API in vitest).
+vi.mock('@/api/system', () => ({
+  getNicheCompliance: vi.fn().mockResolvedValue({
+    niche: '母婴',
+    tier: 'standard',
+    is_high_risk: false,
+    lexicon_stricter: false,
+    qualification_hint: null,
+    lexicon_overlay: null,
+  }),
+}))
+
 const mockedListAccounts = vi.mocked(listAccounts)
 const mockedGetActiveAccount = vi.mocked(getActiveAccount)
+const mockedGetNicheCompliance = vi.mocked(getNicheCompliance)
 
 function account(id: string, name: string, niche: string, isActive = false): Account {
   return {
@@ -139,6 +153,41 @@ describe('WorkflowStartForm account niche defaults', () => {
       topic: undefined,
       goal: '来自分析页的创作目标',
     })
+    wrapper.unmount()
+  })
+
+  it('surfaces stricter lexicon + qualification notice for high-risk niches', async () => {
+    mockedGetNicheCompliance.mockImplementation(async (niche: string) => {
+      if (niche === '医美') {
+        return {
+          niche: '医美',
+          tier: 'high',
+          is_high_risk: true,
+          lexicon_stricter: true,
+          qualification_hint: '医美垂类需具备医疗机构/执业资质公示',
+          lexicon_overlay: 'niche_aesthetic.yaml',
+        }
+      }
+      return {
+        niche,
+        tier: 'standard',
+        is_high_risk: false,
+        lexicon_stricter: false,
+        qualification_hint: null,
+        lexicon_overlay: null,
+      }
+    })
+
+    const wrapper = await mountWithAccounts([], null)
+    const aesthetic = wrapper.findAll('button').find((button) => button.text().includes('医美'))
+    expect(aesthetic).toBeDefined()
+    await aesthetic!.trigger('click')
+    await flushPromises()
+
+    expect(mockedGetNicheCompliance).toHaveBeenCalledWith('医美')
+    expect(wrapper.text()).toContain('高风险垂类')
+    expect(wrapper.text()).toContain('更严格的违禁词库')
+    expect(wrapper.text()).toContain('医疗机构/执业资质')
     wrapper.unmount()
   })
 })

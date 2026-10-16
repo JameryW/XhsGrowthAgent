@@ -6,10 +6,13 @@ import { useAccountsStore } from '@/stores/accounts'
 import type { Account } from '@/api/accounts'
 import { getCreatorStats, getCreatorSuggestions } from '@/api/analytics'
 
-vi.mock('@/api/accounts', () => ({
-  KNOWN_NICHES: [],
-  resolveAccountNiche: vi.fn(),
-}))
+vi.mock('@/api/accounts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/accounts')>()
+  return {
+    ...actual,
+    resolveAccountNiche: vi.fn(),
+  }
+})
 
 vi.mock('@/api/analytics', () => ({
   syncCreatorStats: vi.fn(),

@@ -198,6 +198,18 @@
     "quickStart": "快速启动（默认配置）",
     "history": "工作流历史",
     "recommendedTopic": "推荐话题",
+    "learningRecs": {
+      "title": "基于最近表现的推荐选题",
+      "subtitle": "取自账号最近最多 5 篇有表现的笔记，不编造指标。",
+      "loading": "正在加载推荐…",
+      "emptyTitle": "暂无足够表现样本",
+      "emptyBody": "请先同步创作者中心数据。仅在存在真实互动时展示推荐。",
+      "loadFailed": "暂时无法加载推荐。",
+      "apply": "使用选题",
+      "evidence": "追溯证据",
+      "engagement": "互动率 {rate}",
+      "traceHint": "追溯：结果学习弱标签 · {doc}"
+    },
     "briefMode": "商单 Brief 模式",
     "trendMode": "趋势发现模式",
     "freeMode": "自由创作模式",
@@ -252,6 +264,8 @@
       "niche": "垂类赛道",
       "nicheHelp": "选择内容垂类，影响趋势发现和内容策略",
       "nicheBound": "已自动使用账号绑定赛道：{niche}",
+      "nicheHighRiskTitle": "高风险垂类 — 合规已加强",
+      "nicheHighRiskLexicon": "该垂类将叠加更严格的违禁词库；低风险自动审批不会生效。",
       "niches": {
         "baby": "母婴",
         "beauty": "美妆",
@@ -262,7 +276,11 @@
         "travel": "旅行",
         "tech": "数码",
         "pets": "宠物",
-        "knowledge": "知识"
+        "knowledge": "知识",
+        "medical": "医疗",
+        "aesthetic": "医美",
+        "finance": "金融",
+        "invest": "投资"
       },
       "phases": {
         "scouting": {
@@ -2195,7 +2213,32 @@
       "systemConfig": "系统配置",
       "systemConfigDesc": "LLM、Ripple、向量等全局密钥",
       "publicUxTelemetry": "公开页体验监控",
-      "publicUxTelemetryDesc": "Showcase 与 Replay 的匿名聚合指标"
+      "publicUxTelemetryDesc": "Showcase 与 Replay 的匿名聚合指标",
+      "acceptance": "Acceptance 签字看板",
+      "acceptanceDesc": "G1–G8 文档状态镜像（不能代替真人签字）"
+    },
+    "acceptance": {
+      "title": "Acceptance 签字看板",
+      "subtitle": "只读镜像 docs/acceptance 签字状态；不能代替仓外真人签字。",
+      "disclaimer": "本看板仅为文档状态镜像。本地测试、健康检查或 CI 全绿不得记为门槛通过。",
+      "loading": "正在加载看板…",
+      "loadFailed": "无法加载 Acceptance 看板。",
+      "conclusionPlaceholder": "（待签字结论）",
+      "source": "来源：{doc}",
+      "cols": {
+        "gate": "门槛",
+        "status": "状态",
+        "owner": "负责人角色",
+        "conclusion": "结论"
+      },
+      "status": {
+        "pending_human_signoff": "待真人签字",
+        "passed": "通过",
+        "approved": "通过",
+        "rejected": "不通过",
+        "failed": "失败",
+        "waived": "已豁免（风险接受）"
+      }
     },
     "publicTelemetry": {
       "title": "公开页体验监控",

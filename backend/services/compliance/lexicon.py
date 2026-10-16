@@ -14,13 +14,18 @@ logger = logging.getLogger("xhs_growth.compliance.lexicon")
 
 _CONFIG_DIR = Path(__file__).resolve().parents[2] / "config" / "compliance"
 
-_NICHE_OVERLAYS: dict[str, str] = {
+# Shared with compliance_policy.get_niche_compliance_tier — extend both HIGH_RISK
+# niches and this map together when adding vertical packs.
+NICHE_OVERLAYS: dict[str, str] = {
     "医疗": "niche_medical.yaml",
     "保健": "niche_medical.yaml",
     "药品": "niche_medical.yaml",
+    "医美": "niche_aesthetic.yaml",
     "金融": "niche_finance.yaml",
     "投资": "niche_finance.yaml",
 }
+# Back-compat alias for internal callers / tests that imported the private name.
+_NICHE_OVERLAYS = NICHE_OVERLAYS
 
 
 @dataclass(frozen=True)
@@ -135,6 +140,7 @@ def clear_lexicon_cache() -> None:
 __all__ = [
     "LexiconHit",
     "LexiconScanResult",
+    "NICHE_OVERLAYS",
     "clear_lexicon_cache",
     "scan_state_content",
     "scan_text",

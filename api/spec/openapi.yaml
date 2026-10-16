@@ -494,6 +494,70 @@ paths:
               schema:
                 $ref: '#/components/schemas/InternalError'
 
+  /analytics/creator-stats/{account_id}/learning-recommendations:
+    get:
+      tags:
+        - analytics
+      summary: Learning topic recommendations from recent performing posts
+      description: |
+        P2-1 Start-page recommendations ranked from imported creator_note_stats
+        with real engagement. Never invents topics when samples are insufficient
+        (returns empty=true). Trace fields point at Analytics and docs/outcome-learning.md.
+      operationId: getLearningRecommendations
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Account identifier
+          schema:
+            type: string
+            example: "account_001"
+        - name: limit
+          in: query
+          required: false
+          description: Max recommendations (default N=5)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 5
+      responses:
+        '200':
+          description: Recommendations or explicit empty state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              example:
+                success: true
+                data:
+                  account_id: "account_001"
+                  limit: 5
+                  empty: false
+                  empty_reason: null
+                  sample_count: 1
+                  outcome_learning_doc: "docs/outcome-learning.md"
+                  recommendations:
+                    - topic: "春季穿搭"
+                      related_note_id: "note_001"
+                      engagement_rate: 0.085
+                      evidence_href: "/analytics?account=account_001&note=note_001"
+                      evidence_doc: "docs/outcome-learning.md"
+                error: null
+                timestamp: "2026-10-16T04:00:00Z"
+        '404':
+          description: Account not found / not owned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
   /analytics/costs:
     get:
       tags:

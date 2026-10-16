@@ -481,6 +481,40 @@ export async function getCreatorSuggestions(
   }) as unknown as CreatorSuggestionsPayload
 }
 
+/** P2-1: Start-page topic recommendations from last N performing imported notes. */
+export interface LearningTopicRecommendation {
+  topic: string
+  related_note_id: string
+  note_title: string
+  engagement_rate: number
+  views: number
+  evidence_doc: string
+  evidence_href: string
+  tags: string[]
+  source: string
+}
+
+export interface LearningRecommendationsPayload {
+  account_id: string
+  limit: number
+  min_samples: number
+  sample_count: number
+  empty: boolean
+  empty_reason: string | null
+  recommendations: LearningTopicRecommendation[]
+  outcome_learning_doc: string
+}
+
+export async function getLearningRecommendations(
+  accountId: string,
+  limit: number = 5
+): Promise<LearningRecommendationsPayload> {
+  return client.get(
+    `/analytics/creator-stats/${accountId}/learning-recommendations`,
+    { params: { limit } }
+  ) as unknown as LearningRecommendationsPayload
+}
+
 /**
  * Read the account's historical creative-quality report.
  * This endpoint is analysis-only: it never starts a Creator Center browser sync.

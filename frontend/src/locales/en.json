@@ -198,6 +198,18 @@
     "quickStart": "Quick Start (Default)",
     "history": "Workflow History",
     "recommendedTopic": "Recommended Topic",
+    "learningRecs": {
+      "title": "Recommended topics from recent performance",
+      "subtitle": "Based on your last up to 5 performing posts — no invented metrics.",
+      "loading": "Loading recommendations…",
+      "emptyTitle": "Not enough performance samples yet",
+      "emptyBody": "Import Creator Center stats first. Recommendations appear only when real engagement exists.",
+      "loadFailed": "Could not load recommendations right now.",
+      "apply": "Use topic",
+      "evidence": "Evidence",
+      "engagement": "Engagement {rate}",
+      "traceHint": "Trace: outcome-learning weak labels · {doc}"
+    },
     "briefMode": "Brief Mode",
     "trendMode": "Trend Discovery",
     "freeMode": "Free Creation Mode",
@@ -252,6 +264,8 @@
       "niche": "Content Track",
       "nicheHelp": "Select a vertical track, affects trend discovery and content strategy",
       "nicheBound": "Using this account's bound track: {niche}",
+      "nicheHighRiskTitle": "High-risk niche — stricter compliance",
+      "nicheHighRiskLexicon": "A stricter forbidden-word lexicon is stacked on for this niche. Auto low-risk approval is disabled.",
       "niches": {
         "baby": "Baby",
         "beauty": "Beauty",
@@ -262,7 +276,11 @@
         "travel": "Travel",
         "tech": "Tech",
         "pets": "Pets",
-        "knowledge": "Knowledge"
+        "knowledge": "Knowledge",
+        "medical": "Medical",
+        "aesthetic": "Aesthetic medicine",
+        "finance": "Finance",
+        "invest": "Investing"
       },
       "phases": {
         "scouting": {
@@ -2195,7 +2213,32 @@
       "systemConfig": "System Config",
       "systemConfigDesc": "LLM, Ripple, embedding global keys",
       "publicUxTelemetry": "Public UX telemetry",
-      "publicUxTelemetryDesc": "Anonymous aggregate metrics for Showcase and Replay"
+      "publicUxTelemetryDesc": "Anonymous aggregate metrics for Showcase and Replay",
+      "acceptance": "Acceptance",
+      "acceptanceDesc": "G1–G8 signoff board (docs mirror, not a human substitute)"
+    },
+    "acceptance": {
+      "title": "Acceptance signoff board",
+      "subtitle": "Read-only mirror of docs/acceptance status. Does not replace out-of-repo human signoff.",
+      "disclaimer": "Documentation status mirror only. Local tests, health checks, or CI green must never be recorded as a gate pass.",
+      "loading": "Loading board…",
+      "loadFailed": "Could not load the Acceptance board.",
+      "conclusionPlaceholder": "(awaiting signoff conclusion)",
+      "source": "Source: {doc}",
+      "cols": {
+        "gate": "Gate",
+        "status": "Status",
+        "owner": "Owner role",
+        "conclusion": "Conclusion"
+      },
+      "status": {
+        "pending_human_signoff": "Pending human signoff",
+        "passed": "Passed",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "failed": "Failed",
+        "waived": "Waived (risk accepted)"
+      }
     },
     "publicTelemetry": {
       "title": "Public UX telemetry",

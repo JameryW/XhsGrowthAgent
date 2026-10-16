@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline entry"}
+{"file": ".trellis/spec/backend/compliance-baseline.md", "reason": "P0 HIGH_RISK_NICHES / lexicon — extend for P2-2"}
+{"file": ".trellis/spec/backend/compliance-p1.md", "reason": "Do not regress P1 while adding P2"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Start UI + API + docs acceptance board"}
+{"file": "docs/outcome-learning.md", "reason": "Outcome learning contracts for topic recommendations"}
+{"file": "docs/acceptance/signoff-request-2026-09-22.md", "reason": "G1-G5 signoff source for docs board"}
+{"file": ".trellis/tasks/10-16-compliance-p2-growth-cleanup/prd.md", "reason": "Locked P2 requirements"}

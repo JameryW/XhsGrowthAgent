@@ -41,14 +41,7 @@ _SENSITIVE_WORDS: tuple[str, ...] = (
     "赌博",
 )
 
-_HIGH_RISK_NICHES: tuple[str, ...] = (
-    "医疗",
-    "金融",
-    "药品",
-    "保健",
-    "投资",
-)
-
+# High-risk niches live in compliance_policy.HIGH_RISK_NICHES (single source).
 # 偏敏感但未达 high 的类目（缺免责时升 high，有免责仍 medium）
 _MEDIUM_RISK_NICHES: tuple[str, ...] = (
     "母婴",
@@ -80,7 +73,11 @@ def _classify_publish_risk(
     - medium：缺图片、标题过短、正文过短、或偏敏感类目
     - low：以上均不满足（有图、标题正文合理、无敏感词、非敏感类目）
     """
-    from backend.services.compliance_policy import state_is_blocking, state_is_commercial
+    from backend.services.compliance_policy import (
+        is_high_risk_niche,
+        state_is_blocking,
+        state_is_commercial,
+    )
 
     copy = state.get("copy_content") or {}
     visual = state.get("visual_plan") or {}
@@ -95,17 +92,13 @@ def _classify_publish_risk(
     # high：commercial / blocking / high-risk niche never auto-approve
     if state_is_commercial(dict(state)) or state_is_blocking(dict(state)):
         return "high"
-    if niche in _HIGH_RISK_NICHES:
+    if is_high_risk_niche(str(niche)):
         return "high"
 
     # high：敏感词命中
     for word in _SENSITIVE_WORDS:
         if word in text_blob:
             return "high"
-
-    # high：高风险类目无免责声明（kept for clarity; niche already high above）
-    if niche in _HIGH_RISK_NICHES and "免责" not in body and "不构成建议" not in body:
-        return "high"
 
     # medium：缺图片
     if not image_paths:

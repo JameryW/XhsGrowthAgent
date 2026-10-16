@@ -128,6 +128,12 @@ class TestOpenAPIRequiredEndpoints:
         """Verify /analytics/costs endpoint exists."""
         assert "/analytics/costs" in paths, "Missing /analytics/costs endpoint"
 
+    def test_analytics_learning_recommendations_endpoint_exists(self, paths):
+        """P2-1: Start-page learning recommendations contract path."""
+        assert "/analytics/creator-stats/{account_id}/learning-recommendations" in paths, (
+            "Missing /analytics/creator-stats/{account_id}/learning-recommendations endpoint"
+        )
+
     def test_creator_agent_endpoints_exist(self, paths):
         """Creator Agent routes must be represented in the checked-in contract."""
         expected = {

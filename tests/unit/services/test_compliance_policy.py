@@ -31,6 +31,7 @@ def test_dual_auto_ok_when_only_one(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_high_risk_niche() -> None:
     assert is_high_risk_niche("医疗") is True
+    assert is_high_risk_niche("医美") is True
     assert is_high_risk_niche("穿搭") is False
 
 

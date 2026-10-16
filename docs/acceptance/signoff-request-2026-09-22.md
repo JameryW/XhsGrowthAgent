@@ -58,17 +58,20 @@
   含 1 次瞬态 Ripple 健康检查 ReadTimeout 已恢复；声明非长期 SLO）。
 - 待确认人：release owner。结论：接受为正式 SLO 基线，或指定延长期限/指标后重采。
 
-## 签字表
+## 签字表（结构化看板）
 
-| 门槛 | 签字人 | 日期 | 结论 |
-|---|---|---|---|
-| G1 三档走查 | | | |
-| G2 严格空态 | | | |
-| G3/G7 漏斗埋点 | | | |
-| G4 Lighthouse/截图 | | | |
-| G5 方向1对照 | | | |
-| G6 路由样本质量 | | | |
-| G8 baseline 效力 | | | |
+> **机器可读镜像**：[`signoff-board.json`](./signoff-board.json)（Settings「Acceptance」只读渲染同一状态）。
+> **本表与 JSON 均不能代替仓外真人签字**；CI/本地全绿不得填入「通过」。
+
+| 门槛 | 状态 | 负责人角色 | 签字人 | 日期 | 结论 |
+|---|---|---|---|---|---|
+| G1 三档走查 | pending_human_signoff | release owner / 发布方 | | | |
+| G2 严格空态 | pending_human_signoff | 发布方 | | | |
+| G3/G7 漏斗埋点 | pending_human_signoff | 运营（埋点 owner） | | | |
+| G4 Lighthouse/截图 | pending_human_signoff | 发布方 | | | |
+| G5 方向1对照 | pending_human_signoff | 产品 | | | |
+| G6 路由样本质量 | pending_human_signoff | 产品/内容 owner | | | |
+| G8 baseline 效力 | pending_human_signoff | release owner | | | |
 
 ## 不接受的关闭方式（重申）
 
