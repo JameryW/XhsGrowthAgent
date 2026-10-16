@@ -514,6 +514,7 @@ async def get_risk_gates(
     """List active anti-risk cool-downs with remaining seconds."""
     from backend.services.cdp_session_lock import snapshot_cdp_sessions
     from backend.services.xhs_risk_gate import (
+        get_account_health,
         get_cooldown_policy,
         get_engagement_pause_status,
         list_active_cooldowns,
@@ -523,6 +524,7 @@ async def get_risk_gates(
     gates = snapshot_risk_gates()
     active = list_active_cooldowns(account_id=account_id)
     aid = (account_id or "").strip()
+    health = get_account_health(aid) if aid else None
     return success(
         {
             "risk_gates": gates,
@@ -532,6 +534,8 @@ async def get_risk_gates(
             "policy": get_cooldown_policy(aid) if aid else None,
             # P0-3: Settings-visible engagement risk pause (reason + remaining).
             "engagement_pause": get_engagement_pause_status(aid),
+            # P1-1: full account-health panel (policy / last hit / ban / SAFE_MODE).
+            "account_health": health,
         }
     )
 

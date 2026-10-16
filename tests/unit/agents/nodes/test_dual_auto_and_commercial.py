@@ -122,6 +122,35 @@ def test_publish_options_keeps_disclosure_confirmed() -> None:
     assert dumped["disclosure_confirmed"] is True
 
 
+def test_publish_options_keeps_ai_content_declared_default_true() -> None:
+    """P1-4: AI declaration field must survive Pydantic and default ON."""
+    from backend.api.routes.review import PublishOptions
+
+    opts = PublishOptions(dry_run=True, auto_publish=False)
+    assert opts.ai_content_declared is True
+    dumped = opts.model_dump()
+    assert dumped["ai_content_declared"] is True
+
+    opts2 = PublishOptions(ai_content_declared=False)
+    assert opts2.model_dump()["ai_content_declared"] is False
+
+
+@pytest.mark.asyncio
+async def test_publish_receipt_includes_ai_content_declared() -> None:
+    state = {
+        "session_id": "t1",
+        "phase": WorkflowPhase.PUBLISHING,
+        "dry_run": True,
+        "copy_content": {"selected_title": "日常", "body_text": "正文"},
+        "visual_plan": {"image_paths": ["a.jpg"]},
+        "publish_options": {"dry_run": True, "ai_content_declared": True},
+    }
+    result = await publish_gate_node(state, store=MagicMock())
+    conf = result["publish_confirmation"]
+    assert conf["decision"] == PUBLISH_CONFIRMED
+    assert conf.get("ai_content_declared") is True
+
+
 @pytest.mark.asyncio
 async def test_commercial_dry_run_reads_publish_options_disclosure() -> None:
     """Review checkbox lands in publish_options and authorises dry-run skip path."""

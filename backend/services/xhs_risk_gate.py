@@ -287,6 +287,8 @@ _engagement_pause_wall: dict[str, str] = {}
 _engagement_daily_counts: dict[str, dict[str, dict[str, int]]] = {}
 # account_id -> set of inbound/unread peer user ids
 _inbound_peers: dict[str, set[str]] = {}
+# P1-1: last risk-control hit per account (wall clock + reason), durable.
+_last_risk_hit: dict[str, dict[str, str]] = {}
 # Wall-clock ISO mirrors for durable persistence across restarts.
 _qr_last_attempt_wall: dict[str, str] = {}
 _qr_risk_until_wall: dict[str, str] = {}
@@ -296,6 +298,18 @@ _publish_wall: dict[str, str] = {}
 _engagement_wall: dict[str, str] = {}
 _persist_task: asyncio.Task[None] | None = None
 _hydrated = False
+
+
+def _record_last_risk_hit(account_id: str, *, reason: str, kind: str) -> None:
+    """Stamp the most recent risk hit for the account health panel."""
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return
+    _last_risk_hit[account_id] = {
+        "at": _wall_now(),
+        "reason": str(reason or "risk_control"),
+        "kind": str(kind or "unknown"),
+    }
 
 
 def engagement_pause_seconds(account_id: str = "") -> float:
@@ -385,6 +399,7 @@ def note_engagement_risk_pause(account_id: str, *, reason: str = "risk_control")
     _engagement_pause_wall[account_id] = (
         datetime.now(UTC) + timedelta(seconds=pause_s)
     ).isoformat()
+    _record_last_risk_hit(account_id, reason=reason, kind="engagement_risk_pause")
     _schedule_persist()
 
 
@@ -431,6 +446,71 @@ def get_engagement_pause_status(account_id: str = "") -> dict[str, Any]:
         "retry_after_seconds": block.retry_after_seconds,
         "pause_until": _engagement_pause_wall.get(account_id),
         "message": block.message,
+    }
+
+
+def get_account_health(account_id: str = "") -> dict[str, Any]:
+    """P1-1 Settings account-health panel payload (policy + bans + SAFE_MODE)."""
+    account_id = (account_id or "").strip()
+    policy = (
+        get_cooldown_policy(account_id)
+        if account_id
+        else {
+            "account_id": None,
+            "defaults": global_cooldown_defaults(),
+            "overrides": {},
+            "effective": global_cooldown_defaults(),
+        }
+    )
+    active = list_active_cooldowns(account_id=account_id) if account_id else []
+    remaining_ban_seconds = max(
+        (int(row.get("retry_after_seconds") or 0) for row in active),
+        default=0,
+    )
+    # Prefer the longest remaining ban row as the "current ban" summary.
+    ban_row = None
+    if active:
+        ban_row = max(active, key=lambda r: int(r.get("retry_after_seconds") or 0))
+    last_hit = dict(_last_risk_hit.get(account_id) or {}) if account_id else {}
+    env_safe = _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1
+    effective = policy.get("effective") or {}
+    try:
+        min_pressure = int(float(effective.get("min_risk_pressure") or 0))
+    except (TypeError, ValueError):
+        min_pressure = 0
+    min_pressure = max(0, min(2, min_pressure))
+    safe_mode = {
+        "env_enabled": bool(env_safe),
+        "min_risk_pressure": min_pressure,
+        # Floor semantics: env SAFE_MODE OR account pressure >= 1.
+        "active": bool(env_safe or min_pressure >= 1),
+        "list_only": bool(min_pressure >= 2),
+    }
+    engagement_pause = get_engagement_pause_status(account_id)
+    return {
+        "account_id": account_id or None,
+        "policy": policy,
+        "last_risk_hit": {
+            "at": last_hit.get("at"),
+            "reason": last_hit.get("reason"),
+            "kind": last_hit.get("kind"),
+        }
+        if last_hit
+        else None,
+        "remaining_ban_seconds": remaining_ban_seconds,
+        "current_ban": (
+            {
+                "kind": ban_row.get("kind"),
+                "reason": ban_row.get("reason"),
+                "retry_after_seconds": ban_row.get("retry_after_seconds"),
+                "message": ban_row.get("message"),
+            }
+            if ban_row and remaining_ban_seconds > 0
+            else None
+        ),
+        "safe_mode": safe_mode,
+        "engagement_pause": engagement_pause,
+        "active": active,
     }
 
 
@@ -679,6 +759,7 @@ def note_qr_risk_block(account_id: str, *, reason: str = "300012") -> None:
     # Also push the attempt clock so cooldown stacks with the risk block.
     _qr_last_attempt_at[account_id] = _now()
     _qr_last_attempt_wall[account_id] = _wall_now()
+    _record_last_risk_hit(account_id, reason=reason, kind="qr_risk")
     _schedule_persist()
 
 
@@ -748,6 +829,7 @@ def note_sync_auth_failure(account_id: str, *, reason: str = "AUTH_EXPIRED") -> 
     _sync_auth_blocked_until[account_id] = _now() + block_s
     _sync_auth_reason[account_id] = reason
     _sync_auth_until_wall[account_id] = (datetime.now(UTC) + timedelta(seconds=block_s)).isoformat()
+    _record_last_risk_hit(account_id, reason=reason, kind="sync_auth")
     _schedule_persist()
 
 
@@ -1214,6 +1296,7 @@ def export_risk_gate_state() -> dict[str, Any]:
         "inbound_peers": inbound,
         "engagement_daily_counts": daily,
         "policies": policies,
+        "last_risk_hit": {aid: dict(hit) for aid, hit in _last_risk_hit.items()},
     }
 
 
@@ -1320,6 +1403,17 @@ async def hydrate_risk_gates() -> None:
             }
         if day_map:
             _engagement_daily_counts[str(aid)] = day_map
+    for aid, raw_hit in (data.get("last_risk_hit") or {}).items():
+        if not isinstance(raw_hit, dict):
+            continue
+        hit_at = str(raw_hit.get("at") or "").strip()
+        if not hit_at:
+            continue
+        _last_risk_hit[str(aid)] = {
+            "at": hit_at,
+            "reason": str(raw_hit.get("reason") or "risk_control"),
+            "kind": str(raw_hit.get("kind") or "unknown"),
+        }
     _hydrated = True
     logger.info(
         "risk gates hydrated: browser=%s publish=%s engagement=%s auth=%s qr_risk=%s "
@@ -1351,6 +1445,7 @@ def reset_gates_for_tests() -> None:
     _engagement_pause_wall.clear()
     _engagement_daily_counts.clear()
     _inbound_peers.clear()
+    _last_risk_hit.clear()
     _qr_last_attempt_wall.clear()
     _qr_risk_until_wall.clear()
     _sync_auth_until_wall.clear()
@@ -1386,6 +1481,7 @@ __all__ = [
     "engagement_account_cooldown_seconds",
     "engagement_pause_seconds",
     "export_risk_gate_state",
+    "get_account_health",
     "get_cooldown_policy",
     "get_engagement_pause_status",
     "global_cooldown_defaults",

@@ -247,6 +247,21 @@ class TestFrontendReviewTypes:
             "Missing ReviewSubmitResponse interface"
         )
 
+    def test_publish_options_ai_content_declared_sync(self, review_types_content, _spec):
+        """P1-4: ai_content_declared must exist on OpenAPI + frontend PublishOptions."""
+        props = (
+            _spec.get("components", {})
+            .get("schemas", {})
+            .get("PublishOptions", {})
+            .get("properties", {})
+        )
+        assert "ai_content_declared" in props, "OpenAPI PublishOptions missing ai_content_declared"
+        assert props["ai_content_declared"].get("default") is True
+        assert "ai_content_declared" in review_types_content
+        generated = PROJECT_ROOT / "backend" / "api" / "generated" / "models.py"
+        assert generated.exists()
+        assert "ai_content_declared" in generated.read_text(encoding="utf-8")
+
 
 class TestFrontendAnalyticsTypes:
     """Tests for frontend analytics type definitions."""

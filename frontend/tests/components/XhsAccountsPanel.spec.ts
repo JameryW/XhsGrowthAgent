@@ -34,6 +34,15 @@ vi.mock('@/api/system', () => ({
     active: [],
     cdp_sessions: [],
     engagement_pause: { paused: false },
+    account_health: {
+      account_id: 'acc-1',
+      policy: { defaults: {}, overrides: {}, effective: { browser_action_seconds: 20, publish_seconds: 90 } },
+      last_risk_hit: null,
+      remaining_ban_seconds: 0,
+      safe_mode: { env_enabled: false, min_risk_pressure: 0, active: false, list_only: false },
+      engagement_pause: { paused: false },
+      active: [],
+    },
   }),
 }))
 
@@ -80,6 +89,15 @@ describe('XhsAccountsPanel 手动同步入口', () => {
       active: [],
       cdp_sessions: [],
       engagement_pause: { paused: false },
+      account_health: {
+        account_id: 'acc-1',
+        policy: { defaults: {}, overrides: {}, effective: { browser_action_seconds: 20, publish_seconds: 90 } },
+        last_risk_hit: null,
+        remaining_ban_seconds: 0,
+        safe_mode: { env_enabled: false, min_risk_pressure: 0, active: false, list_only: false },
+        engagement_pause: { paused: false },
+        active: [],
+      },
     })
     const store = useAccountsStore()
     vi.spyOn(store, 'fetchAccounts').mockResolvedValue(undefined)
@@ -125,6 +143,25 @@ describe('XhsAccountsPanel 手动同步入口', () => {
         retry_after_seconds: 3600,
         message: '互动已暂停',
       },
+      account_health: {
+        account_id: 'acc-1',
+        policy: {
+          defaults: {},
+          overrides: {},
+          effective: { browser_action_seconds: 20, publish_seconds: 90, min_risk_pressure: 1 },
+        },
+        last_risk_hit: { at: '2026-10-16T01:00:00+00:00', reason: 'risk_control', kind: 'engagement_risk_pause' },
+        remaining_ban_seconds: 3600,
+        current_ban: { kind: 'engagement_risk_pause', reason: 'risk_control', retry_after_seconds: 3600 },
+        safe_mode: { env_enabled: true, min_risk_pressure: 1, active: true, list_only: false },
+        engagement_pause: {
+          paused: true,
+          reason: 'risk_control',
+          retry_after_seconds: 3600,
+          message: '互动已暂停',
+        },
+        active: [],
+      },
     })
 
     const wrapper = mountPanel()
@@ -132,6 +169,8 @@ describe('XhsAccountsPanel 手动同步入口', () => {
 
     expect(mockedGetRiskGates).toHaveBeenCalledWith('acc-1')
     expect(wrapper.text()).toMatch(/互动暂停|risk_control|engagementPause/)
+    expect(wrapper.text()).toMatch(/SAFE_MODE/)
+    expect(wrapper.text()).toMatch(/冷却|cooldown|最近风控|Last risk/)
     expect(toastMock.error).not.toHaveBeenCalled()
   })
 

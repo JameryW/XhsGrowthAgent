@@ -18,6 +18,7 @@ from backend.api.errors import (
     CreatorActionNotFoundError,
     CreatorActionPolicyDeniedError,
     CreatorActionPublishContentUnavailableError,
+    CreatorAudienceNotFoundError,
     CreatorDecisionNotFoundError,
     CreatorEvidenceNotFoundError,
     CreatorFeedbackAudienceMismatchError,
@@ -370,6 +371,34 @@ async def get_creator_relationship(
     await require_owned_account(str(user["id"]), account_id)
     relationship = await _advisor().get_relationship(account_id.strip(), audience_id.strip())
     return success(data=relationship.model_dump(mode="json"))
+
+
+@router.get("/audience/{audience_id}/export")
+async def export_audience_member(
+    audience_id: str,
+    account_id: str = Query(..., min_length=1),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """P1-3: export Audience Member (relationship + linked learning signals)."""
+    await require_owned_account(str(user["id"]), account_id)
+    payload = await _advisor().export_audience_member(account_id.strip(), audience_id.strip())
+    if payload is None:
+        raise CreatorAudienceNotFoundError(audience_id.strip())
+    return success(data=payload)
+
+
+@router.delete("/audience/{audience_id}")
+async def delete_audience_member(
+    audience_id: str,
+    account_id: str = Query(..., min_length=1),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """P1-3: delete Audience Member relationship (+ linked learning signals)."""
+    await require_owned_account(str(user["id"]), account_id)
+    payload = await _advisor().delete_audience_member(account_id.strip(), audience_id.strip())
+    if payload is None:
+        raise CreatorAudienceNotFoundError(audience_id.strip())
+    return success(data=payload)
 
 
 @router.post("/actions")

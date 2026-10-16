@@ -73,6 +73,8 @@ class PublishOptions(BaseModel):
     # Must be an explicit field — Pydantic otherwise strips the key and
     # publish_gate never sees the human confirmation.
     disclosure_confirmed: bool = False
+    # P1-4: "contains AI-generated content" declaration (default ON in UI).
+    ai_content_declared: bool = True
 
 
 class ReviewDecision(BaseModel):

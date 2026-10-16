@@ -794,6 +794,22 @@ class CreatorAdvisor:
         relationship = await self._repository.get_relationship(account_id, audience_id)
         return relationship or RelationshipMemory(account_id=account_id, audience_id=audience_id)
 
+    async def export_audience_member(
+        self, account_id: str, audience_id: str
+    ) -> dict[str, Any] | None:
+        export = getattr(self._repository, "export_audience_member", None)
+        if export is None:
+            return None
+        return await export(account_id.strip(), audience_id.strip())
+
+    async def delete_audience_member(
+        self, account_id: str, audience_id: str
+    ) -> dict[str, Any] | None:
+        delete = getattr(self._repository, "delete_audience_member", None)
+        if delete is None:
+            return None
+        return await delete(account_id.strip(), audience_id.strip())
+
     @staticmethod
     def _confidence(
         ranked: list[_CandidateEvaluation],

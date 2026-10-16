@@ -121,6 +121,13 @@ def _receipt_fields(
         disclosure = options.get("disclosure_confirmed")
     if disclosure is not None:
         receipt["disclosure_confirmed"] = bool(disclosure)
+    # P1-4: AI content declaration — default True when absent (UI defaults ON).
+    ai_declared = decision.get("ai_content_declared")
+    if ai_declared is None:
+        ai_declared = options.get("ai_content_declared")
+    if ai_declared is None:
+        ai_declared = state.get("ai_content_declared")
+    receipt["ai_content_declared"] = True if ai_declared is None else bool(ai_declared)
     return receipt
 
 

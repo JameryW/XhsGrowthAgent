@@ -22,6 +22,7 @@ class ErrorCode(StrEnum):
     CREATOR_MODEL_REVISION_NOT_FOUND = "ERROR_CREATOR_MODEL_REVISION_NOT_FOUND"
     CREATOR_DECISION_NOT_FOUND = "ERROR_CREATOR_DECISION_NOT_FOUND"
     CREATOR_FEEDBACK_AUDIENCE_MISMATCH = "ERROR_CREATOR_FEEDBACK_AUDIENCE_MISMATCH"
+    CREATOR_AUDIENCE_NOT_FOUND = "ERROR_CREATOR_AUDIENCE_NOT_FOUND"
     CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
     CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
     CREATOR_EVIDENCE_NOT_FOUND = "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
@@ -160,6 +161,18 @@ class CreatorFeedbackAudienceMismatchError(APIError):
             code=ErrorCode.CREATOR_FEEDBACK_AUDIENCE_MISMATCH,
             message="Feedback audience does not match the decision audience",
             status_code=400,
+        )
+
+
+class CreatorAudienceNotFoundError(APIError):
+    """Audience Member (relationship) is missing or not visible to the owner."""
+
+    def __init__(self, audience_id: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_AUDIENCE_NOT_FOUND,
+            message=f"Audience member '{audience_id}' not found",
+            details={"audience_id": audience_id},
+            status_code=404,
         )
 
 

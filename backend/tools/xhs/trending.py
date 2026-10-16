@@ -46,6 +46,7 @@ async def _get_client(account_id: str = "") -> XHSClient:
         user_id=credential.user_id,
         use_browser=settings.platform.use_browser,
         headless=False,
+        account_id=account_id or "",
     )
 
 

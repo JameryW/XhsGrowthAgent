@@ -784,6 +784,8 @@ const publishMode = ref<PublishMode>(null)
 const publishAccountId = ref<string | null>(null)
 /** P0-5: commercial / brief runs require explicit disclosure checkbox. */
 const disclosureConfirmed = ref(false)
+/** P1-4: AI-generated content declaration — default ON. */
+const aiContentDeclared = ref(true)
 const pendingPublishIsCommercial = computed(() => {
   const tid = pendingDecisionThreadId.value
   if (!tid) return false
@@ -971,6 +973,7 @@ const requestDecision = async (tid: string, decision: ContentStatus) => {
     // Force explicit mode choice: reset to unset each time the modal opens.
     publishMode.value = null
     disclosureConfirmed.value = false
+    aiContentDeclared.value = true
     showPublishConfirm.value = true
   } else {
     executeDecision(tid, decision)
@@ -990,6 +993,7 @@ const executeDecision = async (tid: string, decision: ContentStatus) => {
         // a Settings/Dashboard resume UI for awaiting_publish.
         auto_publish: publishMode.value === 'live',
         account_id: publishAccountId.value,
+        ai_content_declared: aiContentDeclared.value === true,
         ...(pendingPublishIsCommercial.value
           ? { disclosure_confirmed: disclosureConfirmed.value === true }
           : {}),
@@ -1766,6 +1770,19 @@ const handleCancelConfirm = () => {
                 <p class="text-xs text-amber-700">{{ t('review.publishConfirm.liveWarning') }}</p>
               </div>
             </div>
+
+            <label
+              class="flex items-start gap-2 p-3 rounded-lg liquid-glass-inset cursor-pointer"
+            >
+              <input
+                v-model="aiContentDeclared"
+                type="checkbox"
+                class="mt-0.5 rounded border-slate-300 text-rose-500 focus:ring-rose-400"
+              />
+              <span class="text-xs text-slate-700 leading-relaxed">
+                {{ t('review.publishConfirm.aiContentLabel') }}
+              </span>
+            </label>
 
             <label
               v-if="pendingPublishIsCommercial"

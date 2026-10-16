@@ -28,6 +28,10 @@ def _empty() -> dict[str, Any]:
         "qr_risk": {},  # account_id -> {until, reason}
         "qr_last_attempt": {},  # account_id -> at
         "policies": {},  # account_id -> {browser_action_seconds, publish_seconds, ...}
+        "engagement_risk_pause": {},  # account_id -> {until, reason}
+        "inbound_peers": {},  # account_id -> [peer_id, ...]
+        "engagement_daily_counts": {},  # account_id -> {day: {dm, comment_reply}}
+        "last_risk_hit": {},  # account_id -> {at, reason, kind}
     }
 
 
