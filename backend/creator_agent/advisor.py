@@ -800,7 +800,12 @@ class CreatorAdvisor:
         export = getattr(self._repository, "export_audience_member", None)
         if export is None:
             return None
-        return await export(account_id.strip(), audience_id.strip())
+        result = await export(account_id.strip(), audience_id.strip())
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            return None
+        return dict(result)
 
     async def delete_audience_member(
         self, account_id: str, audience_id: str
@@ -808,7 +813,12 @@ class CreatorAdvisor:
         delete = getattr(self._repository, "delete_audience_member", None)
         if delete is None:
             return None
-        return await delete(account_id.strip(), audience_id.strip())
+        result = await delete(account_id.strip(), audience_id.strip())
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            return None
+        return dict(result)
 
     @staticmethod
     def _confidence(
