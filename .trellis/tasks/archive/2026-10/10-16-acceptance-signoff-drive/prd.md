@@ -33,11 +33,11 @@
 
 ## Acceptance Criteria
 
-* [ ] 看板 JSON 中 G1–G8 为豁免语义，非 passed；含 next_review_at
-* [ ] 催办清单文档存在且按角色可复制
-* [ ] 签字单 markdown 表与 JSON 状态一致
-* [ ] Settings 只读页反映豁免 + 复审日
-* [ ] 单测：waived ≠ passed；loader 不崩
+* [x] 看板 JSON 中 G1–G8 为豁免语义，非 passed；含 next_review_at
+* [x] 催办清单文档存在且按角色可复制
+* [x] 签字单 markdown 表与 JSON 状态一致
+* [x] Settings 只读页反映豁免 + 复审日
+* [x] 单测：waived ≠ passed；loader 不崩
 
 ## Defaults
 
