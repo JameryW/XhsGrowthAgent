@@ -48,7 +48,6 @@ def test_acceptance_signoff_route_readonly(client):
         assert waiver.get("replaces_signoff") is False
 
 
-
 def test_learning_recommendations_route(client, monkeypatch):
     async def _owned(user_id: str, account_id: str) -> None:
         return None
