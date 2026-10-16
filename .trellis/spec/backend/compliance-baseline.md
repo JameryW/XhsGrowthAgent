@@ -5,6 +5,9 @@ PR #657 (`10-15-compliance-risk-baseline`). Future changes to publish
 automation, engagement DMs, fake-sign HTTP, or content compliance MUST
 keep these invariants.
 
+P1 extensions (health panel, scrape budget, privacy, AI declaration, Redis
+auth) live in [Compliance P1](./compliance-p1.md) (PR #659).
+
 ## Scenario: Dual-auto publish hard reject
 
 ### 1. Scope / Trigger
