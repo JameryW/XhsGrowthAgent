@@ -936,3 +936,37 @@ Added concrete exception types and original messages to fixture-load and Creator
 ### Next Steps
 
 - None - task complete
+
+
+## Session 116: P0 compliance baseline: implement, CI green, merge #657, code-spec
+
+**Date**: 2026-10-16
+**Task**: P0 compliance baseline: implement, CI green, merge #657, code-spec
+**Branch**: `cursor/compliance-p0-spec-7f3c`
+
+### Summary
+
+Delivered P0-1..P0-5 (fake-sign removed, dual-auto hard reject, DM inbound/quotas, lexicon before LLM, commercial disclosure). Fixed CI (ruff/format, vue-tsc is_commercial, Settings getRiskGates mock, status wire shape, docs anchors). PR #657 merged. Captured contracts in compliance-baseline.md; opened docs PR #658; archived task 10-15-compliance-risk-baseline.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `31ec7591` | (see git log) |
+| `e875bdf7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
