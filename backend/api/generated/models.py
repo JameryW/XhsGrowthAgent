@@ -224,6 +224,15 @@ class PublishOptions(BaseModel):
             )
         ),
     ] = False
+    ai_content_declared: Annotated[
+        StrictBool | None,
+        Field(
+            description=(
+                "Operator declaration that the note contains AI-generated content. "
+                "Default true in the Review publish confirm UI; recorded on publish_confirmation."
+            )
+        ),
+    ] = True
 
 
 class Evidence(BaseModel):

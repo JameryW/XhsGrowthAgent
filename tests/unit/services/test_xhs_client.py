@@ -172,7 +172,9 @@ class TestXHSClient:
         assert len(result) == 1
         assert result[0].note_id == "n1"
         assert result[0].title == "Test Post"
-        assert result[0].user_name == "User"
+        # P1 scrape minimize masks others' nicknames before returning
+        assert result[0].user_name == "U**r"
+        assert result[0].user_id == "***"
 
     @pytest.mark.asyncio
     async def test_get_post_analytics_success(self, client):

@@ -324,8 +324,19 @@ class XHSClient:
 
         logger.info(f"Fetching trending topics for category: {category}")
 
+        from backend.services.scrape_budget import (
+            ScrapeBudgetExhaustedError,
+            check_budget,
+            record_success,
+        )
+
         try:
-            notes = await self._http.get_homefeed(category=category)
+            cached = check_budget(self.account_id, "homefeed")
+            if cached is not None:
+                notes = cached
+            else:
+                notes = await self._http.get_homefeed(category=category)
+                notes = record_success(self.account_id, "homefeed", list(notes or []))
 
             # 解析为 XHSTrendingTopic
             topics = []
@@ -343,6 +354,8 @@ class XHSClient:
 
             return topics
 
+        except ScrapeBudgetExhaustedError:
+            raise
         except XHSSignatureUnavailableError:
             raise
         except Exception as e:
@@ -357,28 +370,44 @@ class XHSClient:
 
         logger.info(f"Searching posts for keyword: {keyword}")
 
+        from backend.services.scrape_budget import (
+            ScrapeBudgetExhaustedError,
+            check_budget,
+            record_success,
+        )
+
         try:
-            notes = await self._http.search_notes(keyword=keyword)
+            cached = check_budget(self.account_id, "search")
+            if cached is not None:
+                notes = cached
+            else:
+                notes = await self._http.search_notes(keyword=keyword)
+                notes = record_success(self.account_id, "search", list(notes or []))
 
             results = []
             for note in notes[:limit]:
+                user = note.get("user") if isinstance(note.get("user"), dict) else {}
                 note_id = note.get("id", note.get("note_id", ""))
                 results.append(
                     XHSSearchResult(
                         note_id=note_id,
                         title=note.get("display_title", ""),
-                        user_name=note.get("user", {}).get("nickname", ""),
-                        user_id=note.get("user", {}).get("user_id", ""),
+                        user_name=user.get("nickname", note.get("user_name", "")),
+                        user_id=user.get("user_id", note.get("user_id", "")),
                         likes=note.get("like_count", 0),
                         comments=note.get("comment_count", 0),
                         collects=note.get("collect_count", 0),
-                        cover_url=note.get("cover", {}).get("url", ""),
+                        cover_url=(note.get("cover") or {}).get("url", "")
+                        if isinstance(note.get("cover"), dict)
+                        else "",
                         note_url=f"https://www.xiaohongshu.com/explore/{note_id}",
                     )
                 )
 
             return results
 
+        except ScrapeBudgetExhaustedError:
+            raise
         except XHSSignatureUnavailableError:
             raise
         except Exception as e:
@@ -392,26 +421,47 @@ class XHSClient:
 
         logger.info(f"Fetching comments for post: {post_id}")
 
+        from backend.services.scrape_budget import (
+            ScrapeBudgetExhaustedError,
+            check_budget,
+            record_success,
+        )
+
         try:
-            comments_data = await self._http.get_comments(note_id=post_id)
+            cached = check_budget(self.account_id, "comments")
+            if cached is not None:
+                comments_data = cached
+            else:
+                comments_data = await self._http.get_comments(note_id=post_id)
+                comments_data = record_success(
+                    self.account_id, "comments", list(comments_data or [])
+                )
 
             comments = []
             for item in comments_data[:limit]:
+                user = item.get("user") if isinstance(item.get("user"), dict) else {}
+                target = (
+                    item.get("target_comment")
+                    if isinstance(item.get("target_comment"), dict)
+                    else {}
+                )
                 comments.append(
                     XHSComment(
-                        comment_id=item.get("id", ""),
+                        comment_id=item.get("id", item.get("comment_id", "")),
                         post_id=post_id,
-                        user_name=item.get("user", {}).get("nickname", ""),
-                        user_id=item.get("user", {}).get("user_id", ""),
+                        user_name=user.get("nickname", item.get("user_name", "")),
+                        user_id=user.get("user_id", item.get("user_id", "")),
                         content=item.get("content", ""),
                         like_count=item.get("like_count", 0),
-                        created_at=item.get("create_time", ""),
-                        is_reply=item.get("target_comment", {}).get("id", ""),
+                        created_at=item.get("create_time", item.get("created_at", "")),
+                        is_reply=target.get("id", item.get("is_reply", "")),
                     )
                 )
 
             return comments
 
+        except ScrapeBudgetExhaustedError:
+            raise
         except XHSSignatureUnavailableError:
             raise
         except Exception as e:

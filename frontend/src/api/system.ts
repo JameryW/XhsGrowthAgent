@@ -96,13 +96,41 @@ export interface EngagementPauseStatus {
   message?: string
 }
 
+/** P1-1: account health panel from GET /system/risk-gates?account_id=… */
+export interface AccountHealthSafeMode {
+  env_enabled: boolean
+  min_risk_pressure: number
+  active: boolean
+  list_only: boolean
+}
+
+export interface AccountHealth {
+  account_id?: string | null
+  policy?: CooldownPolicy
+  last_risk_hit?: { at?: string | null; reason?: string | null; kind?: string | null } | null
+  remaining_ban_seconds?: number
+  current_ban?: {
+    kind?: string
+    reason?: string
+    retry_after_seconds?: number
+    message?: string
+  } | null
+  safe_mode?: AccountHealthSafeMode
+  engagement_pause?: EngagementPauseStatus
+  active?: ActiveCooldownEntry[]
+}
+
 export interface RiskGatesResponse {
   risk_gates: RiskGatesSnapshot
   active: ActiveCooldownEntry[]
   cdp_sessions: CdpSessionRow[]
   account_id?: string | null
+  /** Effective cool-down policy when account_id is set. */
+  policy?: CooldownPolicy
   /** P0-3: Settings-visible engagement risk pause (reason + remaining). */
   engagement_pause?: EngagementPauseStatus
+  /** P1-1: full health snapshot (policy / last hit / ban / SAFE_MODE). */
+  account_health?: AccountHealth | null
 }
 
 export interface ClearRiskGatesResult {

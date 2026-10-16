@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline entry + checklist"}
+{"file": ".trellis/spec/backend/compliance-baseline.md", "reason": "P0 invariants to extend (receipts, risk-gates, engagement)"}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "Risk pause / scrape safety conventions"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Stable error codes: scrape_budget_exhausted, auth backend"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Publish confirmation / status fields for AI declaration"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Retention cleanup, audience delete/export, risk_gates consistency"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Settings UI, auth, publish receipt, security.md alignment"}
+{"file": ".trellis/tasks/10-16-compliance-p1-observability-privacy/prd.md", "reason": "Locked P1 requirements and acceptance criteria"}

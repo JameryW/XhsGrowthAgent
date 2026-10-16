@@ -1277,6 +1277,115 @@ class DurableCreatorAgentRepository:
         async with pool.connection() as conn, conn.cursor() as cur:
             return await self._get_relationship_on_cursor(cur, account_id, audience_id)
 
+    async def export_audience_member(
+        self, account_id: str, audience_id: str
+    ) -> dict[str, Any] | None:
+        """P1-3: export Relationship Memory + linked learning-signal ids for one audience."""
+        account_id = (account_id or "").strip()
+        audience_id = (audience_id or "").strip()
+        if not account_id or not audience_id:
+            return None
+        relationship = await self.get_relationship(account_id, audience_id)
+        if relationship is None:
+            return None
+        signals = await self.list_learning_signals(account_id)
+        linked = [
+            s.model_dump(mode="json")
+            for s in signals
+            if str(getattr(s, "audience_id", "") or "") == audience_id
+        ]
+        return {
+            "account_id": account_id,
+            "audience_id": audience_id,
+            "relationship": relationship.model_dump(mode="json"),
+            "learning_signals": linked,
+            "exported_at": utc_now_iso(),
+        }
+
+    async def delete_audience_member(
+        self, account_id: str, audience_id: str
+    ) -> dict[str, Any] | None:
+        """P1-3: delete Relationship Memory (+ linked learning signals) for one audience."""
+        account_id = (account_id or "").strip()
+        audience_id = (audience_id or "").strip()
+        if not account_id or not audience_id:
+            return None
+        existing = await self.get_relationship(account_id, audience_id)
+        if existing is None:
+            return None
+        removed_signals = 0
+        if not is_pool_ready():
+            async with _mem_lock:
+                _mem_relationships.pop((account_id, audience_id), None)
+                for key in list(_mem_learning_signals.keys()):
+                    if key[0] != account_id:
+                        continue
+                    signal = _mem_learning_signals.get(key)
+                    if signal is not None and signal.audience_id == audience_id:
+                        _mem_learning_signals.pop(key, None)
+                        removed_signals += 1
+                        fb_key = (account_id, signal.feedback_id)
+                        _mem_feedback_signals.pop(fb_key, None)
+            return {
+                "account_id": account_id,
+                "audience_id": audience_id,
+                "deleted": True,
+                "removed_learning_signals": removed_signals,
+            }
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(
+                """
+                DELETE FROM creator_agent_learning_signals
+                WHERE account_id = %s
+                  AND payload_json::jsonb->>'audience_id' = %s
+                """,
+                (account_id, audience_id),
+            )
+            removed_signals = cur.rowcount or 0
+            await cur.execute(
+                """
+                DELETE FROM creator_agent_relationships
+                WHERE account_id = %s AND audience_id = %s
+                """,
+                (account_id, audience_id),
+            )
+        return {
+            "account_id": account_id,
+            "audience_id": audience_id,
+            "deleted": True,
+            "removed_learning_signals": int(removed_signals),
+        }
+
+    async def purge_relationships_before(self, cutoff_iso: str) -> int:
+        """Delete Relationship Memory rows with last_interaction_at / updated_at < cutoff."""
+        cutoff = (cutoff_iso or "").strip()
+        if not cutoff:
+            return 0
+        removed = 0
+        if not is_pool_ready():
+            async with _mem_lock:
+                for key, rel in list(_mem_relationships.items()):
+                    stamp = (rel.last_interaction_at or "").strip()
+                    if not stamp or stamp < cutoff:
+                        _mem_relationships.pop(key, None)
+                        removed += 1
+            return removed
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(
+                """
+                DELETE FROM creator_agent_relationships
+                WHERE COALESCE(
+                    NULLIF(payload_json::jsonb->>'last_interaction_at', ''),
+                    updated_at
+                ) < %s
+                """,
+                (cutoff,),
+            )
+            removed = int(cur.rowcount or 0)
+        return removed
+
     async def get_learning_signal(self, account_id: str, signal_id: str) -> LearningSignal | None:
         if not is_pool_ready():
             signal = _mem_learning_signals.get((account_id, signal_id))

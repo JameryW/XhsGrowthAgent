@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Quality-check entry"}
+{"file": ".trellis/spec/backend/compliance-baseline.md", "reason": "Must not regress P0 while adding P1"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error code and fail-closed paths"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "AI declaration on publish receipt / status"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "General quality bar"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "API/UI/docs consistency"}
+{"file": ".trellis/tasks/10-16-compliance-p1-observability-privacy/prd.md", "reason": "P1 acceptance checklist"}

@@ -10,7 +10,11 @@ import {
   type AccountLoginStatusValue,
 } from '@/api/accounts'
 import { syncAllCreatorStats } from '@/api/analytics'
-import { getRiskGates, type EngagementPauseStatus } from '@/api/system'
+import {
+  getRiskGates,
+  type AccountHealth,
+  type EngagementPauseStatus,
+} from '@/api/system'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -80,6 +84,8 @@ const qrLoginAccountName = ref<string>('')
 const qrRiskBlocks = ref<Record<string, { until: number; message: string; riskCode: string }>>({})
 /** P0-3: engagement risk pause (reason + remaining) from /system/risk-gates. */
 const engagementPauses = ref<Record<string, EngagementPauseStatus & { fetchedAt: number }>>({})
+/** P1-1: full account-health snapshot keyed by account id. */
+const accountHealth = ref<Record<string, AccountHealth & { fetchedAt: number }>>({})
 let riskTickTimer: ReturnType<typeof setInterval> | null = null
 // Force recompute of remaining seconds every 1s while any block is active.
 const riskTick = ref(0)
@@ -243,9 +249,11 @@ async function refreshLoginStatus(accountId: string) {
 async function refreshEngagementPauses() {
   if (store.accounts.length === 0) {
     engagementPauses.value = {}
+    accountHealth.value = {}
     return
   }
   const next: Record<string, EngagementPauseStatus & { fetchedAt: number }> = {}
+  const nextHealth: Record<string, AccountHealth & { fetchedAt: number }> = {}
   const fetchedAt = Date.now()
   await Promise.allSettled(
     store.accounts.map(async (account) => {
@@ -254,13 +262,30 @@ async function refreshEngagementPauses() {
         if (resp.engagement_pause?.paused) {
           next[account.id] = { ...resp.engagement_pause, fetchedAt }
         }
+        if (resp.account_health) {
+          nextHealth[account.id] = { ...resp.account_health, fetchedAt }
+        }
       } catch {
         // Soft-fail: Settings still works without pause visibility.
       }
     }),
   )
   engagementPauses.value = next
-  if (Object.keys(next).length > 0) ensureRiskTicker()
+  accountHealth.value = nextHealth
+  if (Object.keys(next).length > 0 || Object.values(nextHealth).some(h => (h.remaining_ban_seconds || 0) > 0)) {
+    ensureRiskTicker()
+  }
+}
+
+function healthFor(accountId: string): (AccountHealth & { remainingBanSeconds: number }) | null {
+  void riskTick.value
+  const health = accountHealth.value[accountId]
+  if (!health) return null
+  const remaining = Math.max(
+    0,
+    Math.ceil((health.remaining_ban_seconds || 0) - (Date.now() - health.fetchedAt) / 1000),
+  )
+  return { ...health, remainingBanSeconds: remaining }
 }
 
 function engagementPauseFor(accountId: string): (EngagementPauseStatus & { remainingSeconds: number }) | null {
@@ -510,6 +535,41 @@ function onQrConfirmed() {
               {{ t('settings.xhsAccounts.engagementPauseBadge', {
                 minutes: Math.max(1, Math.ceil((engagementPauseFor(account.id)?.remainingSeconds || 60) / 60)),
                 reason: engagementPauseFor(account.id)?.reason || 'risk_control',
+              }) }}
+            </span>
+            <span
+              v-if="healthFor(account.id)?.safe_mode?.active"
+              class="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 font-medium"
+              :title="t('settings.xhsAccounts.safeModeHint')"
+            >
+              {{ healthFor(account.id)?.safe_mode?.list_only
+                ? t('settings.xhsAccounts.safeModeListOnly')
+                : t('settings.xhsAccounts.safeModeBadge') }}
+            </span>
+            <span
+              v-if="(healthFor(account.id)?.remainingBanSeconds || 0) > 0"
+              class="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium"
+              :title="healthFor(account.id)?.current_ban?.message || healthFor(account.id)?.last_risk_hit?.reason || ''"
+            >
+              {{ t('settings.xhsAccounts.remainingBanBadge', {
+                minutes: Math.max(1, Math.ceil((healthFor(account.id)?.remainingBanSeconds || 60) / 60)),
+              }) }}
+            </span>
+          </div>
+          <div
+            v-if="healthFor(account.id)"
+            class="mt-1 text-[10px] text-slate-400 space-x-2"
+          >
+            <span v-if="healthFor(account.id)?.last_risk_hit?.at">
+              {{ t('settings.xhsAccounts.lastRiskHit', {
+                reason: healthFor(account.id)?.last_risk_hit?.reason || '—',
+                at: (healthFor(account.id)?.last_risk_hit?.at || '').slice(0, 19).replace('T', ' '),
+              }) }}
+            </span>
+            <span v-if="healthFor(account.id)?.policy?.effective">
+              {{ t('settings.xhsAccounts.cooldownPolicySummary', {
+                browser: Math.round(Number(healthFor(account.id)?.policy?.effective?.browser_action_seconds || 0)),
+                publish: Math.round(Number(healthFor(account.id)?.policy?.effective?.publish_seconds || 0)),
               }) }}
             </span>
           </div>

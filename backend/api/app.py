@@ -1310,6 +1310,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         await hydrate_risk_gates()
 
+    # P1-3: best-effort personal-data retention purge (relationships / scrape / DM peers).
+    with contextlib.suppress(Exception):
+        from backend.services.privacy_retention import run_privacy_cleanup
+
+        await run_privacy_cleanup()
+
     # Start Ripple background health check
     from backend.config.settings import Settings
 

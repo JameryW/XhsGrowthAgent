@@ -46,38 +46,37 @@
 - **伪签名已删除**：`XHSSignature` 不再生成伪造 `x-s`/`x-t`。依赖旧 HTTP 加签的调用返回 `signature_unavailable`，不会静默空结果。平台操作走 headed CDP / 浏览器路径。
 - **Stealth 默认关闭**：登录回退路径默认不注入 `playwright-stealth`；仅当显式设置 `XHS_BROWSER_STEALTH=1` 时才注入（可选 `[browser]` 依赖）。
 - **双自动硬拒绝**：`AUTO_APPROVE_LOW_RISK=true` 与 `auto_publish=true` 不能同时开启（`POST /start` 与 `xhs-growth run` 一致）。合规 blocking、商单 `is_commercial`、高风险垂类永不 `auto_low_risk`。
-- **发布回执**：`publish_confirmation` 记录 `confirmer` / `source`（`human` / `auto_*`）/ `confirmed_at`。
+- **发布回执**：`publish_confirmation` 记录 `confirmer` / `source`（`human` / `auto_*`）/ `confirmed_at`，以及 P1-4 `ai_content_declared`（含 AI 生成内容声明，Review 默认勾选）。
 - **私信策略**：默认仅回复未读/入站白名单用户；日配额默认私信 20、评论回复 50；冷启动「新建私信」需 `XHS_ALLOW_OUTBOUND_DM=1` + 逐条 `human_confirmed`。风控标记命中后互动暂停默认 6 小时，Settings `/api/system/risk-gates` 可见原因与剩余时间。
 - **确定性词库**：LLM 评估前扫描违禁词（含 niche 扩展库）；商单 brief 模式置 `is_commercial=true`，发布前须勾选披露确认且文案保留合作/广告标注。
 
 ## API 安全
 
-### 当前状态
+### 当前状态（P1-5）
 
-- **无认证**: 当前为内部工具，无 API 认证
+- **控制台认证**: `POST /api/auth/login` 签发 bearer token；受保护路由经 `get_current_user` 校验。凭据仅来自 `console_users` 表（无硬编码 admin 回退）。
+- **Token 后端**: `REDIS_URI`（或 `Settings().database.redis_uri`）可达时使用 Redis + TTL（与 `AUTH_TOKEN_EXPIRE_HOURS`，默认 24h 对齐）；不可用时降级进程内存，并在日志标明 `backend=redis|memory`。多实例部署必须配置 Redis，否则各进程 token 不共享。
+- **CORS**: FastAPI 挂载 `CORSMiddleware`（当前 `allow_origins=["*"]` 便于本地/内网联调；生产应收紧为显式来源列表）。
 - **本地运行**: 默认 `localhost:8000`
-- **无 CORS**: 仅允许本地请求
 
 ### 生产部署建议
 
-1. **添加认证**
+1. **收紧 CORS**
    ```python
-   # FastAPI JWT 认证
-   from fastapi.security import HTTPBearer
-   security = HTTPBearer()
-   ```
-
-2. **CORS 配置**
-   ```python
-   from fastapi.middleware.cors import CORSMiddleware
    app.add_middleware(
        CORSMiddleware,
-       allow_origins=["your-domain.com"],
+       allow_origins=["https://your-domain.com"],
        allow_credentials=True,
    )
    ```
 
-3. **Rate Limiting**
+2. **配置 Redis token 后端**
+   ```bash
+   REDIS_URI=redis://:password@redis:6379/0
+   AUTH_TOKEN_EXPIRE_HOURS=24
+   ```
+
+3. **Rate Limiting**（可选）
    ```python
    from slowapi import Limiter
    limiter = Limiter(key_func=get_remote_address)
@@ -90,18 +89,28 @@
 - 使用 SSL 连接 (`POSTGRES_URI`)
 - 定期备份数据
 - 限制数据库访问 IP
+- 风控冷却（`risk_gate_cooldowns` KV）经 DB 共享，多实例一致
 
 ### Redis
 
 - 设置密码 (`REDIS_URI`)
 - 不暴露公网
 - 启用 TLS
+- 用途：控制台 auth token（P1-5）；不可用时 auth 降级内存
 
-### 用户内容
+### 用户内容与个保数据清单（P1-3）
 
-- 存储在 PostgreSQL
-- 包含创作内容、分析数据
-- 遵守小红书数据政策
+| 数据族 | 存储位置 | 默认保留 | 删除/导出 |
+|--------|----------|----------|-----------|
+| 工作流元数据 / 创作内容 | PostgreSQL `workflows` + checkpoint / Artifact store | 运维策略 | 工作流删除 API |
+| Creator Stats 笔记快照 | PostgreSQL creator_stats* | 账号级导入历史 | 账号删除 |
+| Relationship Memory（Audience） | `creator_agent_relationships` | 90 天（`XHS_PRIVACY_RELATIONSHIP_RETENTION_DAYS`） | `DELETE /api/creator-agent/audience/{id}`；导出 `GET .../export` |
+| Learning Signals | `creator_agent_learning_signals` | 随 Audience 删除联动 | 同上 |
+| 评论抓取缓存 | 进程内 scrape cache（脱敏昵称/ID） | 90 天（`XHS_PRIVACY_COMMENTS_RETENTION_DAYS`） | 保留清理任务 |
+| 私信入站白名单 peer | risk_gates KV / 内存 | 90 天（`XHS_PRIVACY_DM_RETENTION_DAYS`） | 保留清理任务 |
+| 控制台用户 | `console_users` | 账号生命周期 | 管理 API（撤 token） |
+
+启动时 / 运维可调用 `backend.services.privacy_retention.run_privacy_cleanup()` 执行到期清理。遵守小红书与适用个保法规；默认偏安全。
 
 ## 日志安全
 

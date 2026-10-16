@@ -770,7 +770,8 @@
       "dryCardDesc": "Preview without publishing",
       "liveCardTitle": "Live Publish",
       "liveCardDesc": "Publish to Xiaohongshu",
-      "disclosureLabel": "I confirm this commercial brief is disclosed/filed and the copy still includes the collaboration/ad label."
+      "disclosureLabel": "I confirm this commercial brief is disclosed/filed and the copy still includes the collaboration/ad label.",
+      "aiContentLabel": "This note contains AI-generated content (checked by default; for labeling/receipt — not for evading disclosure)."
     },
     "stateLost": "The review state was lost after a container restart. Please restart the workflow to regenerate review content.",
     "errorStateLost": "Review State Lost",
@@ -2282,6 +2283,12 @@
       "qrRiskCooldown": "Scan-login cooling down — retry in about {minutes} min; prefer home broadband or mobile hotspot",
       "engagementPauseBadge": "Engagement paused {minutes}m ({reason})",
       "engagementPauseHint": "Engagement paused after a risk signal: {reason}; retry in about {minutes} min",
+      "safeModeBadge": "SAFE_MODE",
+      "safeModeListOnly": "SAFE_MODE·list-only",
+      "safeModeHint": "Creator-stats SAFE_MODE is active (env or account min_risk_pressure)",
+      "remainingBanBadge": "Cooldown ~{minutes}m left",
+      "lastRiskHit": "Last risk: {reason} · {at}",
+      "cooldownPolicySummary": "Cooldowns: browser {browser}s / publish {publish}s",
       "qrLoginTitle": "Scan to Log In — Xiaohongshu",
       "qrWaiting": "Scan with the Xiaohongshu app",
       "qrScanned": "Scanned — please confirm on your phone",

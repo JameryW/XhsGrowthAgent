@@ -50,3 +50,23 @@ def test_get_and_clear_risk_gates(client, monkeypatch):
     assert r2.json()["data"]["total"] >= 1
     r3 = client.get("/api/system/risk-gates", params={"account_id": "acc-z"})
     assert r3.json()["data"]["active"] == []
+
+
+def test_risk_gates_account_health_shape(client, monkeypatch):
+    from backend.services.xhs_risk_gate import note_engagement_risk_pause, set_cooldown_policy
+
+    monkeypatch.setenv("XHS_ENGAGEMENT_RISK_PAUSE_SECONDS", "1800")
+    monkeypatch.setenv("CREATOR_STATS_SAFE_MODE", "1")
+    set_cooldown_policy("acc-health", browser_action_seconds=25.0)
+    note_engagement_risk_pause("acc-health", reason="risk_control")
+
+    r = client.get("/api/system/risk-gates", params={"account_id": "acc-health"})
+    assert r.status_code == 200
+    data = r.json()["data"]
+    health = data["account_health"]
+    assert health["account_id"] == "acc-health"
+    assert health["policy"]["effective"]["browser_action_seconds"] == 25.0
+    assert health["safe_mode"]["active"] is True
+    assert health["engagement_pause"]["paused"] is True
+    assert health["remaining_ban_seconds"] > 0
+    assert health["last_risk_hit"] is not None

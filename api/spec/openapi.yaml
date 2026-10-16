@@ -1725,6 +1725,13 @@ components:
           description: >
             Commercial/brief runs require the operator to confirm disclosure
             (filed/labelled). Forwarded to publish_gate; must not be stripped.
+        ai_content_declared:
+          type: boolean
+          default: true
+          description: >
+            Operator declaration that the note contains AI-generated content.
+            Default true in the Review publish confirm UI; recorded on
+            publish_confirmation as ai_content_declared.
 
     CreatorModelSaveRequest:
       type: object
