@@ -2220,15 +2220,20 @@
     "acceptance": {
       "title": "Acceptance 签字看板",
       "subtitle": "只读镜像 docs/acceptance 签字状态；不能代替仓外真人签字。",
-      "disclaimer": "本看板仅为文档状态镜像。本地测试、健康检查或 CI 全绿不得记为门槛通过。",
+      "disclaimer": "本看板仅为文档状态镜像。waived_risk_accepted 表示风险接受，不是通过。本地测试、健康检查或 CI 全绿不得记为门槛通过。",
       "loading": "正在加载看板…",
       "loadFailed": "无法加载 Acceptance 看板。",
       "conclusionPlaceholder": "（待签字结论）",
+      "nextReviewPlaceholder": "—",
+      "waiverLabel": "豁免记录",
+      "waiverNotPass": "豁免是风险接受，不是已签字通过。本页不提供一键通过。",
+      "nextGlobalReview": "下次全局复审：{date}",
       "source": "来源：{doc}",
       "cols": {
         "gate": "门槛",
         "status": "状态",
         "owner": "负责人角色",
+        "nextReview": "建议复审",
         "conclusion": "结论"
       },
       "status": {
@@ -2237,7 +2242,8 @@
         "approved": "通过",
         "rejected": "不通过",
         "failed": "失败",
-        "waived": "已豁免（风险接受）"
+        "waived": "已豁免（风险接受）",
+        "waived_risk_accepted": "已豁免（风险接受）"
       }
     },
     "publicTelemetry": {

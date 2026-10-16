@@ -172,18 +172,30 @@ export interface AcceptanceSignoffGate {
   conclusion: string
   signed_by: string
   signed_at: string
+  next_review_at?: string
+  chase_action?: string
   evidence?: string[]
   notes?: string
+  /** Server-derived: waived is never true when is_passed. */
+  is_passed?: boolean
+  is_waived?: boolean
 }
 
 export interface AcceptanceSignoffBoard {
   ok: boolean
   version?: number
   source_doc?: string
+  chase_checklist?: string
   disclaimer: string
   updated_at?: string
   gates: AcceptanceSignoffGate[]
-  waiver?: Record<string, unknown> | null
+  waiver?: {
+    recorded_at?: string
+    summary?: string
+    replaces_signoff?: boolean
+    next_global_review_at?: string
+    [key: string]: unknown
+  } | null
   replaces_human_signoff?: boolean
   error?: string
 }

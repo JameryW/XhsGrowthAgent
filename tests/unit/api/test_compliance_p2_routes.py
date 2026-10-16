@@ -37,6 +37,16 @@ def test_acceptance_signoff_route_readonly(client):
     assert data["replaces_human_signoff"] is False
     ids = {g["id"] for g in data["gates"]}
     assert {"G1", "G2", "G3", "G4", "G5"}.issubset(ids)
+    # Waived risk acceptance must never look like a signed pass via API.
+    for gate in data["gates"]:
+        if gate.get("status") in {"waived_risk_accepted", "waived"}:
+            assert gate.get("is_passed") is False
+            assert gate.get("is_waived") is True
+            assert gate.get("next_review_at")
+    waiver = data.get("waiver") or {}
+    if waiver:
+        assert waiver.get("replaces_signoff") is False
+
 
 
 def test_learning_recommendations_route(client, monkeypatch):
