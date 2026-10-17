@@ -20,7 +20,8 @@ SDK 2.0.1 的真实契约（冒烟验证过）：
   → ``{"memories": {"profile": [...], "normal": [...], "proactive": [...]}}``；
 - working/coding 场景 → ``{"facts": [...], "experiences": [...],
   "chain_block": ...}``；
-- ``await client.async_list_memories(user_id=...)`` → ``{"vdb": [...]}``；
+- ``await client.async_list_memories(user_id=...)`` →
+  ``{"vdb": {"memories": [...], "total": N, ...}}``（vdb 为 dict 非 list）；
 - ``await client.async_get_metrics(minutes=...)`` → 指标 dict。
 """
 
@@ -294,7 +295,11 @@ class HyMemoryBridge:
         except Exception as exc:
             logger.warning("hy-memory list failed: %s", exc)
             return []
+        # SDK 2.0.1 实测（探针）：vdb 是 dict（{"memories": [...], "total": N, ...}）
+        # 而非 list；list 形状仅在异常/降级路径出现，两种都兼容。
         vdb = result.get("vdb") if isinstance(result, dict) else None
+        if isinstance(vdb, dict):
+            vdb = vdb.get("memories")
         return list(vdb) if isinstance(vdb, list) else []
 
     async def forget(self, memory_id: str) -> bool:
@@ -332,6 +337,10 @@ def _normalize_search_result(result: Any, *, scene: str) -> list[dict[str, Any]]
     chat: ``{"memories": {"profile": [...], "normal": [...], "proactive": [...]}}``
     working/coding: ``{"facts": [...], "experiences": [...], "chain_block": ...}``
 
+    lite 模式例外（实测）：SDK 把 working/coding 搜索强制为 raw-only normal，
+    返回 chat 形状 ``{"memories": {"normal": [...]}}``——facts/experiences 均空时
+    兜底读 normal 通道，结果归入 facts（lite 下命中即原文事实）。
+
     SDK 每条记忆至少带 ``content`` / ``score``（字段名随版本可能有差异，
     这里逐个兜底，结构异常时跳过该条而不是整体失败）。
     """
@@ -354,6 +363,15 @@ def _normalize_search_result(result: Any, *, scene: str) -> list[dict[str, Any]]
             if isinstance(items, list):
                 for item in items:
                     normalized = _normalize_item(item, scene, channel)
+                    if normalized is not None:
+                        out.append(normalized)
+        if not out:
+            # lite 模式：working/coding 被 SDK 强制为 normal（raw-only），
+            # 返回 chat 形状；兜底归入 facts 通道，避免静默丢结果。
+            channels = result.get("memories")
+            if isinstance(channels, dict):
+                for item in channels.get("normal") or []:
+                    normalized = _normalize_item(item, scene, "facts")
                     if normalized is not None:
                         out.append(normalized)
     return out

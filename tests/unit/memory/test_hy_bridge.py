@@ -73,7 +73,17 @@ class FakeHyClient:
 
     async def async_list_memories(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(("async_list_memories", (), kwargs))
-        return {"vdb": [{"id": "m1", "content": "stored"}]}
+        if getattr(self, "_list_shape", None) is not None:
+            return self._list_shape
+        # 真实 SDK 2.0.1 形状（探针实测）：vdb 是 dict，memories 在其内。
+        return {
+            "vdb": {
+                "memories": [{"id": "m1", "content": "stored"}],
+                "total": 1,
+                "limit": 50,
+                "offset": 0,
+            }
+        }
 
     async def async_delete(self, memory_id: str) -> dict[str, Any]:
         self.calls.append(("async_delete", (memory_id,), {}))
@@ -274,6 +284,24 @@ class TestEnabledReadWrite:
         assert listed == [{"id": "m1", "content": "stored"}]
         assert await bridge.forget("m1") is True
         assert await bridge.metrics(minutes=30) == {"requests": 7}
+
+    @pytest.mark.asyncio
+    async def test_list_memories_vdb_shapes(self, fake_sdk: types.ModuleType):
+        """回归：SDK 2.0.1 实测 vdb 为 dict；list 兼容旧形状；其余归空。"""
+        bridge = HyMemoryBridge(_enabled_settings())
+        client = await _built_client(bridge, fake_sdk)
+        expected = [{"id": "m1", "content": "stored"}]
+
+        # 真实形状：vdb 为 dict
+        assert await bridge.list_memories(account_id="a1") == expected
+
+        # 兼容形状：vdb 直接是 list
+        client._list_shape = {"vdb": list(expected)}
+        assert await bridge.list_memories(account_id="a1") == expected
+
+        # 未知形状：vdb 既非 dict 也非 list
+        client._list_shape = {"vdb": "unexpected"}
+        assert await bridge.list_memories(account_id="a1") == []
 
     @pytest.mark.asyncio
     async def test_workspace_mapping(self):
