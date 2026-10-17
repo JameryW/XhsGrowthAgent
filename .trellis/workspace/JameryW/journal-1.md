@@ -1103,3 +1103,37 @@ Verified #644-656 against main (#657). Opened PR #665 with Closes keywords (gh i
 ### Next Steps
 
 - None - task complete
+
+
+## Session 121: DeepSeek Search/Fetch + Tavily fallback
+
+**Date**: 2026-10-17
+**Task**: DeepSeek Search/Fetch + Tavily fallback
+**Branch**: `cursor/deepseek-search-fetch-api-7f3c`
+
+### Summary
+
+WebSearchProvider facade (DeepSeek first, Tavily Search/Extract fallback), Gateway search.web/fetch, trend_scout enrich + LLM degrade, dual-provider health. CI green on PR #668.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f656f369` | (see git log) |
+| `10255f69` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
