@@ -40,6 +40,7 @@ from backend.context.models import (
     require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
+from backend.memory.hy.recall import format_hy_section, recall_hy_memory
 from backend.models.outputs import ContentPlanOutput, normalize_content_plan
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
@@ -171,13 +172,28 @@ class ContentStrategistAgent(BaseAgent):
         # swallow their own exceptions internally; the pipeline recall carries
         # explicit degradation modes (same arity as pre-migration: 3 cm
         # recalls + 1 batched-ns pipeline helper).
+        # hy-memory 画像召回与这 4 个并发：ensure_future 建 task 立即开跑，
+        # 本 gather 保持 4-awaitable 形状（既有测试以该形状钉并发契约）。
+        # 功能关闭时 recall_hy_memory 立即返回 EMPTY，零成本。
+        hy_recall_task = asyncio.ensure_future(
+            recall_hy_memory(
+                f"{niche} 受众偏好 内容策略 历史经验",
+                account_id=account_id,
+                scene="chat",
+                thread_id=str(thread_id or ""),
+            )
+        )
         styles, plays, benchmark, insights_result = await asyncio.gather(
             cm.recall_style(query=f"content strategy {niche}"),
             cm.recall_plays(condition="content strategy", niche=niche),
             cm.recall_benchmark(niche),
             _recall_insights(store, account_id, str(thread_id or "")),
         )
+        hy_chat = await hy_recall_task
         memory_context = _format_memory_context(insights_result)
+        hy_section = format_hy_section([hy_chat])
+        if hy_section:
+            memory_context += f"\n{hy_section}"
 
         # 拼接 creative memory 上下文
         creative_ctx = cm.build_creative_context(styles, plays, [], benchmark)
