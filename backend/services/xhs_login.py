@@ -1046,7 +1046,9 @@ class XhsLoginSession:
 
     def _is_qr_expired(self) -> bool:
         """二维码是否过期：超时未确认即判定过期."""
-        if self._confirmed:
+        # codeStatus==2 may land before _confirmed is set (first get_status).
+        # Never auto-refresh once the intercept handler already saw confirmation.
+        if self._confirmed or self._code_status == _CODE_CONFIRMED:
             return False
         if self._qr_created_at == 0.0:
             return False

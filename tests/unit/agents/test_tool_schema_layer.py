@@ -19,7 +19,16 @@ from backend.agents.trend_scout import TrendScoutAgent
 from backend.tools.runtime.catalog import build_registry
 
 _DECLARED: tuple[tuple[type[BaseAgent], tuple[str, ...]], ...] = (
-    (TrendScoutAgent, ("xhs.trending", "xhs.keyword_monitor", "xhs.competitor_analyzer")),
+    (
+        TrendScoutAgent,
+        (
+            "xhs.trending",
+            "xhs.keyword_monitor",
+            "xhs.competitor_analyzer",
+            "search.web",
+            "search.fetch",
+        ),
+    ),
     (
         ContentStrategistAgent,
         ("analysis.topic_scorer", "ripple.predict_spread", "ripple.validate_pmf"),

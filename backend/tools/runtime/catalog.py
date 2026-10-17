@@ -557,6 +557,36 @@ def build_registry() -> ToolRegistry:
         auth_scope=("ripple:read",),
     )
 
+    # ── open-web search (DeepSeek primary, Tavily fallback) ─────────────────
+    # No Gateway retry: the facade already retries 429/5xx per provider and
+    # falls through to Tavily. A second Gateway attempt would only multiply
+    # QPS against DeepSeek's hard 5 QPS cap. Failures return structured
+    # ``error`` data (empty results) so callers degrade without raising.
+    _register(
+        registry,
+        capability="search.web",
+        ref=tool_ref("backend.tools.search.web:web_search"),
+        summary="开放网页搜索（DeepSeek Search 优先，Tavily 备用）",
+        pass_style=PassStyle.INVOKE,
+        side_effect=SideEffect.READ_ONLY,
+        latency=LatencyClass.MEDIUM,
+        cost=CostClass.CHEAP,
+        retry=RetryPolicy(),
+        timeout_s=60.0,
+    )
+    _register(
+        registry,
+        capability="search.fetch",
+        ref=tool_ref("backend.tools.search.web:web_fetch"),
+        summary="抓取网页正文 Markdown（DeepSeek Fetch 优先，Tavily Extract 备用）",
+        pass_style=PassStyle.INVOKE,
+        side_effect=SideEffect.READ_ONLY,
+        latency=LatencyClass.MEDIUM,
+        cost=CostClass.CHEAP,
+        retry=RetryPolicy(),
+        timeout_s=60.0,
+    )
+
     # ── xhs platform (read) ─────────────────────────────────────────────────
     # All three declare no retry, and that is a decision rather than the
     # read-only default applied blindly. The call sites they replace never

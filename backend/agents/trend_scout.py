@@ -88,6 +88,8 @@ class TrendScoutAgent(BaseAgent):
         "xhs.trending",
         "xhs.keyword_monitor",
         "xhs.competitor_analyzer",
+        "search.web",
+        "search.fetch",
     )
 
     async def _safe_xhs_trending(
@@ -191,7 +193,89 @@ class TrendScoutAgent(BaseAgent):
         elif monitor.value:
             data["keyword_monitor"] = monitor.value
 
+        # Open-web enrich when XHS realtime is thin or the operator supplied a
+        # topic that benefits from off-platform context. Skip entirely when no
+        # search key is configured so behaviour matches the pre-integration
+        # LLM/XHS degrade path. Failures never abort the scout workflow.
+        need_web = not data.get("hot_topics") or bool(user_topic)
+        if need_web and self._web_search_available():
+            web = await self._safe_web_search(
+                niche=niche,
+                user_topic=user_topic,
+                thread_id=thread_id,
+            )
+            if web:
+                data["web_search"] = web
+
         return data
+
+    @staticmethod
+    def _web_search_available() -> bool:
+        from backend.services.web_search import provider_config_status
+
+        return bool(provider_config_status().get("configured"))
+
+    async def _safe_web_search(
+        self,
+        *,
+        niche: str,
+        user_topic: str = "",
+        thread_id: str = "",
+    ) -> dict[str, Any] | None:
+        """DeepSeek/Tavily search (+ optional fetch) via Gateway; ``None`` on miss."""
+        query = user_topic or niche
+        if not query.strip():
+            return None
+
+        result = await self.tools.invoke(
+            "search.web",
+            {
+                "query": f"{query} 小红书 趋势",
+                "count": 5,
+                "need_content": False,
+                "ori_question": user_topic or niche,
+            },
+            thread_id=thread_id,
+        )
+        if not result.ok:
+            logger.warning(f"search.web failed: {result.error}")
+            return None
+
+        payload = result.value if isinstance(result.value, dict) else {}
+        rows = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or not rows:
+            if payload.get("error"):
+                logger.info(f"search.web empty (error={payload.get('error')})")
+            return None
+
+        # When snippets/summaries are thin, fetch the top URL for Markdown body.
+        top = rows[0] if isinstance(rows[0], dict) else {}
+        top_url = str(top.get("url") or "").strip()
+        preview = str(top.get("summary") or top.get("snippet") or top.get("content") or "").strip()
+        has_text = bool(preview)
+        fetched: dict[str, Any] | None = None
+        if top_url and not has_text:
+            fetch_result = await self.tools.invoke(
+                "search.fetch",
+                {"url": top_url},
+                thread_id=thread_id,
+            )
+            if fetch_result.ok and isinstance(fetch_result.value, dict):
+                body = fetch_result.value
+                if body.get("content"):
+                    fetched = {
+                        "title": body.get("title") or "",
+                        "url": body.get("url") or top_url,
+                        "content": str(body.get("content") or "")[:4000],
+                        "provider": body.get("provider") or "",
+                    }
+
+        return {
+            "provider": payload.get("provider") or "",
+            "fallback_used": bool(payload.get("fallback_used")),
+            "results": rows[:5],
+            "fetched": fetched,
+        }
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -217,7 +301,19 @@ class TrendScoutAgent(BaseAgent):
 
         # Build data context for the LLM
         data_context = ""
-        if real_data:
+        data_source = "llm_generated"
+        has_xhs = bool(
+            real_data
+            and (
+                real_data.get("hot_topics")
+                or real_data.get("keyword_monitor")
+                or real_data.get("competitor_analysis")
+            )
+        )
+        web_block = real_data.get("web_search") if real_data else None
+        has_web = bool(isinstance(web_block, dict) and web_block.get("results"))
+
+        if has_xhs:
             data_context = "\n\n## 实时数据（来自小红书 API）\n"
 
             if real_data.get("hot_topics"):
@@ -250,7 +346,27 @@ class TrendScoutAgent(BaseAgent):
                             data_context += f"  - {p.get('title', '')} (赞: {p.get('likes', 0)})\n"
 
             data_source = "real"
-        else:
+
+        if has_web and isinstance(web_block, dict):
+            provider = web_block.get("provider") or "web"
+            if not data_context:
+                data_context = "\n\n## 实时数据（来自开放网页搜索）\n"
+            data_context += f"\n### 开放网页搜索（provider={provider}）\n"
+            for hit in web_block["results"][:5]:
+                if not isinstance(hit, dict):
+                    continue
+                title = hit.get("title") or hit.get("url") or ""
+                snippet = hit.get("summary") or hit.get("snippet") or ""
+                data_context += f"- {title}: {snippet[:200]}\n"
+            fetched = web_block.get("fetched")
+            if isinstance(fetched, dict) and fetched.get("content"):
+                data_context += (
+                    f"\n补充正文（《{fetched.get('title') or ''}》摘要）:\n"
+                    f"{str(fetched.get('content') or '')[:1500]}\n"
+                )
+            data_source = "real"
+
+        if not data_context:
             data_context = "\n\n## 无实时数据\n小红书实时数据不可用，基于你的知识生成趋势分析。"
             data_source = "llm_generated"
 

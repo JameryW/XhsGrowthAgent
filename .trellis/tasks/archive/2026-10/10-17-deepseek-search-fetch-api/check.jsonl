@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/10-17-deepseek-search-fetch-api/prd.md", "reason": "AC: facade, fallback, gateway, scout, health, degrade"}
+{"file": ".trellis/tasks/10-17-deepseek-search-fetch-api/research/deepseek-search-fetch-api.md", "reason": "Response shapes and error codes must match official API"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Dual failure must not abort workflow"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Unit tests for success/empty/error/fallback"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "No secrets in logs or health payloads"}

@@ -499,6 +499,8 @@ class TestCatalogue:
             "ripple.get_report",
             "ripple.predict_spread",
             "ripple.validate_pmf",
+            "search.web",
+            "search.fetch",
             "xhs.trending",
             "xhs.keyword_monitor",
             "xhs.competitor_analyzer",
@@ -540,6 +542,20 @@ class TestCatalogue:
             assert spec.auth_scope == ("xhs:read",), capability
             assert spec.side_effect is SideEffect.READ_ONLY, capability
             assert spec.retry_policy.retryable is False, capability
+
+    def test_search_tools_do_not_gateway_retry(self):
+        """Facade already retries 429/5xx and falls through to Tavily.
+
+        A second Gateway attempt would only multiply QPS against DeepSeek's
+        hard 5 QPS cap; failures surface as structured empty ``error`` data.
+        """
+        registry = build_registry()
+        for capability in ("search.web", "search.fetch"):
+            spec = registry.spec(capability)
+            assert spec.side_effect is SideEffect.READ_ONLY, capability
+            assert spec.retry_policy.retryable is False, capability
+            assert spec.timeout_s == 60.0, capability
+            assert spec.pass_style is PassStyle.INVOKE, capability
 
     def test_the_report_fetch_declares_its_wait_budget(self):
         """S3c: the call site used to guard this fetch with a 120s wait.
@@ -619,7 +635,7 @@ class TestCatalogue:
         assert mapping == ["content.algorithmic_de_ai"]
 
     def test_the_langchain_tools_are_declared_invoke(self):
-        """The other deliberate side of the same coin: these five reach their
+        """The other deliberate side of the same coin: these reach their
         target through ``ainvoke``, and the catalogue must say so — a missing
         declaration is refused by ``build_registry()`` itself."""
         invoke = {
@@ -629,6 +645,8 @@ class TestCatalogue:
         }
         assert invoke == {
             "analysis.topic_scorer",
+            "search.web",
+            "search.fetch",
             "xhs.trending",
             "xhs.keyword_monitor",
             "xhs.competitor_analyzer",

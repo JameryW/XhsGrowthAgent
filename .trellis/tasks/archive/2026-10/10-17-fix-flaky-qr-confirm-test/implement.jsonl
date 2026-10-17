@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/10-17-fix-flaky-qr-confirm-test/prd.md", "reason": "Flake: confirmed QR must not refresh"}
+{"file": ".trellis/spec/backend/browser-auth-probes.md", "reason": "Login/QR status conventions"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Test stability bar"}

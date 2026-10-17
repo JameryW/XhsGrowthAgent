@@ -153,8 +153,8 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/public_showcase.py:756` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
 | `backend/api/routes/public_showcase.py:842` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
 | `backend/api/routes/system.py:207` | `_ripple_probe_task = loop.create_task(_run())` | CACHE_WARMUP | 用的是 `loop.create_task` |
-| `backend/api/routes/system.py:326` | `ripple_task = asyncio.create_task(_check_ripple())` | CACHE_WARMUP | 健康检查里的预热 |
-| `backend/api/routes/system.py:327` | `memory_task = asyncio.create_task(_check_memory_store())` | CACHE_WARMUP | 健康检查里的预热 |
+| `backend/api/routes/system.py:324` | `ripple_task = asyncio.create_task(_check_ripple())` | CACHE_WARMUP | 健康检查里的预热 |
+| `backend/api/routes/system.py:325` | `memory_task = asyncio.create_task(_check_memory_store())` | CACHE_WARMUP | 健康检查里的预热 |
 | `backend/agents/analyst.py:347` | `asyncio.create_task(_safe_evolve` | POST_RESPONSE | 演化写回不回流 |
 | `backend/api/routes/free.py:915` | `asyncio.create_task(` | POST_RESPONSE | 响应后收尾 |
 | `backend/memory/calibrator.py:73` | `return asyncio.create_task(` | POST_RESPONSE | 校准写回不回流 |
