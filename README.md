@@ -143,7 +143,7 @@ With the relevant integrations enabled, a run moves from the following inputs th
 | Engagement | Supports comment replies and direct-message workflows through the selected account session. | Engagement tools |
 | Account operations | Keeps account context, browser sessions, and history scoped to the selected creator account. | Settings, account controls |
 | Creator Agent decision core | Turns creator identity, judgement policies, and evidence into reproducible personalized decisions, relationship memory, and reviewable learning signals. | `/api/creator-agent`, [design notes](docs/creator-agent.md) |
-| Long-term memory | Optional hy-memory engine that carries account profile and operational experience across sessions; disabled by default, never breaks the main chain. | Analyst, Content Strategist, [integration notes](docs/hy-memory.md) |
+| Long-term memory | Optional hy-memory engine that recalls account profile (chat scene) and operational experience (working scene) across sessions, with best-effort write-back from the Analyst; lite (vector-only) or pro (LLM extraction) modes, disabled by default, never breaks the main chain. | Analyst, Content Strategist, [integration notes](docs/hy-memory.md) |
 
 ### The end-to-end workflow
 
@@ -194,7 +194,7 @@ The public Showcase and Replay are safe-to-browse entry points. The private work
 - **Persistence:** SQLite/in-memory checkpoints for development; PostgreSQL and Redis for production deployments. Workflow telemetry lives in the `workflow_events` table and durable scheduling in execution leases, not in the checkpoint.
 - **Browser automation:** Playwright with per-account browser/CDP session support
 - **Optional prediction engine:** Ripple CAS, connected through an HTTP integration
-- **Optional long-term memory:** [hy-memory](./docs/hy-memory.md), disabled by default; carries account profile and operational experience across sessions
+- **Optional long-term memory:** [hy-memory](./docs/hy-memory.md), disabled by default; recalls account profile and operational experience across sessions, and degrades to empty results on engine failure so a run never breaks. Chat-scene facts land in the vector store while working-scene traces land in the SDK's separate coding store — `list_memories` covers the vector store only.
 
 ### Kernel layers
 
@@ -372,6 +372,8 @@ npm run type-check
 npm run i18n:check
 npm run build
 ```
+
+The hy-memory integration ships 40 unit tests (bridge + agent wiring, off by default — no engine needed) plus a 63-assertion end-to-end functional suite validated against the real hy-memory 2.0.1 SDK; setup and known engine behaviors are covered in the [integration notes](./docs/hy-memory.md).
 
 Further guides:
 
