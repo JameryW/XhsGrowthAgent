@@ -143,6 +143,7 @@
 | 用户互动 | 通过选定账号会话支持评论回复和私信流程。 | Engagement 工具 |
 | 账号运营 | 将账号上下文、浏览器会话和历史记录隔离到对应创作者账号。 | Settings、账号控制 |
 | Creator Agent 决策核心 | 将创作者身份、判断政策和证据转为可复现的个性化决策，并沉淀关系记忆与待审核学习信号。 | `/api/creator-agent`、[设计说明](docs/creator-agent.md) |
+| 长期记忆 | 可选的 hy-memory 记忆引擎，跨会话延续账号画像与运营经验；默认关闭，故障时绝不拖垮主链路。 | Analyst、Content Strategist、[集成说明](docs/hy-memory.md) |
 
 ### 端到端流程
 
@@ -193,6 +194,7 @@ Vue 3 前端围绕创作、审核、增长和账号运营组织：
 - **持久化：** 开发环境使用 SQLite/内存检查点，生产环境使用 PostgreSQL 和 Redis。工作流遥测写入 `workflow_events` 表，持久调度走执行租约，都不在检查点里。
 - **浏览器自动化：** Playwright，支持按账号隔离浏览器/CDP 会话
 - **可选预测引擎：** Ripple CAS，通过 HTTP 集成
+- **可选长期记忆：** [hy-memory](./docs/hy-memory.md)，默认关闭；跨会话延续账号画像与运营经验
 
 ### 内核分层
 
@@ -258,6 +260,7 @@ cp .env.example .env
 | `DASHSCOPE_API_KEY` | Alibaba/Qwen 发布路由 | 可选，若改用其他路由 |
 | `RIPPLE_BASE_URL` | Ripple CAS 服务地址 | 可选 |
 | `RIPPLE_API_TOKEN` | Ripple CAS 令牌 | 可选 |
+| `HYMEMORY_ENABLED` | hy-memory 长期记忆引擎 | 可选（默认关闭，见[集成说明](docs/hy-memory.md)） |
 | `POSTGRES_URI` | 生产检查点/数据库连接 | 生产环境 |
 | `REDIS_URI` | 生产缓存和协同 | 生产环境 |
 
@@ -382,6 +385,7 @@ npm run build
 - [前端 UX 与交互规范](./docs/frontend-ux-optimization.md)
 - [部署指南](./docs/deployment.md)
 - [执行平面：租约 / 接管 / 边界](./docs/execution-plane.md)
+- [hy-memory 集成](./docs/hy-memory.md)
 - [配置参考](./docs/configuration.md)
 - [API 参考](./docs/api-reference.md)
 - [安全注意事项](./docs/security.md)

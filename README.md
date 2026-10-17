@@ -143,6 +143,7 @@ With the relevant integrations enabled, a run moves from the following inputs th
 | Engagement | Supports comment replies and direct-message workflows through the selected account session. | Engagement tools |
 | Account operations | Keeps account context, browser sessions, and history scoped to the selected creator account. | Settings, account controls |
 | Creator Agent decision core | Turns creator identity, judgement policies, and evidence into reproducible personalized decisions, relationship memory, and reviewable learning signals. | `/api/creator-agent`, [design notes](docs/creator-agent.md) |
+| Long-term memory | Optional hy-memory engine that carries account profile and operational experience across sessions; disabled by default, never breaks the main chain. | Analyst, Content Strategist, [integration notes](docs/hy-memory.md) |
 
 ### The end-to-end workflow
 
@@ -193,6 +194,7 @@ The public Showcase and Replay are safe-to-browse entry points. The private work
 - **Persistence:** SQLite/in-memory checkpoints for development; PostgreSQL and Redis for production deployments. Workflow telemetry lives in the `workflow_events` table and durable scheduling in execution leases, not in the checkpoint.
 - **Browser automation:** Playwright with per-account browser/CDP session support
 - **Optional prediction engine:** Ripple CAS, connected through an HTTP integration
+- **Optional long-term memory:** [hy-memory](./docs/hy-memory.md), disabled by default; carries account profile and operational experience across sessions
 
 ### Kernel layers
 
@@ -258,6 +260,7 @@ cp .env.example .env
 | `DASHSCOPE_API_KEY` | Alibaba/Qwen publishing route | Optional if another route is configured |
 | `RIPPLE_BASE_URL` | Ripple CAS service URL | Optional |
 | `RIPPLE_API_TOKEN` | Ripple CAS token | Optional |
+| `HYMEMORY_ENABLED` | hy-memory long-term memory engine | Optional (off by default; see [integration notes](docs/hy-memory.md)) |
 | `POSTGRES_URI` | Production checkpoint/database connection | Production |
 | `REDIS_URI` | Production cache and coordination | Production |
 
@@ -382,6 +385,7 @@ Further guides:
 - [Frontend UX and interaction conventions](./docs/frontend-ux-optimization.md)
 - [Deployment](./docs/deployment.md)
 - [Execution plane: leases, takeover, boundary](./docs/execution-plane.md)
+- [Hy-memory integration](./docs/hy-memory.md)
 - [Configuration](./docs/configuration.md)
 - [API reference](./docs/api-reference.md)
 - [Security](./docs/security.md)
