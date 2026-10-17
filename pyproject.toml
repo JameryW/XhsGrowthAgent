@@ -32,6 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 browser = ["playwright>=1.49", "playwright-stealth>=1.0"]
+memory-hy = ["hy-memory==2.0.1"]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
@@ -95,4 +96,11 @@ ignore_missing_imports = true
 # type-checking when it isn't installed.
 [[tool.mypy.overrides]]
 module = "playwright_stealth.*"
+ignore_missing_imports = true
+
+# hy-memory is an optional [memory-hy] extra (lazy-imported at runtime by
+# backend.memory.hy.bridge with try/except fallback). Don't fail
+# type-checking when it isn't installed.
+[[tool.mypy.overrides]]
+module = "hy_memory.*"
 ignore_missing_imports = true

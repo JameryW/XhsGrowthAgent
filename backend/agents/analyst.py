@@ -25,6 +25,7 @@ from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
 from backend.context.models import RetrievalMode, RetrievalResult, RunContext, require_niche
 from backend.context.retrieval import RecallRequest, recall_namespaces
+from backend.memory.hy.recall import format_hy_section, recall_hy_memory
 from backend.models.outputs import AnalyticsOutput, normalize_analytics
 from backend.models.structured import StructuredOutputError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
@@ -123,6 +124,28 @@ async def _safe_store_strategy_note(mm: MemoryManager, store: BaseStore, rec: st
         logger.warning("store_strategy_note failed", exc_info=True)
 
 
+async def _safe_remember_hy(account_id: str, text: str, *, metadata: dict[str, Any]) -> None:
+    """hy-memory 双写包装：单条写入失败不影响同批其余写入，也不炸节点。
+
+    与 _safe_store_insight 同一纪律（best-effort telemetry），但目标换成
+    hy-memory working 场景。功能关闭时 bridge.remember 直接返回 None，
+    这里连日志都不打（避免关闭状态下每次复盘都刷 warning）。
+    """
+    try:
+        from backend.memory.hy.bridge import get_hy_memory_bridge
+
+        bridge = get_hy_memory_bridge()
+        if not bridge.enabled:
+            return
+        result = await bridge.remember(
+            text, account_id=account_id, scene="working", metadata=metadata
+        )
+        if result is None:
+            logger.debug("hy-memory remember returned None (degraded)")
+    except Exception:
+        logger.warning("hy-memory remember failed", exc_info=True)
+
+
 class AnalystAgent(BaseAgent):
     task_type = TaskType.ANALYSIS
     agent_name = "analyst"
@@ -135,15 +158,33 @@ class AnalystAgent(BaseAgent):
         thread_id = str(state.get("session_id") or "")
         publish_result = state.get("publish_result", {})
 
+        niche = require_niche(state)
+        # hy-memory 召回（chat 画像 + working 经验）与下面的 memory+ripple
+        # gather 并发：先 ensure_future 建 task（立即开跑），主 gather 保持
+        # 2-awaitable 形状不变（既有测试以该形状钉并发契约）。功能关闭时
+        # recall_hy_memory 立即返回 EMPTY，零成本；recall_hy_memory 契约
+        # 永不抛，故主 gather 万一失败时无需 finally 回收该 task。
+        hy_recall_task = asyncio.ensure_future(
+            asyncio.gather(
+                recall_hy_memory(
+                    f"{niche} 账号偏好与受众画像", account_id=account_id, scene="chat"
+                ),
+                recall_hy_memory(
+                    f"{niche} 内容运营经验 数据复盘", account_id=account_id, scene="working"
+                ),
+            )
+        )
         # 召回历史数据 + 获取 Ripple 报告（并发：memory RTT 隐藏在 Ripple 长轮询后）。
         # recall 走 S2 管线（降级信号 + kind=context 事件面），并发契约不变。
         history_result, ripple_report = await asyncio.gather(
             _recall_history(store, account_id, thread_id),
             self._ripple_report(state),
         )
+        hy_chat, hy_working = await hy_recall_task
         history = _format_history(history_result)
 
-        niche = require_niche(state)
+        hy_context = format_hy_section([hy_chat, hy_working])
+
         run_context = RunContext(
             thread_id=thread_id,
             account_id=account_id,
@@ -162,7 +203,7 @@ class AnalystAgent(BaseAgent):
         user_msg = f"""帖子数据：{publish_result}
 历史数据：{history}
 账号定位：{account_id}
-垂类赛道：{niche}{ripple_context}"""
+垂类赛道：{niche}{ripple_context}{hy_context}"""
 
         # P1d-S2b: 分析报告走结构化链。只接 ``StructuredOutputError`` ——
         # 「问过了、每一档都没给出可用产物」是一次分析做不出来，属业务结果，降级成
@@ -228,6 +269,25 @@ class AnalystAgent(BaseAgent):
         await asyncio.gather(
             *(_safe_store_insight(mm, store, insight, post_id) for insight in insights),
             *(_safe_store_strategy_note(mm, store, rec) for rec in recommendations),
+            # hy-memory 双写（best-effort）：洞察/策略建议进 working 场景，
+            # 让 SDK 的 facts/experiences 两层在后续会话可复用。功能关闭时
+            # remember 立即返回 None，与既有写入完全并发不互相阻塞。
+            *(
+                _safe_remember_hy(
+                    account_id,
+                    f"[{niche}] 复盘洞察（帖子 {post_id or 'unknown'}）：{insight}",
+                    metadata={"kind": "insight", "post_id": post_id, "niche": niche},
+                )
+                for insight in insights
+            ),
+            *(
+                _safe_remember_hy(
+                    account_id,
+                    f"[{niche}] 运营策略建议：{rec}",
+                    metadata={"kind": "strategy_note", "niche": niche},
+                )
+                for rec in recommendations
+            ),
         )
 
         # ── Update content history with actual engagement metrics ──

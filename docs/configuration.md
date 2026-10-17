@@ -206,6 +206,26 @@ graph = await compile_graph_prod(POSTGRES_URI)
 
 ---
 
+## Hy Memory 长期记忆（可选，默认关闭）
+
+hy-memory（腾讯混元双系统认知记忆，`hy-memory==2.0.1`）作为可选增强层接入。**默认关闭**：`HYMEMORY_ENABLED=false` 时集成是 no-op——不建 client、不发请求、不 import SDK，主链路行为与未集成一致。安装：`pip install -e ".[memory-hy]"`。设计契约、降级语义与测试覆盖见 [hy-memory 集成说明](./hy-memory.md)。
+
+| 变量 | 必填 | 说明 | 默认值 |
+|------|------|------|--------|
+| `HYMEMORY_ENABLED` | 否 | 总开关。false 时零 SDK 调用，行为与集成前一致 | `false` |
+| `HYMEMORY_MODE` | 否 | 运行档位：`lite`（原始记忆+向量检索，零 LLM 调用）/ `pro`（LLM 抽取+冲突调和）/ `ultra`（+System 2 图式归纳，需图存储） | `lite` |
+| `HYMEMORY_LLM_API_KEY` / `HYMEMORY_LLM_BASE_URL` / `HYMEMORY_LLM_MODEL` | pro/ultra 必填 | LLM 端点，任何 OpenAI 兼容服务均可；lite 可留空 | 空 |
+| `HYMEMORY_EMBEDDER_API_KEY` / `HYMEMORY_EMBEDDER_BASE_URL` / `HYMEMORY_EMBEDDER_MODEL` | 启用后必填 | Embedder 端点（向量检索必需，所有模式都要） | 空 |
+| `HYMEMORY_EMBEDDING_DIMS` | 否 | 向量维度，`0` = 用模型默认维度 | `0` |
+| `HYMEMORY_DATA_DIR` | 否 | 数据目录（Chroma 持久化 + SQLite 元数据 + SDK 日志）；空 = SDK 默认 `~/.hy_memory`，容器部署应指向持久卷 | 空 |
+| `HYMEMORY_DEFAULT_SCENE` | 否 | 未显式指定场景时的落点：`chat`（账号画像）/ `working`（运营经验）/ `coding` | `chat` |
+| `HYMEMORY_DEFAULT_LIMIT` | 否 | 单次召回默认条数（1–50） | `5` |
+| `HYMEMORY_SOURCE` | 否 | source 隔离标签，召回时以 `include_sources` 过滤 | `xhs_growth` |
+
+账号隔离自动完成：`account_id` → SDK `user_id`，`workspace_id` → `xhs/<account_id>`。
+
+---
+
 ## 配置验证
 
 ```bash

@@ -1,6 +1,8 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+from backend.memory.hy.settings import HyMemorySettings
+
 
 class ModelSettings(BaseSettings):
     """LLM 模型配置"""
@@ -239,5 +241,6 @@ class Settings(BaseSettings):
     creator_stats: CreatorStatsSettings = Field(default_factory=CreatorStatsSettings)
     omp: OmpSettings = Field(default_factory=OmpSettings)
     analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
+    hy_memory: HyMemorySettings = Field(default_factory=HyMemorySettings)
 
     model_config = {"env_file": ".env", "extra": "ignore"}
