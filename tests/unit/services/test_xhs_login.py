@@ -661,6 +661,8 @@ class TestGetStatus:
                 {"data": {"codeStatus": 2, "login_info": {"session": "s1", "user_id": "u1"}}},
             )
             await handler(status_resp)
+            # Even with an expired QR clock, codeStatus=2 must win over refresh.
+            session._qr_created_at = time.time() - 1
             result = await session.get_status()
         assert result["status"] == "confirmed"
         assert result["url"] == ""  # url cleared on confirm
@@ -683,6 +685,7 @@ class TestGetStatus:
                     {"data": {"codeStatus": 2}},
                 )
             )
+            session._qr_created_at = time.time()
             r1 = await session.get_status()
             r2 = await session.get_status()
         assert r1["status"] == "confirmed"

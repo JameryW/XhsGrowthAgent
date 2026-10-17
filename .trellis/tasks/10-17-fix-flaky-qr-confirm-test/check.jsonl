@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/10-17-fix-flaky-qr-confirm-test/prd.md", "reason": "Confirmed path must not race expiry"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "No flake regressions"}
