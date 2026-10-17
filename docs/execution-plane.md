@@ -133,7 +133,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_wf_application.py:270` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:272` |
 | `backend/api/routes/_wf_actions.py:268` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
 | `backend/api/routes/_wf_actions.py:465` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:449` |
-| `backend/agents/content_strategist.py:597` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
+| `backend/agents/content_strategist.py:613` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
 | `backend/api/routes/accounts.py:404` | `background_tasks.add_task(sync_after_login, account_id)` | REAL_TASK | Starlette 后台任务，跟响应生命周期走 |
 | `backend/services/creator_stats/client.py:738` | `task = asyncio.create_task(capture(response))` | REAL_TASK | 采集响应，结果进缓存 |
 | `backend/services/creator_stats/client.py:844` | `data_ready = asyncio.create_task(_wait_initial_data())` | REAL_TASK | 与 `:845` 竞速，先到先算 |
@@ -155,7 +155,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/system.py:207` | `_ripple_probe_task = loop.create_task(_run())` | CACHE_WARMUP | 用的是 `loop.create_task` |
 | `backend/api/routes/system.py:326` | `ripple_task = asyncio.create_task(_check_ripple())` | CACHE_WARMUP | 健康检查里的预热 |
 | `backend/api/routes/system.py:327` | `memory_task = asyncio.create_task(_check_memory_store())` | CACHE_WARMUP | 健康检查里的预热 |
-| `backend/agents/analyst.py:287` | `asyncio.create_task(_safe_evolve` | POST_RESPONSE | 演化写回不回流 |
+| `backend/agents/analyst.py:347` | `asyncio.create_task(_safe_evolve` | POST_RESPONSE | 演化写回不回流 |
 | `backend/api/routes/free.py:915` | `asyncio.create_task(` | POST_RESPONSE | 响应后收尾 |
 | `backend/memory/calibrator.py:73` | `return asyncio.create_task(` | POST_RESPONSE | 校准写回不回流 |
 | `backend/api/routes/_wf_runtime.py:102` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
