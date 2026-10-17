@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/compliance-baseline.md", "reason": "Each closed issue must match baseline, not reopen fake-pass"}
+{"file": ".trellis/tasks/10-17-close-p0-compliance-issues/prd.md", "reason": "AC: evidence map + Closes keywords only"}
