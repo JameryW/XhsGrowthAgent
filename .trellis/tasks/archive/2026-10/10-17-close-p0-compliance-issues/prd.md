@@ -21,7 +21,7 @@
 ## Acceptance Criteria
 
 * [x] #644–#656 均在 main 有对应实现证据
-* [ ] Closeout PR 打开且 body 含 13 条 Closes
+* [x] Closeout PR 打开且 body 含 13 条 Closes
 * [ ] PR 合并后 issues 全部 closed（依赖 merge）
 
 ## Out of Scope
