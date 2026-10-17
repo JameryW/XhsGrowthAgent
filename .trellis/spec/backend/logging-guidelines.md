@@ -281,7 +281,8 @@ never appear in log output:
 |---|---|
 | `ANTHROPIC_API_KEY` | LLM provider credential |
 | `OPENAI_API_KEY` | LLM provider credential |
-| `DEEPSEEK_API_KEY` | LLM provider credential |
+| `DEEPSEEK_API_KEY` | LLM provider credential (also DeepSeek Search/Fetch) |
+| `TAVILY_API_KEY` | Web search fallback credential |
 | `DASHSCOPE_API_KEY` | LLM provider credential |
 | `XIAOMIMIMO_API_KEY` | LLM provider credential |
 | `XHS_COOKIE` | Platform session token (full auth) |

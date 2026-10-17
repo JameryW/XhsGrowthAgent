@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/10-17-deepseek-search-fetch-api/prd.md", "reason": "Locked MVP: dual provider facade, tools, health, trend_scout"}
+{"file": ".trellis/tasks/10-17-deepseek-search-fetch-api/research/deepseek-search-fetch-api.md", "reason": "Official Search/Fetch endpoints, schemas, errors, QPS, Tavily comparison"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Retry/degrade patterns for external HTTP"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Where to place services/tools modules"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Credential handling for DEEPSEEK/TAVILY keys"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Test and quality bar for new providers"}
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "httpx service pattern reference (retry/health)"}

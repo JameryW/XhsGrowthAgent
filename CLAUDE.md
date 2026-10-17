@@ -299,7 +299,7 @@ LangGraph BaseStore integration with namespaces per account, semantic search, an
 System health endpoint checks all external dependencies:
 - `llm_providers`: API key availability for Anthropic, OpenAI, DeepSeek, DashScope
 - `ripple_cas`: Ripple CAS engine connectivity
-- `search_api`: Tavily API key
+- `search_api`: DeepSeek Search/Fetch (`DEEPSEEK_API_KEY`) primary + Tavily (`TAVILY_API_KEY`) fallback; reports `active_provider` and per-key `configured`
 - `database`: Checkpointer mode detection (postgres/sqlite/memory)
 - `memory_store`: Backend type (postgres/memory/unavailable), semantic index status (enabled/disabled), embed model name, embed dimensions, namespace counts with total items
 

@@ -698,3 +698,152 @@ class TestL1ToolSchemaLayer:
         assert "- xhs.trending — " in system
         # L1 sits in the stable prefix: after the policy layer, before recall.
         assert system.index("你是小红书趋势侦察专家") < system.index("[可用能力]")
+
+
+class TestWebSearchWiring:
+    """Open-web search via Gateway when XHS is thin / topic needs context."""
+
+    @pytest.fixture
+    def agent(self):
+        return TrendScoutAgent()
+
+    @pytest.fixture
+    def mock_store(self):
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        return store
+
+    @staticmethod
+    def _tool(rows) -> MagicMock:
+        double = MagicMock()
+        double.ainvoke = AsyncMock(return_value=rows)
+        return double
+
+    def _mock_model(self, agent, captured: dict) -> None:
+        mock_response = MagicMock()
+        mock_response.content = '{"trending_topics": ["web话题"]}'
+        mock_model = MagicMock()
+
+        async def _capture(messages, **kwargs):
+            captured["messages"] = messages
+            return mock_response
+
+        mock_model.ainvoke = _capture
+        agent._model = mock_model
+
+    @pytest.mark.asyncio
+    async def test_web_search_used_when_xhs_empty(self, agent, mock_store, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        web_payload = {
+            "results": [
+                {
+                    "title": "站外趋势",
+                    "url": "https://example.com/trend",
+                    "snippet": "摘要",
+                    "summary": "较长摘要",
+                }
+            ],
+            "provider": "deepseek",
+            "fallback_used": False,
+            "error": "",
+        }
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending", new=self._tool([])),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=self._tool([])),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=self._tool([])),
+            patch("backend.tools.search.web.web_search", new=self._tool(web_payload)),
+            patch("backend.tools.search.web.web_fetch", new=self._tool({})),
+        ):
+            result = await agent.execute(
+                {"niche": "母婴", "account_id": "a", "phase": WorkflowPhase.IDLE},
+                store=mock_store,
+            )
+        system = captured["messages"][0].content
+        assert "开放网页搜索" in system
+        assert "站外趋势" in system
+        assert result["trend_data"]["data_source"] == "real"
+
+    @pytest.mark.asyncio
+    async def test_web_search_failure_degrades_without_abort(self, agent, mock_store, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        empty = {"results": [], "provider": "", "fallback_used": True, "error": "all_failed"}
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending", new=self._tool([])),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=self._tool([])),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=self._tool([])),
+            patch("backend.tools.search.web.web_search", new=self._tool(empty)),
+        ):
+            result = await agent.execute(
+                {"niche": "母婴", "account_id": "a", "phase": WorkflowPhase.IDLE},
+                store=mock_store,
+            )
+        assert result["trend_data"]["data_source"] == "llm_generated"
+        assert "无实时数据" in captured["messages"][0].content
+
+    @pytest.mark.asyncio
+    async def test_fetch_when_snippet_thin(self, agent, mock_store, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        thin = {
+            "results": [
+                {"title": "薄摘要", "url": "https://example.com/p", "snippet": "", "summary": ""}
+            ],
+            "provider": "deepseek",
+            "fallback_used": False,
+            "error": "",
+        }
+        fetch_payload = {
+            "title": "正文页",
+            "content": "# 正文页\n\n补充的 Markdown 正文内容",
+            "url": "https://example.com/p",
+            "provider": "deepseek",
+            "fallback_used": False,
+            "error": "",
+        }
+        fetch_tool = self._tool(fetch_payload)
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending", new=self._tool([])),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=self._tool([])),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=self._tool([])),
+            patch("backend.tools.search.web.web_search", new=self._tool(thin)),
+            patch("backend.tools.search.web.web_fetch", new=fetch_tool),
+        ):
+            result = await agent.execute(
+                {"niche": "母婴", "account_id": "a", "phase": WorkflowPhase.IDLE},
+                store=mock_store,
+            )
+        fetch_tool.ainvoke.assert_awaited()
+        system = captured["messages"][0].content
+        assert "补充正文" in system
+        assert "Markdown 正文" in system
+        assert result["trend_data"]["data_source"] == "real"
+
+    @pytest.mark.asyncio
+    async def test_no_keys_skips_web_path(self, agent, mock_store, monkeypatch):
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+        web = self._tool({"results": [{"title": "should-not-appear", "url": "x"}]})
+        captured: dict = {}
+        self._mock_model(agent, captured)
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending", new=self._tool([])),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=self._tool([])),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=self._tool([])),
+            patch("backend.tools.search.web.web_search", new=web),
+        ):
+            result = await agent.execute(
+                {"niche": "母婴", "account_id": "a", "phase": WorkflowPhase.IDLE},
+                store=mock_store,
+            )
+        web.ainvoke.assert_not_called()
+        assert result["trend_data"]["data_source"] == "llm_generated"
+
+    def test_declares_search_capabilities(self, agent):
+        assert "search.web" in agent.tool_capabilities
+        assert "search.fetch" in agent.tool_capabilities

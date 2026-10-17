@@ -88,6 +88,7 @@ SYSTEM_KEY_GROUPS = [
     {
         "id": "search_embedding",
         "keys": [
+            # DeepSeek Search/Fetch reuses DEEPSEEK_API_KEY (listed under llm_providers).
             "TAVILY_API_KEY",
             "XHS_EMBED_MODEL",
             "XHS_EMBED_BASE_URL",

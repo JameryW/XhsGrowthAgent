@@ -246,16 +246,14 @@ async def _check_ripple() -> dict[str, Any]:
 
 
 def _check_search() -> dict[str, Any]:
-    """Check search API availability (Tavily)."""
-    tavily = os.environ.get("TAVILY_API_KEY")
-    configured = bool(tavily)
-    return {
-        "status": "ok" if configured else "warning",
-        "configured": configured,
-        "message": "搜索 API 已配置"
-        if configured
-        else "缺少 TAVILY_API_KEY（趋势发现将使用 LLM 生成数据）",
-    }
+    """Check web search availability (DeepSeek primary, Tavily fallback).
+
+    Reports per-key configuration and which provider the facade would try
+    first. No live probe — keys alone gate trend_scout's open-web path.
+    """
+    from backend.services.web_search import provider_config_status
+
+    return provider_config_status()
 
 
 async def _check_memory_store() -> dict[str, Any]:
