@@ -1137,3 +1137,36 @@ WebSearchProvider facade (DeepSeek first, Tavily Search/Extract fallback), Gatew
 ### Next Steps
 
 - None - task complete
+
+
+## Session 122: Fix flaky QR confirmed status race
+
+**Date**: 2026-10-17
+**Task**: Fix flaky QR confirmed status race
+**Branch**: `cursor/deepseek-search-fetch-api-7f3c`
+
+### Summary
+
+codeStatus=2 must beat QR TTL refresh; stabilize test_status_confirmed_after_code_status_2 on PR #668.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `458d47c3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

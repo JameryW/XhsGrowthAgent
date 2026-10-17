@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 121
+- **Total Sessions**: 122
 - **Last Active**: 2026-10-17
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1139 | Active |
+| `journal-1.md` | ~1172 | Active |
 | `journal-0.md` | ~1989 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -22,6 +22,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 122 | 2026-10-17 | Fix flaky QR confirmed status race | `458d47c3` | `cursor/deepseek-search-fetch-api-7f3c` |
 | 121 | 2026-10-17 | DeepSeek Search/Fetch + Tavily fallback | `f656f369`, `10255f69` | `cursor/deepseek-search-fetch-api-7f3c` |
 | 120 | 2026-10-17 | Close P0 compliance GitHub issues #644-656 | `cc42785d` | `cursor/close-p0-compliance-issues-7f3c` |
 | 119 | 2026-10-16 | Acceptance signoff drive: G1-G8 waived tracking | `fd4ba180`, `0bca9959` | `cursor/acceptance-signoff-drive-7f3c` |
