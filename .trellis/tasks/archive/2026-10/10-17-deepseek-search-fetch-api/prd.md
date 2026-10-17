@@ -27,13 +27,13 @@
 
 ## Acceptance Criteria
 
-* [ ] Search/Fetch 经 facade 可调用并解析官方响应形状  
-* [ ] DeepSeek 失败/未配置且 Tavily 可用时自动 fallback  
-* [ ] Gateway 可发现并调用 search/fetch tools  
-* [ ] `trend_scout` 在合适条件下使用网页搜索结果（非纯占位）  
-* [ ] health 含 provider 配置态与 `active_provider`  
-* [ ] 双端皆失败时 scout 降级、不中断工作流  
-* [ ] 单测覆盖上述路径  
+* [x] Search/Fetch 经 facade 可调用并解析官方响应形状  
+* [x] DeepSeek 失败/未配置且 Tavily 可用时自动 fallback  
+* [x] Gateway 可发现并调用 search/fetch tools  
+* [x] `trend_scout` 在合适条件下使用网页搜索结果（非纯占位）  
+* [x] health 含 provider 配置态与 `active_provider`  
+* [x] 双端皆失败时 scout 降级、不中断工作流  
+* [x] 单测覆盖上述路径  
 
 ## Definition of Done
 
