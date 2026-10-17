@@ -139,10 +139,14 @@ HYMEMORY_DATA_DIR=/data/hy_memory
 
 | 文件 | 数量 | 覆盖 |
 |------|------|------|
-| `tests/unit/memory/test_hy_bridge.py` | 32 | FakeHyClient 假 SDK + `sys.modules` 注入：禁用 no-op、读写归一化、config 构建与 `MEMORY_DATA_DIR`、降级（SDK 缺失/异常/怪结构）、错误归属清除、跨事件循环、recall 适配器 HIT/EMPTY/DEGRADED、`format_hy_section`、settings env 前缀、单例 |
+| `tests/unit/memory/test_hy_bridge.py` | 33 | FakeHyClient 假 SDK + `sys.modules` 注入：禁用 no-op、读写归一化（含 `vdb` dict/list 双形状回归）、config 构建与 `MEMORY_DATA_DIR`、降级（SDK 缺失/异常/怪结构）、错误归属清除、跨事件循环、recall 适配器 HIT/EMPTY/DEGRADED、`format_hy_section`、settings env 前缀、单例 |
 | `tests/unit/agents/test_hy_memory_wiring.py` | 7 | analyst 双场景召回注入 prompt、洞察/建议双写 metadata、禁用零 SDK 调用、SDK 故障不炸节点；strategist hy 段注入、禁用无段 |
 
 全量套件对照基线（main 分支 14 个预先存在失败，与 hy 集成无关）零新增。
+
+另有真实 SDK 2.0.1 端到端功能测试（FT0-FT7，63 项断言全绿，运行于 fresh venv +
+mock OpenAI server：确定性 char-bigram 假嵌入 + 可控抽取 fact 钩子），覆盖配置层、
+pro/lite 全链路读写召回、适配器、agent 接线、降级路径、多事件循环与单例语义。
 
 ## 7. 已知限制
 
@@ -152,3 +156,15 @@ HYMEMORY_DATA_DIR=/data/hy_memory
 - **`async_search` 无 `source` 参数**：SDK 2.0.1 的过滤参数是 `include_sources`，
   本集成只传 `include_sources=[settings.source]`。
 - **数据目录迁移**：`HYMEMORY_DATA_DIR` 改变等于换一套记忆库，需整体迁移。
+- **search 阶段故障 → EMPTY 而非 DEGRADED**（SDK fail-safe，探针实测）：SDK
+  2.0.1 的 `async_search` 把 embed/检索连接错误吞掉并返回空结果结构（无
+  success/error 字段），bridge 无法从响应区分"没命中"与"端点挂了"。DEGRADED
+  通道仅覆盖 client 构建与调用抛错路径（非法 mode、SDK 缺失等）。观测端点故障
+  需看 SDK 自身 ERROR 日志（`LegacyReadPipeline.read failed`）。
+- **两库分离**（SDK 设计）：`scene="working"` 的检索走独立的
+  `CodingMemoryStore`（SQLite），与 chat 的 Chroma vdb 不互通。tool-trace 形态
+  的 `remember(…, scene="working")` 落 coding store；纯文本形态实测走 chat 抽取
+  链路落 vdb。`list_memories` 只列 vdb。
+- **多 client 关停偶发 SIGSEGV**（功能测试实测）：同进程持有多个 client 时，
+  `close()` 后的解释器退出阶段 chroma/sqlite native 清理偶发段错误——发生在
+  全部功能断言通过之后，与读写正确性无关；单 client 关停路径正常。
