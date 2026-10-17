@@ -1070,3 +1070,36 @@ Maintained 2026-09-22 risk waiver; board status waived_risk_accepted + next_revi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 120: Close P0 compliance GitHub issues #644-656
+
+**Date**: 2026-10-17
+**Task**: Close P0 compliance GitHub issues #644-656
+**Branch**: `cursor/close-p0-compliance-issues-7f3c`
+
+### Summary
+
+Verified #644-656 against main (#657). Opened PR #665 with Closes keywords (gh issue write 403). CI green; merge closes all open issues.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc42785d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
