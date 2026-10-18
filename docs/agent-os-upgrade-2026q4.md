@@ -64,7 +64,7 @@
 | 3 | Event Log 是事实、Snapshot 是物化视图、Context 是临时视图 | 三者已分离（checkpoint / events / compiler） | ✅ 已满足 |
 | 4 | Replay 不重调 LLM，读已提交决策 | **节点级成立**（superstep 完成即不重跑）；**节点内不成立**（节点重试会重调 LLM） | ⚠️ 部分（见 §4） |
 | 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；对账仍为"记录 + ContentHistory 匹配"，无自动平台查询 | ✅ 已满足（对账增强留 P1） |
-| 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；provenance 只有 source/timestamp/confidence，缺 trust_class / verified / ttl / source_version | ⚠️ 部分（P1 切片） |
+| 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；trust 尚未参与 rerank | ✅ 已满足（排序融合留 P1 后续） |
 | 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线 | ❌ 缺（P1/P2） |
 | 8 | 多 Agent 并行按 Artifact 分工 + Workspace 冲突 | 当前为单 Agent 串行图；无子 Agent、无并发 workspace | ❌ 缺（P2，先不建） |
 | 9 | Model Gateway 按阶段路由 + Verifier 触发公式 | `backend/models/router.py` 按 TaskType 路由 + fallback/retry；无预算/风险策略，无 verifier | ⚠️ 部分（P2） |
@@ -101,7 +101,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 |---|---|---|---|
 | **P0-A（本次）** | Progress Detector | `backend/state/progress.py` 纯函数库 + `kind:"progress"` 事件契约 + 单测 | 零行为变更即可先观测；为 revise 回路提供"是否在变好"的客观信号 |
 | **P0-B（已完成）** | 统一 Effect 账本 | `backend/state/effects.py` 六态账本；publish 成为第一个消费者（下文 §5.1） | 第二个外部副作用工具出现前必须完成，否则 F2 类故障会重演 |
-| P1-A | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；compiler 渲染可信边界 | 外部网页/记忆注入风险随 hy-memory 接入上升 |
+| **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
 | P1-B | Verifier 触发 | 按风险分级（发布前强制、草稿按期望成本 `p_e·p_d·L > C_v`） | 有 acceptance_signoff 人工验收作基线 |
 | P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产物时启动 | 当前串行图无瓶颈证据，不提前建 |
 | P3 | Adaptive Harness | 依赖评测集 + A/B 门禁；P1b 基线是起点 | 无评测数据前做自适应是赌博 |
@@ -117,6 +117,17 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 旧词兼容 | 读侧归一化 `published → CONFIRMED`、未知状态 → `UNKNOWN`（绝不落 FAILED）；历史行零迁移 |
 | publish 接入 | 提交前写 `PREPARED`（意图落盘）→ `begin()` 领取 → 成功 `CONFIRMED` / 确定失败 `FAILED` / 提交后无判定 `UNKNOWN`（显式写入，不再靠"保持不写"隐含） |
 | 行为等价 | 既有 53 项 publish 测试全绿；对外 `publish_result.status` 词表（published/failed/unknown）未变 |
+
+### 5.2 P1-A 落地记录（Context Provenance）
+
+| 项 | 实现 |
+|---|---|
+| 数据面 | `ContextItem` 新增 `trust_class`（`internal_fact / memory / external_document / model_generated / unspecified`）、`verified`、`ttl_seconds`、`source_version`，全部带默认值（additive） |
+| 默认值 | `trust_class=unspecified`、`verified=False` —— 未标注的生产者不得被呈现为可信 |
+| 生产方标注 | `item_to_context_item`：content_history → `INTERNAL_FACT`，其余三命名空间 → `MEMORY`；hy-memory 召回 → `MEMORY` + `verified=False` |
+| 渲染 | `compile(..., annotate_provenance=True)` 追加单行标签 `[source=… trust=… verified version=… ttl=…]`；**默认 False** —— P1b 基线钉住渲染字节，开启标注必须是显式迁移（同一次改动刷新快照） |
+| 零漂移证明 | `context_compiler_baseline.py --compare --drift-pct 5` → `drift within threshold`，107 项 context 测试全绿 |
+| 未做（诚实边界） | trust 尚未进入 rerank 排序；`verified=True` 本切片无任何生产者（没有可校验的来源），字段先就位 |
 
 ## 6. P0-A 切片设计：Progress Detector
 
