@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
-from backend.context.models import ContextItem, RetrievalMode, RetrievalResult
+from backend.context.models import ContextItem, RetrievalMode, RetrievalResult, TrustClass
 from backend.memory.exceptions import UnknownMemoryNamespaceError
 from backend.memory.store import MemoryManager
 
@@ -102,6 +102,12 @@ def item_to_context_item(value: dict[str, Any], namespace: str) -> ContextItem:
         body=body,
         source=f"memory:{namespace}",
         timestamp=ts,
+        # P1-A: content history is a deterministic record of what was
+        # published; the other three namespaces hold derived memory
+        # (summaries, audience impressions, strategy notes).
+        trust_class=(
+            TrustClass.INTERNAL_FACT if namespace == "content_history" else TrustClass.MEMORY
+        ),
     )
 
 

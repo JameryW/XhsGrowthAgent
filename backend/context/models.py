@@ -49,6 +49,34 @@ LAYER_ORDER: tuple[PromptLayer, ...] = tuple(PromptLayer)
 """Canonical L0→L5 rendering order."""
 
 
+class TrustClass(StrEnum):
+    """How far a context item's *content* can be trusted (P1-A provenance).
+
+    Relevance and trust are different axes: an external page can match the
+    query perfectly and still carry instructions we must not follow. The class
+    is descriptive — enforcement stays in the Tool Gateway — but it travels
+    with the item so a rendered prompt (and any future ranker) can see where
+    the text came from.
+
+    ``UNSPECIFIED`` is the conservative default: a producer that never set a
+    class must not be presented as trustworthy.
+    """
+
+    INTERNAL_FACT = "internal_fact"
+    """Deterministic records from our own store (content history, metrics)."""
+
+    MEMORY = "memory"
+    """Derived memory: LLM summaries, profiles, recalled impressions."""
+
+    EXTERNAL_DOCUMENT = "external_document"
+    """Imported documents or web pages — untrusted by construction."""
+
+    MODEL_GENERATED = "model_generated"
+    """Model output fed back as context (e.g. a previous draft)."""
+
+    UNSPECIFIED = "unspecified"
+
+
 class ContextItem(BaseModel):
     """One compiled-context entry with full provenance metadata."""
 
@@ -61,10 +89,35 @@ class ContextItem(BaseModel):
     scope: str = "task"
     priority: int = 0
     token_cost: int = Field(default=0, ge=0)
+    # ── P1-A provenance ────────────────────────────────────────────────
+    # Additive with defaults: an existing producer that sets none of these
+    # keeps byte-identical rendering (the annotate flag below is opt-in).
+    trust_class: TrustClass = TrustClass.UNSPECIFIED
+    verified: bool = False
+    """True only for a check we actually performed (source exists, version
+    matched). Never means "every claim in the body is correct"."""
+    ttl_seconds: int | None = Field(default=None, ge=0)
+    source_version: str = ""
+    """Version identifier of the source (commit SHA, row version…)."""
 
     def with_token_cost(self, token_cost: int) -> ContextItem:
         """A copy with ``token_cost`` set (frozen model ⇒ explicit wither)."""
         return self.model_copy(update={"token_cost": token_cost})
+
+    def provenance_label(self) -> str:
+        """Compact, machine-readable provenance tag for prompt rendering.
+
+        Deliberately one line: this is carried into the model request, so it
+        must cost a handful of tokens, not a paragraph.
+        """
+        parts = [f"source={self.source}", f"trust={self.trust_class.value}"]
+        if self.verified:
+            parts.append("verified")
+        if self.source_version:
+            parts.append(f"version={self.source_version}")
+        if self.ttl_seconds is not None:
+            parts.append(f"ttl={self.ttl_seconds}s")
+        return "[" + " ".join(parts) + "]"
 
 
 def require_niche(state: Mapping[str, Any]) -> str:

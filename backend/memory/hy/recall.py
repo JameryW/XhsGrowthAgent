@@ -18,7 +18,13 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from backend.context.models import ContextItem, PromptLayer, RetrievalMode, RetrievalResult
+from backend.context.models import (
+    ContextItem,
+    PromptLayer,
+    RetrievalMode,
+    RetrievalResult,
+    TrustClass,
+)
 from backend.memory.hy.bridge import HyMemoryBridge, get_hy_memory_bridge
 
 logger = logging.getLogger("xhs_growth.memory.hy.recall")
@@ -93,6 +99,9 @@ def _to_context_item(item: dict[str, Any]) -> ContextItem:
     return ContextItem(
         body=str(item.get("content") or ""),
         source=f"hy_memory:{item.get('channel') or item.get('scene') or 'chat'}",
+        # P1-A: memory derived by an external engine's LLM extraction —
+        # relevant by construction, but never presented as verified fact.
+        trust_class=TrustClass.MEMORY,
         timestamp=datetime.now(UTC),
         confidence=min(max(score, 0.0), 1.0),
         scope="account",
