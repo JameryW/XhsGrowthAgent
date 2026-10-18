@@ -104,7 +104,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
 | **P1-B（已完成）** | Verifier 触发 | `backend/services/verification_policy.py`：风险下限 + 期望成本公式 + 预算降级；真实发布路径发射判定事件（§5.3） | 有 acceptance_signoff 人工验收作基线 |
 | **P2-部分（已完成）** | 恢复策略分派 | `backend/models/recovery_policy.py`：按错误类型分派 retry/degrade/escalate/stop，retry 层记录决策（§5.4） | 文章 recovery 表可直接落地，且不需要多模型路由矩阵 |
-| P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产出时启动 | 当前串行图无瓶颈证据，不提前建 |
+| P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产出时启动；**证据采集器已就绪（§5.6）** | 当前串行图无瓶颈证据，不提前建 |
 | **P3-前置（已完成）** | Harness Benchmarks 套件 | `scripts/benchmarks/harness_benchmarks.py` + CI job：F1/F2/F4 可跑，F5/F7/F8 记 SKIP（§8） | 评测集是 Adaptive Harness 的前提；先把确定性防线变成可跑的 gate |
 | P3 | Adaptive Harness | 依赖评测集 + A/B 门禁；P1b 基线是起点 | 无评测数据前做自适应是赌博 |
 
@@ -162,6 +162,21 @@ Progress Detector 此前只有单测消费者。接入 `BaseAgent._llm_structure
 | 判定窗口 | `window=2`（与 `attempts_per_level` 默认值对齐） |
 | 联动 | stalled 时调用 `classify_recovery(..., stalled=True)`，日志标出建议动作（`degrade_model`——重复 schema 失败换结构化模式，与文章 bad_arguments 分支一致） |
 | 行为 | **零变更**：重试预算仍决定是否继续；变化只是日志从"又拒了一次"变成"这条在打转，指纹=…" |
+
+### 5.6 P2 证据采集器（Node Latency Report）
+
+P2 的启动条件是"瓶颈证据"。证据不能靠猜，所以先把遥测变成判定：
+
+| 项 | 实现 |
+|---|---|
+| 聚合 | `backend/services/node_latency.py`：按 agent 统计 calls / total / mean / p95 / max / share / errors |
+| 串行度 | `serial_ratio = Σ节点耗时 / 墙钟`：`[0.9, 1.05]` → **node_bound**（时间全在节点里，加并集无收益）；`>1.05` → **parallel_time_present**（节点区间已重叠）；`<0.9` → **waiting_not_parallel**（时间花在等待/审批，不是可并行的活） |
+| 热点 | 单 agent 占比 ≥ 40% 时点名 |
+| 无数据 | `has_data=False` + `verdict=no_data`——**不编造零值**；CLI 退出码 0（"没有数据"是结论，不是失败） |
+| 用法 | `python scripts/benchmarks/node_latency_report.py --events run.json` 或 `--thread <id>` |
+
+样例判定（5 节点合成数据）：`serial ratio 1.00 → node_bound，hotspot: strategist 43%`
+——即"当前图是纯串行，且半壁时间在 strategist"，这正是启动 P2 前需要看到（或推翻）的事实。
 
 ## 6. P0-A 切片设计：Progress Detector
 
