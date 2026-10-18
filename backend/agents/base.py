@@ -32,6 +32,30 @@ from backend.models.router import get_model
 
 logger = logging.getLogger("xhs_growth.agents")
 
+
+def _retry_stall_signal(
+    failures: list[tuple[Any, str]],
+    *,
+    window: int = 2,
+) -> Any:
+    """Stall signal for a structured-retry loop (P0-A consumer).
+
+    Each rejected payload is one "event" carrying the correction text. Two
+    identical corrections in a row mean the model is repeating the same
+    failure — different from a loop that keeps producing *new* corrections
+    (which is converging). The detector is imported lazily: this module is on
+    every agent import path, and the state package pulls pydantic models the
+    retry path does not otherwise need.
+
+    Returns a :class:`backend.state.progress.ProgressSignal`; caller decides
+    whether to act. Log-only today by design — see the call site.
+    """
+    from backend.state.progress import detect_progress
+
+    events = [{"kind": "llm", "error": text} for _, text in failures]
+    return detect_progress(events, window=window)
+
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -296,6 +320,26 @@ class BaseAgent(ABC):
                     self.agent_name,
                     level.value,
                 )
+                # P0-A consumer: distinguish "converging" (each rejection has
+                # a new correction) from "cycling" (the same correction twice).
+                # Log-only: the retry budget still governs behavior; what
+                # changes is that an operator can see a stall instead of
+                # inferring it from repeated identical lines.
+                stall = _retry_stall_signal(failures)
+                if stall.stalled:
+                    from backend.models.recovery_policy import classify_recovery
+
+                    action = classify_recovery(
+                        StructuredOutputError(output_model, failures), stalled=True
+                    )
+                    logger.warning(
+                        "%s: retry loop stalled (reason=%s, fingerprint=%s); "
+                        "recovery would be %s — retry budget still governs this run",
+                        self.agent_name,
+                        stall.reason,
+                        stall.evidence.get("fingerprint", ""),
+                        action.value,
+                    )
                 conversation = [*conversation, HumanMessage(content=f"【纠偏】{correction or ''}")]
         if not answered:
             # Nothing was ever answered. Hand the failure back as itself rather
