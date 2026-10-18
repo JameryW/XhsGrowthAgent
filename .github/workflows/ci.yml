@@ -119,6 +119,25 @@ jobs:
         # (refresh with --write-snapshot in the same PR).
         run: python scripts/benchmarks/context_compiler_baseline.py --compare --drift-pct 5
 
+  harness-benchmarks:
+    name: Harness Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Deterministic fault matrix (F1/F2/F4)
+        # Offline and deterministic: no workflow, no browser, no model call.
+        # Runs production code (Effect Ledger, compliance policy) against
+        # injected faults. SKIP entries are documented gaps (F5/F7/F8), not
+        # passes; only a FAIL exits non-zero.
+        run: python scripts/benchmarks/harness_benchmarks.py
+
   tool-runtime-gate:
     name: Tool Runtime Gate
     runs-on: ubuntu-latest
