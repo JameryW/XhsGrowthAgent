@@ -117,6 +117,7 @@ class ContextCompiler:
         *,
         budget: int | None = None,
         source_weights: Mapping[str, float] | None = None,
+        annotate_provenance: bool = False,
     ) -> CompiledPrompt:
         """Compile static sections + recall items into a layered prompt.
 
@@ -126,6 +127,12 @@ class ContextCompiler:
         Seeding it here rather than at each call site keeps "where does L1 go?"
         a single decision — the LAYER_ORDER rendering below already places it
         between L0 and L2, and the trim order below never touches it.
+
+        ``annotate_provenance`` appends :meth:`ContextItem.provenance_label`
+        to every recalled body. Off by default **on purpose**: the P1b
+        baseline pins rendered bytes, so turning the tag on is an explicit
+        migration (refresh the snapshot in the same change), not a silent
+        prompt drift.
         """
         if run_context.tool_schema:
             seeded = dict(sections)
@@ -149,7 +156,7 @@ class ContextCompiler:
         total = 0
         for layer in LAYER_ORDER:
             section = sections.get(layer, "")
-            bodies = [item.body for item in merged.get(layer, ())]
+            bodies = [_render_item(item, annotate_provenance) for item in merged.get(layer, ())]
             text = "\n".join(part for part in (section, *bodies) if part)
             if text:
                 layers[layer] = text
@@ -165,6 +172,7 @@ class ContextCompiler:
         *,
         budget: int | None = None,
         source_weights: Mapping[str, float] | None = None,
+        annotate_provenance: bool = False,
     ) -> CompiledPrompt:
         """Compile a (segmented) prompt YAML pair into a layered prompt.
 
@@ -187,4 +195,12 @@ class ContextCompiler:
             retrievals,
             budget=budget,
             source_weights=source_weights,
+            annotate_provenance=annotate_provenance,
         )
+
+
+def _render_item(item: ContextItem, annotate: bool) -> str:
+    """One recalled body, optionally followed by its provenance tag."""
+    if not annotate:
+        return item.body
+    return f"{item.body}  {item.provenance_label()}"
