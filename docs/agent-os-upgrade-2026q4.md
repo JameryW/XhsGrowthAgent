@@ -104,6 +104,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
 | **P1-B（已完成）** | Verifier 触发 | `backend/services/verification_policy.py`：风险下限 + 期望成本公式 + 预算降级；真实发布路径发射判定事件（§5.3） | 有 acceptance_signoff 人工验收作基线 |
 | P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产物时启动 | 当前串行图无瓶颈证据，不提前建 |
+| **P3-前置（已完成）** | Harness Benchmarks 套件 | `scripts/benchmarks/harness_benchmarks.py` + CI job：F1/F2/F4 可跑，F5/F7/F8 记 SKIP（§8） | 评测集是 Adaptive Harness 的前提；先把确定性防线变成可跑的 gate |
 | P3 | Adaptive Harness | 依赖评测集 + A/B 门禁；P1b 基线是起点 | 无评测数据前做自适应是赌博 |
 
 ### 5.1 P0-B 落地记录（统一 Effect 账本）
@@ -190,10 +191,18 @@ detect_progress(events, *, window=3) -> ProgressSignal
 
 ## 8. 验证矩阵（对应原文 Harness Benchmark Suite）
 
-当前可测：F2（publish UNKNOWN 不重复发布，已有测试）、F7（预算耗尽保存状态，
-已有 interrupt）、F6（契约变更 → 重新验收，部分有 acceptance）。
+`scripts/benchmarks/harness_benchmarks.py` 是可跑的确定性矩阵（CI job：
+`Harness Benchmarks`），对生产代码注入故障：
 
-待补：F1（LLM 调用期间崩溃 → 安全恢复）、F3（Sandbox 重建）、F4（外部工具
-恶意指令 → 权限不绕过）、F5（并发 workspace 冲突）、F8（Verifier 误放行 → 独立回归识别）。
+| 项 | 状态 | 证据 |
+|---|---|---|
+| F1 崩溃恢复 | ✅ 可跑 | IN_FLIGHT 无判定 → 新 ledger（模拟重启）begin 被拦，不重复提交 |
+| F2 响应丢失 | ✅ 可跑 | UNKNOWN 阻塞、FAILED 释放；attempt 递增 |
+| F4 权限不被绕过 | ✅ 可跑 | 双自动门（审核自动 + 发布自动）必拒；单门放行（两半都断言） |
+| F5 并发 workspace | ⏭ SKIP | 仓库尚无子 Agent/并发 workspace |
+| F7 预算耗尽 | ⏭ SKIP | state 无 run 级预算字段 |
+| F8 Verifier 误放行 | ⏭ SKIP | 尚无 LLM verifier 实现（P1-B 只交付触发） |
 
-F1/F3 的测试前提是节点内 attempt 记录（P0-B），**不先做 P0-B 就无法诚实地测 F1**。
+SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip 清单，只对 FAIL
+返回非零退出码。F1 的边界：这里测的是**副作用层**恢复（账本）；节点内 LLM
+决策仍未持久化（§4.1 已披露），F1 的 full 版本需要 attempt 级决策记录。
