@@ -99,7 +99,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 
 | 优先级 | 切片 | 交付 | 为何是现在 |
 |---|---|---|---|
-| **P0-A（本次）** | Progress Detector | `backend/state/progress.py` 纯函数库 + `kind:"progress"` 事件契约 + 单测 | 零行为变更即可先观测；为 revise 回路提供"是否在变好"的客观信号 |
+| **P0-A（已完成）** | Progress Detector | `backend/state/progress.py` 纯函数库 + `kind:"progress"` 事件契约 + 单测；已接入结构化重试循环（log-only，§5.5） | 零行为变更即可先观测；为 revise 回路提供"是否在变好"的客观信号 |
 | **P0-B（已完成）** | 统一 Effect 账本 | `backend/state/effects.py` 六态账本；publish 成为第一个消费者（下文 §5.1） | 第二个外部副作用工具出现前必须完成，否则 F2 类故障会重演 |
 | **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
 | **P1-B（已完成）** | Verifier 触发 | `backend/services/verification_policy.py`：风险下限 + 期望成本公式 + 预算降级；真实发布路径发射判定事件（§5.3） | 有 acceptance_signoff 人工验收作基线 |
@@ -152,6 +152,17 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 接入 | `retry._RetryChatModel` 的放弃路径记录分类（log-only，行为零变更） |
 | 诚实边界 | `DEGRADE/ESCALATE` 是决策，不是执行——tier 切换需要模型矩阵配置，暂无（`action_available=False` 时 ESCALATE 降级为 RETRY_SAME，不撒谎） |
 
+### 5.5 P0-A 接线记录（结构化重试循环）
+
+Progress Detector 此前只有单测消费者。接入 `BaseAgent._llm_structured` 的内层重试：
+
+| 项 | 实现 |
+|---|---|
+| 事件构造 | 每次 payload 被拒 → 一个 `{"kind":"llm","error": correction}` 事件；两次相同 correction 即判 `same_error_repeated` |
+| 判定窗口 | `window=2`（与 `attempts_per_level` 默认值对齐） |
+| 联动 | stalled 时调用 `classify_recovery(..., stalled=True)`，日志标出建议动作（`degrade_model`——重复 schema 失败换结构化模式，与文章 bad_arguments 分支一致） |
+| 行为 | **零变更**：重试预算仍决定是否继续；变化只是日志从"又拒了一次"变成"这条在打转，指纹=…" |
+
 ## 6. P0-A 切片设计：Progress Detector
 
 ### 6.1 问题
@@ -162,7 +173,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 
 ### 6.2 设计原则
 
-- **只读事件，不改行为**：本切片不接入任何 agent，不改变图；先让信号可观测。
+- **只读事件，不改行为**：先让信号可观测（后续已接入结构化重试的日志面，§5.5）。
 - **证据优先于计数**：判定依据是"错误指纹重复 / 工具输出重复 / 验收项无变化"，
   不是"执行了多少次"。
 - **结构化输出**：返回 dataclass，携带 evidence，便于事件与前端消费。
