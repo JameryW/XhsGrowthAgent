@@ -86,6 +86,29 @@ async def _sleep(attempt: int, base: float, max_delay: float) -> None:
     await asyncio.sleep(_backoff_seconds(attempt, base, max_delay))
 
 
+def _log_recovery_decision(exc: BaseException, *, attempt: int, max_attempts: int) -> None:
+    """Record what kind of recovery this failure deserves (P2, log-only).
+
+    Behavior stays exactly as before — this layer still decides retry-or-raise.
+    The classification exists so an operator reading the logs can tell a
+    permission refusal from a transient outage without guessing, and so the
+    tier-switch follow-up has a decision log to build on.
+    """
+    from backend.models.recovery_policy import classify_recovery
+
+    try:
+        action = classify_recovery(exc, attempt=attempt, max_attempts=max_attempts)
+    except Exception:  # pragma: no cover - classification must never mask the real error
+        return
+    logger.debug(
+        "recovery decision: action=%s attempt=%d/%d error=%s",
+        action.value,
+        attempt + 1,
+        max_attempts,
+        type(exc).__name__,
+    )
+
+
 class _RetryChatModel:
     """Delegate-everything wrapper that retries ainvoke/invoke."""
 
@@ -101,6 +124,7 @@ class _RetryChatModel:
             except Exception as exc:
                 last_exc = exc
                 if not _is_retryable(exc) or attempt == max_retries:
+                    _log_recovery_decision(exc, attempt=attempt, max_attempts=max_retries)
                     raise
                 delay = _backoff_seconds(attempt, base, max_delay)
                 logger.warning(
@@ -124,6 +148,7 @@ class _RetryChatModel:
             except Exception as exc:
                 last_exc = exc
                 if not _is_retryable(exc) or attempt == max_retries:
+                    _log_recovery_decision(exc, attempt=attempt, max_attempts=max_retries)
                     raise
                 delay = _backoff_seconds(attempt, base, max_delay)
                 logger.warning(
