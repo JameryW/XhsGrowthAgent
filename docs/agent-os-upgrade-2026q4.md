@@ -67,7 +67,7 @@
 | 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；trust 尚未参与 rerank | ✅ 已满足（排序融合留 P1 后续） |
 | 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线 | ❌ 缺（P1/P2） |
 | 8 | 多 Agent 并行按 Artifact 分工 + Workspace 冲突 | 当前为单 Agent 串行图；无子 Agent、无并发 workspace | ❌ 缺（P2，先不建） |
-| 9 | Model Gateway 按阶段路由 + Verifier 触发公式 | `backend/models/router.py` 按 TaskType 路由 + fallback/retry；无预算/风险策略，无 verifier | ⚠️ 部分（P2） |
+| 9 | Model Gateway 按阶段路由 + Verifier 触发公式 | P1-B 落地 Verifier 触发策略（§5.3）；`backend/models/router.py` 仍按 TaskType 路由，无预算/阶段/风险策略 | ⚠️ 部分（Verifier ✅ / 路由 P2） |
 | 10 | Adaptive Harness Controller + A/B 门禁 | 无；有 P1b 基线门禁可作为回归基础设施 | ❌ 缺（P3，需评测集先行） |
 
 ## 4. 与假设相悖的两条结论（诚实披露）
@@ -102,7 +102,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | **P0-A（本次）** | Progress Detector | `backend/state/progress.py` 纯函数库 + `kind:"progress"` 事件契约 + 单测 | 零行为变更即可先观测；为 revise 回路提供"是否在变好"的客观信号 |
 | **P0-B（已完成）** | 统一 Effect 账本 | `backend/state/effects.py` 六态账本；publish 成为第一个消费者（下文 §5.1） | 第二个外部副作用工具出现前必须完成，否则 F2 类故障会重演 |
 | **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
-| P1-B | Verifier 触发 | 按风险分级（发布前强制、草稿按期望成本 `p_e·p_d·L > C_v`） | 有 acceptance_signoff 人工验收作基线 |
+| **P1-B（已完成）** | Verifier 触发 | `backend/services/verification_policy.py`：风险下限 + 期望成本公式 + 预算降级；真实发布路径发射判定事件（§5.3） | 有 acceptance_signoff 人工验收作基线 |
 | P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产物时启动 | 当前串行图无瓶颈证据，不提前建 |
 | P3 | Adaptive Harness | 依赖评测集 + A/B 门禁；P1b 基线是起点 | 无评测数据前做自适应是赌博 |
 
@@ -128,6 +128,17 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 渲染 | `compile(..., annotate_provenance=True)` 追加单行标签 `[source=… trust=… verified version=… ttl=…]`；**默认 False** —— P1b 基线钉住渲染字节，开启标注必须是显式迁移（同一次改动刷新快照） |
 | 零漂移证明 | `context_compiler_baseline.py --compare --drift-pct 5` → `drift within threshold`，107 项 context 测试全绿 |
 | 未做（诚实边界） | trust 尚未进入 rerank 排序；`verified=True` 本切片无任何生产者（没有可校验的来源），字段先就位 |
+
+### 5.3 P1-B 落地记录（Verifier 触发）
+
+| 项 | 实现 |
+|---|---|
+| 决策函数 | `decide(VerificationInput) → VerificationDecision`（required / tier / reason / expected_benefit） |
+| 风险下限 | CRITICAL（真实发布等不可逆外部副作用）→ 强制 `HUMAN`；HIGH → 至少 `DETERMINISTIC`。**下限先于公式判定**——低错误概率不能买通高风险门 |
+| 期望成本 | `p_e·p_d·L > C_v` 才验证；MEDIUM/HIGH 正收益落 `LLM` 档，LOW 落 `DETERMINISTIC` 档 |
+| 预算降级 | 预算不够所选档位时降到 `DETERMINISTIC` 并标 `budget_exhausted`；**绝不静默跳过有下限的检查** |
+| 事件 | 新增 `kind:"verification"`（已注册 `EVENT_KINDS`）；真实发布路径在领取 Effect 后发射判定，纯观测、零行为变更 |
+| 诚实边界 | `p_e/p_d` 是输入先验（仓库暂无校准评估集）；`LLM` 档是决策槽位，本仓库尚无独立 verifier 实现（接入是独立变更，需评测门槛） |
 
 ## 6. P0-A 切片设计：Progress Detector
 
