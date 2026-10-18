@@ -656,6 +656,26 @@ async def run_publish(
             "phase": WorkflowPhase.PUBLISHING,
         }
 
+    # P1-B: record *why* this publish is gated. Telemetry only — the gate
+    # itself stays the existing human publish_gate; this line exists so an
+    # operator sees the policy's verdict instead of inferring it from the
+    # gate's presence. Best-effort by contract: never fails a publish.
+    try:
+        from backend.services.verification_policy import (
+            ActionRisk,
+            VerificationInput,
+            decide,
+        )
+        from backend.state.events import emit_events, resolve_thread_id
+
+        decision = decide(VerificationInput(action="publish", risk=ActionRisk.CRITICAL))
+        await emit_events(
+            resolve_thread_id(state),
+            [decision.to_event(action="publish", account_id=_publish_account_id(state))],
+        )
+    except Exception:  # pragma: no cover - telemetry must not break publishing
+        logger.debug("verification decision not recorded", exc_info=True)
+
     # P0-W4 (F3): an explicit force is ONE-SHOT. Whatever the outcome of this
     # execution, the flag is cleared out of publish_options (returned to the
     # caller / written back to state) so the NEXT publish on this thread faces
