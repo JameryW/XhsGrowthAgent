@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.services.text_cover import generate_text_cover_image
+from backend.state.effects import EffectBlockedError, EffectLedger, EffectStatus
 from backend.state.enums import WorkflowPhase
 
 logger = logging.getLogger("xhs_growth.agents.publisher")
@@ -202,38 +203,71 @@ def _is_timeout_error(exc: BaseException) -> bool:
 
 
 async def _read_publish_record(store: BaseStore | None, publish_id: str) -> dict[str, Any] | None:
-    """Best-effort read of a prior idempotency record (dict value only)."""
+    """Best-effort read of a prior effect record, normalised to ledger words.
+
+    Reads through the shared Effect Ledger (P0-B) so the publish guard uses the
+    same six-state vocabulary as every other external-effect tool. Legacy rows
+    keep their old words on disk (``published``) and are normalised on read.
+    """
     if store is None or not publish_id:
         return None
     try:
-        existing = await store.aget(PUBLISH_IDEMPOTENCY_NS, publish_id)
+        record = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(publish_id)
     except Exception as e:  # storage outage must not crash publish
         logger.warning("publish idempotency read failed (proceeding): %s", e)
         return None
-    value = getattr(existing, "value", None) if existing is not None else None
-    return value if isinstance(value, dict) else None
+    return record.to_store_dict() if record is not None else None
 
 
 async def _write_publish_record(
     store: BaseStore | None, publish_id: str, record: dict[str, Any]
 ) -> None:
-    """Best-effort write of the idempotency record (checkpoint/event mirror)."""
+    """Best-effort write of the effect record (checkpoint/event mirror).
+
+    Applies the ledger's transition rules; a refused transition (e.g. writing
+    ``prepared`` over a ``confirmed`` row during a forced retry) is logged and
+    swallowed — telemetry-grade writes must never break a publish.
+    """
     if store is None or not publish_id:
         return
+    status = str(record.get("status") or "").strip().lower()
+    target = {
+        "prepared": EffectStatus.PREPARED,
+        "in_flight": EffectStatus.IN_FLIGHT,
+        "unknown": EffectStatus.UNKNOWN,
+        "published": EffectStatus.CONFIRMED,
+        "confirmed": EffectStatus.CONFIRMED,
+        "failed": EffectStatus.FAILED,
+        "reconciling": EffectStatus.RECONCILING,
+    }.get(status)
+    if target is None:
+        logger.warning("publish idempotency record skipped: unknown status %r", status)
+        return
+    extra = {
+        k: v
+        for k, v in record.items()
+        if k not in {"status", "effect_id", "attempt", "version", "updated_at"}
+    }
     try:
-        await store.aput(PUBLISH_IDEMPOTENCY_NS, publish_id, record)
-    except Exception as e:
+        await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).mark(
+            publish_id, target, error=str(record.get("error") or ""), extra=extra
+        )
+    except Exception as e:  # best-effort by contract; includes ValueError/Stale
         logger.warning("publish idempotency record write failed (non-blocking): %s", e)
 
 
 def _blocked_duplicate_result(publish_id: str, prior: dict[str, Any]) -> dict[str, Any]:
     prior_status = str(prior.get("status") or "unknown")
-    if prior_status == "published":
+    if prior_status in ("published", "confirmed"):
         message = "相同内容在近期已成功发布（幂等键命中），已阻止重复发帖。"
-    else:
+    elif prior_status in ("unknown", "reconciling"):
         message = (
             "相同内容近期发起过真实发布且结果不明（幂等键命中），"
             "已阻止自动重复发帖；请先人工核对小红书近期笔记。"
+        )
+    else:
+        message = (
+            "相同内容已有一条正在进行的发布（幂等键命中），已阻止并发重复发帖；请等待该次发布结束。"
         )
     return {
         "post_id": "",
@@ -271,7 +305,9 @@ async def reconcile_unknown_publish(state: dict[str, Any], store: BaseStore) -> 
     """
     publish_id = compute_publish_id(state)
     record = await _read_publish_record(store, publish_id)
-    if record and record.get("status") == "published":
+    # Read-side normalisation maps legacy "published" to "confirmed"; both
+    # spellings may appear in evidence from pre-P0-B rows.
+    if record and record.get("status") in ("published", "confirmed"):
         return {"status": "published", "evidence": {"source": "idempotency_record", **record}}
 
     copy = state.get("copy_content") or {}
@@ -584,27 +620,14 @@ async def run_publish(
     # mock branch above).
     publish_id = compute_publish_id(state)
     force_publish = bool(publish_options.get("force_publish"))
-    if not force_publish:
-        prior = await _read_publish_record(store, publish_id)
-        if prior and prior.get("status") in ("published", "unknown"):
-            logger.warning(
-                "阻止重复真实发布: publish_id=%s 已有 status=%s 的幂等记录",
-                publish_id,
-                prior.get("status"),
-            )
-            return {
-                "publish_result": _with_publish_link_metadata(
-                    _blocked_duplicate_result(publish_id, prior), state
-                ),
-                "phase": WorkflowPhase.PUBLISHING,
-            }
-    # Record the attempt as result-unknown BEFORE submitting, so a crash /
-    # lost response in between still blocks duplicate real publishes.
+    # P0-B: the intent is durable BEFORE anything is submitted (PREPARED), so a
+    # crash between "we decided to publish" and "we called the platform" is
+    # distinguishable from "the platform may already have the note".
     await _write_publish_record(
         store,
         publish_id,
         {
-            "status": "unknown",
+            "status": "prepared",
             "publish_id": publish_id,
             "account_id": _publish_account_id(state),
             "thread_id": str(state.get("session_id") or state.get("thread_id") or ""),
@@ -612,6 +635,26 @@ async def run_publish(
             "forced": force_publish,
         },
     )
+    # Claim the effect: read the prior record, refuse when it may already have
+    # taken effect, and move to IN_FLIGHT before the submit call. The same
+    # read+judge+write used to be three separate statements here.
+    try:
+        await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).begin(
+            publish_id, tool_name="publish", force=force_publish
+        )
+    except EffectBlockedError as exc:
+        prior = exc.record.to_store_dict()
+        logger.warning(
+            "阻止重复真实发布: publish_id=%s 已有 status=%s 的幂等记录",
+            publish_id,
+            prior.get("status"),
+        )
+        return {
+            "publish_result": _with_publish_link_metadata(
+                _blocked_duplicate_result(publish_id, prior), state
+            ),
+            "phase": WorkflowPhase.PUBLISHING,
+        }
 
     # P0-W4 (F3): an explicit force is ONE-SHOT. Whatever the outcome of this
     # execution, the flag is cleared out of publish_options (returned to the
@@ -711,7 +754,7 @@ async def run_publish(
         # P0-W4: idempotency key rides the result for events/checkpoint audit.
         publish_result["publish_id"] = publish_id
 
-        # Outcome-known: upgrade or downgrade the pre-recorded "unknown". A
+        # Outcome-known: upgrade or downgrade the claimed effect. A
         # platform-reported definite failure (status != published, verdict known)
         # releases the guard; an unknown outcome leaves it ARMED on purpose.
         if status == "published":
@@ -719,13 +762,24 @@ async def run_publish(
                 store,
                 publish_id,
                 {
-                    "status": "published",
+                    "status": "confirmed",
                     "publish_id": publish_id,
                     "post_id": str(publish_result.get("post_id") or ""),
                     "thread_id": str(state.get("session_id") or ""),
                 },
             )
         elif outcome_unknown:
+            # P0-B: say it explicitly. "Submitted, no verdict" is UNKNOWN —
+            # the one state that must never be read as FAILED.
+            await _write_publish_record(
+                store,
+                publish_id,
+                {
+                    "status": "unknown",
+                    "publish_id": publish_id,
+                    "thread_id": str(state.get("session_id") or ""),
+                },
+            )
             logger.error(
                 "发布结果不明（提交后无判定）: publish_id=%s 幂等护栏保持 armed，"
                 "需对账或显式 force 才能再次真实发布",
@@ -753,9 +807,9 @@ async def run_publish(
         # P0-W4: distinguish "failed" (definitely not posted) from "unknown"
         # (result not observable). After the real submit action was entered, a
         # browser/HTTP timeout means the note may well have been published —
-        # reporting that as "failed" invites a duplicate post. The idempotency
-        # record deliberately STAYS "unknown" so the next real publish is
-        # blocked until reconciliation/force.
+        # reporting that as "failed" invites a duplicate post. Under P0-B the
+        # record is explicitly UNKNOWN (submit entered, no verdict) so the next
+        # real publish is blocked until reconciliation/force.
         is_unknown = _is_timeout_error(e)
         publish_result = {
             "post_id": "",
@@ -770,6 +824,16 @@ async def run_publish(
             publish_result["result_known"] = False
             publish_result["note"] = (
                 "提交后超时，发帖结果不明——发布可能已成功，请先人工核对小红书近期笔记"
+            )
+            await _write_publish_record(
+                store,
+                publish_id,
+                {
+                    "status": "unknown",
+                    "publish_id": publish_id,
+                    "thread_id": str(state.get("session_id") or ""),
+                    "error": str(e),
+                },
             )
         else:
             await _write_publish_record(
