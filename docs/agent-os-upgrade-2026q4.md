@@ -67,7 +67,7 @@
 | 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；trust 尚未参与 rerank | ✅ 已满足（排序融合留 P1 后续） |
 | 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线 | ❌ 缺（P1/P2） |
 | 8 | 多 Agent 并行按 Artifact 分工 + Workspace 冲突 | 当前为单 Agent 串行图；无子 Agent、无并发 workspace | ❌ 缺（P2，先不建） |
-| 9 | Model Gateway 按阶段路由 + Verifier 触发公式 | P1-B 落地 Verifier 触发策略（§5.3）；`backend/models/router.py` 仍按 TaskType 路由，无预算/阶段/风险策略 | ⚠️ 部分（Verifier ✅ / 路由 P2） |
+| 9 | Model Gateway 按阶段路由 + Verifier 触发公式 | P1-B Verifier 触发（§5.3）+ P2 恢复策略分派（§5.4）；`router.py` 仍按 TaskType 路由，无阶段/推理预算矩阵 | ⚠️ 部分（Verifier ✅ / 恢复分派 ✅ / 阶段路由 P2） |
 | 10 | Adaptive Harness Controller + A/B 门禁 | 无；有 P1b 基线门禁可作为回归基础设施 | ❌ 缺（P3，需评测集先行） |
 
 ## 4. 与假设相悖的两条结论（诚实披露）
@@ -103,7 +103,8 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | **P0-B（已完成）** | 统一 Effect 账本 | `backend/state/effects.py` 六态账本；publish 成为第一个消费者（下文 §5.1） | 第二个外部副作用工具出现前必须完成，否则 F2 类故障会重演 |
 | **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
 | **P1-B（已完成）** | Verifier 触发 | `backend/services/verification_policy.py`：风险下限 + 期望成本公式 + 预算降级；真实发布路径发射判定事件（§5.3） | 有 acceptance_signoff 人工验收作基线 |
-| P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产物时启动 | 当前串行图无瓶颈证据，不提前建 |
+| **P2-部分（已完成）** | 恢复策略分派 | `backend/models/recovery_policy.py`：按错误类型分派 retry/degrade/escalate/stop，retry 层记录决策（§5.4） | 文章 recovery 表可直接落地，且不需要多模型路由矩阵 |
+| P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产出时启动 | 当前串行图无瓶颈证据，不提前建 |
 | **P3-前置（已完成）** | Harness Benchmarks 套件 | `scripts/benchmarks/harness_benchmarks.py` + CI job：F1/F2/F4 可跑，F5/F7/F8 记 SKIP（§8） | 评测集是 Adaptive Harness 的前提；先把确定性防线变成可跑的 gate |
 | P3 | Adaptive Harness | 依赖评测集 + A/B 门禁；P1b 基线是起点 | 无评测数据前做自适应是赌博 |
 
@@ -140,6 +141,16 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 预算降级 | 预算不够所选档位时降到 `DETERMINISTIC` 并标 `budget_exhausted`；**绝不静默跳过有下限的检查** |
 | 事件 | 新增 `kind:"verification"`（已注册 `EVENT_KINDS`）；真实发布路径在领取 Effect 后发射判定，纯观测、零行为变更 |
 | 诚实边界 | `p_e/p_d` 是输入先验（仓库暂无校准评估集）；`LLM` 档是决策槽位，本仓库尚无独立 verifier 实现（接入是独立变更，需评测门槛） |
+
+### 5.4 P2-部分落地记录（恢复策略分派）
+
+| 项 | 实现 |
+|---|---|
+| 四档动作 | `RETRY_SAME`（429/5xx/网络）/ `DEGRADE_MODEL`（400/422/schema/结构化解析失败）/ `ESCALATE_MODEL`（同错误重复 = stalled）/ `STOP_AND_REPORT`（401/403/内容策略/重试预算耗尽） |
+| 优先级 | **拒绝优先**：401/403/策略拒绝即使同时"像瞬时错误"也直接 STOP——重试拒绝就是绕过路径 |
+| 与 retry 层一致 | 一致性测试：`retry._is_retryable(exc)` 为真 ⇔ 分类为 `RETRY_SAME`（两张规则表不允许漂移） |
+| 接入 | `retry._RetryChatModel` 的放弃路径记录分类（log-only，行为零变更） |
+| 诚实边界 | `DEGRADE/ESCALATE` 是决策，不是执行——tier 切换需要模型矩阵配置，暂无（`action_available=False` 时 ESCALATE 降级为 RETRY_SAME，不撒谎） |
 
 ## 6. P0-A 切片设计：Progress Detector
 
