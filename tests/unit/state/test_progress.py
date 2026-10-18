@@ -125,3 +125,11 @@ class TestEventRendering:
         signal = detect_progress([_tool({"x": 1})] * 3)
         entry = signal.to_event(account_id="a")
         assert entry is not None and entry["kind"] == PROGRESS_EVENT_KIND
+
+    def test_event_kind_is_registered(self):
+        # Same pinning discipline as action/verification: an emitter whose kind
+        # is not declared in EVENT_KINDS drifts away from every reader that
+        # enumerates the timeline vocabulary.
+        from backend.db.workflow_events import EVENT_KINDS
+
+        assert PROGRESS_EVENT_KIND in EVENT_KINDS
