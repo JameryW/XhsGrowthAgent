@@ -387,6 +387,7 @@ Further guides:
 - [Frontend UX and interaction conventions](./docs/frontend-ux-optimization.md)
 - [Deployment](./docs/deployment.md)
 - [Execution plane: leases, takeover, boundary](./docs/execution-plane.md)
+- [Agent OS upgrade: gap analysis and roadmap](./docs/agent-os-upgrade-2026q4.md)
 - [Hy-memory integration](./docs/hy-memory.md)
 - [Configuration](./docs/configuration.md)
 - [API reference](./docs/api-reference.md)

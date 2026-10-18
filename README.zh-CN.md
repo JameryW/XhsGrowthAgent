@@ -387,6 +387,7 @@ hy-memory 集成附带 40 个单测（bridge + agent 接线，默认关闭——
 - [前端 UX 与交互规范](./docs/frontend-ux-optimization.md)
 - [部署指南](./docs/deployment.md)
 - [执行平面：租约 / 接管 / 边界](./docs/execution-plane.md)
+- [Agent OS 升级：差距审计与路线](./docs/agent-os-upgrade-2026q4.md)
 - [hy-memory 集成](./docs/hy-memory.md)
 - [配置参考](./docs/configuration.md)
 - [API 参考](./docs/api-reference.md)
