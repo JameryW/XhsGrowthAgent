@@ -186,6 +186,10 @@ class TestTheFactoryHandsTheCredentialOver:
 
         assert seen["cookie"] == self.COOKIE
         assert seen["user_id"] == "u1"
+        # The id travels with the credential: a factory that resolved the right
+        # cookie but labelled the client "no account" would put every read in
+        # the deployment's bucket and make the two impossible to tell apart.
+        assert seen["account_id"] == "acc-1"
 
     @pytest.mark.asyncio
     async def test_an_uncredentialed_account_gets_a_client_that_cannot_read(self, monkeypatch):
@@ -208,4 +212,8 @@ class TestTheFactoryHandsTheCredentialOver:
 
         assert client.can_read is False
         with pytest.raises(XHSAuthError, match="未配置"):
-            trending._require_readable(client, "xhs_trending")  # noqa: SLF001
+            # The guard lives with the client now (both read tool modules ask
+            # it); this test keeps asserting the real one, not a copy.
+            from backend.services.xhs_client import require_readable
+
+            require_readable(client, "xhs_trending")

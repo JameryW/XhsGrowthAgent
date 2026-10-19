@@ -24,60 +24,17 @@ logger = logging.getLogger("xhs_growth.tools.trending")
 
 
 async def _get_client(account_id: str = "") -> XHSClient:
-    """获取 XHSClient 实例 —— 带上这个账号的凭据.
+    """Compatibility alias for :func:`backend.services.xhs_client.client_for_account`.
 
-    ``account_id`` used to be decorative here ("kept for workflow/tool-call
-    compatibility"): the client was built with no cookie at all, so every HTTP
-    read failed and ``_require_readable`` below fired on every call. Browser
-    login state lives in the CDP profile and is only wired up for publishing, so
-    the read path has to be credentialed from the credential store. That
-    plumbing now lives in ``services/xhs_credentials``: this account's own row
-    if it has one, otherwise the deployment credential, and an unusable answer
-    stays unusable rather than being papered over here.
+    The resolution moved to ``services/xhs_client`` when a second read
+    capability (``analysis.topic_scorer``) needed the same answer: two copies of
+    "which account's cookie, sourced from where" is exactly how two capabilities
+    start reading as different people while each looks correct on its own.  The
+    name stays because every call site and test here grew up around it.
     """
-    from backend.config.settings import Settings
-    from backend.services.xhs_client import XHSClient
-    from backend.services.xhs_credentials import load_credential
+    from backend.services.xhs_client import client_for_account
 
-    settings = Settings()
-    credential = await load_credential(account_id)
-    return XHSClient(
-        cookie=credential.cookie,
-        user_id=credential.user_id,
-        use_browser=settings.platform.use_browser,
-        headless=False,
-        account_id=account_id or "",
-    )
-
-
-def _require_readable(client: XHSClient, capability: str) -> None:
-    """Refuse to treat an unreadable platform as an empty one.
-
-    ``XHSClient`` needs a cookie for every HTTP read, and the credential this
-    account holds is resolved in ``_get_client`` — so this fires when the
-    resolved credential is missing, malformed, or could not be read at all.
-
-    That is the point. Without it the previous path answered the same
-    situation with ``[]`` from ``get_trending``/``search_posts`` and, worse,
-    with one row of zero counts per keyword from ``monitor_keywords``, which
-    ``trend_scout`` then fed the model as ``data_source="real"`` ("0 篇帖子,
-    平均点赞 0, 趋势: declining" — fabricated evidence, asserted as real).
-    Raising hands the problem to the Gateway; the caller falls back to the
-    honest "no realtime data" branch instead.
-
-    The precondition is knowable *before* the call and is not knowable after
-    it, which is why it is checked here rather than inferred from the result.
-
-    Which account's cookie, sourced from where, is answered in
-    ``services/xhs_credentials`` (P2a-S5a); this guard only asks whether the
-    answer was usable. The Gateway's scope check reads the same answer, so a
-    read cannot be credentialed while its scope is denied.
-    """
-    if client.can_read:
-        return
-    from backend.services.xhs_client import XHSAuthError
-
-    raise XHSAuthError(f"{capability}: 未配置 Cookie，无法读取小红书平台数据")
+    return await client_for_account(account_id)
 
 
 @tool
@@ -97,9 +54,11 @@ async def xhs_trending(category: str = "", account_id: str = "") -> list[dict[st
     """
     logger.info(f"Fetching XHS trending for category: {category}")
 
+    from backend.services.xhs_client import require_readable
+
     client = await _get_client(account_id=account_id)
     try:
-        _require_readable(client, "xhs_trending")
+        require_readable(client, "xhs_trending")
         topics = await client.get_trending(category=category)
 
         # 转换为字典格式
@@ -134,7 +93,8 @@ async def keyword_monitor(keywords: list[str], account_id: str = "") -> list[dic
         每个关键词的热度数据，包含 post_count, total_likes, avg_likes
 
     Raises:
-        XHSAuthError: 无 Cookie（见 :func:`_require_readable` —— 此前这种情况
+        XHSAuthError: 无 Cookie（见
+            :func:`backend.services.xhs_client.require_readable` —— 此前这种情况
             会返回"每个关键词一行零"的假数据）。
     """
     logger.info(f"Monitoring keywords: {keywords}")
@@ -142,9 +102,11 @@ async def keyword_monitor(keywords: list[str], account_id: str = "") -> list[dic
     if not keywords:
         return []
 
+    from backend.services.xhs_client import require_readable
+
     client = await _get_client(account_id=account_id)
     try:
-        _require_readable(client, "keyword_monitor")
+        require_readable(client, "keyword_monitor")
         results = await client.monitor_keywords(keywords)
 
         # 计算趋势
@@ -187,9 +149,11 @@ async def competitor_analyzer(
     if niche:
         search_keyword = f"{niche} {account_id}"
 
+    from backend.services.xhs_client import require_readable
+
     client = await _get_client(account_id=credential_account_id)
     try:
-        _require_readable(client, "competitor_analyzer")
+        require_readable(client, "competitor_analyzer")
 
         # 搜索该账号/领域的内容
         posts = await client.search_posts(keyword=search_keyword, limit=30)

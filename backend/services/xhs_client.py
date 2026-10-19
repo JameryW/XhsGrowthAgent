@@ -718,3 +718,57 @@ class XHSClient:
         )
 
         return cast(bool, result.get("success", False))
+
+
+def require_readable(client: XHSClient, capability: str) -> None:
+    """Refuse to treat an unreadable platform as an empty one.
+
+    ``XHSClient`` needs a cookie for every HTTP read, and the credential is
+    resolved by whoever builds the client — so this fires when that credential
+    is missing, malformed, or could not be read at all.
+
+    That is the point. Without it the read methods answer the same situation
+    with ``[]`` (or, worse, one row of zero counts per keyword), which the
+    callers then feed to a model as ``data_source="real"`` — fabricated evidence
+    asserted as measured. Raising hands the problem to the Gateway, which files
+    it as ``ToolResult(ok=False)`` and lets the caller degrade honestly.
+
+    The precondition is knowable *before* the call and is not knowable after it,
+    which is why it is checked here rather than inferred from the result.
+
+    Lives next to ``XHSClient`` because it is a statement about that client, not
+    about any one capability: two tool modules ask this question now, and a copy
+    of the message in each would drift.
+    """
+    if client.can_read:
+        return
+
+    raise XHSAuthError(f"{capability}: 未配置 Cookie，无法读取小红书平台数据")
+
+
+async def client_for_account(account_id: str = "") -> XHSClient:
+    """Build an ``XHSClient`` holding *this account's* credential.
+
+    One owner for the credential plumbing, because it is asked in more than one
+    capability now: ``xhs.trending``, ``xhs.keyword_monitor``,
+    ``xhs.competitor_analyzer`` and ``analysis.topic_scorer`` all read the
+    platform as somebody, and a second copy of this resolution would let them
+    read as different somebodies while each looks right on its own.
+
+    ``account_id`` is not decorative: browser login state lives in the CDP
+    profile and is only wired up for publishing, so the read path has to be
+    credentialed from the credential store — this account's own row if it has
+    one, otherwise the deployment credential, and an unusable answer stays
+    unusable (see :func:`require_readable`) instead of being papered over here.
+    """
+    from backend.config.settings import Settings
+    from backend.services.xhs_credentials import load_credential
+
+    credential = await load_credential(account_id)
+    return XHSClient(
+        cookie=credential.cookie,
+        user_id=credential.user_id,
+        use_browser=Settings().platform.use_browser,
+        headless=False,
+        account_id=account_id or "",
+    )

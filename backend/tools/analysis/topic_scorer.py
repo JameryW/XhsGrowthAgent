@@ -1,6 +1,21 @@
 """话题评分工具 — 评估话题热度与传播潜力.
 
 整合小红书真实数据分析，结合热门话题、搜索趋势和竞品分析.
+
+Two things were fixed here rather than left for a later pass, because they were
+the same defect wearing two coats:
+
+1. **It read as nobody.**  ``XHSClient()`` was built with no cookie at all, so
+   ``search_posts``/``monitor_keywords`` raised on every call — while this
+   capability declares ``auth_scope=("xhs:read",)``, a grant nothing could
+   satisfy.  It now resolves the account's credential through
+   ``services/xhs_client.client_for_account``, the same owner the three
+   ``xhs.*`` read capabilities use.
+2. **It answered "unreadable" with a score.**  The ``except`` turned every
+   failure into ``heat_score=50, potential_score=25.0``, which the caller wrote
+   into the prompt as if measured.  Nothing here may invent a measurement: the
+   guard raises, the Gateway files ``ToolResult(ok=False)``, and the caller
+   skips the topic.
 """
 
 from __future__ import annotations
@@ -19,6 +34,7 @@ async def topic_scorer(
     keywords: list[str] | None = None,
     niche: str = "",
     time_window: str = "7d",
+    account_id: str = "",
 ) -> dict[str, Any]:
     """评估小红书话题的热度得分与传播潜力.
 
@@ -27,19 +43,28 @@ async def topic_scorer(
         keywords: 相关关键词列表
         niche: 所属垂直领域
         time_window: 数据时间窗口
+        account_id: 用谁的凭据去读平台。空 = 部署级凭据（单账号部署）
 
     Returns:
         话题评分结果，包含热度得分、增长趋势、竞争度、推荐等级
+
+    Raises:
+        XHSAuthError: 无可用 Cookie（见
+            :func:`backend.services.xhs_client.require_readable`）。**这条以前不存在**：
+            空 cookie 的 ``XHSClient()`` 让每次读取都抛异常，而下面的 except 把它变成
+            ``heat_score=50, potential_score=25.0`` —— 一个从未测量过的分数，被调用方
+            当作真实数据写进 prompt（"趋势 N/A、热度 50"）。删掉那层兜底而不是给它
+            加日志，是因为"读不到"与"读了，分数是 50"必须是两个答案。
     """
     if keywords is None:
         keywords = []
     logger.info(f"Scoring topic: {topic}")
 
-    from backend.services.xhs_client import XHSClient
+    from backend.services.xhs_client import client_for_account, require_readable
 
-    client = XHSClient()
-
+    client = await client_for_account(account_id)
     try:
+        require_readable(client, "topic_scorer")
         # 1. 搜索话题相关帖子
         search_posts = await client.search_posts(keyword=topic, limit=50)
 
@@ -171,21 +196,6 @@ async def topic_scorer(
             "related_keywords": keywords[:5] if keywords else [f"#{topic}"],
             "best_posting_window": best_posting_window,
             "reference_posts": reference_posts,
-        }
-
-    except Exception as e:
-        logger.error(f"话题评分失败: {e}")
-
-        # 返回基础评分作为降级方案
-        return {
-            "topic": topic,
-            "heat_score": 50,
-            "heat_percentage": 50.0,
-            "potential_score": 25.0,
-            "growth_rate": 0.0,
-            "error": str(e),
-            "recommendation": "数据获取失败，建议手动评估",
-            "related_keywords": keywords[:5] if keywords else [f"#{topic}"],
         }
 
     finally:
