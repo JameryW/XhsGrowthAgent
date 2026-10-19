@@ -43,6 +43,13 @@ _POLICY_FIELDS = (
     "qr_risk_block_seconds",
     # Floor for creator-stats crawl clamps (0=normal, 1=SAFE_MODE, 2=list-only).
     "min_risk_pressure",
+    # Per-account daily ceilings (int-valued; 0 = nothing allowed that day).
+    # Their readers (dm_daily_limit / comment_reply_daily_limit) have asked
+    # _policies for these keys all along; until now no writer and no hydrate
+    # whitelist ever let a value in, so every per-account request landed on the
+    # global env — a fiction the API kept accepting.
+    "dm_daily_limit",
+    "comment_reply_daily_limit",
 )
 
 # account_id -> partial policy overrides
@@ -63,6 +70,8 @@ def global_cooldown_defaults() -> dict[str, float]:
         "qr_cooldown_seconds": max(0.0, _env_float("XHS_QR_LOGIN_COOLDOWN_SECONDS", 900.0)),
         "qr_risk_block_seconds": max(0.0, _env_float("XHS_QR_RISK_BLOCK_SECONDS", 3600.0)),
         "min_risk_pressure": env_safe,
+        "dm_daily_limit": max(0.0, _env_float("XHS_DM_DAILY_LIMIT", 20.0)),
+        "comment_reply_daily_limit": max(0.0, _env_float("XHS_COMMENT_REPLY_DAILY_LIMIT", 50.0)),
     }
 
 
@@ -106,12 +115,15 @@ def set_cooldown_policy(
     qr_cooldown_seconds: float | None = None,
     qr_risk_block_seconds: float | None = None,
     min_risk_pressure: float | None = None,
+    dm_daily_limit: float | None = None,
+    comment_reply_daily_limit: float | None = None,
     replace: bool = False,
 ) -> dict[str, Any]:
-    """Set per-account cool-down overrides. ``None`` fields leave existing values.
+    """Set per-account cool-down / quota overrides. ``None`` fields leave existing values.
 
     Pass ``replace=True`` to replace the whole override map (missing fields = default).
     ``min_risk_pressure`` is clamped to 0–2 (creator-stats SAFE_MODE floor).
+    The two daily limits are int-valued ceilings (0 = nothing allowed that day).
     """
     account_id = (account_id or "").strip()
     if not account_id:
@@ -124,6 +136,8 @@ def set_cooldown_policy(
         "qr_cooldown_seconds": qr_cooldown_seconds,
         "qr_risk_block_seconds": qr_risk_block_seconds,
         "min_risk_pressure": min_risk_pressure,
+        "dm_daily_limit": dm_daily_limit,
+        "comment_reply_daily_limit": comment_reply_daily_limit,
     }
     current: dict[str, float] = {} if replace else dict(_policies.get(account_id) or {})
     for key, value in incoming.items():
@@ -328,7 +342,7 @@ def dm_daily_limit(account_id: str = "") -> int:
     raw = _policy_value(
         account_id,
         "dm_daily_limit",
-        _env_float("XHS_DM_DAILY_LIMIT", 20.0),
+        global_cooldown_defaults()["dm_daily_limit"],
     )
     try:
         return max(0, int(raw))
@@ -341,7 +355,7 @@ def comment_reply_daily_limit(account_id: str = "") -> int:
     raw = _policy_value(
         account_id,
         "comment_reply_daily_limit",
-        _env_float("XHS_COMMENT_REPLY_DAILY_LIMIT", 50.0),
+        global_cooldown_defaults()["comment_reply_daily_limit"],
     )
     try:
         return max(0, int(raw))

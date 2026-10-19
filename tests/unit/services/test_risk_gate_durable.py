@@ -62,6 +62,29 @@ async def test_export_and_hydrate_roundtrip(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_daily_limit_overrides_survive_a_restart(monkeypatch):
+    """The hydrate whitelist used to drop these keys on the floor.
+
+    A per-account ceiling that resets with the process is not a ceiling —
+    every deploy would hand the account its budget back.
+    """
+    from backend.services.xhs_risk_gate import dm_daily_limit, set_cooldown_policy
+
+    set_cooldown_policy("acc-1", dm_daily_limit=3)
+    exported = export_risk_gate_state()
+
+    reset_gates_for_tests()
+    assert dm_daily_limit("acc-1") == 20  # fresh process looks unrestricted
+
+    monkeypatch.setattr(
+        "backend.db.risk_gates.load_risk_gate_state",
+        AsyncMock(return_value=exported),
+    )
+    await hydrate_risk_gates()
+    assert dm_daily_limit("acc-1") == 3
+
+
+@pytest.mark.asyncio
 async def test_the_proactive_budget_survives_a_restart(monkeypatch):
     """The outreach cap is only a budget if its spend is durable.
 

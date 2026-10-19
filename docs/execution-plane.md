@@ -161,7 +161,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_wf_runtime.py:102` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
 | `backend/api/routes/_runner.py:447` | `heartbeat.add_done_callback(_on_heartbeat_done)` | PLANE | 不是新任务：把栅栏登记到租约心跳的结束回调上 |
 | `backend/services/ripple_service.py:214` | `loop.create_task(self._rebuild_client())` | POST_RESPONSE | 重建客户端 |
-| `backend/services/xhs_risk_gate.py:728` | `_persist_task = loop.create_task(_run())` | POST_RESPONSE | 风控快照落盘 |
+| `backend/services/xhs_risk_gate.py:742` | `_persist_task = loop.create_task(_run())` | POST_RESPONSE | 风控快照落盘 |
 
 <!-- anchor-table:end -->
 

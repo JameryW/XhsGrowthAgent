@@ -468,11 +468,16 @@ Phase B（在 A 之上追加）：
    已按"机制 ∧ 策略"出第三档 `xhs:outreach`（仅冷启动需要；应答式回复只吃
    `xhs:write`）。门禁 `check_dm_target_allowed` 改为 policy 驱动（DI 传入），
    旧的 `outbound_dm_allowed(account_id)`（签名撒谎：无视 account_id 读全局 env）
-   已删除。**诚实边界**：①per-account 的 `dm_daily_limit` / `comment_reply_daily_limit`
-   覆盖仍结构不可达（`set_cooldown_policy` 只写 7 个 cooldown 字段）—— 独立缺陷，
-   未在本票修；②`xhs:outreach` 尚未挂进任何 capability 的 `auth_scope`（见 §3.1
-   末段）；③策略表是进程内解析 + DB 读，没有管理界面/写路径，账号行策略需直接写
-   `account_credentials`。
+   已删除。**诚实边界**：①~~per-account 的 `dm_daily_limit` / `comment_reply_daily_limit`
+   覆盖仍结构不可达~~ **已修（票 5b，2026-10-19）**：读者（`_policy_value`）本来就在查
+   `_policies`，断在写侧/恢复侧/展示侧三面——`set_cooldown_policy` 的 `incoming`
+   没有这两键、`_POLICY_FIELDS` 白名单（hydrate 恢复 + `get_cooldown_policy` 过滤）
+   没有这两键、`global_cooldown_defaults` 也没有 ⇒ per-account 请求永远落到全局 env。
+   现四面对齐（白名单/写入器/默认表/API `CooldownPolicyRequest`），配额门禁
+   `check_dm_quota` / `check_comment_reply_quota` 立即按账号生效，覆盖跨重启存活
+   （hydrate 往返有测试钉住）；②`xhs:outreach` 尚未挂进任何 capability 的
+   `auth_scope`（见 §3.1 末段）；③策略表是进程内解析 + DB 读，没有管理界面/写路径，
+   账号行策略需直接写 `account_credentials`。
 6. **scope 到底该接在哪一层？**（原写作"agent 发布路径要不要补 `granted_scopes`"，
    实测后问题变大了，见下。）
 
