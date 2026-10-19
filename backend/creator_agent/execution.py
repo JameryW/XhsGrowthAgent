@@ -48,6 +48,7 @@ from backend.tools.runtime.models import ErrorKind, ToolResult
 
 __all__ = [
     "PUBLISH_CAPABILITY",
+    "EndpointResolver",
     "PublishContent",
     "PublishContentReader",
     "PublishDispatcher",
@@ -190,7 +191,11 @@ def load_publish_content(body: Any) -> PublishContent | None:
     )
 
 
-def build_publish_payload(request: PublishRequest) -> Mapping[str, Any]:
+def build_publish_payload(
+    request: PublishRequest,
+    *,
+    cdp_endpoint: str = "",
+) -> Mapping[str, Any]:
     """The Gateway payload for one publish.
 
     Two keys are here for reasons that are not about the platform call:
@@ -204,6 +209,13 @@ def build_publish_payload(request: PublishRequest) -> Mapping[str, Any]:
       gate records the attempt against the **account** rather than the CDP
       endpoint.  Without it the account-keyed publish cool-down has no writer
       at all in production (P2a-S2 pinned that gap; this is where it closes).
+
+    ``cdp_endpoint`` is here because the grant is about *this account*, and the
+    tool would otherwise fall back to the account-agnostic global browser: an
+    account authorized by a bound profile would publish through whichever
+    session that global Chrome happens to hold.  The agent path already resolves
+    it per account (``agents/publisher.py``); the control-plane path is what
+    this parameter gives the same ability.
     """
     return {
         "title": request.content.title,
@@ -214,6 +226,7 @@ def build_publish_payload(request: PublishRequest) -> Mapping[str, Any]:
         "location": request.content.location,
         "account_id": request.account_id,
         "idempotency_key": request.idempotency_key,
+        "cdp_endpoint": (cdp_endpoint or "").strip(),
     }
 
 
@@ -303,6 +316,7 @@ def gateway_publish_dispatcher(
     *,
     granted_scopes: tuple[str, ...] | None = None,
     scope_resolver: ScopeResolver | None = None,
+    endpoint_resolver: EndpointResolver | None = None,
 ) -> PublishDispatcher:
     """The default dispatcher: one Gateway invocation of ``xhs.publish``.
 
@@ -314,6 +328,12 @@ def gateway_publish_dispatcher(
     Gateway reads ``None`` as *unchecked*; an unchecked requirement is
     indistinguishable from no requirement, which is exactly the state P2a-S5a
     ends.
+
+    The endpoint is resolved per request as well, and for the same reason the
+    grant exists: ``xhs:write`` can now be held by an account whose only
+    evidence is a bound browser profile, so the publish has to target *that*
+    browser.  Leaving it to the tool's global fallback would let a grant about
+    one account execute on another account's session.
 
     The refusal is not here.  It lives one layer up in
     ``CreatorAdvisor._execute_publish``, before this function is reached: a
@@ -332,9 +352,12 @@ def gateway_publish_dispatcher(
         scopes = granted_scopes
         if scopes is None:
             scopes = await (scope_resolver or resolve_scopes)(request.account_id)
+        endpoint = ""
+        if (request.account_id or "").strip():
+            endpoint = await (endpoint_resolver or _account_cdp_endpoint)(request.account_id)
         result = await target.invoke(
             PUBLISH_CAPABILITY,
-            build_publish_payload(request),
+            build_publish_payload(request, cdp_endpoint=endpoint),
             thread_id=request.thread_id,
             granted_scopes=scopes,
         )
@@ -355,3 +378,19 @@ The default is the real owner of that answer
 grant an account a credential without a credential store, not so a caller can
 skip the rule.
 """
+
+EndpointResolver = Callable[[str], Awaitable[str]]
+"""How the account's own browser is located (injectable seam).
+
+The default is ``db.accounts.get_account_cdp_endpoint`` — the same source the
+grant reads for ``profile_bound``, which is the point: the browser the write
+scope was granted for and the browser the publish drives must be the same
+account's.  ``""`` means "no per-account binding", and the tool then falls back
+to the global endpoint (its documented behaviour, unchanged).
+"""
+
+
+async def _account_cdp_endpoint(account_id: str) -> str:
+    from backend.db.accounts import get_account_cdp_endpoint
+
+    return await get_account_cdp_endpoint(account_id)

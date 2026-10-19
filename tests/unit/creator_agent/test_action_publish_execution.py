@@ -593,9 +593,17 @@ class TestTheDefaultDispatcherIsTheRealPath:
             is_private: bool = False,
             account_id: str = "",
             idempotency_key: str = "",
+            cdp_endpoint: str = "",
         ) -> dict[str, Any]:
             """A stand-in with the real signature."""
-            seen.append({"title": title, "account_id": account_id, "key": idempotency_key})
+            seen.append(
+                {
+                    "title": title,
+                    "account_id": account_id,
+                    "key": idempotency_key,
+                    "cdp_endpoint": cdp_endpoint,
+                }
+            )
             return {"post_id": "note-9", "post_url": "https://x/note-9", "status": "published"}
 
         declared = inspect.signature(_stand_in.coroutine).parameters
@@ -612,8 +620,61 @@ class TestTheDefaultDispatcherIsTheRealPath:
 
         assert outcome.status is PublishStatus.PUBLISHED
         assert outcome.note_id == "note-9"
-        assert seen == [{"title": "一条耐用的笔记", "account_id": ACCOUNT, "key": KEY}]
+        assert seen == [
+            {
+                "title": "一条耐用的笔记",
+                "account_id": ACCOUNT,
+                "key": KEY,
+                # No account store here, so the resolved endpoint is "" and the
+                # tool keeps its documented global fallback.
+                "cdp_endpoint": "",
+            }
+        ]
         assert PUBLISH_CAPABILITY in shared_gateway().registry.capabilities()
+
+    @pytest.mark.asyncio
+    async def test_it_sends_the_publish_to_the_accounts_own_browser(self, monkeypatch):
+        """The endpoint travels with the grant, or the grant means something else.
+
+        ``xhs:write`` can now be held on the strength of a bound browser profile
+        (P2a-S5b), so the payload has to name *that* browser.  Left empty, the
+        tool falls back to the account-agnostic global endpoint -- one account's
+        grant, another account's session.
+        """
+        seen: list[str] = []
+
+        @tool
+        async def _stand_in(
+            title: str,
+            body: str,
+            hashtags: list[str] | None = None,
+            image_paths: list[str] | None = None,
+            category: str = "",
+            location: str = "",
+            scheduled_time: str = "",
+            is_private: bool = False,
+            account_id: str = "",
+            idempotency_key: str = "",
+            cdp_endpoint: str = "",
+        ) -> dict[str, Any]:
+            """A stand-in that records which browser it was sent to."""
+            seen.append(cdp_endpoint)
+            return {"post_id": "note-9", "status": "published"}
+
+        asked: list[str] = []
+
+        async def _endpoint(account_id: str) -> str:
+            asked.append(account_id)
+            return "  http://127.0.0.1:9333  "
+
+        monkeypatch.setattr("backend.tools.xhs.publisher.xhs_publisher", _stand_in)
+        monkeypatch.setenv("XHS_COOKIE", COOKIE)
+
+        outcome = await gateway_publish_dispatcher(endpoint_resolver=_endpoint)(_request())
+
+        assert outcome.status is PublishStatus.PUBLISHED
+        assert asked == [ACCOUNT]
+        assert seen == ["http://127.0.0.1:9333"]
 
     @pytest.mark.asyncio
     async def test_an_unusable_credential_stops_the_publish_at_the_scope_check(self, monkeypatch):

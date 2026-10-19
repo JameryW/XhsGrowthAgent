@@ -18,6 +18,10 @@ Four things are pinned here.
 4. **The default reader is the production read.**  Its behaviour is asserted
    against the real ``CredentialRow`` type and its real ``value`` property
    rather than through an injected mapping.
+5. **Scopes follow the mechanism, not the credential.**  Read needs the cookie;
+   write needs the cookie *or* a bound browser profile, because the publish
+   path drives CDP with ``cookie=""``.  Binding is not reachability, and a
+   binding read that fails denies the write rather than inventing it.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from backend.db.accounts import CredentialRow
+from backend.db.accounts import AccountRow, CredentialRow
 from backend.services.xhs_credentials import (
     COOKIE_KEY,
     SOURCE_ACCOUNT,
@@ -51,6 +55,22 @@ def _reader(**rows: str):
 
     async def _read(account_id: str) -> Mapping[str, str]:
         return dict(rows)
+
+    return _read
+
+
+def _binding(endpoint: str):
+    """A profile seam that answers with ``endpoint`` (``""`` = not bound)."""
+
+    async def _read(account_id: str) -> str:
+        return endpoint
+
+    return _read
+
+
+def _binding_that_raises():
+    async def _read(account_id: str) -> str:
+        raise RuntimeError("accounts table unreachable")
 
     return _read
 
@@ -237,6 +257,142 @@ class TestUsability:
         assert XHS_CREDENTIAL_KEYS == (COOKIE_KEY, USER_ID_KEY)
 
 
+class TestScopesFollowTheMechanism:
+    """The grant is per-capability, because the mechanisms are not shared.
+
+    ``xhs:read`` *is* the cookie: every read capability builds an ``XHSClient``
+    whose identity is that cookie.  ``xhs:write`` is the account's own browser —
+    ``XHSPublisher`` is constructed with ``cookie=""`` and drives CDP — so a
+    bound profile is enough there.  Granting the two together, which is what the
+    owner did before this slice, refused publishes the deployment can actually
+    perform.
+    """
+
+    async def test_a_cookie_grants_both(self):
+        credential = await load_credential(
+            "acc-1", reader=_reader(**{COOKIE_KEY: VALID}), profile_reader=_binding("")
+        )
+
+        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
+
+    async def test_a_bound_profile_grants_write_and_not_read(self):
+        credential = await load_credential(
+            "acc-1", reader=_reader(), profile_reader=_binding("http://127.0.0.1:9333")
+        )
+
+        assert credential.usable is False
+        assert credential.profile_bound is True
+        assert credential.scopes == (XHS_WRITE_SCOPE,)
+
+    async def test_a_stale_cookie_with_a_bound_profile_keeps_the_write_grant(self):
+        """The case the cookie-only rule answered wrongly.
+
+        A stale cookie is a *read* problem — the HTTP client cannot act as
+        anyone.  It says nothing about the browser, which still belongs to this
+        account, so the publish path stays open while reads stay closed.
+        """
+        credential = await load_credential(
+            "acc-1",
+            reader=_reader(**{COOKIE_KEY: MALFORMED}),
+            profile_reader=_binding("http://127.0.0.1:9333"),
+        )
+
+        assert credential.source == SOURCE_ACCOUNT
+        assert credential.scopes == (XHS_WRITE_SCOPE,)
+
+    async def test_a_failed_binding_read_denies_the_write(self):
+        credential = await load_credential(
+            "acc-1",
+            reader=_reader(**{COOKIE_KEY: MALFORMED}),
+            profile_reader=_binding_that_raises(),
+        )
+
+        assert credential.profile_bound is False
+        assert credential.scopes == ()
+
+    async def test_a_failed_binding_read_does_not_withdraw_the_cookie(self):
+        """Independence cuts both ways: the cookie covers both scopes by itself."""
+        credential = await load_credential(
+            "acc-1",
+            reader=_reader(**{COOKIE_KEY: VALID}),
+            profile_reader=_binding_that_raises(),
+        )
+
+        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
+
+    async def test_a_blank_account_does_not_consult_the_profile_seam(self, monkeypatch):
+        asked: list[str] = []
+
+        async def _spy(account_id: str) -> str:
+            asked.append(account_id)
+            return "http://127.0.0.1:9333"
+
+        monkeypatch.setenv(COOKIE_KEY, "")
+        monkeypatch.setenv(USER_ID_KEY, "")
+        credential = await load_credential("   ", profile_reader=_spy)
+
+        assert asked == []
+        assert credential.profile_bound is False
+        assert credential.scopes == ()
+
+    async def test_an_unreadable_credential_store_does_not_withdraw_the_binding(self):
+        """Each fact is decided by its own read, not by the other one's failure.
+
+        The boundary still answers a failed *row* read with a blank cookie, and
+        that is right: unknown is not permission to borrow the deployment's
+        identity.  It is not right for the binding, which came from its own
+        successful read and belongs to this account — granting write from it acts
+        as the account the caller named, which is what the grant is about.
+        """
+
+        async def _boom(account_id: str) -> Mapping[str, str]:
+            raise RuntimeError("connection reset")
+
+        credential = await load_credential(
+            "acc-1", reader=_boom, profile_reader=_binding("http://127.0.0.1:9333")
+        )
+
+        assert credential.source == ""
+        assert credential.scopes == (XHS_WRITE_SCOPE,)
+
+    async def test_the_default_profile_seam_reads_the_accounts_cdp_binding(self, monkeypatch):
+        """The production path, asserted end to end.
+
+        A non-empty endpoint is what ``get_account_cdp_endpoint`` returns when the
+        account row carries a ``cdp_port``, and that — nothing else — is what
+        makes ``profile_bound`` true.  No probe, no socket, no Chrome.
+        """
+        monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
+
+        async def _account(account_id: str) -> AccountRow:
+            assert account_id == "acc-1"
+            return AccountRow(id="acc-1", name="A", cdp_port=9333)
+
+        monkeypatch.setattr("backend.db.accounts.get_account", _account)
+        monkeypatch.setenv(COOKIE_KEY, "")
+        monkeypatch.setenv(USER_ID_KEY, "")
+
+        credential = await load_credential("acc-1", reader=_reader())
+
+        assert credential.profile_bound is True
+        assert credential.scopes == (XHS_WRITE_SCOPE,)
+
+    async def test_an_account_with_no_cdp_port_is_not_bound(self, monkeypatch):
+        monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
+
+        async def _account(account_id: str) -> AccountRow:
+            return AccountRow(id="acc-1", name="A", cdp_port=0)
+
+        monkeypatch.setattr("backend.db.accounts.get_account", _account)
+        monkeypatch.setenv(COOKIE_KEY, "")
+        monkeypatch.setenv(USER_ID_KEY, "")
+
+        credential = await load_credential("acc-1", reader=_reader())
+
+        assert credential.profile_bound is False
+        assert credential.scopes == ()
+
+
 class TestTheDefaultReaderIsTheRealPath:
     @staticmethod
     def _rows(*, material: bytes | None = b"ciphertext") -> list[CredentialRow]:
@@ -258,6 +414,14 @@ class TestTheDefaultReaderIsTheRealPath:
         resolver consumes.
         """
         monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
+
+        # ``is_pool_ready`` is now true, so the default profile seam would try a
+        # real ``get_account``.  These tests are about the credential *rows*, so
+        # the binding is pinned to "not bound" rather than left to a warning.
+        async def _no_binding(account_id: str) -> str:
+            return ""
+
+        monkeypatch.setattr("backend.db.accounts.get_account_cdp_endpoint", _no_binding)
 
         async def _list(account_id: str) -> list[CredentialRow]:
             assert account_id == "acc-1"
