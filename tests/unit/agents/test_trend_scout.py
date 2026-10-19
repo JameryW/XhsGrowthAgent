@@ -168,7 +168,7 @@ class TestTrendScoutAgent:
         assert "trend_data" in result
 
     @pytest.mark.asyncio
-    async def test_user_topic_added_to_keyword_seed(self, agent, mock_store):
+    async def test_user_topic_added_to_keyword_seed(self, agent, mock_store, xhs_read_grant):
         """state['topic'] is prepended to the keyword_monitor seed so trend
         scouting revolves around the user's topic, not just the niche.
         Previously trend_scout only seeded [niche]."""
@@ -219,7 +219,9 @@ class TestTrendScoutAgent:
         assert captured["keywords"][0] == "露营亲子日记"
 
     @pytest.mark.asyncio
-    async def test_fetch_real_data_gathers_independent_xhs_calls(self, agent, mock_store):
+    async def test_fetch_real_data_gathers_independent_xhs_calls(
+        self, agent, mock_store, xhs_read_grant
+    ):
         """xhs_trending + competitor_analyzer run via one asyncio.gather (not
         3 serial awaits); keyword_monitor stays serial after (needs trending).
 
@@ -453,7 +455,7 @@ class TestTrendScoutContextPipeline:
         assert result["trend_data"]["data_source"] == "llm_generated"
 
     @pytest.mark.asyncio
-    async def test_real_data_block_in_prompt(self, agent, mock_store):
+    async def test_real_data_block_in_prompt(self, agent, mock_store, xhs_read_grant):
         """Realtime data -> L5 block with the pre-migration header."""
         mock_state = {
             "niche": "母婴",
@@ -476,7 +478,7 @@ class TestTrendScoutContextPipeline:
         assert result["trend_data"]["data_source"] == "real"
 
     @pytest.mark.asyncio
-    async def test_degraded_realtime_emits_context_event(self, agent, mock_store):
+    async def test_degraded_realtime_emits_context_event(self, agent, mock_store, xhs_read_grant):
         """L5 degradation (no realtime data) with a thread_id lands a
         kind=context event — the §十五 silent-degradation kill. With realtime
         data (HIT) no observation event is emitted."""
@@ -558,7 +560,9 @@ class TestXhsReadsThroughTheGateway:
         agent._model = mock_model
 
     @pytest.mark.asyncio
-    async def test_a_broken_platform_read_is_traced_and_degrades(self, agent, mock_store):
+    async def test_a_broken_platform_read_is_traced_and_degrades(
+        self, agent, mock_store, xhs_read_grant
+    ):
         """Non-vacuous: a direct call would raise out of ``execute``. That it
         returns a degraded result *and* the gateway records all three
         capabilities as failures is what shows the reads are routed."""
@@ -594,7 +598,9 @@ class TestXhsReadsThroughTheGateway:
         assert all(e["thread_id"] == "thread-s3d" for e in xhs_events)
 
     @pytest.mark.asyncio
-    async def test_a_working_platform_read_still_reports_real(self, agent, mock_store):
+    async def test_a_working_platform_read_still_reports_real(
+        self, agent, mock_store, xhs_read_grant
+    ):
         """The migration must not over-degrade: same doubles, healthy this
         time, and the gateway sees successes."""
         from backend.tools.runtime.bridge import tracing_to

@@ -14,7 +14,10 @@ site that starts passing scopes) fails here until the register and
 
 Why it exists: eight of twelve capabilities declared a scope, and when this file
 was written exactly one call site applied one. That was invisible until this file
-counted it.
+counted it. Five slices later (票 5g) every call site applies one — so this file
+is no longer a to-do list: it is the ratchet that keeps a *new* call site, a new
+declaration, or a dropped ``granted_scopes`` argument from reopening the hole
+silently.
 
 Why one of the registers has two halves: "a call site passes no scopes" and "the
 declaration is worth nothing there" are not the same fact. A capability that
@@ -51,23 +54,35 @@ DECLARED_SCOPES: dict[str, tuple[str, ...]] = {
 # The places a capability is invoked *with* its requirement applied. Both
 # publish paths: the control plane (an action the user confirmed) and the
 # mainline (a workflow run). Two paths, one rule.
+#
+# The four read paths joined in 票 5g: ``xhs.trending``,
+# ``xhs.competitor_analyzer`` and ``xhs.keyword_monitor`` resolve one grant in
+# ``trend_scout._fetch_real_data`` and hand the **same tuple** to all three
+# invocations, and ``analysis.topic_scorer`` resolves one grant per scoring
+# pass in ``content_strategist``. One judgement, three enforcements: a refusal
+# cannot say one thing at the call site and do another at the runtime.
 CHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {
+    "analysis.topic_scorer": ("backend/agents/content_strategist.py",),
+    "xhs.competitor_analyzer": ("backend/agents/trend_scout.py",),
+    "xhs.keyword_monitor": ("backend/agents/trend_scout.py",),
     "xhs.publish": (
         "backend/agents/publisher.py",
         "backend/creator_agent/execution.py",
     ),
+    "xhs.trending": ("backend/agents/trend_scout.py",),
 }
 
 # The debt proper: invocation sites that pass no ``granted_scopes`` **and whose
 # capability declares one**. These are the sites where the declaration buys
 # nothing today. Ordered so a new one is an obvious diff rather than a silent
 # widening.
-UNCHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {
-    "analysis.topic_scorer": ("backend/agents/content_strategist.py",),
-    "xhs.competitor_analyzer": ("backend/agents/trend_scout.py",),
-    "xhs.keyword_monitor": ("backend/agents/trend_scout.py",),
-    "xhs.trending": ("backend/agents/trend_scout.py",),
-}
+#
+# **Empty since 票 5g.** Every site that invokes a scope-declaring capability
+# now applies it — the remaining figure in §9.6 is two capabilities that have
+# no call site at all yet, not a site that skips its own declaration. Keeping
+# the register (rather than deleting it) is the point: a new unchecked site
+# fails here instead of quietly widening the debt.
+UNCHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {}
 
 # The other half, pinned for a different reason: these sites also pass no
 # scopes, but their capabilities declare none, so there is nothing being
@@ -209,7 +224,7 @@ class TestDeclaredScopes:
 
 
 class TestWhereTheCheckIsApplied:
-    def test_exactly_two_call_sites_apply_a_scope(self):
+    def test_six_call_sites_apply_a_scope(self):
         checked = _group(_call_sites(), checked=True)
         assert checked == CHECKED_CALL_SITES, (
             "The set of scope-checking call sites changed. If you just wired one, "
@@ -242,30 +257,27 @@ class TestWhereTheCheckIsApplied:
             "would immediately be unpaid, so they stay pinned."
         )
 
-    def test_six_scoped_capabilities_have_no_checked_caller(self):
+    def test_two_scoped_capabilities_have_no_checked_caller(self):
         """The number §9.6 quotes. It is a debt figure, not a target.
 
-        Was seven while ripple declared ``ripple:read``; was four before 票 5f.
+        Was seven while ripple declared ``ripple:read``; was four when this
+        file was written; was six after 票 5f registered the two engagement
+        capabilities; is **two** after 票 5g wired every existing call site.
         Removing a declaration retires the debt honestly -- those three
         capabilities are not "partly protected", they are not identity-scoped
-        at all. Unchanged by the earlier S5c wiring on purpose: both checked
-        call sites serve ``xhs.publish``, and a capability with one checked
-        caller is not "partly protected", so the debt is counted per
-        capability, not per site.
+        at all. Debt is counted per capability, not per site: a capability
+        with one checked caller is not "partly protected".
 
-        The two engagement capabilities (票 5f) declare ``xhs:write`` and have
-        **no call site at all** yet -- registered means reachable, not
-        invoked. They join this figure but not ``UNCHECKED_CALL_SITES``: that
-        register counts *sites where the declaration buys nothing*, and an
-        uninvoked capability has no site to count. When one first gets an
-        ``.invoke(...)``, either pass ``granted_scopes`` (checked) or record
-        the site (debt) -- there is no third option.
+        What remains is a different animal from what this register once
+        measured: ``xhs.comment_reply`` and ``xhs.dm_send`` declare
+        ``xhs:write`` and have **no call site at all** -- registered means
+        reachable, not invoked. There is no site to skip a check at. When one
+        first gets an ``.invoke(...)``, either pass ``granted_scopes``
+        (checked) or record the site (debt) -- there is no third option, and
+        this test is where the third option fails.
         """
         unscoped_but_declared = set(DECLARED_SCOPES) - set(CHECKED_CALL_SITES)
-        assert len(unscoped_but_declared) == 6
-        assert "xhs.publish" not in unscoped_but_declared  # the one that is covered
-        assert set(UNCHECKED_CALL_SITES) <= unscoped_but_declared
-        assert unscoped_but_declared - set(UNCHECKED_CALL_SITES) == {
-            "xhs.comment_reply",
-            "xhs.dm_send",
-        }
+        assert len(unscoped_but_declared) == 2
+        assert unscoped_but_declared == {"xhs.comment_reply", "xhs.dm_send"}
+        assert "xhs.publish" not in unscoped_but_declared  # the one that started it all
+        assert UNCHECKED_CALL_SITES == {}, "a site skips its own declaration"

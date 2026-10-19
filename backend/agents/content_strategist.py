@@ -681,12 +681,30 @@ class ContentStrategistAgent(BaseAgent):
         if not topics:
             return ""
 
+        # ── 票 5g / §9.6：topic_scorer 声明的 auth_scope 在这里开始被执行 ──
+        # 归属跟 payload.account_id 同一个身份（空 = 部署级凭据，与工具侧
+        # client_for_account 的口径一致）。一次解析、逐条透传同一元组：判定与
+        # 运行时检查用同一个答案。
+        # 缺授权时整段不打分（今天它是每条各发一次注定 XHSAuthError 的请求），
+        # 出口与"逐条失败全跳过"是同一个 —— 返回空串，不阻断主流程。
+        from backend.services.xhs_credentials import XHS_READ_SCOPE, granted_scopes
+
+        granted = await granted_scopes(account_id)
+        if XHS_READ_SCOPE not in granted:
+            logger.warning(
+                "topic_scorer skipped: account %r holds no %s",
+                account_id or "(deployment)",
+                XHS_READ_SCOPE,
+            )
+            return ""
+
         lines: list[str] = []
         for topic in topics:
             try:
                 scored = await self.tools.invoke(
                     "analysis.topic_scorer",
                     {"topic": topic, "niche": niche, "account_id": account_id},
+                    granted_scopes=granted,
                 )
                 if not scored.ok:
                     logger.warning(f"topic_scorer 失败 ({topic}): {scored.error}")

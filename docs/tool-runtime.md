@@ -93,19 +93,21 @@ trace 事件带一个 `scopes` 字段：
 | `unchecked` | 声明了，但调用方没传 `granted_scopes` ⇒ **没检查** |
 | `checked` | 传了并通过；不足的情况在到达事件之前就已抛 `PermissionDeniedError` |
 
-今天（2026-10-20 复算）的覆盖面：**14 个 capability 里 7 个声明了 scope，全仓有 2 个
-调用点真的传 `granted_scopes`**（`backend/creator_agent/execution.py` 与
-`backend/agents/publisher.py`），两个都落在 `xhs.publish` 上 —— 控制面确认后发布、
-主链工作流发布，两条路径同一条规则。剩余 **6 个声明了 scope 的能力没有任何已检查的
-调用点**（其中 `xhs.comment_reply` / `xhs.dm_send` 是票 5f 注册的，还没有任何调用点）。
-这些数字不是估算，是 `tests/unit/tools/runtime/test_scope_coverage.py` 从代码树
-逐项复算并钉住的；任何新增/收紧都会让那条测试变红，逼着把这节和
-`docs/tool-gateway-engagement-migration.md` §9.6 一起改。
+今天（2026-10-20 复算，票 5g 之后）的覆盖面：**14 个 capability 里 7 个声明了 scope，
+全仓有 6 个调用点真的传 `granted_scopes`** —— `xhs.publish` 两条（
+`backend/creator_agent/execution.py` 控制面确认后发布、`backend/agents/publisher.py`
+主链工作流发布），加票 5g 接上的四条读路径（`backend/agents/trend_scout.py` 的
+`xhs.trending` / `xhs.competitor_analyzer` / `xhs.keyword_monitor`，
+`backend/agents/content_strategist.py` 的 `analysis.topic_scorer`）。剩余 **2 个声明了
+scope 的能力没有任何已检查的调用点**：`xhs.comment_reply` / `xhs.dm_send`（票 5f 注册，
+**还没有任何 `.invoke(...)` 调用点** —— 可及 ≠ 被调用）。这些数字不是估算，是
+`tests/unit/tools/runtime/test_scope_coverage.py` 从代码树逐项复算并钉住的；任何新增/收紧
+都会让那条测试变红，逼着把这节和 `docs/tool-gateway-engagement-migration.md` §9.6 一起改。
 
-**"声明了但没检查的调用点"有两个半边，别混算**：11 个调用点没传 `granted_scopes`，但只有
-**4 个**落在"能力声明了 scope"上（这才叫债务），另外 **7 个**落在"能力什么都没声明"上
-（`content.*` ×2、`search.*` ×2、`ripple.*` ×3 —— 那里没有承诺可违背）。两个半边都在测试里
-钉住，且划分是**从声明推导**出来的，不是各写一遍。
+**"声明了但没检查的调用点"有两个半边，别混算**：今天有 7 个调用点没传 `granted_scopes`，
+但**全部**落在"能力什么都没声明"这一半（`content.*` ×2、`search.*` ×2、`ripple.*` ×3 ——
+那里没有承诺可违背）；债务那一半（`UNCHECKED_CALL_SITES`）**已归零**，登记表留着不为记债，
+只为让下一个漏接的调用点当场变红。划分仍然是**从声明推导**出来的，不是各写一遍。
 
 为什么当初没有立刻全线接线：在发布这条路径上，"有可用凭证"与"这台机器能发出去"并不是
 同一件事（发布走 CDP，`XHSPublisher(cookie="")` 根本不用 cookie），硬接会拒掉一类
@@ -118,15 +120,37 @@ Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。�
 （`missing_publish_credential`，附指路），因为那正是"一个账号的选择、另一个账号的身份"。
 见 §9.6。
 
-### 剩下的 4 个为什么还没接：它们不是同一类问题
+### 剩下 2 个为什么还没接：它们不是同一类问题
 
-把"没接"当成一种债务会得出错误的下一步。逐个查过（2026-10-19），它们分三类：
+把"没接"当成一种债务会得出错误的下一步。逐个查过（2026-10-19，票 5g 复核）：
 
 | 类别 | 能力 | 现状 |
 |---|---|---|
-| 前置条件在**工具内** | `xhs.trending` / `xhs.keyword_monitor` / `xhs.competitor_analyzer` | `services.xhs_client.require_readable` 在读取前拒绝，凭据由 `client_for_account` 解析。Gateway 再判一次不会多出任何信息，只会把"可降级的结果"变成**抛出的契约违规**，而调用点是按 `ToolResult(ok=False)` 写的降级分支。 |
-| 声明结构上无法满足（已修） | `analysis.topic_scorer` | 以前用空 cookie 的 `XHSClient()` 读，并 `except` 成 `heat_score=50` —— 一个没人测过的分数被当数据写进 prompt。现已接上 `client_for_account` + `require_readable`，失败就抛出，调用方跳过该话题。 |
+| **没有调用点**（剩下的一对） | `xhs.comment_reply` / `xhs.dm_send` | 票 5f 注册时就是 `manual-only`：注册带来的是**可及性**，不是"有人在调"。它们至今没有任何 `.invoke(...)` 调用点，也就没有"可以漏掉检查的调用点"。第一个调用点出现时只有两种写法：传 `granted_scopes`（进 `CHECKED_CALL_SITES`），或登记为债务（进 `UNCHECKED_CALL_SITES`）——登记表不认第三种。 |
+| 前置条件在**工具内**（已于票 5g 接上） | `xhs.trending` / `xhs.keyword_monitor` / `xhs.competitor_analyzer` | 见下：原来的反对意见成立，但反对的是"让 Gateway 抛"，不是"接线"本身。 |
+| 声明结构上无法满足（已修） | `analysis.topic_scorer` | 以前用空 cookie 的 `XHSClient()` 读，并 `except` 成 `heat_score=50` —— 一个没人测过的分数被当数据写进 prompt。先接上 `client_for_account` + `require_readable`（失败就抛，调用方跳过该话题），票 5g 再把声明接上。 |
 | **与身份无关**（已删声明） | `ripple.get_report` / `ripple.predict_spread` / `ripple.validate_pmf` | 本来就不是"没接"，是**接不了**：不消费任何凭据（`backend/tools/ripple/client.py` 用 `Settings().ripple.api_token`，部署级密钥，没有账号维度），而 `granted_scopes()` 只能吐出 `xhs:*`。所以 `ripple:read` 已于 2026-10-19 从目录里**删除**，理由见下。 |
+
+**读三件套为什么原来被判成"不该接"，以及票 5g 怎么回答它**：当时的反对是——
+`require_readable` 已经在读取前拒绝，Gateway 再判一次"不会多出任何信息，只会把可降级的
+结果变成**抛出的契约违规**，而调用点是按 `ToolResult(ok=False)` 写的降级分支"。这句反对
+是对的，但它反对的是**把判定交给 Gateway 抛**。票 5g 的接法是把判定留在门前（S5c 发布路径
+同款）：调用点自己解析 grant 并判定，不足就**不发起调用**、按既有契约降级成空；发起了才把
+**同一元组**交给 Gateway 兜底。于是：
+
+* `PermissionDeniedError` 永远不会落到这三个调用点上（它们确实按"失败以数据回来"写的），
+  这一点由一条**走真实 Gateway** 的测试钉住——删掉门前判定它立刻变红（突变 M3 实证）；
+* 不多拒绝任何账号：`xhs:read ⟸ cookie 可用`，与 `require_readable` 是同一个谓词，所以
+  "今天读得到"和"有授权"是同一批账号；
+* 归属跟**凭据身份**走，且刻意绕开了 competitor 的坑：它 payload 里 `account_id` 装的是
+  niche，身份在 `credential_account_id`。`_fetch_real_data` 里解析一次、三处透传同一元组，
+  结构上让"按 niche 解析"写不出来。
+
+**一处诚实的代价**：缺 `xhs:read` 时这三次调用**一次都不发**，trace 里因此也**没有事件**
+（今天会有一条 `ok=False` 的事件）。也就是说"这个账号压根没配 cookie"从 trace 里消失了，
+只剩调用方一行 warning。代价是可接受的——S5c 未授权发布同样不留事件，且"没被授权"与
+"读了但失败"本就该是两个答案（前者连请求都不该发）——但它确实是代价，不是改进：被授权
+账号的读失败仍然照旧产生 `ok=False` 事件。
 
 **为什么删声明而不是"改 vocabulary 给它发一个服务级 grant"**：那样做的效果是"只要部署配好了
 token，所有调用方都拿到 `ripple:read`"。那不是一个权限，是一个**伪装成权限的配置检查** ——

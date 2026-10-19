@@ -98,7 +98,7 @@ class TestToolTracing:
 
 class TestMigrationsGoThroughTheGateway:
     @pytest.mark.asyncio
-    async def test_strategist_scores_topics_through_the_gateway(self):
+    async def test_strategist_scores_topics_through_the_gateway(self, xhs_read_grant):
         agent = ContentStrategistAgent()
         recorder = _Recorder()
         scorer = AsyncMock()

@@ -93,7 +93,7 @@ class TrendScoutAgent(BaseAgent):
     )
 
     async def _safe_xhs_trending(
-        self, niche: str, account_id: str, thread_id: str = ""
+        self, niche: str, account_id: str, thread_id: str = "", *, granted: tuple[str, ...]
     ) -> list[dict[str, Any]]:
         """Trending topics through the Gateway; degrade to ``[]`` on failure.
 
@@ -103,11 +103,18 @@ class TrendScoutAgent(BaseAgent):
         Gateway — with the tool swallowing on its side too — recorded a
         successful call. Now the failure comes back as ``ToolResult(ok=False)``
         and this method degrades *from* that result, so the trace agrees.
+
+        ``granted`` is the caller-resolved grant tuple, handed to the Gateway so
+        ``xhs.trending``'s declared ``auth_scope`` is actually applied (§9.6).
+        It is required rather than optional on purpose: a default of ``()``
+        would mean "check, and be refused", while ``None`` would mean "do not
+        check" — the exact hole this slice closes.
         """
         result = await self.tools.invoke(
             "xhs.trending",
             {"category": niche, "account_id": account_id},
             thread_id=thread_id,
+            granted_scopes=granted,
         )
         if not result.ok:
             logger.warning("xhs_trending failed: %s", result.error)
@@ -116,7 +123,7 @@ class TrendScoutAgent(BaseAgent):
         return cast(list[dict[str, Any]], rows) if isinstance(rows, list) else []
 
     async def _safe_competitor_analyzer(
-        self, niche: str, account_id: str, thread_id: str = ""
+        self, niche: str, account_id: str, thread_id: str = "", *, granted: tuple[str, ...]
     ) -> list[dict[str, Any]]:
         """Competitor notes through the Gateway; degrade to ``[]`` on failure.
 
@@ -125,6 +132,12 @@ class TrendScoutAgent(BaseAgent):
         or search keyword", so a niche is a legitimate value for it and it is
         the value this call site has always sent. Which one it *should* have
         been is a product question, not this migration's to re-decide.
+
+        The grant follows ``account_id`` — the value this call sends as
+        ``credential_account_id``, i.e. the identity whose cookie the tool
+        resolves — **not** the niche travelling in the payload's
+        ``account_id`` key. Those two are different strings here, and only one
+        of them is an identity.
         """
         result = await self.tools.invoke(
             "xhs.competitor_analyzer",
@@ -134,6 +147,7 @@ class TrendScoutAgent(BaseAgent):
                 "credential_account_id": account_id,
             },
             thread_id=thread_id,
+            granted_scopes=granted,
         )
         if not result.ok:
             logger.warning("competitor_analyzer failed: %s", result.error)
@@ -149,49 +163,72 @@ class TrendScoutAgent(BaseAgent):
         thread_id: str = "",
     ) -> dict[str, Any]:
         """Fetch real data from XHS API via tools. Returns empty dict if unavailable."""
-        # xhs_trending + competitor_analyzer are independent (no data
-        # dependency, disjoint data keys, each degrades on its own) → run
-        # concurrently. keyword_monitor DEPENDS on trending (builds its keyword
-        # seed from trending[:3] topic titles) so it stays serial after the
-        # gather. Return-value pattern: assign to `data` after gather (no
-        # concurrent dict mutation). Precedent: copywriter.py:53, #502/#503.
-        trending, competitor_data = await asyncio.gather(
-            self._safe_xhs_trending(niche, account_id, thread_id),
-            self._safe_competitor_analyzer(niche, account_id, thread_id),
-        )
+        # ── 票 5g / §9.6：声明的 auth_scope 在这三个读调用点开始被执行 ──
+        # grant 解析一次、三处透传同一元组（S5c 发布路径同款：判定与运行时检查
+        # 用同一个答案，不许一个说拒绝、另一个照跑）。
+        #
+        # 归属跟**凭据身份**走：三个调用都用 account_id 解析 cookie（competitor
+        # 的 payload.account_id 是 niche 不是身份，身份在它自己的
+        # credential_account_id 字段）。空账号 = 部署级凭据，与工具侧口径一致。
+        from backend.services.xhs_credentials import XHS_READ_SCOPE, granted_scopes
 
+        granted = await granted_scopes(account_id)
         data: dict[str, Any] = {}
-        if trending:
-            data["hot_topics"] = trending
-        if competitor_data:
-            data["competitor_analysis"] = competitor_data
+        trending: list[dict[str, Any]] = []
+        competitor_data: list[dict[str, Any]] = []
 
-        # keyword_monitor needs trending (enriches keyword seed) — sequential.
-        # Keyword seed: niche + user-provided topic (if any), so trend /
-        # keyword monitoring revolves around the user's topic, not just niche.
-        keywords = [niche]
-        if user_topic and user_topic not in keywords:
-            keywords.insert(0, user_topic)
-        if trending:
-            # Add top trending topic titles as keywords
-            for t in trending[:3]:
-                topic = t.get("topic", "")
-                if topic and topic not in keywords:
-                    keywords.append(topic)
+        if XHS_READ_SCOPE not in granted:
+            # 缺读授权 = 三次调用一次都不开始。降级形状与今天一模一样：data
+            # 里没有 XHS 键，web 兜底照旧。区别只是今天它会各发一次注定被
+            # require_readable 拒掉的请求，trace 里连个事件也不会留下。
+            logger.warning(
+                "xhs reads skipped: account %r holds no %s (cookie unusable or unconfigured)",
+                account_id or "(deployment)",
+                XHS_READ_SCOPE,
+            )
+        else:
+            # xhs_trending + competitor_analyzer are independent (no data
+            # dependency, disjoint data keys, each degrades on its own) → run
+            # concurrently. keyword_monitor DEPENDS on trending (builds its keyword
+            # seed from trending[:3] topic titles) so it stays serial after the
+            # gather. Return-value pattern: assign to `data` after gather (no
+            # concurrent dict mutation). Precedent: copywriter.py:53, #502/#503.
+            trending, competitor_data = await asyncio.gather(
+                self._safe_xhs_trending(niche, account_id, thread_id, granted=granted),
+                self._safe_competitor_analyzer(niche, account_id, thread_id, granted=granted),
+            )
+            if trending:
+                data["hot_topics"] = trending
+            if competitor_data:
+                data["competitor_analysis"] = competitor_data
 
-        # No try/except: the Gateway returns failures as data instead of
-        # raising, and the tool no longer swallows its own (see
-        # backend/tools/xhs/trending.py), so a failure here is visible to the
-        # trace rather than only to this log line.
-        monitor = await self.tools.invoke(
-            "xhs.keyword_monitor",
-            {"keywords": keywords, "account_id": account_id},
-            thread_id=thread_id,
-        )
-        if not monitor.ok:
-            logger.warning("keyword_monitor failed: %s", monitor.error)
-        elif monitor.value:
-            data["keyword_monitor"] = monitor.value
+            # keyword_monitor needs trending (enriches keyword seed) — sequential.
+            # Keyword seed: niche + user-provided topic (if any), so trend /
+            # keyword monitoring revolves around the user's topic, not just niche.
+            keywords = [niche]
+            if user_topic and user_topic not in keywords:
+                keywords.insert(0, user_topic)
+            if trending:
+                # Add top trending topic titles as keywords
+                for t in trending[:3]:
+                    topic = t.get("topic", "")
+                    if topic and topic not in keywords:
+                        keywords.append(topic)
+
+            # No try/except: the Gateway returns failures as data instead of
+            # raising, and the tool no longer swallows its own (see
+            # backend/tools/xhs/trending.py), so a failure here is visible to the
+            # trace rather than only to this log line.
+            monitor = await self.tools.invoke(
+                "xhs.keyword_monitor",
+                {"keywords": keywords, "account_id": account_id},
+                thread_id=thread_id,
+                granted_scopes=granted,
+            )
+            if not monitor.ok:
+                logger.warning("keyword_monitor failed: %s", monitor.error)
+            elif monitor.value:
+                data["keyword_monitor"] = monitor.value
 
         # Open-web enrich when XHS realtime is thin or the operator supplied a
         # topic that benefits from off-platform context. Skip entirely when no
