@@ -293,19 +293,22 @@ class TestTheRealAgentLayer:
         for usage in self._audit_repo().usages:
             assert usage.ok, f"{usage.module}: undeclared={usage.undeclared} unused={usage.unused}"
 
-    def test_no_capability_is_left_without_an_agent(self) -> None:
-        """Every declared capability has an agent caller.
+    def test_the_only_orphans_are_the_two_manual_capabilities(self) -> None:
+        """A deliberate tripwire again, in the same spirit as its predecessor.
 
-        This test used to be ``test_the_only_orphan_is_the_publisher`` and
-        pinned ``orphans == ("xhs.publish",)`` -- a deliberate tripwire:
-        "when P2a wires a publisher, this fails and the orphan list gets
-        revisited instead of quietly growing".  It fired in P2a-S4a, which is
-        that orphan *closing*: the mainline publish stopped building its own
-        ``XHSClient`` and now goes through ``self.tools.invoke``.  The pin did
-        its job, so it is retargeted at the property that matters from here
-        on -- a capability with no agent caller is a capability nothing uses.
+        This was ``test_the_only_orphan_is_the_publisher`` (pinned
+        ``orphans == ("xhs.publish",)``) and later a clean ``orphans == ()``.
+        票 5f registered the two manual engagement capabilities for the
+        Gateway/operator path, and **no agent declares them on purpose** --
+        they are manual-only (approval gate, §7.2 of the migration spec). So
+        the pin returns to listing the orphans: when an operator console or a
+        moderation agent first declares one, this fails and the list gets
+        revisited instead of quietly growing.
         """
-        assert self._audit_repo().orphans == ()
+        assert self._audit_repo().orphans == (
+            "xhs.comment_reply",
+            "xhs.dm_send",
+        )
 
     def test_the_default_directory_is_the_agents_package(self) -> None:
         assert DEFAULT_AGENTS_DIR.name == "agents"

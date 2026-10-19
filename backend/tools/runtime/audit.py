@@ -464,17 +464,6 @@ class UngatedTool:
 
 UNGATED_TOOLS: tuple[UngatedTool, ...] = (
     UngatedTool(
-        "backend.tools.xhs.engagement:comment_replier",
-        PLATFORM_WRITE,
-        "回复真实评论（XHSEngagement → CDP → 平台）。模块声明 manual-only，"
-        "当前无任何导入者；接线时必须走 Gateway + Effect 账本，否则重试会重复回复",
-    ),
-    UngatedTool(
-        "backend.tools.xhs.engagement:dm_handler",
-        PLATFORM_WRITE,
-        "发送真实私信（同上）。同一门槛：manual-only、无导入者、接线即须纳入账本",
-    ),
-    UngatedTool(
         "backend.tools.xhs.engagement:escalation_flagger",
         NOTIFICATION,
         "人工升级标记；配置了 webhook 时会向外部发通知，不写平台",

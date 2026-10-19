@@ -36,15 +36,14 @@ class TestTheRealTree:
     def test_the_audit_is_clean(self):
         assert audit_tool_catalogue().ok
 
-    def test_the_platform_write_surface_is_exactly_two_manual_tools(self):
-        # §4.1 of the upgrade note turns on this number. If it grows, the
-        # attempt-level decision record stops being optional — so it is pinned
-        # here rather than described in prose.
+    def test_no_platform_write_stays_outside_the_catalogue(self):
+        # §4.1 of the upgrade note turned on this number while the two manual
+        # engagement tools were unregistered doors. 票 5f moved them into the
+        # catalogue (Gateway + Effect ledger + approval gate), so the ungated
+        # platform-write surface is now empty -- and an unregistered platform
+        # write arriving again is exactly the regression this pins.
         report = audit_tool_catalogue()
-        assert report.platform_writes == (
-            "backend.tools.xhs.engagement:comment_replier",
-            "backend.tools.xhs.engagement:dm_handler",
-        )
+        assert report.platform_writes == ()
 
     def test_the_catalogue_only_names_functions_that_exist(self):
         report = audit_tool_catalogue()
@@ -75,7 +74,10 @@ class TestTheRealTree:
         # classification into a formality.
         assert all(item.note.strip() for item in UNGATED_TOOLS)
         kinds = {item.kind for item in UNGATED_TOOLS}
-        assert PLATFORM_WRITE in kinds
+        # 票 5f: the platform writes are registered now, so none may linger
+        # ungated. A PLATFORM_WRITE entry reappearing here means a new door
+        # to the platform opened outside the catalogue.
+        assert PLATFORM_WRITE not in kinds
 
 
 def _write(root: Path, rel: str, body: str) -> Path:

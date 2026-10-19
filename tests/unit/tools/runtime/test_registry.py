@@ -512,8 +512,10 @@ class TestDescribeParams:
 class TestCatalogue:
     def test_covers_every_agent_call_site(self):
         """The nine capabilities the agents call today must all be declared,
-        plus publishing for P2a. A missing one means the Gateway cannot route
-        it later, and the S5 gate would have nothing to check against."""
+        plus publishing for P2a, plus the two manual engagement capabilities
+        (票 5f: registered for the Gateway/operator path — no agent declares
+        them on purpose). A missing one means the Gateway cannot route it
+        later, and the S5 gate would have nothing to check against."""
         registry = build_registry()
         expected = {
             "analysis.topic_scorer",
@@ -528,6 +530,8 @@ class TestCatalogue:
             "xhs.keyword_monitor",
             "xhs.competitor_analyzer",
             "xhs.publish",
+            "xhs.comment_reply",
+            "xhs.dm_send",
         }
         assert set(registry.capabilities()) == expected
 
@@ -688,6 +692,8 @@ class TestCatalogue:
             "xhs.keyword_monitor",
             "xhs.competitor_analyzer",
             "xhs.publish",
+            "xhs.comment_reply",
+            "xhs.dm_send",
         }
 
     @pytest.mark.asyncio

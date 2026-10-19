@@ -1,12 +1,15 @@
-# 互动能力迁入 Tool Gateway —— 规格草案（不接线）
+# 互动能力迁入 Tool Gateway —— 规格（已落地）
 
-**状态：Phase A 已落地，仍未接线。** 本文不注册任何 capability；§1 的四个缺陷已修
+**状态：Phase A 与 Phase B 均已落地（票 5c/5d/5e/5f，2026-10-20）。**
+`xhs.comment_reply` / `xhs.dm_send` 已注册进 `build_registry()`，§1 的四个缺陷已修
 （PR #684），本文保留它们修前的形态作为证据，并在每节末尾写明修后契约与守护测试。
 
-一句话结论：**仍然不能接线。** 迁移本身是一小时的事，剩下的挡路项是 Effect 账本与
-审批闸门（§5、§7.2）—— 先把一个会谎报成功的工具搬进 Gateway，等于给谎报装上统一的、
-可追溯的外观。而且 `auth_scope` 挡不住 agent（§7.1 有实测依据），所以"先注册、
-用 scope 兜住"这条路根本不成立。
+一句话结论（当时）：**接线的前置是 Effect 账本与审批闸门**（§5、§7.2）—— 先把一个
+会谎报成功的工具搬进 Gateway，等于给谎报装上统一的、可追溯的外观。而且 `auth_scope`
+挡不住 agent（§7.1 有实测依据），所以"先注册、用 scope 兜住"这条路根本不成立。
+前置现已全部满足：账本/审批（票 5c）、unknown 的读回出口（票 5d）、每账号并发上限
+进 DB（票 5e），于是票 5f 完成注册 —— **注册即可达**（§7.1），这正是 §9.4 拍板
+"本轮允许 agent 触达"的含义。
 
 ---
 
@@ -172,7 +175,7 @@ Gateway 只能看到"一次成功返回的调用，值是 `success: False`"（`o
 
 ---
 
-## 3. 两个 capability 的 spec 草案
+## 3. 两个 capability 的 spec（票 5f 已按此注册）
 
 ```python
 _ENGAGEMENT_SAFETY_NET_S = 300.0        # 见 §6
@@ -472,10 +475,14 @@ tool_result = await runtime.tools.invoke("xhs.publish", payload, thread_id=...)
 Phase A 里必须同时钉住：配额记账只在判决为 `sent` / `unknown` 之后调用 ✅
 （`unknown` 也算，因为可能已经发出、收不回来 —— 见 §5.2）。
 
-**Phase B（注册）—— 未开始** —— 前置三项已全部满足（§5 账本 ✅ 票 5c、§7.2
-审批闸门 ✅ 票 5c、Phase A 全绿 ✅）。**仍未注册**：卡在 §9.4（本轮是否允许
-agent 触达，需拍板）。注册后 agent 才第一次能调到它们，这一刻才是
-`docs/agent-os-upgrade-2026q4.md` §4.1 所说的"可及的外部副作用面发生变化"。
+**Phase B（注册）—— 已落地（票 5f，2026-10-20）** —— 前置三项已全部满足（§5 账本 ✅ 票 5c、§7.2
+审批闸门 ✅ 票 5c、Phase A 全绿 ✅），§9.4 拍板"允许"后完成注册：
+`xhs.comment_reply` / `xhs.dm_send` 进 `build_registry()`（SIDE_EFFECTING、
+`max_attempts=1`、`_ENGAGEMENT_SAFETY_NET_S=300`、`max_concurrency=1`、
+`auth_scope=("xhs:write",)`——按 §3.1 不声明 `xhs:outreach`），非 sent 判决按
+publisher 同一条规则报 `DomainOutcome`（§9.1 的答案）。注册后 agent 第一次能调到
+它们，这一刻就是 `docs/agent-os-upgrade-2026q4.md` §4.1 所说的"可及的外部副作用面
+发生变化"——可及 ≠ 自动触发：冷启动外发仍被 §7.2 的逐条审批拦着。
 
 ---
 
@@ -502,7 +509,7 @@ Phase B（在 A 之上追加）：
 | 6 | 同一 `idempotency_key` 第二次调用在**提交前**被拒绝，账本可查 | ✅ 票 5c（`TestTheSameKeyIsRefusedBeforeASecondSubmit`） |
 | 7 | 超时后账本状态为 `unknown`，且不自动重试 | ✅ 票 5c（映射表 + `max_attempts=1` 不动；`unknown` 无任何自动重试路径） |
 | 8 | `unknown` 只能经读回变为 `resolved_sent` / `resolved_not_sent` | ✅ 票 5c（`TestTheStateMachine`；读回**接口**本身见 §9.2） |
-| 9 | Gateway trace 事件里 `side_effect == "side_effecting"`，且不含正文 | ⏳ Phase B 注册后（§9.4 挂起） |
+| 9 | Gateway trace 事件里 `side_effect == "side_effecting"`，且不含正文 | ✅ 票 5f（`TestTheTraceCarriesNoBodies`：`domain_reason` 只带判决理由，正文只随 `ToolResult.domain` 回调用方） |
 
 ---
 
@@ -511,7 +518,10 @@ Phase B（在 A 之上追加）：
 1. **DM "结果不明"该报 `DomainOutcome("unknown")` 还是让网关超时？**
    `publisher.py` 选了前者（平台给出了"提交了但结果不明"这个判断），而互动这边
    超时发生在浏览器动作中途，平台层未必有机会给结论。倾向：能在服务层判定的报
-   `DomainOutcome`，判不了的交给网关超时并进 `unknown`。
+   `DomainOutcome`，判不了的交给网关超时并进 `unknown`。**已落地（票 5f，2026-10-20）**：
+   按倾向办——工具层 `_result_or_outcome` 与 publisher 同一条规则，`sent` 返回、
+   其余判决（拒发/失败/结果不明）一律 `DomainOutcome`（答案，永不自动重试）；
+   服务层判不了的（浏览器动作中途被取消）留给网关超时，账本停在 `unknown` 等读回。
 2. **读回接口存在吗？** ~~笔记评论区可以读；私信会话能否列出自己发过的消息，需要在
    真实账号上验证一次。**这是 §5.3 的唯一前提**，没有它，私信侧 `unknown` 就是终局。~~
    **已落地（票 5d，2026-10-20）**：评论侧/私信侧读回接口都实现了（三值判决
@@ -524,6 +534,9 @@ Phase B（在 A 之上追加）：
    名额（进程内 + PG advisory 计数名额，照 CDP 锁先例，PG 不可用降级进程内），
    多 worker 共享天花板，见 §3.2；账本侧在票 5c 已进 DB（`engagement_effects`）。
 4. **本轮是否允许 agent 触达？** 本文建议：不允许。§7.1 已经证明注册即触达。
+   **已拍板（2026-10-20）："都实现"——允许**，票 5f 完成注册。前置三项（账本/审批/
+   读回）已全部落地后，注册的剩余风险由 §7.2 的逐条审批闸门与 §5 的账本兜住；
+   `auth_scope` 仍不挡人（§7.1），所以审批才是边界，注册不是。
 5. **要不要一张按账号的策略表？** ~~§3.1 的结论是当前 scope 只能表达"这个账号
    登录着 / 有自己绑定的浏览器"，表达不了"这个账号被允许主动私信谁"。~~ **已落地
    （票 5a，2026-10-19）**：`XhsOutreachPolicy` 三模式（`nobody` / `inbound_only`

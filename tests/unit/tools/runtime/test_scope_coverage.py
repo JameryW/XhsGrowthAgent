@@ -40,7 +40,9 @@ BACKEND = REPO / "backend"
 # Recomputed from ``build_registry()`` -- declared, whether or not anyone applies it.
 DECLARED_SCOPES: dict[str, tuple[str, ...]] = {
     "analysis.topic_scorer": ("xhs:read",),
+    "xhs.comment_reply": ("xhs:write",),
     "xhs.competitor_analyzer": ("xhs:read",),
+    "xhs.dm_send": ("xhs:write",),
     "xhs.keyword_monitor": ("xhs:read",),
     "xhs.publish": ("xhs:write",),
     "xhs.trending": ("xhs:read",),
@@ -170,16 +172,17 @@ class TestDeclaredScopes:
             "is a new promise that something has to keep."
         )
 
-    def test_five_of_twelve_capabilities_declare_a_scope(self):
+    def test_seven_of_fourteen_capabilities_declare_a_scope(self):
         """The denominator matters: "some capabilities are scoped" hides the ratio.
 
-        Five, not eight: the three ripple capabilities stopped declaring
-        ``ripple:read``. Removing a declaration is the one change this file is
-        meant to *allow* — see ``test_no_declared_scope_is_unsatisfiable``.
+        Seven of fourteen after Phase B (票 5f): the two engagement
+        capabilities joined with ``xhs:write``. Five was not eight for the
+        ripple three earlier -- removing a declaration is the one change this
+        file is meant to *allow*, see ``test_no_declared_scope_is_unsatisfiable``.
         """
         specs = build_registry().specs()
-        assert len(specs) == 12
-        assert len([spec for spec in specs if spec.auth_scope]) == 5
+        assert len(specs) == 14
+        assert len([spec for spec in specs if spec.auth_scope]) == 7
 
     def test_no_declared_scope_is_unsatisfiable(self):
         """Every declared scope must be one :func:`granted_scopes` can emit.
@@ -239,17 +242,30 @@ class TestWhereTheCheckIsApplied:
             "would immediately be unpaid, so they stay pinned."
         )
 
-    def test_four_scoped_capabilities_have_no_checked_caller(self):
+    def test_six_scoped_capabilities_have_no_checked_caller(self):
         """The number §9.6 quotes. It is a debt figure, not a target.
 
-        Was seven while ripple declared ``ripple:read``. Removing that
-        declaration retires the debt honestly -- those three capabilities are
-        not "partly protected", they are not identity-scoped at all. Unchanged
-        by the earlier S5c wiring on purpose: both checked call sites serve
-        ``xhs.publish``, and a capability with one checked caller is not
-        "partly protected", so the debt is counted per capability, not per site.
+        Was seven while ripple declared ``ripple:read``; was four before 票 5f.
+        Removing a declaration retires the debt honestly -- those three
+        capabilities are not "partly protected", they are not identity-scoped
+        at all. Unchanged by the earlier S5c wiring on purpose: both checked
+        call sites serve ``xhs.publish``, and a capability with one checked
+        caller is not "partly protected", so the debt is counted per
+        capability, not per site.
+
+        The two engagement capabilities (票 5f) declare ``xhs:write`` and have
+        **no call site at all** yet -- registered means reachable, not
+        invoked. They join this figure but not ``UNCHECKED_CALL_SITES``: that
+        register counts *sites where the declaration buys nothing*, and an
+        uninvoked capability has no site to count. When one first gets an
+        ``.invoke(...)``, either pass ``granted_scopes`` (checked) or record
+        the site (debt) -- there is no third option.
         """
         unscoped_but_declared = set(DECLARED_SCOPES) - set(CHECKED_CALL_SITES)
-        assert len(unscoped_but_declared) == 4
+        assert len(unscoped_but_declared) == 6
         assert "xhs.publish" not in unscoped_but_declared  # the one that is covered
-        assert unscoped_but_declared == set(UNCHECKED_CALL_SITES)
+        assert set(UNCHECKED_CALL_SITES) <= unscoped_but_declared
+        assert unscoped_but_declared - set(UNCHECKED_CALL_SITES) == {
+            "xhs.comment_reply",
+            "xhs.dm_send",
+        }

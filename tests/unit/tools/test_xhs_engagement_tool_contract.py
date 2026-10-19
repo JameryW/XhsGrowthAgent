@@ -4,7 +4,9 @@ Spec §1.3 / §8 item 4: a tool that catches everything and returns
 ``{"success": False}`` makes the Gateway read a transport failure as a
 successful call. The tools therefore pass the platform verdict through and let
 exceptions travel -- exactly what ``backend/tools/xhs/publisher.py`` already
-does for ``xhs.publish``.
+does for ``xhs.publish``. Since 票 5f the non-``sent`` verdicts travel as
+``DomainOutcome`` too (an answer, never retried), so ``ok=True`` through the
+Gateway strictly means "sent".
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.tools.runtime.models import DomainOutcome
 from backend.tools.xhs.engagement import comment_replier, dm_handler
 
 MODULE = "backend.tools.xhs.engagement"
@@ -55,8 +58,8 @@ class TestCommentReplierPassesTheVerdictThrough:
     async def test_every_verdict_field_survives_and_the_request_is_echoed(self):
         engagement = _fake_engagement(dict(VERDICT))
         get_engagement, resolve = _patched(engagement)
-        with get_engagement, resolve:
-            result = await comment_replier.ainvoke(
+        with get_engagement, resolve, pytest.raises(DomainOutcome) as exc:
+            await comment_replier.ainvoke(
                 {
                     "comment_id": "c-1",
                     "post_id": "p-1",
@@ -65,6 +68,8 @@ class TestCommentReplierPassesTheVerdictThrough:
                 }
             )
 
+        # The verdict is the answer: everything arrives in the domain payload.
+        result = exc.value.payload
         assert result["status"] == "failed"
         assert result["error_code"] == "send_button_missing"
         assert result["receipt_source"] == "none"
@@ -111,14 +116,19 @@ class TestDmHandlerPassesTheVerdictThrough:
         )
         get_engagement, resolve = _patched(engagement)
         with get_engagement, resolve:
-            result = await dm_handler.ainvoke(
-                {
-                    "message_id": "inbound-7",
-                    "sender_id": "u-1",
-                    "reply_content": "收到",
-                    "account_id": "acc-1",
-                }
-            )
+            try:
+                result = await dm_handler.ainvoke(
+                    {
+                        "message_id": "inbound-7",
+                        "sender_id": "u-1",
+                        "reply_content": "收到",
+                        "account_id": "acc-1",
+                    }
+                )
+            except DomainOutcome as exc:
+                # Assertion-shaped red (not a crash) if the sent/delivered
+                # boundary ever inverts: sent must return its dict.
+                pytest.fail(f"status=sent must return its dict, not raise: {exc.reason}")
 
         assert result["status"] == "sent"
         # ``message_id`` is the one the caller passed in; the outbound receipt is
@@ -134,7 +144,7 @@ class TestDmHandlerPassesTheVerdictThrough:
         """Drop it here and the cold-start gate silently stops existing."""
         engagement = _fake_engagement({"status": "blocked", "success": False})
         get_engagement, resolve = _patched(engagement)
-        with get_engagement, resolve:
+        with get_engagement, resolve, pytest.raises(DomainOutcome):
             await dm_handler.ainvoke(
                 {
                     "message_id": "m-1",

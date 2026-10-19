@@ -93,11 +93,12 @@ trace 事件带一个 `scopes` 字段：
 | `unchecked` | 声明了，但调用方没传 `granted_scopes` ⇒ **没检查** |
 | `checked` | 传了并通过；不足的情况在到达事件之前就已抛 `PermissionDeniedError` |
 
-今天（2026-10-19 复算）的覆盖面：**12 个 capability 里 5 个声明了 scope，全仓有 2 个
+今天（2026-10-20 复算）的覆盖面：**14 个 capability 里 7 个声明了 scope，全仓有 2 个
 调用点真的传 `granted_scopes`**（`backend/creator_agent/execution.py` 与
 `backend/agents/publisher.py`），两个都落在 `xhs.publish` 上 —— 控制面确认后发布、
-主链工作流发布，两条路径同一条规则。剩余 **4 个声明了 scope 的能力没有任何已检查的
-调用点**。这些数字不是估算，是 `tests/unit/tools/runtime/test_scope_coverage.py` 从代码树
+主链工作流发布，两条路径同一条规则。剩余 **6 个声明了 scope 的能力没有任何已检查的
+调用点**（其中 `xhs.comment_reply` / `xhs.dm_send` 是票 5f 注册的，还没有任何调用点）。
+这些数字不是估算，是 `tests/unit/tools/runtime/test_scope_coverage.py` 从代码树
 逐项复算并钉住的；任何新增/收紧都会让那条测试变红，逼着把这节和
 `docs/tool-gateway-engagement-migration.md` §9.6 一起改。
 
@@ -158,7 +159,7 @@ token，所有调用方都拿到 `ripple:read`"。那不是一个权限，是一
 **路由只按声明，不看对象。** 曾经按鸭子类型路由，结果普通函数替身被 `.ainvoke`
 应答 —— 每次调用都"成功"，只是**从未收到 payload**，看起来像一次优雅降级。
 
-## 目录：12 个 capability
+## 目录：14 个 capability
 
 | capability | side_effect | pass_style | retry | auth_scope | timeout_s |
 |---|---|---|---|---|---|
@@ -170,12 +171,14 @@ token，所有调用方都拿到 `ripple:read`"。那不是一个权限，是一
 | `ripple.validate_pmf` | read_only | kwargs | — | — | **3600** |
 | `search.fetch` | read_only | invoke | — | — | 60 |
 | `search.web` | read_only | invoke | — | — | 60 |
+| `xhs.comment_reply` | **side_effecting** | invoke | — | `xhs:write` | **300** |
 | `xhs.competitor_analyzer` | read_only | invoke | — | `xhs:read` | 120 |
+| `xhs.dm_send` | **side_effecting** | invoke | — | `xhs:write` | **300** |
 | `xhs.keyword_monitor` | read_only | invoke | — | `xhs:read` | 120 |
 | `xhs.publish` | **side_effecting** | invoke | — | `xhs:write` | **900** |
 | `xhs.trending` | read_only | invoke | — | `xhs:read` | 120 |
 
-三处容易误读的数字：
+四处容易误读的数字：
 
 - **`timeout_s=3600` 不是"允许等一小时"。** 两个 ripple 慢查询用 payload 里的
   `max_wait`（默认 1800s）自己等待，并以领域结果自报超时（带 `job_id`）。Gateway
@@ -186,6 +189,11 @@ token，所有调用方都拿到 `ripple:read`"。那不是一个权限，是一
   （60s 选择器）才可能观察到成功。用 SLOW 的默认 120s 会在一次**仍在合法进行中**
   的发布上取消调用，并把一次"可能已经提交"的发布报成超时 —— 这正是 P0-B 里
   `UNKNOWN` 想避免的形态。
+- **`xhs.comment_reply` / `xhs.dm_send` 的 300 也是防抢占的兜底。** 互动链自身预算
+  上界 ≈165s（CDP 锁 120s + 元素等待 + 逐动作冷却，推导见
+  `docs/tool-gateway-engagement-migration.md` §6），300 留 1.8 倍余量。这两个能力
+  还声明 `max_concurrency=1`：闸门按账号分键（`account_gate`），同一账号同一时刻
+  一次在途互动。
 - **重试次数少是故意的。** `ripple.*` 与 `content.polish_copy` 从不抛异常，唯一
   可重试的事件是 Gateway 自己的超时；重试超时 = 伪装成重试的加长等待（120s×2
   拖住节点）。要等更久是 `timeout_s` 的事。
