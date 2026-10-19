@@ -81,11 +81,35 @@ LangGraph checkpoint 只保证**已完成的 superstep 不重跑**。节点失�
 
 当前可接受的三个理由：
 - 节点级幂等由 artifact seam 兜底（`_artifact_seam`）；
-- 外部副作用只有 publish 一条，且有稳定幂等键；
+- **能到达 agent 的外部副作用只有 publish 一条**，且有稳定幂等键；
 - 其余节点重试是"重算幂等"的（纯函数式输入→输出）。
 
-**触发升级的条件**：一旦出现第二个外部副作用工具（发评论、发私信），
+**触发升级的条件**：一旦出现第二个**能到达 agent 的**外部副作用工具（发评论、发私信），
 就必须把 attempt 级"决策记录"补上，否则会重演"重试导致重复动作"。
+
+#### 4.1.1 这条前提的实测边界（2026-10-19 复核）
+
+上一版这条写的是"外部副作用只有 publish 一条"。用 AST 把整棵树数一遍后，**这句
+话只在"目录可及"这一层成立**：
+
+| 层 | 数量 | 内容 |
+|---|---|---|
+| 目录（agent 可经 Gateway 到达） | **1** | `xhs.publish`（唯一声明为 `SIDE_EFFECTING` 的能力；12 个能力里其余全是 read_only/pure） |
+| `backend/tools/**` 里写**平台**的 `@tool` | **2** | `comment_replier`（回复真实评论）、`dm_handler`（发真实私信）—— 都走 `XHSEngagement` → CDP → 平台，模块声明 manual-only，且**全仓零导入者** |
+| 声称会写、其实是 stub | 2 | `post_scheduler`、`ab_test_manager` 只返回 canned 结果（`post_scheduler` 注释自己写着"需接 APScheduler"） |
+| 写**本仓服务**（非平台） | 2 | `ripple_cancel_simulation`、`ripple_generate_report` |
+| 有外部通知 | 1 | `escalation_flagger`（配了 webhook 时发通知，不写平台） |
+
+结论：**触发条件仍未达成**（没有任何路径能让 agent 调到那两条平台写工具），
+但"只有 publish 一条"是**错的表述**——正确表述是：可及面 1 条；模块里能真正改外部
+状态的有 5 条（2 条写平台、2 条写本仓的 Ripple 服务、1 条发通知），另有 2 条 stub
+只在返回值上假装会写。
+
+这件事现在由 `backend/tools/runtime/audit.py::audit_tool_catalogue` **守**：26 个
+`@tool` 里每一个都必须是"已注册"或"已登记（`UNGATED_TOOLS`，含它到底能写什么）"，
+新出现的第 27 个会直接让单测变红；登记项与目录指向的函数若消失也会红。
+`tests/unit/tools/runtime/test_catalogue_audit.py` 把平台写集合钉死为上面那两条——
+**它变大的那天，attempt 级决策记录就不再是可选项。**
 
 **4.2 "Event Log 作为恢复依据"在本仓库不成立，且不应成立。**
 

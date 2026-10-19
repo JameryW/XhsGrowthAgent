@@ -35,14 +35,23 @@ from pathlib import Path
 from typing import Any
 
 __all__ = [
+    "CATALOGUE_PATH",
     "DEFAULT_AGENTS_DIR",
+    "TOOLS_ROOT",
+    "UNGATED_TOOLS",
     "AgentToolUsage",
+    "CatalogueAudit",
     "DirectToolImport",
     "ToolRuntimeAudit",
+    "UngatedTool",
     "UnreadableInvocation",
+    "audit_tool_catalogue",
     "audit_tool_runtime",
     "scan_agent_tool_usage",
+    "scan_catalogue_refs",
     "scan_direct_tool_imports",
+    "scan_function_refs",
+    "scan_tool_functions",
 ]
 
 DEFAULT_AGENTS_DIR = Path(__file__).resolve().parents[2] / "agents"
@@ -406,4 +415,302 @@ def audit_tool_runtime(
         usages=usages,
         unknown=tuple(sorted(named - known)),
         orphans=tuple(sorted(known - named)),
+    )
+
+
+# ── Catalogue completeness: what can write outside, and is it behind the Gateway? ──
+
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+"""``backend/tools`` — every tool implementation, registered or not."""
+
+CATALOGUE_PATH = Path(__file__).resolve().parent / "catalog.py"
+"""The declaration file. Its ``tool_ref("...")`` literals are the register."""
+
+#: An unregistered tool that writes to **the XHS platform**. This is the class
+#: §4.1 of the upgrade note is about: a second one reaching an agent would make
+#: node-internal retries able to repeat a real-world action.
+PLATFORM_WRITE = "platform_write"
+#: Writes to a service of ours (Ripple), not to the platform.
+SERVICE_WRITE = "service_write"
+#: Sends a notification outside the process (webhook).
+NOTIFICATION = "notification"
+#: Returns a canned success payload and touches nothing — a stub. The danger is
+#: not the tool, it is a later reader assuming the stub already works.
+STUB = "stub"
+#: Reads only.
+READ_ONLY = "read_only"
+#: Left in the tree but superseded by a registered capability.
+SUPERSEDED = "superseded"
+
+
+@dataclass(frozen=True)
+class UngatedTool:
+    """A ``@tool`` the catalogue does not know about, with what it can do.
+
+    The catalogue is the set of capabilities an agent may reach. A tool outside
+    it is not automatically wrong (``backend/tools`` holds every implementation,
+    including ones no agent should ever call), but it *is* a door: importing it
+    hands out an object the Gateway never sees. This table is the deliberate
+    classification of those doors — the audit fails when a new one appears
+    without an entry, so the surface cannot grow by accident.
+    """
+
+    ref: str
+    kind: str
+    note: str
+
+
+UNGATED_TOOLS: tuple[UngatedTool, ...] = (
+    UngatedTool(
+        "backend.tools.xhs.engagement:comment_replier",
+        PLATFORM_WRITE,
+        "回复真实评论（XHSEngagement → CDP → 平台）。模块声明 manual-only，"
+        "当前无任何导入者；接线时必须走 Gateway + Effect 账本，否则重试会重复回复",
+    ),
+    UngatedTool(
+        "backend.tools.xhs.engagement:dm_handler",
+        PLATFORM_WRITE,
+        "发送真实私信（同上）。同一门槛：manual-only、无导入者、接线即须纳入账本",
+    ),
+    UngatedTool(
+        "backend.tools.xhs.engagement:escalation_flagger",
+        NOTIFICATION,
+        "人工升级标记；配置了 webhook 时会向外部发通知，不写平台",
+    ),
+    UngatedTool(
+        "backend.tools.xhs.engagement:fetch_pending_comments",
+        READ_ONLY,
+        "读取待处理评论",
+    ),
+    UngatedTool(
+        "backend.tools.xhs.publisher:post_scheduler",
+        STUB,
+        "只返回 canned 结果（注释写明需接 APScheduler）。**若实现真实调度，"
+        "必须迁入目录并声明 SIDE_EFFECTING**",
+    ),
+    UngatedTool(
+        "backend.tools.xhs.publisher:ab_test_manager",
+        STUB,
+        "只返回 canned 配置，不触达平台",
+    ),
+    UngatedTool(
+        "backend.tools.xhs.analytics:report_generator",
+        READ_ONLY,
+        "只读 creator_stats 并拼文本，无写入",
+    ),
+    UngatedTool(
+        "backend.tools.xhs.analytics:analytics_reader",
+        READ_ONLY,
+        "读平台分析数据",
+    ),
+    UngatedTool(
+        "backend.tools.xhs.analytics:pattern_detector",
+        READ_ONLY,
+        "读平台分析数据",
+    ),
+    UngatedTool(
+        "backend.tools.ripple.client:ripple_cancel_simulation",
+        SERVICE_WRITE,
+        "取消 Ripple 服务上的任务（改的是本仓服务的状态，不是平台）",
+    ),
+    UngatedTool(
+        "backend.tools.ripple.client:ripple_generate_report",
+        SERVICE_WRITE,
+        "在 Ripple 服务上生成报告",
+    ),
+    UngatedTool(
+        "backend.tools.ripple.client:ripple_get_simulation_status",
+        READ_ONLY,
+        "低层 client 包装；目录走 ripple.integration 的三个能力",
+    ),
+    UngatedTool(
+        "backend.tools.ripple.client:ripple_get_simulation_result",
+        READ_ONLY,
+        "同上",
+    ),
+    UngatedTool(
+        "backend.tools.ripple.client:ripple_get_simulation_log",
+        READ_ONLY,
+        "同上",
+    ),
+    UngatedTool(
+        "backend.tools.ripple.client:ripple_predict_content_spread",
+        READ_ONLY,
+        "同上；目录里对应 ripple.predict_spread",
+    ),
+    UngatedTool(
+        "backend.tools.ripple.client:ripple_validate_pmf",
+        READ_ONLY,
+        "同上；目录里对应 ripple.validate_pmf",
+    ),
+    UngatedTool(
+        "backend.tools.content.de_ai_taste:de_ai_taste",
+        SUPERSEDED,
+        "旧单入口；目录拆成 algorithmic_de_ai / polish_copy 两个能力",
+    ),
+    UngatedTool(
+        "backend.tools.content.layout:layout_recommender",
+        READ_ONLY,
+        "无导入者；纯本地推荐，无外部 I/O",
+    ),
+    UngatedTool(
+        "backend.tools.content.style:style_library",
+        READ_ONLY,
+        "无导入者；纯本地样式库",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class CatalogueAudit:
+    """Every tool in the tree, sorted into registered / declared / unknown."""
+
+    functions: tuple[str, ...]
+    """Every module-level function — the set a ``tool_ref`` may resolve to."""
+    decorated: tuple[str, ...]
+    """The ``@tool`` subset: what an agent could import as a callable."""
+    registered: tuple[str, ...]
+    declared: tuple[str, ...]
+    unclassified: tuple[str, ...]
+    """A ``@tool`` that is neither registered nor declared — the failure."""
+    stale: tuple[str, ...]
+    """Named by the catalogue or the table, but absent from the tree."""
+    platform_writes: tuple[str, ...]
+    """Unregistered tools that write to the platform (the §4.1 set)."""
+    unreadable: tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return not self.unclassified and not self.stale and not self.unreadable
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "functions": list(self.functions),
+            "decorated": list(self.decorated),
+            "registered": list(self.registered),
+            "declared": list(self.declared),
+            "unclassified": list(self.unclassified),
+            "stale": list(self.stale),
+            "platform_writes": list(self.platform_writes),
+            "unreadable": list(self.unreadable),
+        }
+
+
+def _module_ref(path: Path) -> str:
+    """``.../backend/tools/xhs/engagement.py`` → ``backend.tools.xhs.engagement``."""
+    parts = list(path.with_suffix("").parts)
+    if "backend" not in parts:
+        raise ValueError(f"{path}: not under a 'backend' package")
+    return ".".join(parts[parts.index("backend") :])
+
+
+def _scan_defs(root: Path | str, *, only_tool: bool) -> tuple[str, ...]:
+    """Every module-level-ish ``def`` under ``root``, optionally ``@tool`` only.
+
+    AST, for the reason the rest of this module is AST: importing the tree runs
+    module-level wiring, and a gate must never do that.
+    """
+    refs: list[str] = []
+    for path in sorted(Path(root).rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            # Surfaced by the caller as unreadable rather than skipped: a gate
+            # that reports "clean" over a file it could not parse is a lie.
+            raise
+        module = _module_ref(path)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not only_tool:
+                refs.append(f"{module}:{node.name}")
+                continue
+            for decorator in node.decorator_list:
+                target = decorator.func if isinstance(decorator, ast.Call) else decorator
+                name = getattr(target, "id", None) or getattr(target, "attr", None)
+                if name == "tool":
+                    refs.append(f"{module}:{node.name}")
+                    break
+    return tuple(sorted(set(refs)))
+
+
+def scan_function_refs(root: Path | str = TOOLS_ROOT) -> tuple[str, ...]:
+    """Every function a ``tool_ref`` could resolve to, as ``module:function``.
+
+    The catalogue does not only bind LangChain tools: ``content.algorithmic_de_ai``
+    and ``content.polish_copy`` are plain callables reached with ``PassStyle.KWARGS``.
+    Scanning ``@tool`` alone would call those two "stale" — a false alarm that
+    would have taught the next reader to ignore the gate.
+    """
+    return _scan_defs(root, only_tool=False)
+
+
+def scan_tool_functions(root: Path | str = TOOLS_ROOT) -> tuple[str, ...]:
+    """The ``@tool``-decorated subset — what an agent could import directly."""
+    return _scan_defs(root, only_tool=True)
+
+
+def scan_catalogue_refs(path: Path | str = CATALOGUE_PATH) -> tuple[str, ...]:
+    """The ``tool_ref("module:function")`` literals the catalogue declares.
+
+    Deliberately literal-driven: a capability registered some other way is not
+    invisible to the *runtime*, but it is invisible to *this* audit — and the
+    tool behind it then shows up as unclassified, which is the loud direction.
+    """
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    refs: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not (isinstance(node.func, ast.Name) and node.func.id == "tool_ref"):
+            continue
+        if node.args and isinstance(node.args[0], ast.Constant):
+            value = node.args[0].value
+            if isinstance(value, str):
+                refs.append(value)
+    return tuple(sorted(set(refs)))
+
+
+def audit_tool_catalogue(
+    tools_root: Path | str = TOOLS_ROOT,
+    catalogue_path: Path | str = CATALOGUE_PATH,
+    declared: Iterable[UngatedTool] = UNGATED_TOOLS,
+) -> CatalogueAudit:
+    """Sort every tool into registered / declared / unclassified.
+
+    ``unclassified`` fails the gate: a new ``@tool`` must be either reachable
+    through the Gateway or explicitly written down as one that is not, with
+    what it can do. ``stale`` fails too — a name in the catalogue or in the
+    table that no longer resolves describes a surface that has moved.
+
+    ``declared`` is a parameter (not a closed-over constant) so a temporary
+    tree can be audited without inheriting this repository's declarations —
+    the same reason ``audit_tool_runtime`` takes ``known_capabilities``.
+    """
+    try:
+        functions = scan_function_refs(tools_root)
+        decorated = scan_tool_functions(tools_root)
+    except (SyntaxError, UnicodeDecodeError) as exc:
+        return CatalogueAudit(
+            functions=(),
+            decorated=(),
+            registered=(),
+            declared=tuple(item.ref for item in declared),
+            unclassified=(),
+            stale=(),
+            platform_writes=(),
+            unreadable=(f"{tools_root}: {exc}",),
+        )
+
+    registered = scan_catalogue_refs(catalogue_path)
+    declared_refs = {item.ref for item in declared}
+    known = set(registered) | declared_refs
+    return CatalogueAudit(
+        functions=functions,
+        decorated=decorated,
+        registered=registered,
+        declared=tuple(sorted(declared_refs)),
+        unclassified=tuple(ref for ref in decorated if ref not in known),
+        stale=tuple(sorted(ref for ref in known if ref not in functions)),
+        platform_writes=tuple(sorted(item.ref for item in declared if item.kind == PLATFORM_WRITE)),
     )
