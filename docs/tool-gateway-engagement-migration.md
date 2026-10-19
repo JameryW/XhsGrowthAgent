@@ -209,30 +209,37 @@ ToolSpec(
 第一版草案写的是 `xhs:engagement:write` / `xhs:dm:write`，看起来更细，实测后撤回了。
 原因只有一个：**这个仓库里唯一的 scope 来源不能表达这种区分。**
 
-`backend/services/xhs_credentials.py:156-189`：
+`backend/services/xhs_credentials.py:223-230`：
 
 ```python
-@property
-def scopes(self) -> tuple[str, ...]:
-    scopes = []
-    if self.usable:                          # 有可用 cookie ⇒ 能读
-        scopes.append(XHS_READ_SCOPE)
-    if self.usable or self.profile_bound:    # cookie ∨ 账号已绑定 profile ⇒ 能写
-        scopes.append(XHS_WRITE_SCOPE)
-    return tuple(scopes)
+scopes: list[str] = []
+if self.usable:
+    scopes.append(XHS_READ_SCOPE)
+if self.usable or self.profile_bound:
+    scopes.append(XHS_WRITE_SCOPE)
+    if self.outreach.allows_proactive:
+        scopes.append(XHS_OUTREACH_SCOPE)
+return tuple(scopes)
 ```
 
-即 scope 是**机制**推导出来的：读只有一条路（HTTP client，身份就是 cookie），写有两条
-（走 HTTP 的评论/私信，或走 CDP 的账号自己的浏览器）。于是新造一个
+即 read / write 是**机制**推导出来的：读只有一条路（HTTP client，身份就是 cookie），
+写有两条（走 HTTP 的评论/私信，或走 CDP 的账号自己的浏览器）。纯机制推导时，新造一个
 `xhs:engagement:write` 只有两种结局：
 
 - 不扩 `XhsCredential.scopes` → 没有任何调用方持有它 → scope 检查**永远拒**（fail-closed，
   等于把能力静默关掉）；
 - 扩进去 → 任何有可用 cookie **或**已绑定 profile 的账号都持有它 → **零区分度**。
 
-两者都不是防线，所以不写。真正的"评论回复/私信 与 发布 不是同一档权限"需要一张
-**按账号的策略表**（谁被允许主动触达谁），那是一个独立的数据模型，不在本 spec 内 ——
-见开放问题 §9.5。现在诚实的声明就是"需要写权限"，别再叠一层看起来更安全的空壳。
+两者都不是防线。**票 5a 已经把缺的那张按账号的策略表补上了**（§9.5 第 5 条）：
+`XhsOutreachPolicy`（谁被允许主动触达、每日主动上限、是否只允许应答式）随
+`load_credential` 装进 `XhsCredential.outreach`，于是有了第三档
+`xhs:outreach` = **机制 ∧ 策略** —— 这正是"评论/私信 与 发布 不是同一档权限"的
+可表达形式。剩下没做的是把它挂到 capability 的 `auth_scope` 上：
+`xhs.dm_send` 的 spec 仍声明 `("xhs:write",)`，因为策略检查今天发生在服务层
+（`check_dm_target_allowed` + 入口的 `allows_engagement`），还没走到 Gateway 的
+scope 检查。**别把 `xhs:outreach` 声明进任何 capability**，直到 Gateway 侧真有
+调用方传 `granted_scopes` 并按它分支 —— 声明一个没人检查的 scope 就是 §9.5 第 6 条
+那个洞的原样复发。
 
 ### 3.2 为什么 `max_concurrency=1`
 
@@ -451,11 +458,21 @@ Phase B（在 A 之上追加）：
    下退化。CDP 锁已经是 PG advisory（跨进程），是否让账本/信号量也走 DB，取决于
    部署形态。
 4. **本轮是否允许 agent 触达？** 本文建议：不允许。§7.1 已经证明注册即触达。
-5. **要不要一张按账号的策略表？** §3.1 的结论是当前 scope 只能表达"这个账号
-   登录着 / 有自己绑定的浏览器"，表达不了"这个账号被允许主动私信谁"。真要做区分，需要
-   一个策略源（谁被允许触达、每账号每日上限、是否只允许应答式触达），并把
-   `XhsCredential.scopes` 从"机制推导"改成"机制 ∧ 策略"。这是一个独立的数据模型，
-   建议单开一票。
+5. **要不要一张按账号的策略表？** ~~§3.1 的结论是当前 scope 只能表达"这个账号
+   登录着 / 有自己绑定的浏览器"，表达不了"这个账号被允许主动私信谁"。~~ **已落地
+   （票 5a，2026-10-19）**：`XhsOutreachPolicy` 三模式（`nobody` / `inbound_only`
+   默认 / `confirmed_anyone`）+ `daily_proactive_cap`，解析优先级为
+   账号行（带策略键即终局）→ 部署 env（含遗留全局开关 `XHS_ALLOW_OUTBOUND_DM`，
+   映射为 `confirmed_anyone`）→ 安全默认（`inbound_only`, cap 0），**只朝限制方向
+   失败安全**（reader 抛异常/坏值/未知 mode 全部落到更严）。`XhsCredential.scopes`
+   已按"机制 ∧ 策略"出第三档 `xhs:outreach`（仅冷启动需要；应答式回复只吃
+   `xhs:write`）。门禁 `check_dm_target_allowed` 改为 policy 驱动（DI 传入），
+   旧的 `outbound_dm_allowed(account_id)`（签名撒谎：无视 account_id 读全局 env）
+   已删除。**诚实边界**：①per-account 的 `dm_daily_limit` / `comment_reply_daily_limit`
+   覆盖仍结构不可达（`set_cooldown_policy` 只写 7 个 cooldown 字段）—— 独立缺陷，
+   未在本票修；②`xhs:outreach` 尚未挂进任何 capability 的 `auth_scope`（见 §3.1
+   末段）；③策略表是进程内解析 + DB 读，没有管理界面/写路径，账号行策略需直接写
+   `account_credentials`。
 6. **scope 到底该接在哪一层？**（原写作"agent 发布路径要不要补 `granted_scopes`"，
    实测后问题变大了，见下。）
 

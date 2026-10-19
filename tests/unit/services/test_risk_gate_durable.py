@@ -10,11 +10,13 @@ import pytest
 from backend.db.risk_gates import reset_risk_gate_memory_for_tests
 from backend.services.xhs_risk_gate import (
     check_browser_action_allowed,
+    check_dm_target_allowed,
     check_publish_allowed,
     check_sync_auth_cooldown,
     export_risk_gate_state,
     hydrate_risk_gates,
     note_browser_action,
+    note_dm_sent,
     note_publish,
     note_sync_auth_failure,
     reset_gates_for_tests,
@@ -57,6 +59,36 @@ async def test_export_and_hydrate_roundtrip(monkeypatch):
     assert check_sync_auth_cooldown("acc-1") is not None
     snap = snapshot_risk_gates()
     assert snap["durable"] is True
+
+
+@pytest.mark.asyncio
+async def test_the_proactive_budget_survives_a_restart(monkeypatch):
+    """The outreach cap is only a budget if its spend is durable.
+
+    A counter that resets with the process would let one account spend the
+    same day's outreach budget once per deploy.
+    """
+    from backend.services.xhs_outreach_policy import (
+        OUTREACH_CONFIRMED,
+        XhsOutreachPolicy,
+    )
+
+    policy = XhsOutreachPolicy(account_id="acc-1", mode=OUTREACH_CONFIRMED, daily_proactive_cap=1)
+    note_dm_sent("acc-1", proactive=True)
+    exported = export_risk_gate_state()
+
+    reset_gates_for_tests()
+    # Fresh process: the budget looks unspent until the state is hydrated.
+    assert check_dm_target_allowed("acc-1", "cold", human_confirmed=True, policy=policy) is None
+
+    monkeypatch.setattr(
+        "backend.db.risk_gates.load_risk_gate_state",
+        AsyncMock(return_value=exported),
+    )
+    await hydrate_risk_gates()
+    block = check_dm_target_allowed("acc-1", "cold", human_confirmed=True, policy=policy)
+    assert block is not None
+    assert block.risk_code == "proactive_dm_daily_limit"
 
 
 @pytest.mark.asyncio

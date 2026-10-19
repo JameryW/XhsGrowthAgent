@@ -19,6 +19,11 @@ import pytest
 
 from backend.services.cdp_session_lock import CdpSessionBusyError
 from backend.services.xhs_engagement import EngagementRiskError, XHSEngagement
+from backend.services.xhs_outreach_policy import (
+    OUTREACH_CONFIRMED,
+    OUTREACH_NOBODY,
+    XhsOutreachPolicy,
+)
 
 GATE = "backend.services.xhs_risk_gate"
 SENT, BLOCKED, FAILED, UNKNOWN = "sent", "blocked", "failed", "unknown"
@@ -157,7 +162,10 @@ class TestDirectMessageVerdicts:
         page = _page(None, _element(), None)
         engagement = _engagement(page)
 
-        with patch(f"{GATE}.note_dm_sent", lambda *a: notes.append("sent")):
+        with patch(
+            f"{GATE}.note_dm_sent",
+            lambda *a, **k: notes.append({"args": a, "proactive": k.get("proactive")}),
+        ):
             result = await engagement.send_dm("user-9", "你好")
 
         assert result["status"] == FAILED
@@ -170,7 +178,10 @@ class TestDirectMessageVerdicts:
         notes: list[str] = []
         engagement = _engagement(page)
 
-        with patch(f"{GATE}.note_dm_sent", lambda *a: notes.append("sent")):
+        with patch(
+            f"{GATE}.note_dm_sent",
+            lambda *a, **k: notes.append({"args": a, "proactive": k.get("proactive")}),
+        ):
             result = await engagement.send_dm("user-9", "你好")
 
         assert result["status"] == SENT
@@ -178,7 +189,10 @@ class TestDirectMessageVerdicts:
         # No read-back exists yet, so the click must not be dressed as delivery.
         assert result["verified"] is False
         assert result["receipt_id"] == ""
-        assert notes == ["sent"]
+        # "user-9" is nobody's inbound peer here, so the send is cold outreach
+        # and the note must say so — otherwise the proactive budget counts
+        # replies and stops bounding cold sends.
+        assert notes == [{"args": ("acc-1",), "proactive": True}]
 
     async def test_a_cold_target_without_confirmation_never_reaches_the_browser(self):
         """§8 item 5: the gate is checked before any browser action, not after."""
@@ -196,6 +210,95 @@ class TestDirectMessageVerdicts:
         assert result["error_code"] == "dm_target_not_inbound"
         engagement._ensure_page.assert_not_awaited()
         page.goto.assert_not_awaited()
+
+
+class TestTheOutreachPolicyIsTheEntryRule:
+    """§9.5 wiring at the engagement layer: who may be touched at all."""
+
+    async def test_nobody_mode_blocks_a_comment_reply_before_any_browser_action(self):
+        """``nobody`` closes the reply path too — a reply still touches a person."""
+        engagement = _engagement(_page())
+        policy = XhsOutreachPolicy(account_id="acc-1", mode=OUTREACH_NOBODY)
+
+        with patch(
+            "backend.services.xhs_outreach_policy.load_outreach_policy",
+            AsyncMock(return_value=policy),
+        ):
+            result = await engagement.reply_to_comment("note-1", "comment-1", "谢谢")
+
+        assert result["status"] == BLOCKED
+        assert result["error_code"] == "outreach_suspended"
+        engagement._ensure_page.assert_not_awaited()
+
+    async def test_nobody_mode_blocks_a_dm_before_any_browser_action(self):
+        engagement = _engagement(_page())
+        policy = XhsOutreachPolicy(account_id="acc-1", mode=OUTREACH_NOBODY)
+
+        with patch(
+            "backend.services.xhs_outreach_policy.load_outreach_policy",
+            AsyncMock(return_value=policy),
+        ):
+            result = await engagement.send_dm("user-9", "你好")
+
+        assert result["status"] == BLOCKED
+        assert result["error_code"] == "outreach_suspended"
+        engagement._ensure_page.assert_not_awaited()
+
+    async def test_the_resolved_policy_is_what_the_target_gate_is_given(self):
+        """The gate must see the account's policy — not its own safe default.
+
+        If ``send_dm`` drops the argument, a ``confirmed_anyone`` account
+        silently degrades to ``inbound_only`` and cold outreach never opens.
+        """
+        seen: dict[str, Any] = {}
+        policy = XhsOutreachPolicy(
+            account_id="acc-1", mode=OUTREACH_CONFIRMED, daily_proactive_cap=7
+        )
+
+        def _record_gate(account_id: str, target: str, **kwargs: Any) -> None:
+            seen["account_id"] = account_id
+            seen["target"] = target
+            seen["policy"] = kwargs.get("policy")
+            seen["human_confirmed"] = kwargs.get("human_confirmed")
+            return None
+
+        # query_selector slots on a cold confirmed DM: 新建私信 / 搜索框 /
+        # 输入框 / 发送按钮.  The search slot is empty on purpose — this test
+        # pins the gate wiring, not the search flow.
+        page = _page(None, None, _element(), _element())
+        engagement = _engagement(page)
+
+        with (
+            patch(
+                "backend.services.xhs_outreach_policy.load_outreach_policy",
+                AsyncMock(return_value=policy),
+            ),
+            patch(f"{GATE}.check_dm_target_allowed", _record_gate),
+            patch(f"{GATE}.note_dm_sent", lambda *a, **k: None),
+        ):
+            result = await engagement.send_dm("cold-user", "你好", human_confirmed=True)
+
+        assert result["status"] == SENT
+        assert seen["policy"] is policy
+        assert seen["human_confirmed"] is True
+
+    async def test_a_reply_to_an_inbound_peer_never_spends_the_outreach_budget(self):
+        """The note's ``proactive`` flag follows the inbound whitelist, not the caller."""
+        notes: list[dict[str, Any]] = []
+        page = _page(None, _element(), _element())
+        engagement = _engagement(page)
+
+        with (
+            patch(f"{GATE}.is_inbound_peer", lambda *a, **k: True),
+            patch(
+                f"{GATE}.note_dm_sent",
+                lambda *a, **k: notes.append({"proactive": k.get("proactive")}),
+            ),
+        ):
+            result = await engagement.send_dm("friend", "你好")
+
+        assert result["status"] == SENT
+        assert notes == [{"proactive": False}]
 
 
 class TestRetryabilityIsDerivedOnce:

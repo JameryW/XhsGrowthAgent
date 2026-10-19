@@ -339,13 +339,28 @@ class XHSEngagement:
         comment_id: str,
         reply_content: str,
     ) -> dict[str, Any]:
-        """回复评论；遇到登录/风控页面后立即停止且不重试。"""
+        """回复评论；遇到登录/风控页面后立即停止且不重试。
+
+        ``nobody`` mode closes even this: answering a comment still touches a
+        person, and a policy that says "touch nobody" means it (§9.5).
+        """
         from backend.services.cdp_session_lock import CdpSessionBusyError
+        from backend.services.xhs_outreach_policy import load_outreach_policy
 
         correlation_id = self._correlation_id("comment_reply")
         blocked = self._precheck_engagement(kind="comment_reply", correlation_id=correlation_id)
         if blocked is not None:
             return blocked
+        policy = await load_outreach_policy(self.account_id)
+        if not policy.allows_engagement:
+            return self._blocked_result(
+                "outreach_suspended",
+                (
+                    "该账号触达策略为 nobody（不触达任何人，含应答式回复）。"
+                    "如需恢复，请为该账号调整触达策略。"
+                ),
+                correlation_id=correlation_id,
+            )
 
         try:
             async with await self._hold_cdp(), self._guard.lock:
@@ -482,13 +497,17 @@ class XHSEngagement:
     ) -> dict[str, Any]:
         """发送私信；遇到登录/风控页面后立即停止且不重试。
 
-        Cold-start (新建私信) is blocked unless the target is in the
-        unread/inbound peer cache, or outbound DM is explicitly enabled and
-        this call carries ``human_confirmed=True``.
+        Cold-start (新建私信) is the account's *policy* question (§9.5), not a
+        global switch: the resolved policy is loaded here, refuses outright
+        when it allows nobody, and is handed to the target gate so the budget
+        and the "who" answer come from the same table.  A target in the
+        unread/inbound peer cache is a reply and passes either way.
         """
         from backend.services.cdp_session_lock import CdpSessionBusyError
+        from backend.services.xhs_outreach_policy import load_outreach_policy
         from backend.services.xhs_risk_gate import (
             check_dm_target_allowed,
+            is_inbound_peer,
             note_dm_sent,
             note_engagement_risk_pause,
         )
@@ -497,15 +516,29 @@ class XHSEngagement:
         blocked = self._precheck_engagement(kind="dm", correlation_id=correlation_id)
         if blocked is not None:
             return blocked
+        policy = await load_outreach_policy(self.account_id)
+        if not policy.allows_engagement:
+            return self._blocked_result(
+                "outreach_suspended",
+                (
+                    "该账号触达策略为 nobody（不触达任何人，含应答式私信）。"
+                    "如需恢复，请为该账号调整触达策略。"
+                ),
+                correlation_id=correlation_id,
+            )
         target_block = check_dm_target_allowed(
             self.account_id,
             target_user_id,
             human_confirmed=human_confirmed,
+            policy=policy,
         )
         if target_block is not None:
             return self._blocked_result(
                 target_block.risk_code, target_block.message, correlation_id=correlation_id
             )
+        # A reply to someone who wrote first never spends the outreach budget;
+        # anything the target gate let through as cold outreach does.
+        proactive = not is_inbound_peer(self.account_id, target_user_id)
 
         try:
             async with await self._hold_cdp(), self._guard.lock:
@@ -518,7 +551,7 @@ class XHSEngagement:
             # Same rule as the comment path: a *possible* send counts against
             # the daily ceiling, because it cannot be taken back.
             if result.get("status") in _QUOTA_STATUSES:
-                note_dm_sent(self.account_id)
+                note_dm_sent(self.account_id, proactive=proactive)
             elif result.get("error_code") == "risk_control":
                 note_engagement_risk_pause(self.account_id, reason="risk_control")
             return result

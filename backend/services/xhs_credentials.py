@@ -24,6 +24,14 @@ refuse publishes the deployment can actually perform — the state
 ``.env.example`` describes — so the credential carries one more fact, whether a
 browser profile is bound to the account (or, for a blank account id, declared by
 the deployment), and the write scope is granted on either mechanism.
+
+And one tier is **mechanism ∧ policy** (§9.5): proactive outreach needs the
+write mechanism *and* the account's own permission to reach out, which comes
+from :mod:`backend.services.xhs_outreach_policy`.  Two accounts with identical
+logins can be allowed different things there — the question "may this account
+proactively DM anyone" was never one a credential could answer.  The policy
+rides the same :class:`XhsCredential` so the two readers — scopes to the
+Gateway, cookie to the client — cannot disagree about it either.
 :attr:`XhsCredential.scopes` states the rule.
 
 Where the credential comes from, in the order it is consulted:
@@ -60,7 +68,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from backend.services.xhs_outreach_policy import (
+    OutreachReader,
+    XhsOutreachPolicy,
+    load_outreach_policy,
+)
 
 logger = logging.getLogger("xhs_growth.services.xhs_credentials")
 
@@ -70,6 +84,7 @@ __all__ = [
     "SOURCE_ENVIRONMENT",
     "USER_ID_KEY",
     "XHS_CREDENTIAL_KEYS",
+    "XHS_OUTREACH_SCOPE",
     "XHS_READ_SCOPE",
     "XHS_WRITE_SCOPE",
     "CredentialReader",
@@ -86,6 +101,13 @@ __all__ = [
 # rename on either side cannot drift.
 XHS_READ_SCOPE = "xhs:read"
 XHS_WRITE_SCOPE = "xhs:write"
+#: The proactive tier.  Derived from **mechanism ∧ policy** — the only entry in
+#: the vocabulary that a policy can withhold from an account whose mechanism is
+#: perfect, because "logged in" was never the question it answers.  No catalog
+#: capability declares it yet (engagement tools stay unregistered while
+#: §9.4 says agents must not reach out); ``test_xhs_credentials`` pins that
+#: deliberate absence so registration forces the decision.
+XHS_OUTREACH_SCOPE = "xhs:outreach"
 
 COOKIE_KEY = "XHS_COOKIE"
 USER_ID_KEY = "XHS_USER_ID"
@@ -137,6 +159,11 @@ class XhsCredential:
     # "the URL is non-empty, so the browser is up", which is the confusion
     # :attr:`scopes` exists to avoid.
     profile_bound: bool = False
+    # The third entitlement input, and the only one that is not a mechanism:
+    # policy says *whether this account may reach out*, which no amount of
+    # logged-in-ness implies.  Resolved by ``load_credential`` alongside the
+    # rest so the two readers of this object cannot disagree about it.
+    outreach: XhsOutreachPolicy = field(default_factory=XhsOutreachPolicy)
 
     @property
     def usable(self) -> bool:
@@ -158,7 +185,10 @@ class XhsCredential:
     def scopes(self) -> tuple[str, ...]:
         """What this credential entitles its holder to.
 
-        Two capabilities, two mechanisms, so two questions:
+        Two capabilities, two mechanisms, and then one tier that is **mechanism
+        ∧ policy** — the table stopped being derivable from mechanism alone
+        when "this account may proactively reach out" became a question, which
+        the catalog cannot answer and a login cannot imply (§9.5):
 
         * ``xhs:read`` needs the cookie.  Every read capability builds an
           ``XHSClient`` whose identity *is* that cookie; without one there is no
@@ -167,6 +197,11 @@ class XhsCredential:
           ``XHSPublisher(cookie="")`` and drives the account's own browser over
           CDP, so a bound profile is sufficient there; the comment/DM path still
           posts over HTTP and is covered by the cookie.
+        * ``xhs:outreach`` needs the write mechanism **and**
+          :attr:`outreach`'s permission.  Two accounts with identical logins
+          can be allowed different things here, and a reply-only account — the
+          default — does not lose ``xhs:write`` for it: answering someone who
+          wrote first is not outreach.
 
         The profile half is **binding, not reachability**.  ``profile_bound``
         records that the account has a CDP port bound to it; it never records
@@ -181,13 +216,17 @@ class XhsCredential:
         the bound profile is this account's own browser (or, when no account was
         named, the one the deployment declared), so a publish through it acts as
         the identity the caller named, which is what the grant is about.  It
-        lends nobody a read.
+        lends nobody a read — and policy never lends a mechanism: an account
+        allowed outreach without a login still gets no scope, because there is
+        nobody to reach out *as*.
         """
         scopes: list[str] = []
         if self.usable:
             scopes.append(XHS_READ_SCOPE)
         if self.usable or self.profile_bound:
             scopes.append(XHS_WRITE_SCOPE)
+            if self.outreach.allows_proactive:
+                scopes.append(XHS_OUTREACH_SCOPE)
         return tuple(scopes)
 
 
@@ -280,6 +319,7 @@ def _credential(
     source: str,
     *,
     profile_bound: bool = False,
+    outreach: XhsOutreachPolicy | None = None,
 ) -> XhsCredential:
     return XhsCredential(
         account_id=account_id,
@@ -287,6 +327,7 @@ def _credential(
         user_id=str(values.get(USER_ID_KEY) or "").strip(),
         source=source,
         profile_bound=profile_bound,
+        outreach=outreach or XhsOutreachPolicy(account_id=account_id),
     )
 
 
@@ -307,6 +348,7 @@ async def load_credential(
     *,
     reader: CredentialReader | None = None,
     profile_reader: ProfileReader | None = None,
+    outreach_reader: OutreachReader | None = None,
 ) -> XhsCredential:
     """Resolve one account's credential, or the honest absence of one.
 
@@ -320,9 +362,17 @@ async def load_credential(
     does not skip it: with no account to look up, the answer is the deployment's
     own declaration (``XHS_CDP_ENDPOINT``) — the same "a blank id means the
     deployment" rule the cookie source already follows.
+
+    The outreach policy rides the same answer for the same reason the scopes
+    do: ``granted_scopes`` and the executor must not disagree about whether
+    this account may reach out.  It has its own source and its own precedence
+    (see :mod:`backend.services.xhs_outreach_policy`) and never raises — a
+    policy read that fails lands on the safe default, which withholds rather
+    than grants.
     """
     account = (account_id or "").strip()
     profile_bound = await _bound_profile(account, profile_reader)
+    outreach = await load_outreach_policy(account, reader=outreach_reader)
     if account:
         try:
             stored = await (reader or _read_stored)(account)
@@ -333,19 +383,26 @@ async def load_credential(
                 type(exc).__name__,
                 exc,
             )
-            return XhsCredential(account_id=account, profile_bound=profile_bound)
+            return XhsCredential(account_id=account, profile_bound=profile_bound, outreach=outreach)
         if stored:
-            return _credential(account, stored, SOURCE_ACCOUNT, profile_bound=profile_bound)
+            return _credential(
+                account,
+                stored,
+                SOURCE_ACCOUNT,
+                profile_bound=profile_bound,
+                outreach=outreach,
+            )
     try:
         deployment = await _read_deployment()
     except Exception as exc:  # a missing deployment credential is simply absent
         logger.warning("deployment credential read failed: err=%s: %s", type(exc).__name__, exc)
-        return XhsCredential(account_id=account, profile_bound=profile_bound)
+        return XhsCredential(account_id=account, profile_bound=profile_bound, outreach=outreach)
     return _credential(
         account,
         deployment,
         SOURCE_ENVIRONMENT if _carries(deployment) else "",
         profile_bound=profile_bound,
+        outreach=outreach,
     )
 
 
@@ -354,11 +411,13 @@ async def granted_scopes(
     *,
     reader: CredentialReader | None = None,
     profile_reader: ProfileReader | None = None,
+    outreach_reader: OutreachReader | None = None,
 ) -> tuple[str, ...]:
     """The scopes this account holds — the credential answer, as a grant."""
     credential = await load_credential(
         account_id,
         reader=reader,
         profile_reader=profile_reader,
+        outreach_reader=outreach_reader,
     )
     return credential.scopes

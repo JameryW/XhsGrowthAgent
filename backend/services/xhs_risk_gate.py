@@ -17,6 +17,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
+from backend.services.xhs_outreach_policy import XhsOutreachPolicy
+
 logger = logging.getLogger("xhs_growth.risk_gate")
 
 
@@ -347,15 +349,6 @@ def comment_reply_daily_limit(account_id: str = "") -> int:
         return 50
 
 
-def outbound_dm_allowed(account_id: str = "") -> bool:
-    """Cold-start / 新建私信 requires explicit opt-in."""
-    return os.environ.get("XHS_ALLOW_OUTBOUND_DM", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-
-
 def _utc_day_key() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d")
 
@@ -517,7 +510,7 @@ def get_account_health(account_id: str = "") -> dict[str, Any]:
 def _daily_counts(account_id: str) -> dict[str, int]:
     day = _utc_day_key()
     by_day = _engagement_daily_counts.setdefault(account_id, {})
-    return by_day.setdefault(day, {"dm": 0, "comment_reply": 0})
+    return by_day.setdefault(day, {"dm": 0, "comment_reply": 0, "proactive_dm": 0})
 
 
 def check_dm_quota(account_id: str = "") -> GateBlock | None:
@@ -566,12 +559,20 @@ def check_comment_reply_quota(account_id: str = "") -> GateBlock | None:
     )
 
 
-def note_dm_sent(account_id: str) -> None:
+def note_dm_sent(account_id: str, *, proactive: bool = False) -> None:
+    """Count one DM against the day.
+
+    ``proactive`` splits the budget: a message to somebody who wrote first
+    (the inbound whitelist) is a reply and never spends the outreach cap —
+    the same line the policy model draws (§9.5's "是否只允许应答式触达").
+    """
     account_id = (account_id or "").strip()
     if not account_id:
         return
     counts = _daily_counts(account_id)
     counts["dm"] = int(counts.get("dm", 0)) + 1
+    if proactive:
+        counts["proactive_dm"] = int(counts.get("proactive_dm", 0)) + 1
     _schedule_persist()
 
 
@@ -589,10 +590,26 @@ def check_dm_target_allowed(
     target_user_id: str,
     *,
     human_confirmed: bool = False,
+    policy: XhsOutreachPolicy | None = None,
 ) -> GateBlock | None:
-    """DM only to inbound/unread peers unless outbound + per-message confirm."""
+    """DM only to inbound peers unless *this account's policy* opens cold outreach.
+
+    The policy argument is the answer to "is outbound allowed here" — which is
+    what the deleted ``outbound_dm_allowed`` pretended to answer from a global
+    environment switch while its signature took an ``account_id`` it never
+    looked at.  Passing ``None`` is the safe default (``inbound_only``): a
+    caller that has not resolved a policy reaches nobody new.
+
+    Four refusals, in order, each naming its own fact: the policy touches
+    nobody at all (``nobody`` mode — replies included), the target is not
+    someone who wrote first, the account may start conversations but no human
+    confirmed *this* one, or the account's proactive budget for the UTC day is
+    spent.  Replies (inbound peers) answer none of the last three and pass —
+    but only while the account is allowed to touch anybody in the first place.
+    """
     account_id = (account_id or "").strip()
     target_user_id = str(target_user_id or "").strip()
+    effective = policy if policy is not None else XhsOutreachPolicy(account_id=account_id)
     if not target_user_id:
         return GateBlock(
             reason="dm_target_missing",
@@ -600,19 +617,48 @@ def check_dm_target_allowed(
             message="私信目标用户为空。",
             retry_after_seconds=0,
         )
+    if not effective.allows_engagement:
+        return GateBlock(
+            reason="outreach_suspended",
+            risk_code="outreach_suspended",
+            message=(
+                "该账号触达策略为 nobody（不触达任何人，含应答式私信）。"
+                "如需恢复，请为该账号调整触达策略。"
+            ),
+            retry_after_seconds=0,
+        )
     if is_inbound_peer(account_id, target_user_id):
         return None
-    if outbound_dm_allowed() and human_confirmed:
-        return None
-    return GateBlock(
-        reason="dm_target_not_inbound",
-        risk_code="dm_target_not_inbound",
-        message=(
-            "默认禁止新建私信冷启动：目标不在未读/入站白名单。"
-            "开启 XHS_ALLOW_OUTBOUND_DM 并逐条人工确认后才可外发。"
-        ),
-        retry_after_seconds=0,
-    )
+    if not effective.allows_proactive:
+        return GateBlock(
+            reason="dm_target_not_inbound",
+            risk_code="dm_target_not_inbound",
+            message=(
+                "默认禁止新建私信冷启动：目标不在未读/入站白名单。"
+                "该账号的触达策略不允许主动触达（mode="
+                f"{effective.mode}，每日主动上限 {effective.daily_proactive_cap}）；"
+                "如需外发，请为该账号开启 confirmed_anyone 并逐条人工确认。"
+            ),
+            retry_after_seconds=0,
+        )
+    if not human_confirmed:
+        return GateBlock(
+            reason="dm_unconfirmed",
+            risk_code="dm_unconfirmed",
+            message="主动触达需逐条人工确认（human_confirmed=True）。",
+            retry_after_seconds=0,
+        )
+    used = int(_daily_counts(account_id).get("proactive_dm", 0))
+    if used >= effective.daily_proactive_cap:
+        return GateBlock(
+            reason="proactive_dm_daily_limit",
+            risk_code="proactive_dm_daily_limit",
+            message=(
+                f"主动触达日配额已用尽（{used}/{effective.daily_proactive_cap}），请明日再试。"
+            ),
+            retry_after_seconds=86400,
+        )
+    return None
 
 
 def _now() -> float:
@@ -1400,6 +1446,7 @@ async def hydrate_risk_gates() -> None:
             day_map[str(day)] = {
                 "dm": int(counts.get("dm") or 0),
                 "comment_reply": int(counts.get("comment_reply") or 0),
+                "proactive_dm": int(counts.get("proactive_dm") or 0),
             }
         if day_map:
             _engagement_daily_counts[str(aid)] = day_map
@@ -1500,7 +1547,6 @@ __all__ = [
     "note_qr_attempt",
     "note_qr_risk_block",
     "note_sync_auth_failure",
-    "outbound_dm_allowed",
     "persist_risk_gates",
     "publish_cooldown_seconds",
     "qr_cooldown_seconds",
