@@ -415,58 +415,58 @@ class XHSClient:
             return []
 
     async def get_comments(self, post_id: str, limit: int = 20) -> list[XHSComment]:
-        """获取帖子评论 (HTTP API)"""
+        """获取帖子评论 (HTTP API)
+
+        A failure **raises**. It used to be caught here and answered with
+        ``[]``, which is the same value as "this post has no comments" — and the
+        one caller (``fetch_pending_comments``, a human moderation tool) read
+        that as "nothing left to review". A moderator looking at an empty queue
+        concludes the work is done; the comments are simply unread.
+
+        The remaining ``[]`` above is a different fact and stays: a missing
+        cookie is knowable *before* the call, and ``can_read`` /
+        ``require_readable`` are how a caller that must not confuse it asks.
+        Callers that accept the ambiguity may keep using this method bare.
+
+        Raises:
+            ScrapeBudgetExhaustedError: 抓取预算用尽（不是"没有评论"）。
+            XHSSignatureUnavailableError: 签名不可用。
+            Exception: 平台层原样上抛，归一化只在 Tool Gateway。
+        """
         if not self._http:
             return []
 
         logger.info(f"Fetching comments for post: {post_id}")
 
-        from backend.services.scrape_budget import (
-            ScrapeBudgetExhaustedError,
-            check_budget,
-            record_success,
-        )
+        from backend.services.scrape_budget import check_budget, record_success
 
-        try:
-            cached = check_budget(self.account_id, "comments")
-            if cached is not None:
-                comments_data = cached
-            else:
-                comments_data = await self._http.get_comments(note_id=post_id)
-                comments_data = record_success(
-                    self.account_id, "comments", list(comments_data or [])
+        cached = check_budget(self.account_id, "comments")
+        if cached is not None:
+            comments_data = cached
+        else:
+            comments_data = await self._http.get_comments(note_id=post_id)
+            comments_data = record_success(self.account_id, "comments", list(comments_data or []))
+
+        comments = []
+        for item in comments_data[:limit]:
+            user = item.get("user") if isinstance(item.get("user"), dict) else {}
+            target = (
+                item.get("target_comment") if isinstance(item.get("target_comment"), dict) else {}
+            )
+            comments.append(
+                XHSComment(
+                    comment_id=item.get("id", item.get("comment_id", "")),
+                    post_id=post_id,
+                    user_name=user.get("nickname", item.get("user_name", "")),
+                    user_id=user.get("user_id", item.get("user_id", "")),
+                    content=item.get("content", ""),
+                    like_count=item.get("like_count", 0),
+                    created_at=item.get("create_time", item.get("created_at", "")),
+                    is_reply=target.get("id", item.get("is_reply", "")),
                 )
+            )
 
-            comments = []
-            for item in comments_data[:limit]:
-                user = item.get("user") if isinstance(item.get("user"), dict) else {}
-                target = (
-                    item.get("target_comment")
-                    if isinstance(item.get("target_comment"), dict)
-                    else {}
-                )
-                comments.append(
-                    XHSComment(
-                        comment_id=item.get("id", item.get("comment_id", "")),
-                        post_id=post_id,
-                        user_name=user.get("nickname", item.get("user_name", "")),
-                        user_id=user.get("user_id", item.get("user_id", "")),
-                        content=item.get("content", ""),
-                        like_count=item.get("like_count", 0),
-                        created_at=item.get("create_time", item.get("created_at", "")),
-                        is_reply=target.get("id", item.get("is_reply", "")),
-                    )
-                )
-
-            return comments
-
-        except ScrapeBudgetExhaustedError:
-            raise
-        except XHSSignatureUnavailableError:
-            raise
-        except Exception as e:
-            logger.error(f"获取评论失败: {type(e).__name__}: {e}")
-            return []
+        return comments
 
     async def get_post_analytics(self, post_id: str) -> XHSAnalytics:
         """获取帖子数据分析"""

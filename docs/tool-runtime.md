@@ -64,6 +64,14 @@ sink。所以目的地存在 `ContextVar` 里（`bridge.tracing_to`），而不�
 为什么"超时"与"工具说了不行"不能靠读 error 字符串区分：调用点要对前者重试/降级、
 对后者直接换路线，而字符串匹配在第一次文案变动时就悄悄失效了。
 
+**同一条规则的另一半：失败也不能变成数据。** `except Exception: return []`（或
+`return {"heat_score": 50}`）交回的是作者写下的字面量，不是对那个问题的回答 ——
+handler 是因为调用失败才进的。这类兜底被 AST 扫成两张可数的表
+（`scan_silent_fallbacks`，钉在 `tests/unit/tools/runtime/test_silent_fallbacks.py`）：
+`@tool` 那一张今天只剩 `ripple_cancel_simulation`，它的字面量**自己写着**
+`status: "error"`；服务层那一张还剩 5 处，逐条写了"谁在读它、为什么不一起改"。
+空列表因此只有一种含义：读到了，确实没有。
+
 ### 权限检查是 opt-in：`scopes` 字段
 
 `granted_scopes=None` 读作 **unchecked**，不是 denied（`gateway.py` 的

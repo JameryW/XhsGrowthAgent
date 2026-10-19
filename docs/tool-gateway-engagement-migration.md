@@ -100,10 +100,10 @@ Gateway 只能看到"一次成功返回的调用，值是 `success: False`"（`o
 | 位置 | 形状 | 是否同一类问题 |
 |---|---|---|
 | ~~`backend/tools/xhs/engagement.py`~~ | 返回业务字典，丢弃 `status`/`error_code` | **已修（Phase A）** |
-| `backend/tools/xhs/engagement.py:261` | `fetch_pending_comments` 异常返回 `[]` | 半同类：只读，但"读失败"与"没有评论"同形，留给后续 |
+| ~~`backend/tools/xhs/engagement.py:261`~~ | `fetch_pending_comments` 异常返回 `[]` | **已修（2026-10-19）**。比"异常信息不好看"严重得多：那一步在无 cookie 时**根本不抛异常**（`get_comments` 见 `_http is None` 直接 `return []`），所以这个审核队列工具**恒定**回答"没有待办"，而评论一条都没读过。现在守卫在 `try` 内、读失败即抛，`[]` 只表示"读到了，确实没有"。守护：`TestTheModerationQueueRefusesToSayEmpty` |
 | `backend/tools/ripple/integration.py:178-180` | `return {"error": str(e)}` | 是同一形状（S3c 修过它的孪生），但只读、无副作用 |
-| `backend/tools/analysis/topic_scorer.py:176-180` | 返回基础评分兜底 | 不是：显式降级，产出的是真值 |
-| `backend/tools/content/de_ai_taste.py:222-224` | 回退到算法路径 | 不是：同上 |
+| ~~`backend/tools/analysis/topic_scorer.py`~~ | 返回基础评分兜底 | **已修（2026-10-19）**，并且**本行原先的判断是错的**：它把这处写成"显式降级，产出的是真值"。`heat_score=50` / `potential_score=25.0` 是 `except` 分支里的两个常量，没有任何标定，strategist 把它当平台数据写进了 prompt |
+| `backend/tools/content/de_ai_taste.py:222-224` | 回退到算法路径 | 不是：改名回退，产出仍由算法算出 |
 | `backend/tools/xhs/analytics.py:105-107` / `:122-124` | `except: pass` | 不是同一类：静默忽略可选数据，不影响返回值真假 |
 
 ### 1.4 顺带：`message_id` 不是身份，是时钟
@@ -123,11 +123,25 @@ Gateway 只能看到"一次成功返回的调用，值是 `success: False`"（`o
 
 | 位置 | 形状 | 为什么这次没动 |
 |---|---|---|
-| `backend/services/xhs_client.py:694` | 拉取私信时逐条套 `message_id=f"dm_{int(time.time())}"` | 同一秒内所有消息拿到**同一个 id**；但这两个方法（`get_direct_messages` / `respond_to_comment`）在本仓**没有任何调用者**，属于死路径，改它无法被真实流量验证 |
-| `backend/services/xhs_client.py:715` | `send_dm` 把判决压成 `bool` | 同上：死路径 |
-| `backend/tools/xhs/engagement.py:261` | 读失败返回 `[]` | 只读，且不是本次迁移的两个能力 |
+| `backend/services/xhs_client.py:694` | 拉取私信时逐条套 `message_id=f"dm_{int(time.time())}"` | 同一秒内所有消息拿到**同一个 id**；但这些方法在本仓**没有任何调用者**（`get_direct_messages`；同形的还有 `reply_to_comment` / `send_dm` 两个把判决压成 `bool` 的包装），属于死路径，改它无法被真实流量验证 |
+| `backend/services/xhs_client.py:715` | `send_dm` 把判决压成 `bool` | 同上：死路径。（真正被用的是 `XHSEngagement.send_dm`，返回完整判决 —— 两者是不同类的同名方法） |
+| ~~`backend/tools/xhs/engagement.py:261`~~ | 读失败返回 `[]` | **已修（2026-10-19）**，见 §1.3 上方的表。同一个修复还去掉了它底下那层 `XHSClient.get_comments` 的同类兜底，否则只修工具是装饰 |
 
 这些留给"清死代码"或 Phase B 一并处理，不在 Phase A 里假装已经清完。
+
+**服务层剩下的 5 处同类兜底已改成可数的账**，不再靠人记：
+`tests/unit/tools/runtime/test_silent_fallbacks.py` 用 AST 扫 `@tool` 与
+`XHSClient` 的每个方法，把"`except` 里 return 字面量"的位置钉成两张表。删一处、
+加一处都会让那条测试变红。判据是**字面量**而不是"有没有 except"：handler 是
+因为调用失败才进的，它交回的值不可能是对那个问题的回答。
+
+**5 处的性质不一样，别混**：`get_trending`（读取前的前提已由 `require_readable`
+关上，失败那一半没关）与 `search_posts`（4 个调用方各自的降级需求不同）是真债；
+`search_users` / `get_user_info` / `get_user_notes` 是 2026-06「热门博主参考」
+留下的功能面，**没有生产调用方但被测试钉住** —— `test_*_error_returns_empty`
+三条测试**断言**了"出错返回空"，所以改它们要连那三条契约一起改。这是一次
+可以单独拍板的决定，不是"没人验证所以不动"。（本节初稿写成了"死路径、无法
+验证"，是错的，已改正。）
 
 ---
 

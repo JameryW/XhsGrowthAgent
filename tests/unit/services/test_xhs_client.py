@@ -219,6 +219,34 @@ class TestXHSClient:
         assert result[0].content == "Nice!"
 
     @pytest.mark.asyncio
+    async def test_get_comments_propagates_a_failure(self, client):
+        """A failed read must not come back as ``[]``.
+
+        ``[]`` is also the correct answer to "this post has no comments", so
+        catching here made the two indistinguishable *after* the call — and the
+        one consumer is a human moderation queue, where "empty" reads as "the
+        work is done". The missing-cookie case is still ``[]`` on purpose: that
+        one is knowable before the call, via ``can_read`` / ``require_readable``.
+        """
+        with (
+            patch.object(
+                client._http,
+                "get_comments",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("platform 500"),
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await client.get_comments("post_123")
+
+    @pytest.mark.asyncio
+    async def test_get_comments_without_a_cookie_is_still_empty(self, client):
+        """The precondition keeps its documented answer; the failure does not."""
+        client._http = None
+
+        assert await client.get_comments("post_123") == []
+
+    @pytest.mark.asyncio
     async def test_auth_error_on_invalid_cookie(self, client):
         """Auth error when cookie invalid."""
         with patch.object(
