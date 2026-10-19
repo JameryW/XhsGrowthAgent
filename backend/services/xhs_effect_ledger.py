@@ -30,7 +30,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Protocol
 
 from backend.db import engagement_effects as store
 from backend.db.engagement_effects import EffectRow
@@ -227,11 +227,38 @@ def state_for_engagement_verdict(
     return EffectState.UNKNOWN
 
 
+class _EffectStore(Protocol):
+    """账本存储的形状（``backend.db.engagement_effects`` 及测试替身）。"""
+
+    async def insert_or_get(self, row: EffectRow) -> tuple[EffectRow, bool]: ...
+
+    async def cas_update(
+        self,
+        account_id: str,
+        idempotency_key: str,
+        *,
+        expected_state: str,
+        new_state: str,
+        receipt_id: str = "",
+        receipt_source: str = "none",
+        thread_id: str | None = None,
+        approved_by: str | None = None,
+        approved_at: str | None = None,
+        updated_at: str,
+    ) -> EffectRow | None: ...
+
+    async def get_effect(self, account_id: str, idempotency_key: str) -> EffectRow | None: ...
+
+    async def list_effects(self, account_id: str) -> list[EffectRow]: ...
+
+
 class EngagementEffectLedger:
     """claim / 判决 / 读回三段 API。方法即 §5 的三段生命周期。"""
 
-    def __init__(self, effects: Any = store) -> None:
-        self._effects = effects
+    def __init__(self, effects: _EffectStore | None = None) -> None:
+        # 默认走 DB 适配层（无池时是内存回退）；typed store 而不是 Any ——
+        # Any 会让每个 return 点都变成 no-any-return。
+        self._effects: _EffectStore = store if effects is None else effects
 
     # -- claim（提交前）--------------------------------------------------
 

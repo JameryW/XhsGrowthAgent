@@ -178,10 +178,12 @@ async def insert_or_get(row: EffectRow) -> tuple[EffectRow, bool]:
             _row_params(row),
         )
         inserted = await cur.fetchone()
-        stored = await _select_row(cur, row.account_id, row.idempotency_key)
-        if stored is None:
-            raise RuntimeError("effect insert did not return a durable row")
-    return replace(stored), inserted is not None
+        # PG 路径用独立变量名：本函数前面的内存分支已把 stored 收窄成 EffectRow，
+        # 同名复用 _select_row 的 `EffectRow | None` 会让类型合并丢失窄化。
+        persisted = await _select_row(cur, row.account_id, row.idempotency_key)
+    if persisted is None:
+        raise RuntimeError("effect insert did not return a durable row")
+    return replace(persisted), inserted is not None
 
 
 async def cas_update(
