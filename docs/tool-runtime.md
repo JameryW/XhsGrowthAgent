@@ -69,7 +69,8 @@ sink。所以目的地存在 `ContextVar` 里（`bridge.tracing_to`），而不�
 handler 是因为调用失败才进的。这类兜底被 AST 扫成两张可数的表
 （`scan_silent_fallbacks`，钉在 `tests/unit/tools/runtime/test_silent_fallbacks.py`）：
 `@tool` 那一张今天只剩 `ripple_cancel_simulation`，它的字面量**自己写着**
-`status: "error"`；服务层那一张还剩 5 处，逐条写了"谁在读它、为什么不一起改"。
+`status: "error"`；服务层那一张**已清零**（2026-10-19，原 5 处：`get_trending` /
+`search_posts` / 三个博主方法）。空表不是"没查"，是查完之后的结论，仍然逐次复算。
 空列表因此只有一种含义：读到了，确实没有。
 
 ### 权限检查是 opt-in：`scopes` 字段

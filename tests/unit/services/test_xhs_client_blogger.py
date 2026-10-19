@@ -205,37 +205,85 @@ class TestXHSClientBlogger:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_search_users_error_returns_empty(self, client):
-        """search_users returns empty list on API error."""
+    async def test_search_users_error_propagates(self, client):
+        """An API failure is not "this keyword has no bloggers".
+
+        This test and its two siblings used to assert the opposite
+        (``*_error_returns_empty``). They were right about what the code did and
+        wrong about what it should do: the swallow made a failed lookup
+        indistinguishable from an empty one, which is the one answer a caller
+        cannot act on. The contract moved here deliberately — pinning a
+        behaviour and changing it are the same test file's job.
+        """
         from backend.services.xhs_client import XHSApiError
 
-        with patch.object(
-            client._http, "search_users", new_callable=AsyncMock, side_effect=XHSApiError("fail")
+        with (
+            patch.object(
+                client._http,
+                "search_users",
+                new_callable=AsyncMock,
+                side_effect=XHSApiError("fail"),
+            ),
+            pytest.raises(XHSApiError),
         ):
-            result = await client.search_users(keyword="美食")
-
-        assert result == []
+            await client.search_users(keyword="美食")
 
     @pytest.mark.asyncio
-    async def test_get_user_info_error_returns_empty(self, client):
-        """get_user_info returns empty dict on API error."""
+    async def test_get_user_info_error_propagates(self, client):
+        """``{}`` is also "this user has no info". See ``test_search_users_error_propagates``."""
         from backend.services.xhs_client import XHSApiError
 
-        with patch.object(
-            client._http, "get_user_info", new_callable=AsyncMock, side_effect=XHSApiError("fail")
+        with (
+            patch.object(
+                client._http,
+                "get_user_info",
+                new_callable=AsyncMock,
+                side_effect=XHSApiError("fail"),
+            ),
+            pytest.raises(XHSApiError),
         ):
-            result = await client.get_user_info(user_id="u1")
-
-        assert result == {}
+            await client.get_user_info(user_id="u1")
 
     @pytest.mark.asyncio
-    async def test_get_user_notes_error_returns_empty(self, client):
-        """get_user_notes returns empty list on API error."""
+    async def test_get_user_notes_error_propagates(self, client):
+        """Worse than the other two: this one paginates, so a mid-pagination
+        failure used to surface as a *short* result set — "this blogger has few
+        notes" rather than an error.
+        """
         from backend.services.xhs_client import XHSApiError
 
-        with patch.object(
-            client._http, "get_user_notes", new_callable=AsyncMock, side_effect=XHSApiError("fail")
+        with (
+            patch.object(
+                client._http,
+                "get_user_notes",
+                new_callable=AsyncMock,
+                side_effect=XHSApiError("fail"),
+            ),
+            pytest.raises(XHSApiError),
         ):
-            result = await client.get_user_notes(user_id="u1")
+            await client.get_user_notes(user_id="u1")
 
-        assert result == []
+    @pytest.mark.asyncio
+    async def test_get_user_notes_a_mid_pagination_failure_is_not_a_short_result(self, client):
+        """The long-fuse form, pinned on its own: page one succeeds, page two
+        fails. The caller must not receive one page as if the blogger had one
+        page.
+        """
+        from backend.services.xhs_client import XHSApiError
+
+        calls = 0
+
+        async def _pages(user_id: str, cursor: str = ""):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return {"notes": [{"id": "n1"}], "cursor": "c1", "has_more": True}
+            raise XHSApiError("fail")
+
+        with (
+            patch.object(
+                client._http, "get_user_notes", new_callable=AsyncMock, side_effect=_pages
+            ),
+            pytest.raises(XHSApiError),
+        ):
+            await client.get_user_notes(user_id="u1", limit=50)
