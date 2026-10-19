@@ -195,6 +195,29 @@ evaluator→revise_content→copywriter 回路——那里才是"第 3 次修改
 | 行为 | **零变更**：`revision_count` / `copy_content` / `visual_plan` / hints 透传全部原样；stalled 时只写 `kind:"progress"` 事件 + warning 日志 |
 | 诚实边界 | 分数来自本仓 panel（LLM judge），`min_gain=1.0` 是**先验**不是校准值；`budget_without_acceptance` 仍不实现（state 无 run 级预算，与 §8 F7 的 SKIP 同因） |
 
+### 5.8 信号读面（Signal Inventory）
+
+前六片全是"先观测"：node/llm 遥测（P1a）、effect/action 拒绝（P0-B/P2a）、
+verification 判定（P1-B）、progress 信号（P0-A ×2）。**但没有任何读面把它们
+当成一条时间线读回来**——"这轮 stall 了几次 / 走的哪档验证 / 几个动作被拒"
+只能靠手工翻 JSON，等于"观测层建好了，判决还是凭印象"。
+
+| 项 | 实现 |
+|---|---|
+| 聚合 | `backend/services/signal_inventory.py`：按 `kind` 计数 + progress 的 reason 直方图 + verification 的 tier/reason 直方图 + action 拒绝分类 |
+| 只做查找不做判断 | 计数是事实；"这回路太慢"需要本模块没有的基线 ⇒ 明确不评分、不排序、不推荐 |
+| 不编造零值 | 无事件 → `has_data=False`（不是"0 次 stall"）；**"没观测到"与"观测到没有问题"是两条事实** |
+| 无 kind 条目 | 按全仓口径计为 `node`，并**单独报数**（S2 之前的条目），不悄悄合并 |
+| 未知 kind | 出现在 `unknown_kinds` 并照常计数 —— 这就是 #676 那类声明漂移的唯一可见出口 |
+| 坏条目 | 非 mapping 的条目计数后跳过，不抛错（部分导出也是证据） |
+| 样本 | progress 只回显前 3 条 `{reason, window, evidence, thread_id}`；完整计数不受影响 |
+| 用法 | `python scripts/benchmarks/signal_inventory.py --events run.json` 或 `--thread <id>`；无数据退出码 0 |
+
+`--thread` 走 `load_perf_log`（legacy-aware 的唯一正确读法），因此 S2 之前
+把遥测写在 checkpoint 里的线程也能读。集成测试直接用真实发射器
+（`node_perf_entry` / `progress_event` / `verification_event`）写一遍再读回来
+—— 手写 dict 的单测防不住"字段改名"，真实发射器能。
+
 ## 6. P0-A 切片设计：Progress Detector
 
 ### 6.1 问题

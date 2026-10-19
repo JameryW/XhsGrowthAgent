@@ -237,7 +237,7 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
     "mainline_action_intent_producers": lambda: len(
         _outside(CONTROL_PLANE, _action_intent_constructions())
     ),
-    # docs/publish-action-protocol.md -- "EVENT_KINDS 仍没有读者"
+    # docs/publish-action-protocol.md -- "EVENT_KINDS 有一个外部读者（signal_inventory）"
     "event_kinds_readers_outside_its_defining_module": lambda: len(_event_kinds_readers()),
     # both documents -- "account_credentials 仍无写入者"
     "account_credentials_inserts": lambda: len(_credential_inserts()),

@@ -131,7 +131,10 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
     对的那半句一起怀疑。
 - **`EVENT_KINDS` 的 `cost` / `error` 仍无发射者**：`error` 走的是 realtime
   `EventBusService`，不是 `workflow_events` 这一层；`ripple` 只出现在 S2 迁入的历史条目里。
-  `EVENT_KINDS` 本身除自己的 `__all__` 仍**没有读者** —— 声明集仍然没有消费者。
+  `EVENT_KINDS` 现在有**一个**外部读者 —— `backend/services/signal_inventory.py`
+  把未声明的 `kind` 报成"声明漂移"（#676 那类事故的唯一可见出口）。声明集因此不再是
+  无人消费的死表；但读者**不会**替发射端兜底：`cost` / `error` 的发射者缺口仍然开放，
+  这两条 kind 依旧只会出现在历史条目里。
 - **`account_credentials` 表仍无写入者**：读路径（S5a）是通的，但扫码登录把登录态写进 CDP
   profile，没有写这张表。所以今天唯一真能提供凭据的仍是部署级 `XHS_COOKIE`。
 
@@ -149,7 +152,7 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 | `mainline_run_publish_direct_call_sites` | `3` | AST：`backend/**/*.py` 里 `run_publish(...)` 的调用点，**排除函数定义本身** |
 | `action_intent_construction_sites` | `1` | AST：全仓 `ActionIntent(...)` 的构造点；唯一那个在控制面内 |
 | `mainline_action_intent_producers` | `0` | 上一个集合里落在 `backend/creator_agent/` **之外**的个数（上一条是它的阳性对照） |
-| `event_kinds_readers_outside_its_defining_module` | `0` | AST：除 `backend/db/workflow_events.py` 外，import 或引用 `EVENT_KINDS` 的文件数（**注释不算**） |
+| `event_kinds_readers_outside_its_defining_module` | `1` | AST：除 `backend/db/workflow_events.py` 外，import 或引用 `EVENT_KINDS` 的文件数（**注释不算**）；今天那 1 个是 `backend/services/signal_inventory.py` 的漂移检测 |
 | `account_credentials_inserts` | `0` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（DDL / `SELECT` / `DELETE` 都不算） |
 
 <!-- claim-table:end -->
