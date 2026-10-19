@@ -425,6 +425,39 @@ Phase B（在 A 之上追加）：
    表达不了"这个账号被允许主动私信谁"。真要做区分，需要一个策略源（谁被允许触达、
    每账号每日上限、是否只允许应答式触达），并把 `XhsCredential.scopes` 从"凭证推导"
    改成"凭证 ∧ 策略"。这是一个独立的数据模型，建议单开一票。
-6. **`backend/agents/publisher.py:735` 那条路径要不要补 `granted_scopes`？** 它现在是
-   `xhs.publish` 的唯一 agent 入口，不传 scope。补上会让已声明的 `auth_scope` 真正生效，
-   但也可能在缺少凭证解析的部署上把发布整条关掉（fail-closed）。属于独立缺陷，建议单开。
+6. **scope 到底该接在哪一层？**（原写作"agent 发布路径要不要补 `granted_scopes`"，
+   实测后问题变大了，见下。）
+
+   **实测（2026-10-19，由 `tests/unit/tools/runtime/test_scope_coverage.py` 复算）**：
+   12 个 capability 里 **8 个声明了 `auth_scope`**，全仓**只有 1 个调用点**真的传
+   `granted_scopes`（`backend/creator_agent/execution.py`）⇒ **7 个声明了 scope 的
+   能力没有任何已检查的调用点**；`xhs.publish` 有两条路径，一条检查
+   （`creator_agent`）、一条不检查（`backend/agents/publisher.py`）。
+
+   **为什么不能直接把 `creator_agent` 的做法抄到 agent 路径**：scope 的唯一来源是
+   `XhsCredential.scopes`，它由 **cookie 可用性**推导（`backend/services/xhs_credentials.py:130-145`）。
+   而发布这条路径根本不用 cookie —— `backend/tools/xhs/publisher.py:30` 明确构造
+   `XHSPublisher(cookie="")`，真正的提交走 CDP 连上已登录的 Chrome。于是：
+
+   - `.env.example` 里 `XHS_COOKIE=` 是**空的**（它只是"可选项"，没有注释说发布需要它），
+     真实发布靠 `XHS_CDP_*` + 已登录的浏览器；
+   - 接上 scope 后，这类部署的 `usable=False` ⇒ `scopes=()` ⇒ agent 发布直接
+     `PermissionDeniedError`，**而它今天能正常发出**。
+
+   `xhs_credentials` 的 docstring 也不是没想到这一层：它明确写过"能连上浏览器不算授权"
+   （可达性会随进程存亡翻转，授权不该这样）。所以这不是 bug，是**两条口径打架**：
+   声明说"发布需要凭证"，机制说"发布只需要一个已登录的浏览器"。
+
+   **两条路，需要拍板**：
+
+   | 选项 | 做法 | 代价 |
+   |---|---|---|
+   | A. 让授权追上机制 | 给 `xhs_credentials` 增加"可发布"判定（账号有绑定 profile / CDP endpoint），`scopes` 由"cookie ∨ 已绑定 profile"推导 | 要改授权的定义域，且"可达性算不算授权"这个论证要重写 |
+   | B. 让机制追上授权 | 维持 cookie 推导，全线接线，同时把 `XHS_COOKIE` 写成发布的**硬前提**（文档 + 启动自检） | 依赖空 cookie + CDP 的现有部署会立刻发不出去，属破坏性变更 |
+
+   我倾向 **A**：它保住了 `xhs_credentials` 已经写清楚的那个论证（授权不能随进程翻转），
+   也保住 `.env.example` 承诺的那套配置。但这是产品口径的选择，不该由一次重构顺手决定。
+
+   **本轮已做（不动行为）**：trace 事件新增 `scopes: checked | unchecked | none`
+   （`docs/tool-runtime.md` 有表），让"声明了但没检查"在日志里是一条可数的事实；
+   覆盖面被测试钉成数字，债务不会再悄悄扩大。

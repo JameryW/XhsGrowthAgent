@@ -64,6 +64,30 @@ sink。所以目的地存在 `ContextVar` 里（`bridge.tracing_to`），而不�
 为什么"超时"与"工具说了不行"不能靠读 error 字符串区分：调用点要对前者重试/降级、
 对后者直接换路线，而字符串匹配在第一次文案变动时就悄悄失效了。
 
+### 权限检查是 opt-in：`scopes` 字段
+
+`granted_scopes=None` 读作 **unchecked**，不是 denied（`gateway.py` 的
+`_check_scopes`）。所以一个能力可以声明 `auth_scope`，却从来没有人真正按它检查过 ——
+声明看起来像保护，实际不产生任何拒绝。为了让这件事从"要靠读代码猜"变成"查得到"，
+trace 事件带一个 `scopes` 字段：
+
+| 值 | 含义 |
+|---|---|
+| `none` | 该能力没声明 scope，没什么可检查 |
+| `unchecked` | 声明了，但调用方没传 `granted_scopes` ⇒ **没检查** |
+| `checked` | 传了并通过；不足的情况在到达事件之前就已抛 `PermissionDeniedError` |
+
+今天（2026-10-19 复算）的覆盖面：**12 个 capability 里 8 个声明了 scope，全仓只有
+1 个调用点真的传 `granted_scopes`**（`backend/creator_agent/execution.py`），
+其余 7 个声明了 scope 的能力**没有任何已检查的调用点**。这些数字不是估算，是
+`tests/unit/tools/runtime/test_scope_coverage.py` 从代码树逐项复算并钉住的；
+任何新增/收紧都会让那条测试变红，逼着把这节和
+`docs/tool-gateway-engagement-migration.md` §9.6 一起改。
+
+为什么没有立刻全线接线：在发布这条路径上，"有可用凭证"与"这台机器能发出去"并不是
+同一件事（发布走 CDP，`XHSPublisher(cookie="")` 根本不用 cookie），硬接会拒掉一类
+本来能工作的部署。取舍见 §9.6。
+
 ## 传参形状：PassStyle
 
 三种，**在签名上不可区分，猜错也不报错**：
