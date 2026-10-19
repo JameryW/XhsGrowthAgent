@@ -12,6 +12,16 @@ from backend.services.xhs_engagement import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _clean_effects():
+    """Effect 账本是进程级内存态：同键跨用例会被按设计拒绝（§4），必须清。"""
+    from backend.db.engagement_effects import _reset_memory_store
+
+    _reset_memory_store()
+    yield
+    _reset_memory_store()
+
+
 @pytest.mark.asyncio
 async def test_missing_cdp_fails_before_starting_playwright() -> None:
     engagement = XHSEngagement()

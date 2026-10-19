@@ -5,10 +5,18 @@ from __future__ import annotations
 import pytest
 
 from backend.services import xhs_risk_gate as rg
+from backend.services.xhs_effect_ledger import EngagementApproval
 from backend.services.xhs_outreach_policy import (
     OUTREACH_CONFIRMED,
     OUTREACH_NOBODY,
     XhsOutreachPolicy,
+)
+
+#: §7.2 审批记录的测试替身（取代旧的 approval=APPROVAL 自声明）。
+APPROVAL = EngagementApproval(
+    thread_id="thread-1",
+    approved_by="operator-1",
+    approved_at="2026-10-13T00:00:00+00:00",
 )
 
 
@@ -39,10 +47,10 @@ def test_dm_outbound_needs_policy_and_confirm() -> None:
     ``load_outreach_policy``, see test_xhs_outreach_policy).
     """
     policy = XhsOutreachPolicy(account_id="acc-1", mode=OUTREACH_CONFIRMED, daily_proactive_cap=5)
-    unconfirmed = rg.check_dm_target_allowed("acc-1", "cold", human_confirmed=False, policy=policy)
+    unconfirmed = rg.check_dm_target_allowed("acc-1", "cold", approval=None, policy=policy)
     assert unconfirmed is not None
     assert unconfirmed.risk_code == "dm_unconfirmed"
-    assert rg.check_dm_target_allowed("acc-1", "cold", human_confirmed=True, policy=policy) is None
+    assert rg.check_dm_target_allowed("acc-1", "cold", approval=APPROVAL, policy=policy) is None
 
 
 def test_the_gate_is_policy_driven_not_env_driven(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,7 +61,7 @@ def test_the_gate_is_policy_driven_not_env_driven(monkeypatch: pytest.MonkeyPatc
     """
     monkeypatch.setenv("XHS_ALLOW_OUTBOUND_DM", "1")
     monkeypatch.setenv("XHS_OUTREACH_MODE", OUTREACH_CONFIRMED)
-    block = rg.check_dm_target_allowed("acc-1", "cold", human_confirmed=True)
+    block = rg.check_dm_target_allowed("acc-1", "cold", approval=APPROVAL)
     assert block is not None
     assert block.risk_code == "dm_target_not_inbound"
 
@@ -72,15 +80,11 @@ def test_proactive_budget_stops_at_the_cap() -> None:
     policy = XhsOutreachPolicy(account_id="acc-1", mode=OUTREACH_CONFIRMED, daily_proactive_cap=2)
     rg.note_inbound_peers("acc-1", ["friend"])
     rg.note_dm_sent("acc-1", proactive=False)
-    assert (
-        rg.check_dm_target_allowed("acc-1", "cold-1", human_confirmed=True, policy=policy) is None
-    )
+    assert rg.check_dm_target_allowed("acc-1", "cold-1", approval=APPROVAL, policy=policy) is None
     rg.note_dm_sent("acc-1", proactive=True)
-    assert (
-        rg.check_dm_target_allowed("acc-1", "cold-2", human_confirmed=True, policy=policy) is None
-    )
+    assert rg.check_dm_target_allowed("acc-1", "cold-2", approval=APPROVAL, policy=policy) is None
     rg.note_dm_sent("acc-1", proactive=True)
-    block = rg.check_dm_target_allowed("acc-1", "cold-3", human_confirmed=True, policy=policy)
+    block = rg.check_dm_target_allowed("acc-1", "cold-3", approval=APPROVAL, policy=policy)
     assert block is not None
     assert block.risk_code == "proactive_dm_daily_limit"
     # The reply half is untouched by the spent outreach budget.
@@ -90,7 +94,7 @@ def test_proactive_budget_stops_at_the_cap() -> None:
 def test_zero_cap_is_zero_budget() -> None:
     """``confirmed_anyone`` with cap 0 still says no — 0 of something is none of it."""
     policy = XhsOutreachPolicy(account_id="acc-1", mode=OUTREACH_CONFIRMED, daily_proactive_cap=0)
-    block = rg.check_dm_target_allowed("acc-1", "cold", human_confirmed=True, policy=policy)
+    block = rg.check_dm_target_allowed("acc-1", "cold", approval=APPROVAL, policy=policy)
     assert block is not None
     assert block.risk_code == "dm_target_not_inbound"
 

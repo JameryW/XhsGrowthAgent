@@ -308,6 +308,14 @@ eng:{kind}:{account_id}:{target_id}:{sha256(reply_content)[:16]}
 表形态复用 `backend/db/creator_agent.py` 的 `UNIQUE (account_id, idempotency_key)`
 （`:116-122`）—— 同一份库里已有先例，不必发明第二套。
 
+**已落地（票 5c，2026-10-19）**：`backend/db/engagement_effects.py`（PG 表 +
+无池内存回退，`insert_or_get` 用 `ON CONFLICT DO NOTHING` + `RETURNING` 判定
+created，`cas_update` 以 `expected_state` 为条件拒绝陈旧写）+
+`backend/services/xhs_effect_ledger.py`（§4.1 键、`EngagementApproval`、六态状态机、
+claim / 判决 / 读回 API）。接线进 `send_dm` / `reply_to_comment`：浏览器提交动作
+之前 claim，判决之后记账（`tests/unit/services/test_xhs_effect_wiring.py` 用
+"goto 那一刻行已在账本里"钉顺序）。
+
 ### 5.2 四态
 
 | state | 含义 | 可重试 |
@@ -320,6 +328,21 @@ eng:{kind}:{account_id}:{target_id}:{sha256(reply_content)[:16]}
 `intent` 与 `unknown` 的区别：`intent` 是"我们还没提交"，`unknown` 是"可能提交了"。
 前者可以在确认没提交后继续，后者只能读回。
 
+**落地状态（票 5c）**：实现按上表钉死，外加 §5.3 的两个读回出口
+（`resolved_sent` / `resolved_not_sent`）和一个重臂迁移
+（`resolved_not_sent → intent`：读回证明上一次没发出，同一逻辑效果才允许再试；
+其余终态一律封死）。判决 → 账本状态的映射只有一处（
+`state_for_engagement_verdict`），要点：**`sent` 无平台回执不进 `committed`**
+（§5.4 的排除法：私信路径干净点击落 `unknown`；评论路径点完后的 DOM 复查算一次
+内联读回，命中落 `resolved_sent`）；点击前明确失败
+（`comment_not_found` / `*_input_missing` / `send_button_missing` / `configuration`）
+落 `resolved_not_sent`（本地动作日志即"确认没提交"）。
+
+诚实边界：`risk_control` 若发生在点击**之后**才弹拦截页，真实状态是"可能已发出"
+（§3.3 的歧义）；当前按上表名单记 `refused` —— 与 `unknown` 一样堵重试（不会双发），
+差别只在读回后能否重臂。`login_required` 不在名单内，落保守侧 `unknown`。
+等 §9.2 读回能力落地后应复核 `risk_control` 这一档。
+
 ### 5.3 `unknown` 只能在读回之后才离开
 
 读回 = 拉一次目标对象的真实状态（笔记评论区 / 私信会话）；命中则 `resolved_sent`,
@@ -327,6 +350,11 @@ eng:{kind}:{account_id}:{target_id}:{sha256(reply_content)[:16]}
 
 诚实边界：读回接口的存在性是本 spec 的前提之一（开放问题 §9.2）。如果某个方向读不
 回来，那么那一侧的 `unknown` 就是**终局**，必须报给人 —— 而不是"等等再试"。
+
+**落地状态（票 5c）**：出口模型已钉住 —— `record_readback` 是 `unknown` 唯一的
+离开方式（`record_not_sent` 只可从 `intent` 离开，本地日志对 `unknown` 无话可说；
+`tests/unit/services/test_xhs_effect_ledger.py::TestTheStateMachine` 钉死）。读回
+**接口本身**仍是 §9.2 的未拍板项：私信侧 `unknown` 目前是终局（报给人，不重试）。
 
 ### 5.4 什么才算回执
 
@@ -401,6 +429,13 @@ tool_result = await runtime.tools.invoke("xhs.publish", payload, thread_id=...)
 提案：审批作为**调用前置条件**由操作员路径完成，并把结果写进 §5.1 的账本 intent 行
 （`approved_by` / `approved_at`）。Gateway 侧不新增字段 —— 它不该成为审批状态的存储。
 
+**已落地（票 5c，2026-10-19）**：`human_confirmed: bool` 已删除，换成
+`EngagementApproval(thread_id, approved_by, approved_at)`（三字段非空校验 ——
+半条记录就是那个 bool 换了个形状）。冷启动时 `check_dm_target_allowed` 在提交前
+要求审批记录存在（`dm_unconfirmed`），记录进 intent 行；入站应答不需要逐条审批，
+账本三列如实留空（不编造审批人）。工具层 `dm_handler` / `comment_replier` 改收
+审批三件套参数。
+
 ### 7.3 落地两段
 
 **Phase A（不改变可及面）—— 已落地（PR #684）** —— 修 §1 的四个缺陷，全部可独立测试：
@@ -413,8 +448,9 @@ tool_result = await runtime.tools.invoke("xhs.publish", payload, thread_id=...)
 Phase A 里必须同时钉住：配额记账只在判决为 `sent` / `unknown` 之后调用 ✅
 （`unknown` 也算，因为可能已经发出、收不回来 —— 见 §5.2）。
 
-**Phase B（注册）—— 未开始** —— 前置：§5 账本 + §7.2 审批闸门 + Phase A 全绿（已满足
-第三项）。注册后 agent 才第一次能调到它们，这一刻才是
+**Phase B（注册）—— 未开始** —— 前置三项已全部满足（§5 账本 ✅ 票 5c、§7.2
+审批闸门 ✅ 票 5c、Phase A 全绿 ✅）。**仍未注册**：卡在 §9.4（本轮是否允许
+agent 触达，需拍板）。注册后 agent 才第一次能调到它们，这一刻才是
 `docs/agent-os-upgrade-2026q4.md` §4.1 所说的"可及的外部副作用面发生变化"。
 
 ---
@@ -429,7 +465,7 @@ Phase A（**全部已通过**）：
 | 2 | `quota` / `risk_control` 的 `error_code` 到达调用方，且被标为不可重试 | `TestCommentReplyVerdicts::test_a_quota_block_is_reported_with_its_own_code` / `TestRetryabilityIsDerivedOnce` |
 | 3 | 无平台回显时 `receipt_id == ""` 且 `receipt_source == "none"` | `test_a_confirmed_reply_is_sent_but_carries_no_receipt` / `test_a_clicked_send_is_sent_but_unverified` |
 | 4 | 服务层抛异常时工具层**抛出**，不再返回业务字典（Gateway 才能给出 `error_kind`） | `TestCommentReplierPassesTheVerdictThrough::test_an_exception_is_no_longer_turned_into_a_dict` |
-| 5 | `human_confirmed` 缺省时冷启动外发被拒，且**不触达浏览器** | `TestDirectMessageVerdicts::test_a_cold_target_without_confirmation_never_reaches_the_browser` |
+| 5 | 无逐条审批记录时冷启动外发被拒，且**不触达浏览器** | `TestDirectMessageVerdicts::test_a_cold_target_without_confirmation_never_reaches_the_browser`（票 5c 起钉的是 `approval=None`，旧 `human_confirmed` 已删） |
 
 第 3 条原文写的是 `receipt_source == "synthetic"`，实现时改成 `"none"`：既然我们
 **不再生成**任何本地 id，"synthetic" 会描述一个不存在的东西。`"platform"` / `"none"`
@@ -437,12 +473,12 @@ Phase A（**全部已通过**）：
 
 Phase B（在 A 之上追加）：
 
-| # | 判据 |
-|---|---|
-| 6 | 同一 `idempotency_key` 第二次调用在**提交前**被拒绝，账本可查 |
-| 7 | 超时后账本状态为 `unknown`，且不自动重试 |
-| 8 | `unknown` 只能经读回变为 `resolved_sent` / `resolved_not_sent` |
-| 9 | Gateway trace 事件里 `side_effect == "side_effecting"`，且不含正文 |
+| # | 判据 | 状态 |
+|---|---|---|
+| 6 | 同一 `idempotency_key` 第二次调用在**提交前**被拒绝，账本可查 | ✅ 票 5c（`TestTheSameKeyIsRefusedBeforeASecondSubmit`） |
+| 7 | 超时后账本状态为 `unknown`，且不自动重试 | ✅ 票 5c（映射表 + `max_attempts=1` 不动；`unknown` 无任何自动重试路径） |
+| 8 | `unknown` 只能经读回变为 `resolved_sent` / `resolved_not_sent` | ✅ 票 5c（`TestTheStateMachine`；读回**接口**本身见 §9.2） |
+| 9 | Gateway trace 事件里 `side_effect == "side_effecting"`，且不含正文 | ⏳ Phase B 注册后（§9.4 挂起） |
 
 ---
 
