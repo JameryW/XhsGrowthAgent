@@ -117,7 +117,6 @@ class TestDmHandlerPassesTheVerdictThrough:
                     "sender_id": "u-1",
                     "reply_content": "收到",
                     "account_id": "acc-1",
-                    "human_confirmed": True,
                 }
             )
 
@@ -128,8 +127,10 @@ class TestDmHandlerPassesTheVerdictThrough:
         assert result["receipt_id"] == ""
         assert result["verified"] is False
         assert "reply_id" not in result
+        # Inbound reply: no per-item approval record, and none is invented.
+        assert engagement.send_dm.await_args.kwargs["approval"] is None
 
-    async def test_human_confirmed_is_forwarded_to_the_platform_layer(self):
+    async def test_the_approval_record_is_forwarded_to_the_platform_layer(self):
         """Drop it here and the cold-start gate silently stops existing."""
         engagement = _fake_engagement({"status": "blocked", "success": False})
         get_engagement, resolve = _patched(engagement)
@@ -139,8 +140,30 @@ class TestDmHandlerPassesTheVerdictThrough:
                     "message_id": "m-1",
                     "sender_id": "u-1",
                     "reply_content": "收到",
-                    "human_confirmed": True,
+                    "approved_by": "operator-1",
+                    "approved_at": "2026-10-13T00:00:00+00:00",
+                    "thread_id": "thread-1",
                 }
             )
 
-        assert engagement.send_dm.await_args.kwargs["human_confirmed"] is True
+        approval = engagement.send_dm.await_args.kwargs["approval"]
+        assert approval is not None
+        assert approval.approved_by == "operator-1"
+        assert approval.approved_at == "2026-10-13T00:00:00+00:00"
+        assert approval.thread_id == "thread-1"
+
+    async def test_a_partial_approval_record_is_rejected_not_silently_dropped(self):
+        """半条审批记录 = 那个自声明 bool 换了个形状，构造时就该炸（§7.2）。"""
+        engagement = _fake_engagement({"status": "blocked", "success": False})
+        get_engagement, resolve = _patched(engagement)
+        with get_engagement, resolve, pytest.raises(ValueError, match="三件套"):
+            await dm_handler.ainvoke(
+                {
+                    "message_id": "m-1",
+                    "sender_id": "u-1",
+                    "reply_content": "收到",
+                    "approved_by": "operator-1",
+                }
+            )
+
+        engagement.send_dm.assert_not_awaited()

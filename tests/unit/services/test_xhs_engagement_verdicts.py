@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.services.cdp_session_lock import CdpSessionBusyError
+from backend.services.xhs_effect_ledger import EngagementApproval
 from backend.services.xhs_engagement import EngagementRiskError, XHSEngagement
 from backend.services.xhs_outreach_policy import (
     OUTREACH_CONFIRMED,
@@ -27,6 +28,15 @@ from backend.services.xhs_outreach_policy import (
 
 GATE = "backend.services.xhs_risk_gate"
 SENT, BLOCKED, FAILED, UNKNOWN = "sent", "blocked", "failed", "unknown"
+
+
+def _approval() -> EngagementApproval:
+    """§7.2 审批记录替身（冷启动门禁要记录，不再是自声明 bool）。"""
+    return EngagementApproval(
+        thread_id="thread-1",
+        approved_by="operator-1",
+        approved_at="2026-10-13T00:00:00+00:00",
+    )
 
 
 @asynccontextmanager
@@ -71,6 +81,16 @@ def _element(*, reply_button: Any = None) -> MagicMock:
     element.inner_text = AsyncMock(return_value="")
     element.get_attribute = AsyncMock(return_value="")
     return element
+
+
+@pytest.fixture(autouse=True)
+def _clean_effects():
+    """Effect 账本是进程级内存态：同键跨用例会被按设计拒绝（§4），必须清。"""
+    from backend.db.engagement_effects import _reset_memory_store
+
+    _reset_memory_store()
+    yield
+    _reset_memory_store()
 
 
 @pytest.fixture(autouse=True)
@@ -204,7 +224,7 @@ class TestDirectMessageVerdicts:
             message = "冷启动私信需要人工确认"
 
         with patch(f"{GATE}.check_dm_target_allowed", lambda *a, **k: _Block()):
-            result = await engagement.send_dm("cold-user", "你好", human_confirmed=False)
+            result = await engagement.send_dm("cold-user", "你好")
 
         assert result["status"] == BLOCKED
         assert result["error_code"] == "dm_target_not_inbound"
@@ -259,7 +279,7 @@ class TestTheOutreachPolicyIsTheEntryRule:
             seen["account_id"] = account_id
             seen["target"] = target
             seen["policy"] = kwargs.get("policy")
-            seen["human_confirmed"] = kwargs.get("human_confirmed")
+            seen["approval"] = kwargs.get("approval")
             return None
 
         # query_selector slots on a cold confirmed DM: 新建私信 / 搜索框 /
@@ -276,11 +296,11 @@ class TestTheOutreachPolicyIsTheEntryRule:
             patch(f"{GATE}.check_dm_target_allowed", _record_gate),
             patch(f"{GATE}.note_dm_sent", lambda *a, **k: None),
         ):
-            result = await engagement.send_dm("cold-user", "你好", human_confirmed=True)
+            result = await engagement.send_dm("cold-user", "你好", approval=_approval())
 
         assert result["status"] == SENT
         assert seen["policy"] is policy
-        assert seen["human_confirmed"] is True
+        assert seen["approval"] == _approval()
 
     async def test_a_reply_to_an_inbound_peer_never_spends_the_outreach_budget(self):
         """The note's ``proactive`` flag follows the inbound whitelist, not the caller."""

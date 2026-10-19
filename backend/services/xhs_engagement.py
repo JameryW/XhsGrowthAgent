@@ -18,6 +18,9 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 if TYPE_CHECKING:
     from playwright.async_api import Browser, Page
 
+    from backend.db.engagement_effects import EffectRow
+    from backend.services.xhs_effect_ledger import EngagementApproval
+
 logger = logging.getLogger("xhs_growth.engagement")
 
 _T = TypeVar("_T")
@@ -49,6 +52,50 @@ _TRANSIENT_ERROR_CODES = frozenset(
 # purpose: a possible send has to be treated as a send, or the ceiling stops
 # bounding anything — the operator cannot un-send it to stay under the limit.
 _QUOTA_STATUSES = frozenset({SENT, UNKNOWN})
+
+
+async def _record_effect_outcome(effect: EffectRow, result: dict[str, Any]) -> None:
+    """判决后记账（§5.1）：verdict → 账本状态走 ``state_for_engagement_verdict``。
+
+    记账失败绝不改判也不吞判决 —— 结果是平台的，账本是我们的；写入失败时行
+    留在 ``intent``（键仍堵着重试，安全侧），错误进日志等人工复核。
+    """
+    from backend.services.xhs_effect_ledger import (
+        EffectState,
+        EngagementEffectLedger,
+        state_for_engagement_verdict,
+    )
+
+    state = state_for_engagement_verdict(
+        str(result.get("status") or ""),
+        error_code=str(result.get("error_code") or ""),
+        receipt_id=str(result.get("receipt_id") or ""),
+        verified=bool(result.get("verified")),
+    )
+    ledger = EngagementEffectLedger()
+    account_id, key = effect.account_id, effect.idempotency_key
+    try:
+        if state is EffectState.COMMITTED:
+            await ledger.record_committed(
+                account_id, key, receipt_id=str(result.get("receipt_id") or "")
+            )
+        elif state is EffectState.RESOLVED_SENT:
+            await ledger.record_readback(account_id, key, sent=True)
+        elif state is EffectState.RESOLVED_NOT_SENT:
+            await ledger.record_not_sent(account_id, key)
+        elif state is EffectState.REFUSED:
+            await ledger.record_refused(account_id, key)
+        else:  # EffectState.UNKNOWN
+            await ledger.record_unknown(account_id, key)
+    except Exception:
+        logger.error(
+            "effect ledger write failed (account=%s key=%s state=%s); "
+            "row stays intent and the key stays blocked",
+            account_id,
+            key,
+            state.value,
+            exc_info=True,
+        )
 
 
 class EngagementConfigurationError(RuntimeError):
@@ -338,13 +385,24 @@ class XHSEngagement:
         note_id: str,
         comment_id: str,
         reply_content: str,
+        *,
+        approval: EngagementApproval | None = None,
     ) -> dict[str, Any]:
         """回复评论；遇到登录/风控页面后立即停止且不重试。
 
         ``nobody`` mode closes even this: answering a comment still touches a
         person, and a policy that says "touch nobody" means it (§9.5).
+
+        Effect 账本（§5）：浏览器提交动作之前先 claim intent 行，判决之后按
+        ``state_for_engagement_verdict`` 记账 —— 顺序即安全属性，崩在中途也有
+        据可查（§5.1 "先记账再动手"）。同键二次调用在提交前被拒（§4）。
         """
         from backend.services.cdp_session_lock import CdpSessionBusyError
+        from backend.services.xhs_effect_ledger import (
+            EffectAlreadyClaimedError,
+            EffectKind,
+            EngagementEffectLedger,
+        )
         from backend.services.xhs_outreach_policy import load_outreach_policy
 
         correlation_id = self._correlation_id("comment_reply")
@@ -362,11 +420,20 @@ class XHSEngagement:
                 correlation_id=correlation_id,
             )
 
+        ledger = EngagementEffectLedger()
         try:
             async with await self._hold_cdp(), self._guard.lock:
+                effect = await ledger.claim_intent(
+                    kind=EffectKind.COMMENT_REPLY,
+                    account_id=self.account_id,
+                    target_id=comment_id,
+                    content=reply_content,
+                    approval=approval,
+                )
                 result = await self._reply_to_comment_locked(
                     note_id, comment_id, reply_content, correlation_id=correlation_id
                 )
+            await _record_effect_outcome(effect, result)
             # Quota counts a *possible* send too: an unknown submit cannot be
             # un-sent, so letting it go uncounted would make the ceiling stop
             # bounding anything.
@@ -379,6 +446,15 @@ class XHSEngagement:
 
                 note_engagement_risk_pause(self.account_id, reason="risk_control")
             return result
+        except EffectAlreadyClaimedError as exc:
+            return self._blocked_result(
+                "effect_already_claimed",
+                (
+                    f"同一效果已在账本中（state={exc.existing.state}），提交前拒绝（§4）。"
+                    "确认未发出后可重臂，unknown 需先读回（§5.2/§5.3）。"
+                ),
+                correlation_id=correlation_id,
+            )
         except EngagementRiskError as exc:
             if exc.error_code == "risk_control":
                 from backend.services.xhs_risk_gate import note_engagement_risk_pause
@@ -493,7 +569,7 @@ class XHSEngagement:
         target_user_id: str,
         message: str,
         *,
-        human_confirmed: bool = False,
+        approval: EngagementApproval | None = None,
     ) -> dict[str, Any]:
         """发送私信；遇到登录/风控页面后立即停止且不重试。
 
@@ -502,8 +578,18 @@ class XHSEngagement:
         when it allows nobody, and is handed to the target gate so the budget
         and the "who" answer come from the same table.  A target in the
         unread/inbound peer cache is a reply and passes either way.
+
+        ``approval`` 是 §7.2 的逐条人工审批记录（取代旧的 ``human_confirmed``
+        bool —— 调用方自声明的 bool 不可信任）。入站应答不需要逐条审批；
+        冷启动由 ``check_dm_target_allowed`` 在提交前要求它。Effect 账本接线
+        与 ``reply_to_comment`` 同构：提交前 claim，判决后记账。
         """
         from backend.services.cdp_session_lock import CdpSessionBusyError
+        from backend.services.xhs_effect_ledger import (
+            EffectAlreadyClaimedError,
+            EffectKind,
+            EngagementEffectLedger,
+        )
         from backend.services.xhs_outreach_policy import load_outreach_policy
         from backend.services.xhs_risk_gate import (
             check_dm_target_allowed,
@@ -529,7 +615,7 @@ class XHSEngagement:
         target_block = check_dm_target_allowed(
             self.account_id,
             target_user_id,
-            human_confirmed=human_confirmed,
+            approval=approval,
             policy=policy,
         )
         if target_block is not None:
@@ -540,14 +626,23 @@ class XHSEngagement:
         # anything the target gate let through as cold outreach does.
         proactive = not is_inbound_peer(self.account_id, target_user_id)
 
+        ledger = EngagementEffectLedger()
         try:
             async with await self._hold_cdp(), self._guard.lock:
+                effect = await ledger.claim_intent(
+                    kind=EffectKind.DM,
+                    account_id=self.account_id,
+                    target_id=target_user_id,
+                    content=message,
+                    approval=approval,
+                )
                 result = await self._send_dm_locked(
                     target_user_id,
                     message,
-                    human_confirmed=human_confirmed,
+                    approval=approval,
                     correlation_id=correlation_id,
                 )
+            await _record_effect_outcome(effect, result)
             # Same rule as the comment path: a *possible* send counts against
             # the daily ceiling, because it cannot be taken back.
             if result.get("status") in _QUOTA_STATUSES:
@@ -555,6 +650,15 @@ class XHSEngagement:
             elif result.get("error_code") == "risk_control":
                 note_engagement_risk_pause(self.account_id, reason="risk_control")
             return result
+        except EffectAlreadyClaimedError as exc:
+            return self._blocked_result(
+                "effect_already_claimed",
+                (
+                    f"同一效果已在账本中（state={exc.existing.state}），提交前拒绝（§4）。"
+                    "确认未发出后可重臂，unknown 需先读回（§5.2/§5.3）。"
+                ),
+                correlation_id=correlation_id,
+            )
         except EngagementRiskError as exc:
             if exc.error_code == "risk_control":
                 note_engagement_risk_pause(self.account_id, reason="risk_control")
@@ -571,7 +675,7 @@ class XHSEngagement:
         target_user_id: str,
         message: str,
         *,
-        human_confirmed: bool,
+        approval: EngagementApproval | None,
         correlation_id: str,
     ) -> dict[str, Any]:
         """The browser half of ``send_dm``; the caller owns the lock and quota.
@@ -589,10 +693,10 @@ class XHSEngagement:
 
             # Never click 「新建私信」 for inbound replies. Cold-start
             # (outbound) only when the caller already passed the
-            # whitelist/confirm gate above with human_confirmed=True.
+            # whitelist/approval gate above with an EngagementApproval record.
             from backend.services.xhs_risk_gate import is_inbound_peer
 
-            if human_confirmed and not is_inbound_peer(self.account_id, target_user_id):
+            if approval is not None and not is_inbound_peer(self.account_id, target_user_id):
                 new_dm_btn = await page.query_selector("text=新建私信, .new-dm-btn")
                 if new_dm_btn:
                     await self._paced(new_dm_btn.click)

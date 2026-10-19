@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from langchain_core.tools import tool
 
 if TYPE_CHECKING:
+    from backend.services.xhs_effect_ledger import EngagementApproval
     from backend.services.xhs_engagement import XHSEngagement
 
 logger = logging.getLogger("xhs_growth.tools.engagement")
@@ -51,21 +52,52 @@ async def _resolve_engagement_cdp_endpoint(account_id: str) -> str:
     return endpoint
 
 
+def _build_approval(
+    approved_by: str = "", approved_at: str = "", thread_id: str = ""
+) -> EngagementApproval | None:
+    """把工具参数拼成 §7.2 审批记录；三者全空 = 无逐条审批（入站应答常态）。
+
+    只给了部分字段就抛 ``ValueError``：半条审批记录是那个自声明 bool 换了个
+    形状，宁可炸在构造里也不让它进账本。
+    """
+    parts = [
+        str(approved_by or "").strip(),
+        str(approved_at or "").strip(),
+        str(thread_id or "").strip(),
+    ]
+    if not any(parts):
+        return None
+    if not all(parts):
+        raise ValueError("审批记录三件套（approved_by/approved_at/thread_id）要么全给，要么全不给")
+    from backend.services.xhs_effect_ledger import EngagementApproval
+
+    return EngagementApproval(thread_id=parts[2], approved_by=parts[0], approved_at=parts[1])
+
+
 @tool
 async def comment_replier(
     comment_id: str,
     post_id: str,
     reply_content: str,
     account_id: str = "",
+    approved_by: str = "",
+    approved_at: str = "",
+    thread_id: str = "",
 ) -> dict[str, Any]:
     """人工确认后回复一条小红书评论（manual-only）。
 
     仅允许操作员在核对目标和回复内容后显式调用；不会由工作流 agent 自动触发。
+    审批三件套（approved_by/approved_at/thread_id）随调用传入并写进 Effect
+    账本的 intent 行（§5.1/§7.2）—— 与旧的 ``human_confirmed`` bool 不同，
+    它记录的是**谁**批的，而不是调用方自称批过。
 
     Args:
         comment_id: 评论 ID
         post_id: 笔记 ID
         reply_content: 回复内容
+        approved_by: 审批人标识（与 approved_at/thread_id 同给或同缺）
+        approved_at: 审批时刻（ISO 8601）
+        thread_id: 审批所对应的会话/工单 ID
 
     Returns:
         结果字典：``status``（sent/blocked/failed/unknown）、``success``、
@@ -80,6 +112,7 @@ async def comment_replier(
     """
     logger.info(f"Replying to comment: {comment_id}")
 
+    approval = _build_approval(approved_by, approved_at, thread_id)
     engagement = _get_engagement(
         cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
         account_id=account_id,
@@ -89,6 +122,7 @@ async def comment_replier(
             note_id=post_id,
             comment_id=comment_id,
             reply_content=reply_content,
+            approval=approval,
         )
     finally:
         await engagement.close()
@@ -107,18 +141,24 @@ async def dm_handler(
     sender_id: str,
     reply_content: str,
     account_id: str = "",
-    human_confirmed: bool = False,
+    approved_by: str = "",
+    approved_at: str = "",
+    thread_id: str = "",
 ) -> dict[str, Any]:
     """人工确认后发送一条小红书私信（manual-only）。
 
     仅允许操作员在核对收件人和消息内容后显式调用；不会由工作流 agent 自动触发。
-    默认仅可回复未读/入站白名单内的用户；冷启动新建私信需显式开关 + human_confirmed。
+    默认仅可回复未读/入站白名单内的用户；冷启动新建私信需账号策略开启 +
+    逐条人工审批记录（§7.2：approved_by/approved_at/thread_id，取代旧的
+    ``human_confirmed`` 自声明 bool）。
 
     Args:
         message_id: 入站消息 ID（原样回显，不是本次发送的回执）
         sender_id: 发送者用户 ID
         reply_content: 回复内容
-        human_confirmed: 冷启动外发时的逐条人工确认
+        approved_by: 审批人标识（冷启动必给；与 approved_at/thread_id 同给或同缺）
+        approved_at: 审批时刻（ISO 8601）
+        thread_id: 审批所对应的会话/工单 ID
 
     Returns:
         结果字典：``status``（sent/blocked/failed/unknown）、``success``、
@@ -134,6 +174,7 @@ async def dm_handler(
     """
     logger.info(f"Handling DM from: {sender_id}")
 
+    approval = _build_approval(approved_by, approved_at, thread_id)
     engagement = _get_engagement(
         cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
         account_id=account_id,
@@ -142,7 +183,7 @@ async def dm_handler(
         verdict = await engagement.send_dm(
             target_user_id=sender_id,
             message=reply_content,
-            human_confirmed=human_confirmed,
+            approval=approval,
         )
     finally:
         await engagement.close()

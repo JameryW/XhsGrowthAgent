@@ -37,6 +37,8 @@ from backend.db.engagement_effects import EffectRow
 
 __all__ = [
     "CAPABILITY_BY_KIND",
+    "DEFINITE_NON_SEND_ERROR_CODES",
+    "PLATFORM_VERDICT_ERROR_CODES",
     "EffectAlreadyClaimedError",
     "EffectKind",
     "EffectNotFoundError",
@@ -49,6 +51,7 @@ __all__ = [
     "TERMINAL_STATES",
     "effect_idempotency_key",
     "payload_digest_for",
+    "state_for_engagement_verdict",
 ]
 
 
@@ -159,6 +162,71 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+#: 提交动作**从未**发生的失败码：全部出现在点击之前（Phase A 保证
+#: FAILED=definite failure），本地动作日志就是"确认没提交"的证据
+#: （§5.2 "intent 可以在确认没提交后继续"）。
+DEFINITE_NON_SEND_ERROR_CODES: frozenset[str] = frozenset(
+    {
+        "comment_not_found",
+        "dm_input_missing",
+        "reply_input_missing",
+        "send_button_missing",
+        "configuration",  # 页面都起不来（_ensure_page），任何动作都没做
+    }
+)
+
+#: §5.2 refused 名单（额度、风控、blocked）—— 平台给的终局判决，重试会烧额度。
+PLATFORM_VERDICT_ERROR_CODES: frozenset[str] = frozenset({"quota", "risk_control", "blocked"})
+
+
+def state_for_engagement_verdict(
+    status: str,
+    *,
+    error_code: str = "",
+    receipt_id: str = "",
+    verified: bool = False,
+) -> EffectState:
+    """把互动判决（``xhs_engagement`` 的 verdict dict）翻译成账本状态。
+
+    映射表，每一行都有出处：
+
+    ==============  ==========================================================
+    判决             账本状态
+    ==============  ==========================================================
+    sent + 回执      ``committed``（§5.2/§5.4：只有平台回显的 id 才算回执）
+    sent + verified  ``resolved_sent``（§5.3 读回命中 —— 评论路径点完后的 DOM
+                     复查就是一次内联读回：拉目标真实状态，命中）
+    sent 其余        ``unknown``（私信路径点击发出、无平台确认。§5.2 四态里
+                     只能落 unknown：没回执不能算 committed，平台没拒绝不算
+                     refused，已提交不算 intent —— 与 Phase A 自己的注释一致：
+                     "the click is evidence that we submitted, not that the
+                     platform accepted"）
+    unknown          ``unknown``（§5.2 答复丢失）
+    提交前失败码      ``resolved_not_sent``（本地日志证明未发出 → 可重臂）
+    平台终局码        ``refused``（§5.2 名单：额度、风控、blocked）
+    其余             ``unknown``（证明不了"未发出" ⇒ 保守侧，先堵重试）
+    ==============  ==========================================================
+
+    诚实边界：`risk_control` 若发生在点击**之后**才弹出拦截页，真实状态是
+    "可能已发出"（§3.3 的歧义）。当前按 §5.2 名单记 ``refused`` —— 两者都堵
+    重试（不会双发），差别只在读回后能否重臂。等 §9.2 读回能力落地后应复核
+    这一档；`login_required` 不在 §5.2 名单里，落保守侧 ``unknown``。
+    """
+    if status == "sent":
+        if receipt_id:
+            return EffectState.COMMITTED
+        if verified:
+            return EffectState.RESOLVED_SENT
+        return EffectState.UNKNOWN
+    if status == "unknown":
+        return EffectState.UNKNOWN
+    if error_code in PLATFORM_VERDICT_ERROR_CODES:
+        return EffectState.REFUSED
+    if error_code in DEFINITE_NON_SEND_ERROR_CODES:
+        return EffectState.RESOLVED_NOT_SENT
+    return EffectState.UNKNOWN
+
+
 class EngagementEffectLedger:
     """claim / 判决 / 读回三段 API。方法即 §5 的三段生命周期。"""
 
@@ -174,9 +242,13 @@ class EngagementEffectLedger:
         account_id: str,
         target_id: str,
         content: str,
-        approval: EngagementApproval,
+        approval: EngagementApproval | None = None,
     ) -> EffectRow:
         """提交**之前**登记 intent 行；同键不可重臂时抛 ``EffectAlreadyClaimedError``。
+
+        ``approval`` 是 §7.2 的审批记录；入站应答可以没有逐条审批（策略即授权），
+        此时三列如实留空 —— 账本记录"谁批的"，**该不该有**审批由闸门
+        （``check_dm_target_allowed``）判定，两件事不混在一个地方。
 
         返回的行是账本里的权威副本（重臂时是上一行就地翻回 intent，不是新行）。
         """
@@ -188,9 +260,9 @@ class EngagementEffectLedger:
             capability=CAPABILITY_BY_KIND[kind],
             target_id=target_id,
             payload_digest=payload_digest_for(content),
-            thread_id=approval.thread_id,
-            approved_by=approval.approved_by,
-            approved_at=approval.approved_at,
+            thread_id=approval.thread_id if approval else "",
+            approved_by=approval.approved_by if approval else "",
+            approved_at=approval.approved_at if approval else "",
             state=EffectState.INTENT.value,
             receipt_id="",
             receipt_source="none",
@@ -209,9 +281,9 @@ class EngagementEffectLedger:
             key,
             expected_state=EffectState.RESOLVED_NOT_SENT.value,
             new_state=EffectState.INTENT.value,
-            thread_id=approval.thread_id,
-            approved_by=approval.approved_by,
-            approved_at=approval.approved_at,
+            thread_id=approval.thread_id if approval else "",
+            approved_by=approval.approved_by if approval else "",
+            approved_at=approval.approved_at if approval else "",
             updated_at=_now_iso(),
         )
         if re_armed is None:
@@ -259,6 +331,20 @@ class EngagementEffectLedger:
             account_id,
             idempotency_key,
             new_state=EffectState.UNKNOWN,
+            from_states={EffectState.INTENT},
+        )
+
+    async def record_not_sent(self, account_id: str, idempotency_key: str) -> EffectRow:
+        """本地动作日志证明**从未提交**（点击前的明确失败）→ resolved_not_sent。
+
+        与 ``record_readback(sent=False)`` 同一落点、不同证据：这条不需要读回，
+        因为提交动作根本没发生。只允许从 ``intent`` 离开 —— ``unknown`` 的离开
+        方式**只有**读回（§5.3），本地日志对 unknown 无话可说。
+        """
+        return await self._transition(
+            account_id,
+            idempotency_key,
+            new_state=EffectState.RESOLVED_NOT_SENT,
             from_states={EffectState.INTENT},
         )
 

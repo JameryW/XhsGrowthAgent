@@ -14,10 +14,13 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from backend.services.xhs_outreach_policy import XhsOutreachPolicy
+
+if TYPE_CHECKING:
+    from backend.services.xhs_effect_ledger import EngagementApproval
 
 logger = logging.getLogger("xhs_growth.risk_gate")
 
@@ -603,7 +606,7 @@ def check_dm_target_allowed(
     account_id: str,
     target_user_id: str,
     *,
-    human_confirmed: bool = False,
+    approval: EngagementApproval | None = None,
     policy: XhsOutreachPolicy | None = None,
 ) -> GateBlock | None:
     """DM only to inbound peers unless *this account's policy* opens cold outreach.
@@ -617,9 +620,12 @@ def check_dm_target_allowed(
     Four refusals, in order, each naming its own fact: the policy touches
     nobody at all (``nobody`` mode — replies included), the target is not
     someone who wrote first, the account may start conversations but no human
-    confirmed *this* one, or the account's proactive budget for the UTC day is
-    spent.  Replies (inbound peers) answer none of the last three and pass —
-    but only while the account is allowed to touch anybody in the first place.
+    approved *this* one (§7.2: an ``EngagementApproval`` record, not a
+    caller-declared bool — the old ``human_confirmed=True`` was the caller
+    vouching for themselves), or the account's proactive budget for the UTC
+    day is spent.  Replies (inbound peers) answer none of the last three and
+    pass — but only while the account is allowed to touch anybody in the first
+    place.
     """
     account_id = (account_id or "").strip()
     target_user_id = str(target_user_id or "").strip()
@@ -655,11 +661,11 @@ def check_dm_target_allowed(
             ),
             retry_after_seconds=0,
         )
-    if not human_confirmed:
+    if approval is None:
         return GateBlock(
             reason="dm_unconfirmed",
             risk_code="dm_unconfirmed",
-            message="主动触达需逐条人工确认（human_confirmed=True）。",
+            message=("主动触达需逐条人工审批记录（approved_by/approved_at/thread_id，§7.2）。"),
             retry_after_seconds=0,
         )
     used = int(_daily_counts(account_id).get("proactive_dm", 0))

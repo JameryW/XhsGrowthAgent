@@ -24,6 +24,17 @@ from backend.services.xhs_risk_gate import (
 )
 
 
+def _approval():
+    """§7.2 审批记录替身（冷启动门禁要记录，不再吃自声明 bool）。"""
+    from backend.services.xhs_effect_ledger import EngagementApproval
+
+    return EngagementApproval(
+        thread_id="thread-1",
+        approved_by="operator-1",
+        approved_at="2026-10-13T00:00:00+00:00",
+    )
+
+
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch):
     monkeypatch.setenv("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", "60")
@@ -102,14 +113,14 @@ async def test_the_proactive_budget_survives_a_restart(monkeypatch):
 
     reset_gates_for_tests()
     # Fresh process: the budget looks unspent until the state is hydrated.
-    assert check_dm_target_allowed("acc-1", "cold", human_confirmed=True, policy=policy) is None
+    assert check_dm_target_allowed("acc-1", "cold", approval=_approval(), policy=policy) is None
 
     monkeypatch.setattr(
         "backend.db.risk_gates.load_risk_gate_state",
         AsyncMock(return_value=exported),
     )
     await hydrate_risk_gates()
-    block = check_dm_target_allowed("acc-1", "cold", human_confirmed=True, policy=policy)
+    block = check_dm_target_allowed("acc-1", "cold", approval=_approval(), policy=policy)
     assert block is not None
     assert block.risk_code == "proactive_dm_daily_limit"
 
