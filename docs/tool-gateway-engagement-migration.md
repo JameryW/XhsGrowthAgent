@@ -489,8 +489,25 @@ Phase B（在 A 之上追加）：
    `state["account_id"]` 这个从未被校验过的标签走；没有选中账号时，行为主体就是部署本身。
 
    覆盖面从 **1 → 2 个调用点**（都落在 `xhs.publish`），**"没有已检查调用点的能力"
-   仍是 7 个**：债务按能力计，不按调用点计——一个能力有一个已检查调用点就不算"部分
+   是 4 个**：债务按能力计，不按调用点计——一个能力有一个已检查调用点就不算"部分
    受保护"。这两个数字由 `test_scope_coverage.py` 从代码树复算。
+
+   **4 而不是 7，是因为删了三条声明（2026-10-19）**：`ripple.get_report` /
+   `ripple.predict_spread` / `ripple.validate_pmf` 的 `auth_scope=("ripple:read",)`
+   已从目录移除。它们从来不是"没接线"，而是**接不了** —— ripple 用
+   `Settings().ripple.api_token` 认证（部署级密钥，没有账号维度），而
+   `granted_scopes()` 只能吐 `xhs:*`，这个 scope **永远无法被满足**。
+   当时摆在面前的两个选项：
+
+   | 选项 | 做法 | 为什么不 |
+   |---|---|---|
+   | 改 vocabulary（未采用） | 教 `granted_scopes()` 在部署配好 token 时授予 `ripple:read` | 效果等于"所有调用方恒有权限"，那是一个**伪装成权限的配置检查**；它会把"ripple 没配 token"报成"你没被授权"——与"浏览器没开 ≠ 没被授权"是同一个范畴错误。配置缺失已由 `RippleService` 健康检查按自己的语言报告（`DomainOutcome("unavailable")`） |
+   | **删声明**（已采用） | 三个 spec 去掉 `auth_scope` | 无 |
+
+   删的理由不只是"这条声明没用"，而是**它是个陷阱**：做一次"把所有声明的 scope 都接上"
+   的机械扫描，这三个能力就会被永久拒掉，而 trace 会把锅甩给调用方的身份。
+   `test_no_declared_scope_is_unsatisfiable` 现在把这条钉住：任何声明的 scope 都必须是
+   `granted_scopes()` 真能产出的。
 
    **接线带来的唯一收紧**：具名账号若 `cdp_port=0`、只靠全局浏览器，以前会经那台浏览器
    发布，现在被拒（`missing_publish_credential` + `recovery` 指路）。判断依据是它

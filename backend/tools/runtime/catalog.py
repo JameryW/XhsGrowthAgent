@@ -498,6 +498,27 @@ def build_registry() -> ToolRegistry:
     )
 
     # ── ripple ──────────────────────────────────────────────────────────────
+    # No ``auth_scope`` on these three, deliberately — the declarations were
+    # removed rather than wired. ``ripple:read`` was the one scope in this
+    # catalogue that no grant could ever satisfy: ``granted_scopes()`` derives
+    # from an *account* (cookie ∨ bound profile) and so can only ever emit
+    # ``xhs:read`` / ``xhs:write``. Ripple consumes neither — ``client.py``
+    # authenticates with ``Settings().ripple.api_token``, a deployment-level
+    # secret with no account dimension.
+    #
+    # Deleting was the fix because honouring the declaration would have meant
+    # granting ``ripple:read`` to every caller whenever the deployment happens
+    # to be configured. That is not a permission, it is a config check wearing
+    # one — and it would have reported "ripple has no token" as "you are not
+    # authorised", the same category error already rejected for CDP
+    # reachability (``docs/tool-runtime.md``). The precondition already
+    # announces itself in its own vocabulary: ``RippleService`` health check
+    # raises ``DomainOutcome("unavailable")`` through
+    # ``backend/tools/ripple/integration.py``.
+    #
+    # The failure mode this removes: a caller wiring up every declared scope
+    # (the obvious mechanical pass) would have denied all three capabilities
+    # permanently, and the trace would have blamed the caller's identity.
     _register(
         registry,
         capability="ripple.get_report",
@@ -520,7 +541,6 @@ def build_registry() -> ToolRegistry:
         # which is a budget question, not a retry one). If this ever needs to
         # wait longer, raise ``timeout_s``.
         retry=RetryPolicy(),
-        auth_scope=("ripple:read",),
     )
     _register(
         registry,
@@ -539,7 +559,6 @@ def build_registry() -> ToolRegistry:
         # call site did not retry either; declaring ``max_attempts=2`` here
         # would have introduced retries that never existed.
         retry=RetryPolicy(),
-        auth_scope=("ripple:read",),
     )
     _register(
         registry,
@@ -554,7 +573,6 @@ def build_registry() -> ToolRegistry:
         cost=CostClass.CHEAP,
         timeout_s=_RIPPLE_SAFETY_NET_S,
         retry=RetryPolicy(),
-        auth_scope=("ripple:read",),
     )
 
     # ── open-web search (DeepSeek primary, Tavily fallback) ─────────────────

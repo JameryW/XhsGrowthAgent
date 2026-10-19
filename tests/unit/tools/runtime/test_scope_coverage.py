@@ -12,9 +12,18 @@ is today's state, and any change (a new capability, a new unchecked call site, a
 site that starts passing scopes) fails here until the register and
 ``docs/tool-gateway-engagement-migration.md`` §9.6 are updated together.
 
-Why it exists: eight of twelve capabilities declare a scope, and when this file
+Why it exists: eight of twelve capabilities declared a scope, and when this file
 was written exactly one call site applied one. That was invisible until this file
 counted it.
+
+Why one of the registers has two halves: "a call site passes no scopes" and "the
+declaration is worth nothing there" are not the same fact. A capability that
+declares nothing has nothing to check — counting its call site as debt inflates
+the number §9.6 quotes. So the unchecked surface is split by whether the
+capability promised anything, and the debt figure is the first half only.
+
+Five / not eight: ``ripple:read`` was removed rather than wired, because no grant
+this system can compute would ever satisfy it. See ``catalog.py``.
 """
 
 from __future__ import annotations
@@ -31,9 +40,6 @@ BACKEND = REPO / "backend"
 # Recomputed from ``build_registry()`` -- declared, whether or not anyone applies it.
 DECLARED_SCOPES: dict[str, tuple[str, ...]] = {
     "analysis.topic_scorer": ("xhs:read",),
-    "ripple.get_report": ("ripple:read",),
-    "ripple.predict_spread": ("ripple:read",),
-    "ripple.validate_pmf": ("ripple:read",),
     "xhs.competitor_analyzer": ("xhs:read",),
     "xhs.keyword_monitor": ("xhs:read",),
     "xhs.publish": ("xhs:write",),
@@ -50,10 +56,23 @@ CHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# The debt: invocation sites that pass no ``granted_scopes``. Ordered so a new
-# one is an obvious diff rather than a silent widening.
+# The debt proper: invocation sites that pass no ``granted_scopes`` **and whose
+# capability declares one**. These are the sites where the declaration buys
+# nothing today. Ordered so a new one is an obvious diff rather than a silent
+# widening.
 UNCHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {
     "analysis.topic_scorer": ("backend/agents/content_strategist.py",),
+    "xhs.competitor_analyzer": ("backend/agents/trend_scout.py",),
+    "xhs.keyword_monitor": ("backend/agents/trend_scout.py",),
+    "xhs.trending": ("backend/agents/trend_scout.py",),
+}
+
+# The other half, pinned for a different reason: these sites also pass no
+# scopes, but their capabilities declare none, so there is nothing being
+# skipped. They are listed so that "eleven unchecked sites" cannot be quoted as
+# "eleven debts", and so that adding a scope to any of these capabilities has to
+# move its call sites across rather than leave them silently uncounted.
+UNSCOPED_CALL_SITES: dict[str, tuple[str, ...]] = {
     "content.algorithmic_de_ai": ("backend/agents/copywriter.py",),
     "content.polish_copy": ("backend/agents/copywriter.py",),
     "ripple.get_report": ("backend/agents/analyst.py",),
@@ -61,9 +80,6 @@ UNCHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {
     "ripple.validate_pmf": ("backend/agents/content_strategist.py",),
     "search.fetch": ("backend/agents/trend_scout.py",),
     "search.web": ("backend/agents/trend_scout.py",),
-    "xhs.competitor_analyzer": ("backend/agents/trend_scout.py",),
-    "xhs.keyword_monitor": ("backend/agents/trend_scout.py",),
-    "xhs.trending": ("backend/agents/trend_scout.py",),
 }
 
 
@@ -154,11 +170,39 @@ class TestDeclaredScopes:
             "is a new promise that something has to keep."
         )
 
-    def test_eight_of_twelve_capabilities_declare_a_scope(self):
-        """The denominator matters: "some capabilities are scoped" hides the ratio."""
+    def test_five_of_twelve_capabilities_declare_a_scope(self):
+        """The denominator matters: "some capabilities are scoped" hides the ratio.
+
+        Five, not eight: the three ripple capabilities stopped declaring
+        ``ripple:read``. Removing a declaration is the one change this file is
+        meant to *allow* — see ``test_no_declared_scope_is_unsatisfiable``.
+        """
         specs = build_registry().specs()
         assert len(specs) == 12
-        assert len([spec for spec in specs if spec.auth_scope]) == 8
+        assert len([spec for spec in specs if spec.auth_scope]) == 5
+
+    def test_no_declared_scope_is_unsatisfiable(self):
+        """Every declared scope must be one :func:`granted_scopes` can emit.
+
+        The point of a declaration is that some caller can satisfy it. A scope
+        outside this set is unsatisfiable by construction, which makes the
+        declaration a trap: the mechanical fix (passing ``granted_scopes`` at the
+        call site) denies the capability forever and blames the caller's
+        identity for what is really a missing deployment secret.
+
+        Read from :func:`build_registry`, **not** from ``DECLARED_SCOPES``: the
+        register is the thing a hurried change would update alongside the code,
+        and a guard that only compares two registers fires on nothing.
+        """
+        from backend.services.xhs_credentials import XHS_READ_SCOPE, XHS_WRITE_SCOPE
+
+        grantable = {XHS_READ_SCOPE, XHS_WRITE_SCOPE}
+        declared = {scope for spec in build_registry().specs() for scope in spec.auth_scope}
+        assert declared - grantable == set(), (
+            "A capability declares a scope that granted_scopes() can never "
+            "produce. Either teach the grant about the new mechanism, or drop "
+            "the declaration -- declaring it is the one option that cannot work."
+        )
 
 
 class TestWhereTheCheckIsApplied:
@@ -170,22 +214,42 @@ class TestWhereTheCheckIsApplied:
         )
 
     def test_the_unchecked_surface_is_pinned(self):
+        """Both halves, measured together and then split.
+
+        ``_group`` recomputes every site that passes no ``granted_scopes`` from
+        the tree. The split is *derived* from the declaration, not asserted
+        twice: a site belongs to the debt half exactly when its capability
+        declares a scope. So the two registers cannot disagree with the code or
+        with each other.
+        """
         unchecked = _group(_call_sites(), checked=False)
-        assert unchecked == UNCHECKED_CALL_SITES, (
-            "An invocation site gained or lost its ``granted_scopes`` argument. "
-            "This register is the honest count of where the declaration buys "
-            "nothing; update it deliberately rather than letting it drift."
+        debt = {name: files for name, files in unchecked.items() if name in DECLARED_SCOPES}
+        nothing_to_check = {
+            name: files for name, files in unchecked.items() if name not in DECLARED_SCOPES
+        }
+        assert debt == UNCHECKED_CALL_SITES, (
+            "An invocation site gained or lost its ``granted_scopes`` argument, "
+            "or a capability gained/lost its declaration. This register is the "
+            "honest count of where the declaration buys nothing; update it "
+            "deliberately rather than letting it drift."
+        )
+        assert nothing_to_check == UNSCOPED_CALL_SITES, (
+            "A capability without a declaration gained or lost a call site. "
+            "These are not debts -- but they are the places a *new* declaration "
+            "would immediately be unpaid, so they stay pinned."
         )
 
-    def test_seven_scoped_capabilities_have_no_checked_caller(self):
+    def test_four_scoped_capabilities_have_no_checked_caller(self):
         """The number §9.6 quotes. It is a debt figure, not a target.
 
-        Unchanged by S5c on purpose: both new checked call sites serve
-        ``xhs.publish``, which was already the one covered capability. Two
-        call sites, one capability — the debt is counted per capability, not per
-        site, because a capability with one checked caller is not "partly
-        protected".
+        Was seven while ripple declared ``ripple:read``. Removing that
+        declaration retires the debt honestly -- those three capabilities are
+        not "partly protected", they are not identity-scoped at all. Unchanged
+        by the earlier S5c wiring on purpose: both checked call sites serve
+        ``xhs.publish``, and a capability with one checked caller is not
+        "partly protected", so the debt is counted per capability, not per site.
         """
         unscoped_but_declared = set(DECLARED_SCOPES) - set(CHECKED_CALL_SITES)
-        assert len(unscoped_but_declared) == 7
+        assert len(unscoped_but_declared) == 4
         assert "xhs.publish" not in unscoped_but_declared  # the one that is covered
+        assert unscoped_but_declared == set(UNCHECKED_CALL_SITES)
