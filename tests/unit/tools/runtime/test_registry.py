@@ -11,7 +11,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from backend.tools.runtime import (
     CostClass,
@@ -209,6 +209,29 @@ class TestToolResult:
         it cannot be left to a message format."""
         with pytest.raises(ValueError, match="must say how it failed"):
             ToolResult(capability="demo.echo", ok=False, error="boom")
+
+    def test_zero_attempts_means_the_call_never_started(self):
+        """The gate-timeout result reports ``attempts=0``.
+
+        A floor of 1 would force that result to claim a try that never
+        happened; a negative count is still nonsense and stays refused.
+        """
+        result = ToolResult(
+            capability="demo.echo",
+            ok=False,
+            error="no slot",
+            error_kind=ErrorKind.TIMEOUT,
+            attempts=0,
+        )
+        assert result.attempts == 0
+        with pytest.raises(ValidationError):
+            ToolResult(
+                capability="demo.echo",
+                ok=False,
+                error="no slot",
+                error_kind=ErrorKind.TIMEOUT,
+                attempts=-1,
+            )
 
     def test_failure_with_error(self):
         result = ToolResult(

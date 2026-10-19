@@ -44,12 +44,14 @@ def shared_gateway() -> ToolGateway:
     """The process-wide Gateway, built on first use.
 
     Deliberately shared rather than built per call. ``max_concurrency`` is a
-    semaphore owned by the gateway, so a per-call gateway would hand every
-    concurrent workflow its own ceiling — i.e. no ceiling at all on exactly
-    the platform-scraping capabilities that need one. Sharing it is safe
-    because implementations are resolved per call (:func:`catalog.bind`),
-    not captured: a shared gateway does not freeze what the catalogue points
-    at, so test doubles still work.
+    slot gate (``account_gate``) whose process-local half is keyed per
+    capability/account and whose PG half coordinates across workers, so a
+    per-call gateway would hand every concurrent workflow its own local
+    half — i.e. no ceiling at all on exactly the platform-scraping
+    capabilities that need one. Sharing it is safe because implementations
+    are resolved per call (:func:`catalog.bind`), not captured: a shared
+    gateway does not freeze what the catalogue points at, so test doubles
+    still work.
     """
     global _gateway
     if _gateway is None:
