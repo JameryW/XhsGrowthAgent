@@ -8,13 +8,16 @@ there is no cancel and no resume), and a degraded service is reported as a fact
 rather than passed off as a zeroed prediction.
 """
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.services.ripple_service import RippleTimeoutError
-from backend.tools.ripple.integration import predict_spread
+from backend.tools.ripple.integration import get_report, predict_spread
 from backend.tools.runtime import DomainOutcome
+from backend.tools.runtime.catalog import build_registry
+from backend.tools.runtime.gateway import ToolGateway
 
 
 def _service(**overrides: object) -> MagicMock:
@@ -93,6 +96,52 @@ async def test_predict_spread_reports_degradation_as_a_domain_outcome():
     assert excinfo.value.payload["ripple_reason"] == "unreachable"
     # 全零的"预测"体不进 payload：调用方自己造兜底，重复搬运只是噪音。
     assert "ripple_prediction" not in excinfo.value.payload
+
+
+@pytest.mark.asyncio
+async def test_get_report_propagates_a_service_failure():
+    """取报告失败不再被写成一份"报告"。
+
+    这里曾是 ``except Exception: return {"error": str(e)}`` —— 一份**带 error
+    键的成功结果**。Gateway 没有第二个可看的字段，于是记成 ``ok=True``；调用方
+    只能靠一条带外约定（``if "error" in report``）得知事实，而 trace 已经把这件
+    事说成没发生过。它也是 ``scan_ref_fallbacks`` 发现的那一处：目录 ref 面此前
+    不被任何登记表覆盖，因为它既不是 ``@tool``，也不在 service 表的扫描范围里。
+    """
+    service = _service(get_report=AsyncMock(side_effect=Exception("Connection refused")))
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        with pytest.raises(Exception, match="Connection refused"):
+            await get_report(job_id="job-1")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_report_is_not_filed_as_a_success():
+    """Gateway 视角：失败的取报告不再是 ``ok=True``。
+
+    这是整个改动的落点。此前 ``get_report`` 把异常写成 ``{"error": ...}``，
+    Gateway 除了"调用返回了"没有第二个可看的字段，于是记成成功 —— 调用方
+    只能靠 ``if "error" in report`` 这条带外约定得知事实，而 trace 已经把
+    它说成没发生过。断言用 outcome 值收（不用 `pytest.raises` 包住整段），
+    这样"没抛但回了个 error 体"会红在断言上，而不是崩在别处。
+    """
+    events: list[dict[str, Any]] = []
+
+    async def trace(event: dict[str, Any]) -> None:
+        events.append(dict(event))
+
+    service = _service(get_report=AsyncMock(side_effect=Exception("Connection refused")))
+    gateway = ToolGateway(build_registry(), trace=trace)
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        result = await gateway.invoke("ripple.get_report", {"job_id": "job-1"})
+
+    assert result.ok is False
+    # 不再有"带 error 键的成功结果"这种形状：失败就是失败。
+    assert not (isinstance(result.value, dict) and "error" in result.value)
+    assert events[-1].get("ok") is False
 
 
 def test_ripple_settings_default(monkeypatch):

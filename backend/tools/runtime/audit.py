@@ -52,6 +52,7 @@ __all__ = [
     "scan_catalogue_refs",
     "scan_direct_tool_imports",
     "scan_function_refs",
+    "scan_ref_fallbacks",
     "scan_silent_fallbacks",
     "scan_tool_functions",
 ]
@@ -428,6 +429,14 @@ TOOLS_ROOT = Path(__file__).resolve().parents[1]
 CATALOGUE_PATH = Path(__file__).resolve().parent / "catalog.py"
 """The declaration file. Its ``tool_ref("...")`` literals are the register."""
 
+SOURCE_ROOT = TOOLS_ROOT.parent.parent
+"""The repo root — what a catalogue ref's *dotted module* is resolved against.
+
+Refs are written ``backend.tools.ripple.integration:get_report``, so the module
+already carries the ``backend`` segment; resolving against ``backend`` would
+look for ``backend/backend/...``.
+"""
+
 #: An unregistered tool that writes to **the XHS platform**. This is the class
 #: §4.1 of the upgrade note is about: a second one reaching an agent would make
 #: node-internal retries able to repeat a real-world action.
@@ -766,6 +775,77 @@ def scan_silent_fallbacks(
                             returned=ast.unparse(ret.value),  # type: ignore[arg-type]
                         )
                     )
+    return tuple(sorted(found, key=lambda item: (item.ref, item.handler_line)))
+
+
+def _module_file(module: str, root: Path | str = SOURCE_ROOT) -> Path:
+    """Inverse of ``_module_ref``: ``backend.tools.ripple.integration`` → path.
+
+    An unresolvable module raises rather than yielding nothing: a scan that
+    silently reads no source reports "clean" over code it never opened, which
+    is the one answer this module refuses to give.
+    """
+    path = Path(root) / Path(module.replace(".", "/")).with_suffix(".py")
+    if not path.is_file():
+        raise FileNotFoundError(f"no source for module {module!r} under {root}")
+    return path
+
+
+def _def_by_qualname(tree: ast.Module, qualname: str) -> ast.AST | None:
+    """The function or class chain ``qualname`` names; ``None`` if it is gone."""
+    node: ast.AST | None = None
+    for part in qualname.split("."):
+        scope: ast.AST = tree if node is None else node
+        found: ast.AST | None = None
+        for child in ast.iter_child_nodes(scope):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == part:
+                found = child
+                break
+            if node is None and isinstance(child, ast.ClassDef) and child.name == part:
+                found = child
+                break
+        if found is None:
+            return None
+        node = found
+    return node
+
+
+def scan_ref_fallbacks(
+    catalogue_path: Path | str = CATALOGUE_PATH, root: Path | str = SOURCE_ROOT
+) -> tuple[SilentFallback, ...]:
+    """The same question as ``scan_silent_fallbacks``, asked of the catalogue's refs.
+
+    ``scan_silent_fallbacks`` reads the ``@tool`` surface — what an agent *could*
+    reach — and ``SERVICE_FALLBACKS`` reads one service file. Neither sees the
+    functions the Gateway actually invokes: most catalogue refs are plain
+    ``async def``s with no decorator, so a literal handed back from their
+    ``except`` was counted by nobody. ``ripple.get_report`` lived there for
+    exactly that reason: it returned ``{"error": ...}``, the Gateway filed the
+    call ``ok=True``, and the caller had to keep a private convention
+    (``if "error" in report``) to learn what the trace had just denied.
+
+    ``root`` is a parameter so a test can point the scan at a temporary tree —
+    the same reason ``audit_tool_catalogue`` takes ``declared``.
+    """
+    found: list[SilentFallback] = []
+    for ref in scan_catalogue_refs(catalogue_path):
+        module, separator, qualname = ref.partition(":")
+        if not separator or not qualname:
+            raise ValueError(f"catalogue ref {ref!r} is not 'module:function'")
+        source = _module_file(module, root)
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        node = _def_by_qualname(tree, qualname)
+        if node is None:
+            raise LookupError(f"{ref}: no such function in {source}")
+        for handler in _except_handlers(node):
+            for ret in _literal_returns(handler):
+                found.append(
+                    SilentFallback(
+                        ref=ref,
+                        handler_line=handler.lineno,
+                        returned=ast.unparse(ret.value),  # type: ignore[arg-type]
+                    )
+                )
     return tuple(sorted(found, key=lambda item: (item.ref, item.handler_line)))
 
 

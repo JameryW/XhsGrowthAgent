@@ -171,10 +171,14 @@ async def validate_pmf(
 
 
 async def get_report(job_id: str) -> dict[str, Any]:
-    """生成模拟报告"""
-    try:
-        service = await _get_service()
-        return await service.get_report(job_id)
-    except Exception as e:
-        logger.error(f"Ripple report generation failed for {job_id}: {e}")
-        return {"error": str(e)}
+    """生成模拟报告
+
+    No ``except``. A failed call is not a report, and answering it with
+    ``{"error": ...}`` is what made the Gateway file the call as ``ok=True`` —
+    the caller then needed a second, out-of-band protocol
+    (``if "error" in report``) to learn the thing the trace had just claimed
+    did not happen. The service raises now, and normalising belongs to the
+    Gateway alone (see the module docstring).
+    """
+    service = await _get_service()
+    return await service.get_report(job_id)

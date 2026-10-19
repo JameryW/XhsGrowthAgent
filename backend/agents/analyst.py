@@ -393,17 +393,13 @@ class AnalystAgent(BaseAgent):
         if not result.ok:
             logger.warning(f"Ripple report retrieval skipped: {result.error}")
             # 只有超时才是"模拟还在跑"，这时取消任务才有意义。判断依据是
-            # error_kind 而不是错误文本 —— get_report 从不抛异常（失败时返回
-            # {"error": ...}），所以这里实际等价于旧代码的 TimeoutError 分支。
+            # error_kind 而不是错误文本 —— 普通失败不代表任务还在跑，取消它没有意义。
             if result.error_kind is ErrorKind.TIMEOUT:
                 await self._ripple_cancel(job_id)
             return None
 
         report = result.value
         if not isinstance(report, dict):
-            return None
-        if "error" in report:
-            logger.warning(f"Ripple report unavailable: {job_id}: {report['error']}")
             return None
 
         rounds = report.get("rounds", [])

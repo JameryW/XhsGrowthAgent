@@ -1284,3 +1284,55 @@ class TestRippleProgressStoreCleanup:
         # 超时残留被过滤——不再返回，前端不会被钉在 95%
         assert result == {}
         assert "thread-B:job-2" not in RippleService._progress_store
+
+
+class TestGetReportRefusesToAnswerWithAnErrorBody:
+    """``get_report`` 的失败必须是异常，不是一份"带 error 键的结果"。
+
+    ``{"error": str(e)}`` 是服务层最后一处「失败被当成值交回去」。它只有一个
+    调用方（``backend.tools.ripple.integration.get_report``），而那一层又把它
+    原样往外传，于是 Gateway 记成 ``ok=True`` —— 调用方只能靠一条带外约定
+    （``if "error" in report``）得知事实。两处一起改掉：服务层抛，集成层不接。
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_failed_report_request_raises_instead_of_returning_error(self):
+        service = RippleService()
+
+        with (
+            patch.object(
+                service,
+                "_get_config",
+                return_value={
+                    "base_url": "http://ripple-test",
+                    "api_token": "",
+                    "timeout": 30,
+                },
+            ),
+            patch.object(service, "_request_with_retry") as mock_request,
+        ):
+            mock_request.side_effect = httpx.ConnectError("Connection refused")
+
+            with pytest.raises(httpx.ConnectError):
+                await service.get_report("job-1")
+
+    @pytest.mark.asyncio
+    async def test_a_successful_report_is_returned_untouched(self):
+        """正控：改的是失败路径，成功路径仍然原样返回报告体。"""
+        service = RippleService()
+
+        with (
+            patch.object(
+                service,
+                "_get_config",
+                return_value={
+                    "base_url": "http://ripple-test",
+                    "api_token": "",
+                    "timeout": 30,
+                },
+            ),
+            patch.object(service, "_request_with_retry") as mock_request,
+        ):
+            mock_request.return_value = {"rounds": [{"content": "ok"}]}
+
+            assert await service.get_report("job-1") == {"rounds": [{"content": "ok"}]}
