@@ -1179,6 +1179,36 @@ class TestGetAnalytics:
         # client was closed
         instance.close.assert_awaited_once()
 
+    def test_analytics_reads_as_the_account(self, client, mock_store):
+        """The fetch goes through ``client_for_account`` — the credential owner.
+
+        A bare ``XHSClient(cookie="")`` here read as *nobody*, and the old
+        ``get_post_analytics`` answered that with a zero snapshot ("this post
+        has 0 views") instead of failing. The sibling tests mock the read
+        itself, so they cannot see which credential it runs on; this one pins
+        the wiring.
+        """
+        draft_id = self._seed_published_draft(client, mock_store)
+        analytics_obj = XHSAnalytics(post_id="real_note_1", views=1)
+        with (
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value="http://localhost:9222"),
+            ),
+            patch(
+                "backend.services.xhs_client.client_for_account",
+                AsyncMock(),
+            ) as mock_cfa,
+            patch("backend.config.settings.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.platform.headless = True
+            instance = mock_cfa.return_value
+            instance.get_post_analytics = AsyncMock(return_value=analytics_obj)
+            instance.close = AsyncMock()
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+        mock_cfa.assert_awaited_once_with("acct1")
+
     def test_analytics_requires_published_returns_400(self, client, mock_store):
         # create a draft but never publish it → no post_id
         create = client.post("/api/free/draft", json=DRAFT_BODY)

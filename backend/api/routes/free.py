@@ -405,7 +405,9 @@ async def publish_draft(
 
     Loads the draft, synthesizes a minimal state, and calls run_publish — the
     same real-publish path PublisherAgent uses (CDP resolution, account
-    validation, XHSClient.publish_post, ContentHistory recording). Publish
+    validation, the ``xhs.publish`` capability through the Tool Gateway —
+    ``xhs_publisher`` → ``XHSPublisher.publish_note``, not the deleted
+    ``XHSClient.publish_post`` — ContentHistory recording). Publish
     results are recorded to account memory by run_publish itself.
     """
     account_id = await resolve_required_account_id(str(user["id"]), ref.account_id)
@@ -967,15 +969,14 @@ async def get_analytics(
             "start the account browser and scan-login first",
         )
 
-    from backend.services.xhs_client import XHSClient
+    from backend.services.xhs_client import client_for_account
 
-    client = XHSClient(
-        cookie="",
-        user_id="",
-        use_browser=True,
-        headless=False,
-        cdp_endpoint=cdp_endpoint,
-    )
+    # Read as *this account* — the same credential owner every read capability
+    # uses. A cookie-less XHSClient here answered with a zero-analytics snapshot
+    # ("this post has 0 views") whenever the fetch failed; see
+    # XHSClient.get_post_analytics, which now refuses to answer at all without
+    # a credential instead of transcribing zeros.
+    client = await client_for_account(account_id)
     try:
         analytics_obj = await client.get_post_analytics(post_id)
         # XHSAnalytics is a dataclass — convert to a plain dict for the API

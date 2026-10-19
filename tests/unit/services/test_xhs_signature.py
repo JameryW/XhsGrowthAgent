@@ -52,7 +52,7 @@ class TestSignatureUnavailable:
     async def test_monitor_keywords_does_not_swallow_signature_unavailable(self):
         from backend.services.xhs_client import XHSClient
 
-        client = XHSClient(cookie="a1=valid_long_value_12345", use_browser=False)
+        client = XHSClient(cookie="a1=valid_long_value_12345")
         with pytest.raises(XHSSignatureUnavailableError) as exc:
             await client.monitor_keywords(["穿搭"])
         assert exc.value.error_code == "signature_unavailable"

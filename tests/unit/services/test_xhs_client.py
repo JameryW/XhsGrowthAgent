@@ -10,8 +10,6 @@ from backend.services.xhs_client import (
     XHSAuthError,
     XHSClient,
     XHSComment,
-    XHSDirectMessage,
-    XHSPost,
     XHSPublishError,
     XHSRateLimitError,
 )
@@ -19,31 +17,6 @@ from backend.services.xhs_client import (
 
 class TestXHSDataClasses:
     """Tests for XHS data classes."""
-
-    def test_xhs_post_defaults(self):
-        """XHSPost has correct defaults."""
-        post = XHSPost(title="Test", body="Content")
-        assert post.title == "Test"
-        assert post.body == "Content"
-        assert post.hashtags == []
-        assert post.image_paths == []
-        assert post.category == ""
-        assert post.is_private is False
-
-    def test_xhs_post_with_values(self):
-        """XHSPost accepts all values."""
-        post = XHSPost(
-            title="Title",
-            body="Body",
-            hashtags=["#test", "#demo"],
-            image_paths=["img1.jpg", "img2.jpg"],
-            category="美食",
-            location="北京",
-            is_private=True,
-        )
-        assert post.hashtags == ["#test", "#demo"]
-        assert len(post.image_paths) == 2
-        assert post.category == "美食"
 
     def test_xhs_analytics_defaults(self):
         """XHSAnalytics has correct defaults."""
@@ -62,16 +35,6 @@ class TestXHSDataClasses:
         )
         assert comment.comment_id == "c1"
         assert comment.is_reply is False
-
-    def test_xhs_direct_message(self):
-        """XHSDirectMessage creation."""
-        dm = XHSDirectMessage(
-            message_id="m1",
-            sender_id="s1",
-            sender_name="Sender",
-            content="Hello",
-        )
-        assert dm.message_id == "m1"
 
 
 class TestXHSExceptions:
@@ -119,6 +82,25 @@ class TestXHSClient:
         be able to ask *before* the call."""
         assert XHSClient(cookie="test_cookie").can_read is True
         assert XHSClient().can_read is False
+
+    def test_the_playwright_half_is_gone(self):
+        """The zero-caller Playwright half is deleted, not left as a trap.
+
+        Same shape as ``test_xhs_signature_class_removed``: these methods
+        answered "the feature is off" with a *result-shaped* value
+        (``{"post_id": "", "status": "disabled"}`` / ``False`` / ``[]``) that no
+        caller could tell apart from a real attempt — and they had no callers
+        to begin with. Re-adding one has to beat this test first.
+        """
+        for name in (
+            "publish_post",
+            "reply_to_comment",
+            "get_direct_messages",
+            "send_dm",
+            "_ensure_publisher",
+            "_ensure_engagement",
+        ):
+            assert not hasattr(XHSClient, name), name
 
     @pytest.mark.asyncio
     async def test_get_trending_success(self, client):
@@ -302,19 +284,54 @@ class TestXHSClient:
         assert await client.get_comments("post_123") == []
 
     @pytest.mark.asyncio
-    async def test_auth_error_on_invalid_cookie(self, client):
-        """Auth error when cookie invalid."""
-        with patch.object(
-            client._http,
-            "get_note_detail",
-            new_callable=AsyncMock,
-            side_effect=XHSAuthError("认证失败"),
-        ):
-            result = await client.get_post_analytics("post_123")
+    async def test_get_post_analytics_propagates_an_auth_failure(self, client):
+        """A failed fetch must not come back as a zero snapshot.
 
-        # Falls back to empty analytics on error
-        assert result.post_id == "post_123"
-        assert result.views == 0
+        It used to: the catch-all answered every failure with
+        ``XHSAnalytics(post_id=...)`` — views 0, likes 0 — and this test pinned
+        that as *"falls back to empty analytics on error"*. A zero analytics
+        object is not "no data", it is "this post has 0 views", so the failure
+        moved instead of the assertion being deleted.
+        """
+        with (
+            patch.object(
+                client._http,
+                "get_note_detail",
+                new_callable=AsyncMock,
+                side_effect=XHSAuthError("认证失败"),
+            ),
+            pytest.raises(XHSAuthError),
+        ):
+            await client.get_post_analytics("post_123")
+
+    @pytest.mark.asyncio
+    async def test_get_post_analytics_propagates_a_failure(self, client):
+        """The same for a platform error: no zero snapshot from a failed read."""
+        with (
+            patch.object(
+                client._http,
+                "get_note_detail",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("platform 500"),
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await client.get_post_analytics("post_123")
+
+    @pytest.mark.asyncio
+    async def test_get_post_analytics_without_a_cookie_raises(self, client):
+        """The precondition raises here instead of answering with zeros.
+
+        ``get_comments`` keeps its ``[]`` for a missing cookie because "no rows"
+        is at least a neutral answer, and ``require_readable`` exists for the
+        callers that cannot afford the ambiguity. ``XHSAnalytics`` has no
+        neutral value — the zero object *is* the claim "0 views" — so the gate
+        lives inside the method and cannot be forgotten by the caller.
+        """
+        client._http = None
+
+        with pytest.raises(XHSAuthError):
+            await client.get_post_analytics("post_123")
 
     @pytest.mark.asyncio
     async def test_close_client(self, client):

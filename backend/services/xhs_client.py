@@ -1,8 +1,17 @@
-"""Xiaohongshu platform client — API + Playwright hybrid mode.
+"""Xiaohongshu platform client — HTTP API only.
 
-混合架构:
-- HTTP API: 用于简单查询 (热门话题、搜索、获取评论)
-- Playwright: 用于复杂操作 (发布、回复评论、私信)
+小红书平台交互客户端：**只做 HTTP 查询**。
+
+曾经是"混合架构"——HTTP 查简单数据，Playwright 做发布/回复/私信。Playwright 那
+半个类在本仓**没有任何调用者**（`publish_post` / `reply_to_comment` /
+`get_direct_messages` / `send_dm` 四个方法连测试都没写过），连同它们的载荷数据类
+`XHSPost` / `XHSDirectMessage` 一起，2026-10-19 删除。真实发布与互动各自有归属地：
+`XHSPublisher`（经 `backend/tools/xhs/publisher.py`）与 `XHSEngagement`（经
+`backend/tools/xhs/engagement.py`），两者都返回完整判决，而不是这里的 `bool`。
+
+删它的另一个理由：那半边会**说谎**。`use_browser=False` 时
+`publish_post` 返回 ``{"post_id": "", "status": "disabled"}``——一个结果形状的答案，
+描述的是"这个功能没开"，而调用方分不清它和"发出去了但没拿到 id"。
 """
 
 from __future__ import annotations
@@ -10,17 +19,13 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from backend.services.xhs_api import XHSApiEndpoints, XHSApiParams
 from backend.services.xhs_signature import XHSCookieParser
-
-if TYPE_CHECKING:
-    from backend.services.xhs_engagement import XHSEngagement
-    from backend.services.xhs_publisher import XHSPublisher
 
 logger = logging.getLogger("xhs_growth.xhs_client")
 
@@ -77,20 +82,6 @@ class XHSSignatureUnavailableError(XHSApiError):
 
 
 @dataclass
-class XHSPost:
-    """小红书帖子"""
-
-    title: str
-    body: str
-    hashtags: list[str] = field(default_factory=list)
-    image_paths: list[str] = field(default_factory=list)
-    category: str = ""
-    location: str = ""
-    is_private: bool = False
-    scheduled_time: str = ""
-
-
-@dataclass
 class XHSAnalytics:
     """帖子数据分析"""
 
@@ -116,17 +107,6 @@ class XHSComment:
     like_count: int = 0
     created_at: str = ""
     is_reply: bool = False
-
-
-@dataclass
-class XHSDirectMessage:
-    """私信"""
-
-    message_id: str
-    sender_id: str
-    sender_name: str
-    content: str
-    timestamp: str = ""
 
 
 @dataclass
@@ -261,32 +241,20 @@ class _HTTPClient:
 
 
 class XHSClient:
-    """小红书平台交互客户端，混合架构"""
+    """小红书平台 HTTP 查询客户端"""
 
     def __init__(
         self,
         cookie: str = "",
         user_id: str = "",
-        use_browser: bool = False,
-        headless: bool = False,
-        cdp_endpoint: str = "",
         account_id: str = "",
     ):
         self.cookie = cookie
         self.user_id = user_id
-        self.use_browser = use_browser
-        # Kept for compatibility with older callers; XHS browser services are
-        # always headed and ignore this legacy switch.
-        self.headless = False
-        self.cdp_endpoint = cdp_endpoint
         self.account_id = (account_id or "").strip()
 
         # HTTP API 客户端
         self._http = _HTTPClient(cookie=cookie) if cookie else None
-
-        # Playwright 客户端 (懒加载)
-        self._publisher: XHSPublisher | None = None
-        self._engagement: XHSEngagement | None = None
 
         # Cookie 验证
         self._cookie_valid = XHSCookieParser.is_valid(cookie) if cookie else False
@@ -309,10 +277,6 @@ class XHSClient:
         """关闭所有连接"""
         if self._http:
             await self._http.close()
-        if self._publisher:
-            await self._publisher.close()
-        if self._engagement:
-            await self._engagement.close()
 
     # ── HTTP API 方法 (简单查询) ─────────────────────────────────────────────
 
@@ -464,29 +428,47 @@ class XHSClient:
         return comments
 
     async def get_post_analytics(self, post_id: str) -> XHSAnalytics:
-        """获取帖子数据分析"""
+        """获取帖子数据分析
+
+        A failure **raises** — and so does an unreadable client. This method is
+        the one read with no empty answer to fall back on: ``[]`` can mean "no
+        rows" for the list-shaped reads, but a zero ``XHSAnalytics`` does not
+        mean "no data", it means "this post has 0 views" — a claim about the
+        post, transcribed at authoring time and delivered as if measured.
+
+        Until 2026-10-19 both cases were answered with that zero object. The
+        catch-all swallowed the platform failure, and the missing-cookie branch
+        fell through to the same ``return``; ``test_auth_error_on_invalid_cookie``
+        even pinned the swallow as *"falls back to empty analytics on error"*.
+        Because the zero value of the result type is itself the lie, the gate
+        lives *inside* the method — ``require_readable`` is called here rather
+        than left to the caller, who cannot forget a gate they never had to
+        remember. Every other read keeps its documented ``[]``/``{}``
+        precondition answer; this one has no such honest shape.
+
+        Raises:
+            XHSAuthError: 未配置 Cookie —— "没读到"，不是"这篇 0 浏览"。
+            ScrapeBudgetExhaustedError: 抓取预算用尽。
+            XHSSignatureUnavailableError: 签名不可用。
+            Exception: 平台层原样上抛。
+        """
+        require_readable(self, "get_post_analytics")
+        # The gate above just vouched for the credential; narrow for mypy.
+        http = cast(_HTTPClient, self._http)
         logger.info(f"Fetching analytics for post: {post_id}")
 
         # TODO: 需要从创作者中心获取数据，目前返回基础信息
-        try:
-            if self._http:
-                detail = await self._http.get_note_detail(note_id=post_id)
-                return XHSAnalytics(
-                    post_id=post_id,
-                    views=detail.get("view_count", 0),
-                    likes=detail.get("like_count", 0),
-                    collects=detail.get("collect_count", 0),
-                    comments=detail.get("comment_count", 0),
-                    shares=detail.get("share_count", 0),
-                    engagement_rate=detail.get("engagement_rate", 0.0),
-                    fetched_at=time.strftime("%Y-%m-%d %H:%M:%S"),
-                )
-        except XHSSignatureUnavailableError:
-            raise
-        except Exception as e:
-            logger.warning(f"获取分析数据失败: {e}")
-
-        return XHSAnalytics(post_id=post_id)
+        detail = await http.get_note_detail(note_id=post_id)
+        return XHSAnalytics(
+            post_id=post_id,
+            views=detail.get("view_count", 0),
+            likes=detail.get("like_count", 0),
+            collects=detail.get("collect_count", 0),
+            comments=detail.get("comment_count", 0),
+            shares=detail.get("share_count", 0),
+            engagement_rate=detail.get("engagement_rate", 0.0),
+            fetched_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        )
 
     async def monitor_keywords(self, keywords: list[str]) -> list[dict[str, Any]]:
         """关键词监控
@@ -597,146 +579,10 @@ class XHSClient:
                 break
         return all_notes[:limit]
 
-    # ── Playwright 方法 (复杂操作) ───────────────────────────────────────────
-
-    async def _ensure_publisher(self) -> XHSPublisher | None:
-        """确保发布器已初始化"""
-        if self._publisher is None and self.use_browser:
-            from backend.services.xhs_publisher import XHSPublisher
-
-            self._publisher = XHSPublisher(
-                cookie=self.cookie,
-                headless=False,
-                cdp_endpoint=self.cdp_endpoint,
-            )
-        return self._publisher
-
-    async def _ensure_engagement(self) -> XHSEngagement | None:
-        """确保互动器已初始化"""
-        if self._engagement is None and self.use_browser:
-            from backend.services.xhs_engagement import XHSEngagement
-
-            cdp_endpoint = self.cdp_endpoint.strip()
-            if not cdp_endpoint and self.account_id:
-                try:
-                    from backend.db.accounts import get_account_cdp_endpoint
-
-                    cdp_endpoint = (await get_account_cdp_endpoint(self.account_id)).strip()
-                except Exception as exc:
-                    logger.warning("无法解析账号 %s 的互动 CDP endpoint: %s", self.account_id, exc)
-            if not cdp_endpoint:
-                logger.warning(
-                    "互动已闭环：账号 %s 没有持久 CDP endpoint",
-                    self.account_id or "unknown",
-                )
-            self._engagement = XHSEngagement(
-                cookie=self.cookie,
-                headless=False,
-                cdp_endpoint=cdp_endpoint,
-                account_id=self.account_id,
-            )
-        return self._engagement
-
-    # P0-W3/W4: deliberately NO generic auto-retry on this method. It is the
-    # side-effecting submit — a retry that fires after the platform already
-    # accepted the note (e.g. on a response timeout) DOUBLE-POSTS. The read
-    # methods above keep their tenacity retries; retrying a publish is an
-    # explicit human action via /api/workflow/publish-retry, guarded by the
-    # deterministic publish_id idempotency record + unknown-result
-    # reconciliation (backend/agents/publisher.py). Unified retry ownership
-    # (Gateway) lands in P1c.
-    async def publish_post(self, post: XHSPost) -> dict[str, Any]:
-        """发布帖子 (Playwright) — 单次真实提交，不自动重试。"""
-        logger.info(f"Publishing post: {post.title}")
-
-        if not self.use_browser:
-            logger.warning("use_browser=False，无法发布帖子")
-            return {"post_id": "", "status": "disabled"}
-
-        publisher = await self._ensure_publisher()
-        if not publisher:
-            return {"post_id": "", "status": "error", "error": "无法初始化发布器"}
-
-        result = await publisher.publish_note(
-            title=post.title,
-            body=post.body,
-            image_paths=post.image_paths,
-            hashtags=post.hashtags,
-            category=post.category,
-            location=post.location,
-            scheduled_time=post.scheduled_time,
-            is_private=post.is_private,
-        )
-
-        return result
-
-    async def reply_to_comment(self, comment_id: str, post_id: str, reply: str) -> bool:
-        """回复评论 (Playwright)"""
-        logger.info(f"Replying to comment: {comment_id}")
-
-        if not self.use_browser:
-            return False
-
-        engagement = await self._ensure_engagement()
-        if not engagement:
-            return False
-
-        result = await engagement.reply_to_comment(
-            note_id=post_id,
-            comment_id=comment_id,
-            reply_content=reply,
-        )
-
-        return cast(bool, result.get("success", False))
-
-    async def get_direct_messages(self, limit: int = 20) -> list[XHSDirectMessage]:
-        """获取私信 (Playwright)"""
-        logger.info("Fetching direct messages")
-
-        if not self.use_browser:
-            return []
-
-        engagement = await self._ensure_engagement()
-        if not engagement:
-            return []
-
-        unread = await engagement.get_unread_messages()
-
-        messages = []
-        for msg in unread[:limit]:
-            messages.append(
-                XHSDirectMessage(
-                    message_id=f"dm_{int(time.time())}",
-                    sender_id=msg.get("sender_id", ""),
-                    sender_name=msg.get("sender_name", ""),
-                    content=msg.get("preview", ""),
-                    timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
-                )
-            )
-
-        return messages
-
-    async def send_dm(self, user_id: str, message: str) -> bool:
-        """发送私信 (Playwright)"""
-        logger.info(f"Sending DM to user: {user_id}")
-
-        if not self.use_browser:
-            return False
-
-        engagement = await self._ensure_engagement()
-        if not engagement:
-            return False
-
-        result = await engagement.send_dm(
-            target_user_id=user_id,
-            message=message,
-        )
-
-        return cast(bool, result.get("success", False))
-
 
 def require_readable(client: XHSClient, capability: str) -> None:
-    """Refuse to treat an unreadable platform as an empty one.
+    """Refuse to treat an unreadable platform as an empty one, and say which
+    client was vouched for.
 
     ``XHSClient`` needs a cookie for every HTTP read, and the credential is
     resolved by whoever builds the client — so this fires when that credential
@@ -754,6 +600,14 @@ def require_readable(client: XHSClient, capability: str) -> None:
     Lives next to ``XHSClient`` because it is a statement about that client, not
     about any one capability: two tool modules ask this question now, and a copy
     of the message in each would drift.
+
+    The question is asked of :attr:`XHSClient.can_read` — the public
+    precondition — and never of the ``_http`` field behind it: a fake that
+    answers ``can_read=False`` is saying "refuse me", and reaching past that
+    flag into its internals would let a stub's incidental truthiness answer a
+    question it was never asked. For the same reason it *returns* nothing: the
+    call sites whose doubles carry no ``_http`` at all would crash on a value
+    they have no use for.
     """
     if client.can_read:
         return
@@ -766,9 +620,10 @@ async def client_for_account(account_id: str = "") -> XHSClient:
 
     One owner for the credential plumbing, because it is asked in more than one
     capability now: ``xhs.trending``, ``xhs.keyword_monitor``,
-    ``xhs.competitor_analyzer`` and ``analysis.topic_scorer`` all read the
-    platform as somebody, and a second copy of this resolution would let them
-    read as different somebodies while each looks right on its own.
+    ``xhs.competitor_analyzer``, ``analysis.topic_scorer`` and the free-mode
+    analytics route all read the platform as somebody, and a second copy of
+    this resolution would let them read as different somebodies while each
+    looks right on its own.
 
     ``account_id`` is not decorative: browser login state lives in the CDP
     profile and is only wired up for publishing, so the read path has to be
@@ -776,14 +631,11 @@ async def client_for_account(account_id: str = "") -> XHSClient:
     one, otherwise the deployment credential, and an unusable answer stays
     unusable (see :func:`require_readable`) instead of being papered over here.
     """
-    from backend.config.settings import Settings
     from backend.services.xhs_credentials import load_credential
 
     credential = await load_credential(account_id)
     return XHSClient(
         cookie=credential.cookie,
         user_id=credential.user_id,
-        use_browser=Settings().platform.use_browser,
-        headless=False,
         account_id=account_id or "",
     )
