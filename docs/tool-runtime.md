@@ -77,20 +77,24 @@ trace 事件带一个 `scopes` 字段：
 | `unchecked` | 声明了，但调用方没传 `granted_scopes` ⇒ **没检查** |
 | `checked` | 传了并通过；不足的情况在到达事件之前就已抛 `PermissionDeniedError` |
 
-今天（2026-10-19 复算）的覆盖面：**12 个 capability 里 8 个声明了 scope，全仓只有
-1 个调用点真的传 `granted_scopes`**（`backend/creator_agent/execution.py`），
-其余 7 个声明了 scope 的能力**没有任何已检查的调用点**。这些数字不是估算，是
-`tests/unit/tools/runtime/test_scope_coverage.py` 从代码树逐项复算并钉住的；
-任何新增/收紧都会让那条测试变红，逼着把这节和
+今天（2026-10-19 复算）的覆盖面：**12 个 capability 里 8 个声明了 scope，全仓有 2 个
+调用点真的传 `granted_scopes`**（`backend/creator_agent/execution.py` 与
+`backend/agents/publisher.py`），两个都落在 `xhs.publish` 上 —— 控制面确认后发布、
+主链工作流发布，两条路径同一条规则。剩余 **7 个声明了 scope 的能力没有任何已检查的
+调用点**。这些数字不是估算，是 `tests/unit/tools/runtime/test_scope_coverage.py` 从代码树
+逐项复算并钉住的；任何新增/收紧都会让那条测试变红，逼着把这节和
 `docs/tool-gateway-engagement-migration.md` §9.6 一起改。
 
 为什么当初没有立刻全线接线：在发布这条路径上，"有可用凭证"与"这台机器能发出去"并不是
 同一件事（发布走 CDP，`XHSPublisher(cookie="")` 根本不用 cookie），硬接会拒掉一类
-本来能工作的部署。**这条已于 2026-10-19 解掉**，方向是让授权追上机制：
+本来能工作的部署。**这条已于 2026-10-19 解掉并接上线**，方向是让授权追上机制：
 `XhsCredential` 多了一个 `profile_bound` 事实，`scopes` 改成按机制授予 ——
 **读要 cookie，写要 「cookie ∨ 已绑定 profile」**。绑定只读声明、不探测：具名账号读它的
 `cdp_port`，空 account_id 读部署声明的 `XHS_CDP_ENDPOINT`（可达性不是授权：让授权随
-Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。剩下的是接线本身，见 §9.6。
+Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。接线代价是**一处收紧**：
+具名账号若没有自己的 `cdp_port`、只靠全局浏览器，以前会经那台浏览器发布，现在被拒
+（`missing_publish_credential`，附指路），因为那正是"一个账号的选择、另一个账号的身份"。
+见 §9.6。
 
 ## 传参形状：PassStyle
 

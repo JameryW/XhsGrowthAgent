@@ -12,8 +12,9 @@ is today's state, and any change (a new capability, a new unchecked call site, a
 site that starts passing scopes) fails here until the register and
 ``docs/tool-gateway-engagement-migration.md`` §9.6 are updated together.
 
-Why it exists: eight of twelve capabilities declare a scope, and exactly one
-call site applies one. That was invisible until this file counted it.
+Why it exists: eight of twelve capabilities declare a scope, and when this file
+was written exactly one call site applied one. That was invisible until this file
+counted it.
 """
 
 from __future__ import annotations
@@ -39,9 +40,14 @@ DECLARED_SCOPES: dict[str, tuple[str, ...]] = {
     "xhs.trending": ("xhs:read",),
 }
 
-# The only place a capability is invoked *with* its requirement applied.
+# The places a capability is invoked *with* its requirement applied. Both
+# publish paths: the control plane (an action the user confirmed) and the
+# mainline (a workflow run). Two paths, one rule.
 CHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {
-    "xhs.publish": ("backend/creator_agent/execution.py",),
+    "xhs.publish": (
+        "backend/agents/publisher.py",
+        "backend/creator_agent/execution.py",
+    ),
 }
 
 # The debt: invocation sites that pass no ``granted_scopes``. Ordered so a new
@@ -57,7 +63,6 @@ UNCHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {
     "search.web": ("backend/agents/trend_scout.py",),
     "xhs.competitor_analyzer": ("backend/agents/trend_scout.py",),
     "xhs.keyword_monitor": ("backend/agents/trend_scout.py",),
-    "xhs.publish": ("backend/agents/publisher.py",),
     "xhs.trending": ("backend/agents/trend_scout.py",),
 }
 
@@ -157,7 +162,7 @@ class TestDeclaredScopes:
 
 
 class TestWhereTheCheckIsApplied:
-    def test_exactly_one_call_site_applies_a_scope(self):
+    def test_exactly_two_call_sites_apply_a_scope(self):
         checked = _group(_call_sites(), checked=True)
         assert checked == CHECKED_CALL_SITES, (
             "The set of scope-checking call sites changed. If you just wired one, "
@@ -173,7 +178,14 @@ class TestWhereTheCheckIsApplied:
         )
 
     def test_seven_scoped_capabilities_have_no_checked_caller(self):
-        """The number §9.6 quotes. It is a debt figure, not a target."""
+        """The number §9.6 quotes. It is a debt figure, not a target.
+
+        Unchanged by S5c on purpose: both new checked call sites serve
+        ``xhs.publish``, which was already the one covered capability. Two
+        call sites, one capability — the debt is counted per capability, not per
+        site, because a capability with one checked caller is not "partly
+        protected".
+        """
         unscoped_but_declared = set(DECLARED_SCOPES) - set(CHECKED_CALL_SITES)
         assert len(unscoped_but_declared) == 7
         assert "xhs.publish" not in unscoped_but_declared  # the one that is covered

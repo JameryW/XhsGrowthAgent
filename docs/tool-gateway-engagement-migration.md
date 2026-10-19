@@ -434,10 +434,10 @@ Phase B（在 A 之上追加）：
    实测后问题变大了，见下。）
 
    **实测（2026-10-19，由 `tests/unit/tools/runtime/test_scope_coverage.py` 复算）**：
-   12 个 capability 里 **8 个声明了 `auth_scope`**，全仓**只有 1 个调用点**真的传
+   12 个 capability 里 **8 个声明了 `auth_scope`**，当时全仓**只有 1 个调用点**真的传
    `granted_scopes`（`backend/creator_agent/execution.py`）⇒ **7 个声明了 scope 的
    能力没有任何已检查的调用点**；`xhs.publish` 有两条路径，一条检查
-   （`creator_agent`）、一条不检查（`backend/agents/publisher.py`）。
+   （`creator_agent`）、一条不检查（`backend/agents/publisher.py`）—— 后者已在 S5c 接上。
 
    **为什么不能直接把 `creator_agent` 的做法抄到 agent 路径**（当时的实测状态）：scope
    的唯一来源是 `XhsCredential.scopes`，它当时**只**由 cookie 可用性推导。
@@ -483,5 +483,17 @@ Phase B（在 A 之上追加）：
    （`docs/tool-runtime.md` 有表），让"声明了但没检查"在日志里是一条可数的事实；
    覆盖面被测试钉成数字，债务不会再悄悄扩大。
 
-   **还没做的**：把 `backend/agents/publisher.py` 的 agent 路径接上
-   `granted_scopes`。A 解掉的是"接上就会拒"这个前提，接线本身是下一片。
+   **接线（S5c）**：主链 `backend/agents/publisher.py:run_publish` 现在也解析并传入
+   `granted_scopes`，且在幂等账本**之前**拒绝——一次没被授权的发布不该留下 prepared
+   记录。归属跟**选中的账号**（`publish_options.account_id`）走，不跟
+   `state["account_id"]` 这个从未被校验过的标签走；没有选中账号时，行为主体就是部署本身。
+
+   覆盖面从 **1 → 2 个调用点**（都落在 `xhs.publish`），**"没有已检查调用点的能力"
+   仍是 7 个**：债务按能力计，不按调用点计——一个能力有一个已检查调用点就不算"部分
+   受保护"。这两个数字由 `test_scope_coverage.py` 从代码树复算。
+
+   **接线带来的唯一收紧**：具名账号若 `cdp_port=0`、只靠全局浏览器，以前会经那台浏览器
+   发布，现在被拒（`missing_publish_credential` + `recovery` 指路）。判断依据是它
+   正是"一个账号的选择、另一个账号的身份"。没有选中账号的部署不受影响，前提是它
+   **声明**了 `XHS_CDP_ENDPOINT`；只靠 9223 探活兜底的部署会拿到同一条拒绝，这是
+   "只读声明、不探测"的直接代价，已写进 `docs/tool-runtime.md`。

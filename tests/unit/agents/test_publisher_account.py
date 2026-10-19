@@ -124,12 +124,16 @@ async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, 
 
 @pytest.mark.asyncio
 async def test_falls_back_to_global_when_no_account(_browser_settings, mock_store, monkeypatch):
-    """No account_id → use global CDP endpoint if configured/resolved."""
+    """No account_id → the deployment's declared endpoint is what it publishes through.
+
+    Since P2a-S5c that declaration is also what carries the write grant, so the
+    endpoint has to be stated (``XHS_CDP_ENDPOINT``) rather than only patched in
+    at the resolver: a browser discovered by probing is reachability, and
+    reachability is not entitlement.
+    """
     state = _state(publish_options={"dry_run": False})
     client = _mock_client("p2")
-    monkeypatch.setattr(
-        "backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "http://global:9223"
-    )
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
     m_client = _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
@@ -150,6 +154,9 @@ async def test_generates_text_cover_when_no_images(_browser_settings, mock_store
         content_plan={"key_points": ["p1", "p2", "p3"]},
         visual_plan={"color_palette": ["#FFE4E1", "#FFDAB9", "#FFFACD"]},
     )
+    # No account selected → the deployment's declared endpoint carries the
+    # write grant; without it the refusal happens before any cover is drawn.
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
     client = _mock_client("p_cover")
     _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
