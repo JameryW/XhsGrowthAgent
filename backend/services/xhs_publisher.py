@@ -377,8 +377,8 @@ class XHSPublisher:
             logger.error(f"发布失败: {e}", exc_info=True)
             # ponytail: drop the dirty page (keep the browser) so the next
             # attempt starts from a clean page instead of a half-filled/
-            # erroring one. NOTE (P0-W3/W4 comment fix): XHSClient.publish_post
-            # deliberately has NO auto-retry any more — a generic retry around a
+            # erroring one. NOTE (P0-W3/W4): this method — the real submit —
+            # deliberately has NO auto-retry, a generic retry around a
             # side-effecting submit double-posts on a timeout. Retrying a real
             # publish is an explicit upper-layer concern (/publish-retry with
             # idempotency + reconciliation; unified Gateway retry lands in P1c)

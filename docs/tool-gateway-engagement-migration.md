@@ -119,15 +119,22 @@ Gateway 只能看到"一次成功返回的调用，值是 `success: False`"（`o
 `test_a_confirmed_reply_is_sent_but_carries_no_receipt` /
 `test_a_clicked_send_is_sent_but_unverified`。
 
-### 1.5 还剩的同类实例（Phase A 未覆盖）
+### 1.5 原先还剩的同类实例（Phase A 未覆盖）—— 现已清零（2026-10-19）
 
-| 位置 | 形状 | 为什么这次没动 |
+| 位置 | 形状 | 现状 |
 |---|---|---|
-| `backend/services/xhs_client.py:694` | 拉取私信时逐条套 `message_id=f"dm_{int(time.time())}"` | 同一秒内所有消息拿到**同一个 id**；但这些方法在本仓**没有任何调用者**（`get_direct_messages`；同形的还有 `reply_to_comment` / `send_dm` 两个把判决压成 `bool` 的包装），属于死路径，改它无法被真实流量验证 |
-| `backend/services/xhs_client.py:715` | `send_dm` 把判决压成 `bool` | 同上：死路径。（真正被用的是 `XHSEngagement.send_dm`，返回完整判决 —— 两者是不同类的同名方法） |
+| ~~`backend/services/xhs_client.py` 的 `get_direct_messages`~~ | 拉取私信时逐条套 `message_id=f"dm_{int(time.time())}"`，同一秒内所有消息拿到**同一个 id** | **已删（2026-10-19）**：它和 `reply_to_comment` / `send_dm` / `publish_post` 四个方法在本仓**没有任何调用者**、也没有测试（连同载荷数据类 `XHSPost` / `XHSDirectMessage` 一起删）。真正被用的是 `XHSEngagement.send_dm` / `reply_to_comment`，返回完整判决 —— 与被删的两个是不同类的同名方法。时钟 id 的缺陷随死代码一起消失，而不是被修好 |
+| ~~`backend/services/xhs_client.py` 的 `send_dm`~~ | 把判决压成 `bool` | 同上：死路径被删。`use_browser=False` 时那半边还返回 `{"post_id": "", "status": "disabled"}` 这种**结果形状**的答案描述"功能没开"，调用方分不清它和"发出去了没拿到 id" —— 这是删它而不修它的另一个理由 |
 | ~~`backend/tools/xhs/engagement.py:261`~~ | 读失败返回 `[]` | **已修（2026-10-19）**，见 §1.3 上方的表。同一个修复还去掉了它底下那层 `XHSClient.get_comments` 的同类兜底，否则只修工具是装饰 |
 
-这些留给"清死代码"或 Phase B 一并处理，不在 Phase A 里假装已经清完。
+"清死代码"不再是留给 Phase B 的话：`chore/remove-dead-xhs-client-paths`（2026-10-19）
+把整段 Playwright 半边删了。顺带修掉第 6 例「失败=数据」—— `get_post_analytics`
+的 `except` 里**没有** `return <literal>`，只是落到 `try` 之后的
+`return XHSAnalytics(post_id=...)`（零值对象 = "这篇 0 浏览"），**AST 扫描看不见**
+（`tests/unit/tools/runtime/test_silent_fallbacks.py` 的 `TestKnownBlindSpots`
+钉住该盲区）；守它的是行为测试 `test_get_post_analytics_*`，现在无 cookie 与读失败
+都改为失败即抛，因为 `XHSAnalytics` 的零值本身就是一句关于帖子的话，没有中性的
+"空"可退。
 
 **服务层剩下的 5 处同类兜底已改成可数的账**，不再靠人记：
 `tests/unit/tools/runtime/test_silent_fallbacks.py` 用 AST 扫 `@tool` 与

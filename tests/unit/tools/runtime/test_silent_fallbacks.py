@@ -30,6 +30,14 @@ scan of the sources rather than against a second register:
 * ``SERVICE_FALLBACKS`` — the service layer, **empty since 2026-10-19** after
   five instances were removed. Kept as a pinned empty table rather than deleted,
   so a new one has to arrive named and reasoned instead of quietly.
+
+Two shapes are *not* covered and are pinned as such in ``TestKnownBlindSpots``:
+a handler that only logs and lets execution fall through to a zero-valued
+``return`` *after* the ``try`` (``XHSClient.get_post_analytics``, fixed
+2026-10-19), and a handler that silently ``continue``s past the failed item
+(``monitor_keywords``, fixed 2026-10-19). Both read as "failure became data" to
+a human and are invisible to this scan by construction — only behaviour tests
+hold them.
 """
 
 from __future__ import annotations
@@ -229,3 +237,68 @@ class TestPositiveControls:
     def test_a_missing_root_is_an_error_not_a_clean_result(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError):
             scan_silent_fallbacks(tmp_path / "nope")
+
+
+class TestKnownBlindSpots:
+    """Shapes this scan cannot see — pinned so "clean" is never read as "all".
+
+    The judge is *a literal returned from an except handler*, and two shapes
+    that lie the same way never do that:
+
+    * **fall-through to a zero-valued constructor** — ``get_post_analytics``
+      answered a failed fetch (and a missing cookie) with
+      ``XHSAnalytics(post_id=...)``, a zero object that reads as "this post has
+      0 views". The handler only logged; the ``return`` sat *after* the
+      ``try``, so no handler owns it.
+    * **silent drop** — ``monitor_keywords`` used to ``continue`` past a failed
+      keyword, so a five-word batch that failed on two arrived as three rows
+      and read as "only three were monitored".
+
+    Only behaviour tests catch these
+    (``test_get_post_analytics_*`` in ``tests/unit/services/test_xhs_client.py``,
+    ``test_monitor_keywords_propagates_a_failed_keyword``). This class pins the
+    *limit* of the scan on purpose: if the scan ever learns to see either
+    shape, these assertions go red and the blind spot must move from
+    "invisible" to "counted" in the same commit — the reverse of what happened
+    when a fix was believed because a register changed colour while the
+    behaviour tests stayed green.
+    """
+
+    def _tree(self, tmp_path: Path, body: str) -> Path:
+        path = tmp_path / "backend" / "tools" / "xhs" / "one.py"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_fall_through_to_a_zero_object_is_invisible_to_the_scan(self, tmp_path: Path):
+        """The 2026-10-19 ``get_post_analytics`` shape, reduced.
+
+        Asserting the *miss* is the point: the guard that catches this lives in
+        the behaviour tests, and pretending otherwise is how the swallow
+        survived a register that already said "empty".
+        """
+        self._tree(
+            tmp_path,
+            "def one() -> object:\n"
+            "    try:\n"
+            "        return 1\n"
+            "    except Exception:\n"
+            "        pass\n"
+            "    return Zero(post_id='x')\n",
+        )
+        assert scan_silent_fallbacks(tmp_path / "backend" / "tools", tool_only=False) == ()
+
+    def test_a_silent_drop_is_invisible_to_the_scan(self, tmp_path: Path):
+        """The ``monitor_keywords`` shape: the failure just goes missing."""
+        self._tree(
+            tmp_path,
+            "def one(items: list) -> list:\n"
+            "    out = []\n"
+            "    for item in items:\n"
+            "        try:\n"
+            "            out.append(fetch(item))\n"
+            "        except Exception:\n"
+            "            continue\n"
+            "    return out\n",
+        )
+        assert scan_silent_fallbacks(tmp_path / "backend" / "tools", tool_only=False) == ()

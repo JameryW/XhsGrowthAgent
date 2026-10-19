@@ -219,8 +219,10 @@ class TestPublishRetrySafety:
     async def test_failure_resets_page_for_retry(self, publisher: XHSPublisher):
         """On exception, _page is closed and nulled — retry gets a fresh page.
 
-        XHSClient.publish_post retries up to 3x. Without this reset, _ensure_page
-        returns the same stuck page every attempt, so retries fail the same way.
+        ``publish_note`` has no auto-retry (P0-W3/W4: a generic retry around a
+        side-effecting submit double-posts), so whatever retries is a caller —
+        the explicit human /publish-retry. Without this reset, _ensure_page
+        hands that retry the same stuck page and it fails the same way.
         """
         page = AsyncMock()
         page.on = MagicMock()  # sync handler registration — real page.on is sync
