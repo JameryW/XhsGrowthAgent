@@ -77,13 +77,18 @@ trace 事件带一个 `scopes` 字段：
 | `unchecked` | 声明了，但调用方没传 `granted_scopes` ⇒ **没检查** |
 | `checked` | 传了并通过；不足的情况在到达事件之前就已抛 `PermissionDeniedError` |
 
-今天（2026-10-19 复算）的覆盖面：**12 个 capability 里 8 个声明了 scope，全仓有 2 个
+今天（2026-10-19 复算）的覆盖面：**12 个 capability 里 5 个声明了 scope，全仓有 2 个
 调用点真的传 `granted_scopes`**（`backend/creator_agent/execution.py` 与
 `backend/agents/publisher.py`），两个都落在 `xhs.publish` 上 —— 控制面确认后发布、
-主链工作流发布，两条路径同一条规则。剩余 **7 个声明了 scope 的能力没有任何已检查的
+主链工作流发布，两条路径同一条规则。剩余 **4 个声明了 scope 的能力没有任何已检查的
 调用点**。这些数字不是估算，是 `tests/unit/tools/runtime/test_scope_coverage.py` 从代码树
 逐项复算并钉住的；任何新增/收紧都会让那条测试变红，逼着把这节和
 `docs/tool-gateway-engagement-migration.md` §9.6 一起改。
+
+**"声明了但没检查的调用点"有两个半边，别混算**：11 个调用点没传 `granted_scopes`，但只有
+**4 个**落在"能力声明了 scope"上（这才叫债务），另外 **7 个**落在"能力什么都没声明"上
+（`content.*` ×2、`search.*` ×2、`ripple.*` ×3 —— 那里没有承诺可违背）。两个半边都在测试里
+钉住，且划分是**从声明推导**出来的，不是各写一遍。
 
 为什么当初没有立刻全线接线：在发布这条路径上，"有可用凭证"与"这台机器能发出去"并不是
 同一件事（发布走 CDP，`XHSPublisher(cookie="")` 根本不用 cookie），硬接会拒掉一类
@@ -96,7 +101,7 @@ Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。�
 （`missing_publish_credential`，附指路），因为那正是"一个账号的选择、另一个账号的身份"。
 见 §9.6。
 
-### 剩下的 7 个为什么还没接：它们不是同一类问题
+### 剩下的 4 个为什么还没接：它们不是同一类问题
 
 把"没接"当成一种债务会得出错误的下一步。逐个查过（2026-10-19），它们分三类：
 
@@ -104,10 +109,20 @@ Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。�
 |---|---|---|
 | 前置条件在**工具内** | `xhs.trending` / `xhs.keyword_monitor` / `xhs.competitor_analyzer` | `services.xhs_client.require_readable` 在读取前拒绝，凭据由 `client_for_account` 解析。Gateway 再判一次不会多出任何信息，只会把"可降级的结果"变成**抛出的契约违规**，而调用点是按 `ToolResult(ok=False)` 写的降级分支。 |
 | 声明结构上无法满足（已修） | `analysis.topic_scorer` | 以前用空 cookie 的 `XHSClient()` 读，并 `except` 成 `heat_score=50` —— 一个没人测过的分数被当数据写进 prompt。现已接上 `client_for_account` + `require_readable`，失败就抛出，调用方跳过该话题。 |
-| **与身份无关** | `ripple.get_report` / `ripple.predict_spread` / `ripple.validate_pmf` | 不消费任何凭据（`backend/tools/ripple/integration.py` 里没有 cookie，也没有 credential）。`ripple:read` 是**服务级** entitlement，不是身份授权 —— 拿凭证推出的 grant 永远满足不了它，所以"接线"这条路本身不存在。 |
+| **与身份无关**（已删声明） | `ripple.get_report` / `ripple.predict_spread` / `ripple.validate_pmf` | 本来就不是"没接"，是**接不了**：不消费任何凭据（`backend/tools/ripple/client.py` 用 `Settings().ripple.api_token`，部署级密钥，没有账号维度），而 `granted_scopes()` 只能吐出 `xhs:*`。所以 `ripple:read` 已于 2026-10-19 从目录里**删除**，理由见下。 |
+
+**为什么删声明而不是"改 vocabulary 给它发一个服务级 grant"**：那样做的效果是"只要部署配好了
+token，所有调用方都拿到 `ripple:read`"。那不是一个权限，是一个**伪装成权限的配置检查** ——
+它会把"ripple 没配 token"报成"你没被授权"，而这正是本仓已经拒绝过一次的范畴错误（把
+"浏览器没开"报成"没被授权"）。配置缺失现在仍然按它自己的语言说：`RippleService` 健康检查
+经 `backend/tools/ripple/integration.py` 抛 `DomainOutcome("unavailable")`。
+
+删掉的更实际的理由是**它是个陷阱**：如果谁做一次"把所有声明的 scope 都接上"的机械扫描，
+这三个能力会被永久拒掉，而 trace 会把锅甩给调用方的身份。`test_no_declared_scope_is_unsatisfiable`
+现在把这条钉住 —— 任何声明的 scope 都必须是 `granted_scopes()` 真能产出的。
 
 所以"读侧接 scope 是检查还是形式主义"的答案是：对第一类是重复，对第二类已由前置条件
-覆盖，对第三类无解。要动这三类，动作分别是"不接"、"已修"、"改 vocabulary 或删声明"，
+覆盖，对第三类是**声明本身写错了域**。要动这三类，动作分别是"不接"、"已修"、"删声明"，
 而不是统一加一行 `granted_scopes=`。
 
 ## 传参形状：PassStyle
@@ -134,9 +149,9 @@ Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。�
 | `analysis.topic_scorer` | read_only | invoke | 2×3s | `xhs:read` | 120 |
 | `content.algorithmic_de_ai` | pure | **mapping** | — | — | 5 |
 | `content.polish_copy` | pure | kwargs | 2×2s | — | 30 |
-| `ripple.get_report` | read_only | kwargs | — | `ripple:read` | 120 |
-| `ripple.predict_spread` | read_only | kwargs | — | `ripple:read` | **3600** |
-| `ripple.validate_pmf` | read_only | kwargs | — | `ripple:read` | **3600** |
+| `ripple.get_report` | read_only | kwargs | — | — | 120 |
+| `ripple.predict_spread` | read_only | kwargs | — | — | **3600** |
+| `ripple.validate_pmf` | read_only | kwargs | — | — | **3600** |
 | `search.fetch` | read_only | invoke | — | — | 60 |
 | `search.web` | read_only | invoke | — | — | 60 |
 | `xhs.competitor_analyzer` | read_only | invoke | — | `xhs:read` | 120 |

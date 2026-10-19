@@ -524,7 +524,21 @@ class TestCatalogue:
     def test_read_capabilities_declare_their_scope(self):
         registry = build_registry()
         assert registry.spec("xhs.trending").auth_scope == ("xhs:read",)
-        assert registry.spec("ripple.get_report").auth_scope == ("ripple:read",)
+
+    def test_ripple_declares_no_scope_because_no_grant_could_satisfy_it(self):
+        """The reverse of a declaration, pinned so it is not re-added by habit.
+
+        ``ripple:read`` used to be declared on all three ripple capabilities. It
+        was a trap rather than a promise: ``granted_scopes()`` derives from an
+        account and can only emit ``xhs:*``, so the obvious mechanical fix —
+        passing ``granted_scopes`` at the call site — would have denied ripple
+        permanently while the trace blamed the caller's identity. Ripple's real
+        precondition is a deployment-level token, and it already reports itself
+        as ``DomainOutcome("unavailable")``.
+        """
+        registry = build_registry()
+        for capability in ("ripple.get_report", "ripple.predict_spread", "ripple.validate_pmf"):
+            assert registry.spec(capability).auth_scope == (), capability
 
     def test_the_platform_reads_declare_scope_and_no_retry(self):
         """S3d: the three xhs reads are declared ``xhs:read`` and not retried.
