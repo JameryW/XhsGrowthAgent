@@ -202,6 +202,8 @@ class TestTheStateMachine:
             lambda: ledger.record_committed(row.account_id, row.idempotency_key, receipt_id="p"),
             lambda: ledger.record_refused(row.account_id, row.idempotency_key),
             lambda: ledger.record_unknown(row.account_id, row.idempotency_key),
+            # 本地日志对 unknown 无话可说（"可能已发出"证明不了未发出）
+            lambda: ledger.record_not_sent(row.account_id, row.idempotency_key),
         ):
             with pytest.raises(IllegalEffectTransitionError):
                 await move()
