@@ -615,9 +615,34 @@ Phase B（在 A 之上追加）：
    记录。归属跟**选中的账号**（`publish_options.account_id`）走，不跟
    `state["account_id"]` 这个从未被校验过的标签走；没有选中账号时，行为主体就是部署本身。
 
-   覆盖面从 **1 → 2 个调用点**（都落在 `xhs.publish`），**"没有已检查调用点的能力"
-   是 4 个**：债务按能力计，不按调用点计——一个能力有一个已检查调用点就不算"部分
-   受保护"。这两个数字由 `test_scope_coverage.py` 从代码树复算。
+   覆盖面从 **1 → 2 个调用点**（都落在 `xhs.publish`）。**"没有已检查调用点的能力"
+   是 4 个**（票 5f 把两个互动能力注册进来后变 6 个）：债务按能力计，不按调用点计——
+   一个能力有一个已检查调用点就不算"部分受保护"。这两个数字由
+   `test_scope_coverage.py` 从代码树复算。
+
+   **接线收尾（票 5g，2026-10-20）：债务调用点归零。** 剩下 4 个全部接上 ——
+   `trend_scout._fetch_real_data` 对 `xhs.trending` / `xhs.competitor_analyzer` /
+   `xhs.keyword_monitor` **解析一次** grant、三处透传同一元组；
+   `content_strategist._score_trend_topics` 对 `analysis.topic_scorer` 同样一次解析、
+   逐条透传。接法是 S5c 同款：**判定在门前，执行在运行时** —— 调用点自己按 grant
+   判定，不足就**不发起调用**并按既有契约降级（这三个调用点是按 `ToolResult(ok=False)`
+   写的降级分支，不是按异常写的）；发起了才把同一元组交给 Gateway 兜底，于是"一个说
+   拒绝、另一个照跑"不可能发生。归属统一为**凭据身份**：competitor 那个 payload 的
+   `account_id` 装的是 niche，身份在 `credential_account_id`；一次解析、三处共用，
+   结构上让"按 niche 解析"这个错误写不出来（突变实证 M2 会被归属测试抓住）。
+
+   覆盖面 **2 → 6 个调用点**，`UNCHECKED_CALL_SITES` **归零**：现存调用点里再没有
+   "声明了但没检查"，trace 的 `scopes: unchecked` 对现存调用点已不可达（新漏接的调用点
+   仍会让登记表变红，它就是为那一刻留的）。"没有已检查调用点的能力"**6 → 2**：
+   `xhs.comment_reply` / `xhs.dm_send` 注册了但**还没有任何 `.invoke(...)` 调用点**——
+   可及 ≠ 被调用；它们第一个调用点出现时只有两种写法（传 grant / 登记为债务），
+   没有第三种。
+
+   **读路径接线的一处诚实代价**（与发布路径不同的取舍）：缺 `xhs:read` 时三次调用
+   **一次都不发**，trace 里因此没有事件（今天会留一条 `ok=False`）。也就是说"这个账号
+   压根没配 cookie"从 trace 里消失，只剩调用方一行 warning。被授权账号的读失败照旧有
+   事件，所以丢掉的不是"读失败"这个信号，而是"未授权"这个信号——它与 S5c"未授权发布
+   不写 prepared 记录"同构，但它是代价，不是改进，故记在这里。
 
    **4 而不是 7，是因为删了三条声明（2026-10-19）**：`ripple.get_report` /
    `ripple.predict_spread` / `ripple.validate_pmf` 的 `auth_scope=("ripple:read",)`

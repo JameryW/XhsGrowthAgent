@@ -22,7 +22,7 @@ class TestContentStrategistTopicScorer:
         return store
 
     @pytest.mark.asyncio
-    async def test_scores_injected_into_prompt(self, agent, mock_store):
+    async def test_scores_injected_into_prompt(self, agent, mock_store, xhs_read_grant):
         """trend_data 含 hot_topics 时，topic_scorer 被调用且评分进入 system prompt。"""
         mock_state = {
             "account_id": "test_account",

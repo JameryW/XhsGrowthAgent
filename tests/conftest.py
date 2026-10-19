@@ -115,6 +115,26 @@ def _reset_execution_lease_store():
 
 
 @pytest.fixture
+def xhs_read_grant(monkeypatch):
+    """An account that is entitled to read: a usable cookie in the environment.
+
+    票 5g / §9.6: the read capabilities' declared ``auth_scope`` is enforced at
+    the call site now, so a test asserting that a platform read *happened* has
+    to describe an account that may make it — otherwise the read is skipped for
+    a reason that has nothing to do with what the test is about.
+
+    This seeds a cookie ``XhsCredential.usable`` accepts and lets the real
+    resolver compute the grant, rather than stubbing ``granted_scopes``: the
+    wiring is then exercised end to end (env -> credential -> grant ->
+    invoke). The refusal side is pinned separately in
+    ``tests/unit/agents/test_scope_wiring.py``, which needs a grant it can
+    withhold — not one this fixture hands to everybody.
+    """
+    monkeypatch.setenv("XHS_COOKIE", "a1=0123456789abcdef0123")
+    return ("xhs:read", "xhs:write")
+
+
+@pytest.fixture
 def initial_state() -> dict:
     """标准初始状态"""
     return {
