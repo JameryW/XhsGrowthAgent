@@ -69,14 +69,23 @@ SERVICE_FALLBACKS: dict[str, str] = {
         "per-caller decision, so it needs its own slice rather than a blanket swap."
     ),
     "backend.services.xhs_client:XHSClient.search_users": (
-        "Dead path: no caller outside this module. Fixing it would be unverifiable."
+        "Not a dead path and not unverifiable — this file first said so and was "
+        "wrong. The blogger-reference feature (2026-06) pinned it in "
+        "``tests/unit/services/test_xhs_client_blogger.py``, and one of those tests, "
+        "``test_search_users_error_returns_empty``, *asserts* the fallback: the "
+        "'failure reads as empty' behaviour is a written-down contract there. What "
+        "blocks a change is that contract, not a lack of verification. It has no "
+        "production caller yet, so changing it means rewriting that test on purpose."
     ),
     "backend.services.xhs_client:XHSClient.get_user_info": (
-        "Returns ``{}`` — the same ambiguity in a mapping. Dead path: called only "
-        "from inside this module."
+        "Same feature, same pinned contract (``test_get_user_info_error_returns_empty``)"
+        ". Returns ``{}`` — the ambiguity in a mapping rather than a list. Same "
+        "question as the other two, one decision covers all three."
     ),
     "backend.services.xhs_client:XHSClient.get_user_notes": (
-        "Dead path: called only from inside this module."
+        "Same feature, same pinned contract (``test_get_user_notes_error_returns_empty``)"
+        ". Auto-paginates, so a mid-pagination failure would surface as a short "
+        "result set rather than an error — the same lie with a longer fuse."
     ),
 }
 
