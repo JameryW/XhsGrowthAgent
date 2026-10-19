@@ -289,6 +289,49 @@ def _blocked_duplicate_result(publish_id: str, prior: dict[str, Any]) -> dict[st
     }
 
 
+def _missing_publish_credential(
+    state: XHSGrowthState | dict[str, Any], account_id: str
+) -> dict[str, Any]:
+    """Refuse a publish the account holds no write grant for — before any effect.
+
+    Shape matches ``missing_cdp_endpoint``: a typed ``error_type`` plus a
+    structured ``recovery`` dict, because the dashboard renders
+    ``publishError.recovery.{hint,action,action_label}`` and a bare string would
+    reach the operator as an unexplained failure.
+
+    Why this is a *refusal* rather than a warning: since P2a-S5b the write grant
+    is derived from the mechanisms a publish can actually use (a usable cookie,
+    or a browser profile bound to the account), so having neither means the
+    publish would either fail deep inside the browser layer or — worse — run on
+    whichever session the account-agnostic global endpoint happens to hold.
+    """
+    logger.error(
+        "账号 %s 未持有 xhs:write，拒绝发布（未提交任何内容）", account_id or "<未指定账号>"
+    )
+    return {
+        "publish_result": _with_publish_link_metadata(
+            {
+                "post_id": "",
+                "post_url": "",
+                "status": "failed",
+                "error": ("该账号没有发布凭据：既没有可用的登录 cookie，也没有绑定浏览器 profile"),
+                "error_type": "missing_publish_credential",
+                "recovery": {
+                    "message": "该账号未持有发布权限（无可用 cookie，也未绑定浏览器 profile）",
+                    "action": "reconfigure",
+                    "action_label": "去设置",
+                    "hint": (
+                        "请在设置页为该账号绑定浏览器 profile 并完成扫码登录；"
+                        "单账号部署可改为声明 XHS_CDP_ENDPOINT。"
+                    ),
+                },
+            },
+            state,
+        ),
+        "phase": WorkflowPhase.PUBLISHING,
+    }
+
+
 async def reconcile_unknown_publish(state: dict[str, Any], store: BaseStore) -> dict[str, Any]:
     """Reconcile a publish whose result is unknown BEFORE any re-publish.
 
@@ -610,6 +653,21 @@ async def run_publish(
             }
         logger.info("按选中账号 %s 的 CDP profile 登录态发布", publish_account_id)
 
+    # ── 授权：声明的 scope 从这里开始被执行（P2a-S5c）──
+    # 放在幂等账本之前，因为一次"根本没被授权"的发布不该留下 prepared 记录：
+    # 记录一旦落下，重试路径就要先 reconcile 一个从未发生的意图。
+    #
+    # 归属跟**选中的账号**走，不跟 `state["account_id"]` 走：后者只是这条工作流
+    # 的标签，从未被校验过（账号是否激活、是否有 CDP 绑定都只查 publish_options
+    # 里那个）。没有选中账号时，行为主体就是部署本身 —— 与凭证解析器对空
+    # account_id 的口径一致：读部署自己的声明，而不是读一个标签。
+    from backend.services.xhs_credentials import XHS_WRITE_SCOPE, granted_scopes
+
+    grant_account = str(publish_account_id or "").strip()
+    granted = await granted_scopes(grant_account)
+    if XHS_WRITE_SCOPE not in granted:
+        return _missing_publish_credential(state, grant_account)
+
     # ── P0-W4 idempotency gate (real publish path only) ──
     # Deterministic key recorded BEFORE the real submit action. A previous
     # attempt with a known outcome ("published" or result-unknown "unknown")
@@ -736,6 +794,12 @@ async def run_publish(
             "xhs.publish",
             payload,
             thread_id=str(state.get("session_id") or state.get("thread_id") or ""),
+            # The scope requirement used to be decorative on this path: the
+            # Gateway reads ``None`` as *unchecked*, so ``xhs.publish``'s
+            # declared ``auth_scope`` cost nothing here. The tuple resolved
+            # above is the same answer the precondition was judged on, so a
+            # refusal cannot say one thing and the runtime do another.
+            granted_scopes=granted,
         )
         result = _result_from_gateway(tool_result)
 

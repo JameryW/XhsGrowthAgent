@@ -130,12 +130,15 @@ async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, 
 
 @pytest.mark.asyncio
 async def test_falls_back_to_global_when_no_account(_browser_settings, mock_store, monkeypatch):
-    """No account_id → use global CDP endpoint."""
+    """No account selected → the deployment's *declared* endpoint is the grant.
+
+    A blank account id means "this deployment", so the browser it may use is the
+    one ``XHS_CDP_ENDPOINT`` declares — not one discovered by probing, which is
+    what P2a-S5b ruled out for the grant (reachability is not entitlement).
+    """
     state = _state(publish_options={"dry_run": False})
     client = _mock_client("p2")
-    monkeypatch.setattr(
-        "backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "http://global:9223"
-    )
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
     m_client = _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
@@ -165,25 +168,34 @@ async def test_per_account_cdp_endpoint_passed_to_client(
 
 
 @pytest.mark.asyncio
-async def test_per_account_empty_endpoint_falls_back_to_global(
+async def test_selected_account_without_a_binding_is_refused_not_borrowed(
     _browser_settings, mock_store, monkeypatch
 ):
-    """Selected account with no cdp_port binding → global endpoint is used."""
+    """A *selected* account with no port binding must not borrow the global browser.
+
+    Before P2a-S5c this published: the per-account endpoint was empty, so the
+    global one was used, and the note went out through whichever session that
+    Chrome held — i.e. one account's selection, another account's identity.  The
+    grant now says what the mechanism actually does, so this is a refusal with a
+    named fix rather than a silent impersonation.
+
+    The deployment endpoint stays declared on purpose: the refusal must come
+    from the *account's* missing binding, not from there being no browser at all.
+    """
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
-    client = _mock_client("p1")
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="")  # account has no port binding
-    # Make the global resolver return a known value so we can assert the fallback.
-    monkeypatch.setattr(
-        "backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "http://global:9223"
-    )
-    m_client = _patch_client(monkeypatch, client)
-    _mock_history(monkeypatch)
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
+    client = _mock_client("p1")
+    monkeypatch.setattr("backend.tools.xhs.publisher._get_publisher", lambda *a, **kw: client)
 
-    await run_publish(state, store=mock_store)
+    result = await run_publish(state, store=mock_store)
 
-    kwargs = m_client.cdp_seen
-    assert kwargs["cdp_endpoint"] == "http://global:9223"
+    assert client.publish_note.await_count == 0
+    pr = result["publish_result"]
+    assert pr["status"] == "failed"
+    assert pr["error_type"] == "missing_publish_credential"
+    assert pr["recovery"]["action"] == "reconfigure"
 
 
 @pytest.mark.asyncio
@@ -359,6 +371,8 @@ async def test_ignores_past_suggested_timing(_browser_settings, mock_store, monk
     """Historical plan suggestions must not turn a real retry into scheduled publish."""
 
     state = _state(content_plan={"suggested_timing": "2023-10-29T20:30:00Z"})
+    # No account selected → the deployment's declared endpoint carries the grant.
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
     client = _mock_client("p_sched")
     _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
@@ -855,9 +869,10 @@ async def test_unattributed_publish_sends_an_empty_account_id(_browser_settings,
     every existing record.
     """
     state = _state(account_id="", publish_options={"dry_run": False})
-    monkeypatch.setattr(
-        "backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "http://global:9228"
-    )
+    # ``state["account_id"]`` is only a label; the grant follows the *selected*
+    # account, so an unattributed publish is entitled by the deployment's own
+    # declaration — which is also the endpoint it will publish through.
+    _browser_settings.platform.cdp_endpoint = "http://global:9228"
     client = _mock_client("p_anon")
     _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
@@ -892,3 +907,80 @@ async def test_platform_verdict_survives_the_gateway_round_trip(_browser_setting
     assert pr["status"] == "failed"
     assert pr["error_type"] == "auth_expired"
     assert pr["recovery"]["action"] == "reconfigure"
+
+
+# ── P2a-S5c: the declared auth_scope is applied on this path too ─────────────
+
+
+class _RecordingTools:
+    """A stand-in for ``agent.tools`` that records the grant it was handed."""
+
+    def __init__(self) -> None:
+        self.seen: list[tuple[str, tuple[str, ...] | None]] = []
+
+    async def invoke(
+        self,
+        capability: str,
+        payload: object,
+        *,
+        thread_id: str = "",
+        granted_scopes: tuple[str, ...] | None = None,
+    ):
+        from backend.tools.runtime.models import ToolResult
+
+        self.seen.append((capability, granted_scopes))
+        return ToolResult(
+            capability=capability,
+            ok=True,
+            value={"post_id": "p_grant", "status": "published"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_the_resolved_grant_travels_with_the_invocation(
+    _browser_settings, mock_store, monkeypatch
+):
+    """``xhs.publish`` declares ``auth_scope`` — this path now applies it.
+
+    The assertion is on what the Gateway *received*, not on a helper's return
+    value: a resolved tuple that never reaches ``invoke`` would leave the
+    requirement exactly as decorative as it was before.
+    """
+    from types import SimpleNamespace
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_g"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _mock_history(monkeypatch)
+    tools = _RecordingTools()
+
+    await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=tools))
+
+    # No cookie in this environment: the grant is the browser, so it is write
+    # only.  A read scope here would claim an HTTP identity that does not exist.
+    assert tools.seen == [("xhs.publish", ("xhs:write",))]
+
+
+@pytest.mark.asyncio
+async def test_the_refusal_leaves_no_durable_trace(_browser_settings, monkeypatch):
+    """An unauthorized publish must not write the PREPARED record.
+
+    The record exists so a crash *between deciding and submitting* stays
+    distinguishable.  Nothing was decided here — writing it would make the retry
+    path reconcile an intent that was never authorized.
+    """
+    from unittest.mock import patch
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_none"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="")
+    # A browser exists at the deployment level, so the account's missing
+    # binding — not a missing endpoint — is what the refusal is about.
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
+    monkeypatch.setenv("XHS_COOKIE", "web_session=no-login-material")
+
+    with patch("backend.agents.publisher._write_publish_record", new=AsyncMock()) as recorded:
+        result = await run_publish(state, store=_real_store())
+
+    assert recorded.await_count == 0
+    assert result["publish_result"]["error_type"] == "missing_publish_credential"
