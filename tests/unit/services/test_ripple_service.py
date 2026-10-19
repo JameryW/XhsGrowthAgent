@@ -55,7 +55,9 @@ class TestRippleServiceFallback:
         """默认传播预测"""
         service = RippleService()
         result = service._default_spread_prediction()
-        assert result["ripple_fallback"] is True
+        # 取值一律 .get()：哨兵键缺失时要红在断言上，而不是崩在下标上
+        # （KeyError 会掩盖"哨兵不见了"这个真正的错答案）。
+        assert result.get("ripple_fallback") is True
         assert result["ripple_prediction"]["estimated_reach"] == 0
         assert result["ripple_prediction"]["viral_probability"] == 0.0
 
@@ -188,7 +190,8 @@ class TestRippleServicePredict:
 
         with patch.object(service, "_get_config", return_value={"enabled": True}):
             result = await service.predict_spread("测试话题", use_fallback=True)
-            assert result["ripple_fallback"] is True
+            # 同上：.get() 而不是下标，缺键要红成断言失败。
+            assert result.get("ripple_fallback") is True
 
     @pytest.mark.asyncio
     async def test_predict_spread_without_fallback(self):
@@ -1289,7 +1292,8 @@ class TestRippleProgressStoreCleanup:
 class TestGetReportRefusesToAnswerWithAnErrorBody:
     """``get_report`` 的失败必须是异常，不是一份"带 error 键的结果"。
 
-    ``{"error": str(e)}`` 是服务层最后一处「失败被当成值交回去」。它只有一个
+    ``{"error": str(e)}`` 是服务层「失败被当成值交回去」的两处之一（另一处是
+    ``get_result``，票 5i 一并改掉）。它只有一个
     调用方（``backend.tools.ripple.integration.get_report``），而那一层又把它
     原样往外传，于是 Gateway 记成 ``ok=True`` —— 调用方只能靠一条带外约定
     （``if "error" in report``）得知事实。两处一起改掉：服务层抛，集成层不接。
@@ -1336,3 +1340,121 @@ class TestGetReportRefusesToAnswerWithAnErrorBody:
             mock_request.return_value = {"rounds": [{"content": "ok"}]}
 
             assert await service.get_report("job-1") == {"rounds": [{"content": "ok"}]}
+
+
+class TestGetResultRefusesToAnswerWithAnErrorBody:
+    """``get_result`` 与 ``get_report`` 同一条规则（票 5i）。
+
+    差别在于它下游还有一层：``submit_and_wait`` 把它的返回值直接交给
+    ``_parse_spread_result``，后者看到 ``error`` 键会回
+    ``{"ripple_prediction": None, "ripple_error": ...}`` —— 一份"没有预测"的
+    成功结果，经目录回到 Gateway 是 ``ok=True``。调用方靠自己从 body 推导 ok
+    才没被骗（`_RippleCall.read`），但 trace 一直说这次调用成功了。
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_failed_artifacts_fetch_raises(self):
+        service = RippleService()
+
+        with (
+            patch.object(
+                service,
+                "_get_config",
+                return_value={
+                    "base_url": "http://ripple-test",
+                    "api_token": "",
+                    "timeout": 30,
+                },
+            ),
+            patch.object(service, "_request_with_retry") as mock_request,
+        ):
+            mock_request.side_effect = httpx.ConnectError("Connection refused")
+
+            with pytest.raises(httpx.ConnectError):
+                await service.get_result("job-1")
+
+    @pytest.mark.asyncio
+    async def test_a_successful_fetch_is_returned_untouched(self):
+        """正控：改的是失败路径。"""
+        service = RippleService()
+
+        with (
+            patch.object(
+                service,
+                "_get_config",
+                return_value={
+                    "base_url": "http://ripple-test",
+                    "api_token": "",
+                    "timeout": 30,
+                },
+            ),
+            patch.object(service, "_request_with_retry") as mock_request,
+        ):
+            mock_request.return_value = {"output": {"metrics": {}}}
+
+            assert await service.get_result("job-1") == {"output": {"metrics": {}}}
+
+
+class TestAnArtifactsFailureLandsInTheDeclaredDegradation:
+    """拉不到产物 → 走"已声明的降级"，而不是「没有预测」的成功结果。
+
+    这是 ``get_result`` 改动的落点：它的 error 体会被 ``_parse_spread_result``
+    读成 ``{"ripple_prediction": None, "ripple_error": ...}``，经目录回到
+    Gateway 是 ``ok=True``。改成抛之后，``predict_spread`` 走的是它自己的失败
+    分支 —— ``_default_spread_prediction()``，带 ``ripple_fallback`` 哨兵，由
+    集成层拒绝成 ``DomainOutcome("unavailable")``。调用方的答案**两种情况下都是
+    "unavailable"**，变的是 trace 不再说谎。
+    """
+
+    @pytest.mark.asyncio
+    async def test_submit_and_wait_propagates_a_failed_artifacts_fetch(self):
+        service = RippleService()
+
+        with (
+            patch.object(service, "submit_simulation", AsyncMock(return_value={"job_id": "job-1"})),
+            patch.object(
+                service, "wait_for_completion", AsyncMock(return_value={"status": "completed"})
+            ),
+            patch.object(service, "get_result", AsyncMock(side_effect=httpx.ConnectError("boom"))),
+            pytest.raises(httpx.ConnectError),
+        ):
+            await service.submit_and_wait({"max_waves": 3})
+
+    @pytest.mark.asyncio
+    async def test_predict_spread_answers_it_with_the_fallback_body_not_an_error_body(self):
+        """整条链：模拟跑完了、产物拉不到 → 仍然走"带哨兵的降级体"。
+
+        只 double 掉浏览器边界（提交 / 等待），失败点留在 HTTP 边界上让
+        ``get_result`` 自己跑，这样这条测试真的被 ``get_result`` 的选择牵着走。
+        """
+        service = RippleService()
+
+        with (
+            patch.object(
+                service,
+                "_get_config",
+                return_value={
+                    "enabled": True,
+                    "base_url": "http://ripple-test",
+                    "api_token": "",
+                    "timeout": 30,
+                },
+            ),
+            patch.object(service, "is_healthy", return_value=True),
+            patch.object(service, "submit_simulation", AsyncMock(return_value={"job_id": "job-1"})),
+            patch.object(
+                service, "wait_for_completion", AsyncMock(return_value={"status": "completed"})
+            ),
+            # 失败点放在真正的 HTTP 边界上，让 get_result 自己跑 —— 否则这条
+            # 测试只钉住"下游怎么对待异常"，钉不住 get_result 本身的选择。
+            patch.object(
+                service, "_request_with_retry", AsyncMock(side_effect=httpx.ConnectError("boom"))
+            ),
+        ):
+            result = await service.predict_spread(topic="测试话题")
+
+        # 是"带哨兵的降级体"，不是"没有预测"——后者会被当成成功结果传出去。
+        assert result.get("ripple_fallback") is True
+        assert result.get("ripple_prediction") is not None
+        assert "ripple_error" not in result
+        assert "error" not in result

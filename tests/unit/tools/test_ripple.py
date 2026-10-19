@@ -18,6 +18,7 @@ from backend.tools.ripple.integration import get_report, predict_spread
 from backend.tools.runtime import DomainOutcome
 from backend.tools.runtime.catalog import build_registry
 from backend.tools.runtime.gateway import ToolGateway
+from backend.tools.runtime.models import ErrorKind
 
 
 def _service(**overrides: object) -> MagicMock:
@@ -166,3 +167,39 @@ def test_ripple_settings_default(monkeypatch):
     assert s.default_simulation_horizon == "12h"
     assert s.request_timeout == 300
     assert s.workflow_timeout == 1800
+
+
+@pytest.mark.asyncio
+async def test_a_degraded_prediction_is_not_filed_as_a_success():
+    """降级体经 Gateway 也必须是 ``ok=False``（票 5i 的 trace 落点）。
+
+    ``get_result`` 改动后，"拉不到产物"不再变成
+    ``{"ripple_prediction": None, "ripple_error": ...}``（那份经目录回到 Gateway
+    是 ``ok=True``），而是走服务自己的降级分支 → 带 ``ripple_fallback`` 的零值体
+    → 集成层拒绝成 ``DomainOutcome("unavailable")``。
+    """
+    events: list[dict[str, Any]] = []
+
+    async def trace(event: dict[str, Any]) -> None:
+        events.append(dict(event))
+
+    service = _service(
+        predict_spread=AsyncMock(
+            return_value={
+                "ripple_prediction": {"estimated_reach": 0, "viral_probability": 0.0},
+                "ripple_fallback": True,
+                "ripple_reason": "unreachable",
+                "ripple_message": "Service unavailable, using default prediction",
+            }
+        )
+    )
+    gateway = ToolGateway(build_registry(), trace=trace)
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        result = await gateway.invoke("ripple.predict_spread", {"topic": "测试话题"})
+
+    assert result.ok is False
+    assert result.error_kind is ErrorKind.DOMAIN
+    assert result.domain.get("reason") == "unavailable"
+    assert events[-1].get("ok") is False
