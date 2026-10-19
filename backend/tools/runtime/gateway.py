@@ -52,14 +52,22 @@ TraceSink = Callable[[Mapping[str, Any]], Awaitable[None]]
 
 Shape: ``{"kind": "tool", "capability", "thread_id", "ok", "attempts",
 "elapsed_ms", "error", "error_kind", "domain_reason", "degraded",
-"side_effect"}``. S2 keeps this a plain callback so the runtime stays free of
-a DB dependency; wiring it to the ``workflow_events`` tier happens where a
-thread id exists.
+"side_effect", "scopes"}``. S2 keeps this a plain callback so the runtime stays
+free of a DB dependency; wiring it to the ``workflow_events`` tier happens where
+a thread id exists.
 
 ``domain_reason`` is the machine-readable verdict only — not ``ToolResult.domain``.
 That payload can hold prediction bodies, and the same rule as telemetry for
 context recall applies: an event says what happened, the bodies belong behind
 an explicit, sanitised export.
+
+``scopes`` is ``"checked"`` / ``"unchecked"`` / ``"none"``, and it exists because
+the scope check is *opt-in*: a capability that declares ``auth_scope`` is only
+enforced when the caller passes ``granted_scopes``, and ``None`` reads as
+"unchecked" rather than "denied". Without this field a decorative requirement
+and a satisfied one look identical from the outside — which is how seven
+scoped capabilities came to have no checked call site without anyone noticing.
+It reports what happened to *this* call, not whether the capability is safe.
 """
 
 Sleeper = Callable[[float], Awaitable[None]]
@@ -78,6 +86,21 @@ class PermissionDeniedError(PermissionError):
 def _value_degraded(value: Any) -> bool:
     """Let a tool report partial data through its own return value."""
     return isinstance(value, Mapping) and value.get("degraded") is True
+
+
+def _scope_state(spec: ToolSpec, granted: tuple[str, ...] | None) -> str:
+    """What actually happened to this call's requirement, for the trace.
+
+    ``none`` means the capability declares no scope, so there was nothing to
+    check; ``unchecked`` means it declares one and the caller passed no
+    ``granted_scopes``; ``checked`` means the requirement was applied and
+    satisfied (a violation raises before this point and never produces an
+    event). Reported as data rather than a boolean because the interesting
+    state is the *third* one: a requirement that exists and was skipped.
+    """
+    if not spec.auth_scope:
+        return "none"
+    return "unchecked" if granted is None else "checked"
 
 
 class ToolGateway:
@@ -118,6 +141,7 @@ class ToolGateway:
         spec = entry.spec
         data = dict(payload or {})
         self._check_scopes(spec, granted_scopes)
+        scope_state = _scope_state(spec, granted_scopes)
 
         started = time.perf_counter()
         attempts = 0
@@ -148,6 +172,7 @@ class ToolGateway:
                             attempts=attempts,
                         ),
                         thread_id,
+                        scope_state,
                     )
                 except TimeoutError:
                     last_error = f"timeout after {spec.effective_timeout_s:g}s"
@@ -167,6 +192,7 @@ class ToolGateway:
                             degraded=attempts > 1 or _value_degraded(value),
                         ),
                         thread_id,
+                        scope_state,
                     )
 
                 if attempt < spec.retry_policy.max_attempts:
@@ -192,6 +218,7 @@ class ToolGateway:
                     attempts=attempts,
                 ),
                 thread_id,
+                scope_state,
             )
         finally:
             if gate is not None:
@@ -215,7 +242,9 @@ class ToolGateway:
             self._gates[spec.capability] = gate
         return gate
 
-    async def _finish(self, spec: ToolSpec, result: ToolResult, thread_id: str) -> ToolResult:
+    async def _finish(
+        self, spec: ToolSpec, result: ToolResult, thread_id: str, scope_state: str
+    ) -> ToolResult:
         """Emit the trace event (best-effort) and hand the result back."""
         if self._trace is not None:
             event = {
@@ -231,6 +260,7 @@ class ToolGateway:
                 "error_kind": result.error_kind.value if result.error_kind is not None else "",
                 "domain_reason": str(result.domain.get("reason", "")),
                 "degraded": result.degraded,
+                "scopes": scope_state,
             }
             try:
                 await self._trace(event)

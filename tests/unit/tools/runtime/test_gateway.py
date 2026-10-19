@@ -394,6 +394,26 @@ class TestTracing:
         assert event["attempts"] == 1
         assert event["side_effect"] == "pure"
         assert "elapsed_ms" in event
+        # A capability that declares no scope has nothing to report here.
+        assert event["scopes"] == "none"
+
+    @pytest.mark.asyncio
+    async def test_a_skipped_scope_check_is_recorded_as_skipped(self):
+        """The trace must distinguish "satisfied" from "never asked".
+
+        ``granted_scopes=None`` reads as *unchecked*, so a capability can declare
+        ``auth_scope`` and still be called without it being applied. Recording
+        that is what keeps the declaration from looking enforced when it is not.
+        """
+        gateway, recorder = _gateway(_ok, spec=_spec(auth_scope=("xhs:write",)))
+        await gateway.invoke("demo.echo")
+        assert recorder.events[0]["scopes"] == "unchecked"
+
+    @pytest.mark.asyncio
+    async def test_an_enforced_scope_is_recorded_as_checked(self):
+        gateway, recorder = _gateway(_ok, spec=_spec(auth_scope=("xhs:write",)))
+        await gateway.invoke("demo.echo", granted_scopes=("xhs:write",))
+        assert recorder.events[0]["scopes"] == "checked"
 
     @pytest.mark.asyncio
     async def test_trace_failure_never_breaks_the_call(self):
