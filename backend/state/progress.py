@@ -270,10 +270,12 @@ def _current_epoch(rounds: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any
     epoch: list[Mapping[str, Any]] = []
     expected: int | None = None
     for entry in reversed(rounds):
-        try:
-            number = int(entry.get("round"))  # type: ignore[arg-type]
-        except (TypeError, ValueError):
+        # Written as an int by ``revision_record``; a missing/garbled value
+        # ends the epoch rather than being coerced into one.
+        raw_number = entry.get("round")
+        if isinstance(raw_number, bool) or not isinstance(raw_number, (int, float)):
             break
+        number = int(raw_number)
         if expected is not None and number != expected:
             break
         epoch.append(entry)
