@@ -35,8 +35,15 @@ Registry 存的是 `"pkg.module:attr"` 字符串（`ToolRef` / `tool_ref` / `bin
 
 ### 2. 共享单 Gateway
 
-`max_concurrency` 是 **Gateway 自己持有的 Semaphore**，不是每次调用现造的。
-每次调用现造一个信号量等于没有上限（每个等待者都有自己的名额）。
+`max_concurrency` 是 **Gate 按键持有的名额**（`backend/tools/runtime/account_gate.py`），
+不是每次调用现造的。每次调用现造一个信号量等于没有上限（每个等待者都有自己的名额）。
+
+键取 payload 的 `account_id`（有则 `capability|account`，无则退回 `capability`），
+所以上限是**每账号**的而不是全账号共用一份。名额双层：进程内 `asyncio.Semaphore`
+快路径 + PG advisory lock 计数名额（每个名额一个 `pg_try_advisory_lock`），多 worker
+共享同一个天花板；PG 不可用时降级为进程内（每 worker 各自计数）。等待有界——
+名额等不到就报 `ToolResult(ok=False, error_kind=timeout, attempts=0)`：调用从未开始，
+没有副作用可担心。
 
 共享安全的前提正是第 1 条：晚绑定让 `build_registry()` 可以在 patch 生效之后再跑。
 

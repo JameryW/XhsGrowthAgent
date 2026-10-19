@@ -249,8 +249,20 @@ PG 不可用时降级为进程内）。CDP 锁已经提供了**跨进程**的每
 `max_concurrency` 不是在补它的漏洞，而是在 Gateway 层把"同一能力不并发"变成
 **声明**而不是**约定** —— 与 `docs/tool-runtime.md` 开篇的理由一致。
 
-诚实边界：Gateway 的信号量是**进程级**且**全账号共用**。多 worker 部署下它不是
-"每账号 1 个"，而是"每进程 1 个"。真正的每账号互斥仍归 CDP 锁，别把两者混为一谈。
+**票 5e 已落地（2026-10-20）**：闸门从「进程级、全账号共用的 `asyncio.Semaphore`」
+改成**按账号分键的双层名额**（`backend/tools/runtime/account_gate.py`）：payload 带
+`account_id` 时键为 `capability|account`（每账号一个天花板），不带则退回
+`capability` 旧键；进程内信号量快路径 + PG advisory lock 计数名额
+（每个名额一个 `pg_try_advisory_lock(8911, hashtext(f"{key}#{i}"))`，照 CDP 锁先例，
+持锁连接占住整个在途、进程崩溃即自动释放），PG 不可用降级为进程内。等待有界：
+名额等待吃 `effective_timeout_s` 的安全网窗口，等不到报
+`ToolResult(ok=False, error_kind=timeout, attempts=0)` —— 调用从未开始，无副作用。
+
+诚实边界（收窄后仍在的）：① PG 不可用就降级为进程内名额，多 worker 下每 worker
+各自计数 ——「多 worker 不退化」以 PG 半边可用为前提，部署形态仍是前提；② 每个在途
+占住一条池连接（与 CDP 锁同性质），池容量需覆盖并发在途数；③ **跨能力**的每账号
+互斥仍归 CDP 锁，Gateway 名额只管单能力的每账号在途上限，别把两者混为一谈；
+④ 账号识别是 payload 键约定（`account_id`），不是 schema 声明。
 
 ### 3.3 为什么 `max_attempts` 保持 1
 
@@ -508,7 +520,9 @@ Phase B（在 A 之上追加）：
    重臂。
 3. **每账号并发上限要不要进 DB？** 现在 `max_concurrency` 是进程级信号量，多 worker
    下退化。CDP 锁已经是 PG advisory（跨进程），是否让账本/信号量也走 DB，取决于
-   部署形态。
+   部署形态。**已落地（票 5e，2026-10-20）**：要 —— 信号量改成按账号分键的双层
+   名额（进程内 + PG advisory 计数名额，照 CDP 锁先例，PG 不可用降级进程内），
+   多 worker 共享天花板，见 §3.2；账本侧在票 5c 已进 DB（`engagement_effects`）。
 4. **本轮是否允许 agent 触达？** 本文建议：不允许。§7.1 已经证明注册即触达。
 5. **要不要一张按账号的策略表？** ~~§3.1 的结论是当前 scope 只能表达"这个账号
    登录着 / 有自己绑定的浏览器"，表达不了"这个账号被允许主动私信谁"。~~ **已落地

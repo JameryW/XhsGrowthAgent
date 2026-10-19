@@ -35,6 +35,11 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
+from backend.tools.runtime.account_gate import (
+    AccountSlot,
+    AccountSlotTimeoutError,
+    acquire_account_slot,
+)
 from backend.tools.runtime.models import DomainOutcome, ErrorKind, ToolResult, ToolSpec
 from backend.tools.runtime.registry import ToolRegistry
 
@@ -46,6 +51,23 @@ __all__ = [
     "ToolGateway",
     "TraceSink",
 ]
+
+_ACCOUNT_PAYLOAD_KEY = "account_id"
+"""Payload field that identifies the account a call acts for.
+
+The gate key convention: with it, ``max_concurrency`` is a **per-account**
+ceiling (``capability|account``); without it the ceiling stays per capability
+(``capability``), which is what the old process-local semaphore did.
+"""
+
+
+def _gate_key(spec: ToolSpec, data: Mapping[str, Any]) -> str:
+    """Slot-gate identity for one invocation (see ``_ACCOUNT_PAYLOAD_KEY``)."""
+    account = str(data.get(_ACCOUNT_PAYLOAD_KEY) or "").strip()
+    if account:
+        return f"{spec.capability}|{account}"
+    return spec.capability
+
 
 TraceSink = Callable[[Mapping[str, Any]], Awaitable[None]]
 """Where Gateway trace events go (best-effort; never breaks a call).
@@ -121,7 +143,6 @@ class ToolGateway:
         self._registry = registry
         self._trace = trace
         self._sleep: Sleeper = sleeper or asyncio.sleep
-        self._gates: dict[str, asyncio.Semaphore] = {}
 
     @property
     def registry(self) -> ToolRegistry:
@@ -147,9 +168,31 @@ class ToolGateway:
         attempts = 0
         last_error = ""
         last_kind: ErrorKind | None = None
-        gate = self._gate(spec)
-        if gate is not None:
-            await gate.acquire()
+        slot: AccountSlot | None = None
+        if spec.max_concurrency:
+            try:
+                slot = await acquire_account_slot(
+                    key=_gate_key(spec, data),
+                    limit=spec.max_concurrency,
+                    wait_timeout_s=spec.effective_timeout_s,
+                )
+            except AccountSlotTimeoutError as exc:
+                # The call never started — no side effect anywhere — so this
+                # comes back as a plain timeout with ``attempts=0`` rather
+                # than raising at the caller.
+                return await self._finish(
+                    spec,
+                    ToolResult(
+                        capability=capability,
+                        ok=False,
+                        error=str(exc),
+                        error_kind=ErrorKind.TIMEOUT,
+                        elapsed_ms=(time.perf_counter() - started) * 1000.0,
+                        attempts=0,
+                    ),
+                    thread_id,
+                    scope_state,
+                )
         try:
             for attempt in range(1, spec.retry_policy.max_attempts + 1):
                 attempts = attempt
@@ -221,8 +264,8 @@ class ToolGateway:
                 scope_state,
             )
         finally:
-            if gate is not None:
-                gate.release()
+            if slot is not None:
+                await slot.release()
 
     def _check_scopes(self, spec: ToolSpec, granted: tuple[str, ...] | None) -> None:
         """No ``granted_scopes`` means "not checked here" (S3+ passes them)."""
@@ -231,16 +274,6 @@ class ToolGateway:
         missing = tuple(scope for scope in spec.auth_scope if scope not in granted)
         if missing:
             raise PermissionDeniedError(spec.capability, missing)
-
-    def _gate(self, spec: ToolSpec) -> asyncio.Semaphore | None:
-        """Per-capability in-flight ceiling (deterministic half of limiting)."""
-        if not spec.max_concurrency:
-            return None
-        gate = self._gates.get(spec.capability)
-        if gate is None:
-            gate = asyncio.Semaphore(spec.max_concurrency)
-            self._gates[spec.capability] = gate
-        return gate
 
     async def _finish(
         self, spec: ToolSpec, result: ToolResult, thread_id: str, scope_state: str

@@ -99,6 +99,23 @@ def _gateway(
     return gateway, recorder
 
 
+@pytest.fixture(autouse=True)
+def _local_slot_gates_only(monkeypatch):
+    """Deterministic degraded mode: the PG half never engages in these tests.
+
+    The gate under test is ``account_gate``'s; here only the gateway's own
+    wiring matters, so the distributed half is pinned *off* rather than left
+    to ambient pool state (a "passed" run must not depend on whether some
+    other test left a pool behind).
+    """
+    monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: False)
+    from backend.tools.runtime.account_gate import reset_account_gates_for_tests
+
+    reset_account_gates_for_tests()
+    yield
+    reset_account_gates_for_tests()
+
+
 class TestSuccessPath:
     @pytest.mark.asyncio
     async def test_returns_value_and_metadata(self):
@@ -485,6 +502,115 @@ class TestConcurrencyGate:
         for _ in range(3):
             assert (await gateway.invoke("demo.echo")).ok is False
         assert calls == 3
+
+
+class TestAccountKeyedGate:
+    """``max_concurrency`` is per account once the payload names one."""
+
+    @pytest.mark.asyncio
+    async def test_the_same_account_is_serialised_and_different_accounts_are_not(self):
+        active: dict[str, int] = {}
+        peak: dict[str, int] = {}
+        total_active = 0
+        total_peak = 0
+
+        async def slow(payload: dict[str, Any]) -> str:
+            nonlocal total_active, total_peak
+            account = str(payload.get("account_id") or "")
+            active[account] = active.get(account, 0) + 1
+            peak[account] = max(peak.get(account, 0), active[account])
+            total_active += 1
+            total_peak = max(total_peak, total_active)
+            await asyncio.sleep(0.01)
+            active[account] -= 1
+            total_active -= 1
+            return "done"
+
+        gateway, _ = _gateway(slow, spec=_spec(max_concurrency=1))
+        await asyncio.gather(
+            *(gateway.invoke("demo.echo", {"account_id": "a1"}) for _ in range(2)),
+            *(gateway.invoke("demo.echo", {"account_id": "a2"}) for _ in range(2)),
+        )
+        assert peak == {"a1": 1, "a2": 1}, "one in-flight per account"
+        assert total_peak == 2, "two accounts must not share one ceiling"
+
+    @pytest.mark.asyncio
+    async def test_a_payload_without_an_account_keeps_the_capability_key(self):
+        """Old behaviour, pinned: no account id -> one ceiling for the capability."""
+        active = 0
+        peak = 0
+
+        async def slow(payload: dict[str, Any]) -> str:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return "done"
+
+        gateway, _ = _gateway(slow, spec=_spec(max_concurrency=1))
+        await asyncio.gather(
+            gateway.invoke("demo.echo", {"account_id": ""}),
+            gateway.invoke("demo.echo", {"account_id": ""}),
+            gateway.invoke("demo.echo"),
+        )
+        assert peak == 1
+
+    @pytest.mark.asyncio
+    async def test_a_gate_timeout_comes_back_as_a_timeout_result(self):
+        """No slot within the budget -> ToolResult timeout, never a raise.
+
+        The holder takes the slot through the gate module directly so the
+        two sides cannot share one timeout: the gateway's wait budget is its
+        own spec timeout (0.05s), while the holder stays out of the way.
+        """
+        from backend.tools.runtime.account_gate import acquire_account_slot
+
+        holder = await acquire_account_slot(key="demo.echo|a1", limit=1, wait_timeout_s=5.0)
+        try:
+
+            async def fast(payload: dict[str, Any]) -> str:
+                return "ran"
+
+            gateway, recorder = _gateway(fast, spec=_spec(max_concurrency=1, timeout_s=0.05))
+            try:
+                result = await asyncio.wait_for(
+                    gateway.invoke("demo.echo", {"account_id": "a1"}), timeout=1.0
+                )
+            except TimeoutError:
+                pytest.fail("gateway invoke hung waiting for the slot")
+            assert result.ok is False
+            assert result.error_kind is ErrorKind.TIMEOUT
+            assert result.attempts == 0, "the call never started"
+            assert "not acquired" in result.error
+            assert recorder.events[-1]["attempts"] == 0
+        finally:
+            await holder.release()
+
+    @pytest.mark.asyncio
+    async def test_a_gate_timeout_leaks_nothing(self):
+        """After the budget expires, a later call gets the slot once free."""
+        from backend.tools.runtime.account_gate import acquire_account_slot
+
+        holder = await acquire_account_slot(key="demo.echo|a1", limit=1, wait_timeout_s=5.0)
+
+        async def fast(payload: dict[str, Any]) -> str:
+            return "ran"
+
+        gateway, _ = _gateway(fast, spec=_spec(max_concurrency=1, timeout_s=0.05))
+        try:
+            blocked = await asyncio.wait_for(
+                gateway.invoke("demo.echo", {"account_id": "a1"}), timeout=1.0
+            )
+        except TimeoutError:
+            pytest.fail("gateway invoke hung waiting for the slot")
+        assert blocked.ok is False
+        await holder.release()
+        freed = await gateway.invoke("demo.echo", {"account_id": "a1"})
+        assert freed.ok is True
+        assert freed.value == "ran"
+        again = await gateway.invoke("demo.echo", {"account_id": "a1"})
+        assert again.ok is True, "the freed call must have returned its slot"
 
 
 class TestCatalogueIntegration:

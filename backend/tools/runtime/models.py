@@ -154,9 +154,13 @@ class ToolSpec:
     """
     timeout_s: float | None = None
     max_concurrency: int | None = None
-    """In-flight ceiling for this capability (``None`` = unbounded).
+    """In-flight ceiling per account (``None`` = unbounded).
 
-    The Gateway enforces it with a per-capability semaphore. This is the
+    The Gateway enforces it with an account-keyed slot gate — keyed by the
+    payload's ``account_id`` when present, falling back to the capability
+    alone. The gate is process-local *plus* PostgreSQL advisory slots, so
+    multi-worker deployments share one ceiling instead of each keeping its
+    own (see ``backend/tools/runtime/account_gate.py``). This is the
     deterministic half of rate limiting; time-based quotas belong to the
     durable scheduler (P2b).
     """
@@ -296,7 +300,10 @@ class ToolResult(BaseModel):
     error_kind: ErrorKind | None = None
     domain: Mapping[str, Any] = Field(default_factory=dict)
     elapsed_ms: float = Field(default=0.0, ge=0.0)
-    attempts: int = Field(default=1, ge=1)
+    attempts: int = Field(default=1, ge=0)
+    # 0 = the call never started (e.g. no concurrency slot within the wait
+    # budget). The floor is 0 rather than 1 so that result does not have to
+    # claim a try that never happened.
     degraded: bool = False
 
     def __init__(self, **data: Any) -> None:
