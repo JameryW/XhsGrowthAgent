@@ -70,3 +70,23 @@ def test_risk_gates_account_health_shape(client, monkeypatch):
     assert health["engagement_pause"]["paused"] is True
     assert health["remaining_ban_seconds"] > 0
     assert health["last_risk_hit"] is not None
+
+
+def test_put_policy_sets_daily_limit_overrides(client):
+    """The API accepted these keys only after the writer did; pin the seam."""
+    r = client.put(
+        "/api/system/risk-gates/policy",
+        json={"account_id": "acc-cap", "dm_daily_limit": 3, "comment_reply_daily_limit": 4},
+    )
+    assert r.status_code == 200
+    overrides = r.json()["data"]["overrides"]
+    assert overrides.get("dm_daily_limit") == 3
+    assert overrides.get("comment_reply_daily_limit") == 4
+
+    from backend.services.xhs_risk_gate import comment_reply_daily_limit, dm_daily_limit
+
+    assert dm_daily_limit("acc-cap") == 3
+    assert comment_reply_daily_limit("acc-cap") == 4
+
+    r2 = client.get("/api/system/risk-gates/policy", params={"account_id": "acc-cap"})
+    assert r2.json()["data"]["effective"].get("dm_daily_limit") == 3
