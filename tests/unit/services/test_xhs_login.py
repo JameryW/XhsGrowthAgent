@@ -122,13 +122,19 @@ def _bypass_cdp_hold(monkeypatch: pytest.MonkeyPatch):
         "_QR_CONFIRM_TIMEOUT_S",
     ):
         monkeypatch.setattr("backend.services.xhs_login." + _c, 0.01)
-    # QR create wait: success-path tests fire the create handler at 0.02–0.05s,
-    # so the deadline needs headroom past the latest fire (0.05s). 0.15s gives
-    # ~0.10s margin — the prior 0.05s == 0.05s deadline left zero margin and
-    # flaked under scheduling jitter (lazy package __init__ shifted import
-    # timing enough to lose the race 50% of runs). Failure-path tests time out
-    # here (the www_only recovery path waits this TWICE, so the 3x adds ~0.3s).
-    monkeypatch.setattr("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.15)
+    # QR create wait is deliberately NOT shrunk here.
+    #
+    # Success-path tests fire the qrcode/create handler at 0.02–0.05s after
+    # start() begins, i.e. they race this deadline. Shrinking it to match the
+    # fire delay has now flaked twice on CI: a 0.05s deadline against a 0.05s
+    # fire, then a 0.15s deadline against a 0.05s fire (only ~0.10s of margin,
+    # which mocked-browser launch + a 10ms poll loop can eat under runner load).
+    # Leaving the production 5.0s in place costs nothing on success paths —
+    # _wait_for_qr_ready returns on the first poll after _qr_id is set — and it
+    # removes the race instead of widening it.
+    #
+    # Tests that must exercise the timeout pin it down locally instead; see
+    # test_start_raises_login_error_when_no_qr_create_response and friends.
 
 
 class TestStart:
@@ -147,7 +153,7 @@ class TestStart:
             async def _fire_qr_create():
                 # Give start() a moment to register the listener + call goto.
                 # 0.02s is enough under the mock (page.on registers on first await);
-                # _QR_CREATE_WAIT_S=0.05 (autouse) leaves a poll tick to detect it.
+                # the QR wait deadline (production 5.0s) is far away either way.
                 await asyncio.sleep(0.02)
                 assert on_calls, "page.on('response', ...) was not registered"
                 handler = on_calls[0][1]
@@ -173,7 +179,8 @@ class TestStart:
         from backend.services.xhs_login import XhsLoginSession
 
         mock_module, _, _ = _wire_playwright_mock()
-        # QR create wait timeout is shrunk by the autouse _bypass_cdp_hold fixture.
+        # No handler is fired here, so the QR wait really has to expire: the
+        # deadline is pinned to 0.05 in the patch stack below.
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
 
         with (
@@ -182,6 +189,9 @@ class TestStart:
             patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
+            # This test needs the QR wait to actually expire: pin it locally
+            # (the autouse fixture no longer shrinks it — see _bypass_cdp_hold).
+            patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.05),
             pytest.raises(Exception, match="未找到登录二维码"),
         ):
             await session.start()
@@ -336,6 +346,9 @@ class TestStart:
             patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
+            # This test needs the QR wait to actually expire: pin it locally
+            # (the autouse fixture no longer shrinks it — see _bypass_cdp_hold).
+            patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.05),
             pytest.raises(Exception, match="未找到登录二维码"),
         ):
             await session.start()
@@ -361,6 +374,9 @@ class TestStart:
             patch("backend.services.xhs_login._SECURITY_REDIRECT_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_CLICK_SETTLE_S", 0.01),
             patch("backend.services.xhs_login._LOGIN_MODAL_FINAL_SETTLE_S", 0.01),
+            # This test needs the QR wait to actually expire: pin it locally
+            # (the autouse fixture no longer shrinks it — see _bypass_cdp_hold).
+            patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.05),
             pytest.raises(Exception, match="未找到登录二维码"),
         ):
             await session.start()
@@ -552,8 +568,8 @@ class TestGetStatus:
         """Helper: start a session and fire an initial qrcode/create."""
         # Settle/poll constants are shrunk by the autouse _bypass_cdp_hold fixture.
         # Fire at 0.02s: start() registers page.on('response') on its first awaits
-        # (mock playwright yields fast); _QR_CREATE_WAIT_S=0.05 (autouse) leaves
-        # headroom for one _QR_READY_POLL_S tick to detect the fired _qr_id.
+        # (mock playwright yields fast); the QR wait deadline is the production
+        # 5.0s, so one _QR_READY_POLL_S tick is the only thing left to wait for.
         await asyncio.gather(
             session.start(),
             _fire_create_after_delay(on_calls, 0.02),
@@ -806,8 +822,8 @@ class TestGetStatus:
 
             # get_status will detect expiry → _refresh_qr → goto + wait for new create.
             # Fire a new create response after get_status's refresh goto lands.
-            # 0.02s: refresh's _wait_for_qr_ready deadline is _QR_CREATE_WAIT_S=0.05
-            # (autouse), so firing at 0.02s leaves a poll tick to detect the new id.
+            # 0.02s: refresh's _wait_for_qr_ready deadline is the production 5.0s,
+            # so firing at 0.02s leaves ample room for a poll tick to see the id.
             async def _fire_refresh_create():
                 await asyncio.sleep(0.02)
                 handler = on_calls[0][1]
