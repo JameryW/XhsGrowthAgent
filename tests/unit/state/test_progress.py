@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from backend.state.progress import (
     PROGRESS_EVENT_KIND,
+    REVISION_NO_IMPROVEMENT,
+    REVISION_SAME_HINTS,
     ProgressSignal,
     detect_progress,
+    detect_revision_stall,
     progress_event,
+    revision_record,
 )
 
 
@@ -133,3 +137,142 @@ class TestEventRendering:
         from backend.db.workflow_events import EVENT_KINDS
 
         assert PROGRESS_EVENT_KIND in EVENT_KINDS
+
+
+def _verdict(
+    round_no: int,
+    *,
+    score: float | None = 60.0,
+    hints: list[str] | None = None,
+    decision: object = "needs_revision",
+    degraded: bool = False,
+) -> dict:
+    evaluation = {
+        "overall_score": score,
+        "revision_hints": list(hints or []),
+        "decision": decision,
+    }
+    if degraded:
+        evaluation["degraded"] = True
+        evaluation["status"] = "degraded"
+    record = revision_record(round_no, evaluation)
+    assert record is not None
+    return record
+
+
+class TestRevisionRecord:
+    """The record is the input the score/hint rules need — keep it minimal."""
+
+    def test_no_verdict_records_nothing(self):
+        # A neutral filler would look like "no change" and manufacture stalls.
+        assert revision_record(1, None) is None
+        assert revision_record(1, {}) is None
+
+    def test_hint_text_stays_out_of_the_record(self):
+        record = _verdict(1, hints=["标题缺具体收益", "正文第二段太虚"])
+        assert record["hints_digest"]
+        assert "revision_hints" not in record
+        assert "标题缺具体收益" not in str(record)
+
+    def test_digest_ignores_hint_order(self):
+        one = _verdict(1, hints=["a", "b"])
+        two = _verdict(2, hints=["b", "a"])
+        assert one["hints_digest"] == two["hints_digest"]
+
+    def test_enum_decision_is_stored_by_value(self):
+        from backend.state.enums import ContentStatus
+
+        record = _verdict(1, decision=ContentStatus.NEEDS_REVISION)
+        assert record["decision"] == ContentStatus.NEEDS_REVISION.value
+
+    def test_degraded_verdict_keeps_no_score(self):
+        record = _verdict(1, score=None, degraded=True)
+        assert record["score"] is None
+        assert record["degraded"] is True
+
+
+class TestRevisionStall:
+    """Round-level stall detection over the evaluator→copywriter loop."""
+
+    def test_single_round_is_not_a_stall(self):
+        assert detect_revision_stall([_verdict(1)]).stalled is False
+
+    def test_same_hints_twice_stall(self):
+        rounds = [
+            _verdict(1, score=60.0, hints=["标题缺具体收益"]),
+            _verdict(2, score=61.0, hints=["标题缺具体收益"]),
+        ]
+        signal = detect_revision_stall(rounds)
+        assert signal.stalled is True
+        assert signal.reason == REVISION_SAME_HINTS
+        assert signal.evidence["rounds"] == [1, 2]
+        assert signal.evidence["count"] == 2
+
+    def test_different_hints_without_score_movement_stall(self):
+        rounds = [
+            _verdict(1, score=60.4, hints=["标题缺具体收益"]),
+            _verdict(2, score=60.9, hints=["正文第二段太虚"]),
+        ]
+        signal = detect_revision_stall(rounds)
+        assert signal.stalled is True
+        assert signal.reason == REVISION_NO_IMPROVEMENT
+        # 0.5 points on a 0-100 panel is a wobble, not progress.
+        assert signal.evidence["gain"] == 0.5
+        assert signal.evidence["min_gain"] == 1.0
+
+    def test_real_improvement_is_progress(self):
+        rounds = [
+            _verdict(1, score=60.0, hints=["标题缺具体收益"]),
+            _verdict(2, score=66.0, hints=["正文第二段太虚"]),
+        ]
+        assert detect_revision_stall(rounds).stalled is False
+
+    def test_exactly_one_point_is_enough(self):
+        rounds = [
+            _verdict(1, score=60.0, hints=["a"]),
+            _verdict(2, score=61.0, hints=["b"]),
+        ]
+        assert detect_revision_stall(rounds).stalled is False
+
+    def test_degraded_scores_carry_no_evidence(self):
+        # A degraded panel judged nothing; reading None as "no improvement"
+        # would report a stall for a loop nobody measured.
+        rounds = [
+            _verdict(1, score=None, hints=["a"], degraded=True),
+            _verdict(2, score=None, hints=["b"], degraded=True),
+        ]
+        assert detect_revision_stall(rounds).stalled is False
+
+    def test_missing_hints_do_not_count_as_repetition(self):
+        rounds = [_verdict(1, score=50.0), _verdict(2, score=50.0)]
+        signal = detect_revision_stall(rounds)
+        # No hints at all is not "the same hints"; the score rule still holds.
+        assert signal.reason == REVISION_NO_IMPROVEMENT
+
+    def test_human_reset_starts_a_new_epoch(self):
+        # The human "revise" resume resets revision_count to 0, so round
+        # numbers restart. Comparing across the reset would report a stall for
+        # a loop the operator deliberately restarted with a fresh budget.
+        rounds = [
+            _verdict(1, score=60.0, hints=["标题缺具体收益"]),
+            _verdict(2, score=60.0, hints=["标题缺具体收益"]),
+            _verdict(1, score=60.0, hints=["标题缺具体收益"]),
+        ]
+        assert detect_revision_stall(rounds).stalled is False
+
+    def test_epoch_boundary_is_the_round_gap_not_the_count(self):
+        rounds = [
+            _verdict(1, score=60.0, hints=["a"]),
+            _verdict(3, score=60.0, hints=["a"]),
+        ]
+        # A gap means the rounds are not consecutive: no window to compare.
+        assert detect_revision_stall(rounds).stalled is False
+
+    def test_window_is_clamped_to_two(self):
+        rounds = [
+            _verdict(1, score=60.0, hints=["a"]),
+            _verdict(2, score=60.0, hints=["a"]),
+        ]
+        signal = detect_revision_stall(rounds, window=1)
+        assert signal.stalled is True
+        assert signal.window == 2

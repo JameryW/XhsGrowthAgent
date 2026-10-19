@@ -99,7 +99,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 
 | 优先级 | 切片 | 交付 | 为何是现在 |
 |---|---|---|---|
-| **P0-A（已完成）** | Progress Detector | `backend/state/progress.py` 纯函数库 + `kind:"progress"` 事件契约 + 单测；已接入结构化重试循环（log-only，§5.5） | 零行为变更即可先观测；为 revise 回路提供"是否在变好"的客观信号 |
+| **P0-A（已完成）** | Progress Detector | `backend/state/progress.py` 纯函数库 + `kind:"progress"` 事件契约 + 单测；已接入结构化重试循环（log-only，§5.5）与 revise 回路（`detect_revision_stall`，§5.7） | 零行为变更即可先观测；为 revise 回路提供"是否在变好"的客观信号 |
 | **P0-B（已完成）** | 统一 Effect 账本 | `backend/state/effects.py` 六态账本；publish 成为第一个消费者（下文 §5.1） | 第二个外部副作用工具出现前必须完成，否则 F2 类故障会重演 |
 | **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
 | **P1-B（已完成）** | Verifier 触发 | `backend/services/verification_policy.py`：风险下限 + 期望成本公式 + 预算降级；真实发布路径发射判定事件（§5.3） | 有 acceptance_signoff 人工验收作基线 |
@@ -178,6 +178,23 @@ P2 的启动条件是"瓶颈证据"。证据不能靠猜，所以先把遥测变
 样例判定（5 节点合成数据）：`serial ratio 1.00 → node_bound，hotspot: strategist 43%`
 ——即"当前图是纯串行，且半壁时间在 strategist"，这正是启动 P2 前需要看到（或推翻）的事实。
 
+### 5.7 P0-A 第二半（revise 回路进展信号）
+
+§5.5 只接了**节点内部**的重试循环；§6.1 的问题陈述是**跨节点**的
+evaluator→revise_content→copywriter 回路——那里才是"第 3 次修改在变好还是原地
+打转"真正发生的地方。这一片把信号接到它本来要回答的问题上：
+
+| 项 | 实现 |
+|---|---|
+| 轮次记录 | `revision_record(round_no, evaluation)` → `{round, score, hints_digest, decision, degraded}`；**存摘要不存正文**（hint 文本已在 `evaluation_result`，append-only 历史里再存一份会让 checkpoint 每轮增长且无法脱敏） |
+| 状态字段 | `XHSGrowthState.revision_history`（additive，`_append_list`）；无 router 读取，轮次上限仍是唯一裁决者 |
+| 规则一 | `same_hints_repeated`：尾部 `window` 轮 verdict 的 hint 摘要相同（非空）——同一个"改这里"，改完还是同一个"改这里" |
+| 规则二 | `revised_without_improvement`：尾部 `window` 轮 panel 分数增益 < `min_gain`（默认 1 分 / 100）——吐槽点换了，数字没动 |
+| 降级轮 | `score=None`（panel degraded）**不参与分数规则**：没人量过 ≠ 没进步 |
+| 人类重置 | 人工 `revise` resume 会把 `revision_count` 归零，轮号因此重启；检测按**连续轮号**取尾部 epoch，重置处自动断开，不跨 epoch 比较 |
+| 行为 | **零变更**：`revision_count` / `copy_content` / `visual_plan` / hints 透传全部原样；stalled 时只写 `kind:"progress"` 事件 + warning 日志 |
+| 诚实边界 | 分数来自本仓 panel（LLM judge），`min_gain=1.0` 是**先验**不是校准值；`budget_without_acceptance` 仍不实现（state 无 run 级预算，与 §8 F7 的 SKIP 同因） |
+
 ## 6. P0-A 切片设计：Progress Detector
 
 ### 6.1 问题
@@ -200,13 +217,19 @@ P2 的启动条件是"瓶颈证据"。证据不能靠猜，所以先把遥测变
 | `same_error_repeated` | 连续 N 条事件携带相同 error fingerprint | llm/tool 事件的 `error` 字段归一化 |
 | `tool_output_repeated` | 连续 N 条工具事件的输出摘要相同 | payload 的稳定摘要（sha256 前 16 位） |
 
-预留但暂不实现（需要验收数据接入）：
-`budget_without_acceptance`、`revised_without_improvement`。
+两条验收导向规则的状态（2026-10-19 更新）：
+
+- `revised_without_improvement` —— **已落地**（§5.7）。它的输入不是"验收"数据，
+  而是 revise 轮自带的 panel 分数与 revision hints；设计时以为要等外部验收，
+  实际本仓的 evaluator 每轮已经给了。
+- `budget_without_acceptance` —— 仍不实现：state 里没有 run 级预算字段，
+  编一个会让信号看起来比它实际知道的更多（同 §8 F7 的 SKIP）。
 
 ### 6.4 接口
 
 ```python
 detect_progress(events, *, window=3) -> ProgressSignal
+detect_revision_stall(rounds, *, window=2, min_gain=1.0) -> ProgressSignal  # §5.7
 # ProgressSignal(stalled: bool, reason: str, evidence: dict, window: int)
 ```
 

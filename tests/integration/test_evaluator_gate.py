@@ -279,6 +279,21 @@ class TestReviseContentPreservesHints:
         result = await revise_content_node(state, store=store)
         assert result["revision_count"] == 1
 
+    def test_revision_history_is_append_only(self):
+        """The stall signal reads *rounds*; a replace reducer keeps only the last.
+
+        Silent swap to ``replace`` would still pass every node-level test (each
+        call returns one record) while making ``detect_revision_stall`` see a
+        single-round history forever — i.e. never report a stall.
+        """
+        from typing import get_args
+
+        from backend.state.reducers import append_list
+        from backend.state.schema import XHSGrowthState
+
+        annotation = XHSGrowthState.__annotations__["revision_history"]
+        assert get_args(annotation)[1] is append_list
+
 
 class TestGraphTopologyEvaluatorGate:
     """build_graph wires review_gate → evaluator_gate → publish_gate → publisher."""
