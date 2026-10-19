@@ -22,8 +22,9 @@ with ``cookie=""`` and drives CDP, so a publish can legitimately succeed for an
 account whose cookie is stale or absent.  A single "has a cookie" rule would
 refuse publishes the deployment can actually perform — the state
 ``.env.example`` describes — so the credential carries one more fact, whether a
-browser profile is bound to the account, and the write scope is granted on
-either mechanism.  :attr:`XhsCredential.scopes` states the rule.
+browser profile is bound to the account (or, for a blank account id, declared by
+the deployment), and the write scope is granted on either mechanism.
+:attr:`XhsCredential.scopes` states the rule.
 
 Where the credential comes from, in the order it is consulted:
 
@@ -177,9 +178,10 @@ class XhsCredential:
         loudly (``cdp_unavailable``) when it is not there.
 
         Erring generous on the write scope is the safe direction to be wrong in:
-        the bound profile is this account's own browser, so a publish through it
-        acts as the account the caller named, which is what the grant is about.
-        It lends nobody a read.
+        the bound profile is this account's own browser (or, when no account was
+        named, the one the deployment declared), so a publish through it acts as
+        the identity the caller named, which is what the grant is about.  It
+        lends nobody a read.
         """
         scopes: list[str] = []
         if self.usable:
@@ -208,15 +210,29 @@ async def _read_stored(account_id: str) -> Mapping[str, str]:
 
 
 async def _read_bound_profile(account_id: str) -> str:
-    """The default seam: this account's CDP endpoint, or ``""`` when it has none.
+    """The default seam: the browser this identity may publish through, or ``""``.
 
-    ``db.accounts.get_account_cdp_endpoint`` already collapses every way of not
-    having one — no pool, unknown account, ``cdp_port <= 0``, and its own failed
-    read — to ``""``.  That collapse is *wrong* for the credential rows above (an
-    unreadable store is not an empty one) and *right* here: for a binding,
-    "could not tell" and "not bound" must give the same answer, and that answer
-    is the one that denies a write.
+    Two sources, and which one applies is the same question the cookie rule
+    already answers:
+
+    * **A named account** — its own CDP port (``db.accounts`` per-account
+      binding).  ``get_account_cdp_endpoint`` already collapses every way of not
+      having one — no pool, unknown account, ``cdp_port <= 0``, and its own
+      failed read — to ``""``.  That collapse is *wrong* for the credential rows
+      above (an unreadable store is not an empty one) and *right* here: for a
+      binding, "could not tell" and "not bound" must give the same answer, and
+      that answer is the one that denies a write.
+    * **A blank account id** — the deployment's *declared* endpoint
+      (``XHS_CDP_ENDPOINT``), the counterpart of ``XHS_COOKIE``: it is what a
+      single-account deployment means, and it is the only answer a call with no
+      account to look up can have.  Declared, never probed: the publisher has a
+      reachability probe of its own for its fallback, and borrowing that answer
+      would let the grant flip whenever a Chrome process stops.
     """
+    if not account_id:
+        from backend.config.settings import Settings
+
+        return str(Settings().platform.cdp_endpoint or "").strip()
     from backend.db.accounts import get_account_cdp_endpoint
 
     return await get_account_cdp_endpoint(account_id)
@@ -301,11 +317,12 @@ async def load_credential(
     The profile binding is resolved first and carried into *every* answer below,
     including the refusals, because it is the one input that does not come from
     the cookie rows and therefore survives their failure.  A blank account id
-    has no profile to look up — and no account to attach a grant to — so the
-    seam is not consulted at all, mirroring the row reader.
+    does not skip it: with no account to look up, the answer is the deployment's
+    own declaration (``XHS_CDP_ENDPOINT``) — the same "a blank id means the
+    deployment" rule the cookie source already follows.
     """
     account = (account_id or "").strip()
-    profile_bound = await _bound_profile(account, profile_reader) if account else False
+    profile_bound = await _bound_profile(account, profile_reader)
     if account:
         try:
             stored = await (reader or _read_stored)(account)

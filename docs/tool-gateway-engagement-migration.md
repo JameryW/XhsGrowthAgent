@@ -471,6 +471,10 @@ Phase B（在 A 之上追加）：
      "浏览器没开"仍由发布工具自己报 `cdp_unavailable`，而不是被 Gateway 说成"没被授权"。
    - 两个事实各自由自己那次读取决定：cookie 行读取失败仍然是 fail-closed（不回退部署
      身份），但**不会顺手抹掉** binding —— 绑定来自另一次成功读取，且属于这个账号本身。
+   - **空 account_id 也有绑定**：具名账号读它自己的 `cdp_port`，空 account_id 读部署
+     声明的 `XHS_CDP_ENDPOINT`（与 `XHS_COOKIE` 对称 —— 这就是"单账号部署"的意思）。
+     少了这一半，`.env.example` 那套「空 cookie + 全局 CDP」的单账号部署仍然拿不到写权限，
+     选项 A 就等于没落地。两者都只读**声明**，不探测浏览器是否在跑。
    - **授权说哪个浏览器，payload 就带哪个**：控制面发布此前不带 `cdp_endpoint`，靠工具的
      全局回落。grant 一旦可以由 binding 成立，这个回落就会让一个账号的授权跑在另一个账号的
      会话上，所以 `build_publish_payload` 补上了该字段（agent 路径早就按账号解析并传入）。
