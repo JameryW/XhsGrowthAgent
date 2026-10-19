@@ -42,6 +42,7 @@ __all__ = [
     "AgentToolUsage",
     "CatalogueAudit",
     "DirectToolImport",
+    "SilentFallback",
     "ToolRuntimeAudit",
     "UngatedTool",
     "UnreadableInvocation",
@@ -51,6 +52,7 @@ __all__ = [
     "scan_catalogue_refs",
     "scan_direct_tool_imports",
     "scan_function_refs",
+    "scan_silent_fallbacks",
     "scan_tool_functions",
 ]
 
@@ -480,7 +482,9 @@ UNGATED_TOOLS: tuple[UngatedTool, ...] = (
     UngatedTool(
         "backend.tools.xhs.engagement:fetch_pending_comments",
         READ_ONLY,
-        "读取待处理评论",
+        "读取待处理评论。空列表只表示'读到了、确实没有'：无身份与读失败都抛"
+        "（`require_readable` + `get_comments` 不再吞异常），见 "
+        "`scan_silent_fallbacks`",
     ),
     UngatedTool(
         "backend.tools.xhs.publisher:post_scheduler",
@@ -604,6 +608,24 @@ def _module_ref(path: Path) -> str:
     return ".".join(parts[parts.index("backend") :])
 
 
+def _is_tool_decorated(node: ast.AST) -> bool:
+    """Whether ``node`` is a function carrying a ``@tool`` decorator.
+
+    ``@tool``, ``@tool(...)`` and ``@lc_tool(...)`` all count: the decorator is
+    read by its *name*, which is what ``_scan_defs`` did before this helper
+    existed. Kept as one function so the catalogue scan and the fallback scan
+    cannot disagree about what a tool is.
+    """
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return False
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        name = getattr(target, "id", None) or getattr(target, "attr", None)
+        if name == "tool":
+            return True
+    return False
+
+
 def _scan_defs(root: Path | str, *, only_tool: bool) -> tuple[str, ...]:
     """Every module-level-ish ``def`` under ``root``, optionally ``@tool`` only.
 
@@ -622,15 +644,9 @@ def _scan_defs(root: Path | str, *, only_tool: bool) -> tuple[str, ...]:
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            if not only_tool:
-                refs.append(f"{module}:{node.name}")
+            if only_tool and not _is_tool_decorated(node):
                 continue
-            for decorator in node.decorator_list:
-                target = decorator.func if isinstance(decorator, ast.Call) else decorator
-                name = getattr(target, "id", None) or getattr(target, "attr", None)
-                if name == "tool":
-                    refs.append(f"{module}:{node.name}")
-                    break
+            refs.append(f"{module}:{node.name}")
     return tuple(sorted(set(refs)))
 
 
@@ -648,6 +664,136 @@ def scan_function_refs(root: Path | str = TOOLS_ROOT) -> tuple[str, ...]:
 def scan_tool_functions(root: Path | str = TOOLS_ROOT) -> tuple[str, ...]:
     """The ``@tool``-decorated subset — what an agent could import directly."""
     return _scan_defs(root, only_tool=True)
+
+
+@dataclass(frozen=True)
+class SilentFallback:
+    """A ``@tool`` that answers a raised exception with a written-down value.
+
+    The tell is the *literal*. ``return []`` says "the platform had no
+    comments"; ``return {"heat_score": 50, ...}`` says "heat is 50". Both are
+    transcription, not measurement — the handler was reached because the call
+    failed, so the value it hands back cannot be an answer to the question that
+    was asked. A handler returning a *name* or a *call* is not flagged: the
+    value came from somewhere, which is a different and inspectable question.
+    """
+
+    ref: str
+    handler_line: int
+    returned: str
+    """The literal, unparsed — so a review reads the value, not a verdict."""
+
+
+_LITERAL = (ast.Constant, ast.List, ast.Dict, ast.Tuple, ast.Set, ast.JoinedStr)
+
+
+def _literal_returns(handler: ast.ExceptHandler) -> list[ast.Return]:
+    """The handler's own ``return <literal>`` statements.
+
+    Nested ``def``/``lambda`` bodies are skipped: a literal returned by a
+    function *defined* inside the handler is that function's answer, not the
+    handler's. Walking one level matters here because the target shape is
+    exactly "handler swallows, wrapper function reports".
+    """
+    found: list[ast.Return] = []
+    stack: list[ast.AST] = list(handler.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Return) and isinstance(node.value, _LITERAL):
+            found.append(node)
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+    return found
+
+
+def _walk_defs(node: ast.AST, prefix: str = "") -> list[tuple[str, ast.AST]]:
+    """Every function/method under ``node`` with its dotted qualname.
+
+    Classes contribute a prefix; a function does not — its nested ``def``s are
+    closures whose failures belong to the enclosing call, so reporting them
+    separately would double-count one fact. The prefix is what keeps two
+    classes' ``get_comments`` apart, which is not hypothetical:
+    ``backend/services/xhs_client.py`` has exactly that pair.
+    """
+    found: list[tuple[str, ast.AST]] = []
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.ClassDef):
+            found.extend(_walk_defs(child, f"{prefix}{child.name}."))
+        elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            found.append((f"{prefix}{child.name}", child))
+        else:
+            found.extend(_walk_defs(child, prefix))
+    return found
+
+
+def _except_handlers(node: ast.AST) -> list[ast.ExceptHandler]:
+    """Handlers belonging to ``node``, not to a function defined inside it."""
+    found: list[ast.ExceptHandler] = []
+    stack: list[ast.AST] = list(ast.iter_child_nodes(node))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if isinstance(current, ast.ExceptHandler):
+            found.append(current)
+        stack.extend(ast.iter_child_nodes(current))
+    return found
+
+
+def scan_silent_fallbacks(
+    root: Path | str = TOOLS_ROOT, *, tool_only: bool = True
+) -> tuple[SilentFallback, ...]:
+    """Every function whose ``except`` hands back a literal.
+
+    ``tool_only`` (the default) restricts the scan to ``@tool`` — the surface an
+    agent reads directly. ``False`` widens it to every function under ``root``,
+    which is how the *service* layer's remaining instances are counted: those
+    are less dangerous (a caller can still inspect, and the tool above may
+    enforce its own precondition) but they are the same shape, and an uncounted
+    one is the one that comes back.
+
+    The service layer degrades by design in places (``RippleService`` returns a
+    zeroed body beside ``ripple_fallback`` for the *integration* layer to
+    reject), and those degradations carry a visible sentinel. A literal returned
+    from an ``except`` carries nothing: the handler was reached *because* the
+    call failed, so the value cannot be an answer to the question asked.
+    """
+    found: list[SilentFallback] = []
+    paths = _python_files(root)
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        module = _module_ref(path)
+        for qualname, node in _walk_defs(tree):
+            if tool_only and not _is_tool_decorated(node):
+                continue
+            for handler in _except_handlers(node):
+                for ret in _literal_returns(handler):
+                    found.append(
+                        SilentFallback(
+                            ref=f"{module}:{qualname}",
+                            handler_line=handler.lineno,
+                            returned=ast.unparse(ret.value),  # type: ignore[arg-type]
+                        )
+                    )
+    return tuple(sorted(found, key=lambda item: (item.ref, item.handler_line)))
+
+
+def _python_files(root: Path | str) -> list[Path]:
+    """``root`` may be a tree or a single file — and never silently neither.
+
+    ``Path("backend/x.py").rglob("*.py")`` yields nothing: ``rglob`` treats a
+    file as a directory that contains nothing. A scan handed a file would then
+    report "clean" over code it never read, which is the one outcome this
+    module refuses to produce.
+    """
+    path = Path(root)
+    if path.is_file():
+        return [path]
+    if not path.is_dir():
+        raise FileNotFoundError(f"nothing to scan at {path}")
+    return sorted(path.rglob("*.py"))
 
 
 def scan_catalogue_refs(path: Path | str = CATALOGUE_PATH) -> tuple[str, ...]:

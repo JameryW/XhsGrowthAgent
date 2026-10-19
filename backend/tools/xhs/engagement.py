@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 from langchain_core.tools import tool
 
 if TYPE_CHECKING:
-    from backend.services.xhs_client import XHSClient
     from backend.services.xhs_engagement import XHSEngagement
 
 logger = logging.getLogger("xhs_growth.tools.engagement")
@@ -50,17 +49,6 @@ async def _resolve_engagement_cdp_endpoint(account_id: str) -> str:
         except Exception as exc:
             logger.warning("无法解析账号 %s 的互动 CDP endpoint: %s", account_id, exc)
     return endpoint
-
-
-def _get_client() -> XHSClient:
-    """获取 XHSClient 实例"""
-    from backend.config.settings import Settings
-    from backend.services.xhs_client import XHSClient
-
-    settings = Settings()
-    return XHSClient(
-        use_browser=settings.platform.use_browser,
-    )
 
 
 @tool
@@ -227,22 +215,41 @@ async def escalation_flagger(
 
 
 @tool
-async def fetch_pending_comments(post_id: str, limit: int = 20) -> list[dict[str, Any]]:
+async def fetch_pending_comments(
+    post_id: str, limit: int = 20, account_id: str = ""
+) -> list[dict[str, Any]]:
     """人工审核时获取待回复评论（manual-only）。
 
     必须由操作员明确发起，且结果只能用于人工审核；不会被工作流 agent 自动轮询或调度。
 
+    **空列表只表示一件事：读到了，确实没有评论。** 读失败一律抛出。这条规则是
+    后来补上的，它修的是一个比"异常信息不好看"严重得多的问题：以前这个工具用
+    ``XHSClient()``（不带 cookie，``can_read`` 恒为 False）去读，``get_comments``
+    在 ``_http is None`` 时**不抛异常、直接返回 ``[]``**，于是它**永远**返回空列表
+    —— 一个审核队列的工具恒定回答"没有待办"，而真正的评论一条都没读过。
+
     Args:
         post_id: 笔记 ID
         limit: 获取数量
+        account_id: 用哪个账号的身份读；空 = 部署级凭据（与 trending 侧同一口径）
 
     Returns:
-        评论列表
+        评论列表。
+
+    Raises:
+        XHSAuthError: 没有可用 cookie。空列表会把它说成"没有待办"，所以在这里停下。
+        Exception: 平台层异常原样上抛（``comment_replier`` 同一条规则）。
     """
+    from backend.services.xhs_client import client_for_account, require_readable
+
     logger.info(f"Fetching comments for post: {post_id}")
 
-    client = _get_client()
+    client = await client_for_account(account_id)
     try:
+        # Inside the ``try`` so the ``finally`` below still closes the client
+        # when the guard refuses: the client was already built, and building it
+        # may have opened a connection.
+        require_readable(client, "fetch_pending_comments")
         comments = await client.get_comments(post_id=post_id, limit=limit)
 
         return [
@@ -257,10 +264,6 @@ async def fetch_pending_comments(post_id: str, limit: int = 20) -> list[dict[str
             }
             for c in comments
         ]
-
-    except Exception as e:
-        logger.error(f"获取评论失败: {e}")
-        return []
 
     finally:
         await client.close()
