@@ -81,7 +81,7 @@ sink。所以目的地存在 `ContextVar` 里（`bridge.tracing_to`），而不�
 **路由只按声明，不看对象。** 曾经按鸭子类型路由，结果普通函数替身被 `.ainvoke`
 应答 —— 每次调用都"成功"，只是**从未收到 payload**，看起来像一次优雅降级。
 
-## 目录：10 个 capability
+## 目录：12 个 capability
 
 | capability | side_effect | pass_style | retry | auth_scope | timeout_s |
 |---|---|---|---|---|---|
@@ -91,20 +91,33 @@ sink。所以目的地存在 `ContextVar` 里（`bridge.tracing_to`），而不�
 | `ripple.get_report` | read_only | kwargs | — | `ripple:read` | 120 |
 | `ripple.predict_spread` | read_only | kwargs | — | `ripple:read` | **3600** |
 | `ripple.validate_pmf` | read_only | kwargs | — | `ripple:read` | **3600** |
+| `search.fetch` | read_only | invoke | — | — | 60 |
+| `search.web` | read_only | invoke | — | — | 60 |
 | `xhs.competitor_analyzer` | read_only | invoke | — | `xhs:read` | 120 |
 | `xhs.keyword_monitor` | read_only | invoke | — | `xhs:read` | 120 |
-| `xhs.publish` | **side_effecting** | invoke | — | `xhs:write` | 120 |
+| `xhs.publish` | **side_effecting** | invoke | — | `xhs:write` | **900** |
 | `xhs.trending` | read_only | invoke | — | `xhs:read` | 120 |
 
-两处容易误读的数字：
+三处容易误读的数字：
 
 - **`timeout_s=3600` 不是"允许等一小时"。** 两个 ripple 慢查询用 payload 里的
   `max_wait`（默认 1800s）自己等待，并以领域结果自报超时（带 `job_id`）。Gateway
   的兜底**必须严格高于**那个预算，否则 `wait_for` 会先取消调用，而 `job_id` 只有
   工具自己拿得到 —— 于是"重试"从头到尾看不到真正的原因。3600 只是防挂死连接。
+- **`xhs.publish` 的 900 同理，不是"允许等十五分钟"。** `services.xhs_publisher`
+  持 CDP 会话锁最长 `XHS_CDP_PUBLISH_LOCK_TIMEOUT_S`（默认 600s），之后还要传图
+  （60s 选择器）才可能观察到成功。用 SLOW 的默认 120s 会在一次**仍在合法进行中**
+  的发布上取消调用，并把一次"可能已经提交"的发布报成超时 —— 这正是 P0-B 里
+  `UNKNOWN` 想避免的形态。
 - **重试次数少是故意的。** `ripple.*` 与 `content.polish_copy` 从不抛异常，唯一
   可重试的事件是 Gateway 自己的超时；重试超时 = 伪装成重试的加长等待（120s×2
   拖住节点）。要等更久是 `timeout_s` 的事。
+
+这张表由 `tests/unit/tools/runtime/test_docs_capability_table.py` 从
+`build_registry()` **逐格复算**（capability 集合、side_effect、pass_style、retry、
+auth_scope、有效超时）。表曾经写着"10 个 capability"（实际 12：`search.web` /
+`search.fetch` 加进目录时没补行），并把 `xhs.publish` 的超时记成 120 —— 两个数字
+都不会自己变红，所以现在会。
 
 ## L1 tool schema 层
 
