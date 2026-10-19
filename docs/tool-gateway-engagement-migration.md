@@ -351,10 +351,22 @@ claim / 判决 / 读回 API）。接线进 `send_dm` / `reply_to_comment`：浏�
 诚实边界：读回接口的存在性是本 spec 的前提之一（开放问题 §9.2）。如果某个方向读不
 回来，那么那一侧的 `unknown` 就是**终局**，必须报给人 —— 而不是"等等再试"。
 
-**落地状态（票 5c）**：出口模型已钉住 —— `record_readback` 是 `unknown` 唯一的
+**落地状态（票 5c → 5d）**：出口模型已钉住 —— `record_readback` 是 `unknown` 唯一的
 离开方式（`record_not_sent` 只可从 `intent` 离开，本地日志对 `unknown` 无话可说；
-`tests/unit/services/test_xhs_effect_ledger.py::TestTheStateMachine` 钉死）。读回
-**接口本身**仍是 §9.2 的未拍板项：私信侧 `unknown` 目前是终局（报给人，不重试）。
+`tests/unit/services/test_xhs_effect_ledger.py::TestTheStateMachine` 钉死）。
+
+**读回接口已落地（票 5d）**：`XHSEngagement.readback_comment_reply` /
+`readback_dm`（拉目标真实状态，DOM 文本归一化匹配）+ `reconcile_effect`（正文
+摘要对账后才动状态）。判决是**三值** `hit` / `miss` / `inconclusive`，不是二值 ——
+安全不对称决定词汇量：**假 miss 会解锁重臂（同一效果再发一次 = 给同一个真人发
+两条），假 hit 只是把键锁死（无双发）**。所以"读不到"（元素缺失/风控/空列表/
+折叠未展开/条目读不出）一律 `inconclusive`，行原封不动；只有可枚举且非空的表面
+上确实没有才 `miss`（`tests/unit/services/test_xhs_effect_readback.py` 钉住）。
+
+诚实边界（§9.2 从"存在性"降级为"验证度"）：选择器是对页面结构的尽力读法（与
+本模块其余部分同一诚实位）；**私信会话能否列出自己发过的消息尚未在真实账号上
+验证**，验证前私信侧任何 `miss` 只能当"按当前 DOM 读法没看到"用 —— 对私信侧的
+重臂要多一层人工复核。
 
 ### 5.4 什么才算回执
 
@@ -488,8 +500,12 @@ Phase B（在 A 之上追加）：
    `publisher.py` 选了前者（平台给出了"提交了但结果不明"这个判断），而互动这边
    超时发生在浏览器动作中途，平台层未必有机会给结论。倾向：能在服务层判定的报
    `DomainOutcome`，判不了的交给网关超时并进 `unknown`。
-2. **读回接口存在吗？** 笔记评论区可以读；私信会话能否列出自己发过的消息，需要在
-   真实账号上验证一次。**这是 §5.3 的唯一前提**，没有它，私信侧 `unknown` 就是终局。
+2. **读回接口存在吗？** ~~笔记评论区可以读；私信会话能否列出自己发过的消息，需要在
+   真实账号上验证一次。**这是 §5.3 的唯一前提**，没有它，私信侧 `unknown` 就是终局。~~
+   **已落地（票 5d，2026-10-20）**：评论侧/私信侧读回接口都实现了（三值判决
+   `hit`/`miss`/`inconclusive`，见 §5.3 落地状态）。降级为**验证度**问题：私信会话
+   列自己消息的 DOM 读法尚未在真实账号上验证，验证前私信侧 `miss` 需人工复核才可
+   重臂。
 3. **每账号并发上限要不要进 DB？** 现在 `max_concurrency` 是进程级信号量，多 worker
    下退化。CDP 锁已经是 PG advisory（跨进程），是否让账本/信号量也走 DB，取决于
    部署形态。

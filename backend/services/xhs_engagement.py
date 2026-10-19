@@ -53,6 +53,19 @@ _TRANSIENT_ERROR_CODES = frozenset(
 # bounding anything — the operator cannot un-send it to stay under the limit.
 _QUOTA_STATUSES = frozenset({SENT, UNKNOWN})
 
+# §5.3 读回判决三值。安全不对称决定词汇量：假 MISS 会解锁重臂（同一效果再发
+# 一次 = 给同一个真人发两条），假 HIT 只是把键永久锁死（没有双发）。所以
+# 「读不到」必须与「读到了、确实没有」分开 —— 前者只能是 INCONCLUSIVE，
+# 永远不允许落 MISS。
+READBACK_HIT = "hit"
+READBACK_MISS = "miss"
+READBACK_INCONCLUSIVE = "inconclusive"
+
+
+def _normalize_text(text: str) -> str:
+    """DOM 文本归一化：折叠所有空白，读回匹配用。"""
+    return " ".join((text or "").split())
+
 
 async def _record_effect_outcome(effect: EffectRow, result: dict[str, Any]) -> None:
     """判决后记账（§5.1）：verdict → 账本状态走 ``state_for_engagement_verdict``。
@@ -804,6 +817,178 @@ class XHSEngagement:
                     return []
         except CdpSessionBusyError:
             return []
+
+    # -- §5.3 读回（unknown 的唯一出口）--------------------------------
+
+    async def readback_comment_reply(
+        self, note_id: str, comment_id: str, reply_content: str
+    ) -> str:
+        """拉笔记评论区真实状态，判定这条回复是否已经出现（§5.3）。
+
+        三值判决（见 ``READBACK_*``）：找到 → ``hit``；回复区可枚举且确实没有
+        → ``miss``；评论/回复区读不到（元素缺失、风控页、任何不确定）→
+        ``inconclusive``。**读不到永远不是 miss** —— 假 miss 会让操作员把同一条
+        回复再发一次，那正是 §5.3 要防的双发。
+        """
+        from backend.services.cdp_session_lock import CdpSessionBusyError
+
+        try:
+            async with await self._hold_cdp(), self._guard.lock:
+                try:
+                    page = await self._ensure_page()
+                    await self._assert_safe_page(page)
+                    note_url = self.NOTE_URL_TEMPLATE.format(note_id=note_id)
+                    await self._paced(lambda: page.goto(note_url, wait_until="domcontentloaded"))
+                    await self._assert_safe_page(page)
+
+                    comment_selector = f".comment-item[data-id='{comment_id}'], .comment-wrapper"
+                    await page.wait_for_selector(comment_selector, timeout=10000)
+                    comment_element = await page.query_selector(comment_selector)
+                    if comment_element is None:
+                        # 评论本体都找不到：既证明不了有，也证明不了没有。
+                        return READBACK_INCONCLUSIVE
+                    await self._assert_safe_page(page)
+
+                    reply_items = await page.query_selector_all(".reply-item, .reply-content")
+                    if reply_items is None:
+                        # query_selector_all 正常不返回 None，但夹具/异常页面可能。
+                        return READBACK_INCONCLUSIVE
+                    expected = _normalize_text(reply_content)
+                    readable = 0
+                    for item in reply_items:
+                        try:
+                            text = _normalize_text(await item.inner_text())
+                        except Exception:
+                            continue
+                        readable += 1
+                        if expected and expected in text:
+                            return READBACK_HIT
+                    # 只有回复区**确实可枚举且非空**才有资格说 miss；空列表可能是
+                    # 回复折叠未展开（读不到 ≠ 不存在），unreadable 条目同理 ——
+                    # 「没有」证明不了，保守侧留给 inconclusive（假 miss = 双发）。
+                    if not reply_items or readable < len(reply_items):
+                        return READBACK_INCONCLUSIVE
+                    return READBACK_MISS
+                except (EngagementRiskError, EngagementConfigurationError):
+                    return READBACK_INCONCLUSIVE
+                except Exception as exc:
+                    logger.warning("comment readback inconclusive: %s", exc)
+                    return READBACK_INCONCLUSIVE
+        except CdpSessionBusyError:
+            return READBACK_INCONCLUSIVE
+
+    async def readback_dm(self, target_user_id: str, message: str) -> str:
+        """拉与目标的私信会话真实状态，判定这条消息是否已经出现（§5.3）。
+
+        判决规则同 ``readback_comment_reply``。诚实边界：选择器是对页面结构的
+        尽力读法（与本模块其余部分同一诚实位），**是否能列出自己发过的消息尚未
+        在真实账号上验证**（§9.2）；在验证之前，本方法的任何 ``miss`` 都只能当
+        "按当前 DOM 读法没看到"用 —— 调用侧（``reconcile_effect``）把它记成
+        ``resolved_not_sent`` 会开重臂，所以对私信侧的重臂要多一层人工复核。
+        """
+        from backend.services.cdp_session_lock import CdpSessionBusyError
+
+        try:
+            async with await self._hold_cdp(), self._guard.lock:
+                try:
+                    page = await self._ensure_page()
+                    await self._assert_safe_page(page)
+                    await self._paced(lambda: page.goto(self.DM_URL, wait_until="domcontentloaded"))
+                    await self._assert_safe_page(page)
+
+                    # 打开与目标的会话（与 _send_dm_locked 的搜索流同一读法）。
+                    search_input = await page.query_selector(
+                        "input[placeholder*=搜索], .dm-search-input"
+                    )
+                    if search_input is not None:
+                        await self._paced(lambda: search_input.fill(target_user_id))
+                        user_result = await page.query_selector(
+                            f".user-item[data-id='{target_user_id}'], .search-result-item"
+                        )
+                        if user_result is not None:
+                            await self._paced(user_result.click)
+                            await self._assert_safe_page(page)
+
+                    message_items = await page.query_selector_all(
+                        ".message-item, .message-bubble, .dm-message"
+                    )
+                    if message_items is None:
+                        return READBACK_INCONCLUSIVE
+                    expected = _normalize_text(message)
+                    readable = 0
+                    for item in message_items:
+                        try:
+                            text = _normalize_text(await item.inner_text())
+                        except Exception:
+                            continue
+                        readable += 1
+                        if expected and expected in text:
+                            return READBACK_HIT
+                    if readable < len(message_items):
+                        return READBACK_INCONCLUSIVE
+                    # 会话一条消息都读不到 = 既没打开会话也证明不了空。
+                    if not message_items:
+                        return READBACK_INCONCLUSIVE
+                    return READBACK_MISS
+                except (EngagementRiskError, EngagementConfigurationError):
+                    return READBACK_INCONCLUSIVE
+                except Exception as exc:
+                    logger.warning("dm readback inconclusive: %s", exc)
+                    return READBACK_INCONCLUSIVE
+        except CdpSessionBusyError:
+            return READBACK_INCONCLUSIVE
+
+    async def reconcile_effect(
+        self,
+        account_id: str,
+        idempotency_key: str,
+        *,
+        content: str,
+        note_id: str = "",
+    ) -> dict[str, Any]:
+        """§5.3 和解：对一条 ``unknown``/``intent`` effect 跑读回并落账。
+
+        ``content`` 必须与账本行的 ``payload_digest`` 对上 —— 读回只能和解
+        "这条"效果，正文不入账本（§5.1），但摘要在行上，键也可以复算，两者都
+        对上才允许动状态。``note_id`` 仅评论回复需要（读回要先到笔记页）。
+
+        返回 ``{"readback", "state", "changed"}``：``readback`` 是三值判决，
+        ``inconclusive`` 时行**原封不动**（unknown 只能经读回离开，而读不出来的
+        读回不是读回）。
+        """
+        from backend.services.xhs_effect_ledger import (
+            EffectState,
+            EngagementEffectLedger,
+            payload_digest_for,
+        )
+
+        ledger = EngagementEffectLedger()
+        row = await ledger.get(account_id, idempotency_key)
+        if row is None:
+            return {"readback": READBACK_INCONCLUSIVE, "state": None, "changed": False}
+        if row.payload_digest != payload_digest_for(content):
+            # 正文对不上 = 调用方想和解的不是这一行；绝不能拿别的内容去读回。
+            raise ValueError(
+                "content does not match the ledger row's payload_digest; "
+                "refusing to reconcile a different effect"
+            )
+        if row.state not in (EffectState.UNKNOWN.value, EffectState.INTENT.value):
+            # 终局/已读回的行没有"离开"可言。
+            return {"readback": READBACK_INCONCLUSIVE, "state": row.state, "changed": False}
+
+        if row.capability == "xhs.comment_reply":
+            if not note_id:
+                raise ValueError("note_id is required to read back a comment reply")
+            verdict = await self.readback_comment_reply(note_id, row.target_id, content)
+        else:
+            verdict = await self.readback_dm(row.target_id, content)
+
+        if verdict == READBACK_INCONCLUSIVE:
+            return {"readback": verdict, "state": row.state, "changed": False}
+        updated = await ledger.record_readback(
+            account_id, idempotency_key, sent=(verdict == READBACK_HIT)
+        )
+        return {"readback": verdict, "state": updated.state, "changed": True}
 
     async def _stop_playwright(self) -> None:
         if self._playwright is not None:
