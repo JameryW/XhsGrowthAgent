@@ -138,17 +138,33 @@ class TestXHSClient:
         assert result[0].heat_score == 100
 
     @pytest.mark.asyncio
-    async def test_get_trending_rate_limit(self, client):
-        """get_trending returns empty list on rate limit (caught by internal handler)."""
-        with patch.object(
-            client._http,
-            "get_homefeed",
-            new_callable=AsyncMock,
-            side_effect=XHSRateLimitError("rate limited"),
-        ):
-            result = await client.get_trending()
+    async def test_get_trending_rate_limit_propagates(self, client):
+        """A rate limit is a failure, not "nothing is trending".
 
-        assert result == []
+        This test used to assert ``result == []`` and describe it as "caught by
+        internal handler" — which was true, and the problem: the handler turned
+        a failure into the same value as an empty feed, so the Gateway recorded
+        ``ok=True`` over zero rows and the caller could not tell the two apart.
+        ``xhs.trending`` already degrades from ``ToolResult(ok=False)``; the
+        swallow was buying nothing but a dishonest trace.
+        """
+        with (
+            patch.object(
+                client._http,
+                "get_homefeed",
+                new_callable=AsyncMock,
+                side_effect=XHSRateLimitError("rate limited"),
+            ),
+            pytest.raises(XHSRateLimitError),
+        ):
+            await client.get_trending()
+
+    @pytest.mark.asyncio
+    async def test_get_trending_without_a_cookie_is_still_empty(self, client):
+        """The precondition keeps its documented answer; the failure does not."""
+        client._http = None
+
+        assert await client.get_trending() == []
 
     @pytest.mark.asyncio
     async def test_search_posts_success(self, client):
@@ -175,6 +191,45 @@ class TestXHSClient:
         # P1 scrape minimize masks others' nicknames before returning
         assert result[0].user_name == "U**r"
         assert result[0].user_id == "***"
+
+    @pytest.mark.asyncio
+    async def test_search_posts_propagates_a_failure(self, client):
+        """``[]`` is also "this keyword has no posts".
+
+        ``topic_scorer`` scored from the swallowed ``[]`` — post_count 0,
+        interaction 0 — and reported a heat number as if it had been measured.
+        """
+        with (
+            patch.object(
+                client._http,
+                "search_notes",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("platform 500"),
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await client.search_posts("美食")
+
+    @pytest.mark.asyncio
+    async def test_monitor_keywords_propagates_a_failed_keyword(self, client):
+        """A failed keyword is not a keyword that was never monitored.
+
+        The per-keyword handler dropped the row entirely, so a batch of five
+        that failed on two arrived as three rows and read as "only three were
+        monitored". Callers that want isolation may catch per keyword and keep
+        the failed row in their own answer.
+        """
+
+        async def _search(keyword: str, limit: int = 20):
+            if keyword == "坏词":
+                raise RuntimeError("platform 500")
+            return []
+
+        with (
+            patch.object(client._http, "search_notes", new_callable=AsyncMock, side_effect=_search),
+            pytest.raises(RuntimeError),
+        ):
+            await client.monitor_keywords(["好词", "坏词", "另一个"])
 
     @pytest.mark.asyncio
     async def test_get_post_analytics_success(self, client):

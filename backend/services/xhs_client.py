@@ -317,102 +317,97 @@ class XHSClient:
     # ── HTTP API 方法 (简单查询) ─────────────────────────────────────────────
 
     async def get_trending(self, category: str = "") -> list[XHSTrendingTopic]:
-        """获取热门话题 (HTTP API)"""
+        """获取热门话题 (HTTP API)
+
+        A failure **raises**. It used to be answered with ``[]``, which is also
+        the answer to "there is nothing trending" — and the caller
+        (``xhs.trending``) already degrades from ``ToolResult(ok=False)``, so the
+        swallow bought nothing but a ``ok=True`` trace over zero rows.
+
+        Raises:
+            ScrapeBudgetExhaustedError: 抓取预算用尽（不是"没有话题"）。
+            Exception: 平台层原样上抛。
+        """
         if not self._http:
             logger.warning("未配置 Cookie，无法获取热门话题")
             return []
 
         logger.info(f"Fetching trending topics for category: {category}")
 
-        from backend.services.scrape_budget import (
-            ScrapeBudgetExhaustedError,
-            check_budget,
-            record_success,
-        )
+        from backend.services.scrape_budget import check_budget, record_success
 
-        try:
-            cached = check_budget(self.account_id, "homefeed")
-            if cached is not None:
-                notes = cached
-            else:
-                notes = await self._http.get_homefeed(category=category)
-                notes = record_success(self.account_id, "homefeed", list(notes or []))
+        cached = check_budget(self.account_id, "homefeed")
+        if cached is not None:
+            notes = cached
+        else:
+            notes = await self._http.get_homefeed(category=category)
+            notes = record_success(self.account_id, "homefeed", list(notes or []))
 
-            # 解析为 XHSTrendingTopic
-            topics = []
-            for note in notes[:20]:  # 取前 20 个
-                topics.append(
-                    XHSTrendingTopic(
-                        topic_id=note.get("note_id", ""),
-                        title=note.get("display_title", ""),
-                        heat_score=note.get("like_count", 0),
-                        growth_rate=0.0,
-                        related_keywords=note.get("tag_list", []),
-                        category=category,
-                    )
+        # 解析为 XHSTrendingTopic
+        topics = []
+        for note in notes[:20]:  # 取前 20 个
+            topics.append(
+                XHSTrendingTopic(
+                    topic_id=note.get("note_id", ""),
+                    title=note.get("display_title", ""),
+                    heat_score=note.get("like_count", 0),
+                    growth_rate=0.0,
+                    related_keywords=note.get("tag_list", []),
+                    category=category,
                 )
+            )
 
-            return topics
-
-        except ScrapeBudgetExhaustedError:
-            raise
-        except XHSSignatureUnavailableError:
-            raise
-        except Exception as e:
-            logger.error(f"获取热门话题失败: {type(e).__name__}: {e}")
-            return []
+        return topics
 
     async def search_posts(self, keyword: str, limit: int = 20) -> list[XHSSearchResult]:
-        """搜索帖子 (HTTP API)"""
+        """搜索帖子 (HTTP API)
+
+        A failure **raises**, for the same reason as ``get_trending``: ``[]``
+        is also "this keyword has no posts", and every caller already has a
+        degradation path of its own. ``topic_scorer`` in particular scored
+        from ``[]`` — post_count 0, interaction 0 — and reported a heat number
+        as if it had been measured.
+
+        Raises:
+            ScrapeBudgetExhaustedError: 抓取预算用尽（不是"搜不到"）。
+            Exception: 平台层原样上抛。
+        """
         if not self._http:
             logger.warning("未配置 Cookie，无法搜索")
             return []
 
         logger.info(f"Searching posts for keyword: {keyword}")
 
-        from backend.services.scrape_budget import (
-            ScrapeBudgetExhaustedError,
-            check_budget,
-            record_success,
-        )
+        from backend.services.scrape_budget import check_budget, record_success
 
-        try:
-            cached = check_budget(self.account_id, "search")
-            if cached is not None:
-                notes = cached
-            else:
-                notes = await self._http.search_notes(keyword=keyword)
-                notes = record_success(self.account_id, "search", list(notes or []))
+        cached = check_budget(self.account_id, "search")
+        if cached is not None:
+            notes = cached
+        else:
+            notes = await self._http.search_notes(keyword=keyword)
+            notes = record_success(self.account_id, "search", list(notes or []))
 
-            results = []
-            for note in notes[:limit]:
-                user = note.get("user") if isinstance(note.get("user"), dict) else {}
-                note_id = note.get("id", note.get("note_id", ""))
-                results.append(
-                    XHSSearchResult(
-                        note_id=note_id,
-                        title=note.get("display_title", ""),
-                        user_name=user.get("nickname", note.get("user_name", "")),
-                        user_id=user.get("user_id", note.get("user_id", "")),
-                        likes=note.get("like_count", 0),
-                        comments=note.get("comment_count", 0),
-                        collects=note.get("collect_count", 0),
-                        cover_url=(note.get("cover") or {}).get("url", "")
-                        if isinstance(note.get("cover"), dict)
-                        else "",
-                        note_url=f"https://www.xiaohongshu.com/explore/{note_id}",
-                    )
+        results = []
+        for note in notes[:limit]:
+            user = note.get("user") if isinstance(note.get("user"), dict) else {}
+            note_id = note.get("id", note.get("note_id", ""))
+            results.append(
+                XHSSearchResult(
+                    note_id=note_id,
+                    title=note.get("display_title", ""),
+                    user_name=user.get("nickname", note.get("user_name", "")),
+                    user_id=user.get("user_id", note.get("user_id", "")),
+                    likes=note.get("like_count", 0),
+                    comments=note.get("comment_count", 0),
+                    collects=note.get("collect_count", 0),
+                    cover_url=(note.get("cover") or {}).get("url", "")
+                    if isinstance(note.get("cover"), dict)
+                    else "",
+                    note_url=f"https://www.xiaohongshu.com/explore/{note_id}",
                 )
+            )
 
-            return results
-
-        except ScrapeBudgetExhaustedError:
-            raise
-        except XHSSignatureUnavailableError:
-            raise
-        except Exception as e:
-            logger.error(f"搜索帖子失败: {type(e).__name__}: {e}")
-            return []
+        return results
 
     async def get_comments(self, post_id: str, limit: int = 20) -> list[XHSComment]:
         """获取帖子评论 (HTTP API)
@@ -494,93 +489,113 @@ class XHSClient:
         return XHSAnalytics(post_id=post_id)
 
     async def monitor_keywords(self, keywords: list[str]) -> list[dict[str, Any]]:
-        """关键词监控"""
+        """关键词监控
+
+        A failed keyword **raises**, which stops the batch. It used to be caught
+        per keyword and logged, and the keyword simply *absent* from the result —
+        so a batch of five that failed on two arrived as three rows and read as
+        "only three were monitored". Dropping a keyword silently is the same lie
+        one level up: the caller never learns the difference between "not
+        monitored" and "monitored, failed".
+
+        "One dead keyword should not kill the batch" is a real policy, but it is
+        the *caller's* to choose — a caller that wants it catches per keyword and
+        keeps the failed row in its own answer. A second normaliser in here is
+        how this layer and the Gateway came to disagree about what happened.
+
+        Raises:
+            XHSSignatureUnavailableError: 签名不可用 —— 部署问题，不是某个词的问题，
+                所以不再按词隔离（fail closed，见 ``test_xhs_signature.py``）。
+            Exception: 平台层原样上抛。
+        """
         logger.info(f"Monitoring keywords: {keywords}")
 
         results = []
         for keyword in keywords:
-            try:
-                posts = await self.search_posts(keyword=keyword, limit=10)
-                total_likes = sum(p.likes for p in posts)
-                results.append(
-                    {
-                        "keyword": keyword,
-                        "post_count": len(posts),
-                        "total_likes": total_likes,
-                        "avg_likes": total_likes / len(posts) if posts else 0,
-                        "top_posts": posts[:3],
-                    }
-                )
-            except XHSSignatureUnavailableError:
-                # Fail closed — never map missing HTTP signing to empty success.
-                raise
-            except Exception as e:
-                logger.warning(f"关键词 {keyword} 监控失败: {e}")
+            posts = await self.search_posts(keyword=keyword, limit=10)
+            total_likes = sum(p.likes for p in posts)
+            results.append(
+                {
+                    "keyword": keyword,
+                    "post_count": len(posts),
+                    "total_likes": total_likes,
+                    "avg_likes": total_likes / len(posts) if posts else 0,
+                    "top_posts": posts[:3],
+                }
+            )
 
         return results
 
     # ── 博主搜索方法 ──────────────────────────────────────────────────────
 
     async def search_users(self, keyword: str, limit: int = 20) -> list[dict[str, Any]]:
-        """搜索博主 (HTTP API)"""
+        """搜索博主 (HTTP API)
+
+        A failure **raises** — ``[]`` is also "this keyword has no bloggers".
+        The behaviour was pinned as ``test_search_users_error_returns_empty``
+        until 2026-10-19; that test asserted the swallow, so the change moved it
+        rather than dodged it.
+
+        Raises:
+            Exception: 平台层原样上抛。
+        """
         if not self._http:
             logger.warning("未配置 Cookie，无法搜索用户")
             return []
 
         logger.info(f"Searching users for keyword: {keyword}")
 
-        try:
-            users = await self._http.search_users(keyword=keyword)
-            return users[:limit]
-        except XHSSignatureUnavailableError:
-            raise
-        except Exception as e:
-            logger.error(f"搜索用户失败: {type(e).__name__}: {e}")
-            return []
+        users = await self._http.search_users(keyword=keyword)
+        return users[:limit]
 
     async def get_user_info(self, user_id: str) -> dict[str, Any]:
-        """获取博主信息 (HTTP API)"""
+        """获取博主信息 (HTTP API)
+
+        A failure **raises** — ``{}`` is also "this user has no info".
+        See ``search_users`` for why the pinned test moved.
+
+        Raises:
+            Exception: 平台层原样上抛。
+        """
         if not self._http:
             logger.warning("未配置 Cookie，无法获取用户信息")
             return {}
 
         logger.info(f"Fetching user info for: {user_id}")
 
-        try:
-            return await self._http.get_user_info(user_id=user_id)
-        except XHSSignatureUnavailableError:
-            raise
-        except Exception as e:
-            logger.error(f"获取用户信息失败: {type(e).__name__}: {e}")
-            return {}
+        return await self._http.get_user_info(user_id=user_id)
 
     async def get_user_notes(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
-        """获取博主笔记列表 (HTTP API, 自动翻页)"""
+        """获取博主笔记列表 (HTTP API, 自动翻页)
+
+        A failure **raises**, and this one matters more than it looks: it
+        paginates, so a mid-pagination failure answered as ``[]`` surfaced as a
+        *short* result set — the same lie with a longer fuse, and one that reads
+        as "this blogger has few notes". A caller that wants partial results can
+        fetch page by page and decide for itself.
+
+        Raises:
+            Exception: 平台层原样上抛。
+        """
         if not self._http:
             logger.warning("未配置 Cookie，无法获取用户笔记")
             return []
 
         logger.info(f"Fetching notes for user: {user_id}, limit: {limit}")
 
-        try:
-            all_notes: list[dict[str, Any]] = []
-            cursor = ""
-            while len(all_notes) < limit:
-                data = await self._http.get_user_notes(user_id=user_id, cursor=cursor)
-                notes = data.get("notes", [])
-                if not notes:
-                    break
-                all_notes.extend(notes)
-                cursor = data.get("cursor", "")
-                has_more = data.get("has_more", False)
-                if not has_more:
-                    break
-            return all_notes[:limit]
-        except XHSSignatureUnavailableError:
-            raise
-        except Exception as e:
-            logger.error(f"获取用户笔记失败: {type(e).__name__}: {e}")
-            return []
+        all_notes: list[dict[str, Any]] = []
+        cursor = ""
+        while len(all_notes) < limit:
+            data = await self._http.get_user_notes(user_id=user_id, cursor=cursor)
+            notes = data.get("notes", [])
+            if not notes:
+                break
+            all_notes.extend(notes)
+            cursor = data.get("cursor", "")
+            has_more = data.get("has_more", False)
+            if not has_more:
+                break
+        return all_notes[:limit]
 
     # ── Playwright 方法 (复杂操作) ───────────────────────────────────────────
 

@@ -135,13 +135,18 @@ Gateway 只能看到"一次成功返回的调用，值是 `success: False`"（`o
 加一处都会让那条测试变红。判据是**字面量**而不是"有没有 except"：handler 是
 因为调用失败才进的，它交回的值不可能是对那个问题的回答。
 
-**5 处的性质不一样，别混**：`get_trending`（读取前的前提已由 `require_readable`
-关上，失败那一半没关）与 `search_posts`（4 个调用方各自的降级需求不同）是真债；
-`search_users` / `get_user_info` / `get_user_notes` 是 2026-06「热门博主参考」
-留下的功能面，**没有生产调用方但被测试钉住** —— `test_*_error_returns_empty`
-三条测试**断言**了"出错返回空"，所以改它们要连那三条契约一起改。这是一次
-可以单独拍板的决定，不是"没人验证所以不动"。（本节初稿写成了"死路径、无法
-验证"，是错的，已改正。）
+**服务层的同类兜底已清零**（2026-10-19）：原 5 处（`get_trending` / `search_posts` /
+`search_users` / `get_user_info` / `get_user_notes`）全部改为失败即抛。其中三处曾经被
+`test_xhs_client_blogger.py` 的 `test_*_error_returns_empty` **断言**"出错返回空" ——
+那不是"没人验证所以不动"，是**一份把谎话写进契约的测试**；这次连那三条测试一起改成
+`test_*_error_propagates`，契约本身是被改动的对象。顺带修掉一个更深的：`get_user_notes`
+自动翻页，中途失败过去会表现为"结果偏少"（读成"这个博主笔记不多"），现单独立了
+`test_get_user_notes_a_mid_pagination_failure_is_not_a_short_result`。
+
+`monitor_keywords` 的逐词吞异常也一并去掉：它把失败的词**整个从结果里丢掉**，于是
+五个词失败两个会以三行到达，读作"只监控了三个"。"一个词坏不该拖垮整批"是真政策，
+但那是**调用方**的政策，调用方可以自己按词 catch 并把失败行留在自己的答案里；
+在服务层再放一个更安静的归一化器，正是这一层与 Gateway 当初对不上账的原因。
 
 ---
 

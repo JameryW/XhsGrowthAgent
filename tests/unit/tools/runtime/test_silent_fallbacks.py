@@ -27,9 +27,9 @@ This file makes the surface countable. Two registers, both compared against a
 scan of the sources rather than against a second register:
 
 * ``SILENT_FALLBACKS`` — ``@tool`` functions (the surface an agent reads);
-* ``SERVICE_FALLBACKS`` — the service layer's remaining instances, which are
-  a named debt: a tool above them may enforce its own precondition, but the
-  shape is still there and an uncounted one is the one that comes back.
+* ``SERVICE_FALLBACKS`` — the service layer, **empty since 2026-10-19** after
+  five instances were removed. Kept as a pinned empty table rather than deleted,
+  so a new one has to arrive named and reasoned instead of quietly.
 """
 
 from __future__ import annotations
@@ -56,38 +56,19 @@ SILENT_FALLBACKS: dict[str, str] = {
     ),
 }
 
-#: The service layer's remaining instances. Debt, counted on purpose.
-SERVICE_FALLBACKS: dict[str, str] = {
-    "backend.services.xhs_client:XHSClient.get_trending": (
-        "Caller is the xhs_trending tool, which now enforces ``require_readable`` "
-        "before the call, so the missing-cookie half is closed. The failure half "
-        "is not: an HTTP error still arrives as rows of empty data."
-    ),
-    "backend.services.xhs_client:XHSClient.search_posts": (
-        "Four callers with different degradation needs (visual_analysis, "
-        "topic_scorer, keyword_monitor, competitor_analyzer). Raising here is a "
-        "per-caller decision, so it needs its own slice rather than a blanket swap."
-    ),
-    "backend.services.xhs_client:XHSClient.search_users": (
-        "Not a dead path and not unverifiable — this file first said so and was "
-        "wrong. The blogger-reference feature (2026-06) pinned it in "
-        "``tests/unit/services/test_xhs_client_blogger.py``, and one of those tests, "
-        "``test_search_users_error_returns_empty``, *asserts* the fallback: the "
-        "'failure reads as empty' behaviour is a written-down contract there. What "
-        "blocks a change is that contract, not a lack of verification. It has no "
-        "production caller yet, so changing it means rewriting that test on purpose."
-    ),
-    "backend.services.xhs_client:XHSClient.get_user_info": (
-        "Same feature, same pinned contract (``test_get_user_info_error_returns_empty``)"
-        ". Returns ``{}`` — the ambiguity in a mapping rather than a list. Same "
-        "question as the other two, one decision covers all three."
-    ),
-    "backend.services.xhs_client:XHSClient.get_user_notes": (
-        "Same feature, same pinned contract (``test_get_user_notes_error_returns_empty``)"
-        ". Auto-paginates, so a mid-pagination failure would surface as a short "
-        "result set rather than an error — the same lie with a longer fuse."
-    ),
-}
+#: The service layer's remaining instances. **Empty, since 2026-10-19.**
+#:
+#: Five were here and are gone: ``get_trending`` / ``search_posts`` / the three
+#: blogger methods (``search_users`` / ``get_user_info`` / ``get_user_notes``).
+#: Each answered a raised exception with ``[]`` or ``{}`` — values that are also
+#: the correct answer to "there is nothing here". The callers already degraded
+#: from ``ToolResult(ok=False)``; the swallow bought only a dishonest trace.
+#:
+#: "Empty" here is a *statement*, not an omission: the scan is still run and
+#: still compared to this table, so a new instance has to arrive with a name and
+#: a reason rather than quietly. If one appears, the question is the same as for
+#: the tool surface — not "which register" but "why does this handler exist".
+SERVICE_FALLBACKS: dict[str, str] = {}
 
 
 def _refs(found: tuple[SilentFallback, ...]) -> list[str]:
@@ -109,17 +90,25 @@ class TestTheToolSurface:
         assert all(reason.strip() for reason in SILENT_FALLBACKS.values())
 
 
-class TestTheServiceDebt:
-    def test_the_remaining_instances_are_counted(self):
+class TestTheServiceSurface:
+    def test_the_service_layer_has_no_silent_fallbacks(self):
+        """Pinned *empty* — and the comparison is against the scan, not prose.
+
+        Five were removed on 2026-10-19. The test name says "has none" rather
+        than "has exactly these" because an empty table still has to be measured:
+        deleting the assertion instead of asserting nothing would leave the
+        next instance completely unwatched.
+        """
         found = scan_silent_fallbacks(XHS_CLIENT, tool_only=False)
         assert _refs(found) == sorted(SERVICE_FALLBACKS), (
-            "A read method in XHSClient gained or lost a literal fallback. This "
-            "register is the honest count of where a failed read still arrives as "
-            "an empty result.\n"
+            "A read method in XHSClient gained or lost a literal fallback. The "
+            "service register is empty on purpose: every one of these turned a "
+            "failed read into an empty result, which is also the answer to "
+            "'there is nothing here'.\n"
             f"seen: {[(item.ref, item.returned) for item in found]}"
         )
 
-    def test_every_entry_says_who_is_behind_it(self):
+    def test_every_entry_says_why_it_stays(self):
         assert all(reason.strip() for reason in SERVICE_FALLBACKS.values())
 
 
