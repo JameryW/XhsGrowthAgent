@@ -73,12 +73,29 @@ sink。所以目的地存在 `ContextVar` 里（`bridge.tracing_to`），而不�
 
 **同一条规则的另一半：失败也不能变成数据。** `except Exception: return []`（或
 `return {"heat_score": 50}`）交回的是作者写下的字面量，不是对那个问题的回答 ——
-handler 是因为调用失败才进的。这类兜底被 AST 扫成两张可数的表
-（`scan_silent_fallbacks`，钉在 `tests/unit/tools/runtime/test_silent_fallbacks.py`）：
-`@tool` 那一张今天只剩 `ripple_cancel_simulation`，它的字面量**自己写着**
-`status: "error"`；服务层那一张**已清零**（2026-10-19，原 5 处：`get_trending` /
-`search_posts` / 三个博主方法）。空表不是"没查"，是查完之后的结论，仍然逐次复算。
-空列表因此只有一种含义：读到了，确实没有。
+handler 是因为调用失败才进的。这类兜底被 AST 扫成**三张**可数的表
+（`scan_silent_fallbacks` / `scan_ref_fallbacks`，钉在
+`tests/unit/tools/runtime/test_silent_fallbacks.py`）：
+
+| 表 | 扫什么 | 今天 |
+|---|---|---|
+| `SILENT_FALLBACKS` | `@tool` 函数（agent 能读到的面） | 只剩 `ripple_cancel_simulation`，它的字面量**自己写着** `status: "error"` |
+| `SERVICE_FALLBACKS` | `backend/services/xhs_client.py` | **已清零**（2026-10-19，原 5 处：`get_trending` / `search_posts` / 三个博主方法） |
+| `REF_FALLBACKS` | 目录里 `tool_ref(...)` 指向的函数 | **已清零**（2026-10-20，原 1 处：`ripple.get_report`） |
+
+第三张是 2026-10-20 才有的，因为前两张**不是同一个集合**：大多数目录 ref 是没装饰
+器的普通 `async def`，既不在 `@tool` 面里，也不在 `xhs_client.py` 里。于是
+「Gateway 真正调用的那层函数」此前没有任何登记表覆盖 —— `ripple.get_report` 就在
+那里待着：`except Exception: return {"error": str(e)}`，Gateway 记成 `ok=True`，调用
+方只能靠一条带外约定（`if "error" in report`）得知事实，而 trace 已经把它说成没发生
+过。目录里那条"不重试"的注释当时正是**引用这个缺陷当理由**（"它从不抛异常，所以网关
+超时是唯一可重试事件"）——缺陷给自己当论据，这也是它没被发现的原因之一。
+
+`polish_copy` 的 `return fallback` 不进表：它是另一个函数**算出来的**答案，不是作者
+写下的常量。判据一直是"字面量"，这条不是。
+
+空表不是"没查"，是查完之后的结论，仍然逐次复算；ref 那张表扫不到源码会**抛异常**而不
+是报"干净"。空列表因此只有一种含义：读到了，确实没有。
 
 ### 权限检查是 opt-in：`scopes` 字段
 

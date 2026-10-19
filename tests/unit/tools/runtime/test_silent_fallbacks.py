@@ -46,7 +46,12 @@ from pathlib import Path
 
 import pytest
 
-from backend.tools.runtime.audit import TOOLS_ROOT, SilentFallback, scan_silent_fallbacks
+from backend.tools.runtime.audit import (
+    TOOLS_ROOT,
+    SilentFallback,
+    scan_ref_fallbacks,
+    scan_silent_fallbacks,
+)
 
 SERVICES = TOOLS_ROOT.parent / "services"
 XHS_CLIENT = SERVICES / "xhs_client.py"
@@ -77,6 +82,21 @@ SILENT_FALLBACKS: dict[str, str] = {
 #: a reason rather than quietly. If one appears, the question is the same as for
 #: the tool surface — not "which register" but "why does this handler exist".
 SERVICE_FALLBACKS: dict[str, str] = {}
+
+#: The catalogue's ``tool_ref`` functions — what the Gateway actually invokes.
+#: **Empty since 2026-10-20**, when the one instance here was removed:
+#: ``backend.tools.ripple.integration:get_report`` returned ``{"error": ...}``
+#: from its own ``except``, so the Gateway filed a failed report as ``ok=True``
+#: and the caller kept a private convention (``if "error" in report``) to learn
+#: what the trace had just denied.
+#:
+#: It had been invisible to both existing registers by construction: it is not
+#: decorated ``@tool`` (``scan_silent_fallbacks``) and it does not live in
+#: ``xhs_client.py`` (``SERVICE_FALLBACKS``). Most catalogue refs are plain
+#: ``async def``s, so "the surface an agent reads" and "the surface the Gateway
+#: calls" were never the same set. Kept empty and still measured, for the same
+#: reason the other two are.
+REF_FALLBACKS: dict[str, str] = {}
 
 
 def _refs(found: tuple[SilentFallback, ...]) -> list[str]:
@@ -118,6 +138,24 @@ class TestTheServiceSurface:
 
     def test_every_entry_says_why_it_stays(self):
         assert all(reason.strip() for reason in SERVICE_FALLBACKS.values())
+
+
+class TestTheRefSurface:
+    """The functions the Gateway calls, which neither other register saw."""
+
+    def test_no_catalogue_ref_answers_failure_with_a_literal(self):
+        found = scan_ref_fallbacks()
+        assert _refs(found) == sorted(REF_FALLBACKS), (
+            "A catalogue ref started (or stopped) answering a failure with a "
+            "written-down value. These are the functions the Gateway actually "
+            "invokes: a literal here is a failed call recorded as ok=True, and "
+            "the only caller that can then tell is one that knows the "
+            "convention by heart.\n"
+            f"seen: {[(item.ref, item.returned) for item in found]}"
+        )
+
+    def test_every_entry_says_why_it_stays(self):
+        assert all(reason.strip() for reason in REF_FALLBACKS.values())
 
 
 class TestPositiveControls:
@@ -237,6 +275,81 @@ class TestPositiveControls:
     def test_a_missing_root_is_an_error_not_a_clean_result(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError):
             scan_silent_fallbacks(tmp_path / "nope")
+
+    # ── the catalogue-ref scan ─────────────────────────────────────────────
+
+    def _ref_tree(self, tmp_path: Path, ref: str, body: str) -> Path:
+        """A minimal tree: one module, and a catalogue that points at it."""
+        module, _, _qualname = ref.partition(":")
+        path = tmp_path / Path(module.replace(".", "/")).with_suffix(".py")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        catalogue = tmp_path / "catalog.py"
+        catalogue.write_text(f"tool_ref({ref!r})\n", encoding="utf-8")
+        return catalogue
+
+    def test_a_ref_function_swallowing_a_failure_is_found(self, tmp_path: Path):
+        """The shape ``get_report`` had, in a tree of its own."""
+        ref = "backend.tools.fake.reports:get_report"
+        catalogue = self._ref_tree(
+            tmp_path,
+            ref,
+            "async def get_report(job_id: str) -> dict:\n"
+            "    try:\n"
+            "        return {'rounds': []}\n"
+            "    except Exception as e:\n"
+            "        return {'error': str(e)}\n",
+        )
+        found = scan_ref_fallbacks(catalogue_path=catalogue, root=tmp_path)
+        assert [item.ref for item in found] == [ref]
+        assert found[0].returned == "{'error': str(e)}"
+
+    def test_a_ref_function_that_does_not_swallow_is_not_flagged(self, tmp_path: Path):
+        ref = "backend.tools.fake.reports:get_report"
+        catalogue = self._ref_tree(
+            tmp_path,
+            ref,
+            "async def get_report(job_id: str) -> dict:\n    return {'rounds': []}\n",
+        )
+        assert scan_ref_fallbacks(catalogue_path=catalogue, root=tmp_path) == ()
+
+    def test_a_computed_fallback_is_not_a_written_down_value(self, tmp_path: Path):
+        """``return fallback`` (``polish_copy``) is an answer, not a constant.
+
+        The register's criterion has always been "a literal, written down at
+        authoring time". Handing back a value another function computed is a
+        designed degradation — a different question, and one this scan
+        deliberately does not answer.
+        """
+        ref = "backend.tools.fake.polish:polish_copy"
+        catalogue = self._ref_tree(
+            tmp_path,
+            ref,
+            "async def polish_copy(text: str) -> dict:\n"
+            "    fallback = algorithmic(text)\n"
+            "    try:\n"
+            "        return await llm(text)\n"
+            "    except Exception:\n"
+            "        return fallback\n",
+        )
+        assert scan_ref_fallbacks(catalogue_path=catalogue, root=tmp_path) == ()
+
+    def test_a_ref_with_no_source_is_an_error_not_a_clean_scan(self, tmp_path: Path):
+        """ "Nothing to read" must not come back as "nothing to report"."""
+        catalogue = tmp_path / "catalog.py"
+        catalogue.write_text("tool_ref('backend.tools.fake.gone:get_report')\n", encoding="utf-8")
+        with pytest.raises(FileNotFoundError):
+            scan_ref_fallbacks(catalogue_path=catalogue, root=tmp_path)
+
+    def test_a_ref_naming_a_function_that_is_gone_is_an_error_too(self, tmp_path: Path):
+        ref = "backend.tools.fake.reports:get_report"
+        catalogue = self._ref_tree(
+            tmp_path,
+            ref,
+            "async def something_else(job_id: str) -> dict:\n    return {}\n",
+        )
+        with pytest.raises(LookupError):
+            scan_ref_fallbacks(catalogue_path=catalogue, root=tmp_path)
 
 
 class TestKnownBlindSpots:

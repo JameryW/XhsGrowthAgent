@@ -961,24 +961,34 @@ class RippleService:
             return {"error": str(e)}
 
     async def get_report(self, job_id: str) -> dict[str, Any]:
-        """生成模拟报告"""
+        """生成模拟报告
+
+        Raises instead of returning ``{"error": ...}``. That dict was the last
+        service-layer instance of "a failure handed back as a value": every
+        caller had to know the convention, and the one that did not (the
+        Gateway) recorded the call as ``ok=True``. Its only caller is
+        ``backend.tools.ripple.integration.get_report``, which lets the
+        exception through to the Gateway.
+
+        The sibling reads (``get_result`` / ``get_simulation_status``) still
+        answer a failure with ``{"error": ...}``; they are polled in loops that
+        treat the dict as "not ready yet", so changing them is a separate
+        question and is deliberately not done here.
+        """
         config = self._get_config()
 
-        try:
-            payload = {
-                "rounds": [
-                    {"label": "summary", "system_prompt": "", "extra_user_context": ""},
-                    {"label": "diagnosis", "system_prompt": "", "extra_user_context": ""},
-                ],
-                "role": "omniscient",
-            }
-            return await self._request_with_retry(
-                "POST",
-                f"{config['base_url']}/v1/simulations/{job_id}/report",
-                json_data=payload,
-            )
-        except Exception as e:
-            return {"error": str(e)}
+        payload = {
+            "rounds": [
+                {"label": "summary", "system_prompt": "", "extra_user_context": ""},
+                {"label": "diagnosis", "system_prompt": "", "extra_user_context": ""},
+            ],
+            "role": "omniscient",
+        }
+        return await self._request_with_retry(
+            "POST",
+            f"{config['base_url']}/v1/simulations/{job_id}/report",
+            json_data=payload,
+        )
 
     # ── 取消与恢复 ──
 

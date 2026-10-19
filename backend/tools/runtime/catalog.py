@@ -545,14 +545,15 @@ def build_registry() -> ToolRegistry:
         # capability, so it is declared here and the call site no longer wraps
         # the call — one home for the wait, not two that can disagree.
         timeout_s=120.0,
-        # No retry, deliberately — and this is not the read-only default
-        # applied blindly. ``get_report`` reports its own failures as data
-        # (``{"error": ...}``) and so never raises, which leaves the Gateway's
-        # own timeout as the only retryable event; and retrying a timeout is
-        # not a transient-failure remedy, it is a longer wait wearing a
-        # disguise (two attempts behind a 120s guard stall the node for 240s,
-        # which is a budget question, not a retry one). If this ever needs to
-        # wait longer, raise ``timeout_s``.
+        # No retry, deliberately. Until 2026-10-20 the reason given here was
+        # that ``get_report`` "reports its own failures as data and so never
+        # raises", which left the gateway timeout as the only retryable event.
+        # That was the defect quoting itself: the capability was un-retryable
+        # because its failures were invisible. It raises now, so the reason has
+        # to stand on its own — a POST that *generates* a report is not a
+        # safely repeatable read, and two attempts behind a 120s guard stall
+        # the node for 240s, which is a budget question, not a retry one.
+        # If this ever needs to wait longer, raise ``timeout_s``.
         retry=RetryPolicy(),
     )
     _register(
