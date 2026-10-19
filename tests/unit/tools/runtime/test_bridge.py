@@ -46,7 +46,7 @@ class TestSharedGateway:
         assert shared_gateway() is shared_gateway()
 
     def test_carries_the_real_catalogue(self):
-        assert len(shared_gateway().registry) == 12
+        assert len(shared_gateway().registry) == 14
 
     def test_reset_rebuilds_it(self):
         first = shared_gateway()

@@ -91,6 +91,17 @@ _RIPPLE_SAFETY_NET_S = 3600.0
 # or the net delivers a worse answer than the one it pre-empted.
 _PUBLISH_SAFETY_NET_S = 900.0
 
+# The engagement capabilities' net (票 5f / §6 of the engagement-migration
+# spec). ``services.xhs_engagement`` waits up to 120s for the CDP session
+# lock, then 10s + 5s on element waits, up to 5s of cool-down per browser
+# action, across up to ~6 actions — roughly 165s worst case. The SLOW default
+# (120s) would cancel a submit that is still legitimately in flight and
+# report a timeout for something that may well have reached a real person.
+# Same shape as the two nets above: strictly above the tool's own budget,
+# guarding a hung connection rather than making a scheduling decision. 300s
+# leaves 1.8x the measured upper bound.
+_ENGAGEMENT_SAFETY_NET_S = 300.0
+
 
 def _is_langchain_tool(target: Any) -> bool:
     """Is this actually a LangChain tool?
@@ -408,6 +419,7 @@ def _register(
     auth_scope: tuple[str, ...] = (),
     pass_style: PassStyle = PassStyle.KWARGS,
     timeout_s: float | None = None,
+    max_concurrency: int | None = None,
 ) -> None:
     """Declare a capability and bind it, from one statement.
 
@@ -436,6 +448,7 @@ def _register(
             auth_scope=auth_scope,
             pass_style=pass_style,
             timeout_s=timeout_s,
+            max_concurrency=max_concurrency,
             input_schema=describe_params(target),
         ),
         bind(ref, pass_style=pass_style),
@@ -675,6 +688,45 @@ def build_registry() -> ToolRegistry:
         retry=RetryPolicy(),
         timeout_s=_PUBLISH_SAFETY_NET_S,
         auth_scope=("xhs:write",),
+    )
+
+    # The two engagement capabilities (票 5f / §3 of the engagement-migration
+    # spec). Registration is the reachability boundary (§7.1): everything that
+    # must exist *before* this line — the Effect ledger (§5), the approval
+    # gate (§7.2), read-back reconciliation (§5.3) and an account-keyed
+    # in-flight ceiling (§3.2) — exists. ``auth_scope`` stays ``xhs:write``,
+    # not ``xhs:outreach``: per §3.1 a scope nobody checks is the §9.5-6 hole
+    # again, and no call site passes ``granted_scopes`` for these yet.
+    _register(
+        registry,
+        capability="xhs.comment_reply",
+        ref=tool_ref("backend.tools.xhs.engagement:comment_replier"),
+        summary="回复一条小红书评论（写操作）",
+        pass_style=PassStyle.INVOKE,
+        side_effect=SideEffect.SIDE_EFFECTING,
+        latency=LatencyClass.SLOW,
+        cost=CostClass.CHEAP,
+        # One attempt, like xhs.publish and heavier: a retry's price is a
+        # duplicate reply to the same real person (§3.3). The idempotency key
+        # is computed from the effect (§4.1) and guards the ledger, not this.
+        retry=RetryPolicy(),
+        timeout_s=_ENGAGEMENT_SAFETY_NET_S,
+        auth_scope=("xhs:write",),
+        max_concurrency=1,
+    )
+    _register(
+        registry,
+        capability="xhs.dm_send",
+        ref=tool_ref("backend.tools.xhs.engagement:dm_handler"),
+        summary="发送一条小红书私信（写操作，冷启动外发风险最高）",
+        pass_style=PassStyle.INVOKE,
+        side_effect=SideEffect.SIDE_EFFECTING,
+        latency=LatencyClass.SLOW,
+        cost=CostClass.CHEAP,
+        retry=RetryPolicy(),
+        timeout_s=_ENGAGEMENT_SAFETY_NET_S,
+        auth_scope=("xhs:write",),
+        max_concurrency=1,
     )
 
     return registry

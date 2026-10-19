@@ -2,7 +2,9 @@
 
 本模块仅提供人工审核后的单次、显式调用（manual-only）工具。调用前必须由
 操作员确认目标账号、目标内容和待发送文本；这些工具不会被工作流 agent
-调度、轮询或自动触发。
+调度、轮询或自动触发。票 5f 起它们经 ``xhs.comment_reply`` / ``xhs.dm_send``
+在 Tool Gateway 注册（注册即可达，见迁移文档 §7.1）—— 可达不等于自动触发：
+冷启动外发仍被 §7.2 的逐条审批闸门拦着。
 """
 
 from __future__ import annotations
@@ -12,11 +14,33 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
+from backend.tools.runtime.models import DomainOutcome
+
 if TYPE_CHECKING:
     from backend.services.xhs_effect_ledger import EngagementApproval
     from backend.services.xhs_engagement import XHSEngagement
 
 logger = logging.getLogger("xhs_growth.tools.engagement")
+
+_SENT = "sent"
+
+
+def _result_or_outcome(payload: dict[str, Any]) -> dict[str, Any]:
+    """``sent`` 返回结果字典；其余判决一律作为 ``DomainOutcome`` 上报。
+
+    与 ``backend/tools/xhs/publisher.py`` 同一条规则：平台层给出的结论
+    （拒发、失败、或"提交了但结果不明"）是**答案**，不是抖动 —— 作为
+    DomainOutcome 上报，Gateway 标 ``error_kind=domain`` 且永不自动重试。
+    例外在工具层继续向上传（不做第二归一化站点）。
+    """
+    if str(payload.get("status") or "") == _SENT:
+        return payload
+    verdict = {str(key): value for key, value in payload.items() if str(key).isidentifier()}
+    verdict.pop("reason", None)  # the positional argument owns that name
+    raise DomainOutcome(
+        str(payload.get("error") or payload.get("status") or "engagement rejected"),
+        **verdict,
+    )
 
 
 def _get_engagement(cdp_endpoint: str = "", account_id: str = "") -> XHSEngagement:
@@ -100,11 +124,15 @@ async def comment_replier(
         thread_id: 审批所对应的会话/工单 ID
 
     Returns:
-        结果字典：``status``（sent/blocked/failed/unknown）、``success``、
+        仅 ``status == "sent"``：结果字典（``status``、``success``、
         ``error_code``、``receipt_id``（仅平台回显，无则空）、``receipt_source``、
-        ``verified``、``retryable``、``correlation_id``，以及本次请求的目标回显。
+        ``verified``、``retryable``、``correlation_id``）以及本次请求的目标回显。
 
     Raises:
+        DomainOutcome: 平台层给出了非 sent 的结论（拒发、失败、或"提交了但
+            结果不明"）。结论作为**答案**上报（``ToolResult.domain`` 带全量
+            判决字段），Gateway 不会自动重试 —— 与 ``publisher.xhs_publisher``
+            同一条规则。
         Exception: 平台层抛出的异常**原样向上传**。这里不再把异常归一化成
             ``{"success": False}`` 字典 —— 那会让调用方看到"一次成功的调用"，
             从而分不清"没发出去"和"发了但答复丢了"。归一化只在 Tool Gateway
@@ -127,12 +155,14 @@ async def comment_replier(
     finally:
         await engagement.close()
 
-    return {
-        "comment_id": comment_id,
-        "post_id": post_id,
-        "reply": reply_content,
-        **verdict,
-    }
+    return _result_or_outcome(
+        {
+            "comment_id": comment_id,
+            "post_id": post_id,
+            "reply": reply_content,
+            **verdict,
+        }
+    )
 
 
 @tool
@@ -161,12 +191,13 @@ async def dm_handler(
         thread_id: 审批所对应的会话/工单 ID
 
     Returns:
-        结果字典：``status``（sent/blocked/failed/unknown）、``success``、
+        仅 ``status == "sent"``：结果字典（``status``、``success``、
         ``error_code``、``receipt_id``（仅平台回显，无则空）、``receipt_source``、
         ``verified``（私信暂无读回，恒为 False）、``retryable``、
-        ``correlation_id``，以及本次请求的目标回显。
+        ``correlation_id``）以及本次请求的目标回显。
 
     Raises:
+        DomainOutcome: 非 sent 的平台结论，同 ``comment_replier``。
         Exception: 平台层异常原样向上传，理由同 ``comment_replier``。
 
     注意 ``status == "sent"`` 的含义是"提交动作已发出且没有反证"，不是"平台已
@@ -188,12 +219,14 @@ async def dm_handler(
     finally:
         await engagement.close()
 
-    return {
-        "message_id": message_id,
-        "sender_id": sender_id,
-        "reply": reply_content,
-        **verdict,
-    }
+    return _result_or_outcome(
+        {
+            "message_id": message_id,
+            "sender_id": sender_id,
+            "reply": reply_content,
+            **verdict,
+        }
+    )
 
 
 @tool
