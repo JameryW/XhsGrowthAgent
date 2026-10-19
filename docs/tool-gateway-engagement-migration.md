@@ -183,22 +183,26 @@ ToolSpec(
 第一版草案写的是 `xhs:engagement:write` / `xhs:dm:write`，看起来更细，实测后撤回了。
 原因只有一个：**这个仓库里唯一的 scope 来源不能表达这种区分。**
 
-`backend/services/xhs_credentials.py:130-145`：
+`backend/services/xhs_credentials.py:156-189`：
 
 ```python
 @property
 def scopes(self) -> tuple[str, ...]:
-    if not self.usable:
-        return ()
-    return (XHS_READ_SCOPE, XHS_WRITE_SCOPE)   # 读+写一起给，且是有意为之
+    scopes = []
+    if self.usable:                          # 有可用 cookie ⇒ 能读
+        scopes.append(XHS_READ_SCOPE)
+    if self.usable or self.profile_bound:    # cookie ∨ 账号已绑定 profile ⇒ 能写
+        scopes.append(XHS_WRITE_SCOPE)
+    return tuple(scopes)
 ```
 
-即 scope 是**凭证可用性**推导出来的，"这个账号登录着"就同时拿到读与写。于是新造一个
+即 scope 是**机制**推导出来的：读只有一条路（HTTP client，身份就是 cookie），写有两条
+（走 HTTP 的评论/私信，或走 CDP 的账号自己的浏览器）。于是新造一个
 `xhs:engagement:write` 只有两种结局：
 
 - 不扩 `XhsCredential.scopes` → 没有任何调用方持有它 → scope 检查**永远拒**（fail-closed，
   等于把能力静默关掉）；
-- 扩进去 → 任何有可用 cookie 的账号都持有它 → **零区分度**。
+- 扩进去 → 任何有可用 cookie **或**已绑定 profile 的账号都持有它 → **零区分度**。
 
 两者都不是防线，所以不写。真正的"评论回复/私信 与 发布 不是同一档权限"需要一张
 **按账号的策略表**（谁被允许主动触达谁），那是一个独立的数据模型，不在本 spec 内 ——
@@ -421,10 +425,11 @@ Phase B（在 A 之上追加）：
    下退化。CDP 锁已经是 PG advisory（跨进程），是否让账本/信号量也走 DB，取决于
    部署形态。
 4. **本轮是否允许 agent 触达？** 本文建议：不允许。§7.1 已经证明注册即触达。
-5. **要不要一张按账号的策略表？** §3.1 的结论是当前 scope 只能表达"这个账号登录着"，
-   表达不了"这个账号被允许主动私信谁"。真要做区分，需要一个策略源（谁被允许触达、
-   每账号每日上限、是否只允许应答式触达），并把 `XhsCredential.scopes` 从"凭证推导"
-   改成"凭证 ∧ 策略"。这是一个独立的数据模型，建议单开一票。
+5. **要不要一张按账号的策略表？** §3.1 的结论是当前 scope 只能表达"这个账号
+   登录着 / 有自己绑定的浏览器"，表达不了"这个账号被允许主动私信谁"。真要做区分，需要
+   一个策略源（谁被允许触达、每账号每日上限、是否只允许应答式触达），并把
+   `XhsCredential.scopes` 从"机制推导"改成"机制 ∧ 策略"。这是一个独立的数据模型，
+   建议单开一票。
 6. **scope 到底该接在哪一层？**（原写作"agent 发布路径要不要补 `granted_scopes`"，
    实测后问题变大了，见下。）
 
@@ -434,8 +439,8 @@ Phase B（在 A 之上追加）：
    能力没有任何已检查的调用点**；`xhs.publish` 有两条路径，一条检查
    （`creator_agent`）、一条不检查（`backend/agents/publisher.py`）。
 
-   **为什么不能直接把 `creator_agent` 的做法抄到 agent 路径**：scope 的唯一来源是
-   `XhsCredential.scopes`，它由 **cookie 可用性**推导（`backend/services/xhs_credentials.py:130-145`）。
+   **为什么不能直接把 `creator_agent` 的做法抄到 agent 路径**（当时的实测状态）：scope
+   的唯一来源是 `XhsCredential.scopes`，它当时**只**由 cookie 可用性推导。
    而发布这条路径根本不用 cookie —— `backend/tools/xhs/publisher.py:30` 明确构造
    `XHSPublisher(cookie="")`，真正的提交走 CDP 连上已登录的 Chrome。于是：
 
@@ -444,20 +449,35 @@ Phase B（在 A 之上追加）：
    - 接上 scope 后，这类部署的 `usable=False` ⇒ `scopes=()` ⇒ agent 发布直接
      `PermissionDeniedError`，**而它今天能正常发出**。
 
-   `xhs_credentials` 的 docstring 也不是没想到这一层：它明确写过"能连上浏览器不算授权"
-   （可达性会随进程存亡翻转，授权不该这样）。所以这不是 bug，是**两条口径打架**：
-   声明说"发布需要凭证"，机制说"发布只需要一个已登录的浏览器"。
+   这不是 bug，是**两条口径打架**：声明说"发布需要凭证"，机制说"发布只需要一个已登录的
+   浏览器"。
 
-   **两条路，需要拍板**：
+   **已定案：选项 A（让授权追上机制）**。理由是它同时保住了两样真东西 ——
+   "授权不随 Chrome 进程启停翻转"（所以判绑定、不判可达），以及 `.env.example` 承诺的那
+   套「空 cookie + CDP」部署。
 
    | 选项 | 做法 | 代价 |
    |---|---|---|
-   | A. 让授权追上机制 | 给 `xhs_credentials` 增加"可发布"判定（账号有绑定 profile / CDP endpoint），`scopes` 由"cookie ∨ 已绑定 profile"推导 | 要改授权的定义域，且"可达性算不算授权"这个论证要重写 |
-   | B. 让机制追上授权 | 维持 cookie 推导，全线接线，同时把 `XHS_COOKIE` 写成发布的**硬前提**（文档 + 启动自检） | 依赖空 cookie + CDP 的现有部署会立刻发不出去，属破坏性变更 |
+   | **A. 让授权追上机制**（已采用） | `XhsCredential` 增加 `profile_bound`，`scopes` 由"cookie ∨ 已绑定 profile"推导 | 授权定义域从"凭证"扩到"机制"，"可达性算不算授权"的旧论证要重写 |
+   | B. 让机制追上授权（未采用） | 维持 cookie 推导，全线接线，同时把 `XHS_COOKIE` 写成发布的**硬前提**（文档 + 启动自检） | 依赖空 cookie + CDP 的现有部署会立刻发不出去，属破坏性变更 |
 
-   我倾向 **A**：它保住了 `xhs_credentials` 已经写清楚的那个论证（授权不能随进程翻转），
-   也保住 `.env.example` 承诺的那套配置。但这是产品口径的选择，不该由一次重构顺手决定。
+   **A 落地后的授权规则**（`backend/services/xhs_credentials.py:156-189`）：
+
+   - `xhs:read` ⟸ cookie 可用。读只有 HTTP 这一条路，`XHSClient` 的身份就是 cookie。
+   - `xhs:write` ⟸ cookie 可用 **∨** 账号已绑定浏览器 profile。发布走 CDP，评论/私信
+     走 HTTP，两条路各自成立就够了。
+   - **绑定 ≠ 可达**：`profile_bound` 只读账号行的 `cdp_port`（
+     `backend/db/accounts.py:483` 的 `get_account_cdp_endpoint`），不建连接、不探测。
+     "浏览器没开"仍由发布工具自己报 `cdp_unavailable`，而不是被 Gateway 说成"没被授权"。
+   - 两个事实各自由自己那次读取决定：cookie 行读取失败仍然是 fail-closed（不回退部署
+     身份），但**不会顺手抹掉** binding —— 绑定来自另一次成功读取，且属于这个账号本身。
+   - **授权说哪个浏览器，payload 就带哪个**：控制面发布此前不带 `cdp_endpoint`，靠工具的
+     全局回落。grant 一旦可以由 binding 成立，这个回落就会让一个账号的授权跑在另一个账号的
+     会话上，所以 `build_publish_payload` 补上了该字段（agent 路径早就按账号解析并传入）。
 
    **本轮已做（不动行为）**：trace 事件新增 `scopes: checked | unchecked | none`
    （`docs/tool-runtime.md` 有表），让"声明了但没检查"在日志里是一条可数的事实；
    覆盖面被测试钉成数字，债务不会再悄悄扩大。
+
+   **还没做的**：把 `backend/agents/publisher.py` 的 agent 路径接上
+   `granted_scopes`。A 解掉的是"接上就会拒"这个前提，接线本身是下一片。

@@ -54,8 +54,21 @@ plan_action ──policy──▶ ActionIntent(pending_confirmation) ──resol
 
 凭据的唯一所有者是 `backend/services/xhs_credentials.py`（P2a-S5a）：**账号行优先，且账号行
 不可用时不回退**到部署级 `XHS_COOKIE`。回退会把"这个账号没有凭据"静默变成"用部署的身份替它
-发布"。同一个 `XhsCredential` 同时喂 cookie（给 client）与 scopes（给 Gateway），所以
-**"带了凭据"与"被授权"不可能矛盾**。
+发布"。
+
+同一个 `XhsCredential` 同时回答两件事：cookie 给 HTTP client，`scopes` 给 Gateway。但
+`scopes` **不是**"有 cookie"的同义词 —— 读走 `XHSClient`（身份就是 cookie），发布走
+`XHSPublisher(cookie="")`（身份是账号自己绑定的浏览器 profile）。所以规则按机制给：
+
+| scope | 什么时候有 | 为什么 |
+|---|---|---|
+| `xhs:read` | cookie 可用 | 读只有 HTTP 这一条路，没有 cookie 就没有可用的身份 |
+| `xhs:write` | cookie 可用 **∨** 账号已绑定 profile | 发布走 CDP，评论/私信走 HTTP，两条机制任一成立即可 |
+
+"已绑定 profile"只读账号行的 `cdp_port`，不探测浏览器是否在跑 —— 授权不该随一个 Chrome
+进程的启停翻转；浏览器没开由发布工具自己报 `cdp_unavailable`。既然授权指的是"这个账号
+自己的浏览器"，payload 就带上它的 `cdp_endpoint`，而不是让工具回落到账号无关的全局那台。
+细节见 `docs/tool-gateway-engagement-migration.md` §9.6。
 
 ## 四个 capability
 
