@@ -224,8 +224,13 @@ class ContentStrategistAgent(BaseAgent):
 
         # ponytail: 对候选话题打分（topic_scorer 已注册但此前从未调用——死代码）
         # 评分结果拼入 extra_context，让 LLM 基于热度/增长/竞争度选话题。
-        # topic_scorer 内部已处理实时数据不可用降级（返回 heat_score=50），此处只透传。
-        topic_scores_ctx = await self._score_trend_topics(trend_data, niche)
+        # topic_scorer 现在会因**读不到平台**而失败（以前它会回一个 heat_score=50
+        # 的假分数）。这里逐条跳过并记日志，绝不把"没读到"写成"分数是 50"。
+        # account_id 传原始值：空 = 用部署级凭据，不要拿本地那个 "default"
+        # 兜底值去冒充账号（它只是 CreativeMemory 的键）。
+        topic_scores_ctx = await self._score_trend_topics(
+            trend_data, niche, account_id=str(state.get("account_id") or "")
+        )
         if topic_scores_ctx:
             memory_context += f"\n{topic_scores_ctx}"
         # When the user pinned a topic, inject the user-topic branch so the
@@ -656,7 +661,11 @@ class ContentStrategistAgent(BaseAgent):
         return topics
 
     async def _score_trend_topics(
-        self, trend_data: dict[str, Any], niche: str, limit: int = 5
+        self,
+        trend_data: dict[str, Any],
+        niche: str,
+        limit: int = 5,
+        account_id: str = "",
     ) -> str:
         """对候选话题调用 topic_scorer 打分，返回可注入 prompt 的上下文字符串。
 
@@ -676,7 +685,8 @@ class ContentStrategistAgent(BaseAgent):
         for topic in topics:
             try:
                 scored = await self.tools.invoke(
-                    "analysis.topic_scorer", {"topic": topic, "niche": niche}
+                    "analysis.topic_scorer",
+                    {"topic": topic, "niche": niche, "account_id": account_id},
                 )
                 if not scored.ok:
                     logger.warning(f"topic_scorer 失败 ({topic}): {scored.error}")

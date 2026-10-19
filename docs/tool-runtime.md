@@ -96,6 +96,20 @@ Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。�
 （`missing_publish_credential`，附指路），因为那正是"一个账号的选择、另一个账号的身份"。
 见 §9.6。
 
+### 剩下的 7 个为什么还没接：它们不是同一类问题
+
+把"没接"当成一种债务会得出错误的下一步。逐个查过（2026-10-19），它们分三类：
+
+| 类别 | 能力 | 现状 |
+|---|---|---|
+| 前置条件在**工具内** | `xhs.trending` / `xhs.keyword_monitor` / `xhs.competitor_analyzer` | `services.xhs_client.require_readable` 在读取前拒绝，凭据由 `client_for_account` 解析。Gateway 再判一次不会多出任何信息，只会把"可降级的结果"变成**抛出的契约违规**，而调用点是按 `ToolResult(ok=False)` 写的降级分支。 |
+| 声明结构上无法满足（已修） | `analysis.topic_scorer` | 以前用空 cookie 的 `XHSClient()` 读，并 `except` 成 `heat_score=50` —— 一个没人测过的分数被当数据写进 prompt。现已接上 `client_for_account` + `require_readable`，失败就抛出，调用方跳过该话题。 |
+| **与身份无关** | `ripple.get_report` / `ripple.predict_spread` / `ripple.validate_pmf` | 不消费任何凭据（`backend/tools/ripple/integration.py` 里没有 cookie，也没有 credential）。`ripple:read` 是**服务级** entitlement，不是身份授权 —— 拿凭证推出的 grant 永远满足不了它，所以"接线"这条路本身不存在。 |
+
+所以"读侧接 scope 是检查还是形式主义"的答案是：对第一类是重复，对第二类已由前置条件
+覆盖，对第三类无解。要动这三类，动作分别是"不接"、"已修"、"改 vocabulary 或删声明"，
+而不是统一加一行 `granted_scopes=`。
+
 ## 传参形状：PassStyle
 
 三种，**在签名上不可区分，猜错也不报错**：
