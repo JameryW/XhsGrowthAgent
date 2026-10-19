@@ -1,12 +1,39 @@
 """Revise content node implementation - resets content for revision."""
 
+import logging
 from typing import Any
 
 from langgraph.store.base import BaseStore
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.state.enums import WorkflowPhase
+from backend.state.progress import (
+    ProgressSignal,
+    detect_revision_stall,
+    progress_event,
+    revision_record,
+)
 from backend.state.schema import XHSGrowthState
+
+logger = logging.getLogger("xhs_growth.graph.nodes")
+
+
+async def _emit_stall(state: XHSGrowthState, signal: ProgressSignal) -> None:
+    """Publish a stall signal to the event timeline. Best-effort by contract.
+
+    Same rule as every other telemetry write: a run must never fail because its
+    observer could not store a row. The signal is emitted, never routed on —
+    ``max_revision_count`` still decides how many rounds this loop gets.
+    """
+    from backend.state.events import emit_events, resolve_thread_id
+
+    thread_id = resolve_thread_id(state)
+    entry = progress_event(
+        signal,
+        account_id=str(state.get("account_id") or ""),
+        thread_id=thread_id,
+    )
+    await emit_events(thread_id, [entry])
 
 
 async def revise_content_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
@@ -18,6 +45,12 @@ async def revise_content_node(state: XHSGrowthState, *, store: BaseStore) -> dic
 
     Increments revision_count on each cycle; evaluator_outcome force-approves
     after Settings().workflow.max_revision_count to prevent infinite revision loops.
+
+    P0-A (observe-only): each cycle also appends a compact verdict record and
+    runs the Progress Detector over the loop's history. Two rounds asking for
+    the same fix, or two rounds without score movement, produce a
+    ``kind:"progress"`` event and a warning log. Nothing here changes the
+    routing or the budget — the round cap remains the only decider.
     """
     _check_cancelled(state)
     # Carry evaluator revision hints into human_feedback for the copywriter
@@ -38,5 +71,21 @@ async def revise_content_node(state: XHSGrowthState, *, store: BaseStore) -> dic
     }
     if human_feedback:
         result["human_feedback"] = human_feedback
+
+    record = revision_record(result["revision_count"], evaluation)
+    if record is not None:
+        history = [
+            entry for entry in (state.get("revision_history") or []) if isinstance(entry, dict)
+        ]
+        result["revision_history"] = [record]
+        signal = detect_revision_stall([*history, record])
+        if signal.stalled:
+            logger.warning(
+                "Revision loop stalled after round %s: %s evidence=%s",
+                record["round"],
+                signal.reason,
+                signal.evidence,
+            )
+            await _emit_stall(state, signal)
 
     return NodeResult(result, "revise_content").to_dict()

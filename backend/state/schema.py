@@ -83,6 +83,14 @@ class XHSGrowthState(TypedDict, total=False):
     # to prevent infinite revision loops when the panel is miscalibrated or adversarial.
     revision_count: int
 
+    # P0-A (additive, checkpoint-compatible): one compact record per revision
+    # round — the evaluator verdict that round was spent against (score, hint
+    # digest, decision). Append-only; the digest is stored instead of the hint
+    # text so the checkpoint does not grow with every round. Read by
+    # backend.state.progress.detect_revision_stall from the revise node; no
+    # router reads it (the round cap still decides).
+    revision_history: Annotated[list[dict[str, Any]], _append_list]
+
     # Continuous-mode cycle guard — counts analyst→orchestrator cycles.
     # should_continue force-ends after Settings().workflow.max_cycle_count to
     # prevent runaway workflows in continuous execution mode.

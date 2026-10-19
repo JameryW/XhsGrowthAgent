@@ -11,19 +11,29 @@ This module answers one question from the run's own event timeline:
 
 Design constraints (deliberate, keep them when extending):
 
-1. **Read-only.** Nothing here is wired into an agent or the graph yet; the
-   signal is emitted for observation so the policy can be decided on evidence
-   (the same "observe before adapting" order as the Context Compiler baseline).
+1. **Observe before acting.** The signal is emitted (event + log) but never
+   routes: the retry loop's budget still decides whether to retry (#675) and
+   the revision loop's ``max_revision_count`` still decides whether to stop.
+   Policy comes after the evidence has been collected from real runs.
 2. **Evidence over counting.** A stall is "the same error fingerprint twice in
    a row" or "two tool calls returned the same payload", never "N rounds have
    elapsed" — a fast loop that keeps learning is not stalled.
 3. **Structural output.** :class:`ProgressSignal` carries the evidence needed
    to act (fingerprints, digests, window), not a bare boolean.
 
-The two acceptance-oriented rules from the design note (budget spent without
-acceptance movement, revision without score movement) are intentionally not
-implemented here: they need acceptance/score inputs that no caller supplies
-yet, and inventing them would make the signal look more informed than it is.
+Two inputs answer the same question at different granularity:
+
+- :func:`detect_progress` reads a run's **event timeline** — one node's
+  internal retry loop (LLM correction rejected twice the same way).
+- :func:`detect_revision_stall` reads the **round records** of the
+  evaluator→copywriter loop — "round 3 is converging" vs "round 3 is the same
+  complaint again". The records come from :func:`revision_record`, which the
+  revise node appends; scores/hints exist only there, which is why the
+  acceptance-oriented rules had no input until now.
+
+``budget_without_acceptance`` remains unimplemented: it needs a run-level
+budget on state, which does not exist (§8 F7 is a recorded SKIP for the same
+reason). Inventing one would make the signal look better informed than it is.
 """
 
 from __future__ import annotations
@@ -36,14 +46,27 @@ from typing import Any
 
 __all__ = [
     "PROGRESS_EVENT_KIND",
+    "REVISION_NO_IMPROVEMENT",
+    "REVISION_SAME_HINTS",
     "ProgressSignal",
     "detect_progress",
+    "detect_revision_stall",
     "progress_event",
+    "revision_record",
 ]
 
 #: Event kind for an emitted signal. Declared here and consumed by
 #: ``progress_event`` so the vocabulary and the emitter cannot drift.
 PROGRESS_EVENT_KIND = "progress"
+
+#: The evaluator asked for the same fix again: the writer was told "X" in round
+#: N and the panel returned "X" after round N+1's rewrite.
+REVISION_SAME_HINTS = "same_hints_repeated"
+
+#: Rounds were spent but the panel's overall score did not move. Distinct from
+#: the rule above: the complaints may differ (the writer changed *something*)
+#: while the result is equally unacceptable — "revising" without "improving".
+REVISION_NO_IMPROVEMENT = "revised_without_improvement"
 
 
 @dataclass(frozen=True)
@@ -178,6 +201,149 @@ def detect_progress(
                 evidence={
                     "digest": digests[0],
                     "count": window,
+                },
+                window=window,
+            )
+
+    return ProgressSignal(stalled=False, window=window)
+
+
+def revision_record(
+    round_no: int,
+    evaluation: Mapping[str, Any] | None,
+    *,
+    max_hints: int = 40,
+) -> dict[str, Any] | None:
+    """Compact record of the verdict that is about to cost one revision round.
+
+    Returns ``None`` when there is no verdict to record (no evaluation yet, or
+    a caller that reaches the revise node without one — the human
+    ``needs_revision`` path). Absence of a verdict must not fabricate a record:
+    a neutral filler would look like "no change" and manufacture stalls.
+
+    What is stored, and what is not:
+
+    - ``hints_digest`` is a fingerprint of the *sorted* revision hints, not the
+      hint text. The text already lives in ``evaluation_result``; duplicating
+      it into an append-only history would grow the checkpoint for every round
+      and could not be redacted (the same reason node latency uses counts).
+    - ``score`` is ``None`` when the panel degraded (no usable judgement).
+      A degraded round carries no evidence either way, so the score rule
+      ignores it rather than reading it as "no improvement".
+    - ``round`` is the *revision* number this verdict triggered. The revise
+      node derives it from ``revision_count``, which the human-triggered
+      ``revise`` resume resets to 0 — so round numbers restart there, and
+      :func:`detect_revision_stall` treats the reset as an epoch boundary
+      instead of comparing across it.
+    """
+    if not evaluation:
+        return None
+
+    raw_score = evaluation.get("overall_score")
+    score: float | None = None
+    if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
+        score = float(raw_score)
+
+    hints = [str(hint) for hint in (evaluation.get("revision_hints") or []) if str(hint).strip()]
+    digest = _fingerprint(sorted(hints[:max_hints])) if hints else ""
+
+    decision = evaluation.get("decision")
+    return {
+        "round": int(round_no),
+        "score": score,
+        "hints_digest": digest,
+        "decision": getattr(decision, "value", str(decision or "")),
+        "degraded": bool(evaluation.get("degraded"))
+        or str(evaluation.get("status") or "") == "degraded",
+    }
+
+
+def _current_epoch(rounds: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """The trailing run of rounds that belong to one revision budget.
+
+    Round numbers are assigned from ``revision_count``, which a human-triggered
+    ``revise`` resume resets to 0. A decrease (or a gap) is that reset, not a
+    failure: comparing pre-reset rounds against post-reset ones would report a
+    stall for a loop the operator deliberately restarted with a fresh budget.
+    Only the suffix is dropped — the history itself is append-only telemetry.
+    """
+    epoch: list[Mapping[str, Any]] = []
+    expected: int | None = None
+    for entry in reversed(rounds):
+        try:
+            number = int(entry.get("round"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            break
+        if expected is not None and number != expected:
+            break
+        epoch.append(entry)
+        expected = number - 1
+    epoch.reverse()
+    return epoch
+
+
+def detect_revision_stall(
+    rounds: Sequence[Mapping[str, Any]],
+    *,
+    window: int = 2,
+    min_gain: float = 1.0,
+) -> ProgressSignal:
+    """Is the evaluator→copywriter loop still producing *new* outcomes?
+
+    ``rounds`` are :func:`revision_record` entries in chronological order. Two
+    rules, in order of specificity:
+
+    - ``same_hints_repeated``: the trailing ``window`` verdicts asked for the
+      same fix (identical hint digest, non-empty). The writer complied and the
+      panel disagreed with the result the same way — the canonical "retry that
+      cannot succeed" shape.
+    - ``revised_without_improvement``: the panel's score gained less than
+      ``min_gain`` across the trailing ``window`` verdicts. Different
+      complaints, same verdict — rounds are being spent without moving the
+      number that decides the gate.
+
+    ``min_gain`` defaults to one point on the panel's 0-100 scale: a rounding
+    wobble is not progress. Rounds whose score is ``None`` (degraded panel) are
+    skipped by the score rule, and a window with fewer than two usable scores
+    returns no signal — "not enough evidence" is not "stalled".
+    """
+    window = max(2, int(window))
+    cleaned = [entry for entry in rounds if isinstance(entry, Mapping)]
+    epoch = _current_epoch(cleaned)
+    if len(epoch) < window:
+        return ProgressSignal(stalled=False, window=window)
+
+    tail = epoch[-window:]
+
+    digests = [str(entry.get("hints_digest") or "") for entry in tail]
+    if all(digests) and len(set(digests)) == 1:
+        return ProgressSignal(
+            stalled=True,
+            reason=REVISION_SAME_HINTS,
+            evidence={
+                "hints_digest": digests[0],
+                "count": window,
+                "rounds": [entry.get("round") for entry in tail],
+            },
+            window=window,
+        )
+
+    scores = [
+        entry.get("score") if isinstance(entry.get("score"), (int, float)) else None
+        for entry in tail
+    ]
+    if all(score is not None for score in scores):
+        usable = [float(score) for score in scores]  # type: ignore[arg-type]
+        gain = usable[-1] - usable[0]
+        if gain < min_gain:
+            return ProgressSignal(
+                stalled=True,
+                reason=REVISION_NO_IMPROVEMENT,
+                evidence={
+                    "scores": usable,
+                    "gain": gain,
+                    "min_gain": min_gain,
+                    "rounds": [entry.get("round") for entry in tail],
                 },
                 window=window,
             )
