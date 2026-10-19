@@ -91,6 +91,14 @@ handler 是因为调用失败才进的。这类兜底被 AST 扫成**三张**可
 过。目录里那条"不重试"的注释当时正是**引用这个缺陷当理由**（"它从不抛异常，所以网关
 超时是唯一可重试事件"）——缺陷给自己当论据，这也是它没被发现的原因之一。
 
+同一次审计还查出服务层另一处同类（`RippleService.get_result`，票 5i 改掉）：它的
+`{"error": ...}` 会被 `_parse_spread_result` 读成
+`{"ripple_prediction": None, "ripple_error": ...}`，同样经目录回到 `ok=True`。两处
+都不进上面任何一张表 —— 它们本来就不在 `xhs_client.py` 或 `@tool` 面里，这正说明第
+三张表为什么必须存在。它们改完之后走的是服务**自己声明的降级**（带 `ripple_fallback`
+哨兵的零值体），由集成层拒绝成 `DomainOutcome("unavailable")`：调用方的答案前后都是
+"unavailable"，变的是 trace 不再说谎。
+
 `polish_copy` 的 `return fallback` 不进表：它是另一个函数**算出来的**答案，不是作者
 写下的常量。判据一直是"字面量"，这条不是。
 

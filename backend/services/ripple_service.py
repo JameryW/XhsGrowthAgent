@@ -949,31 +949,48 @@ class RippleService:
         return result
 
     async def get_result(self, job_id: str) -> dict[str, Any]:
-        """获取模拟结果"""
+        """获取模拟结果
+
+        Raises instead of returning ``{"error": str(e)}`` — same change as
+        ``get_report``, and for the same reason: the dict was a *successful*
+        result carrying a failure. It has one caller (``submit_and_wait``),
+        which hands it straight to ``_parse_spread_result`` /
+        ``_parse_pmf_result``; those read the ``error`` key and answer
+        ``{"ripple_prediction": None, "ripple_error": ...}``, which travels
+        back through the catalogue as ``ok=True``. The callers were defended
+        (``_RippleCall.read`` derives ``ok`` from the body, not from
+        ``ToolResult.ok``) — the trace was not, and that is what changes here.
+
+        With the exception propagating, ``predict_spread`` / ``validate_pmf``
+        take their normal failure branch (``_default_*``, carrying
+        ``ripple_fallback``) and the integration layer turns it into
+        ``DomainOutcome("unavailable")``. The call site's answer is unchanged:
+        "unavailable" either way.
+        """
         config = self._get_config()
 
-        try:
-            return await self._request_with_retry(
-                "GET",
-                f"{config['base_url']}/v1/simulations/{job_id}/artifacts/output-json",
-            )
-        except Exception as e:
-            return {"error": str(e)}
+        return await self._request_with_retry(
+            "GET",
+            f"{config['base_url']}/v1/simulations/{job_id}/artifacts/output-json",
+        )
 
     async def get_report(self, job_id: str) -> dict[str, Any]:
         """生成模拟报告
 
-        Raises instead of returning ``{"error": ...}``. That dict was the last
-        service-layer instance of "a failure handed back as a value": every
-        caller had to know the convention, and the one that did not (the
+        Raises instead of returning ``{"error": ...}``. That dict was one of
+        two service-layer instances of "a failure handed back as a value":
+        every caller had to know the convention, and the one that did not (the
         Gateway) recorded the call as ``ok=True``. Its only caller is
         ``backend.tools.ripple.integration.get_report``, which lets the
         exception through to the Gateway.
 
-        The sibling reads (``get_result`` / ``get_simulation_status``) still
-        answer a failure with ``{"error": ...}``; they are polled in loops that
-        treat the dict as "not ready yet", so changing them is a separate
-        question and is deliberately not done here.
+        The other instance was ``get_result`` (same change, 票 5i).
+
+        ``get_simulation_status`` never answered with a dict at all — it lets
+        ``_request_with_retry`` raise into the polling loop. An earlier version
+        of this docstring grouped it with ``get_result`` and said both were
+        "polled in loops that treat the dict as not ready yet"; neither half
+        was right — only one of them returned a dict, and it was not polled.
         """
         config = self._get_config()
 
