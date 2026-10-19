@@ -21,7 +21,9 @@ Four things are pinned here.
 5. **Scopes follow the mechanism, not the credential.**  Read needs the cookie;
    write needs the cookie *or* a bound browser profile, because the publish
    path drives CDP with ``cookie=""``.  Binding is not reachability, and a
-   binding read that fails denies the write rather than inventing it.
+   binding read that fails denies the write rather than inventing it.  A blank
+   account id is bound by the deployment's *declared* endpoint, never by the
+   publisher's reachability probe.
 """
 
 from __future__ import annotations
@@ -320,7 +322,50 @@ class TestScopesFollowTheMechanism:
 
         assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
 
-    async def test_a_blank_account_does_not_consult_the_profile_seam(self, monkeypatch):
+    async def test_a_blank_account_is_bound_by_the_declared_deployment_endpoint(self, monkeypatch):
+        """With no account to look up, the deployment's declaration answers.
+
+        ``XHS_CDP_ENDPOINT`` is the counterpart of ``XHS_COOKIE``: it is what a
+        single-account deployment means.  It is *declared* and never probed — the
+        publisher's own fallback probes the well-known port, and borrowing that
+        answer would make the grant depend on whether a Chrome process is up.
+        """
+        monkeypatch.setenv(COOKIE_KEY, "")
+        monkeypatch.setenv(USER_ID_KEY, "")
+        monkeypatch.setenv("XHS_CDP_ENDPOINT", "http://127.0.0.1:9333")
+
+        credential = await load_credential("")
+
+        assert credential.account_id == ""
+        assert credential.profile_bound is True
+        assert credential.scopes == (XHS_WRITE_SCOPE,)
+
+    async def test_a_blank_account_does_not_borrow_a_named_accounts_binding(self, monkeypatch):
+        """The blank path must not hit the account store at all."""
+
+        async def _must_not_be_called(account_id: str) -> str:
+            raise AssertionError(f"account store consulted for {account_id!r}")
+
+        monkeypatch.setattr("backend.db.accounts.get_account_cdp_endpoint", _must_not_be_called)
+        monkeypatch.setenv(COOKIE_KEY, "")
+        monkeypatch.setenv(USER_ID_KEY, "")
+        monkeypatch.setenv("XHS_CDP_ENDPOINT", "http://127.0.0.1:9333")
+
+        credential = await load_credential("  ")
+
+        assert credential.profile_bound is True
+
+    async def test_an_undeclared_deployment_has_no_binding(self, monkeypatch):
+        monkeypatch.setenv(COOKIE_KEY, "")
+        monkeypatch.setenv(USER_ID_KEY, "")
+        monkeypatch.setenv("XHS_CDP_ENDPOINT", "")
+
+        credential = await load_credential("")
+
+        assert credential.profile_bound is False
+        assert credential.scopes == ()
+
+    async def test_the_seam_still_decides_when_one_is_injected(self, monkeypatch):
         asked: list[str] = []
 
         async def _spy(account_id: str) -> str:
@@ -331,9 +376,9 @@ class TestScopesFollowTheMechanism:
         monkeypatch.setenv(USER_ID_KEY, "")
         credential = await load_credential("   ", profile_reader=_spy)
 
-        assert asked == []
-        assert credential.profile_bound is False
-        assert credential.scopes == ()
+        assert asked == [""]
+        assert credential.profile_bound is True
+        assert credential.scopes == (XHS_WRITE_SCOPE,)
 
     async def test_an_unreadable_credential_store_does_not_withdraw_the_binding(self):
         """Each fact is decided by its own read, not by the other one's failure.

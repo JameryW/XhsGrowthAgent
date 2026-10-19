@@ -63,11 +63,14 @@ plan_action ──policy──▶ ActionIntent(pending_confirmation) ──resol
 | scope | 什么时候有 | 为什么 |
 |---|---|---|
 | `xhs:read` | cookie 可用 | 读只有 HTTP 这一条路，没有 cookie 就没有可用的身份 |
-| `xhs:write` | cookie 可用 **∨** 账号已绑定 profile | 发布走 CDP，评论/私信走 HTTP，两条机制任一成立即可 |
+| `xhs:write` | cookie 可用 **∨** 已绑定 profile | 发布走 CDP，评论/私信走 HTTP，两条机制任一成立即可 |
 
-"已绑定 profile"只读账号行的 `cdp_port`，不探测浏览器是否在跑 —— 授权不该随一个 Chrome
-进程的启停翻转；浏览器没开由发布工具自己报 `cdp_unavailable`。既然授权指的是"这个账号
-自己的浏览器"，payload 就带上它的 `cdp_endpoint`，而不是让工具回落到账号无关的全局那台。
+"已绑定 profile"对**具名账号**读的是它自己的 `cdp_port`；对**空 account_id** 读的是
+部署声明的 `XHS_CDP_ENDPOINT`（单账号部署就是"这个部署有一台自己的浏览器"，与
+`XHS_COOKIE` 的地位对称）。两者都**只读声明，不探测**浏览器是否在跑 —— 授权不该随一个
+Chrome 进程的启停翻转；浏览器没开由发布工具自己报 `cdp_unavailable`。既然授权指的是
+"这个账号的浏览器"，payload 就带上它的 `cdp_endpoint`，而不是让工具回落到账号无关的
+全局那台。
 细节见 `docs/tool-gateway-engagement-migration.md` §9.6。
 
 ## 四个 capability

@@ -88,9 +88,9 @@ trace 事件带一个 `scopes` 字段：
 同一件事（发布走 CDP，`XHSPublisher(cookie="")` 根本不用 cookie），硬接会拒掉一类
 本来能工作的部署。**这条已于 2026-10-19 解掉**，方向是让授权追上机制：
 `XhsCredential` 多了一个 `profile_bound` 事实，`scopes` 改成按机制授予 ——
-**读要 cookie，写要 「cookie ∨ 账号已绑定 profile」**。绑定只读账号行的 `cdp_port`，
-不探测浏览器是否活着（可达性不是授权：让授权随 Chrome 启停翻转，Gateway 会把"浏览器
-没开"报成"没被授权"）。剩下的是接线本身，见 §9.6。
+**读要 cookie，写要 「cookie ∨ 已绑定 profile」**。绑定只读声明、不探测：具名账号读它的
+`cdp_port`，空 account_id 读部署声明的 `XHS_CDP_ENDPOINT`（可达性不是授权：让授权随
+Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。剩下的是接线本身，见 §9.6。
 
 ## 传参形状：PassStyle
 
