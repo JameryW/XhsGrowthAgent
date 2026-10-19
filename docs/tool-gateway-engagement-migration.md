@@ -1,23 +1,32 @@
 # 互动能力迁入 Tool Gateway —— 规格草案（不接线）
 
-**状态：spec only。** 本文不改变任何运行时行为，也不注册任何 capability。
-落地顺序与前置条件见 §7，验收标准见 §8。
+**状态：Phase A 已落地，仍未接线。** 本文不注册任何 capability；§1 的四个缺陷已修
+（PR #684），本文保留它们修前的形态作为证据，并在每节末尾写明修后契约与守护测试。
 
-一句话结论：**现在不能接线。** 迁移本身是一小时的事，挡在前面的是三个已实测的
-诚实性缺陷（§1）—— 先把一个会谎报成功的工具搬进 Gateway，等于给谎报装上统一的、
+一句话结论：**仍然不能接线。** 迁移本身是一小时的事，剩下的挡路项是 Effect 账本与
+审批闸门（§5、§7.2）—— 先把一个会谎报成功的工具搬进 Gateway，等于给谎报装上统一的、
 可追溯的外观。而且 `auth_scope` 挡不住 agent（§7.1 有实测依据），所以"先注册、
 用 scope 兜住"这条路根本不成立。
 
 ---
 
-## 1. 为什么迁：三个已实测的缺陷
+## 1. 为什么迁：四个已实测的缺陷（Phase A 已修）
 
-不是"架构上更整齐"，是这三个缺陷现在就在生产路径上，且每一个都在
+不是"架构上更整齐"，是这四个缺陷当时就在生产路径上，且每一个都在
 `docs/tool-runtime.md` 想消灭的那一类里 —— **归一化发生在第二个地方**。
+
+下表是修前 → 修后的对照，细节在 §1.1–§1.4：
+
+| # | 修前 | 修后 |
+|---|---|---|
+| 1 | DM 找不到发送按钮 → 跳过点击、照记配额、返回 `success: True` | `status=failed`、`error_code=send_button_missing`、不记配额 |
+| 2 | 平台 `status`/`error_code` 在工具层被丢 | 原样透传，且 `retryable` 由错误码一次推出 |
+| 3 | 工具层 `except Exception` → 业务字典（Gateway 看到 `ok=True`） | 异常原样抛出，归一化只在 Gateway |
+| 4 | `reply_<ts>` / `dm_<ts>` 冒充回执 | `receipt_id` 只来自平台回显，无回显即空 |
 
 ### 1.1 DM 在没点发送的情况下报成功
 
-`backend/services/xhs_engagement.py:413-418`：
+`backend/services/xhs_engagement.py`（修前，该段已删除）：
 
 ```python
 send_btn = await page.query_selector("text=发送, button.send-btn")
@@ -35,15 +44,21 @@ return {"success": True, "message_id": f"dm_{int(time.time())}"}
 这不是边缘情况：`query_selector` 返回 `None` 本来就是"没找到"，被写成可选分支就等于
 把"没找到"当成了"不需要"。
 
+**修后**：`backend/services/xhs_engagement.py:594` 起，按钮缺失直接返回
+`FAILED` + `send_button_missing`；配额改由 `send_dm` 读判决后记账，只在
+`status ∈ {sent, unknown}` 时增加。守护：
+`tests/unit/services/test_xhs_engagement_verdicts.py::TestDirectMessageVerdicts::test_a_missing_send_button_no_longer_reports_success`。
+
 ### 1.2 平台给出的结论被丢在工具层
 
-`backend/services/xhs_engagement.py:198-204` 的 `_blocked_result` 明确带四个字段：
+`_blocked_result`（修前形态）明确带四个字段：
+
 
 ```python
 {"success": False, "status": "blocked", "error_code": error_code, "error": message}
 ```
 
-但 `backend/tools/xhs/engagement.py:98-105`（评论）与 `:154-161`（私信）只取三个：
+但两个工具（修前）只取三个字段：
 
 ```python
 "success": result.get("success", False),
@@ -56,9 +71,14 @@ return {"success": True, "message_id": f"dm_{int(time.time())}"}
 占着（`cdp_busy`）、页面没找到评论。前两种是终局（不该重试，重试还会烧额度），后两种
 是暂时（等等可以）。现在它们都只是 `success: False` 加一句中文。
 
+**修后**：两个工具直接把服务层判决原样透出（`status` / `error_code` / `retryable`
+一个不少），只额外回显请求身份。`retryable` 由 `_TRANSIENT_ERROR_CODES` 一次推出，
+**默认不可重试** —— 说不清原因的错误码不该被自动重放。守护：
+`tests/unit/services/test_xhs_engagement_verdicts.py::TestRetryabilityIsDerivedOnce`。
+
 ### 1.3 异常在工具层被归一化成业务字典
 
-`backend/tools/xhs/engagement.py:107-113` 与 `:163-169`：
+两个工具（修前）都有这段：
 
 ```python
 except Exception as e:
@@ -71,12 +91,16 @@ Gateway 只能看到"一次成功返回的调用，值是 `success: False`"（`o
 `ok` / `error_kind` 上。这正是 `backend/tools/xhs/publisher.py` 已经拆掉的那层
 （该文件 docstring：*"归一化只在 Gateway 一个归属地"*）。
 
-边界要说清：全仓 `backend/tools/` 里还有四处 `except Exception`，但只有这一对是
-**有副作用的写操作 + 吞掉平台判决**：
+**修后**：两个工具不再捕获任何异常，只在 `finally` 里关会话；异常原样向上传。守护：
+`tests/unit/tools/test_xhs_engagement_tool_contract.py::TestCommentReplierPassesTheVerdictThrough::test_an_exception_is_no_longer_turned_into_a_dict`。
+
+边界要说清 —— Phase A 之后，全仓 `backend/tools/` 剩下的 `except Exception` 没有一处
+还是"有副作用的写操作 + 吞掉平台判决"：
 
 | 位置 | 形状 | 是否同一类问题 |
 |---|---|---|
-| `backend/tools/xhs/engagement.py:107-113` / `:163-169` | 返回业务字典，丢弃 `status`/`error_code` | **是**，且是写操作 |
+| ~~`backend/tools/xhs/engagement.py`~~ | 返回业务字典，丢弃 `status`/`error_code` | **已修（Phase A）** |
+| `backend/tools/xhs/engagement.py:261` | `fetch_pending_comments` 异常返回 `[]` | 半同类：只读，但"读失败"与"没有评论"同形，留给后续 |
 | `backend/tools/ripple/integration.py:178-180` | `return {"error": str(e)}` | 是同一形状（S3c 修过它的孪生），但只读、无副作用 |
 | `backend/tools/analysis/topic_scorer.py:176-180` | 返回基础评分兜底 | 不是：显式降级，产出的是真值 |
 | `backend/tools/content/de_ai_taste.py:222-224` | 回退到算法路径 | 不是：同上 |
@@ -84,24 +108,41 @@ Gateway 只能看到"一次成功返回的调用，值是 `success: False`"（`o
 
 ### 1.4 顺带：`message_id` 不是身份，是时钟
 
-`f"dm_{int(time.time())}"`（`backend/services/xhs_engagement.py:418`）。它不含平台任何回执，重复发送
+`f"dm_{int(time.time())}"`（修前，评论侧另有 `f"reply_{int(time.time())}"`）。它不含平台任何回执，重复发送
 与真实发送产生的是**同一形态**的 id，且同一秒内两次调用会撞。任何以它为幂等键或
-对账依据的账本都会立刻失效。迁移时这条必须改成"平台回显，否则空"。
+对账依据的账本都会立刻失效。
+
+**修后**：两个能力都只报 `receipt_id`（仅平台回显）+ `receipt_source`，本地标识改名为
+`correlation_id` 并注明"不是回执"。评论路径的 `verified=True` 来自 DOM 里 `.reply-item`
+出现；私信没有读回，所以 `verified` 恒为 `False` —— 点击只是"已提交"，不是"已送达"。
+守护：
+`test_a_confirmed_reply_is_sent_but_carries_no_receipt` /
+`test_a_clicked_send_is_sent_but_unverified`。
+
+### 1.5 还剩的同类实例（Phase A 未覆盖）
+
+| 位置 | 形状 | 为什么这次没动 |
+|---|---|---|
+| `backend/services/xhs_client.py:694` | 拉取私信时逐条套 `message_id=f"dm_{int(time.time())}"` | 同一秒内所有消息拿到**同一个 id**；但这两个方法（`get_direct_messages` / `respond_to_comment`）在本仓**没有任何调用者**，属于死路径，改它无法被真实流量验证 |
+| `backend/services/xhs_client.py:715` | `send_dm` 把判决压成 `bool` | 同上：死路径 |
+| `backend/tools/xhs/engagement.py:261` | 读失败返回 `[]` | 只读，且不是本次迁移的两个能力 |
+
+这些留给"清死代码"或 Phase B 一并处理，不在 Phase A 里假装已经清完。
 
 ---
 
 ## 2. 现状与目标形态
 
-| | 现在 | 迁移后 |
+| | Phase A 之后 | 迁移后 |
 |---|---|---|
 | 调用方式 | agent 直接持有 `@tool` 函数 | `gateway.invoke("xhs.comment_reply", payload)` |
 | 超时 | 无（`XhsLoginSession` 那套不覆盖互动） | `_ENGAGEMENT_SAFETY_NET_S`，见 §6 |
-| 重试 | 无（调用方自己 `try`） | `RetryPolicy(max_attempts=1)`，见 §3.3 |
+| 重试 | 无，但判决自带 `retryable` | `RetryPolicy(max_attempts=1)`，见 §3.3 |
 | 权限 | 无声明 | `auth_scope`，但**不构成防线**，见 §7.1 |
-| 归一化 | 工具层 + 服务层两处 | 只在 Gateway（工具抛，服务给结论） |
-| 平台结论 | 丢弃 `status`/`error_code` | `DomainOutcome`，含全部判决字段 |
+| 归一化 | 只在服务层给判决，工具层抛 | 只在 Gateway（工具抛，服务给结论） |
+| 平台结论 | 透传 `status`/`error_code` + `retryable` | `DomainOutcome`，含全部判决字段 |
 | 幂等 | 无 | 内容级键 + Effect 账本，见 §4 |
-| 可观测 | 无 trace | Gateway trace 事件（`kind: "tool"`） |
+| 可观测 | `correlation_id` 可串日志 | Gateway trace 事件（`kind: "tool"`） |
 
 ---
 
@@ -252,9 +293,10 @@ eng:{kind}:{account_id}:{target_id}:{sha256(reply_content)[:16]}
 
 ### 5.4 什么才算回执
 
-只有**平台回显**的 id 才算。`dm_{timestamp}` 这类本地生成的 id 一律记
-`receipt = ""` + `receipt_source = "synthetic"`，并且**永远**不能作为 `committed`
-的依据。这一条直接对应 §1.4。
+只有**平台回显**的 id 才算。本地标识一律不进 `receipt_id`：`receipt_id = ""` +
+`receipt_source = "none"`，本地那个值放 `correlation_id`，并且**永远**不能作为
+`committed` 的依据。这一条直接对应 §1.4；Phase A 已按此实现（不再有任何本地生成的
+`reply_*` / `dm_*`）。
 
 ---
 
@@ -324,32 +366,37 @@ tool_result = await runtime.tools.invoke("xhs.publish", payload, thread_id=...)
 
 ### 7.3 落地两段
 
-**Phase A（不改变可及面）** —— 修 §1 的四个缺陷，全部可独立测试：
+**Phase A（不改变可及面）—— 已落地（PR #684）** —— 修 §1 的四个缺陷，全部可独立测试：
 
-1. 找不到发送按钮 → 不允许 `success: True`（必须是明确的失败，带可判别的 kind）
-2. `status` / `error_code` 透传到调用方，`quota` / `risk_control` 被识别为终局
-3. `reply_id` / `message_id` 只来自平台回显，本地生成一律置空 + `receipt_source`
-4. 异常不再在工具层归一化成业务字典（判据：工具层退出后没有 `except Exception` 返回值）
+1. 找不到发送按钮 → 不允许 `success: True`（必须是明确的失败，带可判别的 kind）✅
+2. `status` / `error_code` 透传到调用方，`quota` / `risk_control` 被识别为终局 ✅
+3. 回执只来自平台回显，本地生成一律置空 + `receipt_source` ✅
+4. 异常不再在工具层归一化成业务字典（判据：工具层退出后没有 `except Exception` 返回值）✅
 
-Phase A 里必须同时钉住：`note_dm_sent`（配额记账）只在**确认发出**之后调用。
+Phase A 里必须同时钉住：配额记账只在判决为 `sent` / `unknown` 之后调用 ✅
+（`unknown` 也算，因为可能已经发出、收不回来 —— 见 §5.2）。
 
-**Phase B（注册）** —— 前置：§5 账本 + §7.2 审批闸门 + Phase A 全绿。注册后 agent
-才第一次能调到它们，这一刻才是 `docs/agent-os-upgrade-2026q4.md` §4.1 所说的
-"可及的外部副作用面发生变化"。
+**Phase B（注册）—— 未开始** —— 前置：§5 账本 + §7.2 审批闸门 + Phase A 全绿（已满足
+第三项）。注册后 agent 才第一次能调到它们，这一刻才是
+`docs/agent-os-upgrade-2026q4.md` §4.1 所说的"可及的外部副作用面发生变化"。
 
 ---
 
 ## 8. 验收标准
 
-Phase A（每条都能写成一条测试）：
+Phase A（**全部已通过**）：
 
-| # | 判据 |
-|---|---|
-| 1 | 发送按钮选择器失配时，返回的结局不是成功，且配额计数不变 |
-| 2 | `quota` / `risk_control` 的 `error_code` 到达调用方，且被标为不可重试 |
-| 3 | 无平台回显时 `reply_id == ""` 且 `receipt_source == "synthetic"` |
-| 4 | 服务层抛异常时工具层**抛出**，不再返回业务字典（Gateway 才能给出 `error_kind`） |
-| 5 | `human_confirmed` 缺省时冷启动外发被拒（钉住现有闸门，防迁移时丢） |
+| # | 判据 | 守护测试 |
+|---|---|---|
+| 1 | 发送按钮选择器失配时，返回的结局不是成功，且配额计数不变 | `TestDirectMessageVerdicts::test_a_missing_send_button_no_longer_reports_success` / `TestCommentReplyVerdicts::test_a_missing_send_button_is_a_failure_not_a_success` |
+| 2 | `quota` / `risk_control` 的 `error_code` 到达调用方，且被标为不可重试 | `TestCommentReplyVerdicts::test_a_quota_block_is_reported_with_its_own_code` / `TestRetryabilityIsDerivedOnce` |
+| 3 | 无平台回显时 `receipt_id == ""` 且 `receipt_source == "none"` | `test_a_confirmed_reply_is_sent_but_carries_no_receipt` / `test_a_clicked_send_is_sent_but_unverified` |
+| 4 | 服务层抛异常时工具层**抛出**，不再返回业务字典（Gateway 才能给出 `error_kind`） | `TestCommentReplierPassesTheVerdictThrough::test_an_exception_is_no_longer_turned_into_a_dict` |
+| 5 | `human_confirmed` 缺省时冷启动外发被拒，且**不触达浏览器** | `TestDirectMessageVerdicts::test_a_cold_target_without_confirmation_never_reaches_the_browser` |
+
+第 3 条原文写的是 `receipt_source == "synthetic"`，实现时改成 `"none"`：既然我们
+**不再生成**任何本地 id，"synthetic" 会描述一个不存在的东西。`"platform"` / `"none"`
+两个值就够了；本地标识改叫 `correlation_id`，名字本身就说明它不是回执。
 
 Phase B（在 A 之上追加）：
 

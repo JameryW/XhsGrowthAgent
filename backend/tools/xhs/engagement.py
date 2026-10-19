@@ -80,7 +80,15 @@ async def comment_replier(
         reply_content: 回复内容
 
     Returns:
-        回复结果: success, reply_id
+        结果字典：``status``（sent/blocked/failed/unknown）、``success``、
+        ``error_code``、``receipt_id``（仅平台回显，无则空）、``receipt_source``、
+        ``verified``、``retryable``、``correlation_id``，以及本次请求的目标回显。
+
+    Raises:
+        Exception: 平台层抛出的异常**原样向上传**。这里不再把异常归一化成
+            ``{"success": False}`` 字典 —— 那会让调用方看到"一次成功的调用"，
+            从而分不清"没发出去"和"发了但答复丢了"。归一化只在 Tool Gateway
+            一个归属地（见 ``backend/tools/xhs/publisher.py`` 的同一条规则）。
     """
     logger.info(f"Replying to comment: {comment_id}")
 
@@ -89,31 +97,20 @@ async def comment_replier(
         account_id=account_id,
     )
     try:
-        result = await engagement.reply_to_comment(
+        verdict = await engagement.reply_to_comment(
             note_id=post_id,
             comment_id=comment_id,
             reply_content=reply_content,
         )
-
-        return {
-            "comment_id": comment_id,
-            "post_id": post_id,
-            "reply": reply_content,
-            "success": result.get("success", False),
-            "reply_id": result.get("reply_id", ""),
-            "error": result.get("error", ""),
-        }
-
-    except Exception as e:
-        logger.error(f"回复评论失败: {e}")
-        return {
-            "comment_id": comment_id,
-            "success": False,
-            "error": str(e),
-        }
-
     finally:
         await engagement.close()
+
+    return {
+        "comment_id": comment_id,
+        "post_id": post_id,
+        "reply": reply_content,
+        **verdict,
+    }
 
 
 @tool
@@ -130,13 +127,22 @@ async def dm_handler(
     默认仅可回复未读/入站白名单内的用户；冷启动新建私信需显式开关 + human_confirmed。
 
     Args:
-        message_id: 消息 ID
+        message_id: 入站消息 ID（原样回显，不是本次发送的回执）
         sender_id: 发送者用户 ID
         reply_content: 回复内容
         human_confirmed: 冷启动外发时的逐条人工确认
 
     Returns:
-        回复结果: success, reply_id
+        结果字典：``status``（sent/blocked/failed/unknown）、``success``、
+        ``error_code``、``receipt_id``（仅平台回显，无则空）、``receipt_source``、
+        ``verified``（私信暂无读回，恒为 False）、``retryable``、
+        ``correlation_id``，以及本次请求的目标回显。
+
+    Raises:
+        Exception: 平台层异常原样向上传，理由同 ``comment_replier``。
+
+    注意 ``status == "sent"`` 的含义是"提交动作已发出且没有反证"，不是"平台已
+    确认送达"；后者要等读回能力（见 docs/tool-gateway-engagement-migration.md §5.3）。
     """
     logger.info(f"Handling DM from: {sender_id}")
 
@@ -145,31 +151,20 @@ async def dm_handler(
         account_id=account_id,
     )
     try:
-        result = await engagement.send_dm(
+        verdict = await engagement.send_dm(
             target_user_id=sender_id,
             message=reply_content,
             human_confirmed=human_confirmed,
         )
-
-        return {
-            "message_id": message_id,
-            "sender_id": sender_id,
-            "reply": reply_content,
-            "success": result.get("success", False),
-            "reply_id": result.get("message_id", ""),
-            "error": result.get("error", ""),
-        }
-
-    except Exception as e:
-        logger.error(f"回复私信失败: {e}")
-        return {
-            "message_id": message_id,
-            "success": False,
-            "error": str(e),
-        }
-
     finally:
         await engagement.close()
+
+    return {
+        "message_id": message_id,
+        "sender_id": sender_id,
+        "reply": reply_content,
+        **verdict,
+    }
 
 
 @tool
