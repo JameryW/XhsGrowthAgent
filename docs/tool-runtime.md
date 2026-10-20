@@ -330,9 +330,13 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
   层，门禁不覆盖它；迁移属于后续任务。
   - 同文件 `:134` 还有**第二处**（PMF 那一支）；本节原先只点了第一处。两处都在
     `_run_retry()` 里，都走 `ripple.submit_and_wait`，都不经 Gateway。
-- **L1 参数类型是原样反射的**：LangChain 工具给 JSON-schema 的 `string`，普通函数
-  给注解名（`dict[str, Any]`）。没有归一化 —— P2c 真要把 schema 交给模型调工具时
-  需要一个统一口径。
+- ~~**L1 参数类型是原样反射的**~~ **已解决（票 5o）**：L1 渲染改用统一词表
+  `string / integer / number / boolean / object / array / null / any`
+  （`schema.py::_TYPE_VOCABULARY`）。两种反射约定都翻译进来（LangChain 的
+  JSON-schema 名、普通函数的注解名），未知名字渲染成 `any` 而不是把注解文本漏进
+  stable prefix；`ToolSpec.input_schema` 里的原样反射**保持不变**（需要精确信息的
+  调用方仍读得到）。这不是发明结构：映射是一对一的同义名，且 "词表封闭 + 全目录
+  不泄漏" 由 `test_schema.py` 两条测试钉住。
 - ~~**`account_credentials` 没有写入者**~~ **已解决（票 5n）**：读在 `services/xhs_credentials`
   （P2a-S5a），写在扫码登录确认成功之后 —— `XhsLoginSession._persist_login_cookie` 把
   cookie 经 `db.crypto` 加密 upsert 进表（`(account_id, key_name)` 唯一，重登即替换）。
@@ -342,12 +346,12 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
   **诚实边界**：行优先于部署 env 的 `XHS_COOKIE`（既有优先级），所以 cookie 过期后要
   重扫码刷新；过期行会暂时遮蔽仍然可用的部署 cookie。
 
-**可重算的部分发布成值（下面的表），量不出来的那一条不编谓词。**
+**可重算的部分发布成值（下面的表）。**
 
-「L1 参数类型是原样反射的、没有归一化」**不是树的形状，是一个设计判断** —— 它可以被读出来、
-被争论，但没法被一个扫描器证实或证伪。按 `docs/planning.md` 的先例（量不出来的主张宁标
-「未重量」也不写一个恒真的检查），它**留在上面的散文里、不进表**。给一条设计判断编一个
-恒真的谓词，等于给自己发一张写着「已复核」的收据。
+L1 归一化那条**曾经**是"设计判断、不进表"：当时没有统一词表，给它编谓词只能编出
+恒真检查。票 5o 之后它变成了可执行事实（词表封闭 + 目录内不泄漏原始注解），
+**用测试钉住、仍不进 claim 表**——谓词衡量的是"渲染器是否按词表工作"，与上面几条
+"树上有几处"不同类，混进同一张表会让两类事实互相稀释。
 
 <!-- claim-table:begin -->
 
@@ -359,5 +363,3 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
 | `account_credentials_inserts` | `1` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（与 `publish-action-protocol.md` 同一条事实，**刻意的重复**：两份文档各自要被单独读懂）。票 5n 起唯一那处是扫码登录的 `upsert_credential` |
 
 <!-- claim-table:end -->
-
-L1 归一化那一条**未重量**；表里没有它的行，不是漏了，是不给它编谓词（理由见上）。
