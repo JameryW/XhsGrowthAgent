@@ -20,7 +20,12 @@ from backend.state.events import (
     ACTION_EVENT_KIND,
     ACTION_LEASE_REFUSED,
     ACTION_POLICY_DENIED,
+    ACTION_PUBLISH_BLOCKED,
     ACTION_PUBLISH_REFUSED,
+    BLOCKED_ACCOUNT_INACTIVE,
+    BLOCKED_DUPLICATE_PUBLISH,
+    BLOCKED_MISSING_CDP_ENDPOINT,
+    BLOCKED_MISSING_CREDENTIAL,
     action_perf_entry,
     has_inline_perf_log,
     inline_perf_log,
@@ -184,13 +189,43 @@ class TestTheActionEntry:
         assert entry["account_id"] == ""
 
     def test_the_vocabulary_is_closed_and_distinct(self):
-        """Three action names, because each is a different fact: a policy denied
-        the action, a human refused it at a gate, and a foreign instance already
-        holds the lease. One reason string would make them indistinguishable --
-        and the third is the one a reader needs to tell "we chose not to" from
-        "somebody else is already doing it"."""
-        vocabulary = {ACTION_POLICY_DENIED, ACTION_PUBLISH_REFUSED, ACTION_LEASE_REFUSED}
-        assert vocabulary == {"policy_denied", "publish_refused", "lease_refused"}
+        """Four action names, because each is a different fact: a policy denied
+        the action, a human refused it at a gate, a foreign instance already
+        holds the lease, and the publish path itself blocked an attempt on a
+        precondition (票 5k). One reason string would make them
+        indistinguishable — and the last two are the ones a reader needs to
+        tell "we chose not to" from "somebody else is already doing it" from
+        "the environment was not ready"."""
+        vocabulary = {
+            ACTION_POLICY_DENIED,
+            ACTION_PUBLISH_REFUSED,
+            ACTION_LEASE_REFUSED,
+            ACTION_PUBLISH_BLOCKED,
+        }
+        assert vocabulary == {
+            "policy_denied",
+            "publish_refused",
+            "lease_refused",
+            "publish_blocked",
+        }
+
+    def test_the_publish_blocked_reasons_are_closed_and_distinct(self):
+        """One action, four causes — and the causes are a vocabulary, not free
+        text, so a reader can count them. The set is closed on purpose: a new
+        precondition must name itself here (the same ratchet the Gateway's
+        ``event`` field and ``scopes`` vocabulary use)."""
+        reasons = {
+            BLOCKED_ACCOUNT_INACTIVE,
+            BLOCKED_MISSING_CDP_ENDPOINT,
+            BLOCKED_MISSING_CREDENTIAL,
+            BLOCKED_DUPLICATE_PUBLISH,
+        }
+        assert reasons == {
+            "account_inactive",
+            "missing_cdp_endpoint",
+            "missing_credential",
+            "duplicate_publish",
+        }
 
     async def test_the_entry_round_trips_through_the_store(self):
         """Its shape is a contract with whoever reads the timeline back out."""

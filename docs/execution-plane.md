@@ -387,7 +387,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `acquire_outcome_definitions_in_the_lease_module` | `1` | 该模块内 `acquire_outcome` 的定义数 —— 决定只做一次，`acquire` 是它的投影 |
 | `execution_lease_call_sites_under_backend` | `3` | 全仓 `_execution_lease(` 的调用点数 —— 一个实现、三个执行者 |
 | `repair_paths_that_stand_down_on_a_live_owner` | `2` | `_wf_actions.py` 内 `HELD_BY_LIVE_OWNER` 的出现次数 —— 两条修复路径各一处 |
-| `lease_refusal_reasons_in_the_action_vocabulary` | `3` | `state/events.py` 里拒绝名的个数（`ACTION_` 前缀、字符串值、名字不含 `KIND`）—— policy / publish / lease 是三个不同的「不」 |
+| `lease_refusal_reasons_in_the_action_vocabulary` | `4` | `state/events.py` 里拒绝名的个数（`ACTION_` 前缀、字符串值、名字不含 `KIND`）—— policy / publish（人类拒绝）/ lease / publish_blocked（发布路径自身的前置条件，票 5k）是四个不同的「不」 |
 | `renew_outcome_members` | `3` | `RenewOutcome` 的成员数 —— 「不是你的」「问不到」不再是一个 `False` 的两种拼法 |
 | `renew_outcome_definitions_in_the_lease_module` | `1` | 该模块内 `renew_outcome` 的定义数 —— 决定只做一次，`renew` 是它的投影 |
 | `renew_call_sites_under_backend` | `0` | 全仓 `renew(` 的调用点数 —— 心跳问的是**具名**的那个问题；这个 `0` 说的是「没有第二个消费者」，不是「没有续租」 |

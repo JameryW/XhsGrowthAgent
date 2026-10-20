@@ -28,6 +28,16 @@ from backend.config.models import TaskType
 from backend.services.text_cover import generate_text_cover_image
 from backend.state.effects import EffectBlockedError, EffectLedger, EffectStatus
 from backend.state.enums import WorkflowPhase
+from backend.state.events import (
+    ACTION_PUBLISH_BLOCKED,
+    BLOCKED_ACCOUNT_INACTIVE,
+    BLOCKED_DUPLICATE_PUBLISH,
+    BLOCKED_MISSING_CDP_ENDPOINT,
+    BLOCKED_MISSING_CREDENTIAL,
+    action_perf_entry,
+    emit_events,
+    resolve_thread_id,
+)
 
 logger = logging.getLogger("xhs_growth.agents.publisher")
 
@@ -559,6 +569,49 @@ class PublisherAgent(BaseAgent):
         return await run_publish(state, store, agent=self)
 
 
+async def _record_publish_blocked(
+    state: Mapping[str, Any],
+    reason: str,
+    *,
+    account_id: str = "",
+    **fields: Any,
+) -> None:
+    """Store one ``kind:"action"`` event for a publish that was never attempted.
+
+    Four preconditions stop the publish path before any effect: the account is
+    inactive, no CDP endpoint is bound, the account holds no write grant, or the
+    idempotency ledger already knows a prior attempt. Each returns a
+    user-visible ``publish_result`` today, so a single thread answers *what*
+    happened; it is the cross-thread question — "how often is a publish
+    blocked, and why" — that has no answer without an entry here.
+    ``publish_gate`` closed exactly this gap for human refusals (P2a-S5b); this
+    is the publisher's own half.
+
+    ``publish_refused`` is deliberately not reused: that name means a human
+    said no at the gate. These are the path's own precondition checks, so they
+    get their own action name plus a closed ``reason`` vocabulary
+    (:data:`BLOCKED_ACCOUNT_INACTIVE` / :data:`BLOCKED_MISSING_CDP_ENDPOINT` /
+    :data:`BLOCKED_MISSING_CREDENTIAL` / :data:`BLOCKED_DUPLICATE_PUBLISH`) —
+    one countable fact, four distinguishable causes.  ``fields`` stays
+    machine-readable (``publish_id``, ``prior_status``); the human-facing
+    explanation rides ``publish_result``.
+
+    Best-effort by contract: ``emit_events`` swallows storage failures, because
+    telemetry must never turn a safe refusal into an error.
+    """
+    await emit_events(
+        resolve_thread_id(state),
+        [
+            action_perf_entry(
+                ACTION_PUBLISH_BLOCKED,
+                account_id=account_id,
+                reason=reason,
+                **fields,
+            )
+        ],
+    )
+
+
 async def run_publish(
     state: XHSGrowthState | dict[str, Any],
     store: BaseStore,
@@ -601,6 +654,9 @@ async def run_publish(
         account = await get_account(publish_account_id)
         if account is None or not account.is_active:
             logger.warning(f"账号 {publish_account_id} 未激活或不存在，跳过发布")
+            await _record_publish_blocked(
+                state, BLOCKED_ACCOUNT_INACTIVE, account_id=publish_account_id
+            )
             # Explicit annotation: publish_result is a heterogeneous dict
             # (str fields + nested recovery dict + bools). Without it mypy
             # joins the first literal's values to Collection[str] and rejects
@@ -631,6 +687,9 @@ async def run_publish(
 
         if not cdp_endpoint:
             logger.error("账号 %s 未绑定可用 CDP endpoint，无法发布", publish_account_id)
+            await _record_publish_blocked(
+                state, BLOCKED_MISSING_CDP_ENDPOINT, account_id=publish_account_id
+            )
             publish_result = {
                 "post_id": "",
                 "post_url": "",
@@ -666,6 +725,7 @@ async def run_publish(
     grant_account = str(publish_account_id or "").strip()
     granted = await granted_scopes(grant_account)
     if XHS_WRITE_SCOPE not in granted:
+        await _record_publish_blocked(state, BLOCKED_MISSING_CREDENTIAL, account_id=grant_account)
         return _missing_publish_credential(state, grant_account)
 
     # ── P0-W4 idempotency gate (real publish path only) ──
@@ -707,6 +767,13 @@ async def run_publish(
             publish_id,
             prior.get("status"),
         )
+        await _record_publish_blocked(
+            state,
+            BLOCKED_DUPLICATE_PUBLISH,
+            account_id=_publish_account_id(state),
+            publish_id=publish_id,
+            prior_status=str(prior.get("status") or ""),
+        )
         return {
             "publish_result": _with_publish_link_metadata(
                 _blocked_duplicate_result(publish_id, prior), state
@@ -724,7 +791,6 @@ async def run_publish(
             VerificationInput,
             decide,
         )
-        from backend.state.events import emit_events, resolve_thread_id
 
         decision = decide(VerificationInput(action="publish", risk=ActionRisk.CRITICAL))
         await emit_events(
