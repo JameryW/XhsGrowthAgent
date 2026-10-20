@@ -236,3 +236,43 @@ class TestMemoryManager:
         assert isinstance(manager.audience_ns, tuple)
         assert isinstance(manager.insights_ns, tuple)
         assert isinstance(manager.strategy_ns, tuple)
+
+
+class TestReadFailuresAreNotEmptyMemory:
+    """票 5m — a store that raised is not a store that had nothing.
+
+    ``[]`` is the correct answer to "there is no memory here". It must not also
+    be the answer to "the read failed": the four recall methods used to catch
+    every exception and return it, so a memory backend outage was
+    indistinguishable from an empty namespace — and no caller could choose to
+    degrade, because nothing told it anything had gone wrong.
+    """
+
+    METHODS = (
+        "recall_similar_content",
+        "recall_audience_preferences",
+        "recall_insights",
+        "recall_strategy_notes",
+    )
+
+    @pytest.fixture
+    def manager(self):
+        return MemoryManager(account_id="test_account")
+
+    @pytest.mark.parametrize("method", METHODS)
+    @pytest.mark.asyncio
+    async def test_a_failed_search_raises(self, manager, method):
+        store = AsyncMock()
+        store.asearch = AsyncMock(side_effect=RuntimeError("memory backend down"))
+
+        with pytest.raises(RuntimeError, match="memory backend down"):
+            await getattr(manager, method)(store, "query")
+
+    @pytest.mark.parametrize("method", METHODS)
+    @pytest.mark.asyncio
+    async def test_the_empty_answer_still_means_read_and_found_nothing(self, manager, method):
+        """The positive control: no results is a success, not a failure."""
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+
+        assert await getattr(manager, method)(store, "query") == []

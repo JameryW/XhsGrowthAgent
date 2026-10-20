@@ -23,13 +23,17 @@ Three of these were removed on 2026-10-19, each caught in a different layer:
 * ``XHSClient.get_comments`` returned ``[]`` from its own handler, which is why
   fixing only the tool would have been cosmetic.
 
-This file makes the surface countable. Two registers, both compared against a
+This file makes the surface countable. Registers, each compared against a
 scan of the sources rather than against a second register:
 
 * ``SILENT_FALLBACKS`` — ``@tool`` functions (the surface an agent reads);
 * ``SERVICE_FALLBACKS`` — the service layer, **empty since 2026-10-19** after
   five instances were removed. Kept as a pinned empty table rather than deleted,
   so a new one has to arrive named and reasoned instead of quietly.
+* ``REF_FALLBACKS`` — the functions the catalogue's ``tool_ref`` points at
+  (what the Gateway actually invokes), **empty since 2026-10-20**;
+* ``MEMORY_FALLBACKS`` — ``MemoryManager``'s recall helpers (the read path an
+  agent would reach for memory directly), **empty since 2026-10-20 (票 5m)**.
 
 Two shapes are *not* covered and are pinned as such in ``TestKnownBlindSpots``:
 a handler that only logs and lets execution fall through to a zero-valued
@@ -55,6 +59,7 @@ from backend.tools.runtime.audit import (
 
 SERVICES = TOOLS_ROOT.parent / "services"
 XHS_CLIENT = SERVICES / "xhs_client.py"
+MEMORY_STORE = TOOLS_ROOT.parent / "memory" / "store.py"
 
 #: ``@tool`` functions allowed to answer a failure with a literal, and why.
 #: An entry with a thin reason is worse than no entry: it reads as settled.
@@ -97,6 +102,18 @@ SERVICE_FALLBACKS: dict[str, str] = {}
 #: calls" were never the same set. Kept empty and still measured, for the same
 #: reason the other two are.
 REF_FALLBACKS: dict[str, str] = {}
+
+#: ``MemoryManager``'s public read surface. **Empty since 2026-10-20 (票 5m).**
+#:
+#: The four ``recall_*`` helpers each ran ``store.asearch`` under a
+#: ``try/except`` that answered a raised exception with ``[]`` — the same value
+#: that means "the read succeeded and found nothing". Agents do not call these
+#: helpers today (they go through ``backend/context/retrieval.py``, which calls
+#: ``store.asearch`` itself and reports DEGRADED); that is exactly why the
+#: instances survived the other registers: not a ``@tool``, not
+#: ``xhs_client.py``, not a catalogue ref. A low-level helper is still a surface
+#: a future caller reaches for, so it is counted and pinned empty.
+MEMORY_FALLBACKS: dict[str, str] = {}
 
 
 def _refs(found: tuple[SilentFallback, ...]) -> list[str]:
@@ -156,6 +173,24 @@ class TestTheRefSurface:
 
     def test_every_entry_says_why_it_stays(self):
         assert all(reason.strip() for reason in REF_FALLBACKS.values())
+
+
+class TestTheMemoryManagerSurface:
+    """``MemoryManager.recall_*`` — the read path the other registers never saw."""
+
+    def test_no_recall_method_answers_failure_with_a_literal(self):
+        found = scan_silent_fallbacks(MEMORY_STORE, tool_only=False)
+        assert _refs(found) == sorted(MEMORY_FALLBACKS), (
+            "A MemoryManager recall helper started answering a failed read with "
+            "a literal. ``[]`` already means 'the read succeeded and found "
+            "nothing'; returning it from an ``except`` makes an outage "
+            "indistinguishable from an empty namespace, and the caller cannot "
+            "choose to degrade.\n"
+            f"seen: {[(item.ref, item.returned) for item in found]}"
+        )
+
+    def test_every_entry_says_why_it_stays(self):
+        assert all(reason.strip() for reason in MEMORY_FALLBACKS.values())
 
 
 class TestPositiveControls:

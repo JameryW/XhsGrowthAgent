@@ -73,7 +73,7 @@ sink。所以目的地存在 `ContextVar` 里（`bridge.tracing_to`），而不�
 
 **同一条规则的另一半：失败也不能变成数据。** `except Exception: return []`（或
 `return {"heat_score": 50}`）交回的是作者写下的字面量，不是对那个问题的回答 ——
-handler 是因为调用失败才进的。这类兜底被 AST 扫成**三张**可数的表
+handler 是因为调用失败才进的。这类兜底被 AST 扫成**四张**可数的表
 （`scan_silent_fallbacks` / `scan_ref_fallbacks`，钉在
 `tests/unit/tools/runtime/test_silent_fallbacks.py`）：
 
@@ -82,6 +82,7 @@ handler 是因为调用失败才进的。这类兜底被 AST 扫成**三张**可
 | `SILENT_FALLBACKS` | `@tool` 函数（agent 能读到的面） | 只剩 `ripple_cancel_simulation`，它的字面量**自己写着** `status: "error"` |
 | `SERVICE_FALLBACKS` | `backend/services/xhs_client.py` | **已清零**（2026-10-19，原 5 处：`get_trending` / `search_posts` / 三个博主方法） |
 | `REF_FALLBACKS` | 目录里 `tool_ref(...)` 指向的函数 | **已清零**（2026-10-20，原 1 处：`ripple.get_report`） |
+| `MEMORY_FALLBACKS` | `backend/memory/store.py` 的 `MemoryManager.recall_*`（记忆读取面） | **已清零**（2026-10-20，票 5m，原 4 处：四个 recall 方法把读失败答成 `[]`） |
 
 第三张是 2026-10-20 才有的，因为前两张**不是同一个集合**：大多数目录 ref 是没装饰
 器的普通 `async def`，既不在 `@tool` 面里，也不在 `xhs_client.py` 里。于是
@@ -98,6 +99,13 @@ handler 是因为调用失败才进的。这类兜底被 AST 扫成**三张**可
 三张表为什么必须存在。它们改完之后走的是服务**自己声明的降级**（带 `ripple_fallback`
 哨兵的零值体），由集成层拒绝成 `DomainOutcome("unavailable")`：调用方的答案前后都是
 "unavailable"，变的是 trace 不再说谎。
+
+第四张（`MEMORY_FALLBACKS`，2026-10-20 票 5m）扫的是**记忆读取面**：`MemoryManager`
+的四个 `recall_*` 各自把读失败答成 `[]`。agent 今天走的检索管线
+（`backend/context/retrieval.py`）直接调 `store.asearch`，并用
+`RetrievalResult(mode=DEGRADED)` 报降级 —— 所以这条低层路径既不在 `@tool` 面，也不在
+服务层/目录 ref 里，与第三张表是同一个盲区形状。四个方法现在失败即抛，空列表只表示
+"读到了、确实没有"。
 
 `polish_copy` 的 `return fallback` 不进表：它是另一个函数**算出来的**答案，不是作者
 写下的常量。判据一直是"字面量"，这条不是。
