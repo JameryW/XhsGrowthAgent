@@ -433,6 +433,80 @@ class TestTracing:
         assert recorder.events[0]["scopes"] == "checked"
 
     @pytest.mark.asyncio
+    async def test_a_call_the_caller_skipped_is_recorded_as_skipped(self):
+        """票 5j — a call never attempted is a fact, not an absence.
+
+        The Gateway only writes events for calls that reached it, so the read
+        paths that started enforcing ``xhs:read`` (§9.6 / 5g) had one state with
+        no trace at all: "the account holds no ``xhs:read``, so we never asked".
+        ``trace_skipped`` writes it, and the fields below are what keep it from
+        masquerading as a failed invocation.
+        """
+        gateway, recorder = _gateway(_ok, spec=_spec(auth_scope=("xhs:read", "xhs:write")))
+
+        await gateway.trace_skipped(
+            "demo.echo", granted=("xhs:write",), account_id="acc-7", thread_id="t-1"
+        )
+
+        event = recorder.events[0]
+        assert event["kind"] == "tool"
+        assert event["event"] == "skipped"
+        assert event["capability"] == "demo.echo"
+        assert event["side_effect"] == "pure"
+        assert event["thread_id"] == "t-1"
+        assert event["account_id"] == "acc-7"
+        assert event["ok"] is False
+        assert event["attempts"] == 0, "a call that never started made no attempts"
+        assert event["elapsed_ms"] == 0.0
+        # Derived from the declaration, not echoed from the caller.
+        assert event["missing_scopes"] == ["xhs:read"]
+        assert event["scopes"] == "missing"
+
+
+class TestASkipIsNeverInvented:
+    """The mirror rule of "failure is not data": a trace must not claim a denial.
+
+    ``trace_skipped`` recomputes what is missing from the catalogue's
+    declaration. When nothing *is* missing, the honest report is no event —
+    the caller bug is a log line, not a fabricated fact in the timeline.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_satisfied_declaration_records_nothing(self):
+        gateway, recorder = _gateway(_ok, spec=_spec(auth_scope=("xhs:read",)))
+        await gateway.trace_skipped("demo.echo", granted=("xhs:read",))
+        assert recorder.events == []
+
+    @pytest.mark.asyncio
+    async def test_a_capability_that_declares_no_scope_records_nothing(self):
+        gateway, recorder = _gateway(_ok, spec=_spec())
+        await gateway.trace_skipped("demo.echo", granted=())
+        assert recorder.events == []
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_capability_is_not_described_anyway(self):
+        """No spec ⇒ no honest ``side_effect`` / ``missing_scopes`` to report."""
+        gateway, recorder = _gateway(_ok, spec=_spec())
+        await gateway.trace_skipped("demo.missing", granted=())
+        assert recorder.events == []
+
+    @pytest.mark.asyncio
+    async def test_a_failing_sink_never_breaks_the_caller(self):
+        gateway, _ = _gateway(_ok, spec=_spec(auth_scope=("xhs:read",)), trace_raises=True)
+        # Outcome-valued like the timeout assertions: deleting the best-effort
+        # guard makes the sink's exception escape, and an escaping exception
+        # would otherwise be judged as a crash rather than as the failed answer
+        # this test is about.
+        outcome = "started"
+        try:
+            await gateway.trace_skipped("demo.echo", granted=())
+        except Exception as exc:
+            outcome = f"raised: {type(exc).__name__}"
+        else:
+            outcome = "returned"
+        assert outcome == "returned"
+
+    @pytest.mark.asyncio
     async def test_trace_failure_never_breaks_the_call(self):
         async def ok(payload: dict[str, Any]) -> str:
             return "fine"
