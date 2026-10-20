@@ -19,6 +19,15 @@ could, which is exactly the misreading the parameter rendering has to head off.
 
 Output is deterministic — sorted by capability — because a stable prefix that
 reshuffles between runs is not a stable prefix.
+
+Parameter types are rendered in the shared vocabulary below (票 5o). The two
+reflection conventions — JSON-schema names from a LangChain tool, annotation
+names from a plain function — describe the same underlying types, so translating
+them into one vocabulary is not inventing structure; leaving them raw would put
+``dict[str, Any]`` next to ``object`` in the same prompt. The raw reflection
+stays on ``ToolSpec.input_schema`` for anything that needs it exactly; only the
+prompt-facing text is canonicalised, and an unrecognised name becomes ``any``
+rather than leaking an annotation into the stable prefix.
 """
 
 from __future__ import annotations
@@ -34,18 +43,86 @@ _HEADER = (
 )
 _MAPPING_NOTE = "整体即 `{name}: {type}` —— 该工具只接收一个 mapping，不再嵌套"
 
+_TYPE_VOCABULARY: dict[str, str] = {
+    "str": "string",
+    "string": "string",
+    "int": "integer",
+    "integer": "integer",
+    "float": "number",
+    "number": "number",
+    "bool": "boolean",
+    "boolean": "boolean",
+    "dict": "object",
+    "mapping": "object",
+    "object": "object",
+    "list": "array",
+    "tuple": "array",
+    "sequence": "array",
+    "set": "array",
+    "frozenset": "array",
+    "array": "array",
+    "none": "null",
+    "nonetype": "null",
+    "any": "any",
+}
+"""The one vocabulary L1 renders in.
+
+Both reflection conventions land here: a LangChain tool reports JSON-schema
+names already (``string`` / ``integer``), a plain function reports annotation
+names (``str`` / ``dict[str, Any]``). A name outside this table renders as
+``any`` — the vocabulary is closed on purpose, so a new annotation cannot leak
+its text into the stable prefix unnoticed.
+"""
+
+
+def _canonical_type(raw: str) -> str:
+    """Map one reflected type spelling onto the shared vocabulary.
+
+    Purely textual: strips ``typing.`` / ``collections.abc.`` prefixes and
+    forward-ref quotes, reduces generics to their container
+    (``dict[str, Any]`` → ``object``, ``list[str]`` → ``array``), and unwraps
+    ``Optional[...]`` / ``X | None`` to the wrapped type. Nullability is not
+    rendered: L1 describes the *call shape* (and required-ness already says
+    whether a parameter may be omitted), not every value the tool accepts.
+    Unknown names → ``any``.
+    """
+    text = raw.strip().strip("'\"")
+    if not text:
+        return "any"
+    text = text.replace("typing.", "").replace("collections.abc.", "").replace("types.", "")
+    for prefix in ("Optional[", "Union["):
+        if text.startswith(prefix) and text.endswith("]"):
+            parts = [
+                part.strip()
+                for part in text[len(prefix) : -1].split(",")
+                if part.strip().lower() not in {"none", "nonetype"}
+            ]
+            text = parts[0] if parts else "any"
+            break
+    if "|" in text:
+        parts = [
+            part.strip()
+            for part in text.split("|")
+            if part.strip().lower() not in {"none", "nonetype"}
+        ]
+        text = parts[0] if parts else "any"
+    if "[" in text:
+        text = text.split("[", 1)[0].strip()
+    base = text.rsplit(".", 1)[-1].lower()
+    return _TYPE_VOCABULARY.get(base, "any")
+
 
 def _type_name(described: object) -> str:
-    """The declared type as text.
+    """The declared type, rendered in the L1 vocabulary.
 
-    Whatever ``describe_params`` found: a reflected JSON-schema type
-    (``"string"``/``"integer"``) for a LangChain tool, an annotation name
-    (``"str"``/``"dict"``) for a plain function. Rendered as-is rather than
-    normalised — normalising here would invent a schema the tools do not have.
+    ``describe_params`` reflects two conventions for the same idea; both go
+    through :func:`_canonical_type` so the rendered text never mixes
+    ``dict[str, Any]`` with ``object``. Anything unreadable renders as ``any``
+    rather than echoing a name whose meaning L1 cannot promise.
     """
     if isinstance(described, dict):
         value = described.get("type", "any")
-        return str(value) if value else "any"
+        return _canonical_type(str(value)) if value else "any"
     return "any"
 
 

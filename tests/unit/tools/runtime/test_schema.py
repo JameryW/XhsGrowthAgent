@@ -94,18 +94,56 @@ class TestParameterRendering:
                 )
             ]
         )
-        assert "参数: 整体即 `data: dict[str, Any]`" in text
+        assert "参数: 整体即 `data: object`" in text
         assert "参数: data:" not in text
 
-    def test_a_reflected_schema_is_rendered_as_found(self) -> None:
-        """Types are reflected, not normalised: a LangChain tool reports
-        JSON-schema types and a plain function reports annotation names, and
-        inventing a common vocabulary here would describe schemas the tools do
-        not have."""
+    @pytest.mark.parametrize(
+        ("declared", "rendered"),
+        [
+            ("string", "string"),
+            ("str", "string"),
+            ("integer", "integer"),
+            ("int", "integer"),
+            ("float", "number"),
+            ("boolean", "boolean"),
+            ("dict[str, Any]", "object"),
+            ("Mapping[str, Any]", "object"),
+            ("list[str]", "array"),
+            ("Optional[str]", "string"),
+            ("str | None", "string"),
+            ("typing.Sequence[int]", "array"),
+            ("SomeUnknownThing", "any"),
+        ],
+    )
+    def test_both_reflection_conventions_render_in_one_vocabulary(
+        self, declared: str, rendered: str
+    ) -> None:
+        """A JSON-schema name and an annotation name are the same type (票 5o).
+
+        The old contract rendered whatever was reflected, so two tools said
+        ``dict[str, Any]`` and ``object`` for the same shape inside one prompt.
+        Canonicalising is translation, not invention: the mapping is
+        name-for-name, and a name outside the table degrades to ``any`` instead
+        of leaking annotation text into the stable prefix. The raw reflection
+        stays on ``ToolSpec.input_schema`` for callers that need it exactly.
+        """
         text = render_tool_schema(
-            [_spec("x.a", params={"topic": {"type": "string", "required": True}})]
+            [_spec("x.thing", params={"value": {"type": declared, "required": True}})]
         )
-        assert "topic: string" in text
+        assert f"value: {rendered}" in text
+
+    def test_no_catalogue_parameter_leaks_an_annotation(self) -> None:
+        """The vocabulary is closed over the real catalogue.
+
+        Every reflected spelling now has to leave through the table; a tool
+        declaring something new renders as ``any`` (still legal) rather than
+        putting its own annotation syntax into L1. This is the ratchet that
+        makes the vocabulary shared instead of nominal.
+        """
+        registry = build_registry()
+        text = render_tool_schema(registry.specs())
+        for leaked in ("dict[", "list[", "Mapping[", "Sequence[", "typing.", "collections.abc."):
+            assert leaked not in text, f"{leaked!r} leaked into L1"
 
 
 class TestRuntimeFactsStayOut:
