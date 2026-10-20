@@ -11,7 +11,10 @@ there). This file pins what the wiring **does**, which the AST cannot see:
   payload's ``account_id`` key, which is the niche;
 * a missing ``xhs:read`` skips the reads and degrades **without** letting
   ``PermissionDeniedError`` out — these three calls were always "no data"
-  shaped, and the caller's decision to degrade stays where it was.
+  shaped, and the caller's decision to degrade stays where it was;
+* the skip is itself an event (票 5j, ``TestASkippedReadIsVisibleInTheTrace``):
+  "we hold no ``xhs:read``" must not be indistinguishable from "these reads
+  were never planned".
 
 The refusal is *not* tested by catching an exception. Catching one would only
 prove the code raised; the assertion here is on the outcome value, so a
@@ -21,13 +24,17 @@ assertion rather than as a crash.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.agents.base import BaseAgent
 from backend.agents.content_strategist import ContentStrategistAgent
 from backend.agents.trend_scout import TrendScoutAgent
+from backend.config.models import TaskType
+from backend.tools.runtime.bridge import tracing_to
 from backend.tools.runtime.models import ToolResult
 
 _SHARED_GATEWAY = "backend.tools.runtime.bridge.shared_gateway"
@@ -39,10 +46,18 @@ _GRANT = ("xhs:read", "xhs:write")
 
 
 class _RecordingTools:
-    """A stand-in for ``agent.tools`` that records the grant it was handed."""
+    """A stand-in for ``agent.tools`` that records the grant it was handed.
+
+    It also answers ``trace_skipped`` (票 5j): the call site now reports the
+    skipped read through the Gateway seam, so a stand-in that only has
+    ``invoke`` would turn a legitimately skipped call into an ``AttributeError``
+    — i.e. the double would invent the failure the production path degrades
+    from.
+    """
 
     def __init__(self, values: dict[str, Any] | None = None) -> None:
         self.seen: list[tuple[str, dict[str, Any], tuple[str, ...] | None]] = []
+        self.skips: list[tuple[str, tuple[str, ...], str, str]] = []
         self.values = values or {}
 
     async def invoke(
@@ -55,6 +70,16 @@ class _RecordingTools:
     ) -> ToolResult:
         self.seen.append((capability, dict(payload or {}), granted_scopes))
         return ToolResult(capability=capability, ok=True, value=self.values.get(capability))
+
+    async def trace_skipped(
+        self,
+        capability: str,
+        *,
+        granted: tuple[str, ...],
+        account_id: str = "",
+        thread_id: str = "",
+    ) -> None:
+        self.skips.append((capability, tuple(granted), account_id, thread_id))
 
 
 def _granting(accounts: list[str], scopes: tuple[str, ...] = _GRANT):
@@ -262,3 +287,124 @@ class TestARefusalDegradesInsteadOfEscaping:
 
         assert tools.seen == []
         assert context == "", "the same empty section every per-topic failure produces"
+
+
+class TestASkippedReadIsVisibleInTheTrace:
+    """票 5j — the §9.6 cost is paid off: the skip itself is an event.
+
+    5g kept the call-site judgement (no grant ⇒ do not even ask), which meant an
+    unauthorized account produced *no* tool event at all: the trace could not
+    tell "we hold no ``xhs:read``" from "these reads were never planned". The
+    call site now writes ``event:"skipped"`` through the same sink an invocation
+    uses; ``attempts:0`` and ``scopes:"missing"`` keep it from reading as a
+    failed call, which is the other thing that can produce ``ok=False``.
+    """
+
+    @staticmethod
+    def _sink(events: list[dict[str, Any]]):
+        async def sink(event: Mapping[str, Any]) -> None:
+            events.append(dict(event))
+
+        return sink
+
+    @pytest.mark.asyncio
+    async def test_the_three_skipped_reads_are_recorded(self, monkeypatch):
+        monkeypatch.setattr(_GRANTED_SCOPES, _granting([], scopes=()))
+        agent = TrendScoutAgent()
+        events: list[dict[str, Any]] = []
+
+        with tracing_to(self._sink(events)):
+            data = await agent._fetch_real_data("母婴", account_id="acc-7", thread_id="t-1")
+
+        assert data == {}, "the degrade shape is unchanged"
+        skipped = {
+            str(event.get("capability")): event
+            for event in events
+            if event.get("event") == "skipped"
+        }
+        assert set(skipped) == {
+            "xhs.trending",
+            "xhs.competitor_analyzer",
+            "xhs.keyword_monitor",
+        }, "one event per read this branch skipped, not one for the branch"
+        assert [event for event in events if event.get("event") == "invoke"] == []
+        for capability, event in skipped.items():
+            assert event.get("attempts") == 0, capability
+            assert event.get("ok") is False, capability
+            assert event.get("scopes") == "missing", capability
+            assert event.get("reason") == "missing_scope", capability
+            assert event.get("missing_scopes") == ["xhs:read"], capability
+            assert event.get("account_id") == "acc-7", capability
+            assert event.get("thread_id") == "t-1", capability
+
+    @pytest.mark.asyncio
+    async def test_a_permitted_read_records_invocations_and_no_skips(
+        self, monkeypatch, xhs_read_grant
+    ):
+        """The reverse direction: an authorized account must not get skip events."""
+        agent = TrendScoutAgent()
+        events: list[dict[str, Any]] = []
+
+        with (
+            tracing_to(self._sink(events)),
+            patch(
+                "backend.tools.xhs.trending.xhs_trending",
+                new=_tool_returning([{"topic": "露营"}]),
+            ),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=_tool_returning([])),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=_tool_returning([])),
+        ):
+            await agent._fetch_real_data("母婴", account_id="acc-7", thread_id="t-1")
+
+        invoked = {
+            str(event.get("capability")) for event in events if event.get("event") == "invoke"
+        }
+        assert invoked == {
+            "xhs.trending",
+            "xhs.competitor_analyzer",
+            "xhs.keyword_monitor",
+        }
+        assert [event for event in events if event.get("event") == "skipped"] == []
+
+    @pytest.mark.asyncio
+    async def test_topic_scoring_skip_is_recorded(self, monkeypatch):
+        monkeypatch.setattr(_GRANTED_SCOPES, _granting([], scopes=()))
+        agent = ContentStrategistAgent()
+        events: list[dict[str, Any]] = []
+
+        with tracing_to(self._sink(events)):
+            context = await agent._score_trend_topics(
+                {"hot_topics": [{"topic": "探店"}]}, "美食", account_id="acc-9"
+            )
+
+        assert context == ""
+        skipped = [event for event in events if event.get("event") == "skipped"]
+        assert len(skipped) == 1, "one decision, one capability: not one event per topic"
+        event = skipped[0]
+        assert event.get("capability") == "analysis.topic_scorer"
+        assert event.get("missing_scopes") == ["xhs:read"]
+        assert event.get("attempts") == 0
+        assert event.get("account_id") == "acc-9"
+
+    @pytest.mark.asyncio
+    async def test_the_skip_event_reaches_the_event_store(self):
+        """Through ``__call__``: the node's sink names the thread the caller omitted."""
+        from backend.db.workflow_events import list_events
+
+        class _SkipAgent(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "skip_agent"
+            prompt_file = ""
+
+            async def execute(self, state: Any, store: Any) -> dict[str, Any]:
+                await self.tools.trace_skipped("xhs.trending", granted=(), account_id="acc-7")
+                return {"ok": True}
+
+        await _SkipAgent()({"thread_id": "t-1"}, store=AsyncMock())
+
+        events = await list_events("t-1", kind="tool")
+        assert len(events) == 1
+        assert events[0].get("event") == "skipped"
+        assert events[0].get("thread_id") == "t-1", (
+            "the node's sink supplies the thread id when the call site has none"
+        )

@@ -696,6 +696,10 @@ class ContentStrategistAgent(BaseAgent):
                 account_id or "(deployment)",
                 XHS_READ_SCOPE,
             )
+            # 票 5j：跳过本身也要留痕 —— 与 trend_scout._fetch_real_data 同款。
+            await self.tools.trace_skipped(
+                "analysis.topic_scorer", granted=granted, account_id=account_id
+            )
             return ""
 
         lines: list[str] = []

@@ -181,11 +181,26 @@ class TrendScoutAgent(BaseAgent):
             # 缺读授权 = 三次调用一次都不开始。降级形状与今天一模一样：data
             # 里没有 XHS 键，web 兜底照旧。区别只是今天它会各发一次注定被
             # require_readable 拒掉的请求，trace 里连个事件也不会留下。
+            #
+            # 票 5j：这条分支不再只有一行 warning —— 每个被跳过的能力各写一条
+            # event:"skipped" / attempts:0 的审计事件。否则「这个账号压根没被
+            # 授权」在 trace 里完全消失，读起来和「这些读从来没被计划过」一样。
             logger.warning(
                 "xhs reads skipped: account %r holds no %s (cookie unusable or unconfigured)",
                 account_id or "(deployment)",
                 XHS_READ_SCOPE,
             )
+            for capability in (
+                "xhs.trending",
+                "xhs.competitor_analyzer",
+                "xhs.keyword_monitor",
+            ):
+                await self.tools.trace_skipped(
+                    capability,
+                    granted=granted,
+                    account_id=account_id,
+                    thread_id=thread_id,
+                )
         else:
             # xhs_trending + competitor_analyzer are independent (no data
             # dependency, disjoint data keys, each degrades on its own) → run

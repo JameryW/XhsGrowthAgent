@@ -117,6 +117,13 @@ trace 事件带一个 `scopes` 字段：
 | `none` | 该能力没声明 scope，没什么可检查 |
 | `unchecked` | 声明了，但调用方没传 `granted_scopes` ⇒ **没检查** |
 | `checked` | 传了并通过；不足的情况在到达事件之前就已抛 `PermissionDeniedError` |
+| `missing` | 声明了，**调用点**自己解析 grant 后发现缺 ⇒ 一次都没发起调用。这条事件（`event:"skipped"`、`attempts:0`）由调用点经 `trace_skipped` 写进同一个 sink，**不是 Gateway 拒绝的**——Gateway 的拒绝是抛 `PermissionDeniedError`，它连事件都不产生 |
+
+第四个值（票 5j）补的是前三个都描述不到的一格：前三个都是"调用到达过 Gateway"的
+状态，而"判定留在门前、缺授权就不发起调用"（票 5g 的接法）产生的是**没有发生**的调用 ——
+不写事件时，"这个账号没有 `xhs:read`"和"这些读从来没被计划过"在 trace 里长得一模一样。
+`missing_scopes` 从目录声明复算，不在调用点硬写：事件不可能声称一个能力其实没声明的
+scope；反过来，grant 满足声明或能力不在目录里时**一条都不写**（只留日志），不发明拒绝。
 
 今天（2026-10-20 复算，票 5g 之后）的覆盖面：**14 个 capability 里 7 个声明了 scope，
 全仓有 6 个调用点真的传 `granted_scopes`** —— `xhs.publish` 两条（
@@ -171,11 +178,13 @@ Chrome 启停翻转，Gateway 会把"浏览器没开"报成"没被授权"）。�
   niche，身份在 `credential_account_id`。`_fetch_real_data` 里解析一次、三处透传同一元组，
   结构上让"按 niche 解析"写不出来。
 
-**一处诚实的代价**：缺 `xhs:read` 时这三次调用**一次都不发**，trace 里因此也**没有事件**
-（今天会有一条 `ok=False` 的事件）。也就是说"这个账号压根没配 cookie"从 trace 里消失了，
-只剩调用方一行 warning。代价是可接受的——S5c 未授权发布同样不留事件，且"没被授权"与
-"读了但失败"本就该是两个答案（前者连请求都不该发）——但它确实是代价，不是改进：被授权
-账号的读失败仍然照旧产生 `ok=False` 事件。
+**一处曾经的代价（票 5j 已补上）**：缺 `xhs:read` 时这三次调用**一次都不发**，5g 当时
+trace 里因此**没有事件**（改前会有一条 `ok=False` 的事件）。也就是说"这个账号压根没配
+cookie"从 trace 里消失了，只剩调用方一行 warning。票 5j 让调用点自己写一条
+`event:"skipped"` / `scopes:"missing"` / `attempts:0` 的事件（每个被跳过的能力一条，
+经同一个 sink 落进 `workflow_events`），于是"没被授权"重新是一条可查的事实，而它仍然与
+"读了但失败"是两个答案：后者是 `event:"invoke"` + `ok=False`，前者是一次**没有发生**的
+调用。
 
 **为什么删声明而不是"改 vocabulary 给它发一个服务级 grant"**：那样做的效果是"只要部署配好了
 token，所有调用方都拿到 `ripple:read`"。那不是一个权限，是一个**伪装成权限的配置检查** ——

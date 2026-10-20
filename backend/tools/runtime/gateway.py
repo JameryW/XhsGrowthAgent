@@ -32,7 +32,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from backend.tools.runtime.account_gate import (
@@ -41,7 +41,7 @@ from backend.tools.runtime.account_gate import (
     acquire_account_slot,
 )
 from backend.tools.runtime.models import DomainOutcome, ErrorKind, ToolResult, ToolSpec
-from backend.tools.runtime.registry import ToolRegistry
+from backend.tools.runtime.registry import ToolRegistry, UnknownCapabilityError
 
 logger = logging.getLogger("xhs_growth.tools.gateway")
 
@@ -72,24 +72,34 @@ def _gate_key(spec: ToolSpec, data: Mapping[str, Any]) -> str:
 TraceSink = Callable[[Mapping[str, Any]], Awaitable[None]]
 """Where Gateway trace events go (best-effort; never breaks a call).
 
-Shape: ``{"kind": "tool", "capability", "thread_id", "ok", "attempts",
+Shape: ``{"kind": "tool", "event", "capability", "thread_id", "ok", "attempts",
 "elapsed_ms", "error", "error_kind", "domain_reason", "degraded",
-"side_effect", "scopes"}``. S2 keeps this a plain callback so the runtime stays
-free of a DB dependency; wiring it to the ``workflow_events`` tier happens where
-a thread id exists.
+"side_effect", "scopes"}``. ``event`` is ``"invoke"`` for a call that ran, and
+``"skipped"`` for a call the caller decided not to make
+(:meth:`ToolGateway.trace_skipped` writes those; they also carry ``reason``,
+``missing_scopes`` and the ``account_id`` whose grant was missing). S2 keeps
+this a plain callback so the runtime stays free of a DB dependency; wiring it
+to the ``workflow_events`` tier happens where a thread id exists.
 
 ``domain_reason`` is the machine-readable verdict only — not ``ToolResult.domain``.
 That payload can hold prediction bodies, and the same rule as telemetry for
 context recall applies: an event says what happened, the bodies belong behind
 an explicit, sanitised export.
 
-``scopes`` is ``"checked"`` / ``"unchecked"`` / ``"none"``, and it exists because
-the scope check is *opt-in*: a capability that declares ``auth_scope`` is only
-enforced when the caller passes ``granted_scopes``, and ``None`` reads as
-"unchecked" rather than "denied". Without this field a decorative requirement
-and a satisfied one look identical from the outside — which is how seven
-scoped capabilities came to have no checked call site without anyone noticing.
-It reports what happened to *this* call, not whether the capability is safe.
+``scopes`` is ``"checked"`` / ``"unchecked"`` / ``"missing"`` / ``"none"``, and
+it exists because the scope check is *opt-in*: a capability that declares
+``auth_scope`` is only enforced when the caller passes ``granted_scopes``, and
+``None`` reads as "unchecked" rather than "denied". Without this field a
+decorative requirement and a satisfied one look identical from the outside —
+which is how seven scoped capabilities came to have no checked call site
+without anyone noticing. It reports what happened to *this* call, not whether
+the capability is safe.
+
+``missing`` is the fourth state and it exists because the first three are all
+about calls that reached the Gateway: a requirement that was evaluated at the
+*call site* and found unmet leaves a skipped event, not an invocation. Without
+it, "we never asked because we hold no ``xhs:read``" and "this capability has
+no requirement" both looked like nothing happened (see ``trace_skipped``).
 """
 
 Sleeper = Callable[[float], Awaitable[None]]
@@ -119,6 +129,12 @@ def _scope_state(spec: ToolSpec, granted: tuple[str, ...] | None) -> str:
     satisfied (a violation raises before this point and never produces an
     event). Reported as data rather than a boolean because the interesting
     state is the *third* one: a requirement that exists and was skipped.
+
+    The fourth value (``missing``) is deliberately **not** produced here: this
+    function describes calls that reached the Gateway, and a call whose
+    requirement fails locally never gets that far. ``trace_skipped`` writes
+    that state, so "the Gateway said no" and "the call site never asked" stay
+    distinguishable in the log.
     """
     if not spec.auth_scope:
         return "none"
@@ -267,6 +283,71 @@ class ToolGateway:
             if slot is not None:
                 await slot.release()
 
+    async def trace_skipped(
+        self,
+        capability: str,
+        *,
+        granted: Sequence[str],
+        account_id: str = "",
+        thread_id: str = "",
+    ) -> None:
+        """Record that a call site declined to invoke for lack of a declared scope.
+
+        The Gateway writes one ``event:"invoke"`` per call that ran. A call the
+        caller decided **not** to make never reaches :meth:`invoke`, so before
+        this method its absence was the one state the trace could not show:
+        reads skipped because the account holds no ``xhs:read`` looked exactly
+        like reads that were never planned (the cost §9.6 recorded when the
+        read paths started enforcing their declaration).
+
+        Two fields keep this from being mistaken for a failed invocation:
+        ``event:"skipped"`` and ``attempts:0``. ``ok`` is ``False`` because a
+        call that was not attempted is not a success.
+
+        ``missing_scopes`` is recomputed from the catalogue's declaration, not
+        taken from the caller — an event must not be able to claim a
+        requirement the capability does not declare. The mirror of that rule is
+        "never invent a denial": a grant that satisfies the declaration (a call
+        site skipping something it may call), or a capability the catalogue
+        does not know, emits **nothing** and only logs. Best-effort like every
+        trace write: it never raises at the caller.
+        """
+        try:
+            spec = self._registry.get(capability).spec
+        except UnknownCapabilityError:
+            # Cannot describe what was skipped (side effect, declared scopes).
+            # Writing a guessed event would be worse than a log line.
+            logger.warning("skip trace ignored: unknown capability %r", capability)
+            return
+        missing = tuple(scope for scope in spec.auth_scope if scope not in granted)
+        if not missing:
+            logger.warning(
+                "skip trace ignored: %s declares %s, the grant satisfies it",
+                capability,
+                tuple(spec.auth_scope),
+            )
+            return
+        await self._emit(
+            {
+                "kind": "tool",
+                "event": "skipped",
+                "capability": spec.capability,
+                "side_effect": spec.side_effect.value,
+                "thread_id": thread_id,
+                "account_id": account_id,
+                "ok": False,
+                "attempts": 0,
+                "elapsed_ms": 0.0,
+                "error": f"missing required scope(s): {', '.join(missing)}",
+                "error_kind": "",
+                "domain_reason": "",
+                "degraded": False,
+                "scopes": "missing",
+                "reason": "missing_scope",
+                "missing_scopes": list(missing),
+            }
+        )
+
     def _check_scopes(self, spec: ToolSpec, granted: tuple[str, ...] | None) -> None:
         """No ``granted_scopes`` means "not checked here" (S3+ passes them)."""
         if granted is None or not spec.auth_scope:
@@ -275,12 +356,21 @@ class ToolGateway:
         if missing:
             raise PermissionDeniedError(spec.capability, missing)
 
+    async def _emit(self, event: Mapping[str, Any]) -> None:
+        """Hand one event to the sink; telemetry never breaks a call."""
+        if self._trace is None:
+            return
+        try:
+            await self._trace(event)
+        except Exception as exc:
+            logger.debug("gateway trace emission failed: %s", exc)
+
     async def _finish(
         self, spec: ToolSpec, result: ToolResult, thread_id: str, scope_state: str
     ) -> ToolResult:
         """Emit the trace event (best-effort) and hand the result back."""
-        if self._trace is not None:
-            event = {
+        await self._emit(
+            {
                 "kind": "tool",
                 "event": "invoke",
                 "capability": spec.capability,
@@ -295,8 +385,5 @@ class ToolGateway:
                 "degraded": result.degraded,
                 "scopes": scope_state,
             }
-            try:
-                await self._trace(event)
-            except Exception as exc:  # telemetry must never break a call
-                logger.debug("gateway trace emission failed: %s", exc)
+        )
         return result
