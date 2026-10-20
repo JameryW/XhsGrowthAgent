@@ -45,6 +45,27 @@ class TestTheRealTree:
         report = audit_tool_catalogue()
         assert report.platform_writes == ()
 
+    def test_the_reachable_side_effecting_surface_is_three_capabilities(self):
+        """§4.1.1 of the upgrade note quotes this set; the prose must not drift.
+
+        Until 票 5f only ``xhs.publish`` was a reachable side-effecting
+        capability, and the note's trigger condition was "a second reachable
+        side-effecting tool". Registration changed the reachable surface to
+        three. "Reachable" and "called" stay different facts -- the engagement
+        pair has no agent call site (``test_scope_coverage`` pins that) -- and
+        the note's trigger condition is about the former.
+        """
+        from backend.tools.runtime.catalog import build_registry
+        from backend.tools.runtime.models import SideEffect
+
+        registry = build_registry()
+        reachable = sorted(
+            name
+            for name in registry.capabilities()
+            if registry.spec(name).side_effect is SideEffect.SIDE_EFFECTING
+        )
+        assert reachable == ["xhs.comment_reply", "xhs.dm_send", "xhs.publish"]
+
     def test_the_catalogue_only_names_functions_that_exist(self):
         report = audit_tool_catalogue()
         missing = sorted(set(report.registered) - set(report.functions))
