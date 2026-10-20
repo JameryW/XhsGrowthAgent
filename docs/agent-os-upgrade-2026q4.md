@@ -11,11 +11,13 @@
    LangGraph checkpoint 是状态权威，租约覆盖接管边界，Context Compiler 有
    L0-L5 与漂移门禁，Tool Runtime 有双失败模式，publish 有确定性幂等键与
    UNKNOWN 处理。
-2. **真正的 P0 缺口只有两个**：
+2. **真正的 P0 缺口只有两个**（审计时点；均已落地，见 §5）：
    - **Effect 账本只覆盖 publish 一个工具**，没有 PREPARED→IN_FLIGHT→
-     CONFIRMED/UNKNOWN/RECONCILING 的统一状态机与对账动作；
+     CONFIRMED/UNKNOWN/RECONCILING 的统一状态机与对账动作 → **已补**：P0-B 统一
+     六态账本 + 票 5c 的互动账本（`engagement_effects`，提交前 claim）；
    - **没有 Progress Detector**：`revise_content` 回路只靠轮次上限兜底，
-     无法区分"第 3 次修改在变好"与"第 3 次修改在原地打转"。
+     无法区分"第 3 次修改在变好"与"第 3 次修改在原地打转" → **已补**：P0-A
+     （`backend/state/progress.py`，§5.5）。
 3. **不建议**引入 Temporal 或重写内核：LangGraph checkpoint + 租约已提供
    等价语义（节点级重放成立）；缺口在节点内部的 Attempt/Effect 粒度，
    补这两个实体即可，不需要换执行引擎。
@@ -48,22 +50,24 @@
 | Run | **无独立实体** | **缺口**：resume 与 rerun 无法从 ID 区分 |
 | Step | graph node（superstep） | 有，checkpoint 天然记录 |
 | Attempt | 节点内 `with_retry` 的隐式计数 | **缺口**：没有 attempt_id，也没有 attempt 级事件 |
-| Effect | `publish_id` 幂等键（`backend/agents/publisher.py`） | **半有**：仅 publish，状态机只有 published/unknown/failed |
+| Effect | publish：`publish_id` + P0-B `EffectLedger`；互动两条：票 5c `engagement_effects` | **有**（两条路径）：PREPARED → IN_FLIGHT → CONFIRMED / FAILED / UNKNOWN（↔ RECONCILING）；键在提交动作前 claim |
 
-关键判断（与原文一致）：**Attempt 与 Effect 不能混用**。当前 publish 幂等键
-已经做对了一半——`compute_publish_id(account + content + images + window)` 是
-逻辑动作的稳定键，重试复用；但它没有独立的 `effect_id` 命名与账本表，
-状态也没有 `RECONCILING`。
+关键判断（与原文一致）：**Attempt 与 Effect 不能混用**。当前两条外部副作用路径都已经有
+独立的 Effect 层：publish 是 `compute_publish_id(account + content + images + window)`
+（逻辑动作的稳定键，重试复用）+ P0-B 六态 `EffectLedger`（含 `RECONCILING`）；互动两条是
+票 5c 的 `engagement_effects`（键 `eng:{kind}:{account_id}:{target_id}:{sha256[:16]}`，在
+提交前 claim）。仍然缺的是 **Attempt 实体本身**（没有 attempt_id / attempt 级事件）——
+Effect 与 Attempt 的分离在实现上成立，在命名与遥测上不成立。
 
 ## 3. 差距矩阵（原文十条 → 本仓库）
 
 | # | 原文主张 | 本仓库现状 | 差距等级 |
 |---|---|---|---|
 | 1 | 事件驱动状态机，不是追加 Chat Message | checkpoint 是状态、EventStore 是 telemetry；agent 层无 chat 追加 | ✅ 已满足 |
-| 2 | Task/Run/Step/Attempt/Effect 五实体 | Task/Step 有；Run/Attempt 缺；Effect 仅 publish | ⚠️ 部分 |
+| 2 | Task/Run/Step/Attempt/Effect 五实体 | Task/Step 有；Run/Attempt 缺；Effect 有 publish（P0-B 六态）+ 互动两条（票 5c `engagement_effects`） | ⚠️ 部分 |
 | 3 | Event Log 是事实、Snapshot 是物化视图、Context 是临时视图 | 三者已分离（checkpoint / events / compiler） | ✅ 已满足 |
 | 4 | Replay 不重调 LLM，读已提交决策 | **节点级成立**（superstep 完成即不重跑）；**节点内不成立**（节点重试会重调 LLM） | ⚠️ 部分（见 §4） |
-| 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；对账仍为"记录 + ContentHistory 匹配"，无自动平台查询 | ✅ 已满足（对账增强留 P1） |
+| 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；票 5c 为互动两条加上 `engagement_effects`（提交前 claim）；对账仍为"记录 + ContentHistory 匹配"，无自动平台查询 | ✅ 已满足（对账增强留 P1） |
 | 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；trust 尚未参与 rerank | ✅ 已满足（排序融合留 P1 后续） |
 | 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线 | ❌ 缺（P1/P2） |
 | 8 | 多 Agent 并行按 Artifact 分工 + Workspace 冲突 | 当前为单 Agent 串行图；无子 Agent、无并发 workspace | ❌ 缺（P2，先不建） |
@@ -81,35 +85,42 @@ LangGraph checkpoint 只保证**已完成的 superstep 不重跑**。节点失�
 
 当前可接受的三个理由：
 - 节点级幂等由 artifact seam 兜底（`_artifact_seam`）；
-- **能到达 agent 的外部副作用只有 publish 一条**，且有稳定幂等键；
+- **可及的外部副作用已有 3 条**（`xhs.publish`，加票 5f 注册的 `xhs.comment_reply` /
+  `xhs.dm_send`），三条都有稳定 effect 键、且都在**提交动作前 claim**（publish 走 P0-B
+  幂等账本；互动两条走票 5c 的 `engagement_effects`）—— 重试撞的是账本，不是平台；
 - 其余节点重试是"重算幂等"的（纯函数式输入→输出）。
 
-**触发升级的条件**：一旦出现第二个**能到达 agent 的**外部副作用工具（发评论、发私信），
-就必须把 attempt 级"决策记录"补上，否则会重演"重试导致重复动作"。
+**触发升级的条件（票 5f 后重述）**：原文写的是"出现第二个**能到达 agent 的**外部副作用
+工具（发评论、发私信）"。5f 把互动两条注册进目录后，这句话**按字面已经成立**（可及面
+1 → 3，见 §4.1.1）；但它守护的性质——"重试导致重复动作"——没有随之失守：两条新能力都
+要求提交前 effect claim，5f 又钉了 `max_attempts=1` 与逐条审批闸门。因此判据改为：
+**出现一条不经 effect 级 claim 的外部副作用路径**（新工具直接写平台/服务，或现有路径在
+claim 之前就发出请求），那才是 attempt 级决策记录必须补上的时刻。
 
-#### 4.1.1 这条前提的实测边界（2026-10-19 复核）
+#### 4.1.1 这条前提的实测边界（2026-10-19 复核；2026-10-20 票 5f 后同步第一行）
 
-上一版这条写的是"外部副作用只有 publish 一条"。用 AST 把整棵树数一遍后，**这句
-话只在"目录可及"这一层成立**：
+上一版这条写的是"外部副作用只有 publish 一条"。用 AST 把整棵树数一遍后，**这句话只在
+"目录可及"这一层成立**（下表为 2026-10-19 实测；票 5f 之后第一行的数字已变，见行内注）：
 
 | 层 | 数量 | 内容 |
 |---|---|---|
-| 目录（agent 可经 Gateway 到达） | **1** | `xhs.publish`（唯一声明为 `SIDE_EFFECTING` 的能力；12 个能力里其余全是 read_only/pure） |
-| `backend/tools/**` 里写**平台**的 `@tool` | **2** | `comment_replier`（回复真实评论）、`dm_handler`（发真实私信）—— 都走 `XHSEngagement` → CDP → 平台，模块声明 manual-only，且**全仓零导入者** |
+| 目录（agent 可经 Gateway 到达） | **1 → 3**（票 5f） | 2026-10-19 时 `xhs.publish` 是唯一声明为 `SIDE_EFFECTING` 的能力；票 5f 把 `xhs.comment_reply` / `xhs.dm_send` 注册进目录，可及面变成 3 条。后两者**没有任何 `.invoke` 调用点**，也没有任何 agent 的 `tool_capabilities` 声明它们——可及 ≠ 被调用；集合由 `test_catalogue_audit.py::test_the_reachable_side_effecting_surface_is_three_capabilities` 从 `build_registry()` 复算 |
+| `backend/tools/**` 里写**平台**的 `@tool` | **2** | `comment_replier`（回复真实评论）、`dm_handler`（发真实私信）—— 都走 `XHSEngagement` → CDP → 平台。票 5f 起它们在**目录里**（经 Gateway + effect 账本 + 审批闸门），静态导入者仍为零 |
 | 声称会写、其实是 stub | 2 | `post_scheduler`、`ab_test_manager` 只返回 canned 结果（`post_scheduler` 注释自己写着"需接 APScheduler"） |
 | 写**本仓服务**（非平台） | 2 | `ripple_cancel_simulation`、`ripple_generate_report` |
 | 有外部通知 | 1 | `escalation_flagger`（配了 webhook 时发通知，不写平台） |
 
-结论：**触发条件仍未达成**（没有任何路径能让 agent 调到那两条平台写工具），
-但"只有 publish 一条"是**错的表述**——正确表述是：可及面 1 条；模块里能真正改外部
-状态的有 5 条（2 条写平台、2 条写本仓的 Ripple 服务、1 条发通知），另有 2 条 stub
-只在返回值上假装会写。
+结论（票 5f 后重述）：**"可及面 1 条"已过期** —— 注册后 agent 可经 Gateway 到达 3 条
+`SIDE_EFFECTING` 能力，但其中两条没有任何调用点，"可及"与"被调用"仍是两件事。模块里能
+真正改外部状态的有 5 条（2 条写平台、2 条写本仓的 Ripple 服务、1 条发通知），另有 2 条
+stub 只在返回值上假装会写。
 
 这件事现在由 `backend/tools/runtime/audit.py::audit_tool_catalogue` **守**：26 个
 `@tool` 里每一个都必须是"已注册"或"已登记（`UNGATED_TOOLS`，含它到底能写什么）"，
 新出现的第 27 个会直接让单测变红；登记项与目录指向的函数若消失也会红。
-`tests/unit/tools/runtime/test_catalogue_audit.py` 把平台写集合钉死为上面那两条——
-**它变大的那天，attempt 级决策记录就不再是可选项。**
+**票 5f 之后未登记的平台写集合是空的**（`platform_writes == ()` 被测试钉住），可及面是
+3 条 `SIDE_EFFECTING`；`test_catalogue_audit.py` 从 `build_registry()` 复算这个集合——
+**它变大的那天，本节与 attempt 级决策记录的判据都要一起重审。**
 
 **4.2 "Event Log 作为恢复依据"在本仓库不成立，且不应成立。**
 
