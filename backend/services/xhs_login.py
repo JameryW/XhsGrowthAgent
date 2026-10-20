@@ -909,6 +909,7 @@ class XhsLoginSession:
             # codeStatus==2：登录成功，cookie 已由 persistent context 写入 profile。
             # 标记 confirmed，后续 get_status 直接返回 confirmed（幂等）。
             self._confirmed = True
+            await self._persist_login_cookie()
             logger.info(
                 "扫码登录成功: account=%s qr_id=%s login_info keys=%s",
                 self.account_id,
@@ -1161,12 +1162,100 @@ class XhsLoginSession:
             if isinstance(cookie, dict) and bool(cookie.get("value"))
         }
 
+    async def _login_cookies(self) -> list[dict[str, Any]]:
+        """Login-domain cookies from whichever transport this session is on.
+
+        Two transports exist (Playwright context, raw CDP), and both can answer
+        with the same shape; a session whose transport is already gone answers
+        with an empty list rather than raising — the caller is telemetry-grade.
+        """
+        if self._context is not None:
+            try:
+                cookies = await self._context.cookies(_LOGIN_STATUS_URLS)
+            except Exception as exc:
+                logger.debug("playwright 读取登录 cookie 失败: %s", exc)
+                return []
+            return [cookie for cookie in cookies if isinstance(cookie, dict)]
+        if self._raw_ws is not None:
+            try:
+                result = await self._raw_send("Network.getCookies", {"urls": _LOGIN_STATUS_URLS})
+            except Exception as exc:
+                logger.debug("raw CDP 读取登录 cookie 失败: %s", exc)
+                return []
+            cookies = result.get("cookies") if isinstance(result, dict) else None
+            return (
+                [cookie for cookie in cookies if isinstance(cookie, dict)]
+                if isinstance(cookies, list)
+                else []
+            )
+        return []
+
+    async def _persist_login_cookie(self) -> None:
+        """Mirror a *proven* login into ``account_credentials`` (票 5n).
+
+        The browser profile is and stays the durable login state for CDP
+        publishing. This row is for the other half: the HTTP read path
+        authenticates as the cookie in ``account_credentials``, so without it a
+        named account can publish but cannot read. Until 票 5n nothing wrote
+        this table, which is why the only readable identity was the deployment's
+        ``XHS_COOKIE``.
+
+        Three guards, each answering a different question:
+
+        * **proven login, not a partial session** — the same
+          ``_cookie_names_mean_logged_in`` predicate the preflight uses, so a
+          www-only session (web_session + id_token, creator SSO expired) is never
+          written as a credential;
+        * **a cookie the read path would accept** — ``XHSCookieParser.is_valid``
+          is exactly ``XhsCredential.usable``'s test; writing a value the reader
+          will refuse would be a row that looks like a credential and is not;
+        * **the account store exists** — no pool means this deployment has no
+          per-account credentials at all (same distinction ``_read_stored``
+          draws), so it is a configuration fact, not a failure.
+
+        Best-effort: a write failure must never fail a login that succeeded in
+        the browser. The stale-cookie trade-off is documented in
+        ``docs/tool-runtime.md``: the row takes precedence over the deployment
+        env cookie (the reader's existing rule), so re-login is what refreshes
+        it, and a stale row can shadow a working env cookie until then.
+        """
+        cookies = await self._login_cookies()
+        names = {str(cookie.get("name") or "") for cookie in cookies if cookie.get("value")}
+        is_logged_in, _signals, _reason = _cookie_names_mean_logged_in(names)
+        if not is_logged_in:
+            return
+        header = "; ".join(
+            f"{cookie['name']}={cookie['value']}"
+            for cookie in cookies
+            if cookie.get("name") and cookie.get("value")
+        )
+        from backend.services.xhs_credentials import COOKIE_KEY
+        from backend.services.xhs_signature import XHSCookieParser
+
+        if not XHSCookieParser.is_valid(header):
+            logger.warning(
+                "扫码登录已确认但 cookie 缺少 a1，跳过凭据落库 account=%s", self.account_id
+            )
+            return
+        from backend.db.pool import is_pool_ready
+
+        if not is_pool_ready():
+            return
+        try:
+            from backend.db.accounts import upsert_credential
+
+            await upsert_credential(self.account_id, COOKIE_KEY, header)
+            logger.info("扫码登录凭据已写入 account_credentials account=%s", self.account_id)
+        except Exception as exc:  # 凭据落库失败不能反噬一次成功的登录
+            logger.warning("扫码登录凭据落库失败 account=%s: %s", self.account_id, exc)
+
     async def _confirm_existing_creator_login(
         self, *, already_warmed: bool = False
     ) -> dict[str, Any]:
         """Mark session confirmed when creator access token is present."""
         self._confirmed = True
         self._code_status = _CODE_CONFIRMED
+        await self._persist_login_cookie()
         logger.info(
             "扫码登录已跳过：profile 已具备创作者中心登录态 account=%s",
             self.account_id,
@@ -1386,6 +1475,7 @@ class XhsLoginSession:
         if await self._raw_has_strong_cookie():
             self._confirmed = True
             self._code_status = _CODE_CONFIRMED
+            await self._persist_login_cookie()
             await self._raw_send("Page.navigate", {"url": _CREATOR_HOME_URL})
             await asyncio.sleep(1.0)
             await self.stop(keep_page=True)
@@ -1403,6 +1493,7 @@ class XhsLoginSession:
         if await self._raw_has_strong_cookie():
             self._confirmed = True
             self._code_status = _CODE_CONFIRMED
+            await self._persist_login_cookie()
             await self.stop(keep_page=True)
             _detach_session_if_current(self)
             logger.info("raw CDP creator warm minted access token account=%s", self.account_id)
@@ -1550,6 +1641,7 @@ class XhsLoginSession:
         if await self._raw_has_strong_cookie():
             self._confirmed = True
             self._code_status = _CODE_CONFIRMED
+            await self._persist_login_cookie()
             # 与 playwright-CDP confirmed 分支一致：保留 host Chrome 里的已登录
             # tab（不发 Target.closeTarget），只断 ws，会话自摘出注册表。
             await self.stop(keep_page=True)
@@ -1569,6 +1661,7 @@ class XhsLoginSession:
         if await self._raw_warm_creator_for_confirm():
             self._confirmed = True
             self._code_status = _CODE_CONFIRMED
+            await self._persist_login_cookie()
             logger.info("raw CDP creator 页面证据确认登录成功 account=%s", self.account_id)
             await self.stop(keep_page=True)
             _detach_session_if_current(self)

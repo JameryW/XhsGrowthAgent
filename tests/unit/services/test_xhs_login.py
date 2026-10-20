@@ -1681,3 +1681,160 @@ async def _fire_create_after_delay(on_calls: list, delay: float) -> None:
         },
     )
     await handler(resp)
+
+
+class TestLoginCredentialPersistence:
+    """票 5n — a confirmed login is mirrored into ``account_credentials``.
+
+    The browser profile stays the CDP-publish mechanism; the row written here is
+    the **HTTP read identity**. The guards matter as much as the write: only a
+    *proven* login (creator token present, per the same predicate preflight uses)
+    may become a credential, and only when the value would pass the reader's own
+    validity test (``a1`` present).
+    """
+
+    _COOKIES = [
+        {"name": "a1", "value": "0123456789abcdef0123", "domain": ".xiaohongshu.com"},
+        {"name": "web_session", "value": "sess-1", "domain": ".xiaohongshu.com"},
+        {
+            "name": "access-token-creator.xiaohongshu.com",
+            "value": "tok-1",
+            "domain": ".xiaohongshu.com",
+        },
+    ]
+
+    @staticmethod
+    def _session(tmp_path):
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        session._context = MagicMock()
+        session._context.cookies = AsyncMock(
+            return_value=list(TestLoginCredentialPersistence._COOKIES)
+        )
+        return session
+
+    async def test_a_confirmed_login_writes_the_cookie_row(self, tmp_path):
+        """End to end through the real confirmation block, not the helper alone.
+
+        Start with no cookies (so the creator-token skip path cannot mark the
+        session confirmed and persist before the QR flow), then hand the context
+        the post-login jar and confirm via ``codeStatus=2``. The only
+        confirmation site reachable is the one this test is about.
+        """
+        from backend.services.xhs_login import XhsLoginSession
+
+        mock_module, _, on_calls = _wire_playwright_mock()
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+            patch("backend.db.accounts.upsert_credential", new=AsyncMock()) as upsert,
+        ):
+            await asyncio.gather(session.start(), _fire_create_after_delay(on_calls, 0.02))
+            # What the browser holds after a successful scan.
+            session._context.cookies = AsyncMock(return_value=list(self._COOKIES))
+            handler = on_calls[0][1]
+            await handler(
+                _build_mock_response(
+                    "https://x/api/sns/web/v1/login/qrcode/status",
+                    "GET",
+                    {"data": {"codeStatus": 2, "login_info": {"user_id": "u1"}}},
+                )
+            )
+            session._qr_created_at = time.time()
+            result = await session.get_status()
+
+        assert result["status"] == "confirmed"
+        upsert.assert_awaited_once()
+        account_id, key_name, header = upsert.await_args.args
+        assert (account_id, key_name) == ("acc-1", "XHS_COOKIE")
+        assert "a1=0123456789abcdef0123" in header
+        assert "access-token-creator.xiaohongshu.com=tok-1" in header
+        await session.stop()
+
+    async def test_a_raw_cdp_session_writes_the_same_row(self, tmp_path):
+        """The raw transport reads the same cookies over ``Network.getCookies``."""
+        session = self._session(tmp_path)
+        session._context = None
+        session._raw_ws = object()
+        session._raw_send = AsyncMock(return_value={"cookies": self._COOKIES})
+        with (
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+            patch("backend.db.accounts.upsert_credential", new=AsyncMock()) as upsert,
+        ):
+            await session._persist_login_cookie()
+
+        upsert.assert_awaited_once()
+        assert upsert.await_args.args[0] == "acc-1"
+        assert upsert.await_args.args[1] == "XHS_COOKIE"
+
+    async def test_a_www_only_session_is_not_persisted(self, tmp_path):
+        """web_session + id_token without the creator token is a partial session.
+
+        Persisting it would write a credential for an account whose creator SSO
+        has expired — the same false "logged in" the preflight predicate exists
+        to prevent.
+        """
+        session = self._session(tmp_path)
+        session._context.cookies = AsyncMock(
+            return_value=[
+                {"name": "a1", "value": "0123456789abcdef0123"},
+                {"name": "web_session", "value": "s"},
+                {"name": "id_token", "value": "t"},
+            ]
+        )
+        with (
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+            patch("backend.db.accounts.upsert_credential", new=AsyncMock()) as upsert,
+        ):
+            await session._persist_login_cookie()
+
+        upsert.assert_not_awaited()
+
+    async def test_a_cookie_the_reader_would_refuse_is_not_written(self, tmp_path):
+        """No ``a1`` means ``XhsCredential.usable`` is False: a row would lie."""
+        session = self._session(tmp_path)
+        session._context.cookies = AsyncMock(
+            return_value=[
+                {"name": "web_session", "value": "s"},
+                {"name": "access-token-creator.xiaohongshu.com", "value": "t"},
+            ]
+        )
+        with (
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+            patch("backend.db.accounts.upsert_credential", new=AsyncMock()) as upsert,
+        ):
+            await session._persist_login_cookie()
+
+        upsert.assert_not_awaited()
+
+    async def test_no_account_store_means_no_write(self, tmp_path):
+        """No pool is a deployment fact, not a failure: skip silently."""
+        session = self._session(tmp_path)
+        with (
+            patch("backend.db.pool.is_pool_ready", return_value=False),
+            patch("backend.db.accounts.upsert_credential", new=AsyncMock()) as upsert,
+        ):
+            await session._persist_login_cookie()
+
+        upsert.assert_not_awaited()
+
+    async def test_a_failed_write_never_fails_the_login(self, tmp_path):
+        """Outcome-valued: telemetry-grade write must not break a succeeded login."""
+        session = self._session(tmp_path)
+        outcome = "started"
+        with (
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+            patch(
+                "backend.db.accounts.upsert_credential",
+                new=AsyncMock(side_effect=RuntimeError("db down")),
+            ),
+        ):
+            try:
+                await session._persist_login_cookie()
+            except Exception as exc:
+                outcome = f"raised: {type(exc).__name__}"
+            else:
+                outcome = "returned"
+        assert outcome == "returned"

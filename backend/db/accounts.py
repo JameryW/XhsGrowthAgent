@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from backend.db.crypto import decrypt_value, mask_value
+from backend.db.crypto import decrypt_value, encrypt_value, mask_value
 from backend.db.pool import get_pool
 
 logger = logging.getLogger("xhs_growth.db.accounts")
@@ -456,6 +456,37 @@ async def list_credentials(account_id: str) -> list[CredentialRow]:
         )
         for r in rows
     ]
+
+
+async def upsert_credential(account_id: str, key_name: str, value: str) -> None:
+    """Write (or replace) one encrypted credential row for an account.
+
+    The write side of the account store. Until 票 5n it had no caller: the QR
+    login wrote the browser profile and nothing wrote this table, so the HTTP
+    read path could only ever authenticate as the deployment identity. The login
+    session now mirrors its cookie here once it has proven a login (see
+    ``services.xhs_login._persist_login_cookie``).
+
+    Encryption is the table's pre-existing mechanism — ``db.crypto`` falls back
+    to plaintext *with a warning* when ``ENCRYPTION_KEY`` is unset; that is the
+    same behaviour the console's secret storage already has, not a new decision.
+
+    The upsert is keyed by ``(account_id, key_name)``: re-login replaces the
+    previous cookie instead of accumulating rows, so a reader never has to guess
+    which of two rows is current.
+    """
+    encrypted = encrypt_value(value)
+    pool = get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO account_credentials (account_id, key_name, encrypted_value)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (account_id, key_name)
+            DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value
+            """,
+            (account_id, key_name, encrypted),
+        )
 
 
 def _resolve_cdp_host() -> str:

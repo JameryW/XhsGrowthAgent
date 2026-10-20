@@ -160,15 +160,21 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
   把未声明的 `kind` 报成"声明漂移"（#676 那类事故的唯一可见出口）。声明集因此不再是
   无人消费的死表；但读者**不会**替发射端兜底：`cost` / `error` 的发射者缺口仍然开放，
   这两条 kind 依旧只会出现在历史条目里。
-- **`account_credentials` 表仍无写入者**：读路径（S5a）是通的，但扫码登录把登录态写进 CDP
-  profile，没有写这张表。所以今天唯一真能提供凭据的仍是部署级 `XHS_COOKIE`。
+- ~~**`account_credentials` 表仍无写入者**~~ **已解决（票 5n）**：扫码登录确认成功后，
+  `XhsLoginSession._persist_login_cookie` 把 cookie 经 `db.crypto` 加密 upsert 进
+  `account_credentials`（`(account_id, key_name)` 唯一，重登即替换）。三条护栏：只写
+  **已证明的登录**（creator token 谓词；www-only 半登录不写）、只写**读侧会接受的**
+  cookie（`XHSCookieParser.is_valid` ⇔ `XhsCredential.usable`）、无账号库时跳过；落库
+  失败 best-effort。**诚实边界**：行优先于部署 env 的 `XHS_COOKIE`，cookie 过期后需重扫码
+  刷新（过期行会暂时遮蔽仍可用的部署 cookie）。
 
-**这三条都是关于代码的、可测量的事实**（「还有几个调用点」「还有几个读者」「还有几个写入者」），
+**这几条都是关于代码的、可测量的事实**（「还有几个调用点」「还有几个读者」「还有几个写入者」），
 所以它们在这里发布成值，由 `tests/unit/scripts/test_residue_claims.py` 从树上重算。
 **把它们修好而不改这张表，判据会红** —— 这是本节唯一的目的：本仓已经有过一次「登记项被结掉了、
 记录继续声称它开放」的经历（`docs/planning.md` 的 `orchestrator_router` 缺键那条，
 见 `tests/unit/graph/test_routers.py` 的 `test_brief_mode_creating_routes_to_the_copywriter`），
-而当时没有任何机制察觉。散文写的残留就是那个机制缺口。
+而当时没有任何机制察觉。散文写的残留就是那个机制缺口。票 5n 刚走过一次这个机制：写入者
+从 0 变 1，表同步改成 1。
 
 <!-- claim-table:begin -->
 
@@ -178,7 +184,7 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 | `action_intent_construction_sites` | `1` | AST：全仓 `ActionIntent(...)` 的构造点；唯一那个在控制面内 |
 | `mainline_action_intent_producers` | `0` | 上一个集合里落在 `backend/creator_agent/` **之外**的个数（上一条是它的阳性对照） |
 | `event_kinds_readers_outside_its_defining_module` | `1` | AST：除 `backend/db/workflow_events.py` 外，import 或引用 `EVENT_KINDS` 的文件数（**注释不算**）；今天那 1 个是 `backend/services/signal_inventory.py` 的漂移检测 |
-| `account_credentials_inserts` | `0` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（DDL / `SELECT` / `DELETE` 都不算） |
+| `account_credentials_inserts` | `1` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（DDL / `SELECT` / `DELETE` 都不算）。票 5n 起唯一那处是扫码登录的 `upsert_credential` |
 
 <!-- claim-table:end -->
 

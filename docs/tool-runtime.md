@@ -333,11 +333,14 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
 - **L1 参数类型是原样反射的**：LangChain 工具给 JSON-schema 的 `string`，普通函数
   给注解名（`dict[str, Any]`）。没有归一化 —— P2c 真要把 schema 交给模型调工具时
   需要一个统一口径。
-- **`account_credentials` 没有写入者**：读它在 `services/xhs_credentials`（P2a-S5a），
-  但扫码登录把登录态写进 CDP profile（per-account Chrome user-data-dir），并没有写
-  这张表。所以**今天唯一真的能提供凭据的来源是部署级的 `XHS_COOKIE`**
-  （`.env.example` 里声明、P2a-S5a 之前无人读）；per-account 那一行读路径是通的、
-  也是优先的，但在登录流程开始写它之前一直是空的。写它属于后续任务。
+- ~~**`account_credentials` 没有写入者**~~ **已解决（票 5n）**：读在 `services/xhs_credentials`
+  （P2a-S5a），写在扫码登录确认成功之后 —— `XhsLoginSession._persist_login_cookie` 把
+  cookie 经 `db.crypto` 加密 upsert 进表（`(account_id, key_name)` 唯一，重登即替换）。
+  三条护栏：只写**已证明的登录**（creator token 谓词；www-only 半登录不写）、只写
+  **读侧会接受的** cookie（`XHSCookieParser.is_valid` ⇔ `XhsCredential.usable`）、没有
+  账号库时跳过（配置事实，不是失败）；落库失败 best-effort，不反噬一次成功的登录。
+  **诚实边界**：行优先于部署 env 的 `XHS_COOKIE`（既有优先级），所以 cookie 过期后要
+  重扫码刷新；过期行会暂时遮蔽仍然可用的部署 cookie。
 
 **可重算的部分发布成值（下面的表），量不出来的那一条不编谓词。**
 
@@ -353,7 +356,7 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
 | `api_route_modules_importing_ripple_service` | `3` | AST：`backend/api/routes/*.py` 里 import `RippleService` 的文件数 |
 | `ripple_service_direct_call_sites_in_api_routes` | `2` | 正则：这几个文件里 `ripple.submit_and_wait(` 的出现次数（`backend/api/routes/_wf_actions.py:129` 与 `:147`） |
 | `tool_gate_allowed_prefix` | `backend.tools.runtime.` | 读 `backend/tools/runtime/audit.py` 的 `_ALLOWED_PREFIX` —— 门禁只覆盖这一个包，本节第一条的前提 |
-| `account_credentials_inserts` | `0` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（与 `publish-action-protocol.md` 同一条事实，**刻意的重复**：两份文档各自要被单独读懂） |
+| `account_credentials_inserts` | `1` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（与 `publish-action-protocol.md` 同一条事实，**刻意的重复**：两份文档各自要被单独读懂）。票 5n 起唯一那处是扫码登录的 `upsert_credential` |
 
 <!-- claim-table:end -->
 
