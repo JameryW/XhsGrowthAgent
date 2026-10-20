@@ -113,14 +113,22 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 等于赌一次重复发布。所以两个生产者往同一个字段里放的是不同的稳定串（主链放 content 级键、
 控制面放请求级键），而这是**刻意的**：它们的共同点只是"对这个 intent 稳定"。
 
-## 被拒也留痕（P2a-S5b）
+## 被拒也留痕（P2a-S5b / 票 5k）
 
-`workflow_events` 的 `kind="action"` 从 P1a 就声明着，直到 P2a-S5b 才有第一个发射者。两条：
+`workflow_events` 的 `kind="action"` 从 P1a 就声明着，直到 P2a-S5b 才有第一个发射者。三条：
 
 - **策略拒绝**（route 层发，`policy_denied`）：advisor 抛异常时已经失去了"这是哪条工作流"的
   上下文，route 是最后还知道 `thread_id` 的地方。
 - **人类拒绝**（publish gate 发，`publish_refused`）：拒绝是节点当场做的决定，理由分
   `human_refusal`（按设计工作）与 `unrecognised_decision`（版本错位，是要追的 bug）。
+- **发布路径自身的前置条件**（publisher 发，`publish_blocked`，票 5k）：账号停用/不存在、
+  未绑定 CDP endpoint、没有 `xhs:write` 授权、幂等账本拦住重复发布 —— 四者都是"这次发布
+  **没有尝试**"，没有调用任何 capability，因而不可能有 effect。与"人类拒绝"（`publish_refused`）
+  和"策略拒绝"（`policy_denied`）是不同的事实（没人说过"不"；是环境/前置条件不允许），
+  所以用**新的 action 名 + 封闭 reason 词表**（`account_inactive` / `missing_cdp_endpoint` /
+  `missing_credential` / `duplicate_publish`），而不是塞进任何一个旧名字。重复发布那条额外带
+  `publish_id` 与 `prior_status`（机器可读的"为什么"）。**每个线程的 `publish_result` 仍然回答
+  "这次怎么了"；action 账回答"多久发生一次、为什么"** —— 与 publish gate 那条同一分工。
 
 **自由文本不进遥测**：人类的 `comments` 留在 `publish_confirmation` 里，不作为事件字段 ——
 与 Gateway trace sink 同一条规则（事件说发生了什么，正文属于一次显式、已脱敏的导出）。

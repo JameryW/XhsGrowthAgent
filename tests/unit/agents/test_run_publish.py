@@ -984,3 +984,125 @@ async def test_the_refusal_leaves_no_durable_trace(_browser_settings, monkeypatc
 
     assert recorded.await_count == 0
     assert result["publish_result"]["error_type"] == "missing_publish_credential"
+
+
+# ── 票 5k: a publish blocked before it was attempted is a countable fact ──────
+#
+# Three/four preconditions return a `publish_result` without ever invoking the
+# capability: inactive account, no CDP endpoint, no write grant, duplicate
+# attempt. The per-thread result already says *what* happened; the action entry
+# is what lets an operator ask "*how often*, and why" across threads (the same
+# gap P2a-S5b closed for human refusals at the publish gate).
+
+
+async def _publish_blocked_events(state):
+    """The ``kind:"action"`` entries this publish path wrote for a block."""
+    from backend.db.workflow_events import list_events
+    from backend.state.events import (
+        ACTION_EVENT_KIND,
+        ACTION_PUBLISH_BLOCKED,
+        resolve_thread_id,
+    )
+
+    events = await list_events(resolve_thread_id(state), kind=ACTION_EVENT_KIND)
+    return [event for event in events if event.get("action") == ACTION_PUBLISH_BLOCKED]
+
+
+@pytest.mark.asyncio
+async def test_an_inactive_account_block_is_recorded(_browser_settings, monkeypatch):
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_off"})
+    _mock_account_active(monkeypatch, is_active=False)
+
+    result = await run_publish(state, store=_real_store())
+
+    assert result["publish_result"]["error_type"] == "account_inactive"
+    events = await _publish_blocked_events(state)
+    assert len(events) == 1
+    assert (events[0].get("action"), events[0].get("reason"), events[0].get("account_id")) == (
+        "publish_blocked",
+        "account_inactive",
+        "acc_off",
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_missing_cdp_endpoint_block_is_recorded(_browser_settings, monkeypatch):
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_nocdp"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="")
+    _browser_settings.platform.cdp_endpoint = ""
+
+    result = await run_publish(state, store=_real_store())
+
+    assert result["publish_result"]["error_type"] == "missing_cdp_endpoint"
+    events = await _publish_blocked_events(state)
+    assert len(events) == 1
+    assert events[0].get("reason") == "missing_cdp_endpoint"
+    assert events[0].get("account_id") == "acc_nocdp"
+
+
+@pytest.mark.asyncio
+async def test_a_missing_write_grant_block_is_recorded(_browser_settings, monkeypatch):
+    """The publish-retry path (`agent=None`) must record it too — it has no
+    tool-trace context, so the action entry is the only durable observation."""
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_none"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="")
+    # A browser exists at the deployment level; what is missing is the grant.
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
+    monkeypatch.setenv("XHS_COOKIE", "web_session=no-login-material")
+
+    result = await run_publish(state, store=_real_store())
+
+    assert result["publish_result"]["error_type"] == "missing_publish_credential"
+    events = await _publish_blocked_events(state)
+    assert len(events) == 1
+    assert events[0].get("reason") == "missing_credential"
+    assert events[0].get("account_id") == "acc_none"
+
+
+@pytest.mark.asyncio
+async def test_a_duplicate_publish_block_is_recorded_with_its_prior(_browser_settings, monkeypatch):
+    from backend.agents.publisher import compute_publish_id
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_dup"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    client = _mock_client("p_once")
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+    store = _real_store()
+
+    first = await run_publish(state, store=store)
+    assert first["publish_result"]["status"] == "published"
+
+    second = await run_publish(state, store=store)
+
+    assert second["publish_result"]["error_type"] == "duplicate_publish_blocked"
+    events = await _publish_blocked_events(state)
+    assert len(events) == 1
+    event = events[0]
+    assert event.get("reason") == "duplicate_publish"
+    assert event.get("publish_id") == compute_publish_id(state)
+    assert event.get("prior_status") == "confirmed", (
+        "the machine-readable why: the prior effect already succeeded"
+    )
+    assert event.get("account_id") == "acc_dup"
+
+
+@pytest.mark.asyncio
+async def test_a_successful_publish_records_no_blocked_event(_browser_settings, monkeypatch):
+    """The positive control: the event means "blocked", so a publish that ran
+    must not carry one. Without this, emitting on every publish would pass the
+    four tests above."""
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_ok"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    client = _mock_client("p_ok")
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+
+    result = await run_publish(state, store=_real_store())
+
+    assert result["publish_result"]["status"] == "published"
+    assert await _publish_blocked_events(state) == []

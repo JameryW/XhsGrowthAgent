@@ -25,7 +25,12 @@ __all__ = [
     "ACTION_EVENT_KIND",
     "ACTION_LEASE_REFUSED",
     "ACTION_POLICY_DENIED",
+    "ACTION_PUBLISH_BLOCKED",
     "ACTION_PUBLISH_REFUSED",
+    "BLOCKED_ACCOUNT_INACTIVE",
+    "BLOCKED_DUPLICATE_PUBLISH",
+    "BLOCKED_MISSING_CDP_ENDPOINT",
+    "BLOCKED_MISSING_CREDENTIAL",
     "LEGACY_PERF_LOG_KEY",
     "action_perf_entry",
     "emit_events",
@@ -50,10 +55,26 @@ ACTION_EVENT_KIND = "action"
 #: may contain instead of discovering it per call site.
 ACTION_POLICY_DENIED = "policy_denied"
 ACTION_PUBLISH_REFUSED = "publish_refused"
+#: A publish the *path itself* blocked before attempting it: a precondition was
+#: not met, so no capability was invoked and no effect can exist. Distinct from
+#: the two above — no human and no policy engine said no; the publisher found
+#: the account / credential / ledger in a state that makes an attempt wrong.
+#: ``reason`` names which precondition (the ``BLOCKED_*`` constants below).
+ACTION_PUBLISH_BLOCKED = "publish_blocked"
+
+#: Why :data:`ACTION_PUBLISH_BLOCKED` fired — one per precondition the publish
+#: path checks before it submits anything. Closed on purpose: a reader
+#: enumerates the reasons instead of discovering them per call site. The order
+#: matches the order the path checks them in.
+BLOCKED_ACCOUNT_INACTIVE = "account_inactive"
+BLOCKED_MISSING_CDP_ENDPOINT = "missing_cdp_endpoint"
+BLOCKED_MISSING_CREDENTIAL = "missing_credential"
+BLOCKED_DUPLICATE_PUBLISH = "duplicate_publish"
 #: A repair path stood down because a live foreign owner holds the thread's
-#: lease. Unlike the two above, no policy refused and no human decided: the
-#: work is simply already being done, by another instance. Filing it under the
-#: same name as "we chose not to" would hide the one fact the operator needs.
+#: lease. Unlike the ones above, no policy refused, no human decided and no
+#: precondition blocked the attempt: the work is simply already being done, by
+#: another instance. Filing it under the same name as "we chose not to" would
+#: hide the one fact the operator needs.
 ACTION_LEASE_REFUSED = "lease_refused"
 
 
@@ -75,12 +96,13 @@ def action_perf_entry(
     refusal belongs in the same place.
 
     ``action`` is one of :data:`ACTION_POLICY_DENIED` /
-    :data:`ACTION_PUBLISH_REFUSED` / :data:`ACTION_LEASE_REFUSED`, and
-    ``fields`` carries the machine-readable specifics (``policy_id``, ``gate``,
-    ``reason``).  Free text is deliberately
-    **not** a parameter: the same rule as the Gateway's trace sink — an event
-    says what happened, the bodies belong behind an explicit, sanitised export.
-    A human's comment therefore stays on the confirmation record, never here.
+    :data:`ACTION_PUBLISH_REFUSED` / :data:`ACTION_PUBLISH_BLOCKED` /
+    :data:`ACTION_LEASE_REFUSED`, and ``fields`` carries the machine-readable
+    specifics (``policy_id``, ``gate``, ``reason``, ``publish_id``).  Free text
+    is deliberately **not** a parameter: the same rule as the Gateway's trace
+    sink — an event says what happened, the bodies belong behind an explicit,
+    sanitised export.  A human's comment therefore stays on the confirmation
+    record, never here.
 
     Reserved keys are written last so ``fields`` cannot spoof them.  The caller
     writes the entry with :func:`emit_events`, which is best-effort: telemetry
