@@ -129,6 +129,7 @@ async def observe_style_promotions(
     observations: list[ContentObservation],
     *,
     policy: PromotionPolicy | None = None,
+    record: bool = True,
 ) -> ObservationPass:
     """Decide (and record) a promotion verdict for every style observation.
 
@@ -136,6 +137,10 @@ async def observe_style_promotions(
     namespace; a promote decided earlier in the same pass is folded back in so a
     second observation of the same key supersedes or duplicates instead of
     forking the ledger.
+
+    ``record=False`` is the dry-run switch: the ledger is still **read** (a
+    decision made without its current records would be a different decision),
+    but nothing is written and ``recorded`` stays 0.
     """
     page = await ledger.records(account_id)
     if page.available and not page.complete:
@@ -158,9 +163,10 @@ async def observe_style_promotions(
             existing=tuple(existing),
             policy=policy,
         )
-        outcome = await ledger.append(account_id, candidate, decision)
-        if outcome is LedgerAppendOutcome.RECORDED:
-            recorded += 1
+        if record:
+            outcome = await ledger.append(account_id, candidate, decision)
+            if outcome is LedgerAppendOutcome.RECORDED:
+                recorded += 1
         if decision.disposition is PromotionDisposition.PROMOTE:
             existing.append(
                 ExistingEntry(

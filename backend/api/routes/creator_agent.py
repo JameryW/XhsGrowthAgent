@@ -78,6 +78,7 @@ from backend.creator_agent.repository import (
 )
 from backend.db.creator_agent import get_repository
 from backend.memory.creator_agent_observations import CreativeMemoryObservationSource
+from backend.memory.promotion_ledger import PromotionLedger
 from backend.state.events import ACTION_POLICY_DENIED
 
 router = APIRouter()
@@ -255,6 +256,40 @@ async def list_creator_evidence_proposals(
         normalized_account_id, min_confidence=min_confidence, limit=limit
     )
     return success(data=page.model_dump(mode="json"))
+
+
+@router.get("/memory-promotions")
+async def list_memory_promotions(
+    request: Request,
+    account_id: str = Query(..., min_length=1),
+    limit: int = Query(default=50, json_schema_extra={"minimum": 1, "maximum": 200}),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[dict[str, Any]]:
+    """Read the append-only promotion ledger for one account.
+
+    Read-only by construction: the ledger has no update/delete surface, so this
+    endpoint cannot be the second way to change a memory decision. A deployment
+    without a memory store answers ``available=False`` instead of "no decisions"
+    — an empty page and an absent store are different facts.
+    """
+    normalized_account_id = (account_id or "").strip()
+    if not normalized_account_id:
+        raise ValidationError("account_id", "account_id cannot be empty")
+    if not 1 <= limit <= 200:
+        raise ValidationError("limit", "limit must be between 1 and 200")
+    await require_owned_account(str(user["id"]), normalized_account_id)
+
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None) if graph is not None else None
+    page = await PromotionLedger(store).records(normalized_account_id, limit=limit)
+    return success(
+        data={
+            "account_id": normalized_account_id,
+            "available": page.available,
+            "complete": page.complete,
+            "records": [record.to_dict() for record in page.records],
+        }
+    )
 
 
 @router.get("/decisions/{decision_id}/model-revision")

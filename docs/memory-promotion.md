@@ -1,8 +1,9 @@
-# Memory Promotion Pipeline（协议层 + observe-only 通道）
+# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面）
 
-> 状态：**Slice A + Slice B1 已落**（`backend/memory/promotion.py` 协议；
+> 状态：**Slice A + Slice B（B1 库 / B2 接线）已落**（`backend/memory/promotion.py` 协议；
 > `promotion_ledger.py` append-only 账本；`promotion_observations.py` Creative Memory style
-> 观测的 observe-only 通道）。Slice B2（管理面/调度接线）/C/D 未实现。
+> 观测的 observe-only 通道；`GET /api/creator-agent/memory-promotions` 只读管理面；
+> `scripts/observe_memory_promotions.py` 真实调用者）。Slice C/D 未实现。
 > 设计依据：`.trellis/tasks/10-21-memory-promotion-pipeline/prd.md`；
 > 现状侦察：同目录 `research/2026-10-21-recon.md`。
 > 路线图出处：`docs/agent-os-upgrade-2026q4.md` §3 第 7 行。
@@ -163,6 +164,32 @@ if decision.disposition is PromotionDisposition.PROMOTE:
 - 返回 `ObservationPass(promotions, ledger_available, recorded)`：`ledger_available=False`
   时决定照做、`recorded=0`——"没配库"不等于"没做决定"，两者必须分开呈现。
 
+### 7.4 管理面与真实调用者（Slice B2）
+
+**只读管理面** `GET /api/creator-agent/memory-promotions?account_id=…&limit=…`：
+
+- 鉴权与同目录的 evidence-proposals 一致：`require_owned_account(user, account_id)`；
+- 返回 `{account_id, available, complete, records[]}`；`records` 是账本行的原样 dict
+  （`PromotionRecord.to_dict`），时间倒序；
+- **只读是结构事实**：账本没有 update/delete 面，这个路由也只有 GET（测试从 router
+  取出该方法集合断言 `{"GET"}`，不是靠约定）；
+- 没配 store 时 `available=false`，不是"没有决定过"。
+
+**真实调用者** `scripts/observe_memory_promotions.py`：
+
+```bash
+python scripts/observe_memory_promotions.py --account-id acc-1            # 记账一次
+python scripts/observe_memory_promotions.py --account-id acc-1 --dry-run  # 只决定不写
+```
+
+- 它读 Creative Memory style 行（`CreativeMemoryObservationSource`）→ `observe_style_promotions`
+  → 把每个判决写进账本；**不写**目标命名空间（晋升仍是 Slice C）。
+- **必须有持久化 store**：没有 `XHS_POSTGRES_URI`/`POSTGRES_URI` 时直接退出码 2，
+  不退回内存 store —— 记录随进程消失与"什么都没决定"无法区分。
+- `--dry-run` 仍然**读**账本（不读当前记录的判决会是不一样的判决），但零写入、`recorded=0`。
+- 输出是 JSON 摘要（`scanned` / `style_candidates` / `ledger_available` / `recorded` /
+  `scan_saturated` / `decisions[]`），便于 cron/人工核对；调度本身属于部署配置。
+
 ## 8. 明确不在这里的东西
 
 - **协议层不读任何存储**：来源行、证据、已有记录都由调用方读好再传；
@@ -172,12 +199,11 @@ if decision.disposition is PromotionDisposition.PROMOTE:
 - **不写目标命名空间、不改 prompt**：Slice B 只记账；Slice C 才第一次晋升；
 - **不接 hy-memory**：Slice D，且初期只产 `REVIEW`；
 - **不做审核 UI**：复用现有 evidence-proposal / learning-signal 面；
-- **没有生产调用者**：`GET` 管理面与调度/CLI 接线是 Slice B2，本片只在测试里驱动
-  `observe_style_promotions`。
+- **不自动调度**：CLI 是真实调用者，但 cron/部署接线属于配置，不在代码里。
 
 ## 9. 下一片
 
-- **B2**：`GET` 只读管理面（本次账本）+ 调度/CLI 调用者（observe-only，仍不写目标命名空间）；
+- ~~B2：`GET` 只读管理面 + 调度/CLI 调用者~~ **已落（票 5t）**；
 - **Slice C**：第一次 `internal_fact` 晋升（`strategy_notes`）+ `context.retrieval` 透传
   `verified` / `source_version` / `ttl_seconds`；**验证必须换成独立重读**，不能复用
   observe-only 的"本轮读到的行即来源"；
