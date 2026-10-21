@@ -308,10 +308,10 @@ L1 只描述**调用形状**，不描述**运行时权限**：`side_effect` / `a
    改成 `orphans == ()`）。与 prompt 覆盖度门禁同口径：
    对计划中的工作失败的门禁，最后会被人关掉。
 
-**为什么只覆盖 `backend/agents/**`：** `backend/api/routes/_wf_actions.py` 仍有一处
-刻意的直调（ripple-retry 路由绕过 health-check/fallback，见「已知残留」），它属
-API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才能让白名单是一个可以
-讲清楚的东西。
+**为什么只覆盖 `backend/agents/**`：** 门禁范围画在"agent 是否绕开运行时"这一条上，
+才能让白名单是一个可以讲清楚的东西。API 层唯一的例外（ripple-retry 直调
+`RippleService.submit_and_wait`）已在票 5p 迁到 Gateway，现在没有任何已知的 API 层
+直调（见「已知残留」）。
 
 ## 加一个新工具
 
@@ -325,11 +325,13 @@ API 层。把门禁范围画到"agent 是否绕开运行时"这一条上，才�
 
 ## 已知残留
 
-- **`backend/api/routes/_wf_actions.py:129`** 的 ripple-retry 路由仍直调
-  `RippleService.submit_and_wait` —— 刻意绕开 health-check 与 fallback。属 API
-  层，门禁不覆盖它；迁移属于后续任务。
-  - 同文件 `:134` 还有**第二处**（PMF 那一支）；本节原先只点了第一处。两处都在
-    `_run_retry()` 里，都走 `ripple.submit_and_wait`，都不经 Gateway。
+- ~~**ripple-retry 路由直调 `RippleService.submit_and_wait`**~~ **已解决（票 5p）**：
+  `_run_retry()` 改经 Gateway 调 `ripple.predict_spread` / `ripple.validate_pmf`，
+  并把"要一次真实模拟"写成 payload 的 `require_live=True`。语义由两个改动接住：
+  服务层对 `use_fallback=False` 的不可用**抛** `RippleUnavailableError`（不再返回
+  `{"error": ...}` 值），集成层把它翻译成 `DomainOutcome("unavailable")` —— 于是
+  "降级体"与"禁止降级时不可用"在调用方是同一个分支，重试不会把零值 fallback 写成
+  新结果，也不会在没有真模拟时动状态。claim 值随之从 2→0、3→2（见下表）。
 - ~~**L1 参数类型是原样反射的**~~ **已解决（票 5o）**：L1 渲染改用统一词表
   `string / integer / number / boolean / object / array / null / any`
   （`schema.py::_TYPE_VOCABULARY`）。两种反射约定都翻译进来（LangChain 的
@@ -357,8 +359,8 @@ L1 归一化那条**曾经**是"设计判断、不进表"：当时没有统一�
 
 | 主张 | 发布的值 | 复核方式 |
 | --- | --- | --- |
-| `api_route_modules_importing_ripple_service` | `3` | AST：`backend/api/routes/*.py` 里 import `RippleService` 的文件数 |
-| `ripple_service_direct_call_sites_in_api_routes` | `2` | 正则：这几个文件里 `ripple.submit_and_wait(` 的出现次数（`backend/api/routes/_wf_actions.py:129` 与 `:147`） |
+| `api_route_modules_importing_ripple_service` | `2` | AST：`backend/api/routes/*.py` 里 import `RippleService` 的文件数（票 5p 起只剩 `_wf_artifacts.py` 与 `system.py` 两个读/探针用途） |
+| `ripple_service_direct_call_sites_in_api_routes` | `0` | 正则：这几个文件里 `ripple.submit_and_wait(` 的出现次数（票 5p 把 `_run_retry()` 的两处迁到 Gateway 后归零） |
 | `tool_gate_allowed_prefix` | `backend.tools.runtime.` | 读 `backend/tools/runtime/audit.py` 的 `_ALLOWED_PREFIX` —— 门禁只覆盖这一个包，本节第一条的前提 |
 | `account_credentials_inserts` | `1` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（与 `publish-action-protocol.md` 同一条事实，**刻意的重复**：两份文档各自要被单独读懂）。票 5n 起唯一那处是扫码登录的 `upsert_credential` |
 

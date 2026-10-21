@@ -55,11 +55,43 @@ from backend.state.events import ACTION_LEASE_REFUSED
 
 _OWNED = AccountRow(id="acc1", name="acc1", is_active=True, owner_user_id="user-test")
 _OTHER_OWNER = "other-host:4242:deadbeef"
-_RIPPLE_SERVICE = "backend.services.ripple_service.RippleService.get_instance"
+_GATEWAY = "backend.tools.runtime.bridge.shared_gateway"
 _RUN_PUBLISH = "backend.api.routes._wf_actions.run_publish"
 _DB_UPSERT = "backend.api.routes._wf_actions._db_upsert"
 _EVENT_BUS = "backend.api.routes._wf_actions.EventBusService"
 _ARTIFACTS = "backend.state.artifacts"
+
+
+def _ok_gateway(observe: Any = None) -> MagicMock:
+    """A Gateway whose two ripple capabilities succeed.
+
+    票 5p moved the retry off ``RippleService`` and onto the Gateway, so the
+    lease observation moves with it: the moment to inspect is now *inside*
+    ``invoke``, one layer up, which is the same moment in wall-clock terms.
+    """
+    from backend.tools.runtime.models import ToolResult
+
+    gateway = MagicMock()
+
+    async def _invoke(
+        capability: str, payload: Any = None, *, thread_id: str = "", **_kwargs: Any
+    ) -> ToolResult:
+        if observe is not None:
+            await observe(capability, payload, thread_id)
+        if capability == "ripple.predict_spread":
+            return ToolResult(
+                capability=capability,
+                ok=True,
+                value={"ripple_prediction": {"viral_probability": 0.4}},
+            )
+        return ToolResult(
+            capability=capability,
+            ok=True,
+            value={"ripple_pmf": {"pmf_score": 0.6}},
+        )
+
+    gateway.invoke = _invoke
+    return gateway
 
 
 @pytest.fixture(autouse=True)
@@ -177,25 +209,18 @@ def _passthrough_artifacts() -> Any:
 
 
 def test_ripple_retry_holds_the_lease_while_the_simulation_runs() -> None:
-    """Observed from inside ``submit_and_wait``, not from the endpoint's reply."""
+    """Observed from inside the Gateway call, not from the endpoint's reply."""
     graph = _ripple_graph()
     seen: dict[str, Any] = {}
     captured: dict[str, Any] = {}
 
-    service = MagicMock()
-
-    async def _submit(*_args: Any, **kwargs: Any) -> dict[str, Any]:
-        seen.setdefault("during", []).append(await leases.get_lease(kwargs["thread_id"]))
-        return {}
-
-    service.submit_and_wait = _submit
-    service._parse_spread_result = lambda _raw: {}
-    service._parse_pmf_result = lambda _raw: {}
+    async def _observe(_capability: str, _payload: Any, thread_id: str) -> None:
+        seen.setdefault("during", []).append(await leases.get_lease(thread_id))
 
     resolve_state, refify_updates = _passthrough_artifacts()
     with (
         _client(graph) as client,
-        patch(_RIPPLE_SERVICE, return_value=service),
+        patch(_GATEWAY, return_value=_ok_gateway(_observe)),
         resolve_state,
         refify_updates,
         patch("backend.api.routes._wf_actions.asyncio", _AsyncioShim(captured)),
@@ -355,13 +380,13 @@ def test_a_live_foreign_owner_stops_the_ripple_retry() -> None:
     graph = _ripple_graph()
     captured: dict[str, Any] = {}
 
-    service = MagicMock()
-    service.submit_and_wait = AsyncMock(return_value={})
+    gateway = _ok_gateway()
+    gateway.invoke = AsyncMock()
 
     resolve_state, refify_updates = _passthrough_artifacts()
     with (
         _client(graph) as client,
-        patch(_RIPPLE_SERVICE, return_value=service),
+        patch(_GATEWAY, return_value=gateway),
         resolve_state,
         refify_updates,
         patch("backend.api.routes._wf_actions.asyncio", _AsyncioShim(captured)),
@@ -372,7 +397,7 @@ def test_a_live_foreign_owner_stops_the_ripple_retry() -> None:
         assert resp.json()["data"]["status"] == "retrying", resp.json()
         _drive(captured)
 
-    assert service.submit_and_wait.await_count == 0, "the simulation ran for a foreign owner"
+    assert gateway.invoke.await_count == 0, "the simulation ran for a foreign owner"
     graph.aupdate_state.assert_not_awaited()
 
     events = asyncio.run(list_events("t1"))

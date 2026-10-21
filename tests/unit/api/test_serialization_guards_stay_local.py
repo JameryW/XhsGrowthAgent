@@ -167,8 +167,36 @@ def test_brief_upload_still_resumes_past_a_foreign_lease(brief_client: TestClien
 # half, so a later "just make it match the sibling" edit has to argue with a
 # failing test rather than a comment.
 
-_RIPPLE_SERVICE = "backend.services.ripple_service.RippleService.get_instance"
+_GATEWAY = "backend.tools.runtime.bridge.shared_gateway"
 _SERIALIZATION_SENTENCE = "工作流正在运行，无法重试。"
+
+
+def _ok_gateway() -> MagicMock:
+    """A Gateway that answers both ripple capabilities successfully.
+
+    This file pins the serialization guard, not the simulations — so the calls
+    are faked at the seam the route now uses (票 5p) rather than at
+    ``RippleService``.
+    """
+    from backend.tools.runtime.models import ToolResult
+
+    gateway = MagicMock()
+
+    async def _invoke(capability: str, *_args: Any, **_kwargs: Any) -> ToolResult:
+        if capability == "ripple.predict_spread":
+            return ToolResult(
+                capability=capability,
+                ok=True,
+                value={"ripple_prediction": {"viral_probability": 0.4}},
+            )
+        return ToolResult(
+            capability=capability,
+            ok=True,
+            value={"ripple_pmf": {"pmf_score": 0.6}},
+        )
+
+    gateway.invoke = _invoke
+    return gateway
 
 
 @pytest.fixture
@@ -247,7 +275,7 @@ def test_ripple_retry_starts_without_taking_the_task_slot(ripple_client: TestCli
     gains an entry and this test fails -- pointing at §7, which explains why the
     three lines are not copyable.
     """
-    with patch(_RIPPLE_SERVICE, return_value=MagicMock()):
+    with patch(_GATEWAY, return_value=_ok_gateway()):
         resp = _retry_ripple(ripple_client)
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["status"] == "retrying", resp.json()
@@ -271,7 +299,7 @@ def test_ripple_retry_still_runs_past_a_foreign_lease(ripple_client: TestClient)
     assert asyncio.run(_runner.has_active_execution("t1")) is True
     assert _runner.process_has_active_task("t1") is False
 
-    with patch(_RIPPLE_SERVICE, return_value=MagicMock()):
+    with patch(_GATEWAY, return_value=_ok_gateway()):
         resp = _retry_ripple(ripple_client)
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["status"] == "retrying", resp.json()

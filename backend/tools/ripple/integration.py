@@ -32,7 +32,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from backend.services.ripple_service import RippleService, RippleTimeoutError
+from backend.services.ripple_service import (
+    RippleService,
+    RippleTimeoutError,
+    RippleUnavailableError,
+)
 from backend.tools.runtime.models import DomainOutcome
 
 logger = logging.getLogger("xhs_growth.tools.ripple")
@@ -83,6 +87,7 @@ async def predict_spread(
     max_wait: float = 1800.0,
     thread_id: str | None = None,
     environment: dict[str, Any] | None = None,
+    require_live: bool = False,
 ) -> dict[str, Any]:
     """预测内容传播效果 — 供 ContentStrategist 和 Copywriter 调用
 
@@ -91,6 +96,11 @@ async def predict_spread(
         max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
         thread_id: 关联的工作流线程 ID，用于推送进度事件
         environment: 环境上下文（竞争格局、季节性、平台趋势），提高 input_completeness
+        require_live: 要一次**真实**模拟，不允许降级答案（票 5p）。默认 ``False``：
+            服务不可用时由 ``_reject_degraded`` 把降级体变成
+            ``DomainOutcome("unavailable")``；为 ``True`` 时服务层直接抛
+            ``RippleUnavailableError``，同样落到这个领域判决上 —— 两条路都不会
+            把"没跑到"答成一个看起来像预测的值。
 
     Returns:
         - ripple_job_id: 模拟任务 ID
@@ -98,7 +108,7 @@ async def predict_spread(
 
     Raises:
         DomainOutcome: ``timeout``（携带 ripple_job_id / max_wait）或
-            ``unavailable``（服务降级）
+            ``unavailable``（服务降级 / 不允许降级时不可用）
     """
     if tags is None:
         tags = []
@@ -116,12 +126,22 @@ async def predict_spread(
             max_wait=max_wait,
             thread_id=thread_id,
             environment=environment,
+            use_fallback=not require_live,
         )
     except RippleTimeoutError as exc:
         # The simulation is still running server-side. Carry its id: cancel and
         # resume both start from it, and it is the reason this is a domain
         # outcome rather than a plain timeout.
         raise DomainOutcome("timeout", ripple_job_id=exc.job_id, max_wait=exc.max_wait) from exc
+    except RippleUnavailableError as exc:
+        # ``require_live`` asked for a real simulation and there was none. This
+        # branch exists so the failure arrives in the *same* vocabulary as the
+        # degraded one above — a caller branches once, not twice.
+        raise DomainOutcome(
+            "unavailable",
+            ripple_reason=exc.reason,
+            ripple_message=exc.message,
+        ) from exc
     return _reject_degraded(result, body_key="ripple_prediction")
 
 
@@ -135,12 +155,14 @@ async def validate_pmf(
     ensemble_runs: int = 1,
     max_wait: float = 1800.0,
     thread_id: str | None = None,
+    require_live: bool = False,
 ) -> dict[str, Any]:
     """验证产品市场契合度 — 供 ContentStrategist 调用
 
     Args:
         max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
         thread_id: 关联的工作流线程 ID，用于推送进度事件
+        require_live: 同 ``predict_spread`` —— 不允许降级答案（票 5p）。
 
     Returns:
         - ripple_job_id: 模拟任务 ID
@@ -148,7 +170,7 @@ async def validate_pmf(
 
     Raises:
         DomainOutcome: ``timeout``（携带 ripple_job_id / max_wait）或
-            ``unavailable``（服务降级）
+            ``unavailable``（服务降级 / 不允许降级时不可用）
     """
     if differentiators is None:
         differentiators = []
@@ -164,9 +186,16 @@ async def validate_pmf(
             ensemble_runs=ensemble_runs,
             max_wait=max_wait,
             thread_id=thread_id,
+            use_fallback=not require_live,
         )
     except RippleTimeoutError as exc:
         raise DomainOutcome("timeout", ripple_job_id=exc.job_id, max_wait=exc.max_wait) from exc
+    except RippleUnavailableError as exc:
+        raise DomainOutcome(
+            "unavailable",
+            ripple_reason=exc.reason,
+            ripple_message=exc.message,
+        ) from exc
     return _reject_degraded(result, body_key="ripple_pmf")
 
 

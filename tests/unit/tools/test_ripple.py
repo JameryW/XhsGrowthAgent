@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.services.ripple_service import RippleTimeoutError
-from backend.tools.ripple.integration import get_report, predict_spread
+from backend.services.ripple_service import RippleTimeoutError, RippleUnavailableError
+from backend.tools.ripple.integration import get_report, predict_spread, validate_pmf
 from backend.tools.runtime import DomainOutcome
 from backend.tools.runtime.catalog import build_registry
 from backend.tools.runtime.gateway import ToolGateway
@@ -203,3 +203,65 @@ async def test_a_degraded_prediction_is_not_filed_as_a_success():
     assert result.error_kind is ErrorKind.DOMAIN
     assert result.domain.get("reason") == "unavailable"
     assert events[-1].get("ok") is False
+
+
+@pytest.mark.asyncio
+async def test_require_live_refuses_the_degraded_answer():
+    """``require_live=True`` 关掉降级，并把"没有真模拟"变成同一个领域判决（票 5p）。
+
+    这是 ripple-retry 迁到 Gateway 的前提：路由不能再靠直调 ``submit_and_wait``
+    来"绕开 fallback" —— 它把意图作为 payload 传下来，服务层对
+    ``use_fallback=False`` 抛 ``RippleUnavailableError``，集成层翻译成
+    ``DomainOutcome("unavailable")``。于是"降级体"与"禁止降级时不可用"在调用方
+    是同一个分支，而不是两种形状。
+    """
+    from backend.services.ripple_service import RippleUnavailableError
+
+    service = _service(predict_spread=AsyncMock(side_effect=RippleUnavailableError("unreachable")))
+
+    outcome: object = "not raised"
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        try:
+            await predict_spread(topic="测试话题", require_live=True)
+        except Exception as exc:  # judged below; a different exception is a contract failure
+            outcome = exc
+
+    assert isinstance(outcome, DomainOutcome), outcome
+    assert outcome.reason == "unavailable"
+    assert outcome.payload["ripple_reason"] == "unreachable"
+    assert service.predict_spread.await_args.kwargs.get("use_fallback") is False
+
+
+@pytest.mark.asyncio
+async def test_the_pmf_capability_carries_the_same_intent():
+    """``require_live`` 在两支能力上同义 —— 路由并发调它们，语义不能一支一半。"""
+    service = _service(validate_pmf=AsyncMock(side_effect=RippleUnavailableError("unreachable")))
+
+    outcome: object = "not raised"
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        try:
+            await validate_pmf("产品", "品类", "描述", require_live=True)
+        except Exception as exc:
+            outcome = exc
+
+    assert isinstance(outcome, DomainOutcome), outcome
+    assert outcome.reason == "unavailable"
+    assert outcome.payload["ripple_reason"] == "unreachable"
+    assert service.validate_pmf.await_args.kwargs.get("use_fallback") is False
+
+
+@pytest.mark.asyncio
+async def test_the_default_path_keeps_the_service_able_to_degrade():
+    """没有 ``require_live`` 的调用方（agents）行为不变：允许降级体并由集成层拒绝。"""
+    service = _service(
+        predict_spread=AsyncMock(return_value={"ripple_prediction": {"viral_probability": 0.3}})
+    )
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        result = await predict_spread(topic="测试话题")
+
+    assert result["ripple_prediction"]["viral_probability"] == 0.3
+    assert service.predict_spread.await_args.kwargs.get("use_fallback") is True

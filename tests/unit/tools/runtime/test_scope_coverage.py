@@ -89,12 +89,20 @@ UNCHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {}
 # skipped. They are listed so that "eleven unchecked sites" cannot be quoted as
 # "eleven debts", and so that adding a scope to any of these capabilities has to
 # move its call sites across rather than leave them silently uncounted.
+# 票 5p added the two API call sites: ripple-retry invokes the same two
+# capabilities through the Gateway, so they are front-door callers too.
 UNSCOPED_CALL_SITES: dict[str, tuple[str, ...]] = {
     "content.algorithmic_de_ai": ("backend/agents/copywriter.py",),
     "content.polish_copy": ("backend/agents/copywriter.py",),
     "ripple.get_report": ("backend/agents/analyst.py",),
-    "ripple.predict_spread": ("backend/agents/content_strategist.py",),
-    "ripple.validate_pmf": ("backend/agents/content_strategist.py",),
+    "ripple.predict_spread": (
+        "backend/agents/content_strategist.py",
+        "backend/api/routes/_wf_actions.py",
+    ),
+    "ripple.validate_pmf": (
+        "backend/agents/content_strategist.py",
+        "backend/api/routes/_wf_actions.py",
+    ),
     "search.fetch": ("backend/agents/trend_scout.py",),
     "search.web": ("backend/agents/trend_scout.py",),
 }
