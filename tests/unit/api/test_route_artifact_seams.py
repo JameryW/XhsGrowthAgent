@@ -398,6 +398,19 @@ def test_ripple_retry_writeback_goes_through_write_seam():
     captured: dict[str, Any] = {}
     real_create_task = asyncio.create_task
 
+    from backend.tools.runtime.models import ToolResult
+
+    gateway = MagicMock()
+
+    async def _invoke(capability: str, *_args: Any, **_kwargs: Any) -> ToolResult:
+        if capability == "ripple.predict_spread":
+            return ToolResult(
+                capability=capability, ok=True, value={"ripple_prediction": pred_body}
+            )
+        return ToolResult(capability=capability, ok=True, value={"ripple_pmf": pmf_body})
+
+    gateway.invoke = AsyncMock(side_effect=_invoke)
+
     def _fake_create_task(coro: Any, **kwargs: Any) -> Any:
         # Capture only the route's background body; delegate everything else
         # (TestClient/anyio internals) to the real create_task.
@@ -409,17 +422,12 @@ def test_ripple_retry_writeback_goes_through_write_seam():
         return real_create_task(coro, **kwargs)
 
     with (
-        patch("backend.services.ripple_service.RippleService") as mock_service,
+        patch("backend.tools.runtime.bridge.shared_gateway", return_value=gateway),
         patch(
             "backend.api.routes._wf_application.asyncio.create_task",
             side_effect=_fake_create_task,
         ),
     ):
-        ripple = mock_service.get_instance.return_value
-        ripple.submit_and_wait = AsyncMock(return_value={"raw": "payload"})
-        ripple._parse_spread_result = MagicMock(return_value={"ripple_prediction": pred_body})
-        ripple._parse_pmf_result = MagicMock(return_value={"ripple_pmf": pmf_body})
-
         resp = client.post("/api/workflow/ripple-retry/t1")
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"]["status"] == "retrying"
@@ -427,9 +435,9 @@ def test_ripple_retry_writeback_goes_through_write_seam():
         # Drive the captured background coroutine to completion in-scope.
         asyncio.run(captured["coro"])
 
-    # The read seam mattered: the retry reached the service (it only gets past
-    # the fallback check via the RESOLVED stale prediction), once per simulation.
-    assert ripple.submit_and_wait.await_count == 2
+    # The read seam mattered: the retry reached the simulations (it only gets past
+    # the fallback check via the RESOLVED stale prediction), once per capability.
+    assert gateway.invoke.await_count == 2
 
     # Write seam: bodies stored, payload carries refs, not the inline bodies.
     written = graph.aupdate_state.await_args.args[1]

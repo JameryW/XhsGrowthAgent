@@ -12,6 +12,7 @@ from backend.services.ripple_service import (
     RippleHealthStatus,
     RippleService,
     RippleTimeoutError,
+    RippleUnavailableError,
 )
 
 
@@ -195,14 +196,48 @@ class TestRippleServicePredict:
 
     @pytest.mark.asyncio
     async def test_predict_spread_without_fallback(self):
-        """服务不可用时返回错误"""
+        """服务不可用且禁止降级 → 抛异常，不给 {"error"} 值（票 5p）。
+
+        旧行为是把不可用答成一个 dict —— 调用方必须知道形状才能分辨
+        "失败"与"数据"，而 Gateway 会把它记成 ok=True。
+        """
         service = RippleService()
         service._health_status = RippleHealthStatus(is_healthy=False)
 
-        with patch.object(service, "_get_config", return_value={"enabled": True}):
-            result = await service.predict_spread("测试话题", use_fallback=False)
-            assert "error" in result
-            assert "unavailable" in result["error"]
+        with (
+            patch.object(service, "_get_config", return_value={"enabled": True}),
+            patch.object(service, "_probe_before_fallback", AsyncMock(return_value=False)),
+            pytest.raises(RippleUnavailableError) as excinfo,
+        ):
+            await service.predict_spread("测试话题", use_fallback=False)
+        assert excinfo.value.reason == "unreachable"
+
+    @pytest.mark.asyncio
+    async def test_validate_pmf_without_fallback(self):
+        """PMF 同一条纪律：禁止降级时不可用是异常，不是值。"""
+        service = RippleService()
+        service._health_status = RippleHealthStatus(is_healthy=False)
+
+        with (
+            patch.object(service, "_get_config", return_value={"enabled": True}),
+            patch.object(service, "_probe_before_fallback", AsyncMock(return_value=False)),
+            pytest.raises(RippleUnavailableError),
+        ):
+            await service.validate_pmf("产品", "品类", "描述", use_fallback=False)
+
+    @pytest.mark.asyncio
+    async def test_a_failed_submit_without_fallback_raises(self):
+        """请求阶段失败也一样：没有降级选项时，失败必须抛，不能变成值。"""
+        service = RippleService()
+        service._health_status = RippleHealthStatus(is_healthy=True)
+
+        with (
+            patch.object(service, "_get_config", return_value={"enabled": True}),
+            patch.object(service, "submit_and_wait", AsyncMock(side_effect=RuntimeError("boom"))),
+            pytest.raises(RippleUnavailableError) as excinfo,
+        ):
+            await service.predict_spread("测试话题", use_fallback=False)
+        assert "boom" in excinfo.value.message
 
 
 class TestRippleServiceParse:

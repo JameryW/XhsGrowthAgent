@@ -26,6 +26,22 @@ class RippleTimeoutError(TimeoutError):
         super().__init__(f"Ripple simulation {job_id} did not complete within {max_wait}s")
 
 
+class RippleUnavailableError(RuntimeError):
+    """服务不可用，而调用方明确**不允许**降级答案（``use_fallback=False``）。
+
+    ``use_fallback=False`` 是"要一次真实模拟"的模式；这时把不可用答成
+    ``{"error": ...}`` 值（或零值 fallback）会让"失败"和"数据"在调用边界上
+    同形，读者必须知道具体形状才分得清（票 5p 的起点）。抛出来把两种答案
+    在边界上分开，integration 层再把它变成 ``DomainOutcome("unavailable")``
+    —— 那是运行时给"领域自己的判决"留的通道。
+    """
+
+    def __init__(self, reason: str, *, message: str = ""):
+        self.reason = reason
+        self.message = message or reason
+        super().__init__(self.message)
+
+
 # ponytail: 残留进度过期阈值——max_wait(1800s) 的 94%。超过仍 running 视为
 # 超时未收尾的历史残留，get_thread_progress 据此清理（兜底主修法之外的旧数据）
 _STALE_PROGRESS_SECS = 1700.0
@@ -608,15 +624,15 @@ class RippleService:
         if not config["enabled"] or not self.is_healthy():  # noqa: SIM102
             # Probe before falling back — service may have recovered since last check
             if not config["enabled"] or not await self._probe_before_fallback():
+                reason = (
+                    "disabled"
+                    if not config["enabled"]
+                    else self._health_status.reason or "unreachable"
+                )
                 if use_fallback:
-                    reason = (
-                        "disabled"
-                        if not config["enabled"]
-                        else self._health_status.reason or "unreachable"
-                    )
                     logger.info(f"Ripple unavailable (reason={reason}), using fallback prediction")
                     return self._default_spread_prediction()
-                return {"error": "Ripple service unavailable"}
+                raise RippleUnavailableError(reason)
 
         try:
             event: dict[str, Any] = {
@@ -651,7 +667,7 @@ class RippleService:
             logger.error(f"Ripple spread prediction failed: {type(e).__name__}: {e}")
             if use_fallback:
                 return self._default_spread_prediction()
-            return {"error": str(e)}
+            raise RippleUnavailableError(type(e).__name__, message=str(e)) from e
 
     async def validate_pmf(
         self,
@@ -691,15 +707,15 @@ class RippleService:
         if not config["enabled"] or not self.is_healthy():  # noqa: SIM102
             # Probe before falling back — service may have recovered since last check
             if not config["enabled"] or not await self._probe_before_fallback():
+                reason = (
+                    "disabled"
+                    if not config["enabled"]
+                    else self._health_status.reason or "unreachable"
+                )
                 if use_fallback:
-                    reason = (
-                        "disabled"
-                        if not config["enabled"]
-                        else self._health_status.reason or "unreachable"
-                    )
                     logger.info(f"Ripple unavailable (reason={reason}), using fallback PMF")
                     return self._default_pmf_result()
-                return {"error": "Ripple service unavailable"}
+                raise RippleUnavailableError(reason)
 
         try:
             event = {
@@ -731,7 +747,7 @@ class RippleService:
             logger.error(f"Ripple PMF validation failed: {type(e).__name__}: {e}")
             if use_fallback:
                 return self._default_pmf_result()
-            return {"error": str(e)}
+            raise RippleUnavailableError(type(e).__name__, message=str(e)) from e
 
     async def submit_simulation(self, request_body: dict[str, Any]) -> dict[str, Any]:
         """提交模拟任务，返回含 job_id 的响应"""

@@ -146,9 +146,6 @@ async def retry_ripple_analysis(
             }
         )
 
-    from backend.services.ripple_service import RippleService, RippleTimeoutError
-
-    ripple = RippleService.get_instance()
     ripple_timeout = 1800.0
 
     async def _run_retry() -> None:
@@ -167,66 +164,84 @@ async def retry_ripple_analysis(
                     )
                     return
                 print(f"[ripple-retry] Started for {thread_id}, topic={topic}", flush=True)
+                # Retry means "run a real simulation again", so the capabilities
+                # are asked with ``require_live=True``: the degraded answer is a
+                # domain outcome, not data, and nothing is written unless both
+                # simulations actually ran (票 5p). These used to be two direct
+                # ``submit_and_wait`` calls under a comment saying the same thing
+                # — the Gateway now carries that intent, so timeout/retry/trace
+                # apply to these two calls like every other tool call.
+                from backend.tools.runtime.bridge import shared_gateway
+
+                gateway = shared_gateway()
                 try:
-                    # Bypass health-check/fallback — retry means we want a real simulation
-                    pred_task = ripple.submit_and_wait(
-                        {
-                            "skill": "social-media",
-                            "platform": "xiaohongshu",
-                            "event": {
+                    pred_result, pmf_result = await asyncio.gather(
+                        gateway.invoke(
+                            "ripple.predict_spread",
+                            {
                                 "topic": topic,
                                 "content_type": content_plan.get("content_type", "note"),
                                 "tags": content_plan.get("hashtags", []),
                                 "tone": content_plan.get("content_angle", ""),
                                 "description": content_plan.get("content_angle", ""),
+                                "max_waves": 3,
+                                "simulation_horizon": "12h",
+                                "ensemble_runs": 1,
+                                "max_wait": ripple_timeout,
+                                "thread_id": thread_id,
+                                "require_live": True,
                             },
-                            "max_waves": 3,
-                            "simulation_horizon": "12h",
-                            "ensemble_runs": 1,
-                        },
-                        max_wait=ripple_timeout,
-                        thread_id=thread_id,
-                    )
-                    pmf_task = ripple.submit_and_wait(
-                        {
-                            "skill": "pmf-validation",
-                            "channel": "content-seeding",
-                            "vertical": "fmcg",
-                            "platform": "xiaohongshu",
-                            "event": {
-                                "name": content_plan.get("selected_topic", ""),
+                            thread_id=thread_id,
+                        ),
+                        gateway.invoke(
+                            "ripple.validate_pmf",
+                            {
+                                "product_name": content_plan.get("selected_topic", ""),
                                 "category": content_plan.get("category", ""),
                                 "description": content_plan.get("content_angle", ""),
                                 "differentiators": content_plan.get("key_points", []),
+                                "max_waves": 3,
+                                "simulation_horizon": "12h",
+                                "ensemble_runs": 1,
+                                "max_wait": ripple_timeout,
+                                "thread_id": thread_id,
+                                "require_live": True,
                             },
-                            "max_waves": 3,
-                            "simulation_horizon": "12h",
-                            "ensemble_runs": 1,
-                        },
-                        max_wait=ripple_timeout,
-                        thread_id=thread_id,
+                            thread_id=thread_id,
+                        ),
                     )
-                    raw_pred, raw_pmf = await asyncio.gather(pred_task, pmf_task)
-                    print(f"[ripple-retry] Simulations completed for {thread_id}", flush=True)
-
-                    pred = ripple._parse_spread_result(raw_pred)
-                    pmf_result = ripple._parse_pmf_result(raw_pmf)
-                except (RippleTimeoutError, TimeoutError):
-                    logger.warning("Ripple retry timed out for %s", thread_id)
-                    return
                 except Exception as e:
                     print(
                         f"[ripple-retry] FAILED for {thread_id}: {type(e).__name__}: {e}",
                         flush=True,
                     )
                     return
+                if not pred_result.ok or not pmf_result.ok:
+                    logger.warning(
+                        "Ripple retry did not complete for %s: %s",
+                        thread_id,
+                        [
+                            (
+                                result.capability,
+                                result.error_kind.value if result.error_kind else "",
+                                result.error,
+                            )
+                            for result in (pred_result, pmf_result)
+                            if not result.ok
+                        ],
+                    )
+                    return
+                print(f"[ripple-retry] Simulations completed for {thread_id}", flush=True)
+
+                pred = pred_result.value if isinstance(pred_result.value, dict) else {}
+                pmf_result_data = pmf_result.value if isinstance(pmf_result.value, dict) else {}
 
                 # Update workflow state with new Ripple results
                 updates: dict[str, Any] = {}
                 ripple_pred_data = pred.get("ripple_prediction")
                 if ripple_pred_data:
                     updates["ripple_prediction"] = ripple_pred_data
-                ripple_pmf_data = pmf_result.get("ripple_pmf")
+                ripple_pmf_data = pmf_result_data.get("ripple_pmf")
                 if ripple_pmf_data:
                     updates["ripple_pmf"] = ripple_pmf_data
 
@@ -237,7 +252,7 @@ async def retry_ripple_analysis(
                 else:
                     reason = (
                         pred.get("ripple_reason")
-                        or pmf_result.get("ripple_reason")
+                        or pmf_result_data.get("ripple_reason")
                         or "unreachable"
                     )
                     updates["ripple_reason"] = reason

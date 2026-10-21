@@ -197,35 +197,67 @@ def _registrations(path: Path, target: str) -> int:
 
 
 def _submits_are_concurrent(path: Path, target: str) -> bool:
-    """True when every ``.submit_and_wait`` result is consumed by ONE ``gather``.
+    """True when every ripple simulation is consumed by ONE ``gather``.
 
     This is the whole difference between a 1800 s window and 3600 s, and it is
     not readable from the two call sites -- both spellings look identical.  A
     sequential pair answers ``False`` here, which is what makes the ``true``
     claim a claim rather than a constant.
+
+    Two shapes are accepted because the tree moved once (票 5p).  The retry used
+    to bind two ``RippleService.submit_and_wait`` awaitables to names and gather
+    those names; it now spells the two simulations as ``gateway.invoke`` calls
+    inside one ``gather``.  The question -- overlapped or sequential -- is the
+    same, so the scan counts *simulation calls* (either spelling) and asks
+    whether a single ``gather`` consumes all of them.
     """
+
+    def _is_simulation(call: ast.Call) -> bool:
+        callee = _callee(call)
+        if callee == "submit_and_wait":
+            return True
+        # ``gateway.invoke("ripple.<capability>", ...)`` -- only ripple ids are
+        # the simulations this claim is about.
+        if callee == "invoke" and call.args and isinstance(call.args[0], ast.Constant):
+            return isinstance(call.args[0].value, str) and call.args[0].value.startswith("ripple.")
+        return False
+
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for func in _functions(tree):
         if func.name != target:
             continue
-        submitted: set[str] = set()
-        for node in ast.walk(func):
-            if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
-                continue
-            if _callee(node.value) != "submit_and_wait":
-                continue
-            for target_node in node.targets:
-                if isinstance(target_node, ast.Name):
-                    submitted.add(target_node.id)
-        if not submitted:
+        calls = {
+            id(node): node
+            for node in ast.walk(func)
+            if isinstance(node, ast.Call) and _is_simulation(node)
+        }
+        if len(calls) < 2:
             return False
-        gathered: set[str] = set()
+        # name each simulation call may be bound to
+        bound: dict[int, str] = {}
         for node in ast.walk(func):
-            if isinstance(node, ast.Call) and _callee(node) == "gather":
-                for arg in node.args:
-                    if isinstance(arg, ast.Name):
-                        gathered.add(arg.id)
-        return submitted <= gathered
+            if (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Call)
+                and id(node.value) in calls
+            ):
+                for target_node in node.targets:
+                    if isinstance(target_node, ast.Name):
+                        bound[id(node.value)] = target_node.id
+        # each gather's coverage of the simulations
+        for node in ast.walk(func):
+            if not (isinstance(node, ast.Call) and _callee(node) == "gather"):
+                continue
+            consumed: set[int] = set()
+            for arg in node.args:
+                if isinstance(arg, ast.Call) and id(arg) in calls:
+                    consumed.add(id(arg))
+                elif isinstance(arg, ast.Name):
+                    consumed.update(call_id for call_id, name in bound.items() if name == arg.id)
+            if consumed == set(calls):
+                return True
+        return False
+
     raise AssertionError(f"no function named {target} in {path.name}")
 
 
@@ -1404,8 +1436,13 @@ def test_the_concurrency_scan_answers_false_for_sequential_submits(tmp_path: Pat
 
     Without this fixture the claim could be a constant: a scan hard-wired to
     ``return True`` would publish the same value.  The sequential sample is the
-    discriminating half -- same two ``submit_and_wait`` calls, awaited one after
-    the other, which is a 3600 s window rather than an 1800 s one.
+    discriminating half -- same two simulations, awaited one after the other,
+    which is a 3600 s window rather than an 1800 s one.
+
+    Two gathered shapes are pinned because the tree moved once (票 5p): the
+    named-awaitable spelling the route used, and the inline
+    ``gateway.invoke("ripple.*")`` spelling it uses now.  Both are concurrent;
+    only the sample that awaits separately may answer ``False``.
     """
     root = _pkg(tmp_path)
     gathered = _write(
@@ -1415,6 +1452,15 @@ def test_the_concurrency_scan_answers_false_for_sequential_submits(tmp_path: Pat
         "    pred_task = ripple.submit_and_wait({})\n"
         "    pmf_task = ripple.submit_and_wait({})\n"
         "    raw_pred, raw_pmf = await asyncio.gather(pred_task, pmf_task)\n",
+    )
+    inline = _write(
+        root,
+        "inline.py",
+        "async def _run_retry():\n"
+        "    pred = await asyncio.gather(\n"
+        '        gateway.invoke("ripple.predict_spread", {}),\n'
+        '        gateway.invoke("ripple.validate_pmf", {}),\n'
+        "    )\n",
     )
     sequential = _write(
         root,
@@ -1426,6 +1472,7 @@ def test_the_concurrency_scan_answers_false_for_sequential_submits(tmp_path: Pat
         "    raw_pmf = await pmf_task\n",
     )
     assert _submits_are_concurrent(gathered, "_run_retry") is True
+    assert _submits_are_concurrent(inline, "_run_retry") is True
     assert _submits_are_concurrent(sequential, "_run_retry") is False
 
 
