@@ -1,12 +1,13 @@
 # Memory Promotion Pipeline（设计 PRD）
 
-> 状态：**设计已定，尚未实现**。本任务只产出 PRD + 侦察记录，不写运行时代码；
-> 实现按 §6 的切片另开任务，每片单独 PR。
+> 状态：**Slice A 已落**（票 5r：`backend/memory/promotion.py` + 测试 + `docs/memory-promotion.md`）；
+> Slice B/C/D 未实现，按 §6 另开任务，每片单独 PR。
 >
 > 依据：`docs/agent-os-upgrade-2026q4.md` §3 差距矩阵第 7 行 ——
 > 「hy-memory 有 LLM 抽取 + reconciler，无『来源验证→去重→晋升』显式流水线」❌ 缺（P1/P2）。
 >
 > 侦察记录（每条判断的出处）：`research/2026-10-21-recon.md`
+> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12
 
 ## 1. Goal
 
@@ -115,10 +116,12 @@ PromotionDecision(frozen)
 ## 6. 切片（按顺序，每片独立可交付）
 
 - **Slice A — 纯协议（observe-only）**
-  `backend/memory/promotion.py`：上述 dataclass、枚举、`decide_promotion(candidate, *, existing, policy)`
-  纯函数；无 I/O、无全局状态、确定性。测试：每个 reason 至少一条；同输入两跑逐字节一致；
-  未知 `TrustClass` → `REVIEW`；`internal_fact` 但无 `source_version` → `REFUSE`。
+  `backend/memory/promotion.py`：上述 dataclass、枚举、`decide_promotion(candidate, *,
+  source, existing, policy)` 纯函数；无 I/O、无全局状态、确定性。测试：每个 reason 至少
+  一条；同输入两跑逐字节一致；非 machine-promotable 类 → `REVIEW`；`internal_fact` 但无
+  `source_version` → `REFUSE`。
   验收：`tests/` 全绿且 **context baseline 漂移 0**（本片不产生任何 prompt 文本）。
+  **已落（票 5r）**：实现形态见 §12 与 `docs/memory-promotion.md`。
 - **Slice B — ledger + 真候选（observe-only）**
   append-only promotion 记录（`accounts/{account}/memory_promotions` 或 Postgres 表，二选一，
   见 §9 Q5）+ reader + `GET` 管理面（只读）；接一个真实候选源（Creative Memory observations）
@@ -191,3 +194,21 @@ PromotionDecision(frozen)
 - 每片 PR 描述必须写「改了什么 / 证据数字（来自复算，不是估计）/ 没做什么」。
 - Slice A 完成后，把本 PRD 的「状态」改为进行中并链接 PR；全部落地后把
   `agent-os-upgrade-2026q4.md` 第 7 行改成已满足，并把本任务归档。
+
+## 12. Slice A 实现记录（票 5r）—— 与本节初稿的差异
+
+实现时对 §4/§5 的初稿做了以下几处修正，理由都写在 `docs/memory-promotion.md`：
+
+| 初稿 | 实现 | 理由 |
+|---|---|---|
+| `SOURCE_UNREADABLE` 拒因 | **移除** | reader 读失败 = 异常上抛；把它做成拒因会让"失败"与"拒绝"同形（违反本仓「失败不是数据」） |
+| 未列 `SOURCE_UNVERSIONED` | 新增 | "没有版本"可判定（`candidate.source_version` 为空）→ REFUSE；来源 present 但无版本是**非法输入**（`ValueError`，由 `SourceCheck.__post_init__` 保证） |
+| 未列 `SOURCE_STALE` 的两种用法 | 合并为一个拒因 | ①来源版本 ≠ 候选版本（REVIEW）；②候选比已存记录旧（REVIEW）。两者语义都是"不新鲜" |
+| 未列 `POLICY_BLOCKED` | 新增 | policy 白名单是真实配置面；不设它 Slice C 的目标命名空间就只能靠调用方自律 |
+| 未列 `VERIFIED_INTERNAL_FACT` / `SUPERSEDES_OLDER` | 新增 | 正向判决也需要封闭 reason，否则"为什么 promote"无法记账 |
+| `dedupe` 只有 4 值 | 加 `NOT_EVALUATED` | "没去看"与"看了是新的"必须分开（ledger 不能把两者读成一件事） |
+| `decide_promotion(candidate, *, existing, policy)` | `decide_promotion(candidate, *, source, existing, policy)` | verify 的事实必须显式传入；函数保持纯，不读存储 |
+
+最终交付：`backend/memory/promotion.py`（12 个 reason 全可达、确定性、非法输入 ValueError、
+无 except）、`tests/unit/memory/test_promotion.py`（42 条）、`docs/memory-promotion.md`。
+Slice A 不产生任何 prompt 文本，context baseline 零漂移。

@@ -3,7 +3,7 @@
   "name": "memory-promotion-pipeline",
   "title": "Memory Promotion Pipeline",
   "description": "Design PRD for the missing memory promotion pipeline: verify -> dedupe -> promote, closed reason vocabulary, append-only ledger, observe-only first slices. PRD only; implementation lands as separate tasks per slice.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "backend/memory,backend/context,docs",
   "package": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "依据 docs/agent-os-upgrade-2026q4.md 差距矩阵第 7 行；侦察记录见 research/2026-10-21-recon.md。本任务不写运行时代码（Phase 1 交付物），实现按 prd.md §6 切片另开任务。",
+  "notes": "PRD 已定（票 5q）；Slice A 协议已落（票 5r：backend/memory/promotion.py + tests/unit/memory/test_promotion.py + docs/memory-promotion.md）。Slice B（ledger）/C（首次 internal_fact 晋升）/D（hy 候选 REVIEW-only）待落，其中 B 依赖 PRD §9 Q5（ledger 存储选型）裁决。",
   "meta": {}
 }
