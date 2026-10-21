@@ -1,14 +1,14 @@
 # Memory Promotion Pipeline（设计 PRD）
 
-> 状态：**Slice A + Slice B1 已落**（票 5r：决策协议；票 5s：append-only ledger +
-> Creative Memory style 观测的 observe-only 通道）；Slice B2（管理面/调度接线）/C/D 未实现，
-> 按 §6 另开任务，每片单独 PR。
+> 状态：**Slice A + Slice B（B1 库 / B2 接线）已落**（票 5r：决策协议；票 5s：append-only
+> ledger + Creative Memory style 观测的 observe-only 通道；票 5t：只读管理面 + 真实
+> 调用者 CLI）。Slice C/D 未实现，按 §6 另开任务，每片单独 PR。
 >
 > 依据：`docs/agent-os-upgrade-2026q4.md` §3 差距矩阵第 7 行 ——
 > 「hy-memory 有 LLM 抽取 + reconciler，无『来源验证→去重→晋升』显式流水线」❌ 缺（P1/P2）。
 >
 > 侦察记录（每条判断的出处）：`research/2026-10-21-recon.md`
-> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12 / §13
+> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12 / §13 / §14
 
 ## 1. Goal
 
@@ -128,8 +128,10 @@ PromotionDecision(frozen)
   reader + `GET` 管理面（只读）；接一个真实候选源（Creative Memory observations）
   **只记账、不写同命名空间**。验收：prompt 输出逐字节不变；账本无 update/delete API。
   **B1 已落（票 5s）**：ledger（`promotion_ledger.py`）+ Creative Memory **style** 观测的
-  observe-only 通道（`promotion_observations.py`）；`GET` 管理面与调度接线归 **B2**。
-  实现形态见 §13 与 `docs/memory-promotion.md` §7。
+  observe-only 通道（`promotion_observations.py`）；
+  **B2 已落（票 5t）**：只读管理面 `GET /api/creator-agent/memory-promotions` + 真实调用者
+  `scripts/observe_memory_promotions.py`（`--dry-run` 只读账本零写入；无持久化 store 明确
+  退出，不退回内存）。实现形态见 §13 / §14 与 `docs/memory-promotion.md` §7。Slice B 完成。
 - **Slice C — 第一次晋升（`internal_fact` only）**
   把通过 §5.1/§5.2 的 measured 观测晋升进 `strategy_notes`（只这一个命名空间）；同时让
   `context.retrieval.item_to_context_item` **透传** `verified` / `source_version` / `ttl_seconds`
@@ -241,3 +243,18 @@ PromotionDecision(frozen)
 `tests/unit/memory/test_promotion_ledger.py`（12）、`test_promotion_observations.py`（13）、
 文档 `docs/memory-promotion.md` §7。prompt 输出零变化。
 Slice A 不产生任何 prompt 文本，context baseline 零漂移。
+
+## 14. Slice B2 实现记录（票 5t）
+
+| 项 | 实现 | 取舍 |
+|---|---|---|
+| 管理面 | `GET /api/creator-agent/memory-promotions`（挂在既有 creator-agent router） | 复用同一鉴权/响应面；不在 `backend/memory` 里造 HTTP 依赖 |
+| 响应 | `{account_id, available, complete, records[to_dict]}` | 两个事实分开：`available`（没配 store）与 `complete`（页满） |
+| 只读 | 路由只有 GET；测试从 router 的方法集合断言 `{"GET"}` | "只读"是结构事实，不是约定 |
+| 鉴权 | `require_owned_account(user, account_id)` 在账本读取之前 | 与 evidence-proposals 同一条作用域规则 |
+| 调用者 | `scripts/observe_memory_promotions.py`：`--account-id` / `--window` / `--dry-run` | cron/调度属于部署配置，代码只提供可重复的 pass |
+| 持久化要求 | 无 `XHS_POSTGRES_URI`/`POSTGRES_URI` → 退出码 2 | 不退回内存 store：记录随进程消失 ="什么都没决定" |
+| dry-run | 仍读账本（当前记录影响判决），`record=False` 零写入、`recorded=0` | 为此给 `observe_style_promotions` 加了 `record: bool = True`（默认行为不变） |
+| 测试 | 路由 6、CLI pass 8（含 dry-run / 无 store / saturated / 校验 / CLI 拒跑） | 校验用 outcome 断言，避免下游 store 的报错替本层背书 |
+
+文档 `docs/memory-promotion.md` §7.4。prompt 输出仍零变化；Slice B 至此完成。
