@@ -175,11 +175,13 @@ pro/lite 全链路读写召回、适配器、agent 接线、降级路径、多�
 仓库侧没有"这条抽取出来的记忆凭什么可信 / 与已有记忆重复吗 / 该不该进 prompt"的判断。
 `docs/agent-os-upgrade-2026q4.md` §3 第 7 行把这个缺口记为「Memory Promotion Pipeline」。
 
-**Slice A + Slice B 已落**（票 5r / 5s / 5t）：纯决策协议 `backend/memory/promotion.py`、
-append-only 账本 `backend/memory/promotion_ledger.py`、Creative Memory style 观测的
-observe-only 通道 `backend/memory/promotion_observations.py`、只读管理面
-`GET /api/creator-agent/memory-promotions` 与调用者 `scripts/observe_memory_promotions.py`，
-文档 `docs/memory-promotion.md`；C（首次晋升）/D（hy 候选接同一闸门）未实现。
+**Slice A + Slice B + Slice C 已落**（票 5r / 5s / 5t / 5u）：纯决策协议
+`backend/memory/promotion.py`、append-only 账本 `promotion_ledger.py`、Creative Memory style
+观测的 observe-only 通道 `promotion_observations.py`、只读管理面
+`GET /api/creator-agent/memory-promotions` 与调用者 `scripts/observe_memory_promotions.py`、
+独立重读验证 `promotion_source.py`、首次晋升 `promotion_apply.py`（`strategy_notes`）与
+retrieval provenance 透传，文档 `docs/memory-promotion.md`；D（hy 候选接同一闸门）未实现 ——
+**hy-memory 抽取的记忆目前仍不经过本闸门**，这是 D 片才接上的。
 
 - PRD：`.trellis/tasks/10-21-memory-promotion-pipeline/prd.md`
   （verify → dedupe → promote 三段、封闭拒因词表、append-only ledger、observe-only 先行的切片）；

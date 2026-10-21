@@ -30,6 +30,7 @@ import sys
 from typing import Any
 
 from backend.memory.creator_agent_observations import CreativeMemoryObservationSource
+from backend.memory.promotion_apply import promote_style_observations
 from backend.memory.promotion_ledger import PromotionLedger
 from backend.memory.promotion_observations import observe_style_promotions
 
@@ -42,50 +43,101 @@ async def run_observation_pass(
     account_id: str,
     window: int = _DEFAULT_WINDOW,
     dry_run: bool = False,
+    apply: bool = False,
     source: Any | None = None,
+    verification_source: Any | None = None,
+    recorded_at: str | None = None,
 ) -> dict[str, Any]:
-    """One observe-only pass over ``account_id``; returns the printed summary.
+    """One pass over ``account_id``; returns the printed summary.
 
-    ``store`` and ``source`` are injected so the pass is testable without
-    Postgres; the CLI below is the only place that constructs real ones.
+    ``apply=False`` (default) is the observe-only pass: decisions are recorded in
+    the ledger, nothing is written to the target namespace. ``apply=True`` is
+    Slice C: the source is re-read independently, and a ``PROMOTE`` is recorded
+    and then written into ``strategy_notes``.
+
+    ``store`` / ``source`` / ``verification_source`` are injected so the pass is
+    testable without Postgres; the CLI below is the only place that constructs
+    real ones.
     """
     account_id = (account_id or "").strip()
     if not account_id:
         raise ValueError("account_id must be a non-empty string")
     if window < 1:
         raise ValueError("window must be >= 1")
+    if apply and dry_run:
+        raise ValueError("apply and dry_run are mutually exclusive")
 
     observer = source if source is not None else CreativeMemoryObservationSource()
     scan = await observer.observations(account_id, window=window)
     observations = list(scan.observations)
 
+    ledger = PromotionLedger(store)
+    summary: dict[str, Any] = {
+        "account_id": account_id,
+        "mode": "apply" if apply else "observe",
+        "dry_run": dry_run,
+        "scanned": len(observations),
+        "scan_saturated": bool(scan.saturated),
+    }
+    if apply:
+        application = await promote_style_observations(
+            ledger,
+            store,
+            account_id,
+            observations,
+            source=verification_source,
+            dry_run=dry_run,
+            recorded_at=recorded_at,
+        )
+        summary.update(
+            {
+                "style_candidates": len(application.promotions),
+                "ledger_available": application.ledger_available,
+                "recorded": application.recorded,
+                "applied": application.applied,
+                "decisions": [
+                    {
+                        "candidate_id": item.decision.candidate_id,
+                        "key": item.candidate.key,
+                        "source_ref": item.candidate.source_ref,
+                        "disposition": item.decision.disposition.value,
+                        "reason": item.decision.reason.value,
+                        "dedupe": item.decision.dedupe.value,
+                        "verified": item.decision.verified,
+                        "applied": item.applied,
+                    }
+                    for item in application.promotions
+                ],
+            }
+        )
+        return summary
+
     result = await observe_style_promotions(
-        PromotionLedger(store),
+        ledger,
         account_id,
         observations,
         record=not dry_run,
     )
-    return {
-        "account_id": account_id,
-        "dry_run": dry_run,
-        "scanned": len(observations),
-        "style_candidates": len(result.promotions),
-        "ledger_available": result.ledger_available,
-        "recorded": result.recorded,
-        "scan_saturated": bool(scan.saturated),
-        "decisions": [
-            {
-                "candidate_id": item.decision.candidate_id,
-                "key": item.candidate.key,
-                "source_ref": item.candidate.source_ref,
-                "disposition": item.decision.disposition.value,
-                "reason": item.decision.reason.value,
-                "dedupe": item.decision.dedupe.value,
-                "verified": item.decision.verified,
-            }
-            for item in result.promotions
-        ],
-    }
+    summary.update(
+        {
+            "style_candidates": len(result.promotions),
+            "ledger_available": result.ledger_available,
+            "recorded": result.recorded,
+            "decisions": [
+                {
+                    "candidate_id": item.decision.candidate_id,
+                    "key": item.candidate.key,
+                    "source_ref": item.candidate.source_ref,
+                    "disposition": item.decision.disposition.value,
+                    "reason": item.decision.reason.value,
+                    "dedupe": item.decision.dedupe.value,
+                    "verified": item.decision.verified,
+                }
+                for item in result.promotions
+            ],
+        }
+    )
+    return summary
 
 
 async def _run_with_postgres(args: argparse.Namespace) -> dict[str, Any]:
@@ -106,6 +158,7 @@ async def _run_with_postgres(args: argparse.Namespace) -> dict[str, Any]:
             account_id=args.account_id,
             window=args.window,
             dry_run=args.dry_run,
+            apply=args.apply,
         )
     finally:
         await context.__aexit__(None, None, None)
@@ -125,13 +178,27 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="read the ledger and decide, but record nothing",
+        help="read the ledger and decide, but record/write nothing",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help=(
+            "Slice C: independently re-read each source and write PROMOTE verdicts into "
+            "strategy_notes (ledger row first). Off by default."
+        ),
     )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.apply and args.dry_run:
+        print(
+            "observe_memory_promotions: --apply and --dry-run are mutually exclusive",
+            file=sys.stderr,
+        )
+        return 2
     try:
         summary = asyncio.run(_run_with_postgres(args))
     except (RuntimeError, ValueError) as exc:

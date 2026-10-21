@@ -64,6 +64,11 @@ _BODY_KEYS: tuple[str, ...] = (
 # Timestamp-key precedence for provenance (all values ISO strings in practice).
 _TS_KEYS: tuple[str, ...] = ("timestamp", "created_at", "ts", "recorded_at", "date")
 
+#: A producer may carry an explicit trust class (票 5u: promoted memories do).
+#: Only spellings from the published vocabulary are accepted; anything else
+#: keeps the namespace default rather than inventing a stricter-looking class.
+_TRUST_BY_VALUE: dict[str, TrustClass] = {member.value: member for member in TrustClass}
+
 
 class RecallRequest(BaseModel):
     """One namespace recall to run as part of a parallel batch."""
@@ -84,12 +89,43 @@ def _parse_ts(value: Any) -> datetime | None:
         return None
 
 
+def _carried_trust(value: dict[str, Any], namespace: str) -> TrustClass:
+    """Explicit producer trust class, else the namespace default (P1-A rule).
+
+    ``content_history`` is a deterministic record of what was published; the
+    other three namespaces hold derived memory. A promoted record (票 5u) may
+    say otherwise because its value was verified against a durable row, so the
+    explicit field wins — but only when it spells a real vocabulary member; an
+    unknown spelling keeps the conservative namespace default instead of
+    becoming ``unspecified`` or, worse, a class it never claimed.
+    """
+    raw = value.get("trust_class")
+    if isinstance(raw, str):
+        carried = _TRUST_BY_VALUE.get(raw)
+        if carried is not None:
+            return carried
+    return TrustClass.INTERNAL_FACT if namespace == "content_history" else TrustClass.MEMORY
+
+
+def _carried_ttl(value: dict[str, Any]) -> int | None:
+    """A non-negative int TTL or ``None``; bools are not durations."""
+    raw = value.get("ttl_seconds")
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw if raw >= 0 else None
+
+
 def item_to_context_item(value: dict[str, Any], namespace: str) -> ContextItem:
     """Map one raw memory record to a pipeline ContextItem (deterministic).
 
     Body extraction follows ``_BODY_KEYS`` precedence; the fallback is a
     sorted-key JSON dump so the mapping never loses information.  Unknown
     shapes keep full provenance via ``source``.
+
+    Since 票 5u the mapping also carries producer provenance when present:
+    ``trust_class`` / ``verified`` / ``ttl_seconds`` / ``source_version``. The
+    fields already existed on ``ContextItem``; before this they were only ever
+    renderer-side labels because no producer wrote them.
     """
     body = next((str(value[k]) for k in _BODY_KEYS if value.get(k) is not None), "")
     if not body:
@@ -98,16 +134,15 @@ def item_to_context_item(value: dict[str, Any], namespace: str) -> ContextItem:
         (parsed for parsed in (_parse_ts(value.get(k)) for k in _TS_KEYS) if parsed),
         None,
     )
+    raw_version = value.get("source_version")
     return ContextItem(
         body=body,
         source=f"memory:{namespace}",
         timestamp=ts,
-        # P1-A: content history is a deterministic record of what was
-        # published; the other three namespaces hold derived memory
-        # (summaries, audience impressions, strategy notes).
-        trust_class=(
-            TrustClass.INTERNAL_FACT if namespace == "content_history" else TrustClass.MEMORY
-        ),
+        trust_class=_carried_trust(value, namespace),
+        verified=value.get("verified") is True,
+        ttl_seconds=_carried_ttl(value),
+        source_version=raw_version if isinstance(raw_version, str) else "",
     )
 
 

@@ -1,9 +1,10 @@
-# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面）
+# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 第一次晋升）
 
-> 状态：**Slice A + Slice B（B1 库 / B2 接线）已落**（`backend/memory/promotion.py` 协议；
-> `promotion_ledger.py` append-only 账本；`promotion_observations.py` Creative Memory style
-> 观测的 observe-only 通道；`GET /api/creator-agent/memory-promotions` 只读管理面；
-> `scripts/observe_memory_promotions.py` 真实调用者）。Slice C/D 未实现。
+> 状态：**Slice A + Slice B（B1 库 / B2 接线）+ Slice C 已落**（`backend/memory/promotion.py`
+> 协议；`promotion_ledger.py` append-only 账本；`promotion_observations.py` Creative Memory
+> style 观测的 observe-only 通道；`GET /api/creator-agent/memory-promotions` 只读管理面；
+> `scripts/observe_memory_promotions.py` 真实调用者；`promotion_source.py` 独立重读 +
+> `promotion_apply.py` 第一次晋升 + `context.retrieval` provenance 透传）。Slice D 未实现。
 > 设计依据：`.trellis/tasks/10-21-memory-promotion-pipeline/prd.md`；
 > 现状侦察：同目录 `research/2026-10-21-recon.md`。
 > 路线图出处：`docs/agent-os-upgrade-2026q4.md` §3 第 7 行。
@@ -190,21 +191,46 @@ python scripts/observe_memory_promotions.py --account-id acc-1 --dry-run  # 只�
 - 输出是 JSON 摘要（`scanned` / `style_candidates` / `ledger_available` / `recorded` /
   `scan_saturated` / `decisions[]`），便于 cron/人工核对；调度本身属于部署配置。
 
-## 8. 明确不在这里的东西
+## 8. 第一次晋升：独立重读 → 先记账 → 再写入（Slice C，票 5u）
+
+这一节是管道**第一次改变 prompt 可召回内容**的地方。三条纪律缺一不可：
+
+1. **验证不能自证**：`promotion_source.py::CreativeMemoryPromotionSource` 按
+   `style_id` 重读 durable 行（`db.creative_memory.get_style`），`present/version` 由
+   重读决定。扫描说 v1、行已到 v2 → 判决 `REVIEW(source_stale)`，不晋升。reader 抛异常
+   原样上抛；行没有 `last_used` 抛错（无法版本化就不能判）。
+2. **先记账、后写入**：`promotion_apply.py` 对 `PROMOTE` 先 `ledger.append` 再
+   `write_promoted_memory`。两步之间崩溃 → 账本有 promote 行、目标缺失 = **pending**，
+   绝不反向（先写后记会留下无法归因的记忆）。`REFUSE/REVIEW` 只记账、不写。
+3. **写入值自带 provenance**：写入 `accounts/<id>/strategy_notes` 的 value 是
+   `{note, promotion_id, source_ref, source_version, verified, trust_class, ttl_seconds,
+   promoted_at, policy_version, decided_by}`，key 用 candidate 的确定性 key
+   （supersede 替换同一行，不堆积近副本）。
+
+**检索侧透传**（`context/retrieval.py::item_to_context_item`，票 5u）：值里带
+`trust_class` / `verified` / `ttl_seconds` / `source_version` 时原样进 `ContextItem`；
+`trust_class` 只接受发布词表里的拼写（未知拼写回落命名空间默认，不升级也不降级）；
+`verified` 只认真正的 `True`；负 TTL / 非整数 TTL 视为没有。这是 P1-A 的字段第一次
+有生产者 —— 之前它们只是渲染侧标签。
+
+**CLI**：`--apply` 才走晋升（默认 observe-only）。`--apply --dry-run` 互斥（退出码 2）；
+`--apply` 同样要求 Postgres store。
+
+## 9. 明确不在这里的东西
 
 - **协议层不读任何存储**：来源行、证据、已有记录都由调用方读好再传；
 - **不判语义重复**：键级去重是确定的；语义近邻需要 embedding 与判断，只作为审核提示，
   不在本函数内（PRD §3）；
 - **不算 TTL**：`SourceCheck.ttl_expired` 由调用方用真实时钟算好传入，本层保持纯函数；
-- **不写目标命名空间、不改 prompt**：Slice B 只记账；Slice C 才第一次晋升；
+- **只晋升 style 一族**：plays/materials 的目标命名空间未裁决（PRD §9），未接；
 - **不接 hy-memory**：Slice D，且初期只产 `REVIEW`；
 - **不做审核 UI**：复用现有 evidence-proposal / learning-signal 面；
 - **不自动调度**：CLI 是真实调用者，但 cron/部署接线属于配置，不在代码里。
 
-## 9. 下一片
+## 10. 下一片
 
 - ~~B2：`GET` 只读管理面 + 调度/CLI 调用者~~ **已落（票 5t）**；
-- **Slice C**：第一次 `internal_fact` 晋升（`strategy_notes`）+ `context.retrieval` 透传
-  `verified` / `source_version` / `ttl_seconds`；**验证必须换成独立重读**，不能复用
-  observe-only 的"本轮读到的行即来源"；
-- **Slice D**：hy-memory 候选（`REVIEW` only，`DEGRADED` 批次整体 REFUSE）。
+- ~~Slice C：第一次 `internal_fact` 晋升 + retrieval 透传 provenance~~ **已落（票 5u）**；
+- **Slice D**：hy-memory 候选（`REVIEW` only，`DEGRADED` 批次整体 REFUSE）—— 行 7 的
+  原始动机（SDK 抽取的记忆从未经过任何闸门）在这一片才真正接上；在那之前，管道管的是
+  仓库自有 measured 记忆，不是 hy-memory。

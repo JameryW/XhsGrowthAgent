@@ -162,3 +162,71 @@ def test_the_cli_refuses_without_a_durable_store(
     assert code == 2
     assert "POSTGRES_URI" in captured.err
     assert captured.out == ""
+
+
+# ── Slice C: --apply (票 5u) ──────────────────────────────────────────────────
+
+
+class _Verifier:
+    """Scripted independent re-read used by the apply-style tests."""
+
+    def __init__(self, version: str) -> None:
+        self.version = version
+        self.calls: list[tuple[str, str]] = []
+
+    async def source_check(self, account_id: str, observation: ContentObservation):
+        from backend.memory.promotion import SourceCheck
+
+        self.calls.append((account_id, observation.source_id))
+        return SourceCheck(
+            present=True,
+            version=self.version,
+            evidence_found=("ev_style_style_1",),
+        )
+
+
+@pytest.mark.asyncio
+async def test_apply_records_then_writes_the_target_namespace() -> None:
+    store = InMemoryStore()
+    verifier = _Verifier(_VERSION)
+
+    summary = await run_observation_pass(
+        store=store,
+        account_id=_ACCOUNT,
+        apply=True,
+        source=_Source([_style()]),
+        verification_source=verifier,
+        recorded_at="2026-10-21T10:00:00+00:00",
+    )
+
+    assert summary["mode"] == "apply"
+    assert summary["applied"] == 1
+    assert summary["recorded"] == 1
+    assert summary["decisions"][0]["applied"] is True
+    assert verifier.calls == [(_ACCOUNT, "style_1")]
+
+    item = await store.aget(("accounts", _ACCOUNT, "strategy_notes"), "style:style_1")
+    assert item is not None
+    assert item.value["verified"] is True
+
+
+@pytest.mark.asyncio
+async def test_apply_dry_run_is_refused() -> None:
+    outcome: object = "accepted"
+    try:
+        await run_observation_pass(
+            store=InMemoryStore(), account_id=_ACCOUNT, apply=True, dry_run=True
+        )
+    except Exception as exc:
+        outcome = exc
+    assert isinstance(outcome, ValueError), outcome
+    assert "mutually exclusive" in str(outcome), outcome
+
+
+def test_the_cli_refuses_apply_with_dry_run(capsys: pytest.CaptureFixture[str]) -> None:
+    code = main(["--account-id", _ACCOUNT, "--apply", "--dry-run"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "mutually exclusive" in captured.err
+    assert captured.out == ""
