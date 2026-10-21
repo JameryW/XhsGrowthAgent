@@ -168,3 +168,24 @@ pro/lite 全链路读写召回、适配器、agent 接线、降级路径、多�
 - **多 client 关停偶发 SIGSEGV**（功能测试实测）：同进程持有多个 client 时，
   `close()` 后的解释器退出阶段 chroma/sqlite native 清理偶发段错误——发生在
   全部功能断言通过之后，与读写正确性无关；单 client 关停路径正常。
+
+## 8. 与 Memory Promotion Pipeline 的关系
+
+本集成是**可选增强层**，SDK 的抽取与冲突调和（pro 模式 reconciler）对仓库不透明；
+仓库侧没有"这条抽取出来的记忆凭什么可信 / 与已有记忆重复吗 / 该不该进 prompt"的判断。
+`docs/agent-os-upgrade-2026q4.md` §3 第 7 行把这个缺口记为「Memory Promotion Pipeline」。
+
+设计已定、尚未实现：
+
+- PRD：`.trellis/tasks/10-21-memory-promotion-pipeline/prd.md`
+  （verify → dedupe → promote 三段、封闭拒因词表、append-only ledger、observe-only 先行的切片）；
+- 侦察：`.trellis/tasks/10-21-memory-promotion-pipeline/research/2026-10-21-recon.md`。
+
+两条与本层直接相关的约束（PRD 已写死）：
+
+1. **晋升的验证不能走 recall API** —— 上一条已知限制已经说明 search 阶段故障会被 SDK
+   吞成"空结果"，`last_error` 也区分不了；冷启动风格还会伪造 `default_*` 行（ADR-0006）。
+   验证必须读原始行 + 明确的 reader 协议。
+2. **SDK 的降级不等于候选有错** —— 降级批次整体 `REFUSE(source_degraded)` 并记账，
+   不把"没读到"说成"没有候选"。
+
