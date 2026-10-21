@@ -1,14 +1,15 @@
 # Memory Promotion Pipeline（设计 PRD）
 
-> 状态：**Slice A + Slice B（B1 库 / B2 接线）已落**（票 5r：决策协议；票 5s：append-only
-> ledger + Creative Memory style 观测的 observe-only 通道；票 5t：只读管理面 + 真实
-> 调用者 CLI）。Slice C/D 未实现，按 §6 另开任务，每片单独 PR。
+> 状态：**Slice A + Slice B（B1 库 / B2 接线）+ Slice C 已落**（票 5r：决策协议；票 5s：
+> append-only ledger + Creative Memory style 观测的 observe-only 通道；票 5t：只读管理面 +
+> 真实调用者 CLI；票 5u：独立重读验证 + 第一次 `internal_fact` 晋升 + retrieval provenance
+> 透传）。Slice D 未实现，按 §6 另开任务，单独 PR。
 >
 > 依据：`docs/agent-os-upgrade-2026q4.md` §3 差距矩阵第 7 行 ——
 > 「hy-memory 有 LLM 抽取 + reconciler，无『来源验证→去重→晋升』显式流水线」❌ 缺（P1/P2）。
 >
 > 侦察记录（每条判断的出处）：`research/2026-10-21-recon.md`
-> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12 / §13 / §14
+> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12 / §13 / §14 / §15
 
 ## 1. Goal
 
@@ -137,6 +138,9 @@ PromotionDecision(frozen)
   `context.retrieval.item_to_context_item` **透传** `verified` / `source_version` / `ttl_seconds`
   （今天只映射 timestamp 与 trust_class），使被晋升的记录在 provenance 标签上可见。
   验收：任何未验证候选无法到达 prompt（突变自检）；重复候选第二次跑 → `DUPLICATE` 不新增。
+  **已落（票 5u）**：独立重读 `promotion_source.py`；`promotion_apply.py` 先记账后写
+  `strategy_notes`（写入值带 provenance）；retrieval 透传 + 显式 `trust_class`（未知拼写回落
+  命名空间默认）；CLI `--apply`。实现形态见 §15 与 `docs/memory-promotion.md` §8。
 - **Slice D — hy-memory 候选（REVIEW-only 起步）**
   SDK 抽取的记忆以 metadata 里的 `source_ref` 进入同一闸门；`DEGRADED` 批次整体
   `REFUSE(source_degraded)`；初期**只产 `REVIEW`**，人审通过后才允许任何写入。
@@ -258,3 +262,18 @@ Slice A 不产生任何 prompt 文本，context baseline 零漂移。
 | 测试 | 路由 6、CLI pass 8（含 dry-run / 无 store / saturated / 校验 / CLI 拒跑） | 校验用 outcome 断言，避免下游 store 的报错替本层背书 |
 
 文档 `docs/memory-promotion.md` §7.4。prompt 输出仍零变化；Slice B 至此完成。
+
+## 15. Slice C 实现记录（票 5u）
+
+| 项 | 实现 | 取舍 |
+|---|---|---|
+| 验证 | `promotion_source.py::CreativeMemoryPromotionSource`：按 `style_id` 调 `db.creative_memory.get_style` 重读 | **不复用** observe-only 的 `source_check_from_observation`（那是扫描自证）；reader 抛错上抛；行无 `last_used` 抛错 |
+| 写入 | `promotion_apply.py::write_promoted_memory`：`accounts/<id>/strategy_notes`，key = candidate.key | 确定性 key 让 supersede 替换同一行 |
+| 写入值 | `{note, promotion_id, source_ref, source_version, verified, trust_class, ttl_seconds, promoted_at, policy_version, decided_by}` | provenance 由写入方携带，渲染侧不必再猜 |
+| 顺序 | `PROMOTE`：ledger.append → 写目标；`REFUSE/REVIEW`：只记账 | 崩溃留下 pending 账本行，不是无法归因的记忆（测试用"目标写失败"钉住） |
+| 检索 | `item_to_context_item` 透传 `trust_class`/`verified`/`ttl_seconds`/`source_version` | 显式 trust 只认发布词表拼写；未知拼写回落命名空间默认；`verified` 只认 `True`；负/非整数 TTL 视为无 |
+| CLI | `--apply`（默认仍 observe-only）；`--apply`+`--dry-run` 互斥退出 2 | 晋升是显式运维动作，不是调度默认 |
+| 测试 | 晋升/验证 18、retrieval +4、CLI +3 | 关键断言是 outcome 式（避免下游异常替本层背书） |
+
+prompt 输出仍零变化（测试与基线都不含晋升数据）；但这是**第一次**存在能改变 prompt 的写入路径，
+验收按 PRD §7「任何未验证候选无法到达 prompt」做突变（M1/M2/M3/M4/M9/M10/M11）。

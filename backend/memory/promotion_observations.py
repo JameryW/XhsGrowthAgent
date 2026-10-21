@@ -123,6 +123,26 @@ def _is_style(observation: ContentObservation) -> bool:
     return observation.kind is ContentObservationKind.STYLE
 
 
+async def current_target_entries(
+    ledger: PromotionLedger, account_id: str
+) -> tuple[tuple[ExistingEntry, ...], bool]:
+    """Current promote records for the target namespace, plus ledger availability.
+
+    Raises when the ledger page is incomplete: the record that did not fit could
+    be the duplicate that makes the candidate a no-op, so a partial page must not
+    be used to decide. Shared by the observe-only pass and the applying pass so
+    the two cannot disagree about what "current" means.
+    """
+    page = await ledger.records(account_id)
+    if page.available and not page.complete:
+        raise RuntimeError(
+            "promotion ledger page is incomplete; raise the limit before deciding "
+            "on it (a missing record can be the duplicate)"
+        )
+    target_records = [record for record in page.records if record.namespace == TARGET_NAMESPACE]
+    return current_entries(target_records), page.available
+
+
 async def observe_style_promotions(
     ledger: PromotionLedger,
     account_id: str,
@@ -142,14 +162,8 @@ async def observe_style_promotions(
     decision made without its current records would be a different decision),
     but nothing is written and ``recorded`` stays 0.
     """
-    page = await ledger.records(account_id)
-    if page.available and not page.complete:
-        raise RuntimeError(
-            "promotion ledger page is incomplete; raise the limit before deciding "
-            "on it (a missing record can be the duplicate)"
-        )
-    target_records = [record for record in page.records if record.namespace == TARGET_NAMESPACE]
-    existing: list[ExistingEntry] = list(current_entries(target_records))
+    existing_entries, ledger_available = await current_target_entries(ledger, account_id)
+    existing: list[ExistingEntry] = list(existing_entries)
 
     promotions: list[ObservedPromotion] = []
     recorded = 0
@@ -182,6 +196,6 @@ async def observe_style_promotions(
 
     return ObservationPass(
         promotions=tuple(promotions),
-        ledger_available=page.available,
+        ledger_available=ledger_available,
         recorded=recorded,
     )

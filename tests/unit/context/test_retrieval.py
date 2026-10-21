@@ -238,3 +238,63 @@ def test_freshness_decay_rejects_bad_half_life() -> None:
     result = RetrievalResult(namespace="content_history")
     with pytest.raises(ValueError):
         apply_freshness_decay(result, now=datetime.now(UTC), half_life_days=0)
+
+
+# ── producer provenance carried into ContextItem (票 5u) ──────────────────────
+
+
+def test_a_promoted_record_carries_its_provenance() -> None:
+    """The fields existed on ContextItem; a promoted memory is the first producer."""
+    from backend.context.models import TrustClass
+
+    item = item_to_context_item(
+        {
+            "note": "治愈风格历史互动率 0.412（样本 10）",
+            "trust_class": "internal_fact",
+            "verified": True,
+            "ttl_seconds": 3600,
+            "source_version": "2026-10-01T20:00:00Z",
+        },
+        "strategy_notes",
+    )
+    assert item.trust_class is TrustClass.INTERNAL_FACT  # explicit wins over namespace default
+    assert item.verified is True
+    assert item.ttl_seconds == 3600
+    assert item.source_version == "2026-10-01T20:00:00Z"
+
+
+def test_an_unknown_trust_spelling_keeps_the_namespace_default() -> None:
+    from backend.context.models import TrustClass
+
+    item = item_to_context_item({"note": "x", "trust_class": "definitely_true"}, "strategy_notes")
+    assert item.trust_class is TrustClass.MEMORY
+
+
+def test_bad_ttl_and_verified_shapes_do_not_leak_into_provenance() -> None:
+    from backend.context.models import ContextItem
+
+    outcome: object = "no error"
+    try:
+        outcome = item_to_context_item(
+            {"note": "x", "verified": "yes", "ttl_seconds": -5}, "strategy_notes"
+        )
+    except Exception as exc:  # judged below: a rejected record must not crash
+        outcome = exc
+
+    assert isinstance(outcome, ContextItem), outcome
+    assert outcome.verified is False  # only a real True counts
+    assert outcome.ttl_seconds is None  # a negative duration is not a TTL
+    assert outcome.source_version == ""
+
+
+def test_a_plain_record_keeps_the_old_mapping() -> None:
+    from backend.context.models import TrustClass
+
+    plain = item_to_context_item({"note": "x"}, "strategy_notes")
+    assert plain.trust_class is TrustClass.MEMORY
+    assert plain.verified is False
+    assert plain.ttl_seconds is None
+    assert plain.source_version == ""
+
+    history = item_to_context_item({"content": "y"}, "content_history")
+    assert history.trust_class is TrustClass.INTERNAL_FACT

@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "PRD 已定（票 5q）。Slice A 协议已落（5r）；Slice B 完成：B1 账本 + style observe-only 通道（5s），B2 只读管理面 GET /api/creator-agent/memory-promotions + 调用者 scripts/observe_memory_promotions.py（5t）。待落：C（首次 internal_fact 晋升）、D（hy 候选 REVIEW-only）。PRD §9 Q5 已裁决为 BaseStore namespace。",
+  "notes": "PRD 已定（票 5q）。Slice A 协议已落（5r）；Slice B 完成：B1 账本 + style observe-only 通道（5s），B2 只读管理面 + 调用者 CLI（5t）；Slice C 已落（5u）：独立重读验证 + 首次 internal_fact 晋升（先记账后写 strategy_notes）+ retrieval provenance 透传 + CLI --apply。待落：D（hy 候选 REVIEW-only）。PRD §9 Q5 已裁决为 BaseStore namespace。",
   "meta": {}
 }
