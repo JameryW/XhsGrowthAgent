@@ -311,7 +311,7 @@ L1 只描述**调用形状**，不描述**运行时权限**：`side_effect` / `a
 **为什么只覆盖 `backend/agents/**`：** 门禁范围画在"agent 是否绕开运行时"这一条上，
 才能让白名单是一个可以讲清楚的东西。API 层唯一的例外（ripple-retry 直调
 `RippleService.submit_and_wait`）已在票 5p 迁到 Gateway，现在没有任何已知的 API 层
-直调（见「已知残留」）。
+直调（见「登记的残留」）。
 
 ## 加一个新工具
 
@@ -323,7 +323,10 @@ L1 只描述**调用形状**，不描述**运行时权限**：`side_effect` / `a
 4. `python scripts/gates/tool_runtime_gate.py` 应当变绿；门禁会把漏掉的第 2 步
    直接指出来。
 
-## 已知残留
+## 登记的残留（已全部解决）
+
+这一节登记过三条残留，如今三条都已落地；保留原文（划线 + 票号）是因为它们说明的
+**边界**仍然有效 —— 理由、诚实边界和不做什么写在这里，claim 表继续从树上重算。
 
 - ~~**ripple-retry 路由直调 `RippleService.submit_and_wait`**~~ **已解决（票 5p）**：
   `_run_retry()` 改经 Gateway 调 `ripple.predict_spread` / `ripple.validate_pmf`，
