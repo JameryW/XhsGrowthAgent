@@ -1,6 +1,8 @@
-# Memory Promotion Pipeline（协议层）
+# Memory Promotion Pipeline（协议层 + observe-only 通道）
 
-> 状态：**Slice A 已落**（`backend/memory/promotion.py` + 测试），Slice B/C/D 未实现。
+> 状态：**Slice A + Slice B1 已落**（`backend/memory/promotion.py` 协议；
+> `promotion_ledger.py` append-only 账本；`promotion_observations.py` Creative Memory style
+> 观测的 observe-only 通道）。Slice B2（管理面/调度接线）/C/D 未实现。
 > 设计依据：`.trellis/tasks/10-21-memory-promotion-pipeline/prd.md`；
 > 现状侦察：同目录 `research/2026-10-21-recon.md`。
 > 路线图出处：`docs/agent-os-upgrade-2026q4.md` §3 第 7 行。
@@ -116,19 +118,67 @@ if decision.disposition is PromotionDisposition.PROMOTE:
     ...  # Slice B/C：先记账，再写目标命名空间
 ```
 
-## 7. 明确不在这里的东西
+## 7. append-only 账本与 observe-only 通道（Slice B1）
 
-- **不读任何存储**：来源行、证据、已有记录都由调用方读好再传；
+### 7.1 存储裁决（PRD §9 Q5）
+
+账本放 `accounts/<account>/memory_promotions`（BaseStore），不建 Postgres 表：
+
+- 记录**不可变**，id 由
+  `sha256(candidate_id | source_version | disposition | reason | policy_version)` 派生
+  ⇒ 同一判决重复写是幂等（同 key 同字节），新版本/新策略/新判决是**新行**，历史只增不改；
+- 与记忆同库，Slice C 读取不需要第二种连接或迁移；
+- 运维需要跨账号查询时再镜像 Postgres —— 写入口只有 `PromotionLedger.append` 一处，
+  决策对象不变。
+
+**诚实边界**：BaseStore 无 CAS；多写者并发同键依赖"相同字节"这一性质。读页满
+（`LedgerPage.complete=False`）时，调用方**不得**据此做去重——缺的那条可能正是重复记录，
+所以 observe 通道会直接拒绝决定而不是猜。
+
+### 7.2 `PromotionLedger`（`backend/memory/promotion_ledger.py`）
+
+| API | 语义 |
+|---|---|
+| `append(account_id, candidate, decision, *, recorded_at=None)` | 写一行；返回 `RECORDED` / `NO_STORE`；store 抛异常则**原样抛**；`recorded_at` 由调用方注入（测试确定性/回填） |
+| `records(account_id, *, limit=200)` | 时间倒序一页；`available=False` 表示没配 store（配置事实），`complete=False` 表示可能还有更多 |
+| `current_entries(records)` | 从 supersede 边**推导**当前记录：promote ∧ 未被任何记录取代；同键两条 current → 抛（协议只会 supersede，不会分叉） |
+| `promotion_id_for(decision, *, source_version)` | 确定性 id；`source_version` 是必要输入，否则 supersede 会覆盖它取代的版本记录 |
+
+`PromotionRecord` 的 14 个字段（含 `supersedes`、`recorded_at`）原样存取；`from_dict`
+对缺字段抛 `KeyError` —— 账本是**记录**，不是 best-effort 遥测，读不懂的行要炸出来。
+
+### 7.3 observe-only 通道（`backend/memory/promotion_observations.py`）
+
+第一个真实候选源：Creative Memory 的 **style** 行（走既有
+`CreativeMemoryObservationSource`，不碰 `recall_style` 的冷启动伪造行）。
+
+- `candidate_from_observation`：`strategy_notes` / key `style:<source_id>` /
+  `INTERNAL_FACT` / `source_ref=creative-memory://style/<id>` /
+  `evidence_ids=(ev_style_<id>,)` / `sample_count`、`measured_rate` 原样带上；
+  **只有 style 在范围内**（plays/materials 的目标命名空间未裁决）；缺时间戳的行**抛**，
+  不静默跳过（它无法被版本化，判 `source_unversioned` 会对着一个谎话判）。
+- `observe_style_promotions(ledger, account_id, observations)`：读当前账本 → 逐个判决 →
+  每个判决都 `append`（observe-only：**不写**目标命名空间）；同一 pass 内若同键出现更新
+  版本，把刚晋升的记录折回 `existing`，于是第二条判 `SUPERSEDES_OLDER` 而不是分叉。
+- 返回 `ObservationPass(promotions, ledger_available, recorded)`：`ledger_available=False`
+  时决定照做、`recorded=0`——"没配库"不等于"没做决定"，两者必须分开呈现。
+
+## 8. 明确不在这里的东西
+
+- **协议层不读任何存储**：来源行、证据、已有记录都由调用方读好再传；
 - **不判语义重复**：键级去重是确定的；语义近邻需要 embedding 与判断，只作为审核提示，
   不在本函数内（PRD §3）；
 - **不算 TTL**：`SourceCheck.ttl_expired` 由调用方用真实时钟算好传入，本层保持纯函数；
-- **不写 ledger、不写记忆、不改 prompt**：Slice B/C；
+- **不写目标命名空间、不改 prompt**：Slice B 只记账；Slice C 才第一次晋升；
 - **不接 hy-memory**：Slice D，且初期只产 `REVIEW`；
-- **不做审核 UI**：复用现有 evidence-proposal / learning-signal 面。
+- **不做审核 UI**：复用现有 evidence-proposal / learning-signal 面；
+- **没有生产调用者**：`GET` 管理面与调度/CLI 接线是 Slice B2，本片只在测试里驱动
+  `observe_style_promotions`。
 
-## 8. 下一片
+## 9. 下一片
 
-- **Slice B**：append-only ledger（`accounts/{account}/memory_promotions` 或 Postgres，
-  待 PRD §9 Q5 裁决）+ 真候选源只记账；
-- **Slice C**：第一次 `internal_fact` 晋升 + `context.retrieval` 透传 provenance 字段；
+- **B2**：`GET` 只读管理面（本次账本）+ 调度/CLI 调用者（observe-only，仍不写目标命名空间）；
+- **Slice C**：第一次 `internal_fact` 晋升（`strategy_notes`）+ `context.retrieval` 透传
+  `verified` / `source_version` / `ttl_seconds`；**验证必须换成独立重读**，不能复用
+  observe-only 的"本轮读到的行即来源"；
 - **Slice D**：hy-memory 候选（`REVIEW` only，`DEGRADED` 批次整体 REFUSE）。

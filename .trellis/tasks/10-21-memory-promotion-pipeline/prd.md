@@ -1,13 +1,14 @@
 # Memory Promotion Pipeline（设计 PRD）
 
-> 状态：**Slice A 已落**（票 5r：`backend/memory/promotion.py` + 测试 + `docs/memory-promotion.md`）；
-> Slice B/C/D 未实现，按 §6 另开任务，每片单独 PR。
+> 状态：**Slice A + Slice B1 已落**（票 5r：决策协议；票 5s：append-only ledger +
+> Creative Memory style 观测的 observe-only 通道）；Slice B2（管理面/调度接线）/C/D 未实现，
+> 按 §6 另开任务，每片单独 PR。
 >
 > 依据：`docs/agent-os-upgrade-2026q4.md` §3 差距矩阵第 7 行 ——
 > 「hy-memory 有 LLM 抽取 + reconciler，无『来源验证→去重→晋升』显式流水线」❌ 缺（P1/P2）。
 >
 > 侦察记录（每条判断的出处）：`research/2026-10-21-recon.md`
-> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12
+> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12 / §13
 
 ## 1. Goal
 
@@ -123,9 +124,12 @@ PromotionDecision(frozen)
   验收：`tests/` 全绿且 **context baseline 漂移 0**（本片不产生任何 prompt 文本）。
   **已落（票 5r）**：实现形态见 §12 与 `docs/memory-promotion.md`。
 - **Slice B — ledger + 真候选（observe-only）**
-  append-only promotion 记录（`accounts/{account}/memory_promotions` 或 Postgres 表，二选一，
-  见 §9 Q5）+ reader + `GET` 管理面（只读）；接一个真实候选源（Creative Memory observations）
+  append-only promotion 记录（`accounts/{account}/memory_promotions`，§9 Q5 已裁决）+
+  reader + `GET` 管理面（只读）；接一个真实候选源（Creative Memory observations）
   **只记账、不写同命名空间**。验收：prompt 输出逐字节不变；账本无 update/delete API。
+  **B1 已落（票 5s）**：ledger（`promotion_ledger.py`）+ Creative Memory **style** 观测的
+  observe-only 通道（`promotion_observations.py`）；`GET` 管理面与调度接线归 **B2**。
+  实现形态见 §13 与 `docs/memory-promotion.md` §7。
 - **Slice C — 第一次晋升（`internal_fact` only）**
   把通过 §5.1/§5.2 的 measured 观测晋升进 `strategy_notes`（只这一个命名空间）；同时让
   `context.retrieval.item_to_context_item` **透传** `verified` / `source_version` / `ttl_seconds`
@@ -171,8 +175,13 @@ PromotionDecision(frozen)
 3. **语义近邻去重的成本**：只在 `NEEDS_REVIEW` 时做（省一次 embedding）还是每次去重都做？
    语义 index 不可用时是 `REVIEW` 还是 `REFUSE`？
 4. **machine-promote 阈值**：`sample_count >= 5` 是否够？要不要加"最近 N 天"冷却窗口？
-5. **账本存储**：BaseStore namespace（无 CAS，多写者需唯一约束）还是 Postgres 表（可加
-   `(candidate_id)` 唯一约束）？写多读少，建议 Postgres，但需确认部署形态。
+5. **账本存储**：~~BaseStore namespace 还是 Postgres 表？~~ **已裁决（票 5s）：
+   BaseStore namespace `accounts/<account>/memory_promotions`**。理由：记录不可变、id 由
+   `(candidate_id, source_version, disposition, reason, policy_version)` 派生 ⇒ 同 key 写
+   相同字节是幂等而非改写历史；与记忆同库，Slice C 读取不需要第二种连接/迁移；运维需要
+   跨账号查询时再镜像到 Postgres —— 写入口只有 `PromotionLedger.append` 一处，决策对象不变。
+   代价（诚实边界）：BaseStore 无 CAS，多写者并发同键依赖"字节相同"这一性质；读页满
+   （`complete=False`）必须拒绝据此去重，已写进协议。
 6. **谁算 `decided_by="machine"` 的责任人**：审计要能定位策略版本；`policy_version` 的
    来源（常量？配置文件？）需要定。
 
@@ -211,4 +220,24 @@ PromotionDecision(frozen)
 
 最终交付：`backend/memory/promotion.py`（12 个 reason 全可达、确定性、非法输入 ValueError、
 无 except）、`tests/unit/memory/test_promotion.py`（42 条）、`docs/memory-promotion.md`。
+
+## 13. Slice B1 实现记录（票 5s）
+
+| 项 | 实现 | 与初稿/PRD 的差异 |
+|---|---|---|
+| ledger 存储 | `accounts/<account>/memory_promotions`（BaseStore） | Q5 裁决见 §9；未建 Postgres 表 |
+| 记录形状 | `PromotionRecord`（14 字段，含 `supersedes` / `recorded_at`） | `recorded_at` 由调用方注入（测试确定性/回填），不是协议层的时钟 |
+| id 派生 | `promo_` + sha256(`candidate_id | source_version | disposition | reason | policy_version`)[:16] | 初稿只说"确定性"；实现把 **source_version** 也纳入，否则 supersede 会覆盖旧版本记录（突变 M2 钉住） |
+| 追加语义 | 同 id 覆盖相同字节 = 幂等；不同 id 只增不改；无 update/delete | — |
+| 无 store | `LedgerAppendOutcome.NO_STORE` / `LedgerPage.available=False` | 不把"没配库"说成"记录了 0 条" |
+| 读失败 | 原样抛（无 except） | 与「失败不是数据」一致 |
+| 页满 | `LedgerPage.complete=False`；observe 通道**拒绝据此去重** | 初稿未写；不加这条会让"缺的那条正是重复记录"时静默分叉 |
+| current 推导 | `current_entries` 从 supersede 边推导：promote 记录 ∧ 未被取代；同键两条 current → 抛 | 不存"当前"标志，append-only 历史是唯一事实 |
+| 真候选 | Creative Memory **style** 观测（`promotion_observations.py`），复用 `creator_agent.proposals` 的 evidence id/claim/ref 推导 | plays/materials 的目标命名空间未裁决，Slice B 刻意只接 styles |
+| 观察检查 | `source_check_from_observation`：本轮读到的行即来源（present/version/evidence） | **Slice C 必须换成独立重读**，否则"验证"就是拿扫描结果自证（文档已写明） |
+| 未接线 | `GET` 管理面、调度/CLI 调用者 → **B2** | 本片不产生生产调用者，也不写目标命名空间 |
+
+交付：`backend/memory/promotion_ledger.py`、`backend/memory/promotion_observations.py`、
+`tests/unit/memory/test_promotion_ledger.py`（12）、`test_promotion_observations.py`（13）、
+文档 `docs/memory-promotion.md` §7。prompt 输出零变化。
 Slice A 不产生任何 prompt 文本，context baseline 零漂移。
