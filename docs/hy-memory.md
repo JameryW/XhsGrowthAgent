@@ -175,8 +175,10 @@ pro/lite 全链路读写召回、适配器、agent 接线、降级路径、多�
 仓库侧没有"这条抽取出来的记忆凭什么可信 / 与已有记忆重复吗 / 该不该进 prompt"的判断。
 `docs/agent-os-upgrade-2026q4.md` §3 第 7 行把这个缺口记为「Memory Promotion Pipeline」。
 
-**Slice A 已落**（票 5r）：纯决策协议 `backend/memory/promotion.py` +
-`docs/memory-promotion.md`；Slice B（ledger）/C（首次晋升）/D（hy 候选接同一闸门）未实现。
+**Slice A + Slice B1 已落**（票 5r / 5s）：纯决策协议 `backend/memory/promotion.py`、
+append-only 账本 `backend/memory/promotion_ledger.py`、Creative Memory style 观测的
+observe-only 通道 `backend/memory/promotion_observations.py`，文档 `docs/memory-promotion.md`；
+B2（管理面/调度）/C（首次晋升）/D（hy 候选接同一闸门）未实现。
 
 - PRD：`.trellis/tasks/10-21-memory-promotion-pipeline/prd.md`
   （verify → dedupe → promote 三段、封闭拒因词表、append-only ledger、observe-only 先行的切片）；
