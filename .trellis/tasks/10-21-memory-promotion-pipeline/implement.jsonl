@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend entry: pre-development checklist + quality bar for the slices"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Closed reason vocabularies / failure-vs-data rules the decision function must follow"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Ledger storage choice (append-only, unique constraint, no CAS) for Slice B"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Tests/mutation/docs bar every slice is checked against"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Dependency direction memory <-> creator_agent <-> context (ADR-0006 style seam)"}
+{"file": ".trellis/tasks/10-21-memory-promotion-pipeline/prd.md", "reason": "Locked design: decisions, data shapes, closed reasons, slices, non-goals"}
+{"file": ".trellis/tasks/10-21-memory-promotion-pipeline/research/2026-10-21-recon.md", "reason": "Code-grounded current state and every missing piece (paths + line refs)"}
+{"file": "docs/adr/0002-creator-review-before-model-learning.md", "reason": "Hard invariant: no learning without creator disposition; promotion REVIEW tier derives from it"}
+{"file": "docs/adr/0005-creator-model-revisions-are-append-only-snapshots.md", "reason": "Append-only ledger/supersede shape mirrors the revision invariant"}
+{"file": "docs/adr/0006-creative-memory-contributes-evidence-via-readonly-proposals.md", "reason": "Read-only proposal seam + the recall-fabrication hazard verification must avoid"}

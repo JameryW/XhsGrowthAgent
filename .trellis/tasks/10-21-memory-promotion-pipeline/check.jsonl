@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Quality-check entry"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "General quality bar (tests, docs, claims)"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify failures raise; REFUSE only means 'read it and it is not enough'"}
+{"file": ".trellis/tasks/10-21-memory-promotion-pipeline/prd.md", "reason": "Acceptance criteria and non-goals to check against"}
+{"file": ".trellis/tasks/10-21-memory-promotion-pipeline/research/2026-10-21-recon.md", "reason": "Confirm the implementation did not invent facts the recon contradicts"}

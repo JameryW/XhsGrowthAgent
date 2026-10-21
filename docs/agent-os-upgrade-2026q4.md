@@ -69,7 +69,7 @@ Effect 与 Attempt 的分离在实现上成立，在命名与遥测上不成立�
 | 4 | Replay 不重调 LLM，读已提交决策 | **节点级成立**（superstep 完成即不重跑）；**节点内不成立**（节点重试会重调 LLM） | ⚠️ 部分（见 §4） |
 | 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；票 5c 为互动两条加上 `engagement_effects`（提交前 claim）；对账仍为"记录 + ContentHistory 匹配"，无自动平台查询 | ✅ 已满足（对账增强留 P1） |
 | 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；trust 尚未参与 rerank | ✅ 已满足（排序融合留 P1 后续） |
-| 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线 | ❌ 缺（P1/P2） |
+| 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线；设计 PRD 已出：verify → dedupe → promote、封闭拒因、append-only ledger、observe-only 先行切片（`.trellis/tasks/10-21-memory-promotion-pipeline/prd.md`） | ⚠️ 设计已定、未实现（P1） |
 | 8 | 多 Agent 并行按 Artifact 分工 + Workspace 冲突 | 当前为单 Agent 串行图；无子 Agent、无并发 workspace | ❌ 缺（P2，先不建） |
 | 9 | Model Gateway 按阶段路由 + Verifier 触发公式 | P1-B Verifier 触发（§5.3）+ P2 恢复策略分派（§5.4）；`router.py` 仍按 TaskType 路由，无阶段/推理预算矩阵 | ⚠️ 部分（Verifier ✅ / 恢复分派 ✅ / 阶段路由 P2） |
 | 10 | Adaptive Harness Controller + A/B 门禁 | 无；有 P1b 基线门禁可作为回归基础设施 | ❌ 缺（P3，需评测集先行） |
