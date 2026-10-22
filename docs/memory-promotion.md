@@ -1,11 +1,12 @@
-# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 第一次晋升）
+# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选）
 
-> 状态：**Slice A + Slice B（B1 库 / B2 接线）+ Slice C 已落**（`backend/memory/promotion.py`
+> 状态：**Slice A + Slice B（B1 库 / B2 接线）+ Slice C + Slice D 已落**（`backend/memory/promotion.py`
 > 协议；`promotion_ledger.py` append-only 账本；`promotion_observations.py` Creative Memory
 > style 观测的 observe-only 通道；`GET /api/creator-agent/memory-promotions` 只读管理面；
 > `scripts/observe_memory_promotions.py` 真实调用者；`promotion_source.py` 独立重读 +
-> `promotion_apply.py` 第一次晋升 + `context.retrieval` provenance 透传）。Slice D 未实现。
-> 设计依据：`.trellis/tasks/10-21-memory-promotion-pipeline/prd.md`；
+> `promotion_apply.py` 第一次晋升 + `context.retrieval` provenance 透传；`promotion_hy.py`
+> + `scripts/observe_hy_promotions.py`：hy-memory 候选 **REVIEW-only** 接入）。
+> 设计依据：`.trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md`；
 > 现状侦察：同目录 `research/2026-10-21-recon.md`。
 > 路线图出处：`docs/agent-os-upgrade-2026q4.md` §3 第 7 行。
 
@@ -216,21 +217,50 @@ python scripts/observe_memory_promotions.py --account-id acc-1 --dry-run  # 只�
 **CLI**：`--apply` 才走晋升（默认 observe-only）。`--apply --dry-run` 互斥（退出码 2）；
 `--apply` 同样要求 Postgres store。
 
-## 9. 明确不在这里的东西
+## 9. hy-memory 候选：REVIEW-only 接入（Slice D，票 5v）
+
+行 7 的原始动机（SDK 抽取的记忆从未经过任何闸门）到这里才真正接上。设计原则是
+**接进同一协议，但不给写路径**：
+
+- `promotion_hy.py::batch_from_retrieval` 接受 `recall_hy_memory` 的三种 mode：
+  `HIT` → 行；`EMPTY` → 健康空读；`DEGRADED` → 必须带错误摘要（`HyMemoryBatch` 双向校验：
+  降级必须带 error，健康必须不带）。
+- `batch_from_bridge` 走管理 API `list_memories` 读**原始行**（不是语义命中），
+  `last_error` 只在"读回空且确有错误"时算降级；成功读到行时不因旧错误误判。
+- 行 → candidate：`trust_class` 固定 `MEMORY`（协议因此只能给
+  `REVIEW(needs_human_review)`，调用方无法改成可机晋升）；`source_ref` 优先 metadata，
+  其次 `memory_id`，最后**内容寻址**；版本优先 metadata，否则内容哈希。
+- **降级批次 → 一条 `REFUSE(source_degraded)` 账本记录**（key 由 scene+error 派生，
+  幂等；错误摘要写进 `PromotionRecord.detail`）——"读不到"绝不渲染成"没有候选"。
+- **永不晋升护栏**：若策略错误地把 `MEMORY` 列入 `machine_promotable_classes`，
+  `observe_hy_candidates` 抛 `RuntimeError`，不写账本 —— 未验证来源的写入无法归因。
+
+**诚实边界（写进代码注释与 §10）**：
+
+1. SDK 没有可信的重读 API：search 故障会被吞成空结果，`last_error` 只覆盖 client 构建/
+   调用异常。所以 hy 行的版本是**文本版本**（内容哈希），不是行版本；`REVIEW` 是终点。
+2. 没有审核 UI / 审批写路径：REVIEW 行是审计记录；"人审通过后才允许写入"由「没有写路径」
+   保证，而不是由审批流保证。Q1（审核入口）仍是 PRD §9 的开放问题。
+
+调用者：`scripts/observe_hy_promotions.py`（`--account-id` / `--scene` / `--limit` /
+`--dry-run`；要求 Postgres store 且 `HYMEMORY_ENABLED=true`）。默认不接进 agent 流程 ——
+D 只产 REVIEW，接线无收益且有成本。
+
+## 10. 明确不在这里的东西
 
 - **协议层不读任何存储**：来源行、证据、已有记录都由调用方读好再传；
 - **不判语义重复**：键级去重是确定的；语义近邻需要 embedding 与判断，只作为审核提示，
   不在本函数内（PRD §3）；
 - **不算 TTL**：`SourceCheck.ttl_expired` 由调用方用真实时钟算好传入，本层保持纯函数；
 - **只晋升 style 一族**：plays/materials 的目标命名空间未裁决（PRD §9），未接；
-- **不接 hy-memory**：Slice D，且初期只产 `REVIEW`；
+- **hy 候选只产 REVIEW**：没有重读就没有晋升（D 的 `REVIEW` 是终点）；
 - **不做审核 UI**：复用现有 evidence-proposal / learning-signal 面；
 - **不自动调度**：CLI 是真实调用者，但 cron/部署接线属于配置，不在代码里。
 
-## 10. 下一片
+## 11. 下一片
 
 - ~~B2：`GET` 只读管理面 + 调度/CLI 调用者~~ **已落（票 5t）**；
 - ~~Slice C：第一次 `internal_fact` 晋升 + retrieval 透传 provenance~~ **已落（票 5u）**；
-- **Slice D**：hy-memory 候选（`REVIEW` only，`DEGRADED` 批次整体 REFUSE）—— 行 7 的
-  原始动机（SDK 抽取的记忆从未经过任何闸门）在这一片才真正接上；在那之前，管道管的是
-  仓库自有 measured 记忆，不是 hy-memory。
+- ~~Slice D：hy-memory 候选（REVIEW only，DEGRADED 批次整体 REFUSE）~~ **已落（票 5v）**；
+- 行 7 的四片全部落地；剩下的是 PRD §9 的开放问题（人审入口、TTL 默认值、语义近邻成本、
+  谁算 `decided_by="machine"` 的 policy 来源）—— 它们不再阻塞行 7 的"有显式流水线"判定。

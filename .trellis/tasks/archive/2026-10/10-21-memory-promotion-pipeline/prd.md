@@ -1,15 +1,15 @@
 # Memory Promotion Pipeline（设计 PRD）
 
-> 状态：**Slice A + Slice B（B1 库 / B2 接线）+ Slice C 已落**（票 5r：决策协议；票 5s：
-> append-only ledger + Creative Memory style 观测的 observe-only 通道；票 5t：只读管理面 +
+> 状态：**Slice A + Slice B（B1 库 / B2 接线）+ Slice C + Slice D 全部已落**（票 5r：决策协议；
+> 票 5s：append-only ledger + Creative Memory style 观测的 observe-only 通道；票 5t：只读管理面 +
 > 真实调用者 CLI；票 5u：独立重读验证 + 第一次 `internal_fact` 晋升 + retrieval provenance
-> 透传）。Slice D 未实现，按 §6 另开任务，单独 PR。
+> 透传；票 5v：hy-memory 候选以 **REVIEW-only** 进入同一闸门，DEGRADED 批次整体拒）。
 >
 > 依据：`docs/agent-os-upgrade-2026q4.md` §3 差距矩阵第 7 行 ——
 > 「hy-memory 有 LLM 抽取 + reconciler，无『来源验证→去重→晋升』显式流水线」❌ 缺（P1/P2）。
 >
 > 侦察记录（每条判断的出处）：`research/2026-10-21-recon.md`
-> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12 / §13 / §14 / §15
+> 实现记录与词表修正：`docs/memory-promotion.md`、本文件 §12 / §13 / §14 / §15 / §16
 
 ## 1. Goal
 
@@ -145,6 +145,10 @@ PromotionDecision(frozen)
   SDK 抽取的记忆以 metadata 里的 `source_ref` 进入同一闸门；`DEGRADED` 批次整体
   `REFUSE(source_degraded)`；初期**只产 `REVIEW`**，人审通过后才允许任何写入。
   验收：`last_error` 非空时零晋升；人审 disposition 与 ADR-0002 语汇一致。
+  **已落（票 5v）**：`backend/memory/promotion_hy.py`（行→candidate、批次构造、REVIEW-only
+  观察通道、降级批次单条拒记录）+ `scripts/observe_hy_promotions.py`。**人审写入面仍未实现**
+  （PRD §9 Q1 的审核入口问题依旧开放）：D 的 REVIEW 行是审计记录，不是审批 UI；"人审通过后
+  才允许写入"在 D 里由「没有写路径」保证，而不是由审批流保证。
 
 ## 7. Acceptance Criteria（全局）
 
@@ -277,3 +281,21 @@ Slice A 不产生任何 prompt 文本，context baseline 零漂移。
 
 prompt 输出仍零变化（测试与基线都不含晋升数据）；但这是**第一次**存在能改变 prompt 的写入路径，
 验收按 PRD §7「任何未验证候选无法到达 prompt」做突变（M1/M2/M3/M4/M9/M10/M11）。
+
+## 16. Slice D 实现记录（票 5v）
+
+| 项 | 实现 | 取舍 |
+|---|---|---|
+| 候选来源 | `promotion_hy.py::batch_from_retrieval`（`recall_hy_memory` 的 HIT/EMPTY/DEGRADED）与 `batch_from_bridge`（`list_memories` 原始行 + `last_error`） | 失败/空分开：DEGRADED 必须带错误摘要，healthy 必须不带（`HyMemoryBatch.__post_init__` 双向校验） |
+| 映射 | 行 → `PromotionCandidate`：内容取 content/statement/text；`source_ref` 优先 metadata，其次 memory_id，最后内容寻址；版本优先 metadata，否则内容寻址 | 内容寻址是**文本版本**不是行版本（SDK 无可信重读，文档写明） |
+| 信任类 | 固定 `TrustClass.MEMORY` | 协议因此只给 `REVIEW(needs_human_review)`；调用方无法把它改成可机晋升 |
+| 永不晋升 | 若策略把 MEMORY 列为可机晋升 → `RuntimeError` | 未验证来源的写入会无法归因；D 没有写路径，宁可在误配置时炸 |
+| 降级批次 | 一条 `REFUSE(source_degraded)` 记录，key 由 scene+error 派生；`detail` 存错误摘要 | 错误摘要此前只存在于 candidate body（账本不存 body）；给 `PromotionRecord` 加了可选 `detail`，向后兼容（缺省空串） |
+| 幂等 | 同一行/同一降级错误 → 同一 `promotion_id` → 重复观察只留一行 | append-only 语义不变 |
+| 调用者 | `scripts/observe_hy_promotions.py`（`--scene`/`--limit`/`--dry-run`；要求 Postgres store 与 `HYMEMORY_ENABLED`） | 真正的调用者存在，但默认不接线到 agent 流程（D 只产 REVIEW，接线无收益且有成本） |
+| 测试 | 模块 30、CLI 7 | 边界断言同 5t/5u：outcome 式，避免下游异常替本层背书 |
+
+**未做（诚实边界）**：人审写入面（PRD §9 Q1）仍未实现 —— D 的 REVIEW 行是审计记录，
+不是审批 UI；「人审通过后才允许写入」由「没有写路径」保证，而不是由审批流保证。
+D 的候选也**没有独立重读**（SDK 无此 API），所以版本是内容寻址、`REVIEW` 是终点；
+这两点在 `docs/memory-promotion.md` §9 与 `docs/hy-memory.md` §9 都写明。

@@ -104,6 +104,7 @@ class PromotionRecord:
     decided_by: str
     policy_version: str
     recorded_at: str
+    detail: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -121,6 +122,7 @@ class PromotionRecord:
             "decided_by": self.decided_by,
             "policy_version": self.policy_version,
             "recorded_at": self.recorded_at,
+            "detail": self.detail,
         }
 
     @classmethod
@@ -143,6 +145,7 @@ class PromotionRecord:
             decided_by=str(raw["decided_by"]),
             policy_version=str(raw["policy_version"]),
             recorded_at=str(raw["recorded_at"]),
+            detail=str(raw.get("detail") or ""),
         )
 
 
@@ -184,8 +187,14 @@ class PromotionLedger:
         decision: PromotionDecision,
         *,
         recorded_at: str | None = None,
+        detail: str = "",
     ) -> LedgerAppendOutcome:
-        """Write one decision. Raises if the store raises."""
+        """Write one decision. Raises if the store raises.
+
+        ``detail`` carries the operator-facing context the decision vocabulary
+        cannot spell out (e.g. the reader's degradation summary); it is stored,
+        not re-derived.
+        """
         if self._store is None:
             return LedgerAppendOutcome.NO_STORE
         record = PromotionRecord(
@@ -203,6 +212,7 @@ class PromotionLedger:
             decided_by=decision.decided_by,
             policy_version=decision.policy_version,
             recorded_at=recorded_at or datetime.now(UTC).isoformat(),
+            detail=detail,
         )
         await self._store.aput(
             self.namespace(account_id),
