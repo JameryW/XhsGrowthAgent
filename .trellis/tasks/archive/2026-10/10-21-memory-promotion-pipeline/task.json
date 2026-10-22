@@ -3,7 +3,7 @@
   "name": "memory-promotion-pipeline",
   "title": "Memory Promotion Pipeline",
   "description": "Design PRD for the missing memory promotion pipeline: verify -> dedupe -> promote, closed reason vocabulary, append-only ledger, observe-only first slices. PRD only; implementation lands as separate tasks per slice.",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "backend/memory,backend/context,docs",
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-10-21",
-  "completedAt": null,
+  "completedAt": "2026-10-22",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "PRD 已定（票 5q）。Slice A 协议已落（5r）；Slice B 完成：B1 账本 + style observe-only 通道（5s），B2 只读管理面 + 调用者 CLI（5t）；Slice C 已落（5u）：独立重读验证 + 首次 internal_fact 晋升（先记账后写 strategy_notes）+ retrieval provenance 透传 + CLI --apply。待落：D（hy 候选 REVIEW-only）。PRD §9 Q5 已裁决为 BaseStore namespace。",
+  "notes": "PRD 已定（票 5q）。四片全部落地并已归档：A 协议（5r）、B 账本+观测+管理面+调用者（5s/5t）、C 独立重读+首次晋升+provenance（5u）、D hy 候选 REVIEW-only（5v）。PRD §9 Q5 已裁决为 BaseStore namespace；剩余开放问题（人审入口、TTL 默认值、语义近邻成本、policy 来源）不阻塞行 7 判定。",
   "meta": {}
 }
