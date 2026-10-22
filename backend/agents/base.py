@@ -294,13 +294,53 @@ class BaseAgent(ABC):
         answered = False
         last_valid: T | None = None
 
+        import time
+        from datetime import UTC, datetime
+
+        from backend.state.attempts import AttemptOutcome, attempt_entry
+
+        def record_attempt(
+            level: Any,
+            attempt_no: int,
+            outcome: AttemptOutcome,
+            started_perf: float,
+            started_at: str,
+            error_class: str = "",
+        ) -> None:
+            """Append one attempt event; telemetry must never fail the call."""
+            try:
+                self._current_llm_perf_entries().append(
+                    attempt_entry(
+                        agent=self.agent_name,
+                        task_type=self.task_type.value,
+                        level=getattr(level, "value", str(level)),
+                        attempt_no=attempt_no,
+                        outcome=outcome,
+                        duration_ms=(time.perf_counter() - started_perf) * 1000.0,
+                        started_at=started_at,
+                        error_class=error_class,
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - template: exception class unknown
+                logger.debug("attempt entry capture failed: %s", exc)
+
         for level in degradation_path(resolve_structured_mode(provider)):
-            for _ in range(max(1, attempts_per_level)):
+            for attempt_no in range(1, max(1, attempts_per_level) + 1):
+                attempt_started = time.perf_counter()
+                attempt_started_at = datetime.now(UTC).isoformat()
                 try:
                     payload = await self._structured_call(level, conversation, output_model)
                 except Exception as exc:
                     # The level itself is unusable; a retry would fail the same
                     # way, so record it and degrade.
+                    record_attempt(
+                        level,
+                        attempt_no,
+                        AttemptOutcome.UNREACHABLE,
+                        attempt_started,
+                        attempt_started_at,
+                        type(exc).__name__,
+                    )
                     failures.append((level, f"{type(exc).__name__}: {exc}"))
                     unreachable.append((level, exc))
                     break
@@ -308,12 +348,35 @@ class BaseAgent(ABC):
                 outcome, correction = validate_output(payload, output_model)
                 if outcome is None:
                     # Malformed: this one can never be the accepted payload.
+                    record_attempt(
+                        level,
+                        attempt_no,
+                        AttemptOutcome.PAYLOAD_REJECTED,
+                        attempt_started,
+                        attempt_started_at,
+                        "SchemaRejection",
+                    )
                     failures.append((level, correction or "payload did not validate"))
                 else:
                     correction = validator(outcome) if validator is not None else None
                     if correction is None:
+                        record_attempt(
+                            level,
+                            attempt_no,
+                            AttemptOutcome.SUCCEEDED,
+                            attempt_started,
+                            attempt_started_at,
+                        )
                         return outcome
                     last_valid = outcome
+                    record_attempt(
+                        level,
+                        attempt_no,
+                        AttemptOutcome.SEMANTIC_REJECTED,
+                        attempt_started,
+                        attempt_started_at,
+                        "ValidatorRejection",
+                    )
                     failures.append((level, correction))
                 logger.info(
                     "%s: %s payload rejected, retrying with the correction",

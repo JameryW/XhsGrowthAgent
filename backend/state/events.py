@@ -23,6 +23,7 @@ from typing import Any
 
 __all__ = [
     "ACTION_EVENT_KIND",
+    "ATTEMPT_EVENT_KIND",
     "ACTION_LEASE_REFUSED",
     "ACTION_POLICY_DENIED",
     "ACTION_PUBLISH_BLOCKED",
@@ -44,6 +45,11 @@ __all__ = [
 # Checkpoint key telemetry used to occupy. Its *presence* (not its value) is
 # what marks a thread as legacy: post-S2 runs never write it into state.
 LEGACY_PERF_LOG_KEY = "performance_log"
+
+#: Telemetry kind for one node-internal retry attempt (票 5w).
+#: An attempt is not an effect: nothing external happened; it is also not a step
+#: because the node has not finished. See backend/state/attempts.py.
+ATTEMPT_EVENT_KIND = "attempt"
 
 #: Telemetry kind for a *refusal* — an action that was asked for and denied.
 #: Declared in ``backend.db.workflow_events.EVENT_KINDS`` since P1a as part of

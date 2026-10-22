@@ -435,3 +435,125 @@ class TestTokenAccounting:
 
         agent.model.bind.assert_called_once_with(temperature=0)
         agent.model.ainvoke.assert_not_called()
+
+
+# ── Attempt identity (票 5w) ──────────────────────────────────────────────────
+
+
+def _attempts(agent: _Agent) -> list[dict[str, Any]]:
+    """Drain the perf contextvar and keep only attempt entries."""
+    return [
+        entry
+        for entry in agent._drain_llm_perf()
+        if isinstance(entry, dict) and entry.get("kind") == "attempt"
+    ]
+
+
+class TestAttemptIdentity:
+    """Every (level × attempt) ends with one attempt event, correctly labelled."""
+
+    @pytest.mark.asyncio
+    async def test_a_successful_attempt_is_recorded(self):
+        agent, _calls = _text_agent('{"topic": "美食探店"}')
+        agent._drain_llm_perf()  # clear anything a previous test left behind
+
+        with _with_provider(ModelProvider.XUNFEI):
+            plan = await agent._llm_structured(_messages(), _Plan)
+
+        assert plan == _Plan(topic="美食探店")
+        attempts = _attempts(agent)
+        assert len(attempts) == 1
+        entry = attempts[0]
+        assert entry["outcome"] == "succeeded"
+        assert entry["attempt_no"] == 1
+        assert entry["level"] == "prompted"
+        assert entry["agent"] == "structured_test"
+        assert entry["task_type"] == "routing"
+        assert entry["error_class"] == ""
+        assert str(entry["attempt_id"]).startswith("att_")
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_payload_is_recorded_apart_from_success(self):
+        agent, _calls = _text_agent("{}", '{"topic": "第二次"}')
+        agent._drain_llm_perf()
+
+        with _with_provider(ModelProvider.XUNFEI):
+            plan = await agent._llm_structured(_messages(), _Plan)
+
+        assert plan == _Plan(topic="第二次")
+        entries = _attempts(agent)
+        assert [entry["outcome"] for entry in entries] == ["payload_rejected", "succeeded"]
+        assert [entry["attempt_no"] for entry in entries] == [1, 2]
+        assert entries[0]["error_class"] == "SchemaRejection"
+        assert entries[1]["error_class"] == ""
+        assert entries[0]["attempt_id"] != entries[1]["attempt_id"]
+
+    @pytest.mark.asyncio
+    async def test_a_refused_payload_is_recorded_as_semantic_rejection(self):
+        agent, _calls = _text_agent('{"topic": "不会通过"}')
+        agent._drain_llm_perf()
+
+        with _with_provider(ModelProvider.XUNFEI), pytest.raises(StructuredOutputError):
+            await agent._llm_structured(
+                _messages(),
+                _Plan,
+                validator=lambda _plan: "写成这样不行",
+            )
+
+        entries = _attempts(agent)
+        assert [entry["outcome"] for entry in entries] == ["semantic_rejected"] * 2
+        assert {entry["error_class"] for entry in entries} == {"ValidatorRejection"}
+
+    @pytest.mark.asyncio
+    async def test_an_advisory_refusal_still_records_the_rejections(self):
+        agent, _calls = _text_agent('{"topic": "勉强可用"}')
+        agent._drain_llm_perf()
+
+        with _with_provider(ModelProvider.XUNFEI):
+            plan = await agent._llm_structured(
+                _messages(),
+                _Plan,
+                validator=lambda _plan: "如果能更具体更好",
+                accept_last_valid=True,
+            )
+
+        assert plan == _Plan(topic="勉强可用")
+        entries = _attempts(agent)
+        assert [entry["outcome"] for entry in entries] == ["semantic_rejected"] * 2
+        # The advisory acceptance is a *caller* decision; no attempt claims the
+        # payload passed the semantic check it actually failed.
+        assert all(entry["outcome"] != "succeeded" for entry in entries)
+
+    @pytest.mark.asyncio
+    async def test_an_unreachable_level_is_recorded_as_such(self):
+        agent = _Agent()
+        agent._model = _UnreachableModel(RuntimeError("endpoint down"))
+        agent._drain_llm_perf()
+
+        with (
+            _with_provider(ModelProvider.OPENAI),
+            pytest.raises(RuntimeError, match="endpoint down"),
+        ):
+            await agent._llm_structured(_messages(), _Plan)
+
+        entries = _attempts(agent)
+        assert entries, "an unreachable chain still has attempts to account for"
+        assert {entry["outcome"] for entry in entries} == {"unreachable"}
+        assert {entry["error_class"] for entry in entries} == {"RuntimeError"}
+        # One attempt per level: a retry of an uncallable level would fail the
+        # same way, which is why the loop breaks instead of spending the budget.
+        assert len(entries) == len({entry["level"] for entry in entries})
+
+    @pytest.mark.asyncio
+    async def test_attempt_entries_carry_no_prompt_or_output_text(self):
+        agent, _calls = _text_agent('{"topic": "内容"}')
+        agent._drain_llm_perf()
+
+        with _with_provider(ModelProvider.XUNFEI):
+            await agent._llm_structured(_messages(), _Plan)
+
+        for entry in _attempts(agent):
+            for forbidden in ("content", "prompt", "messages", "output", "text", "error"):
+                assert forbidden not in entry
+            assert "内容" not in str(entry)
+            assert "系统提示" not in str(entry)
