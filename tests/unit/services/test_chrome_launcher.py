@@ -508,6 +508,9 @@ async def test_stop_chrome_sigterms_live_pid(_profile_dir: Path, monkeypatch):
         return call_count["n"] == 1  # alive only on the first check
 
     monkeypatch.setattr(cl, "_pid_alive", _fake_alive)
+    # Pin ownership: a real /proc/<pid> may exist on busy CI runners and would
+    # otherwise trip the profile-mismatch fail-closed path for this fake pid.
+    monkeypatch.setattr(cl, "_pid_matches_profile", lambda _pid, _profile: True)
 
     killed: list[tuple[int, int]] = []
     monkeypatch.setattr(

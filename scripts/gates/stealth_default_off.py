@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""CI gate: default browser path must not inject stealth.
+"""CI gate: anti-detect camouflage and fake HTTP signing must stay gone.
 
-Fails if production login code calls ``_apply_stealth`` without the
-``XHS_BROWSER_STEALTH`` opt-in guard, or if ``fake-useragent`` is in main deps.
+Fails if production code reintroduces playwright-stealth, webdriver-hide
+init scripts, AutomationControlled camouflage args, fake-useragent, or the
+removed ``XHSSignature`` class.
 """
 
 from __future__ import annotations
@@ -12,40 +13,62 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-LOGIN = ROOT / "backend" / "services" / "xhs_login.py"
+BACKEND = ROOT / "backend"
 PYPROJECT = ROOT / "pyproject.toml"
+SIGNATURE = ROOT / "backend" / "services" / "xhs_signature.py"
+
+# Patterns that mean "we are forging or hiding automation fingerprints".
+_FORBIDDEN_BACKEND = (
+    (re.compile(r"playwright_stealth|\bStealth\b"), "playwright-stealth / Stealth"),
+    (re.compile(r"_apply_stealth|_stealth_injection_enabled"), "stealth helpers"),
+    (re.compile(r"XHS_BROWSER_STEALTH"), "stealth opt-in env"),
+    (
+        re.compile(r"navigator\.webdriver|defineProperty\(\s*navigator"),
+        "webdriver-hide init script",
+    ),
+    (
+        re.compile(r"disable-blink-features=AutomationControlled"),
+        "AutomationControlled camouflage flag",
+    ),
+    (re.compile(r"fake[_-]?useragent", re.I), "fake-useragent"),
+)
+
+
+def _iter_backend_py() -> list[Path]:
+    return sorted(p for p in BACKEND.rglob("*.py") if p.is_file())
 
 
 def main() -> int:
     errors: list[str] = []
-    login_src = LOGIN.read_text(encoding="utf-8")
-    # Every call site must be guarded by _stealth_injection_enabled().
-    call_sites = [m.start() for m in re.finditer(r"await\s+self\._apply_stealth\s*\(", login_src)]
-    for pos in call_sites:
-        window = login_src[max(0, pos - 400) : pos]
-        if "_stealth_injection_enabled" not in window:
-            errors.append(
-                f"{LOGIN}: _apply_stealth call near offset {pos} is not guarded "
-                "by _stealth_injection_enabled()"
-            )
-    if "def _stealth_injection_enabled" not in login_src:
-        errors.append(f"{LOGIN}: missing _stealth_injection_enabled helper")
+
+    for path in _iter_backend_py():
+        src = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT)
+        for pattern, label in _FORBIDDEN_BACKEND:
+            if pattern.search(src):
+                errors.append(f"{rel}: forbidden {label}")
 
     pyproject = PYPROJECT.read_text(encoding="utf-8")
-    # Main dependencies block only (before optional-dependencies).
-    main_deps = pyproject.split("[project.optional-dependencies]", 1)[0]
-    if "fake-useragent" in main_deps or "fake_useragent" in main_deps:
-        errors.append(f"{PYPROJECT}: fake-useragent must not be in main dependencies")
+    if re.search(r"playwright-stealth|fake-useragent|fake_useragent", pyproject):
+        errors.append(
+            f"{PYPROJECT.relative_to(ROOT)}: stealth/fake-useragent must not be a dependency"
+        )
+    if "playwright_stealth" in pyproject:
+        errors.append(
+            f"{PYPROJECT.relative_to(ROOT)}: playwright_stealth mypy override must stay removed"
+        )
 
-    sig_src = (ROOT / "backend" / "services" / "xhs_signature.py").read_text(encoding="utf-8")
+    sig_src = SIGNATURE.read_text(encoding="utf-8")
     if re.search(r"^class\s+XHSSignature\b", sig_src, re.M):
         errors.append("backend/services/xhs_signature.py still defines class XHSSignature")
+    if re.search(r"generate_x_s|XHS_WEB|md5.*sign", sig_src, re.I):
+        errors.append("backend/services/xhs_signature.py reintroduced fake signing logic")
 
     if errors:
         for err in errors:
             print(f"ERROR: {err}", file=sys.stderr)
         return 1
-    print("stealth_default_off: ok")
+    print("stealth_hard_delete: ok")
     return 0
 
 

@@ -10,8 +10,8 @@ Contract source of truth: [`.trellis/spec/backend/compliance-baseline.md`](../..
 
 | Issue | Title | Evidence on `main` | Notes vs issue text |
 |------:|-------|--------------------|---------------------|
-| [#644](https://github.com/JameryW/XhsGrowthAgent/issues/644) | T1-1 stealth | `xhs_login._stealth_enabled` / `_apply_stealth` only when `XHS_BROWSER_STEALTH=1`; `scripts/gates/stealth_default_off.py`; `tests/unit/services/test_stealth_default_off.py` | MVP = default-off + opt-in (not hard-delete of optional dep) |
-| [#645](https://github.com/JameryW/XhsGrowthAgent/issues/645) | T1-2 CI gate | CI job **Compliance Baseline Gate** runs `python scripts/gates/stealth_default_off.py` | — |
+| [#644](https://github.com/JameryW/XhsGrowthAgent/issues/644) | T1-1 stealth | Hard-delete: no `_apply_stealth` / `XHS_BROWSER_STEALTH` / `playwright-stealth`; `scripts/gates/stealth_default_off.py` asserts absence | Follow-up completed hard-delete (was MVP opt-in) |
+| [#645](https://github.com/JameryW/XhsGrowthAgent/issues/645) | T1-2 CI gate | CI job **Compliance Baseline Gate** runs `python scripts/gates/stealth_default_off.py` (absence check) | — |
 | [#646](https://github.com/JameryW/XhsGrowthAgent/issues/646) | T1-3 fake sign | No `XHSSignature`; HTTP path raises `signature_unavailable`; `tests/unit/services/test_xhs_signature.py` | — |
 | [#647](https://github.com/JameryW/XhsGrowthAgent/issues/647) | T2-1 publish audit | `publish_gate` writes `publish_confirmation` with `confirmer` / `source` / `confirmed_at`; refuse path emits `ACTION_PUBLISH_REFUSED`; `tests/unit/agents/nodes/test_dual_auto_and_commercial.py`, `test_publish_gate.py` | Receipt fields fulfill audit intent; action constant naming differs |
 | [#648](https://github.com/JameryW/XhsGrowthAgent/issues/648) | T2-2 dual-auto | `compliance_policy.assert_not_dual_auto` → `dual_auto_publish_forbidden`; wired on start/CLI | Hard reject (no ack bypass) per locked MVP |

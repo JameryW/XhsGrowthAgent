@@ -678,7 +678,6 @@ def login(
                 args=[
                     "--no-first-run",
                     "--no-default-browser-check",
-                    "--disable-blink-features=AutomationControlled",
                 ],
             )
             page = context.pages[0] if context.pages else await context.new_page()

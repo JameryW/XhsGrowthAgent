@@ -21,11 +21,13 @@ copy alone is not evidence. The flag is returned only with `scanned` status
 and is explicitly false when that status has no fillable verification control.
 Waiting, confirmed, and expired responses must not carry a stale flag.
 
-## Stealth / anti-detect (P0)
+## Stealth / anti-detect (P0) — hard delete
 
-- Do **not** call `_apply_stealth` on the default path. Opt-in only via
-  `XHS_BROWSER_STEALTH=1` (or `true`/`yes`).
-- CI enforces default-off via `scripts/gates/stealth_default_off.py`
+- Do **not** ship anti-detect camouflage: no `playwright-stealth`, no
+  `_apply_stealth`, no `XHS_BROWSER_STEALTH` opt-in, no `navigator.webdriver`
+  hide init scripts, no `--disable-blink-features=AutomationControlled`.
+- Prefer a real headed CDP Chrome profile over forging fingerprints.
+- CI enforces absence via `scripts/gates/stealth_default_off.py`
   (Compliance Baseline Gate).
 - Fake HTTP shield signatures (`XHSSignature` / `XHS_WEB` MD5) are **removed**.
   Cookie parsing (`XHSCookieParser`) remains. HTTP callers that needed a fake

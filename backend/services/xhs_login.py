@@ -41,15 +41,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.login")
 
 
-def _stealth_injection_enabled() -> bool:
-    """Opt-in stealth only. Default is off (safe); requires XHS_BROWSER_STEALTH=1."""
-    return os.environ.get("XHS_BROWSER_STEALTH", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-
-
 # www 站登录浮层自动触发 qrcode/create 的入口页。creator.xiaohongshu.com/login
 # 无二维码 UI（spike 实测），只有 www 站 explore 页弹登录浮层才发 qrcode/create。
 _EXPLORE_URL = "https://www.xiaohongshu.com/explore"
@@ -689,20 +680,12 @@ class XhsLoginSession:
                     args=[
                         "--no-first-run",
                         "--no-default-browser-check",
-                        "--disable-blink-features=AutomationControlled",
                         "--no-sandbox",
                         "--disable-dev-shm-usage",
                     ],
                 )
-                # Stealth is opt-in only (XHS_BROWSER_STEALTH=1). Default path
-                # never injects anti-detect scripts — they are an automation
-                # fingerprint on headed/CDP Chrome. Optional [browser] extra.
-                if _stealth_injection_enabled():
-                    await self._apply_stealth(self._context)
-                else:
-                    logger.info(
-                        "skipping stealth injection (default); set XHS_BROWSER_STEALTH=1 to enable"
-                    )
+                # Anti-detect camouflage is intentionally absent. Prefer a real
+                # headed CDP Chrome profile over forging a browser fingerprint.
 
             # Always use a short-lived login page. Reusing an existing business
             # tab (creator publish page, etc.) can navigate/close the operator's
@@ -796,7 +779,7 @@ class XhsLoginSession:
             await self.stop()
             raise
         except Exception as e:
-            # launch/goto/stealth 等意外异常：关 context 后包成 LoginError，使 route
+            # launch/goto 等意外异常：关 context 后包成 LoginError，使 route
             # 的 except LoginError 统一映射 503（裸 Exception 会落到 500 内部错误）。
             await self.stop()
             raise LoginError(f"启动扫码登录失败：{type(e).__name__}: {e}") from e
@@ -2010,33 +1993,6 @@ class XhsLoginSession:
                 if isinstance(login_info, dict):
                     self._login_info = login_info
             logger.debug("拦截到 qrcode/status: code_status=%s", code_status)
-
-    async def _apply_stealth(self, context: BrowserContext) -> None:
-        """复用 publisher 的 stealth 注入逻辑.
-
-        XHS shield 检测 webdriver/CDP/permissions 等指纹，仅隐藏
-        navigator.webdriver 不够。playwright-stealth 注入全套反检测 init
-        script（plugins/webgl/vendor/permissions/ua 等）。可选依赖，未装则
-        fallback 到手动 webdriver 隐藏。
-        """
-        try:
-            from playwright_stealth import Stealth
-
-            # 不覆盖 platform/languages（stealth 默认 Win32/en-US 与真实 Linux UA +
-            # zh-CN locale 冲突，指纹不一致反而是自动化特征）。只启用检测隐藏类。
-            await Stealth(
-                navigator_platform=False,
-                navigator_languages=False,
-                navigator_languages_override=("zh-CN", "zh"),
-            ).apply_stealth_async(context)
-            logger.info("playwright-stealth 已应用 (login session)")
-        except Exception as e:
-            logger.warning(
-                "playwright-stealth 不可用，fallback 手动隐藏: %s: %s", type(e).__name__, e
-            )
-            await context.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', { get: () => false });"
-            )
 
 
 # ── 会话注册表：模块级 dict[account_id, XhsLoginSession] ──

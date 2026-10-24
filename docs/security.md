@@ -44,7 +44,8 @@
 ### 合规与自动化底线（P0）
 
 - **伪签名已删除**：`XHSSignature` 不再生成伪造 `x-s`/`x-t`。依赖旧 HTTP 加签的调用返回 `signature_unavailable`，不会静默空结果。平台操作走 headed CDP / 浏览器路径。
-- **Stealth 默认关闭**：登录回退路径默认不注入 `playwright-stealth`；仅当显式设置 `XHS_BROWSER_STEALTH=1` 时才注入（可选 `[browser]` 依赖）。
+- **防检测伪装已硬删除**：无 `playwright-stealth`、无 `XHS_BROWSER_STEALTH` opt-in、无 `navigator.webdriver` 隐藏脚本、无 `AutomationControlled` 伪装参数。登录走真实 headed CDP Chrome profile。
+- **发布资格 = 确定性判定器 + 审计**：`backend/services/compliance/judgers.py` 按失败模式（词库 / 商单披露 / 硬合规 / 双自动 / 高风险自动放行）各自判定，结果写入 `evaluation_result.publish_eligibility`；**不**把 LLM 综合自评当作放行依据。质量面板仅驱动修订回路。
 - **双自动硬拒绝**：`AUTO_APPROVE_LOW_RISK=true` 与 `auto_publish=true` 不能同时开启（`POST /start` 与 `xhs-growth run` 一致）。合规 blocking、商单 `is_commercial`、高风险垂类永不 `auto_low_risk`。
 - **发布回执**：`publish_confirmation` 记录 `confirmer` / `source`（`human` / `auto_*`）/ `confirmed_at`，以及 P1-4 `ai_content_declared`（含 AI 生成内容声明，Review 默认勾选）。
 - **私信策略**：默认仅回复未读/入站白名单用户；日配额默认私信 20、评论回复 50；冷启动「新建私信」需 `XHS_ALLOW_OUTBOUND_DM=1` + 逐条 `human_confirmed`。风控标记命中后互动暂停默认 6 小时，Settings `/api/system/risk-gates` 可见原因与剩余时间。

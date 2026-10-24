@@ -163,7 +163,7 @@
 
 工作流支持恢复，并会暴露状态、中间结果、审核决策和性能日志。审核门是明确的产品边界：智能体可以准备和评估内容，但发布动作仍然可见、可控。发布会先经过确定性策略引擎和人工确认，再由 Tool Gateway 执行，每次执行都会返回不可变回执。
 
-**合规默认偏安全：** 已删除伪造 HTTP 签名（改为明确的 `signature_unavailable`，不静默空结果）；浏览器 stealth 默认不注入（需 `XHS_BROWSER_STEALTH=1`）；`AUTO_APPROVE_LOW_RISK` 与 `auto_publish` 不可同时开启；私信默认仅回复入站白名单并有日配额；LLM 评估前先做确定性违禁词扫描；商单 brief 发布前须勾选披露确认。详见 [docs/security.md](./docs/security.md)。
+**合规默认偏安全：** 已删除伪造 HTTP 签名（改为明确的 `signature_unavailable`，不静默空结果）；防检测伪装（stealth / webdriver 隐藏）已硬删除；能否发布由确定性失败模式判定器 + 审计（`publish_eligibility`）决定，不交给 LLM 自评；`AUTO_APPROVE_LOW_RISK` 与 `auto_publish` 不可同时开启；私信默认仅回复入站白名单并有日配额；LLM 评估前先做确定性违禁词扫描；商单 brief 发布前须勾选披露确认。详见 [docs/security.md](./docs/security.md)。
 
 ## Web 工作区
 

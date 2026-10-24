@@ -10,6 +10,7 @@ from backend.graph.routers import (
     copywriter_router,
     draft_gate_router,
     evaluator_outcome,
+    evaluator_requires_human,
     orchestrator_router,
     publish_gate_outcome,
     review_outcome,
@@ -380,6 +381,25 @@ class TestEvaluatorOutcome:
             },
             "revision_count": 5,
         }
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_llm_approved_blocked_by_eligibility_audit(self):
+        """LLM approved must not publish when a deterministic judger blocks."""
+        state = {
+            "evaluation_result": {
+                "decision": ContentStatus.APPROVED,
+                "dimensions": [],
+                "publish_eligibility": {
+                    "allowed": False,
+                    "blocking_failures": ["lexicon"],
+                    "verdicts": [],
+                    "policy_version": "publish_judgers_v1",
+                    "decided_at": "2026-01-01T00:00:00+00:00",
+                },
+            },
+            "revision_count": 0,
+        }
+        assert evaluator_requires_human(state) is True
         assert evaluator_outcome(state) == "__end__"
 
     def test_quality_only_rejection_at_cap_still_publishes(self):

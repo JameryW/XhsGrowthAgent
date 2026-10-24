@@ -346,6 +346,9 @@ class EvaluationResult(TypedDict, total=False):
     # (blocking dims + compliance below the reject threshold). Missing/empty
     # on legacy results ⇒ quality-only (router back-compat default).
     failed_dimensions: list[str]
+    # Deterministic publish eligibility (per-failure-mode judgers + audit).
+    # Publish routing must consult this — not the LLM panel's overall self-score.
+    publish_eligibility: dict[str, Any]
 
 
 class BriefContent(TypedDict, total=False):
