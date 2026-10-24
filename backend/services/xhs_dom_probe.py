@@ -5,7 +5,7 @@ XHS 发布页 DOM 会漂移，发布器选择器失效是 silent failure（要 w
 发布器（xhs_publisher.py）改动的必跑检查。
 
 复用 XHSPublisher._ensure_browser/_ensure_page/_goto_creator_page 拿已登录 page，
-避免重写 CDP/cookie/stealth 逻辑。
+避免重写 CDP/cookie 逻辑。
 """
 
 from __future__ import annotations

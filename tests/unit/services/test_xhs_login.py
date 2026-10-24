@@ -1191,25 +1191,6 @@ class TestExceptionLogDiagnostics:
 
         assert any("ValueError: bad envelope" in record.message for record in caplog.records)
 
-    async def test_stealth_fallback_warning_includes_exception_type(
-        self, tmp_path, caplog, monkeypatch
-    ):
-        from backend.services.xhs_login import XhsLoginSession
-
-        monkeypatch.setenv("XHS_BROWSER_STEALTH", "1")
-        session = XhsLoginSession("acc-1", str(tmp_path / "p"))
-        context = MagicMock()
-        context.add_init_script = AsyncMock()
-
-        with (
-            patch.dict(sys.modules, {"playwright_stealth": None}),
-            caplog.at_level(logging.WARNING, logger="xhs_growth.login"),
-        ):
-            await session._apply_stealth(context)
-
-        assert any("ModuleNotFoundError:" in record.message for record in caplog.records)
-        context.add_init_script.assert_awaited_once()
-
     async def test_raw_cdp_warning_includes_exception_type(self, caplog):
         from backend.services.xhs_login import XhsLoginSession, _inspect_profile_login_status_raw
 
@@ -1262,42 +1243,26 @@ class TestExceptionLogDiagnostics:
         assert any("LookupError: page probe failed" in record.message for record in caplog.records)
 
 
-class TestStealthFallback:
-    """_apply_stealth — graceful degradation when playwright-stealth missing."""
+class TestNoStealthOnLaunchFallback:
+    """Fallback Chromium launch must not inject anti-detect camouflage."""
 
-    async def test_stealth_falls_back_to_webdriver_hide(self, tmp_path, monkeypatch):
-        """playwright-stealth import fails → manual webdriver hiding init script."""
-        from backend.services.xhs_login import XhsLoginSession
-
-        # Stealth is opt-in; enable so the launch fallback path still exercises it.
-        monkeypatch.setenv("XHS_BROWSER_STEALTH", "1")
-        mock_module, _, on_calls = _wire_playwright_mock()
-        session = XhsLoginSession("acc-1", str(tmp_path / "p"))
-
-        # Make playwright_stealth import raise inside _apply_stealth.
-        with (
-            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
-            patch.dict(sys.modules, {"playwright_stealth": None}),
-        ):
-            await asyncio.gather(session.start(), _fire_create_after_delay(on_calls, 0.05))
-
-        # add_init_script should have been called with the webdriver hide script.
-        # _apply_stealth is called on the context; check it was invoked.
-        assert session._context is not None
-        await session.stop()
-
-    async def test_stealth_skipped_by_default(self, tmp_path, monkeypatch):
+    async def test_fallback_launch_does_not_add_init_scripts(self, tmp_path, monkeypatch):
         from backend.services.xhs_login import XhsLoginSession
 
         monkeypatch.delenv("XHS_BROWSER_STEALTH", raising=False)
+        # No cdp_endpoint → launch_persistent_context path (the only place
+        # stealth used to inject init scripts).
+        session = XhsLoginSession("acc-1", str(tmp_path / "p"), cdp_endpoint="")
         mock_module, _, on_calls = _wire_playwright_mock()
-        session = XhsLoginSession("acc-1", str(tmp_path / "p"))
-        with (
-            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
-            patch.object(session, "_apply_stealth", new_callable=AsyncMock) as stealth,
-        ):
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
             await asyncio.gather(session.start(), _fire_create_after_delay(on_calls, 0.05))
-        stealth.assert_not_awaited()
+        assert session._context is not None
+        session._context.add_init_script.assert_not_called()
+        launch = mock_module.async_playwright.return_value.start.return_value.chromium
+        launch.launch_persistent_context.assert_awaited()
+        kwargs = launch.launch_persistent_context.await_args.kwargs
+        args = kwargs.get("args") or []
+        assert not any("AutomationControlled" in str(a) for a in args)
         await session.stop()
 
 

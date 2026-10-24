@@ -214,48 +214,89 @@ def _rejection_is_compliance_driven(evaluation: Mapping[str, Any]) -> bool:
     return bool(blocking)
 
 
+def _publish_eligibility(state: XHSGrowthState) -> dict[str, Any]:
+    """Deterministic publish eligibility audit (never an LLM self-score).
+
+    Prefer the stamped ``evaluation_result.publish_eligibility``; if absent
+    (legacy checkpoints), recompute from current state so fail-closed still
+    holds.
+    """
+    evaluation = state.get("evaluation_result") or {}
+    if isinstance(evaluation, dict):
+        stamped = evaluation.get("publish_eligibility")
+        if isinstance(stamped, dict) and "allowed" in stamped:
+            return stamped
+    from backend.services.compliance.judgers import decide_publish_eligibility
+
+    return decide_publish_eligibility(dict(state)).to_audit_dict()
+
+
+def _eligibility_blocks(state: XHSGrowthState) -> bool:
+    report = _publish_eligibility(state)
+    if report.get("allowed") is False:
+        return True
+    failures = report.get("blocking_failures") or []
+    return bool(failures)
+
+
 def evaluator_requires_human(state: XHSGrowthState) -> bool:
-    """P0-W5 single source of truth: does this evaluation forbid auto-publish?
+    """Single source of truth: does this run forbid continuing toward publish?
 
     Used by BOTH the evaluator node (to park the workflow in the existing
     paused status) and the evaluator_outcome router (to end the run), so the
     "human channel" decision can never diverge between them.
+
+    Publish permission is owned by deterministic judgers + audit
+    (``publish_eligibility``). The LLM panel's overall score is **not** the
+    authority — it only feeds the quality revise loop.
+
+    Fail-closed (pause / ``__end__``) when:
+    - the panel is degraded / decision-less (P0-W5);
+    - eligibility blocks AND quality already looks "approved" (LLM must not
+      self-approve a publish the judgers refuse);
+    - eligibility / compliance still blocks at the revision cap.
+    Under the revision cap, eligibility failures still take the revise loop
+    so authors get ``revision_hints`` before a hard stop.
     """
     evaluation = state.get("evaluation_result")
     # `_evaluation_is_degraded` already reports None/empty as degraded; the
     # explicit `is None` arm only narrows the type for the checks below.
     if evaluation is None or _evaluation_is_degraded(evaluation):
         return True
+
     decision: Any = evaluation.get("decision")
+    eligibility_blocked = _eligibility_blocks(state)
+    revision_count = state.get("revision_count", 0)
+    at_cap = revision_count >= Settings().workflow.max_revision_count
+
     if decision in (ContentStatus.REJECTED, "rejected"):
-        revision_count = state.get("revision_count", 0)
-        if (
-            revision_count >= Settings().workflow.max_revision_count
-            and _rejection_is_compliance_driven(evaluation)
-        ):
-            return True
-    return False
+        return bool(
+            at_cap and (eligibility_blocked or _rejection_is_compliance_driven(evaluation))
+        )
+
+    if decision in (ContentStatus.NEEDS_REVISION, "needs_revision"):
+        # Soft quality revise; eligibility re-checked after the next pass.
+        return False
+
+    # Approved / legacy: LLM self-score must not grant publish when judgers block.
+    return bool(eligibility_blocked)
 
 
 def evaluator_outcome(
     state: XHSGrowthState,
 ) -> Literal["publisher", "revise_content", "__end__"]:
-    """创作质量评估路由 — RQGM agent-as-a-judge 面板判定（P0-W5 fail-closed）.
+    """创作质量评估路由 — 确定性发布资格 + 质量修订回路（fail-closed）.
 
-    review_gate approved 后进入 evaluator_gate。读取 evaluation_result.decision：
-    - approved → publisher
-    - needs_revision / rejected（质量轨）→ revise_content（revision_hints 随
-      evaluation_result 携带）
-    - 降级/缺失/decision=None、以及 compliance/政策维度的拒绝 → __end__：
-      质量门失败时禁止静默放行发布（compliance fail-closed）。evaluator 节点已
-      把 phase 置为既有 PAUSED 语义并写入 PAUSE_REASON_EVALUATOR_FAIL_CLOSED，
-      人工通过 POST /resume/{thread_id} {"human_decision": "approve"|"revise"}
-      继续（compliance 阻断按设计可被人工推翻——fail-closed 是"必须有人决定"，
-      不是"禁止发布"）。路由本身不写状态。
+    review_gate approved 后进入 evaluator_gate：
 
-    循环防护（仅质量轨）：revision_count >= Settings().workflow.max_revision_count
-    （默认 2）时，只有全部 REJECTED 证据都来自质量维度才放行 publisher（保持
-    旧行为锚定）；compliance/阻塞维度参与的拒绝走与上面相同的人工通道。
+    - **能不能发** 只看 ``publish_eligibility``（确定性判定器 + 审计），不看
+      LLM 综合自评分。LLM ``approved`` 在判定器失败时不得放行。
+    - **要不要改** 才读 quality ``decision``（needs_revision / rejected →
+      revise_content，把 revision_hints 交给文案）。
+    - 降级/缺失、或判定器在修订上限仍失败 → ``__end__``（节点 PAUSED）。
+
+    循环防护（仅质量轨）：revision_count 达上限后，**无**判定器阻断的质量拒绝
+    可进 publish_gate；判定器/compliance 阻断仍走人工通道。
 
     不读 _check_terminal：此处只在人审通过后触发，不会有 cancelled/paused 分支
     （那些在 review_outcome 已拦截）。
@@ -272,13 +313,12 @@ def evaluator_outcome(
         "needs_revision",
         "rejected",
     ):
-        # Force-approve if revision limit reached — prevent infinite loop
-        # (quality track only; compliance rejections were caught above).
         revision_count = state.get("revision_count", 0)
         if revision_count >= Settings().workflow.max_revision_count:
+            # Cap + quality-only: eligibility already cleared requires_human.
             return "publisher"
         return "revise_content"
-    # approved（及显式未知 decision 的 legacy 结果）→ 放行发布
+    # Quality approved and eligibility clear → publish_gate
     return "publisher"
 
 

@@ -61,6 +61,33 @@ logger = logging.getLogger("xhs_growth.agents.evaluator")
 
 _compiler = ContextCompiler()
 
+
+def _with_publish_eligibility(
+    state: XHSGrowthState | dict[str, Any],
+    evaluation: dict[str, Any],
+    *,
+    compliance_scan: dict[str, Any] | None = None,
+    is_blocking: bool | None = None,
+    is_commercial: bool | None = None,
+) -> dict[str, Any]:
+    """Stamp deterministic publish eligibility (judgers + audit) onto the result.
+
+    Publish routing must read ``publish_eligibility``, not the LLM panel's
+    overall self-score. Quality ``decision`` remains for the revise loop only.
+    """
+    from backend.services.compliance.judgers import decide_publish_eligibility
+
+    merged: dict[str, Any] = {**dict(state), "evaluation_result": evaluation}
+    if compliance_scan is not None:
+        merged["compliance_scan"] = compliance_scan
+    if is_blocking is not None:
+        merged["is_blocking"] = is_blocking
+    if is_commercial is not None:
+        merged["is_commercial"] = is_commercial
+    report = decide_publish_eligibility(merged)
+    evaluation["publish_eligibility"] = report.to_audit_dict()
+    return evaluation
+
 # Outer wall-clock budget for the LLM panel call. Must match (or slightly
 # exceed) TASK_TIMEOUT_OVERRIDES["evaluation"] so the model HTTP client can
 # finish before this wait_for aborts; previously hard-coded to 60s while the
@@ -275,29 +302,36 @@ class EvaluatorAgent(BaseAgent):
             issues = [f"违禁词命中: {h.term}" for h in lexicon.hits]
             if disclosure_missing:
                 issues.append("商单文案缺少合作/广告披露标注")
+            blocked_eval = {
+                "overall_score": None,
+                "dimensions": [
+                    {
+                        "dimension": "compliance",
+                        "score": 0.0,
+                        "rationale": "确定性词库/披露扫描阻断",
+                        "issues": issues,
+                        "is_blocking": True,
+                        "available": True,
+                        "highlight_terms": lexicon_payload.get("highlight_terms") or [],
+                    }
+                ],
+                "decision": ContentStatus.REJECTED,
+                "status": "ready",
+                "degraded": False,
+                "lexicon_scan": lexicon_payload,
+                "revision_hints": issues,
+                "bias_warning": "",
+                "summary": "确定性合规扫描阻断发布: " + "; ".join(issues),
+                "failed_dimensions": ["compliance"],
+            }
             return {
-                "evaluation_result": {
-                    "overall_score": None,
-                    "dimensions": [
-                        {
-                            "dimension": "compliance",
-                            "score": 0.0,
-                            "rationale": "确定性词库/披露扫描阻断",
-                            "issues": issues,
-                            "is_blocking": True,
-                            "available": True,
-                            "highlight_terms": lexicon_payload.get("highlight_terms") or [],
-                        }
-                    ],
-                    "decision": ContentStatus.REJECTED,
-                    "status": "ready",
-                    "degraded": False,
-                    "lexicon_scan": lexicon_payload,
-                    "revision_hints": issues,
-                    "bias_warning": "",
-                    "summary": "确定性合规扫描阻断发布: " + "; ".join(issues),
-                    "failed_dimensions": ["compliance"],
-                },
+                "evaluation_result": _with_publish_eligibility(
+                    state,
+                    blocked_eval,
+                    compliance_scan=lexicon_payload,
+                    is_blocking=True,
+                    is_commercial=commercial,
+                ),
                 "compliance_scan": lexicon_payload,
                 "is_blocking": True,
                 "is_commercial": commercial,
@@ -434,17 +468,26 @@ class EvaluatorAgent(BaseAgent):
         )
         # Always attach the deterministic pre-LLM scan for audit/Review highlight.
         result["lexicon_scan"] = lexicon_payload
+        is_blocking = bool(lexicon_payload.get("is_blocking"))
+        result = _with_publish_eligibility(
+            state,
+            result,
+            compliance_scan=lexicon_payload,
+            is_blocking=is_blocking,
+            is_commercial=commercial,
+        )
         logger.info(
-            "Evaluation done: overall=%s decision=%s bias_warning=%s",
+            "Evaluation done: overall=%s decision=%s eligibility=%s bias_warning=%s",
             result["overall_score"],
             result.get("decision"),
+            (result.get("publish_eligibility") or {}).get("allowed"),
             bool(result.get("bias_warning")),
         )
         return {
             "evaluation_result": result,
             "compliance_scan": lexicon_payload,
             "is_commercial": commercial,
-            "is_blocking": bool(lexicon_payload.get("is_blocking")),
+            "is_blocking": is_blocking,
         }
 
     def evaluator_fingerprint(self, ctx: EvaluationContext | None = None) -> str:

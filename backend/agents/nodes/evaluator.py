@@ -59,24 +59,27 @@ async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
     if "evaluation_result" not in result:
         error = result.get("error", "unknown evaluator failure")
         logger.warning("Evaluator failed, degrading to an explicit fail-closed result: %s", error)
+        from backend.agents.evaluator import _with_publish_eligibility
+
+        degraded = {
+            "overall_score": None,
+            "dimensions": [],
+            "decision": None,
+            "status": "degraded",
+            "degraded": True,
+            "coverage": {
+                "weighted_ratio": 0.0,
+                "available": [],
+                "unavailable": [],
+                "required": ["copywriting", "compliance"],
+                "required_available": False,
+            },
+            "revision_hints": [],
+            "bias_warning": "",
+            "summary": f"评估器异常，评估未完成: {error}",
+        }
         result = {
-            "evaluation_result": {
-                "overall_score": None,
-                "dimensions": [],
-                "decision": None,
-                "status": "degraded",
-                "degraded": True,
-                "coverage": {
-                    "weighted_ratio": 0.0,
-                    "available": [],
-                    "unavailable": [],
-                    "required": ["copywriting", "compliance"],
-                    "required_available": False,
-                },
-                "revision_hints": [],
-                "bias_warning": "",
-                "summary": f"评估器异常，评估未完成: {error}",
-            }
+            "evaluation_result": _with_publish_eligibility(state, degraded),
         }
 
     evaluation = result.get("evaluation_result") or {}

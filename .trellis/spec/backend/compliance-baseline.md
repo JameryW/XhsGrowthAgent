@@ -90,11 +90,11 @@ assert_not_dual_auto(auto_publish=req.auto_publish)
 
 ---
 
-## Scenario: Fake signature removal & stealth default-off
+## Scenario: Fake signature removal & stealth hard-delete
 
 ### 1. Scope / Trigger
 
-- Editing `xhs_signature.py`, `xhs_client._request`, `xhs_login._apply_stealth`,
+- Editing `xhs_signature.py`, `xhs_client._request`, `xhs_login` launch args,
   `pyproject.toml` browser extras, or CI gate `scripts/gates/stealth_default_off.py`.
 
 ### 2. Signatures
@@ -111,22 +111,23 @@ class XHSSignatureUnavailableError(RuntimeError):
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `XHS_BROWSER_STEALTH` | unset/off | Stealth inject only when `1`/`true`/`yes` |
-| Main deps | no `fake-useragent` | Optional browser extra may keep playwright-stealth for explicit opt-in |
+| `playwright-stealth` / `fake-useragent` | absent | Not in main or `[browser]` extras |
+| `XHS_BROWSER_STEALTH` / `_apply_stealth` | absent | Hard-deleted — no opt-in path |
+| AutomationControlled / webdriver hide | absent | No fingerprint camouflage args/scripts |
 
 ### 4. Validation & Error Matrix
 
 | Condition | Behavior |
 |-----------|----------|
 | HTTP path that previously fake-signed | Raise `signature_unavailable` — never empty success |
-| Default login / CI | No `_apply_stealth` call unless env opt-in |
-| CI job Compliance Baseline Gate | Runs `scripts/gates/stealth_default_off.py` |
+| Login launch / CI | No stealth helpers, no camouflage init scripts |
+| CI job Compliance Baseline Gate | Runs `scripts/gates/stealth_default_off.py` (absence check) |
 
 ### 5. Good / Base / Bad
 
-- **Good**: Browser/CDP reads after user login.
+- **Good**: Browser/CDP reads after user login on a real headed profile.
 - **Base**: Cookie parser still used by credentials.
-- **Bad**: Re-adding MD5 `XHS_WEB` sign or default stealth injection.
+- **Bad**: Re-adding MD5 `XHS_WEB` sign, stealth deps, or webdriver-hide scripts.
 
 ### 6. Tests
 
@@ -148,6 +149,50 @@ return []  # swallow failure
 ```python
 raise XHSSignatureUnavailableError(...)  # error_code=signature_unavailable
 ```
+
+---
+
+## Scenario: Deterministic publish judgers (per failure mode)
+
+### 1. Scope / Trigger
+
+- Changing publish routing (`evaluator_outcome` / `evaluator_requires_human`),
+  `evaluation_result.publish_eligibility`, or
+  `backend/services/compliance/judgers.py`.
+
+### 2. Signatures
+
+```python
+# backend/services/compliance/judgers.py
+class JudgerId(StrEnum): ...  # lexicon | commercial_disclosure | ...
+def decide_publish_eligibility(state, *, thresholds=None) -> PublishEligibility: ...
+```
+
+### 3. Contracts
+
+| Field | Meaning |
+|-------|---------|
+| `evaluation_result.publish_eligibility` | Audited conjunction of per-mode verdicts |
+| `publish_eligibility.allowed` | Sole machine authority for "may proceed toward publish" |
+| LLM `decision` / overall_score | Quality revise loop only — must not alone grant publish |
+| Thresholds | Env `XHS_JUDGER_*_BLOCKING` (default True) — business-cost knobs |
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|-----------|----------|
+| Any blocking judger fails + quality `approved` | Fail-closed human channel (`__end__` / pause) |
+| Blocking judger fails + quality revise under cap | `revise_content` (hints first) |
+| Blocking still fails at revision cap | Fail-closed human channel |
+| All judgers pass + quality approved | Route to `publish_gate` |
+
+### 5–7. Cases / Tests / Wrong-Correct
+
+- Tests: `tests/unit/services/compliance/test_judgers.py`, router suites under
+  `tests/unit/graph/test_routers.py` / `tests/integration/test_evaluator_gate.py`.
+- **Wrong**: `if evaluation["decision"] == "approved": return "publisher"` without
+  consulting `publish_eligibility`.
+- **Correct**: eligibility audit first; LLM score only drives revise vs continue.
 
 ---
 
