@@ -270,9 +270,7 @@ def evaluator_requires_human(state: XHSGrowthState) -> bool:
     at_cap = revision_count >= Settings().workflow.max_revision_count
 
     if decision in (ContentStatus.REJECTED, "rejected"):
-        return bool(
-            at_cap and (eligibility_blocked or _rejection_is_compliance_driven(evaluation))
-        )
+        return bool(at_cap and (eligibility_blocked or _rejection_is_compliance_driven(evaluation)))
 
     if decision in (ContentStatus.NEEDS_REVISION, "needs_revision"):
         # Soft quality revise; eligibility re-checked after the next pass.

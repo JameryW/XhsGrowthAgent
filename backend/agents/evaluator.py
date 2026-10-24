@@ -88,6 +88,7 @@ def _with_publish_eligibility(
     evaluation["publish_eligibility"] = report.to_audit_dict()
     return evaluation
 
+
 # Outer wall-clock budget for the LLM panel call. Must match (or slightly
 # exceed) TASK_TIMEOUT_OVERRIDES["evaluation"] so the model HTTP client can
 # finish before this wait_for aborts; previously hard-coded to 60s while the

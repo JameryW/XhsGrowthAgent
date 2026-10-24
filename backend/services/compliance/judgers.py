@@ -306,7 +306,8 @@ def judge_dual_auto(state: Mapping[str, Any], thresholds: JudgerThresholds) -> J
 
 
 def judge_high_risk_auto(state: Mapping[str, Any], thresholds: JudgerThresholds) -> JudgerVerdict:
-    plan = state.get("content_plan") if isinstance(state.get("content_plan"), dict) else {}
+    raw_plan = state.get("content_plan")
+    plan: dict[str, Any] = raw_plan if isinstance(raw_plan, dict) else {}
     niche = str(state.get("niche") or plan.get("niche") or "")
     high = is_high_risk_niche(niche)
     # High-risk niches must never ride auto_low_risk or the dual-auto path.

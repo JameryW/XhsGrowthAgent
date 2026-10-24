@@ -61,7 +61,7 @@ async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
         logger.warning("Evaluator failed, degrading to an explicit fail-closed result: %s", error)
         from backend.agents.evaluator import _with_publish_eligibility
 
-        degraded = {
+        degraded: dict[str, Any] = {
             "overall_score": None,
             "dimensions": [],
             "decision": None,

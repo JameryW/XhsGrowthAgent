@@ -383,7 +383,6 @@ class TestEvaluatorOutcome:
         }
         assert evaluator_outcome(state) == "__end__"
 
-
     def test_llm_approved_blocked_by_eligibility_audit(self):
         """LLM approved must not publish when a deterministic judger blocks."""
         state = {
