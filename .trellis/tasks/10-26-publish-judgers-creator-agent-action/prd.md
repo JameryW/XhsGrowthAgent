@@ -28,11 +28,11 @@
 
 ## Acceptance Criteria
 
-* [ ] Plan publish: stamped eligibility deny / dual-auto / high-risk-auto → `ActionPolicyDeniedError`, no intent, auditable policy_id
-* [ ] Execute publish: lexicon/disclosure hit on artifact body → fail-closed before Gateway, no receipt
-* [ ] Single `decide_publish_eligibility` implementation shared
-* [ ] Workflow #717 router semantics unchanged (tests still green)
-* [ ] Unit tests for policy + execution deny paths; lint/mypy/CI green
+* [x] Plan publish: stamped eligibility deny / dual-auto / high-risk-auto → `ActionPolicyDeniedError`, no intent, auditable policy_id
+* [x] Execute publish: lexicon/disclosure hit on artifact body → fail-closed before Gateway, no receipt
+* [x] Single `decide_publish_eligibility` implementation shared
+* [x] Workflow #717 router semantics unchanged (tests still green)
+* [x] Unit tests for policy + execution deny paths; lint/mypy/CI green
 
 ## Definition of Done
 

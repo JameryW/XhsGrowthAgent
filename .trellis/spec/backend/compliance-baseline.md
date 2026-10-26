@@ -210,8 +210,13 @@ PolicyId.PUBLISH_ELIGIBILITY_DENIED = "policy.action.publish_eligibility_denied"
 - **Wrong**: `if evaluation["decision"] == "approved": return "publisher"` without
   consulting `publish_eligibility`.
 - **Wrong**: Action execute calling Tool Gateway before `decide_publish_eligibility`.
+- **Wrong**: Action plan calling full `decide_publish_eligibility` on an empty body
+  with `is_commercial=True` — disclosure judger false-denies before any artifact
+  exists. Use `judgers=PLAN_TIME_JUDGERS` only at plan.
 - **Correct**: eligibility audit first; LLM score only drives revise vs continue.
 - **Correct**: Action plan + execute + workflow share one `decide_publish_eligibility`.
+- **Correct**: Plan = stamped deny + `PLAN_TIME_JUDGERS`; execute = full conjunction
+  after hash match.
 
 ---
 

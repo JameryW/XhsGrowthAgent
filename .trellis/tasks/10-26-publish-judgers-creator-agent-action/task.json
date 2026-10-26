@@ -15,12 +15,12 @@
   "branch": "cursor/publish-judgers-creator-agent-action-ca60",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
-  "pr_url": null,
+  "commit": "3302f21bc318983eda0ee5743f5565255d20fc7a",
+  "pr_url": "https://github.com/JameryW/XhsGrowthAgent/pull/718",
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "Merged #718; Action plan/execute judgers + light residual; CI green.",
   "meta": {}
 }
