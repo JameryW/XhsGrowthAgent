@@ -25,12 +25,12 @@
 
 ## Acceptance Criteria
 
-* [ ] `rg -n "playwright_stealth|_apply_stealth|XHS_BROWSER_STEALTH" backend/` → no production hits (comments/docs about removal OK in docs/)
-* [ ] `pip install -e ".[browser]"` does not install `playwright-stealth`
-* [ ] CI gate fails if stealth/camouflage or `XHSSignature` reappear
-* [ ] Each failure mode has an isolated judger with configurable threshold / cost
-* [ ] Publish route consults eligibility audit, not LLM overall self-score alone
-* [ ] Unit tests green for judgers + stealth absence + router
+* [x] `rg -n "playwright_stealth|_apply_stealth|XHS_BROWSER_STEALTH" backend/` → no production hits (comments/docs about removal OK in docs/)
+* [x] `pip install -e ".[browser]"` does not install `playwright-stealth`
+* [x] CI gate fails if stealth/camouflage or `XHSSignature` reappear
+* [x] Each failure mode has an isolated judger with configurable threshold / cost
+* [x] Publish route consults eligibility audit, not LLM overall self-score alone
+* [x] Unit tests green for judgers + stealth absence + router
 
 ## Out of Scope
 
