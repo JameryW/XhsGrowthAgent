@@ -207,9 +207,14 @@ class TestReviseDecisionTakesFreshBudget:
         updates = call.args[1]
         evaluation = updates["evaluation_result"]
         assert str(evaluation["decision"]) == "needs_revision"
+        assert evaluation.get("status") == "human_revision_requested"
         assert evaluation.get("revision_hints"), "the writer needs a revision hint"
         # Fresh budget for the human-initiated cycle (the cap was already hit).
         assert updates["revision_count"] == 0
         assert updates["pause_reason"] is None
+        # Stamp must clear the shared predicate so evaluator_outcome can
+        # route into revise_content (LLM needs_revision alone would re-park).
+        merged = {**_paused_evaluator_values(revision_count=2), **updates}
+        assert evaluator_requires_human(merged) is False
         mock_resume.assert_awaited_once()
         assert mock_resume.await_args.args[3] != WorkflowPhase.SCOUTING

@@ -152,7 +152,7 @@ START → orchestrator → [trend_scout | content_strategist | analyst | engagem
         engagement → orchestrator
 ```
 
-- `evaluator_gate`: RQGM agent-as-a-judge panel (arxiv 2606.26294) — runs after human review approves, before publish. 6-dimension quality scoring (copywriting/visual/compliance/reach/audience + adversarial bias check); auto-routes approved→publisher, needs_revision/rejected→revise_content. Non-blocking: on evaluator failure, degrades to pass-through. `revision_hints` carried into `human_feedback.revisions` for the copywriter.
+- `evaluator_gate`: RQGM agent-as-a-judge panel (arxiv 2606.26294) — runs after human review approves, before publish_gate. 6-dimension quality scoring (copywriting/visual/compliance/reach/audience + adversarial bias check); writes scores/hints for UI. **Heavy residual**: quality `approved` + `publish_eligibility` clear → publisher; degraded / quality `needs_revision`/`rejected` (including at revision cap) / eligibility deny → `__end__` + `PAUSED` + `evaluator_fail_closed` (human via `POST /resume` `approve`|`revise`). Never auto-`revise_content` from LLM decision; never force-publish at cap. `revision_hints` carried into `human_feedback.revisions` when human chooses revise.
 - `compile_graph_dev()`: Memory checkpointer, interrupts at `review_gate`, `choice_gate`, `draft_gate` for human-in-the-loop
 - `compile_graph_prod()`: Postgres checkpointer for persistence
 

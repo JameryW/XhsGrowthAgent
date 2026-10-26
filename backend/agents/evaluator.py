@@ -1010,10 +1010,10 @@ def _rejection_failed_dimensions(
     Returns the dimension names that drove the hard rejection: every dimension
     flagged ``is_blocking`` plus ``compliance`` when it scored below the reject
     threshold. ``failed_dimensions`` containing a compliance/policy dimension
-    (or any blocking dimension) marks the rejection as compliance-driven, which
-    the router must never force-publish at the revision cap. A quality-only
-    rejection yields the failing non-blocking dimension names — the router's
-    legacy default when the field is absent is also quality.
+    (or any blocking dimension) marks the rejection as compliance-driven for
+    audit/UI. Heavy residual: the router parks *all* quality
+    needs_revision/rejected (and eligibility denies) for the human channel —
+    never force-publishes at the revision cap.
     """
     failed: list[str] = []
     for d in dimensions:

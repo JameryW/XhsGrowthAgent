@@ -235,8 +235,8 @@ if values.get("error") and (phase == WorkflowPhase.ERROR or not next_nodes):
 
 ### Quality-gate fail-closed continuation
 
-- `evaluator_requires_human` (backend/graph/routers.py) is the SINGLE predicate for "human required"; the evaluator node stamps `phase=PAUSED` + `pause_reason="evaluator_fail_closed"` with it, and the router returns `__end__` with it — the two can never diverge.
-- Resume of such a terminal thread REQUIRES body `{"human_decision": "approve"|"revise"}`: approve patches `evaluation_result` (cleared `failed_dimensions`, `degraded=False`, `decision=approved`) via `aupdate_state(as_node="evaluator_gate")` so the conditional edge goes straight to `publisher` without re-running upstream; revise grants a fresh revision budget. Missing/invalid decision → 4xx structured error — never the legacy whole-pipeline restart. Legacy pauses (no `pause_reason`) keep old resume behavior.
+- `evaluator_requires_human` (backend/graph/routers.py) is the SINGLE predicate for "human required"; the evaluator node stamps `phase=PAUSED` + `pause_reason="evaluator_fail_closed"` with it, and the router returns `__end__` with it — the two can never diverge. Heavy residual: quality `needs_revision`/`rejected` (any cap) also require human — never auto-`revise_content`, never force-publish at `max_revision_count`.
+- Resume of such a terminal thread REQUIRES body `{"human_decision": "approve"|"revise"}`: approve patches `evaluation_result` (cleared `failed_dimensions`, `degraded=False`, `decision=approved`) via `aupdate_state(as_node="evaluator_gate")` so the conditional edge goes straight to `publisher` without re-running upstream; revise stamps `status=human_revision_requested` + fresh revision budget so `evaluator_outcome` may one-shot-route to `revise_content` (the only auto path into that node from the gate). Missing/invalid decision → 4xx structured error — never the legacy whole-pipeline restart. Legacy pauses (no `pause_reason`) keep old resume behavior.
 
 ### Tests Required
 

@@ -190,7 +190,7 @@ async def load_action_policy_context_from_thread(thread_id, account_id="", *, gr
 |-------|---------|
 | `evaluation_result.publish_eligibility` | Audited conjunction of per-mode verdicts |
 | `publish_eligibility.allowed` | Sole machine authority for "may proceed toward publish" |
-| LLM `decision` / overall_score | Quality revise loop only — must not alone grant publish |
+| LLM `decision` / overall_score | UI scores/hints only — must not alone grant publish **or** auto-enter `revise_content` (heavy residual) |
 | Thresholds | Env `XHS_JUDGER_*_BLOCKING` (default True) — business-cost knobs |
 | Action **plan** | Auto-loads stamped eligibility from thread checkpoint when `thread_id` is set (`load_action_policy_context_from_thread`); explicit `policy_context=` overrides; + account-level judgers (`PLAN_TIME_JUDGERS`); **no** artifact read; deny → no intent |
 | Action **execute** | After hash match, before Gateway: full judgers on artifact body; deny → no receipt |
@@ -200,9 +200,10 @@ async def load_action_policy_context_from_thread(thread_id, account_id="", *, gr
 | Condition | Behavior |
 |-----------|----------|
 | Any blocking judger fails + quality `approved` | Fail-closed human channel (`__end__` / pause) |
-| Blocking judger fails + quality revise under cap | `revise_content` (hints first) |
-| Blocking still fails at revision cap | Fail-closed human channel |
+| Quality `needs_revision` / `rejected` (any revision count, including cap) | Fail-closed human channel — **no** auto `revise_content`, **no** force-publish |
 | All judgers pass + quality approved | Route to `publish_gate` |
+| `POST /resume` `human_decision=revise` | Stamp `human_revision_requested` + fresh budget → one-shot `revise_content` |
+| `POST /resume` `human_decision=approve` | Patch approved → continue toward publish (eligibility still enforced on next pass / gate) |
 | Action plan: stamped `allowed=False` / dual_auto | `ActionPolicyDeniedError` (`policy.action.publish_eligibility_denied`); no intent |
 | Action plan: checkpoint/graph unreadable | `ActionPolicyDeniedError` (`policy.action.eligibility_context_unavailable`); no intent |
 | Action plan: stamp missing | Continue (eligibility stamp check allows); execute still judges body |
@@ -216,6 +217,8 @@ async def load_action_policy_context_from_thread(thread_id, account_id="", *, gr
   (incl. `test_policy_context_loader.py` for stamp auto-load).
 - **Wrong**: `if evaluation["decision"] == "approved": return "publisher"` without
   consulting `publish_eligibility`.
+- **Wrong**: Auto-routing LLM `needs_revision`/`rejected` to `revise_content`, or
+  force-publishing quality reject at `max_revision_count`.
 - **Wrong**: Action execute calling Tool Gateway before `decide_publish_eligibility`.
 - **Wrong**: Action plan calling full `decide_publish_eligibility` on an empty body
   with `is_commercial=True` — disclosure judger false-denies before any artifact
@@ -223,7 +226,8 @@ async def load_action_policy_context_from_thread(thread_id, account_id="", *, gr
 - **Wrong**: Relying on callers to inject stamped eligibility at plan — production
   must auto-load from the thread checkpoint (explicit `policy_context=` is
   override-only).
-- **Correct**: eligibility audit first; LLM score only drives revise vs continue.
+- **Correct**: eligibility audit first; LLM quality reject → human channel;
+  only `/resume` revise enters `revise_content`.
 - **Correct**: Action plan + execute + workflow share one `decide_publish_eligibility`.
 - **Correct**: Plan = checkpoint stamp auto-load + `PLAN_TIME_JUDGERS`; execute =
   full conjunction after hash match.

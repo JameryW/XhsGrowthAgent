@@ -190,8 +190,8 @@ async def test_quality_gate_predicate_identical_on_resolved_state():
 
     evaluation_result stays inline (registry-exempt), so the resolved view is
     byte-identical for the predicate — pinned here for every fail-closed
-    family: degraded evidence, compliance-driven rejection at the revision
-    ceiling, and the plain quality track that must NOT demand a human.
+    family: degraded evidence, quality reject (heavy residual, including at
+    cap), and human-initiated revise which must NOT re-park.
     """
     store = InMemoryStore()
     copy, visual = _content()
@@ -208,8 +208,7 @@ async def test_quality_gate_predicate_identical_on_resolved_state():
         ({"decision": None}, 0, True),
         # compliance-driven rejection at the revision ceiling → fail closed
         ({"decision": "rejected", "failed_dimensions": ["compliance"]}, max_revisions, True),
-        # blocking evidence on ANY track at the ceiling → fail closed (the
-        # is_blocking dimension marker, not the dimension name, is the signal)
+        # blocking evidence on ANY track at the ceiling → fail closed
         (
             {
                 "decision": "rejected",
@@ -219,9 +218,20 @@ async def test_quality_gate_predicate_identical_on_resolved_state():
             max_revisions,
             True,
         ),
-        # plain quality rejection → the revise loop, not the human channel
-        ({"decision": "rejected", "failed_dimensions": ["quality"]}, max_revisions, False),
-        ({"decision": "needs_revision"}, max_revisions, False),
+        # heavy residual: plain quality reject / needs_revision → human channel
+        ({"decision": "rejected", "failed_dimensions": ["quality"]}, max_revisions, True),
+        ({"decision": "needs_revision"}, max_revisions, True),
+        ({"decision": "needs_revision"}, 0, True),
+        # /resume revise stamp must not re-park (one-shot into revise_content)
+        (
+            {
+                "decision": "needs_revision",
+                "status": "human_revision_requested",
+                "human_override": {"decision": "revise"},
+            },
+            0,
+            False,
+        ),
     ]
 
     for evaluation, revision_count, expected in shapes:

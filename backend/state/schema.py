@@ -78,9 +78,10 @@ class XHSGrowthState(TypedDict, total=False):
     # 创作质量评估 (RQGM agent-as-a-judge 面板) — 发布前 AI 质量关卡
     evaluation_result: EvaluationResult
 
-    # Revision loop guard — counts evaluator→revise_content→copywriter cycles.
-    # evaluator_outcome force-approves after Settings().workflow.max_revision_count
-    # to prevent infinite revision loops when the panel is miscalibrated or adversarial.
+    # Revision loop guard — counts human-initiated revise→copywriter cycles
+    # (entered only via POST /resume human_decision=revise). Heavy residual:
+    # evaluator_outcome never auto-revises from LLM decision and never
+    # force-publishes at max_revision_count; the cap bounds the human revise budget.
     revision_count: int
 
     # P0-A (additive, checkpoint-compatible): one compact record per revision

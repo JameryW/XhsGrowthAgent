@@ -236,10 +236,9 @@ class TestRevisionCountInterruptPreservation:
             }
         )
 
-        # The graph will run review_gate → evaluator_gate → publisher (dry_run)
-        # revision_count=2 is below max_revision_count(2)? No: >= means 2 >= 2
-        # is True, so if the evaluator rejects, it force-approves. But we're
-        # approving, so it goes straight to publisher.
+        # The graph will run review_gate → evaluator_gate → publisher (dry_run).
+        # Heavy residual: LLM reject would park for human (no force-publish at
+        # cap). This path stubs an APPROVED panel so it goes to publisher.
         #
         # P0-W5: the evaluator gate is fail-closed for degraded results, and
         # the global conftest LLM stub ('{"result": "mocked"}') produces a

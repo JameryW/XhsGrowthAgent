@@ -43,8 +43,9 @@ async def revise_content_node(state: XHSGrowthState, *, store: BaseStore) -> dic
     the copywriter can act on the evaluator's panel verdict (RQGM co-evolution:
     evaluator feedback feeds back into the writer).
 
-    Increments revision_count on each cycle; evaluator_outcome force-approves
-    after Settings().workflow.max_revision_count to prevent infinite revision loops.
+    Increments revision_count on each cycle. Entry is human-initiated
+    (POST /resume revise); the max_revision_count budget bounds that loop —
+    evaluator_outcome never force-publishes at the cap (heavy residual).
 
     P0-A (observe-only): each cycle also appends a compact verdict record and
     runs the Progress Detector over the loop's history. Two rounds asking for
