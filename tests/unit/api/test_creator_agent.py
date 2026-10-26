@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -43,6 +45,17 @@ def client():
         return {"id": "owner-a", "username": "tester"}
 
     app.dependency_overrides[get_current_user] = _user
+    # Publish plan auto-loads stamped eligibility from the workflow graph.
+    # Default mock: readable checkpoint, no stamp → plan may continue (execute
+    # still judges body).  Tests that need a stamped deny can override.
+    graph = MagicMock()
+    graph.store = None
+    graph.aget_state = AsyncMock(
+        return_value=SimpleNamespace(
+            values={"session_id": "test", "niche": "", "auto_publish": False}
+        )
+    )
+    app.state.graph = graph
     return TestClient(app)
 
 
@@ -757,6 +770,87 @@ def test_a_denied_publish_is_recorded_against_its_thread(client, monkeypatch):
     assert entry["retry_after_seconds"] == 42
     assert entry["reason"]
     assert entry["timestamp"]
+
+
+def test_stamped_eligibility_deny_is_auto_loaded_at_plan(client, monkeypatch):
+    """Publish plan must deny from checkpoint stamp without caller inject."""
+    _own_any_account(monkeypatch)
+    monkeypatch.setattr(
+        "backend.services.xhs_risk_gate.check_publish_allowed", lambda **_kwargs: None
+    )
+    decision_id = _seed_model_and_decision(client)
+    client.app.state.graph.aget_state = AsyncMock(
+        return_value=SimpleNamespace(
+            values={
+                "session_id": "s1",
+                "evaluation_result": {
+                    "publish_eligibility": {
+                        "allowed": False,
+                        "blocking_failures": ["lexicon"],
+                    }
+                },
+            }
+        )
+    )
+
+    denied = client.post(
+        "/api/creator-agent/actions",
+        json={
+            "account_id": "account-a",
+            "decision_id": decision_id,
+            "action_kind": "publish",
+            "idempotency_key": "api-stamp-deny-1",
+            "artifact_ref": "artifact://publish_payload/latest",
+            "content_hash": "a" * 64,
+            "thread_id": "thread-stamp-deny",
+        },
+    )
+
+    assert denied.status_code == 403
+    error = denied.json()["error"]
+    assert error["code"] == "ERROR_CREATOR_ACTION_POLICY_DENIED"
+    assert error["details"]["policy_id"] == "policy.action.publish_eligibility_denied"
+    assert "lexicon" in error["message"]
+    listed = client.get(
+        "/api/creator-agent/actions",
+        params={"account_id": "account-a"},
+    )
+    assert listed.status_code == 200
+    assert listed.json()["data"] == []
+
+
+def test_unreadable_checkpoint_denies_plan_fail_closed(client, monkeypatch):
+    """Graph/checkpointer failure at plan → eligibility_context_unavailable."""
+    _own_any_account(monkeypatch)
+    monkeypatch.setattr(
+        "backend.services.xhs_risk_gate.check_publish_allowed", lambda **_kwargs: None
+    )
+    decision_id = _seed_model_and_decision(client)
+    client.app.state.graph = None
+
+    denied = client.post(
+        "/api/creator-agent/actions",
+        json={
+            "account_id": "account-a",
+            "decision_id": decision_id,
+            "action_kind": "publish",
+            "idempotency_key": "api-stamp-unavailable-1",
+            "artifact_ref": "artifact://publish_payload/latest",
+            "content_hash": "a" * 64,
+            "thread_id": "thread-stamp-unavailable",
+        },
+    )
+
+    assert denied.status_code == 403
+    error = denied.json()["error"]
+    assert error["code"] == "ERROR_CREATOR_ACTION_POLICY_DENIED"
+    assert error["details"]["policy_id"] == "policy.action.eligibility_context_unavailable"
+    listed = client.get(
+        "/api/creator-agent/actions",
+        params={"account_id": "account-a"},
+    )
+    assert listed.status_code == 200
+    assert listed.json()["data"] == []
 
 
 def test_the_recorder_passes_an_absent_thread_through(monkeypatch):

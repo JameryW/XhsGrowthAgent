@@ -48,6 +48,7 @@ class PolicyId(StrEnum):
     RISK_COOLDOWN = "policy.action.risk_cooldown"
     RISK_UNAVAILABLE = "policy.action.risk_unavailable"
     PUBLISH_ELIGIBILITY_DENIED = "policy.action.publish_eligibility_denied"
+    ELIGIBILITY_CONTEXT_UNAVAILABLE = "policy.action.eligibility_context_unavailable"
 
 
 #: Capabilities that reach outside the process.  Everything else is
@@ -73,9 +74,11 @@ class RiskVerdict:
 class ActionPolicyContext:
     """Optional plan-time compliance inputs (no artifact body).
 
-    Injectable so tests and future thread-state loaders can supply a stamped
-    ``publish_eligibility`` audit and account-level flags without the policy
-    engine reading the Artifact Store.
+    Production ``plan_action(publish)`` auto-loads this from the workflow
+    checkpoint when ``thread_id`` is set (see
+    :func:`~backend.creator_agent.policy_context.load_action_policy_context_from_thread`).
+    Callers may still pass an explicit context to **override** the auto-loader
+    (tests).  Never derived from the Artifact Store.
     """
 
     publish_eligibility: Mapping[str, Any] | None = None
