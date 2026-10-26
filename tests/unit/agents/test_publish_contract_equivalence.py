@@ -232,6 +232,23 @@ async def test_quality_gate_predicate_identical_on_resolved_state():
             0,
             False,
         ),
+        # /resume approve must not re-park on a stamped eligibility deny
+        (
+            {
+                "decision": "approved",
+                "status": "human_approved",
+                "human_override": {"decision": "approve"},
+                "publish_eligibility": {
+                    "allowed": False,
+                    "blocking_failures": ["lexicon"],
+                    "verdicts": [],
+                    "policy_version": "publish_judgers_v1",
+                    "decided_at": "2026-01-01T00:00:00+00:00",
+                },
+            },
+            0,
+            False,
+        ),
     ]
 
     for evaluation, revision_count, expected in shapes:

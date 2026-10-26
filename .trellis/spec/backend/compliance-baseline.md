@@ -203,7 +203,7 @@ async def load_action_policy_context_from_thread(thread_id, account_id="", *, gr
 | Quality `needs_revision` / `rejected` (any revision count, including cap) | Fail-closed human channel — **no** auto `revise_content`, **no** force-publish |
 | All judgers pass + quality approved | Route to `publish_gate` |
 | `POST /resume` `human_decision=revise` | Stamp `human_revision_requested` + fresh budget → one-shot `revise_content` |
-| `POST /resume` `human_decision=approve` | Patch approved → continue toward publish (eligibility still enforced on next pass / gate) |
+| `POST /resume` `human_decision=approve` | Stamp `human_approved` → continue toward `publish_gate` even if prior `publish_eligibility.allowed=False` (human override; fail-closed ≠ forever forbidden). Fresh evaluator pass after revise still re-runs judgers. |
 | Action plan: stamped `allowed=False` / dual_auto | `ActionPolicyDeniedError` (`policy.action.publish_eligibility_denied`); no intent |
 | Action plan: checkpoint/graph unreadable | `ActionPolicyDeniedError` (`policy.action.eligibility_context_unavailable`); no intent |
 | Action plan: stamp missing | Continue (eligibility stamp check allows); execute still judges body |
@@ -228,6 +228,10 @@ async def load_action_policy_context_from_thread(thread_id, account_id="", *, gr
   override-only).
 - **Correct**: eligibility audit first; LLM quality reject → human channel;
   only `/resume` revise enters `revise_content`.
+- **Wrong**: After `/resume` approve, still consulting a stale
+  `publish_eligibility.allowed=False` stamp so `evaluator_requires_human`
+  re-parks — human override must win (`status=human_approved` /
+  `human_override.decision=approve`).
 - **Correct**: Action plan + execute + workflow share one `decide_publish_eligibility`.
 - **Correct**: Plan = checkpoint stamp auto-load + `PLAN_TIME_JUDGERS`; execute =
   full conjunction after hash match.

@@ -192,6 +192,9 @@ def _evaluation_is_degraded(evaluation: Any) -> bool:
     return "decision" not in evaluation or evaluation.get("decision") is None
 
 
+_HUMAN_APPROVED_STATUS = "human_approved"
+
+
 def _human_requested_revision(evaluation: Mapping[str, Any]) -> bool:
     """True when /resume already chose revise — one-shot entry to revise_content.
 
@@ -203,6 +206,19 @@ def _human_requested_revision(evaluation: Mapping[str, Any]) -> bool:
         return True
     override = evaluation.get("human_override")
     return isinstance(override, dict) and str(override.get("decision") or "") == "revise"
+
+
+def _human_approved_override(evaluation: Mapping[str, Any]) -> bool:
+    """True when /resume already chose approve — continue toward publish_gate.
+
+    Fail-closed means "requires a human", not "forbidden forever". A stamped
+    ``publish_eligibility.allowed=False`` must not re-park after the human
+    explicitly approved; publish_gate still demands the irreversible confirm.
+    """
+    if str(evaluation.get("status") or "") == _HUMAN_APPROVED_STATUS:
+        return True
+    override = evaluation.get("human_override")
+    return isinstance(override, dict) and str(override.get("decision") or "") == "approve"
 
 
 def _publish_eligibility(state: XHSGrowthState) -> dict[str, Any]:
@@ -249,19 +265,24 @@ def evaluator_requires_human(state: XHSGrowthState) -> bool:
     - eligibility blocks when quality already looks "approved" (LLM must not
       self-approve a publish the judgers refuse).
 
-    Exception: a ``human_revision_requested`` stamp from ``/resume`` revise
-    must NOT re-park — ``evaluator_outcome`` routes that one-shot into
-    ``revise_content`` with the fresh revision budget.
+    Exception: a ``/resume`` stamp must NOT re-park —
+    - ``human_revision_requested`` → one-shot ``revise_content``;
+    - ``human_approved`` → continue toward ``publisher`` / publish_gate even
+      when the prior eligibility stamp still says denied (human override).
     """
     evaluation = state.get("evaluation_result")
-    # `_evaluation_is_degraded` already reports None/empty as degraded; the
-    # explicit `is None` arm only narrows the type for the checks below.
-    if evaluation is None or _evaluation_is_degraded(evaluation):
+    if evaluation is None:
         return True
 
-    # Human already chose revise via /resume — allow the revise loop this once.
-    if _human_requested_revision(evaluation):
+    # Human /resume stamp wins over the evidence that caused the park
+    # (degraded flags, quality decision, eligibility stamp). Without this
+    # order, a leftover publish_eligibility.allowed=False would re-park
+    # approve, and a leftover degraded flag would re-park revise.
+    if _human_requested_revision(evaluation) or _human_approved_override(evaluation):
         return False
+
+    if _evaluation_is_degraded(evaluation):
+        return True
 
     decision: Any = evaluation.get("decision")
 

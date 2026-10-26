@@ -500,6 +500,32 @@ class TestEvaluatorOutcome:
         assert evaluator_requires_human(state) is False
         assert evaluator_outcome(state) == "revise_content"
 
+    def test_human_resume_approve_overrides_eligibility_deny(self):
+        """POST /resume approve must not re-park on a stamped eligibility deny.
+
+        Fail-closed means requires a human, not forever forbidden — the prior
+        publish_eligibility.allowed=False audit stamp stays for history, but
+        the human override continues toward publish_gate.
+        """
+        state = {
+            "evaluation_result": {
+                "decision": ContentStatus.APPROVED,
+                "status": "human_approved",
+                "degraded": False,
+                "human_override": {"decision": "approve", "source": "resume_api"},
+                "publish_eligibility": {
+                    "allowed": False,
+                    "blocking_failures": ["lexicon"],
+                    "verdicts": [],
+                    "policy_version": "publish_judgers_v1",
+                    "decided_at": "2026-01-01T00:00:00+00:00",
+                },
+            },
+            "revision_count": 0,
+        }
+        assert evaluator_requires_human(state) is False
+        assert evaluator_outcome(state) == "publisher"
+
     def test_max_revision_zero_still_requires_human_for_llm_revise(self):
         """Even with max_revision_count=0, LLM needs_revision never force-publishes."""
         from unittest.mock import patch
