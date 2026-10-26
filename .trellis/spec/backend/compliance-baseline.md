@@ -227,6 +227,11 @@ async def load_action_policy_context_from_thread(thread_id, account_id="", *, gr
 - **Correct**: Action plan + execute + workflow share one `decide_publish_eligibility`.
 - **Correct**: Plan = checkpoint stamp auto-load + `PLAN_TIME_JUDGERS`; execute =
   full conjunction after hash match.
+- **Wrong**: Creator-agent API unit tests that call `POST /actions` publish without
+  mocking `graph.aget_state` — production wires `thread_policy_context_loader`,
+  so a missing/unreadable graph fail-closes as `eligibility_context_unavailable`.
+- **Correct**: Mock a readable empty checkpoint (no stamp) when the test is not
+  asserting load failure.
 
 ---
 

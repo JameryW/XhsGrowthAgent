@@ -29,11 +29,11 @@
 
 ## Acceptance Criteria
 
-* [ ] Publish plan + thread with stamped `allowed=False` → 403, no intent, no caller-injected context
-* [ ] Publish plan + thread without stamp → policy may allow (account/risk permitting); execute still judges body
-* [ ] Checkpoint unreadable → fail-closed deny at plan
-* [ ] Explicit `policy_context=` overrides auto-load
-* [ ] Unit tests + lint/mypy; CI green; specs/docs updated
+* [x] Publish plan + thread with stamped `allowed=False` → 403, no intent, no caller-injected context
+* [x] Publish plan + thread without stamp → policy may allow (account/risk permitting); execute still judges body
+* [x] Checkpoint unreadable → fail-closed deny at plan
+* [x] Explicit `policy_context=` overrides auto-load
+* [x] Unit tests + lint/mypy; CI green; specs/docs updated
 
 ## Definition of Done
 

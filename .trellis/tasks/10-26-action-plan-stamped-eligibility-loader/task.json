@@ -15,12 +15,12 @@
   "branch": "cursor/action-plan-stamped-eligibility-loader-ca60",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
-  "pr_url": null,
+  "commit": "17409e70c58bbf97f525a246bdadf530a7bc3776",
+  "pr_url": "https://github.com/JameryW/XhsGrowthAgent/pull/719",
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "Merged #719; plan auto-loads stamp; missing allows; load fail deny.",
   "meta": {}
 }
