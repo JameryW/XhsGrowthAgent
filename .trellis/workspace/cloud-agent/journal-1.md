@@ -75,3 +75,37 @@ Merged #718: Action plan uses stamped eligibility + PLAN_TIME_JUDGERS; execute r
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Auto-load stamped publish eligibility at Action plan
+
+**Date**: 2026-10-26
+**Task**: Auto-load stamped publish eligibility at Action plan
+**Branch**: `main`
+
+### Summary
+
+Merged #719: plan_action(publish) auto-loads publish_eligibility from workflow checkpoint; missing stamp allows; checkpointer failure fail-closes with eligibility_context_unavailable; explicit policy_context overrides. Spec notes API tests must mock graph.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `17409e70` | (see git log) |
+| `99254522` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
