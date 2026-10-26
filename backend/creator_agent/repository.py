@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 from backend.creator_agent.models import (
     ActionCapability,
@@ -172,6 +173,33 @@ class ActionPublishContentUnavailableError(Exception):
         self.action_id = action_id
         self.reason = reason
         super().__init__(f"publish intent {action_id!r} has no usable content: {reason}")
+
+
+class ActionPublishEligibilityDeniedError(Exception):
+    """Deterministic publish judgers refused the confirmed intent before Gateway.
+
+    Distinct from :class:`ActionPublishContentUnavailableError`: the artifact
+    was readable and matched the confirmed hash, but
+    :func:`~backend.services.compliance.judgers.decide_publish_eligibility`
+    returned ``allowed=False``.  No receipt is written and no Tool Gateway call
+    is made.  ``eligibility`` carries the audit dict for the action timeline.
+    """
+
+    def __init__(
+        self,
+        action_id: str,
+        reason: str,
+        *,
+        account_id: str = "",
+        thread_id: str = "",
+        eligibility: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.action_id = action_id
+        self.reason = reason
+        self.account_id = account_id
+        self.thread_id = thread_id
+        self.eligibility: dict[str, Any] = dict(eligibility or {})
+        super().__init__(f"publish intent {action_id!r} refused by publish eligibility: {reason}")
 
 
 class ActionCredentialUnavailableError(Exception):

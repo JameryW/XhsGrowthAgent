@@ -157,8 +157,10 @@ raise XHSSignatureUnavailableError(...)  # error_code=signature_unavailable
 ### 1. Scope / Trigger
 
 - Changing publish routing (`evaluator_outcome` / `evaluator_requires_human`),
-  `evaluation_result.publish_eligibility`, or
-  `backend/services/compliance/judgers.py`.
+  `evaluation_result.publish_eligibility`,
+  `backend/services/compliance/judgers.py`,
+  `backend/services/compliance/projection.py`, or
+  creator-agent Action plan/execute (`policy.py` / `advisor._execute_publish`).
 
 ### 2. Signatures
 
@@ -166,6 +168,16 @@ raise XHSSignatureUnavailableError(...)  # error_code=signature_unavailable
 # backend/services/compliance/judgers.py
 class JudgerId(StrEnum): ...  # lexicon | commercial_disclosure | ...
 def decide_publish_eligibility(state, *, thresholds=None) -> PublishEligibility: ...
+
+# backend/services/compliance/projection.py — thin Action/artifact → state mapping
+def project_action_plan_state(...) -> dict: ...
+def project_artifact_body_for_judgers(...) -> dict: ...
+
+# Plan-time subset (no body) — same decide_publish_eligibility, judgers=
+PLAN_TIME_JUDGERS  # dual_auto | high_risk_auto
+
+# backend/creator_agent/policy.py
+PolicyId.PUBLISH_ELIGIBILITY_DENIED = "policy.action.publish_eligibility_denied"
 ```
 
 ### 3. Contracts
@@ -176,6 +188,8 @@ def decide_publish_eligibility(state, *, thresholds=None) -> PublishEligibility:
 | `publish_eligibility.allowed` | Sole machine authority for "may proceed toward publish" |
 | LLM `decision` / overall_score | Quality revise loop only — must not alone grant publish |
 | Thresholds | Env `XHS_JUDGER_*_BLOCKING` (default True) — business-cost knobs |
+| Action **plan** | Stamped eligibility deny + account-level judgers (dual_auto / high_risk_auto); **no** artifact read; deny → no intent |
+| Action **execute** | After hash match, before Gateway: full judgers on artifact body; deny → no receipt |
 
 ### 4. Validation & Error Matrix
 
@@ -185,14 +199,19 @@ def decide_publish_eligibility(state, *, thresholds=None) -> PublishEligibility:
 | Blocking judger fails + quality revise under cap | `revise_content` (hints first) |
 | Blocking still fails at revision cap | Fail-closed human channel |
 | All judgers pass + quality approved | Route to `publish_gate` |
+| Action plan: stamped `allowed=False` / dual_auto | `ActionPolicyDeniedError` (`policy.action.publish_eligibility_denied`); no intent |
+| Action execute: lexicon/disclosure hit on body | `ActionPublishEligibilityDeniedError` before Gateway; no receipt |
 
 ### 5–7. Cases / Tests / Wrong-Correct
 
 - Tests: `tests/unit/services/compliance/test_judgers.py`, router suites under
-  `tests/unit/graph/test_routers.py` / `tests/integration/test_evaluator_gate.py`.
+  `tests/unit/graph/test_routers.py` / `tests/integration/test_evaluator_gate.py`,
+  Action plan/execute deny suites under `tests/unit/creator_agent/`.
 - **Wrong**: `if evaluation["decision"] == "approved": return "publisher"` without
   consulting `publish_eligibility`.
+- **Wrong**: Action execute calling Tool Gateway before `decide_publish_eligibility`.
 - **Correct**: eligibility audit first; LLM score only drives revise vs continue.
+- **Correct**: Action plan + execute + workflow share one `decide_publish_eligibility`.
 
 ---
 

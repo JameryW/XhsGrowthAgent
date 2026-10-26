@@ -22,6 +22,7 @@ from backend.api.errors import CreatorActionPolicyDeniedError, ErrorCode
 from backend.creator_agent import (
     ActionCapability,
     ActionIntentRequest,
+    ActionPolicyContext,
     ActionPolicyDeniedError,
     ActionPolicySnapshot,
     CreatorAdvisor,
@@ -351,6 +352,132 @@ class TestTheAccountKeyedCooldownIsReachableNow:
         # A caller that knows the account id lands in its own bucket.
         note_publish(account_id="acc-1")
         assert check_publish_allowed(account_id="acc-1") is not None
+
+
+class TestPublishEligibilityAtPlan:
+    """Shared ``decide_publish_eligibility`` on the Action plan path."""
+
+    def test_stamped_eligibility_deny_has_stable_policy_id(self):
+        verdict = evaluate_action_policy(
+            ActionPolicySnapshot(
+                capability=ActionCapability.PUBLISH,
+                account_id="account-a",
+                publish_eligibility={
+                    "allowed": False,
+                    "blocking_failures": ["lexicon"],
+                    "policy_version": "publish_judgers_v1",
+                },
+            )
+        )
+        assert verdict.allowed is False
+        assert verdict.policy_id is PolicyId.PUBLISH_ELIGIBILITY_DENIED
+        assert "lexicon" in verdict.reason
+
+    def test_dual_auto_on_projected_state_denies(self, monkeypatch):
+        monkeypatch.setenv("AUTO_APPROVE_LOW_RISK", "1")
+        verdict = evaluate_action_policy(
+            ActionPolicySnapshot(
+                capability=ActionCapability.PUBLISH,
+                account_id="account-a",
+                auto_publish=True,
+            )
+        )
+        assert verdict.allowed is False
+        assert verdict.policy_id is PolicyId.PUBLISH_ELIGIBILITY_DENIED
+        assert "dual_auto" in verdict.reason
+
+    def test_high_risk_auto_denies_when_niche_known(self):
+        verdict = evaluate_action_policy(
+            ActionPolicySnapshot(
+                capability=ActionCapability.PUBLISH,
+                account_id="account-a",
+                niche="医美",
+                extra={
+                    "human_feedback": {"source": "auto_low_risk", "decision": "approved"},
+                },
+            )
+        )
+        assert verdict.allowed is False
+        assert verdict.policy_id is PolicyId.PUBLISH_ELIGIBILITY_DENIED
+        assert "high_risk" in verdict.reason
+
+    def test_clean_plan_context_still_allows(self, monkeypatch):
+        monkeypatch.delenv("AUTO_APPROVE_LOW_RISK", raising=False)
+        verdict = evaluate_action_policy(
+            ActionPolicySnapshot(
+                capability=ActionCapability.PUBLISH,
+                account_id="account-a",
+                niche="生活方式",
+                auto_publish=False,
+            )
+        )
+        assert verdict.allowed is True
+        assert verdict.policy_id is PolicyId.ALLOWED
+
+    def test_plan_skips_body_judgers_so_commercial_flag_alone_does_not_deny(self):
+        """Plan must not run disclosure/lexicon on an empty projection.
+
+        ``is_commercial=True`` with no body would fail commercial_disclosure if
+        the full judger set ran — that belongs at execute after hash match.
+        """
+        verdict = evaluate_action_policy(
+            ActionPolicySnapshot(
+                capability=ActionCapability.PUBLISH,
+                account_id="account-a",
+                is_commercial=True,
+            )
+        )
+        assert verdict.allowed is True
+        assert verdict.policy_id is PolicyId.ALLOWED
+
+    def test_build_snapshot_carries_injectable_context(self):
+        snapshot = build_action_policy_snapshot(
+            _request(),
+            cooldown_checker=lambda _account_id: None,
+            policy_context=ActionPolicyContext(
+                niche="医美",
+                auto_publish=True,
+                publish_eligibility={"allowed": False, "blocking_failures": ["dual_auto"]},
+            ),
+        )
+        assert snapshot.niche == "医美"
+        assert snapshot.auto_publish is True
+        assert snapshot.publish_eligibility is not None
+        assert snapshot.publish_eligibility["allowed"] is False
+
+    @pytest.mark.asyncio
+    async def test_stamped_deny_leaves_no_intent(self, monkeypatch):
+        monkeypatch.setattr(
+            "backend.services.xhs_risk_gate.check_publish_allowed", lambda **_kwargs: None
+        )
+        advisor, decision_id = await _advisor_with_decision()
+        with pytest.raises(ActionPolicyDeniedError) as excinfo:
+            await advisor.plan_action(
+                _request(decision_id=decision_id, idempotency_key="elig-denied"),
+                policy_context=ActionPolicyContext(
+                    publish_eligibility={
+                        "allowed": False,
+                        "blocking_failures": ["commercial_disclosure"],
+                    }
+                ),
+            )
+        assert excinfo.value.policy_id is PolicyId.PUBLISH_ELIGIBILITY_DENIED
+        assert await advisor.list_actions("account-a") == []
+
+    @pytest.mark.asyncio
+    async def test_dual_auto_deny_leaves_no_intent(self, monkeypatch):
+        monkeypatch.setenv("AUTO_APPROVE_LOW_RISK", "1")
+        monkeypatch.setattr(
+            "backend.services.xhs_risk_gate.check_publish_allowed", lambda **_kwargs: None
+        )
+        advisor, decision_id = await _advisor_with_decision()
+        with pytest.raises(ActionPolicyDeniedError) as excinfo:
+            await advisor.plan_action(
+                _request(decision_id=decision_id, idempotency_key="dual-auto-denied"),
+                policy_context=ActionPolicyContext(auto_publish=True),
+            )
+        assert excinfo.value.policy_id is PolicyId.PUBLISH_ELIGIBILITY_DENIED
+        assert await advisor.list_actions("account-a") == []
 
 
 class TestTheApiSurfaceForADeniedAction:

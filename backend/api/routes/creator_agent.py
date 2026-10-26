@@ -18,6 +18,7 @@ from backend.api.errors import (
     CreatorActionNotFoundError,
     CreatorActionPolicyDeniedError,
     CreatorActionPublishContentUnavailableError,
+    CreatorActionPublishEligibilityDeniedError,
     CreatorAudienceNotFoundError,
     CreatorDecisionNotFoundError,
     CreatorEvidenceNotFoundError,
@@ -65,6 +66,7 @@ from backend.creator_agent.repository import (
     ActionIntentMissingError,
     ActionPolicyDeniedError,
     ActionPublishContentUnavailableError,
+    ActionPublishEligibilityDeniedError,
     ActionResolutionConflictError,
     ActionValidationError,
     CreatorModelMissingError,
@@ -79,7 +81,11 @@ from backend.creator_agent.repository import (
 from backend.db.creator_agent import get_repository
 from backend.memory.creator_agent_observations import CreativeMemoryObservationSource
 from backend.memory.promotion_ledger import PromotionLedger
-from backend.state.events import ACTION_POLICY_DENIED
+from backend.state.events import (
+    ACTION_POLICY_DENIED,
+    ACTION_PUBLISH_BLOCKED,
+    BLOCKED_PUBLISH_ELIGIBILITY,
+)
 
 router = APIRouter()
 
@@ -528,6 +534,21 @@ async def execute_creator_action(
     except ActionPublishContentUnavailableError as exc:
         raise CreatorActionPublishContentUnavailableError(
             action_id=exc.action_id, reason=exc.reason
+        ) from exc
+    except ActionPublishEligibilityDeniedError as exc:
+        await _record_action_refusal(
+            exc.account_id or account_id,
+            exc.thread_id,
+            ACTION_PUBLISH_BLOCKED,
+            reason=BLOCKED_PUBLISH_ELIGIBILITY,
+            action_id=exc.action_id,
+            blocking_failures=(exc.eligibility or {}).get("blocking_failures"),
+            policy_version=(exc.eligibility or {}).get("policy_version"),
+        )
+        raise CreatorActionPublishEligibilityDeniedError(
+            action_id=exc.action_id,
+            reason=exc.reason,
+            eligibility=exc.eligibility,
         ) from exc
     except ActionCredentialUnavailableError as exc:
         raise CreatorActionCredentialUnavailableError(

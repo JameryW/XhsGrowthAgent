@@ -29,8 +29,11 @@ __all__ = [
     "JudgerId",
     "JudgerThresholds",
     "JudgerVerdict",
+    "PLAN_TIME_JUDGERS",
     "PublishEligibility",
     "decide_publish_eligibility",
+    "judge_dual_auto",
+    "judge_high_risk_auto",
     "load_thresholds",
 ]
 
@@ -331,6 +334,13 @@ _DEFAULT_JUDGERS: tuple[JudgerFn, ...] = (
     judge_lexicon,
     judge_commercial_disclosure,
     judge_blocking_compliance,
+    judge_dual_auto,
+    judge_high_risk_auto,
+)
+
+#: Action **plan** may answer only failure modes that need no artifact body.
+#: Lexicon / disclosure / blocking_compliance re-run at execute after hash match.
+PLAN_TIME_JUDGERS: tuple[JudgerFn, ...] = (
     judge_dual_auto,
     judge_high_risk_auto,
 )
