@@ -59,6 +59,7 @@ from backend.creator_agent.execution import (
 from backend.creator_agent.repository import (
     ActionCredentialUnavailableError,
     ActionPublishContentUnavailableError,
+    ActionPublishEligibilityDeniedError,
 )
 from backend.db import creator_agent as creator_agent_db
 from backend.services.xhs_credentials import XhsCredential
@@ -372,6 +373,68 @@ class TestEveryRefusalPrecedesTheGateway:
         assert "content_hash" in excinfo.value.reason
         assert recorder.requests == []
         assert await advisor.get_action_execution(ACCOUNT, intent.action_id) is None
+
+
+class TestPublishEligibilityBeforeGateway:
+    """Full ``decide_publish_eligibility`` after hash match, before Tool Gateway."""
+
+    async def test_lexicon_hit_on_artifact_body_refuses_without_receipt(self):
+        store = InMemoryStore()
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        dirty = {
+            **BODY,
+            "title": "包治百病的秘方",
+            "body": "一周见效，根治顽疾",
+        }
+        ref, digest = await _stored(store, dirty)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        with pytest.raises(ActionPublishEligibilityDeniedError) as excinfo:
+            await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert "lexicon" in excinfo.value.reason or "publish_eligibility" in excinfo.value.reason
+        assert "lexicon" in (excinfo.value.eligibility.get("blocking_failures") or [])
+        assert recorder.requests == []
+        assert await advisor.get_action_execution(ACCOUNT, intent.action_id) is None
+
+    async def test_commercial_without_disclosure_refuses_without_receipt(self):
+        store = InMemoryStore()
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        dirty = {
+            **BODY,
+            "title": "周末探店分享",
+            "body": "这家店真的不错，强烈推荐",
+            "is_commercial": True,
+        }
+        ref, digest = await _stored(store, dirty)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        with pytest.raises(ActionPublishEligibilityDeniedError) as excinfo:
+            await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        failures = excinfo.value.eligibility.get("blocking_failures") or []
+        assert "commercial_disclosure" in failures
+        assert recorder.requests == []
+        assert await advisor.get_action_execution(ACCOUNT, intent.action_id) is None
+
+    async def test_clean_body_still_reaches_the_gateway(self):
+        store = InMemoryStore()
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        ref, digest = await _stored(store, BODY)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        execution = await advisor.execute_action(ACCOUNT, intent.action_id)
+        assert len(recorder.requests) == 1
+        assert execution.status is ActionExecutionStatus.SUCCEEDED
 
 
 class TestTheCredentialRefusal:

@@ -33,6 +33,7 @@ class ErrorCode(StrEnum):
     CREATOR_ACTION_CAPABILITY_NOT_WIRED = "ERROR_CREATOR_ACTION_CAPABILITY_NOT_WIRED"
     CREATOR_ACTION_POLICY_DENIED = "ERROR_CREATOR_ACTION_POLICY_DENIED"
     CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE = "ERROR_CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE"
+    CREATOR_ACTION_PUBLISH_ELIGIBILITY_DENIED = "ERROR_CREATOR_ACTION_PUBLISH_ELIGIBILITY_DENIED"
     CREATOR_ACTION_CREDENTIAL_UNAVAILABLE = "ERROR_CREATOR_ACTION_CREDENTIAL_UNAVAILABLE"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
@@ -315,6 +316,32 @@ class CreatorActionPublishContentUnavailableError(APIError):
             code=ErrorCode.CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE,
             message=reason or "Creator action has no publishable content",
             details={"action_id": action_id},
+            status_code=409,
+        )
+
+
+class CreatorActionPublishEligibilityDeniedError(APIError):
+    """Confirmed publish intent blocked by deterministic publish judgers.
+
+    409: the intent is well-formed and confirmed, the artifact matched the
+    content hash, but ``decide_publish_eligibility`` refused before Tool
+    Gateway.  ``eligibility`` is the audit dict (verdicts / blocking_failures).
+    """
+
+    def __init__(
+        self,
+        *,
+        action_id: str,
+        reason: str,
+        eligibility: dict[str, Any] | None = None,
+    ):
+        details: dict[str, Any] = {"action_id": action_id}
+        if eligibility:
+            details["eligibility"] = eligibility
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_PUBLISH_ELIGIBILITY_DENIED,
+            message=reason or "Creator action refused by publish eligibility",
+            details=details,
             status_code=409,
         )
 

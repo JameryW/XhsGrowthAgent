@@ -32,6 +32,7 @@ __all__ = [
     "BLOCKED_DUPLICATE_PUBLISH",
     "BLOCKED_MISSING_CDP_ENDPOINT",
     "BLOCKED_MISSING_CREDENTIAL",
+    "BLOCKED_PUBLISH_ELIGIBILITY",
     "LEGACY_PERF_LOG_KEY",
     "action_perf_entry",
     "emit_events",
@@ -76,6 +77,10 @@ BLOCKED_ACCOUNT_INACTIVE = "account_inactive"
 BLOCKED_MISSING_CDP_ENDPOINT = "missing_cdp_endpoint"
 BLOCKED_MISSING_CREDENTIAL = "missing_credential"
 BLOCKED_DUPLICATE_PUBLISH = "duplicate_publish"
+#: Control-plane execute path: artifact matched hash, but deterministic
+#: publish judgers refused before Tool Gateway (Action plan/execute shared
+#: ``decide_publish_eligibility``).
+BLOCKED_PUBLISH_ELIGIBILITY = "publish_eligibility_denied"
 #: A repair path stood down because a live foreign owner holds the thread's
 #: lease. Unlike the ones above, no policy refused, no human decided and no
 #: precondition blocked the attempt: the work is simply already being done, by

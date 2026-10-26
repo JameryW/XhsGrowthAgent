@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -56,6 +56,7 @@ from backend.creator_agent.models import (
 )
 from backend.creator_agent.observations import CreatorContentObservationSource
 from backend.creator_agent.policy import (
+    ActionPolicyContext,
     build_action_policy_snapshot,
     evaluate_action_policy,
 )
@@ -67,6 +68,7 @@ from backend.creator_agent.repository import (
     ActionIntentMissingError,
     ActionPolicyDeniedError,
     ActionPublishContentUnavailableError,
+    ActionPublishEligibilityDeniedError,
     ActionValidationError,
     CreatorAgentRepository,
     CreatorModelMissingError,
@@ -346,8 +348,18 @@ class CreatorAdvisor:
         await self._repository.create_decision(decision)
         return decision
 
-    async def plan_action(self, request: ActionIntentRequest) -> ActionIntent:
-        """Validate and persist a confirmation-gated action hand-off."""
+    async def plan_action(
+        self,
+        request: ActionIntentRequest,
+        *,
+        policy_context: ActionPolicyContext | None = None,
+    ) -> ActionIntent:
+        """Validate and persist a confirmation-gated action hand-off.
+
+        ``policy_context`` is an injectable plan-time compliance snapshot
+        (stamped ``publish_eligibility``, niche, ``auto_publish``).  It is
+        never derived from the artifact body — plan must not read artifacts.
+        """
         account_id = request.account_id.strip()
         idempotency_key = request.idempotency_key.strip()
         existing = await self._repository.get_action_by_idempotency_key(account_id, idempotency_key)
@@ -395,8 +407,12 @@ class CreatorAdvisor:
         # validation (so the engine never re-derives an intent's shape) and
         # before ``create_action`` (so a denial leaves no intent behind for a
         # human to confirm).  Reached on every capability; the engine itself
-        # decides which ones it has an opinion about.
-        verdict = evaluate_action_policy(build_action_policy_snapshot(request))
+        # decides which ones it has an opinion about.  Publish eligibility
+        # judgers (stamped audit + account-level dual_auto / high_risk_auto)
+        # share ``decide_publish_eligibility`` with the workflow and execute.
+        verdict = evaluate_action_policy(
+            build_action_policy_snapshot(request, policy_context=policy_context)
+        )
         if not verdict.allowed:
             # The denial stays observable without persisting an intent: the
             # caller gets a 403 carrying ``policy_id`` + ``retry_after_seconds``,
@@ -599,6 +615,41 @@ class CreatorAdvisor:
         if content_hash_of(body) != expected_hash:
             raise ActionPublishContentUnavailableError(
                 action_id, "artifact body does not match the confirmed content_hash"
+            )
+        # Full publish judgers after the body is known and before Gateway.
+        # Shared engine with the workflow / plan path — never a second rule table.
+        from backend.services.compliance.judgers import decide_publish_eligibility
+        from backend.services.compliance.projection import project_artifact_body_for_judgers
+
+        try:
+            projected = project_artifact_body_for_judgers(
+                body if isinstance(body, Mapping) else {},
+                account_id=action.account_id,
+                title=content.title,
+                text=content.body,
+            )
+            eligibility = decide_publish_eligibility(projected)
+        except Exception as exc:  # noqa: BLE001 - fail-closed before side effects
+            raise ActionPublishEligibilityDeniedError(
+                action_id,
+                f"publish eligibility could not be evaluated: {type(exc).__name__}",
+                account_id=action.account_id,
+                thread_id=thread_id,
+            ) from exc
+        if not eligibility.allowed:
+            failures = eligibility.blocking_failures
+            codes = [str(v.reason_code or v.judger_id) for v in failures]
+            reason = (
+                f"publish_eligibility denied: {', '.join(codes)}"
+                if codes
+                else "publish_eligibility denied"
+            )
+            raise ActionPublishEligibilityDeniedError(
+                action_id,
+                reason,
+                account_id=action.account_id,
+                thread_id=thread_id,
+                eligibility=eligibility.to_audit_dict(),
             )
         return await self._publish(
             PublishRequest(

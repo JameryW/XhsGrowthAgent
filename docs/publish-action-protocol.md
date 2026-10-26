@@ -8,26 +8,37 @@ confirm）、"真的发了"（execution）拆成**四个可以被单独读、单
 任何东西能把它们分开看。
 
 ```text
-plan_action ──policy──▶ ActionIntent(pending_confirmation) ──resolve──▶ confirmed
-                                                            │
+plan_action ──policy (+ stamped / account-level judgers)──▶ ActionIntent(pending_confirmation)
+                                                            │ resolve
+                                                            ▼ confirmed
                                                     execute_action
                                                             │
-                          credential ─▶ artifact ─▶ content hash ─▶ Tool Gateway ▶ receipt
+     credential ─▶ artifact ─▶ content hash ─▶ decide_publish_eligibility ─▶ Tool Gateway ▶ receipt
 ```
+
+「能不能发」与工作流共用
+`backend.services.compliance.judgers.decide_publish_eligibility`（经
+`backend.services.compliance.projection` 投影成 state-like dict，**不复制规则表**）：
+
+| 层 | 何时跑 | 输入 | 失败时 |
+|---|---|---|---|
+| **plan** | `evaluate_action_policy`（账号/冷却之后） | 可注入的 stamped `publish_eligibility`；账号级判定器 `PLAN_TIME_JUDGERS`（`dual_auto` / `high_risk_auto`）；**不读 artifact**、不跑正文 lexicon/disclosure | **403** `policy.action.publish_eligibility_denied`；**不产生 intent** |
+| **execute** | artifact 可读且 content hash 一致之后、Gateway 之前 | artifact 正文投影 | **409** `..._PUBLISH_ELIGIBILITY_DENIED`；无 receipt；`publish_blocked` / `publish_eligibility_denied` 审计 |
 
 入口是 API（形状见 [creator-agent.md](creator-agent.md#创建和解析-action-intent)），
 实现分布在 `backend/creator_agent/{models,advisor,execution,repository,policy}.py`
 与 `backend/api/routes/creator_agent.py`。
 
-## 四条拒绝，各在不同的层
+## 拒绝分层
 
 | 阶段 | 拒绝时 | 谁拒 | 留下什么 |
 |---|---|---|---|
-| plan | **403** `..._POLICY_DENIED` | deterministic Policy Engine | **不产生 intent**；一条 `kind="action"` 的审计事件 |
+| plan | **403** `..._POLICY_DENIED` | deterministic Policy Engine（含 publish judgers） | **不产生 intent**；一条 `kind="action"` 的审计事件 |
 | execute（未确认） | **409** `..._EXECUTION_NOT_ALLOWED` | executor | 无 receipt |
 | execute（凭据） | **409** `..._CREDENTIAL_UNAVAILABLE` | executor | 无 receipt、**未读 artifact** |
 | execute（能力未接线） | **501** `..._CAPABILITY_NOT_WIRED` | executor 的兜底 | 无 receipt |
 | execute（内容不可用） | **409** `..._PUBLISH_CONTENT_UNAVAILABLE` | executor | 无 receipt、未到 Gateway |
+| execute（判定器拒绝） | **409** `..._PUBLISH_ELIGIBILITY_DENIED` | `decide_publish_eligibility` | 无 receipt、未到 Gateway；`publish_blocked` 审计 |
 
 两处口径值得单说：
 
@@ -40,17 +51,19 @@ plan_action ──policy──▶ ActionIntent(pending_confirmation) ──resol
 
 ## 执行前的检查顺序是设计的一部分
 
-`execute_action` 里四道检查的顺序不是随意的，它按**依赖强度**排：
+`execute_action` 里检查的顺序不是随意的，它按**依赖强度**排：
 
 1. **确认状态**（不依赖任何外部数据）
 2. **能力已接线**（同样只依赖 intent 自己）
 3. **凭据与 scope**（依赖账号状态，**不依赖 artifact**）
 4. **artifact 可读 → 内容 hash 与人类确认的一致**
-5. 才进 Tool Gateway
+5. **`decide_publish_eligibility`（正文投影）** — lexicon / disclosure 等需正文的判定器
+6. 才进 Tool Gateway
 
 第 3 条排在第 4 条之前是有理由的：**授权不依赖 artifact**。反过来排会让"这个账号根本没有发布
 凭据"被回答成"你的内容有问题"，而且判决会取决于 artifact store 是否可达 —— 一个与授权无关的
-组件挂掉，不该改变授权结论。
+组件挂掉，不该改变授权结论。第 5 条必须在 Gateway 之前：判定器失败不得产生 receipt，也不得
+调用副作用能力。
 
 凭据的唯一所有者是 `backend/services/xhs_credentials.py`（P2a-S5a）：**账号行优先，且账号行
 不可用时不回退**到部署级 `XHS_COOKIE`。回退会把"这个账号没有凭据"静默变成"用部署的身份替它
@@ -126,7 +139,7 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
   **没有尝试**"，没有调用任何 capability，因而不可能有 effect。与"人类拒绝"（`publish_refused`）
   和"策略拒绝"（`policy_denied`）是不同的事实（没人说过"不"；是环境/前置条件不允许），
   所以用**新的 action 名 + 封闭 reason 词表**（`account_inactive` / `missing_cdp_endpoint` /
-  `missing_credential` / `duplicate_publish`），而不是塞进任何一个旧名字。重复发布那条额外带
+  `missing_credential` / `duplicate_publish` / `publish_eligibility_denied`），而不是塞进任何一个旧名字。重复发布那条额外带
   `publish_id` 与 `prior_status`（机器可读的"为什么"）。**每个线程的 `publish_result` 仍然回答
   "这次怎么了"；action 账回答"多久发生一次、为什么"** —— 与 publish gate 那条同一分工。
 

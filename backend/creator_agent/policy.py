@@ -13,11 +13,11 @@ Design constraints (all three are load-bearing):
 2. **Fail-closed.**  "Cannot read the input" is a denial, never an allow.  The
    risky direction of this gate is allowing a publish that should have been
    blocked, so every unreadable state resolves to deny.
-3. **No service import.**  The engine takes an already-computed
-   ``RiskVerdict``; the only place that talks to ``xhs_risk_gate`` is
-   ``_risk_gate_publish_verdict``.  That keeps the rule table unit-testable
-   without touching global gate state, and keeps the dependency in one function
-   instead of spread over the module.
+3. **No service import at the rule table.**  Risk cool-down still enters as an
+   already-computed ``RiskVerdict``.  Publish judgers are consulted via
+   :func:`~backend.services.compliance.judgers.decide_publish_eligibility` on a
+   projected state (shared with the workflow + execute path) — never a
+   duplicated rule table.
 
 Only **side-effecting** capabilities are gated.  The three non-transactional
 capabilities (``compare_options`` / ``save_shortlist`` /
@@ -27,9 +27,10 @@ never leave the process, so a publish policy has nothing to say about them.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from backend.creator_agent.models import ActionCapability, ActionIntentRequest
 
@@ -46,6 +47,7 @@ class PolicyId(StrEnum):
     ACCOUNT_MISSING = "policy.action.account_missing"
     RISK_COOLDOWN = "policy.action.risk_cooldown"
     RISK_UNAVAILABLE = "policy.action.risk_unavailable"
+    PUBLISH_ELIGIBILITY_DENIED = "policy.action.publish_eligibility_denied"
 
 
 #: Capabilities that reach outside the process.  Everything else is
@@ -68,6 +70,22 @@ class RiskVerdict:
 
 
 @dataclass(frozen=True)
+class ActionPolicyContext:
+    """Optional plan-time compliance inputs (no artifact body).
+
+    Injectable so tests and future thread-state loaders can supply a stamped
+    ``publish_eligibility`` audit and account-level flags without the policy
+    engine reading the Artifact Store.
+    """
+
+    publish_eligibility: Mapping[str, Any] | None = None
+    niche: str = ""
+    auto_publish: bool = False
+    is_commercial: bool = False
+    extra: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class ActionPolicySnapshot:
     """Everything the policy is allowed to look at.
 
@@ -75,11 +93,21 @@ class ActionPolicySnapshot:
     "could not consult" is expressed as ``RiskVerdict(RISK_UNAVAILABLE, ...)``
     rather than as ``None``, because ``None`` already means "clear" and quietly
     folding an unreadable gate into it would turn fail-closed into fail-open.
+
+    ``publish_eligibility`` is an optional **stamped** audit (e.g. from a prior
+    workflow evaluation).  When present and ``allowed is False``, plan denies
+    without waiting for an artifact.  Account-level judgers still run via
+    :func:`decide_publish_eligibility` on the projected plan state.
     """
 
     capability: ActionCapability
     account_id: str
     risk: RiskVerdict | None = None
+    publish_eligibility: Mapping[str, Any] | None = None
+    niche: str = ""
+    auto_publish: bool = False
+    is_commercial: bool = False
+    extra: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +122,28 @@ class CooldownChecker(Protocol):
     """Boundary to the risk gate; injected so tests never touch global state."""
 
     def __call__(self, account_id: str) -> RiskVerdict | None: ...
+
+
+def _stamped_eligibility_denied(stamped: Mapping[str, Any] | None) -> str | None:
+    """Return a denial reason when a stamped audit already forbids publish."""
+    if not isinstance(stamped, Mapping) or "allowed" not in stamped:
+        return None
+    if stamped.get("allowed") is not False:
+        return None
+    failures = stamped.get("blocking_failures") or []
+    codes = [str(x) for x in failures if str(x).strip()]
+    if codes:
+        return f"stamped publish_eligibility denied: {', '.join(codes)}"
+    return "stamped publish_eligibility denied"
+
+
+def _eligibility_reason(report: Any) -> str:
+    failures = getattr(report, "blocking_failures", ()) or ()
+    codes = [str(getattr(v, "reason_code", "") or getattr(v, "judger_id", "")) for v in failures]
+    codes = [c for c in codes if c]
+    if codes:
+        return f"publish_eligibility denied: {', '.join(codes)}"
+    return "publish_eligibility denied"
 
 
 def evaluate_action_policy(snapshot: ActionPolicySnapshot) -> PolicyVerdict:
@@ -126,6 +176,47 @@ def evaluate_action_policy(snapshot: ActionPolicySnapshot) -> PolicyVerdict:
             retry_after_seconds=snapshot.risk.retry_after_seconds,
         )
 
+    stamped_reason = _stamped_eligibility_denied(snapshot.publish_eligibility)
+    if stamped_reason is not None:
+        return PolicyVerdict(
+            allowed=False,
+            policy_id=PolicyId.PUBLISH_ELIGIBILITY_DENIED,
+            reason=stamped_reason,
+        )
+
+    # Account-level judgers only (no body).  Full conjunction — lexicon /
+    # disclosure / compliance — runs at execute after the artifact hash matches.
+    # Fail-closed: an unreadable judger engine must not become an allow.
+    try:
+        from backend.services.compliance.judgers import (
+            PLAN_TIME_JUDGERS,
+            decide_publish_eligibility,
+        )
+        from backend.services.compliance.projection import project_action_plan_state
+
+        projected = project_action_plan_state(
+            account_id=snapshot.account_id,
+            niche=snapshot.niche,
+            auto_publish=snapshot.auto_publish,
+            is_commercial=snapshot.is_commercial,
+            publish_eligibility=snapshot.publish_eligibility,
+            extra=snapshot.extra,
+        )
+        report = decide_publish_eligibility(projected, judgers=PLAN_TIME_JUDGERS)
+    except Exception as exc:  # noqa: BLE001 - fail-closed
+        return PolicyVerdict(
+            allowed=False,
+            policy_id=PolicyId.PUBLISH_ELIGIBILITY_DENIED,
+            reason=f"publish eligibility could not be evaluated: {type(exc).__name__}",
+        )
+
+    if not report.allowed:
+        return PolicyVerdict(
+            allowed=False,
+            policy_id=PolicyId.PUBLISH_ELIGIBILITY_DENIED,
+            reason=_eligibility_reason(report),
+        )
+
     return PolicyVerdict(allowed=True, policy_id=PolicyId.ALLOWED, reason="")
 
 
@@ -133,6 +224,7 @@ def build_action_policy_snapshot(
     request: ActionIntentRequest,
     *,
     cooldown_checker: CooldownChecker | None = None,
+    policy_context: ActionPolicyContext | None = None,
 ) -> ActionPolicySnapshot:
     """Collect the snapshot for ``request``.
 
@@ -140,15 +232,24 @@ def build_action_policy_snapshot(
     they exercise the same code path without writing into module-global gate
     state.  (Patching ``xhs_risk_gate`` instead would leave the default path
     itself untested.)
+
+    ``policy_context`` supplies optional stamped eligibility / niche /
+    auto_publish flags without reading an artifact at plan time.
     """
     checker = cooldown_checker or _risk_gate_publish_verdict
     risk = None
     if request.action_kind in _SIDE_EFFECTING_CAPABILITIES:
         risk = _consult_checker(checker, request.account_id.strip())
+    ctx = policy_context or ActionPolicyContext()
     return ActionPolicySnapshot(
         capability=request.action_kind,
         account_id=request.account_id,
         risk=risk,
+        publish_eligibility=ctx.publish_eligibility,
+        niche=ctx.niche,
+        auto_publish=ctx.auto_publish,
+        is_commercial=ctx.is_commercial,
+        extra=ctx.extra,
     )
 
 

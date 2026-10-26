@@ -71,6 +71,7 @@ from backend.creator_agent.models import (
 )
 from backend.creator_agent.observations import CreatorContentObservationSource
 from backend.creator_agent.policy import (
+    ActionPolicyContext,
     ActionPolicySnapshot,
     PolicyId,
     PolicyVerdict,
@@ -89,6 +90,7 @@ from backend.creator_agent.repository import (
     ActionCredentialUnavailableError,
     ActionPolicyDeniedError,
     ActionPublishContentUnavailableError,
+    ActionPublishEligibilityDeniedError,
     ModelRevisionMissingError,
 )
 from backend.creator_agent.revisions import build_model_revision_page
@@ -97,9 +99,11 @@ __all__ = [
     "CreatorAdvisor",
     "CreatorContentObservationSource",
     "ActionCredentialUnavailableError",
+    "ActionPolicyContext",
     "ActionPolicyDeniedError",
     "ActionPolicySnapshot",
     "ActionPublishContentUnavailableError",
+    "ActionPublishEligibilityDeniedError",
     "PolicyId",
     "PolicyVerdict",
     "RiskVerdict",
