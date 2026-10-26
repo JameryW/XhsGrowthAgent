@@ -41,3 +41,37 @@ Merged #717: hard-deleted stealth/camouflage; publish eligibility via per-failur
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Wire publish judgers into Action plan/execute
+
+**Date**: 2026-10-26
+**Task**: Wire publish judgers into Action plan/execute
+**Branch**: `main`
+
+### Summary
+
+Merged #718: Action plan uses stamped eligibility + PLAN_TIME_JUDGERS; execute runs full decide_publish_eligibility after hash match before Gateway. Workflow light residual kept from #717. Spec notes plan must not run body judgers on empty commercial state.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3302f21b` | (see git log) |
+| `1b992b64` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

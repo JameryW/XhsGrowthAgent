@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
+- **Total Sessions**: 2
 - **Last Active**: 2026-10-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~43 | Active |
+| `journal-1.md` | ~77 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 2 | 2026-10-26 | Wire publish judgers into Action plan/execute | `3302f21b`, `1b992b64` | `main` |
 | 1 | 2026-10-26 | Deterministic publish judgers + stealth hard-delete | `0fbcc966`, `e5824c8f`, `1ae93ad0`, `5a7fcb7d` | `main` |
 <!-- @@@/auto:session-history -->
 
