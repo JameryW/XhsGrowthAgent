@@ -57,8 +57,13 @@ from backend.creator_agent.models import (
 from backend.creator_agent.observations import CreatorContentObservationSource
 from backend.creator_agent.policy import (
     ActionPolicyContext,
+    PolicyId,
     build_action_policy_snapshot,
     evaluate_action_policy,
+)
+from backend.creator_agent.policy_context import (
+    EligibilityContextUnavailableError,
+    PolicyContextLoader,
 )
 from backend.creator_agent.proposals import build_evidence_proposals
 from backend.creator_agent.repository import (
@@ -180,6 +185,7 @@ class CreatorAdvisor:
         artifact_store: Any | None = None,
         publish: PublishDispatcher | None = None,
         credentials: CredentialLoader | None = None,
+        policy_context_loader: PolicyContextLoader | None = None,
     ):
         self._repository = repository
         self._content_observations = content_observations
@@ -197,6 +203,11 @@ class CreatorAdvisor:
             publish if publish is not None else gateway_publish_dispatcher()
         )
         self._load_credential: CredentialLoader = credentials or load_credential
+        # Plan-time stamp loader (thread checkpoint → ActionPolicyContext).
+        # Production API wires ``thread_policy_context_loader(graph)``; unit
+        # tests that omit it skip auto-load unless they pass a loader or an
+        # explicit ``policy_context``.
+        self._policy_context_loader = policy_context_loader
 
     async def decide(self, request: DecisionRequest) -> DecisionRecord:
         model = await self._repository.get_model(request.account_id)
@@ -353,12 +364,14 @@ class CreatorAdvisor:
         request: ActionIntentRequest,
         *,
         policy_context: ActionPolicyContext | None = None,
+        policy_context_loader: PolicyContextLoader | None = None,
     ) -> ActionIntent:
         """Validate and persist a confirmation-gated action hand-off.
 
-        ``policy_context`` is an injectable plan-time compliance snapshot
-        (stamped ``publish_eligibility``, niche, ``auto_publish``).  It is
-        never derived from the artifact body — plan must not read artifacts.
+        For publish with a ``thread_id``, plan auto-loads stamped
+        ``publish_eligibility`` (+ niche / ``auto_publish``) from the workflow
+        checkpoint unless ``policy_context`` is passed explicitly (override).
+        Never derived from the artifact body — plan must not read artifacts.
         """
         account_id = request.account_id.strip()
         idempotency_key = request.idempotency_key.strip()
@@ -403,6 +416,13 @@ class CreatorAdvisor:
                     f"candidate IDs are not recommendations: {missing}", "candidate_ids"
                 )
 
+        effective_context = await self._resolve_plan_policy_context(
+            request,
+            account_id=account_id,
+            policy_context=policy_context,
+            policy_context_loader=policy_context_loader,
+        )
+
         # P2a-S2 policy gate.  Placement is the whole point: after shape
         # validation (so the engine never re-derives an intent's shape) and
         # before ``create_action`` (so a denial leaves no intent behind for a
@@ -411,7 +431,7 @@ class CreatorAdvisor:
         # judgers (stamped audit + account-level dual_auto / high_risk_auto)
         # share ``decide_publish_eligibility`` with the workflow and execute.
         verdict = evaluate_action_policy(
-            build_action_policy_snapshot(request, policy_context=policy_context)
+            build_action_policy_snapshot(request, policy_context=effective_context)
         )
         if not verdict.allowed:
             # The denial stays observable without persisting an intent: the
@@ -450,6 +470,46 @@ class CreatorAdvisor:
             updated_at=now,
         )
         return await self._repository.create_action(action)
+
+    async def _resolve_plan_policy_context(
+        self,
+        request: ActionIntentRequest,
+        *,
+        account_id: str,
+        policy_context: ActionPolicyContext | None,
+        policy_context_loader: PolicyContextLoader | None,
+    ) -> ActionPolicyContext | None:
+        """Auto-load stamped eligibility for publish unless explicitly overridden.
+
+        Explicit ``policy_context`` always wins (tests / callers).  Load failure
+        is fail-closed with ``ELIGIBILITY_CONTEXT_UNAVAILABLE`` — same spirit as
+        an unreadable risk gate.  Missing stamp is not a deny (loader returns
+        ``publish_eligibility=None``).
+        """
+        if policy_context is not None:
+            return policy_context
+        if request.action_kind is not ActionCapability.PUBLISH:
+            return None
+        thread_id = (request.thread_id or "").strip()
+        if not thread_id:
+            return None
+        loader = policy_context_loader or self._policy_context_loader
+        if loader is None:
+            return None
+        try:
+            return await loader(thread_id, account_id)
+        except EligibilityContextUnavailableError as exc:
+            raise ActionPolicyDeniedError(
+                account_id=account_id,
+                policy_id=PolicyId.ELIGIBILITY_CONTEXT_UNAVAILABLE,
+                reason=exc.reason,
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 - fail-closed
+            raise ActionPolicyDeniedError(
+                account_id=account_id,
+                policy_id=PolicyId.ELIGIBILITY_CONTEXT_UNAVAILABLE,
+                reason=f"eligibility context could not be loaded: {type(exc).__name__}",
+            ) from exc
 
     async def list_actions(
         self, account_id: str, status: ActionStatus | None = None

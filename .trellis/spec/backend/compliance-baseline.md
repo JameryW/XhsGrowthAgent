@@ -178,6 +178,10 @@ PLAN_TIME_JUDGERS  # dual_auto | high_risk_auto
 
 # backend/creator_agent/policy.py
 PolicyId.PUBLISH_ELIGIBILITY_DENIED = "policy.action.publish_eligibility_denied"
+PolicyId.ELIGIBILITY_CONTEXT_UNAVAILABLE = "policy.action.eligibility_context_unavailable"
+
+# backend/creator_agent/policy_context.py — plan auto-load (no artifact)
+async def load_action_policy_context_from_thread(thread_id, account_id="", *, graph) -> ActionPolicyContext: ...
 ```
 
 ### 3. Contracts
@@ -188,7 +192,7 @@ PolicyId.PUBLISH_ELIGIBILITY_DENIED = "policy.action.publish_eligibility_denied"
 | `publish_eligibility.allowed` | Sole machine authority for "may proceed toward publish" |
 | LLM `decision` / overall_score | Quality revise loop only — must not alone grant publish |
 | Thresholds | Env `XHS_JUDGER_*_BLOCKING` (default True) — business-cost knobs |
-| Action **plan** | Stamped eligibility deny + account-level judgers (dual_auto / high_risk_auto); **no** artifact read; deny → no intent |
+| Action **plan** | Auto-loads stamped eligibility from thread checkpoint when `thread_id` is set (`load_action_policy_context_from_thread`); explicit `policy_context=` overrides; + account-level judgers (`PLAN_TIME_JUDGERS`); **no** artifact read; deny → no intent |
 | Action **execute** | After hash match, before Gateway: full judgers on artifact body; deny → no receipt |
 
 ### 4. Validation & Error Matrix
@@ -200,23 +204,29 @@ PolicyId.PUBLISH_ELIGIBILITY_DENIED = "policy.action.publish_eligibility_denied"
 | Blocking still fails at revision cap | Fail-closed human channel |
 | All judgers pass + quality approved | Route to `publish_gate` |
 | Action plan: stamped `allowed=False` / dual_auto | `ActionPolicyDeniedError` (`policy.action.publish_eligibility_denied`); no intent |
+| Action plan: checkpoint/graph unreadable | `ActionPolicyDeniedError` (`policy.action.eligibility_context_unavailable`); no intent |
+| Action plan: stamp missing | Continue (eligibility stamp check allows); execute still judges body |
 | Action execute: lexicon/disclosure hit on body | `ActionPublishEligibilityDeniedError` before Gateway; no receipt |
 
 ### 5–7. Cases / Tests / Wrong-Correct
 
 - Tests: `tests/unit/services/compliance/test_judgers.py`, router suites under
   `tests/unit/graph/test_routers.py` / `tests/integration/test_evaluator_gate.py`,
-  Action plan/execute deny suites under `tests/unit/creator_agent/`.
+  Action plan/execute deny suites under `tests/unit/creator_agent/`
+  (incl. `test_policy_context_loader.py` for stamp auto-load).
 - **Wrong**: `if evaluation["decision"] == "approved": return "publisher"` without
   consulting `publish_eligibility`.
 - **Wrong**: Action execute calling Tool Gateway before `decide_publish_eligibility`.
 - **Wrong**: Action plan calling full `decide_publish_eligibility` on an empty body
   with `is_commercial=True` — disclosure judger false-denies before any artifact
   exists. Use `judgers=PLAN_TIME_JUDGERS` only at plan.
+- **Wrong**: Relying on callers to inject stamped eligibility at plan — production
+  must auto-load from the thread checkpoint (explicit `policy_context=` is
+  override-only).
 - **Correct**: eligibility audit first; LLM score only drives revise vs continue.
 - **Correct**: Action plan + execute + workflow share one `decide_publish_eligibility`.
-- **Correct**: Plan = stamped deny + `PLAN_TIME_JUDGERS`; execute = full conjunction
-  after hash match.
+- **Correct**: Plan = checkpoint stamp auto-load + `PLAN_TIME_JUDGERS`; execute =
+  full conjunction after hash match.
 
 ---
 

@@ -79,6 +79,11 @@ from backend.creator_agent.policy import (
     build_action_policy_snapshot,
     evaluate_action_policy,
 )
+from backend.creator_agent.policy_context import (
+    EligibilityContextUnavailableError,
+    load_action_policy_context_from_thread,
+    thread_policy_context_loader,
+)
 from backend.creator_agent.proposals import (
     build_evidence_proposals,
     observation_claim,
@@ -104,6 +109,7 @@ __all__ = [
     "ActionPolicySnapshot",
     "ActionPublishContentUnavailableError",
     "ActionPublishEligibilityDeniedError",
+    "EligibilityContextUnavailableError",
     "PolicyId",
     "PolicyVerdict",
     "RiskVerdict",
@@ -116,7 +122,9 @@ __all__ = [
     "build_publish_payload",
     "evaluate_action_policy",
     "interpret_publish_result",
+    "load_action_policy_context_from_thread",
     "load_publish_content",
+    "thread_policy_context_loader",
     "build_decision_dataset_page",
     "project_decision_dataset",
     "build_model_revision_page",

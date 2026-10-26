@@ -58,6 +58,7 @@ from backend.creator_agent import (
     ModelRevision,
     ModelRevisionPage,
     RelationshipMemory,
+    thread_policy_context_loader,
 )
 from backend.creator_agent.repository import (
     ActionCapabilityNotWiredError,
@@ -118,7 +119,11 @@ class ReviewLearningSignalRequest(BaseModel):
     model: CreatorModelDefinition | None = None
 
 
-def _advisor(*, artifact_store: Any | None = None) -> CreatorAdvisor:
+def _advisor(
+    *,
+    artifact_store: Any | None = None,
+    policy_context_loader: Any | None = None,
+) -> CreatorAdvisor:
     """The request-scoped advisor.
 
     ``artifact_store`` is only ever needed by the publish executor, so every
@@ -126,11 +131,15 @@ def _advisor(*, artifact_store: Any | None = None) -> CreatorAdvisor:
     store is handed over rather than fetched in here because it belongs to the
     compiled graph, not to the Creator Agent domain -- the same reason the
     workflow routes read it off ``request.app.state.graph``.
+
+    ``policy_context_loader`` is wired on the plan route so publish can
+    auto-load stamped eligibility from the thread checkpoint (no artifact).
     """
     return CreatorAdvisor(
         get_repository(),
         content_observations=CreativeMemoryObservationSource(),
         artifact_store=artifact_store,
+        policy_context_loader=policy_context_loader,
     )
 
 
@@ -445,14 +454,22 @@ async def delete_audience_member(
 @router.post("/actions")
 async def plan_creator_action(
     request: ActionIntentRequest,
+    http_request: Request,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
-    """Create a pending Action Intent; no external capability is invoked."""
+    """Create a pending Action Intent; no external capability is invoked.
+
+    Publish plans with a ``thread_id`` auto-load stamped
+    ``publish_eligibility`` from the workflow checkpoint (fail-closed if the
+    graph/checkpointer is unreadable).  Plan never reads artifacts.
+    """
     account_id = request.account_id.strip()
     await require_owned_account(str(user["id"]), account_id)
     request.account_id = account_id
+    graph = getattr(http_request.app.state, "graph", None)
+    advisor = _advisor(policy_context_loader=thread_policy_context_loader(graph))
     try:
-        action = await _advisor().plan_action(request)
+        action = await advisor.plan_action(request)
     except DecisionRecordMissingError as exc:
         raise CreatorDecisionNotFoundError(exc.decision_id) from exc
     except ActionValidationError as exc:

@@ -22,7 +22,7 @@ plan_action ──policy (+ stamped / account-level judgers)──▶ ActionInte
 
 | 层 | 何时跑 | 输入 | 失败时 |
 |---|---|---|---|
-| **plan** | `evaluate_action_policy`（账号/冷却之后） | 可注入的 stamped `publish_eligibility`；账号级判定器 `PLAN_TIME_JUDGERS`（`dual_auto` / `high_risk_auto`）；**不读 artifact**、不跑正文 lexicon/disclosure | **403** `policy.action.publish_eligibility_denied`；**不产生 intent** |
+| **plan** | `evaluate_action_policy`（账号/冷却之后） | 有 `thread_id` 时由 `load_action_policy_context_from_thread` **自动**从工作流 checkpoint 读取 stamped `publish_eligibility`（及 niche / `auto_publish` 等）；显式 `policy_context=` 可覆盖（测试）；账号级判定器 `PLAN_TIME_JUDGERS`（`dual_auto` / `high_risk_auto`）；**不读 artifact**、不跑正文 lexicon/disclosure；缺 stamp 不拒（execute 仍判正文） | stamped / dual_auto → **403** `policy.action.publish_eligibility_denied`；checkpoint/graph 不可读 → **403** `policy.action.eligibility_context_unavailable`；**不产生 intent** |
 | **execute** | artifact 可读且 content hash 一致之后、Gateway 之前 | artifact 正文投影 | **409** `..._PUBLISH_ELIGIBILITY_DENIED`；无 receipt；`publish_blocked` / `publish_eligibility_denied` 审计 |
 
 入口是 API（形状见 [creator-agent.md](creator-agent.md#创建和解析-action-intent)），
