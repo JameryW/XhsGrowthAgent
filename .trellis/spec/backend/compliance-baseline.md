@@ -190,7 +190,7 @@ async def load_action_policy_context_from_thread(thread_id, account_id="", *, gr
 |-------|---------|
 | `evaluation_result.publish_eligibility` | Audited conjunction of per-mode verdicts |
 | `publish_eligibility.allowed` | Sole machine authority for "may proceed toward publish" |
-| LLM `decision` / overall_score | UI scores/hints only — must not alone grant publish **or** auto-enter `revise_content` (heavy residual) |
+| LLM `decision` / overall_score | Advisory UI scores/hints only (Dashboard/Review/Evaluation: suggest-approve/revise/do-not-publish + 仅供参考) — must not alone grant publish **or** auto-enter `revise_content` (heavy residual). Fail-closed pause CTAs are human-decision (approve continue publish / request revise), not an LLM quality gate. |
 | Thresholds | Env `XHS_JUDGER_*_BLOCKING` (default True) — business-cost knobs |
 | Action **plan** | Auto-loads stamped eligibility from thread checkpoint when `thread_id` is set (`load_action_policy_context_from_thread`); explicit `policy_context=` overrides; + account-level judgers (`PLAN_TIME_JUDGERS`); **no** artifact read; deny → no intent |
 | Action **execute** | After hash match, before Gateway: full judgers on artifact body; deny → no receipt |

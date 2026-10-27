@@ -163,6 +163,18 @@ describe('EvaluationView', () => {
     expect(wrapper.text()).toContain(tt('evaluation.action.viewWorkflow'))
   })
 
+  it('detail frames RQGM decision as advisory (suggest + for reference)', async () => {
+    const { getEvaluationResult, getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    ;(getEvaluationResult as any).mockResolvedValue(baseResult)
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+    const wrapper = await mountEval({ threadId: 't-detail' })
+    expect(wrapper.text()).toContain(tt('evaluation.decision.approved'))
+    expect(wrapper.text()).toContain(tt('evaluation.forReference'))
+    expect(wrapper.text()).toContain(tt('evaluation.advisoryHint'))
+    expect(wrapper.text().toLowerCase()).not.toContain('quality gate')
+  })
+
   it('renders no-score as — not 0.0 (EV-05)', async () => {
     const { getEvaluationResult, getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
     const noScore = JSON.parse(JSON.stringify(baseResult))

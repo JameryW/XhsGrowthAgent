@@ -877,7 +877,7 @@ function dimensionTooltip(dim: string): string {
                 <div class="item-title">{{ item.selected_title || t('evaluation.empty.title') }}</div>
                 <div class="item-meta"><span class="source-badge source-workflow">{{ t('evaluation.stream.sourceWorkflow') }}</span><span class="meta-tag">{{ phaseLabel(item.phase) }}</span><span class="meta-sep">·</span><span class="meta-time">{{ formatDateTime(item.updated_at) }}</span></div>
               </div>
-              <div class="item-right"><span class="score-kind">{{ t('evaluation.rqgmScoreLabel') }}</span><span class="item-score" :class="scoreTierClass(item.overall_score, { pass: item.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: item.warn_threshold ?? SCORE_THRESHOLDS.warn })">{{ item.overall_score == null || item.degraded || item.status_detail === 'degraded' || item.status_detail === 'failed' ? '—' : item.overall_score.toFixed(1) }}</span><span class="decision-badge" :class="decisionBadgeClass(item.decision || 'unknown')">{{ item.degraded ? t('evaluation.status.degraded') : decisionLabel(item.decision || 'unknown') }}</span></div>
+              <div class="item-right"><span class="score-kind">{{ t('evaluation.rqgmScoreLabel') }}</span><span class="item-score" :class="scoreTierClass(item.overall_score, { pass: item.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: item.warn_threshold ?? SCORE_THRESHOLDS.warn })">{{ item.overall_score == null || item.degraded || item.status_detail === 'degraded' || item.status_detail === 'failed' ? '—' : item.overall_score.toFixed(1) }}</span><span class="for-ref-chip">{{ t('evaluation.forReference') }}</span><span class="decision-badge" :class="decisionBadgeClass(item.decision || 'unknown')">{{ item.degraded ? t('evaluation.status.degraded') : decisionLabel(item.decision || 'unknown') }}</span></div>
             </button>
           </template>
           <template v-else>
@@ -941,15 +941,17 @@ function dimensionTooltip(dim: string): string {
 
       <!-- 结果展示（复用原有结构） -->
       <div v-if="hasResult && ev" class="result-grid">
-        <!-- 总分 + 决策 -->
+        <!-- 总分 + 建议决策（advisory，非发布闸门） -->
         <section class="overview-card">
           <div class="score-block">
             <span class="score-label">{{ t('evaluation.rqgmScoreLabel') }}</span>
             <span class="score-value" :class="detailUnavailable ? 'score-none' : scoreClass">{{ detailUnavailable || ev.overall_score == null ? '—' : ev.overall_score.toFixed(1) }}</span>
+            <span class="for-ref-chip">{{ t('evaluation.forReference') }}</span>
           </div>
           <div class="decision-badge" :class="detailDecisionClass">
             {{ detailUnavailable ? t('evaluation.status.notReady') : t(DETAIL_DECISION_KEYS[ev.decision || 'unknown'] ?? 'evaluation.decision.unknown') }}
           </div>
+          <p class="text-xs text-slate-400">{{ t('evaluation.advisoryHint') }}</p>
           <p class="text-xs text-slate-400">{{ t('evaluation.weightedScoreHint') }}</p>
           <p v-if="detailUnavailable" class="status-notice" role="status">{{ t('evaluation.status.degradedHint') }} <button type="button" class="retry-btn min-h-9" @click="retryDetail">{{ t('evaluation.error.retry') }}</button></p>
           <p v-if="result?.data_as_of || result?.evaluated_at" class="text-xs text-slate-400">{{ t('evaluation.dataAsOf') }} {{ formatDateTime(result?.data_as_of || result?.evaluated_at || '') }}</p>
@@ -1195,13 +1197,17 @@ function dimensionTooltip(dim: string): string {
   @apply border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900;
 }
 .overview-card { display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
-.score-block { display: flex; align-items: baseline; gap: 0.5rem; }
+.score-block { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; }
 .score-label { font-size: 0.8125rem; @apply text-slate-500 dark:text-slate-400; }
 .score-value { font-size: 2.5rem; font-weight: 800; line-height: 1; }
 .score-pass { @apply text-green-600 dark:text-green-400; }
 .score-warn { @apply text-amber-600 dark:text-amber-400; }
 .score-fail { @apply text-red-600 dark:text-red-400; }
 .score-none { @apply text-slate-400 dark:text-slate-500; }
+.for-ref-chip {
+  font-size: 0.625rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 0.25rem;
+  @apply bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400;
+}
 .decision-badge { padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
 .decision-approved { @apply bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300; }
 .decision-revision { @apply bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300; }

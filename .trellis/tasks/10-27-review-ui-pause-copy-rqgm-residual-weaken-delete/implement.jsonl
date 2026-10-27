@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/compliance-baseline.md", "reason": "Publish eligibility + human fail-closed channel"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Pause/resume evaluator_fail_closed"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue component/i18n patterns"}

@@ -125,10 +125,10 @@ const resumeWorkflow = () => {
   workflowStore.resumeWorkflow()
 }
 
-// P0-W5 continuation channel: the evaluator gate parked the workflow, so the
-// human decides — "approve" publishes without re-running creation, "revise"
-// sends it back to the revision step with a fresh revision budget. The click
-// itself is the explicit decision the API demands (no silent pipeline restart).
+// P0-W5 fail-closed human channel: RQGM parked the workflow for a human
+// decision (AI scores are advisory). "approve" continues toward publish
+// without re-running creation; "revise" returns to revision with a fresh
+// budget. The click is the explicit decision the API demands.
 const evaluatorGatePaused = computed(() => workflowStore.evaluatorGatePaused)
 
 const decideEvaluatorGate = (decision: 'approve' | 'revise') => {
@@ -235,11 +235,9 @@ const scrollToDraftInput = () => {
         </span>
       </NeonButton>
 
-      <!-- P0-W5: the pre-publish quality gate parked this workflow on purpose
-           (degraded evaluation or a compliance rejection). /resume here needs
-           an explicit human decision, so ask for one instead of the plain
-           resume button (the API rejects a decision-less resume with 400
-           rather than restarting the whole pipeline). -->
+      <!-- P0-W5: fail-closed pause after RQGM (advisory) / eligibility block.
+           /resume needs an explicit human decision — not a plain resume
+           (API rejects decision-less resume with 400). -->
       <p
         v-if="evaluatorGatePaused"
         class="w-full sm:w-auto text-xs text-amber-300/90 self-center"

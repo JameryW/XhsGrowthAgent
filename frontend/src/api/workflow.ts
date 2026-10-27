@@ -58,9 +58,10 @@ export async function pauseWorkflow(threadId: string): Promise<{ thread_id: stri
 }
 
 // 恢复工作流
-// humanDecision：评估质量门 fail-closed 暂停（status=paused +
+// humanDecision：RQGM/资格 fail-closed 暂停（status=paused +
 // pause_reason="evaluator_fail_closed"）时，后端要求的显式人工决定
-// （"approve" 放行发布 / "revise" 退回修订）。其他暂停不需要它。
+// （"approve" 批准继续发布 / "revise" 要求修订）。AI 评分仅供参考。
+// 其他暂停不需要它。
 export async function resumeWorkflow(
   threadId: string,
   resumeValue?: Record<string, unknown>,
