@@ -129,7 +129,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | 锚点 | 证据 | 分类 | 备注 |
 | --- | --- | --- | --- |
 | `backend/db/execution_leases.py:722` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:723`；由 `end_lease` 取消，取消即正常收尾 |
-| `backend/api/routes/_wf_runtime.py:361` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:353` |
+| `backend/api/routes/_wf_runtime.py:363` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:365` |
 | `backend/api/routes/_wf_application.py:270` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:272` |
 | `backend/api/routes/_wf_actions.py:283` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
 | `backend/api/routes/_wf_actions.py:480` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:482` |

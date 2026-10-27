@@ -1,19 +1,19 @@
 """Evaluator node — RQGM agent-as-a-judge panel (pre-publish quality gate).
 
-Runs after review_gate (human-approved) and before publisher. Auto-routes:
-overall_score >= threshold and no blocking compliance failure → publisher,
-else → revise_content (revision_hints carried in evaluation_result).
+Runs after review_gate (human-approved) and before publish_gate. Writes
+scores/hints for UI; routing is fail-closed under heavy residual:
 
-Does NOT use interrupt_before — the decision is the AI panel's own verdict,
-not a human input (per RQGM judge semantics). Evaluation result is written
-to state + emitted as a WORKFLOW_DATA_UPDATED event for visibility.
+- quality approved + publish_eligibility clear → publisher (publish_gate)
+- quality needs_revision/rejected, degraded/decision-less, or eligibility
+  deny when otherwise publishable → __end__ + PAUSED +
+  PAUSE_REASON_EVALUATOR_FAIL_CLOSED (human via POST /resume)
 
-Failure semantics (P0-W5, task 09-11-p0-correctness-fixes): a degraded or
-decision-less evaluation — and a compliance/policy rejection at the revision
-cap — is fail-CLOSED: the router ends the run (__end__) and this node parks
-the workflow in the existing paused phase for the human channel. It must
-never silently pass through to the publisher. Quality-only revisions keep
-the pre-existing revise/force-publish loop.
+Does NOT use interrupt_before. Evaluation result is written to state +
+emitted as a WORKFLOW_DATA_UPDATED event for visibility.
+
+Never auto-enters revise_content from an LLM decision; never force-publishes
+at max_revision_count. Human revise/approve reuses the existing resume
+channel (see ``build_evaluator_pause_resume_updates``).
 """
 
 import logging
@@ -39,12 +39,13 @@ _evaluator = EvaluatorAgent()
 async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Run the creation-quality evaluator and emit its result.
 
-    P0-W5 (fail-closed quality gate): a degraded / decision-less evaluation or
-    a compliance/policy rejection must NOT silently reach the publisher. The
-    evaluator_gate router ends the run for those cases (__end__); this node
-    additionally parks the workflow in the existing PAUSED phase so
-    derive_status surfaces the (frontend-handled) "paused" status and the human
-    can continue via the existing resume/review channels.
+    Heavy residual (fail-closed): degraded / decision-less evidence, quality
+    ``needs_revision``/``rejected`` (including at revision cap), or eligibility
+    deny on an otherwise-approved path must NOT auto-publish or auto-revise.
+    The evaluator_gate router ends the run (__end__); this node parks the
+    workflow in PAUSED + ``PAUSE_REASON_EVALUATOR_FAIL_CLOSED`` so
+    derive_status surfaces "paused" and the human continues via
+    ``POST /resume`` with ``human_decision=approve|revise``.
     """
     _check_cancelled(state)
 
@@ -106,13 +107,14 @@ async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
         result["phase"] = WorkflowPhase.PAUSED
         result["pause_reason"] = PAUSE_REASON_EVALUATOR_FAIL_CLOSED
         logger.warning(
-            "Evaluator gate fail-closed (degraded/compliance) — parking workflow %s "
-            "as paused for human review instead of publishing",
+            "Evaluator gate fail-closed (degraded/quality/eligibility) — parking "
+            "workflow %s as paused for human review instead of publishing or "
+            "auto-revising",
             thread_id,
         )
     else:
-        # A gate that passed (or took the quality revise loop) must not keep a
-        # stale pause marker around — /resume would keep demanding a decision.
+        # A gate that passed (or is the one-shot human-revise entry) must not
+        # keep a stale pause marker — /resume would keep demanding a decision.
         result["pause_reason"] = None
 
     return NodeResult(result, "evaluator").to_dict()

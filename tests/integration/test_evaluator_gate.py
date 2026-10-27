@@ -35,6 +35,8 @@ from backend.state.enums import ContentStatus, WorkflowPhase
 
 
 def _panel_json(decision: str, hints: list[str] | None = None) -> str:
+    import json
+
     dims = ",".join(
         '{"dimension": "%s", "score": 80, "rationale": "r", "issues": [], "is_blocking": false}' % n
         for n in (
@@ -51,7 +53,8 @@ def _panel_json(decision: str, hints: list[str] | None = None) -> str:
     )
     return (
         '{"overall_score": 80, "dimensions": [%s], "decision": "%s", '
-        '"revision_hints": %s, "bias_warning": "", "summary": "ok"}' % (dims, decision, hints or [])
+        '"revision_hints": %s, "bias_warning": "", "summary": "ok"}'
+        % (dims, decision, json.dumps(hints or [], ensure_ascii=False))
     )
 
 
@@ -183,6 +186,48 @@ class TestEvaluatorNodeIntegration:
         assert result.get("pause_reason") is None, "a passed gate must not stay marked"
 
     @pytest.mark.asyncio
+    async def test_quality_needs_revision_pauses_for_human(self, state, store):
+        """Heavy residual: quality needs_revision parks — no auto revise_content.
+
+        Decision is rule-derived from dimension scores (not LLM self-report):
+        low non-blocking scores ⇒ NEEDS_REVISION ⇒ human channel.
+        """
+        # compliance >= reject_threshold(50) so we stay on needs_revision (not
+        # rejected); other dims low so weighted overall < pass_threshold(70).
+        dims = ",".join(
+            '{"dimension": "%s", "score": %s, "rationale": "r", "issues": ["弱"], '
+            '"is_blocking": false}' % (name, score)
+            for name, score in (
+                ("copywriting", 40),
+                ("visual", 40),
+                ("compliance", 60),
+                ("reach", 40),
+                ("audience", 40),
+                ("ai_taste", 40),
+                ("image_quality", 40),
+                ("commercial_tone", 40),
+                ("bias_check", 40),
+            )
+        )
+        mock_response = MagicMock()
+        mock_response.content = (
+            '{"overall_score": 42, "dimensions": [%s], "decision": "needs_revision", '
+            '"revision_hints": ["改标题"], "bias_warning": "", "summary": "弱"}' % dims
+        )
+        with patch.object(EvaluatorAgent, "model", new_callable=PropertyMock) as m:
+            model = MagicMock()
+            model.ainvoke = AsyncMock(return_value=mock_response)
+            m.return_value = model
+            result = await evaluator_node(state, store=store)
+
+        assert result["evaluation_result"]["decision"] == ContentStatus.NEEDS_REVISION
+        assert result["phase"] == WorkflowPhase.PAUSED
+        assert result["pause_reason"] == PAUSE_REASON_EVALUATOR_FAIL_CLOSED
+        merged = {**state, **result}
+        assert evaluator_requires_human(merged) is True
+        assert evaluator_outcome(merged) == "__end__"
+
+    @pytest.mark.asyncio
     async def test_node_emits_data_updated_event(self, state, store):
         mock_response = MagicMock()
         mock_response.content = _panel_json("needs_revision", ["改标题"])
@@ -203,17 +248,26 @@ class TestEvaluatorOutcomeRouting:
             == "publisher"
         )
 
-    def test_needs_revision_to_revise(self):
-        assert (
-            evaluator_outcome({"evaluation_result": {"decision": ContentStatus.NEEDS_REVISION}})
-            == "revise_content"
-        )
+    def test_needs_revision_to_human_channel(self):
+        state = {"evaluation_result": {"decision": ContentStatus.NEEDS_REVISION}}
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
-    def test_rejected_to_revise(self):
-        assert (
-            evaluator_outcome({"evaluation_result": {"decision": ContentStatus.REJECTED}})
-            == "revise_content"
-        )
+    def test_rejected_to_human_channel(self):
+        state = {"evaluation_result": {"decision": ContentStatus.REJECTED}}
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_human_resume_revise_to_revise_content(self):
+        state = {
+            "evaluation_result": {
+                "decision": ContentStatus.NEEDS_REVISION,
+                "status": "human_revision_requested",
+                "human_override": {"decision": "revise"},
+            }
+        }
+        assert evaluator_requires_human(state) is False
+        assert evaluator_outcome(state) == "revise_content"
 
     def test_missing_evaluation_is_fail_closed(self):
         """P0-W5: missing evaluation_result must NOT default to publisher."""

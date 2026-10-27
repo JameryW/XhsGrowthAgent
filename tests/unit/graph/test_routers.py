@@ -299,14 +299,17 @@ class TestEvaluatorOutcome:
         state = {"evaluation_result": {"decision": "approved"}}
         assert evaluator_outcome(state) == "publisher"
 
-    def test_needs_revision_routes_to_revise(self):
+    def test_needs_revision_requires_human(self):
+        """Heavy residual: LLM needs_revision parks for human — no auto-revise."""
         state = {"evaluation_result": {"decision": ContentStatus.NEEDS_REVISION}}
-        assert evaluator_outcome(state) == "revise_content"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
-    def test_rejected_routes_to_revise(self):
-        """REJECTED also routes to revise (not __end__) — let writer try to fix."""
+    def test_rejected_requires_human(self):
+        """Heavy residual: LLM rejected parks for human — no auto-revise."""
         state = {"evaluation_result": {"decision": ContentStatus.REJECTED}}
-        assert evaluator_outcome(state) == "revise_content"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
     def test_no_evaluation_is_fail_closed(self):
         """P0-W5 fail-closed: no evaluation_result must NOT silently publish.
@@ -352,12 +355,7 @@ class TestEvaluatorOutcome:
         assert evaluator_outcome(state) == "__end__"
 
     def test_compliance_rejection_at_cap_not_force_published(self):
-        """Revision cap force-publish applies to QUALITY-only rejections.
-
-        A compliance/policy driven REJECTED at the cap must go to the same
-        human channel as a degraded evaluation (__end__ + paused by the node),
-        never silently publish.
-        """
+        """Compliance/policy REJECTED at the cap stays on the human channel."""
         state = {
             "evaluation_result": {
                 "decision": ContentStatus.REJECTED,
@@ -366,11 +364,11 @@ class TestEvaluatorOutcome:
             },
             "revision_count": 2,
         }
+        assert evaluator_requires_human(state) is True
         assert evaluator_outcome(state) == "__end__"
 
     def test_blocking_dimension_rejection_at_cap_not_force_published_legacy_shape(self):
-        """Back-compat: legacy results without failed_dimensions still use the
-        structured is_blocking evidence to detect a compliance/policy reject."""
+        """Legacy results without failed_dimensions still park (heavy residual)."""
         state = {
             "evaluation_result": {
                 "decision": "rejected",
@@ -381,6 +379,7 @@ class TestEvaluatorOutcome:
             },
             "revision_count": 5,
         }
+        assert evaluator_requires_human(state) is True
         assert evaluator_outcome(state) == "__end__"
 
     def test_llm_approved_blocked_by_eligibility_audit(self):
@@ -402,9 +401,8 @@ class TestEvaluatorOutcome:
         assert evaluator_requires_human(state) is True
         assert evaluator_outcome(state) == "__end__"
 
-    def test_quality_only_rejection_at_cap_still_publishes(self):
-        """Quality-only REJECTED at the cap keeps the old force-publish path
-        (fail-OPEN is allowed for the quality track)."""
+    def test_quality_only_rejection_at_cap_requires_human(self):
+        """Heavy residual: quality REJECTED at cap never force-publishes."""
         state = {
             "evaluation_result": {
                 "decision": ContentStatus.REJECTED,
@@ -416,82 +414,120 @@ class TestEvaluatorOutcome:
             },
             "revision_count": 2,
         }
-        assert evaluator_outcome(state) == "publisher"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
-    def test_needs_revision_force_approves_at_limit(self):
-        """revision_count >= MAX → force publisher (prevent infinite loop)."""
+    def test_needs_revision_at_cap_requires_human(self):
+        """revision_count >= MAX + needs_revision → human, not publisher."""
         state = {
             "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
             "revision_count": 2,
         }
-        assert evaluator_outcome(state) == "publisher"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
-    def test_rejected_force_approves_at_limit(self):
-        """REJECTED at revision limit → publisher (not infinite loop)."""
+    def test_rejected_at_cap_requires_human(self):
+        """REJECTED at revision limit → human channel (no force-publish)."""
         state = {
             "evaluation_result": {"decision": ContentStatus.REJECTED},
             "revision_count": 2,
         }
-        assert evaluator_outcome(state) == "publisher"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
-    def test_needs_revision_still_revises_below_limit(self):
-        """revision_count < MAX → still routes to revise_content."""
+    def test_needs_revision_below_cap_still_requires_human(self):
+        """Heavy residual: under-cap needs_revision also parks (no auto-revise)."""
         state = {
             "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
             "revision_count": 1,
         }
-        assert evaluator_outcome(state) == "revise_content"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
-    def test_needs_revision_revises_at_zero(self):
-        """revision_count=0 (first cycle) → still routes to revise_content."""
+    def test_needs_revision_at_zero_requires_human(self):
+        """First-cycle LLM needs_revision still parks for human."""
         state = {
             "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
             "revision_count": 0,
         }
-        assert evaluator_outcome(state) == "revise_content"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
     def test_approved_ignores_revision_count(self):
-        """APPROVED always routes to publisher — guard must not interfere.
-
-        The revision_count guard only applies to needs_revision/rejected.
-        An approved decision at revision_count >= MAX must still go to
-        publisher (not get stuck or re-route to revise_content).
-        """
+        """APPROVED + clear eligibility → publisher even at high revision_count."""
         state = {
             "evaluation_result": {"decision": ContentStatus.APPROVED},
             "revision_count": 99,
         }
+        assert evaluator_requires_human(state) is False
         assert evaluator_outcome(state) == "publisher"
 
-    def test_above_limit_force_approves(self):
-        """revision_count > MAX (not just ==) → force publisher."""
+    def test_above_limit_needs_revision_requires_human(self):
+        """revision_count > MAX + needs_revision → human, never publisher."""
         state = {
             "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
             "revision_count": 5,
         }
-        assert evaluator_outcome(state) == "publisher"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
-    def test_needs_revision_string_routes_to_revise(self):
-        """Raw string decision (JSON-deserialized result) → revise_content."""
+    def test_needs_revision_string_requires_human(self):
+        """Raw string decision (JSON-deserialized) → human channel."""
         state = {"evaluation_result": {"decision": "needs_revision"}}
-        assert evaluator_outcome(state) == "revise_content"
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
 
-    def test_rejected_string_force_approves_at_limit(self):
-        """Raw string rejected at revision limit → publisher (cap applies to strings too)."""
+    def test_rejected_string_at_cap_requires_human(self):
+        """Raw string rejected at revision limit → human channel."""
         state = {
             "evaluation_result": {"decision": "rejected"},
             "revision_count": 2,
         }
+        assert evaluator_requires_human(state) is True
+        assert evaluator_outcome(state) == "__end__"
+
+    def test_human_resume_revise_routes_to_revise_content(self):
+        """POST /resume revise stamp is the only auto path into revise_content."""
+        state = {
+            "evaluation_result": {
+                "decision": ContentStatus.NEEDS_REVISION,
+                "status": "human_revision_requested",
+                "human_override": {"decision": "revise", "source": "resume_api"},
+                "revision_hints": ["人工复核未放行"],
+            },
+            "revision_count": 0,
+        }
+        assert evaluator_requires_human(state) is False
+        assert evaluator_outcome(state) == "revise_content"
+
+    def test_human_resume_approve_overrides_eligibility_deny(self):
+        """POST /resume approve must not re-park on a stamped eligibility deny.
+
+        Fail-closed means requires a human, not forever forbidden — the prior
+        publish_eligibility.allowed=False audit stamp stays for history, but
+        the human override continues toward publish_gate.
+        """
+        state = {
+            "evaluation_result": {
+                "decision": ContentStatus.APPROVED,
+                "status": "human_approved",
+                "degraded": False,
+                "human_override": {"decision": "approve", "source": "resume_api"},
+                "publish_eligibility": {
+                    "allowed": False,
+                    "blocking_failures": ["lexicon"],
+                    "verdicts": [],
+                    "policy_version": "publish_judgers_v1",
+                    "decided_at": "2026-01-01T00:00:00+00:00",
+                },
+            },
+            "revision_count": 0,
+        }
+        assert evaluator_requires_human(state) is False
         assert evaluator_outcome(state) == "publisher"
 
-    def test_evaluator_outcome_force_approve_at_settings_limit(self):
-        """Patch Settings max_revision_count=0 → revision_count=0 force-approves.
-
-        Non-vacuous: with max_revision_count=0, even the first needs_revision
-        (revision_count=0) hits the 0 >= 0 cap → publisher (force-approve
-        immediately, no revisions allowed). Reverting to the hardcoded default
-        of 2 would make 0 >= 2 False → revise_content, failing this assert.
-        """
+    def test_max_revision_zero_still_requires_human_for_llm_revise(self):
+        """Even with max_revision_count=0, LLM needs_revision never force-publishes."""
         from unittest.mock import patch
 
         state = {
@@ -501,7 +537,8 @@ class TestEvaluatorOutcome:
         with patch("backend.graph.routers.Settings") as mock_settings:
             # REAL int — int >= MagicMock() raises TypeError (#513/#516/#517 trap)
             mock_settings.return_value.workflow.max_revision_count = 0
-            assert evaluator_outcome(state) == "publisher"
+            assert evaluator_requires_human(state) is True
+            assert evaluator_outcome(state) == "__end__"
 
 
 class TestShouldContinue:

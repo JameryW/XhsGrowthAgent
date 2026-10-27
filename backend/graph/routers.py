@@ -163,13 +163,8 @@ def review_outcome(state: XHSGrowthState) -> Literal["evaluator_gate", "revise_c
 
 
 # Loop-guard caps live in WorkflowSettings (env WORKFLOW_MAX_REVISION_COUNT /
-# WORKFLOW_MAX_CYCLE_COUNT). They mirror ripple.max_reselect_count — see
-# evaluator_outcome / should_continue below.
-
-# P0-W5: dimensions whose failure is a compliance/policy failure — these can
-# NEVER be silently force-published (fail-closed track). Anything else is on
-# the quality track, where fail-open at the revision cap remains allowed.
-COMPLIANCE_DIMENSIONS = frozenset({"compliance", "policy"})
+# WORKFLOW_MAX_CYCLE_COUNT). max_revision_count budgets human-initiated revise
+# cycles; max_cycle_count is enforced in should_continue.
 
 # P0-W5 (round 2): the reason stamped on the state when this fail-closed gate
 # parks the workflow. It is the CONTRACT between the evaluator node (writer)
@@ -178,6 +173,11 @@ COMPLIANCE_DIMENSIONS = frozenset({"compliance", "policy"})
 # whole-pipeline restart. Written by the node from the SAME predicate the router
 # uses (`evaluator_requires_human`), so the two can never diverge.
 PAUSE_REASON_EVALUATOR_FAIL_CLOSED = "evaluator_fail_closed"
+
+# Status stamped by POST /resume when the human chooses revise. Distinguishes a
+# human-initiated revise entry (allowed to route into revise_content once) from
+# an LLM quality needs_revision/rejected (heavy residual: always human channel).
+_HUMAN_REVISION_STATUS = "human_revision_requested"
 
 
 def _evaluation_is_degraded(evaluation: Any) -> bool:
@@ -192,26 +192,33 @@ def _evaluation_is_degraded(evaluation: Any) -> bool:
     return "decision" not in evaluation or evaluation.get("decision") is None
 
 
-def _rejection_is_compliance_driven(evaluation: Mapping[str, Any]) -> bool:
-    """True when a REJECTED decision was driven by compliance/policy evidence.
+_HUMAN_APPROVED_STATUS = "human_approved"
 
-    Primary marker: the additive ``failed_dimensions`` list (P0-W5) intersected
-    with the compliance dimensions. Back-compat for legacy results without the
-    marker: any dimension flagged ``is_blocking`` (the same evidence that made
-    _compute_decision reject). Missing marker + no blocking dims ⇒ quality
-    (the PRD's backward-compatible default).
+
+def _human_requested_revision(evaluation: Mapping[str, Any]) -> bool:
+    """True when /resume already chose revise — one-shot entry to revise_content.
+
+    Heavy residual never auto-routes LLM ``needs_revision``/``rejected`` into
+    the revise loop; only this resume stamp (or matching ``human_override``)
+    may enter ``revise_content`` from ``evaluator_outcome``.
     """
-    failed_dims = evaluation.get("failed_dimensions")
-    dims = evaluation.get("dimensions") or []
-    blocking = {
-        str(d.get("dimension")) for d in dims if isinstance(d, dict) and d.get("is_blocking")
-    }
-    if failed_dims is not None:
-        if set(failed_dims) & set(COMPLIANCE_DIMENSIONS):
-            return True
-        # A blocking dimension on ANY track is a hard policy signal.
-        return bool(set(failed_dims) & blocking)
-    return bool(blocking)
+    if str(evaluation.get("status") or "") == _HUMAN_REVISION_STATUS:
+        return True
+    override = evaluation.get("human_override")
+    return isinstance(override, dict) and str(override.get("decision") or "") == "revise"
+
+
+def _human_approved_override(evaluation: Mapping[str, Any]) -> bool:
+    """True when /resume already chose approve — continue toward publish_gate.
+
+    Fail-closed means "requires a human", not "forbidden forever". A stamped
+    ``publish_eligibility.allowed=False`` must not re-park after the human
+    explicitly approved; publish_gate still demands the irreversible confirm.
+    """
+    if str(evaluation.get("status") or "") == _HUMAN_APPROVED_STATUS:
+        return True
+    override = evaluation.get("human_override")
+    return isinstance(override, dict) and str(override.get("decision") or "") == "approve"
 
 
 def _publish_eligibility(state: XHSGrowthState) -> dict[str, Any]:
@@ -240,61 +247,74 @@ def _eligibility_blocks(state: XHSGrowthState) -> bool:
 
 
 def evaluator_requires_human(state: XHSGrowthState) -> bool:
-    """Single source of truth: does this run forbid continuing toward publish?
+    """Single source of truth: does this run forbid auto-continuing?
 
     Used by BOTH the evaluator node (to park the workflow in the existing
     paused status) and the evaluator_outcome router (to end the run), so the
     "human channel" decision can never diverge between them.
 
     Publish permission is owned by deterministic judgers + audit
-    (``publish_eligibility``). The LLM panel's overall score is **not** the
-    authority — it only feeds the quality revise loop.
+    (``publish_eligibility``). The LLM panel's ``decision`` never alone grants
+    publish, and under heavy residual it also never auto-enters
+    ``revise_content`` — revise/approve must come from ``POST /resume``.
 
     Fail-closed (pause / ``__end__``) when:
     - the panel is degraded / decision-less (P0-W5);
-    - eligibility blocks AND quality already looks "approved" (LLM must not
-      self-approve a publish the judgers refuse);
-    - eligibility / compliance still blocks at the revision cap.
-    Under the revision cap, eligibility failures still take the revise loop
-    so authors get ``revision_hints`` before a hard stop.
+    - quality ``needs_revision`` / ``rejected`` (including at revision cap —
+      no force-publish);
+    - eligibility blocks when quality already looks "approved" (LLM must not
+      self-approve a publish the judgers refuse).
+
+    Exception: a ``/resume`` stamp must NOT re-park —
+    - ``human_revision_requested`` → one-shot ``revise_content``;
+    - ``human_approved`` → continue toward ``publisher`` / publish_gate even
+      when the prior eligibility stamp still says denied (human override).
     """
     evaluation = state.get("evaluation_result")
-    # `_evaluation_is_degraded` already reports None/empty as degraded; the
-    # explicit `is None` arm only narrows the type for the checks below.
-    if evaluation is None or _evaluation_is_degraded(evaluation):
+    if evaluation is None:
+        return True
+
+    # Human /resume stamp wins over the evidence that caused the park
+    # (degraded flags, quality decision, eligibility stamp). Without this
+    # order, a leftover publish_eligibility.allowed=False would re-park
+    # approve, and a leftover degraded flag would re-park revise.
+    if _human_requested_revision(evaluation) or _human_approved_override(evaluation):
+        return False
+
+    if _evaluation_is_degraded(evaluation):
         return True
 
     decision: Any = evaluation.get("decision")
-    eligibility_blocked = _eligibility_blocks(state)
-    revision_count = state.get("revision_count", 0)
-    at_cap = revision_count >= Settings().workflow.max_revision_count
 
-    if decision in (ContentStatus.REJECTED, "rejected"):
-        return bool(at_cap and (eligibility_blocked or _rejection_is_compliance_driven(evaluation)))
-
-    if decision in (ContentStatus.NEEDS_REVISION, "needs_revision"):
-        # Soft quality revise; eligibility re-checked after the next pass.
-        return False
+    # Heavy residual: LLM quality revise/reject always parks for human.
+    # Never auto-revise; never force-publish at max_revision_count.
+    if decision in (
+        ContentStatus.REJECTED,
+        ContentStatus.NEEDS_REVISION,
+        "rejected",
+        "needs_revision",
+    ):
+        return True
 
     # Approved / legacy: LLM self-score must not grant publish when judgers block.
-    return bool(eligibility_blocked)
+    return bool(_eligibility_blocks(state))
 
 
 def evaluator_outcome(
     state: XHSGrowthState,
 ) -> Literal["publisher", "revise_content", "__end__"]:
-    """创作质量评估路由 — 确定性发布资格 + 质量修订回路（fail-closed）.
+    """创作质量评估路由 — 确定性发布资格 + 人工修订通道（heavy residual）.
 
     review_gate approved 后进入 evaluator_gate：
 
     - **能不能发** 只看 ``publish_eligibility``（确定性判定器 + 审计），不看
       LLM 综合自评分。LLM ``approved`` 在判定器失败时不得放行。
-    - **要不要改** 才读 quality ``decision``（needs_revision / rejected →
-      revise_content，把 revision_hints 交给文案）。
-    - 降级/缺失、或判定器在修订上限仍失败 → ``__end__``（节点 PAUSED）。
-
-    循环防护（仅质量轨）：revision_count 达上限后，**无**判定器阻断的质量拒绝
-    可进 publish_gate；判定器/compliance 阻断仍走人工通道。
+    - **要不要改** 不再由 LLM ``needs_revision``/``rejected`` 自动进
+      ``revise_content``；质量拒绝一律 ``__end__``（节点 PAUSED），由
+      ``POST /resume`` ``human_decision=revise|approve`` 继续。
+    - 降级/缺失 → ``__end__``（节点 PAUSED）。
+    - 修订上限 **不再** force 进 publisher；上限下的质量拒绝仍走人工通道。
+    - 唯一进 ``revise_content`` 的路径：``/resume`` revise 盖章后的一次路由。
 
     不读 _check_terminal：此处只在人审通过后触发，不会有 cancelled/paused 分支
     （那些在 review_outcome 已拦截）。
@@ -303,18 +323,8 @@ def evaluator_outcome(
         return "__end__"
 
     evaluation = state.get("evaluation_result") or {}
-    decision: Any = evaluation.get("decision")
-
-    if decision in (
-        ContentStatus.NEEDS_REVISION,
-        ContentStatus.REJECTED,
-        "needs_revision",
-        "rejected",
-    ):
-        revision_count = state.get("revision_count", 0)
-        if revision_count >= Settings().workflow.max_revision_count:
-            # Cap + quality-only: eligibility already cleared requires_human.
-            return "publisher"
+    # Only human-initiated revise (POST /resume) enters revise_content from here.
+    if _human_requested_revision(evaluation):
         return "revise_content"
     # Quality approved and eligibility clear → publish_gate
     return "publisher"

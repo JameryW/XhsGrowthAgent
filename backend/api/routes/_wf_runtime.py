@@ -144,23 +144,25 @@ def _resume_phase_for_next_nodes(
 
 # ── P0-W5 continuation channel: evaluator fail-closed pause ──────────────────
 #
-# The evaluator gate is fail-closed: a degraded evaluation or a compliance
-# rejection ends the run with phase=PAUSED + pause_reason=evaluator_fail_closed
-# (backend/graph/routers.py::evaluator_requires_human is the single source of
-# truth shared by node and router). Such a thread must NEVER fall through to the
-# legacy restart below — ainvoke-from-scouting would re-run the whole creation
-# pipeline. A human decision continues it in place instead:
+# The evaluator gate is fail-closed (heavy residual): a degraded evaluation,
+# quality needs_revision/rejected (including at revision cap — no force-publish),
+# or eligibility deny ends the run with phase=PAUSED +
+# pause_reason=evaluator_fail_closed (backend/graph/routers.py::
+# evaluator_requires_human is the single source of truth shared by node and
+# router). Such a thread must NEVER fall through to the legacy restart below —
+# ainvoke-from-scouting would re-run the whole creation pipeline. A human
+# decision continues it in place instead:
 #
 #   approve → evaluation_result is patched to APPROVED and the gate is replayed
 #             via aupdate_state(as_node="evaluator_gate"), so the conditional
 #             edge routes straight to the publisher (verified empirically in
-#             tests/integration/test_evaluator_pause_resume.py). Compliance
-#             blocks are human-overridable BY DESIGN — fail-closed means
-#             "requires a human", not "forbidden".
-#   revise   → patched to NEEDS_REVISION with a FRESH revision budget
-#             (revision_count reset to 0), so the human-initiated cycle gets a
-#             full Settings().workflow.max_revision_count allowance instead of
-#             instantly re-triggering the fail-closed cap.
+#             tests/integration/test_evaluator_pause_resume.py). Eligibility /
+#             compliance blocks are human-overridable BY DESIGN — fail-closed
+#             means "requires a human", not "forbidden".
+#   revise   → patched to NEEDS_REVISION + status=human_revision_requested with
+#             a FRESH revision budget (revision_count reset to 0). That stamp is
+#             the only path from evaluator_outcome into revise_content (LLM
+#             quality decisions never auto-revise).
 #
 # Both paths keep the original judge output (score/dimensions/summary) so the
 # audit trail and the training samples still show what the panel actually said;

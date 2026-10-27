@@ -186,6 +186,38 @@ class TestApproveDecisionContinuesToPublisher:
         # truth with the evaluator node / router).
         assert evaluator_requires_human({**values, **updates}) is False
 
+    def test_approve_overrides_stamped_eligibility_deny(self):
+        """Eligibility deny parked threads must continue after human approve.
+
+        The audit stamp may still say allowed=False; human override clears the
+        shared predicate so evaluator_outcome can route to publisher.
+        """
+        values = _paused_evaluator_values(
+            evaluation_result={
+                "overall_score": 90,
+                "decision": "approved",
+                "status": "ready",
+                "degraded": False,
+                "dimensions": [],
+                "revision_hints": [],
+                "summary": "LLM approved but lexicon blocked",
+                "publish_eligibility": {
+                    "allowed": False,
+                    "blocking_failures": ["lexicon"],
+                    "verdicts": [],
+                    "policy_version": "publish_judgers_v1",
+                    "decided_at": "2026-01-01T00:00:00+00:00",
+                },
+            }
+        )
+        with _resume_env(values) as (client, graph, mock_resume):
+            resp = client.post("/api/workflow/resume/thr1", json={"human_decision": "approve"})
+
+        assert resp.status_code == 200, resp.text
+        updates = graph.aupdate_state.await_args.args[1]
+        assert evaluator_requires_human({**values, **updates}) is False
+        mock_resume.assert_awaited_once()
+
 
 class TestReviseDecisionTakesFreshBudget:
     """revise → NEEDS_REVISION with a fresh revision budget, routed to revise."""
@@ -207,9 +239,14 @@ class TestReviseDecisionTakesFreshBudget:
         updates = call.args[1]
         evaluation = updates["evaluation_result"]
         assert str(evaluation["decision"]) == "needs_revision"
+        assert evaluation.get("status") == "human_revision_requested"
         assert evaluation.get("revision_hints"), "the writer needs a revision hint"
         # Fresh budget for the human-initiated cycle (the cap was already hit).
         assert updates["revision_count"] == 0
         assert updates["pause_reason"] is None
+        # Stamp must clear the shared predicate so evaluator_outcome can
+        # route into revise_content (LLM needs_revision alone would re-park).
+        merged = {**_paused_evaluator_values(revision_count=2), **updates}
+        assert evaluator_requires_human(merged) is False
         mock_resume.assert_awaited_once()
         assert mock_resume.await_args.args[3] != WorkflowPhase.SCOUTING
