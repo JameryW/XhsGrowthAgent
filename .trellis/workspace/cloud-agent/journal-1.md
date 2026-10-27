@@ -144,3 +144,38 @@ Merged #720: quality needs_revision/rejected park for human via evaluator_fail_c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: RQGM advisory UI + human-decision fail-closed CTAs
+
+**Date**: 2026-10-27
+**Task**: RQGM advisory UI + human-decision fail-closed CTAs
+**Branch**: `main`
+
+### Summary
+
+Merged #721: demoted RQGM to advisory on Dashboard/Review/Evaluation; human-decision approve/revise CTAs for evaluator_fail_closed; Review deep-link fail-closed surface; docs anchor retarget.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `15effa2c` | (see git log) |
+| `badbd20f` | (see git log) |
+| `e785c826` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
