@@ -231,7 +231,9 @@ function workflowItemFromState(state: WorkflowStateResponse): WorkflowListItem {
     thread_id: state.thread_id,
     account_id: source.account_id || '',
     phase: state.phase || 'reviewing',
-    status: 'awaiting_review',
+    // Preserve real status (e.g. paused + evaluator_fail_closed deep-link).
+    // Forcing awaiting_review hid fail-closed CTAs behind review_gate actions.
+    status: state.status || 'awaiting_review',
     dry_run: source.dry_run ?? false,
     auto_publish: source.auto_publish ?? false,
     progress_percent: state.progress_percent ?? 0,
@@ -686,6 +688,16 @@ function decisionClass(d: string | null | undefined): string {
 function isEvaluatorFailClosed(tid: string): boolean {
   const detail = workflowDetails.value.get(tid)
   return detail?.status === 'paused' && detail?.pause_reason === 'evaluator_fail_closed'
+}
+
+/** review_gate approve/revise/reject — hide while paused or fail-closed. */
+function showReviewGateActions(tid: string): boolean {
+  if (isEvaluatorFailClosed(tid)) return false
+  const detail = workflowDetails.value.get(tid)
+  if (detail?.status === 'paused') return false
+  const item = workflows.value.find(w => w.thread_id === tid)
+  if (item?.status === 'paused') return false
+  return true
 }
 
 const failClosedPending = ref<Set<string>>(new Set())
@@ -1687,7 +1699,7 @@ const handleCancelConfirm = () => {
                   </NeonButton>
                 </template>
                 <NeonButton
-                  v-if="!isEvaluatorFailClosed(wf.thread_id)"
+                  v-if="showReviewGateActions(wf.thread_id)"
                   variant="cyan"
                   size="sm"
                   :loading="isDecisionPending(wf.thread_id, 'approved')"
@@ -1701,7 +1713,7 @@ const handleCancelConfirm = () => {
                 </NeonButton>
 
                 <NeonButton
-                  v-if="!isEvaluatorFailClosed(wf.thread_id)"
+                  v-if="showReviewGateActions(wf.thread_id)"
                   variant="purple"
                   size="sm"
                   :loading="isDecisionPending(wf.thread_id, 'needs_revision')"
@@ -1715,7 +1727,7 @@ const handleCancelConfirm = () => {
                 </NeonButton>
 
                 <NeonButton
-                  v-if="!isEvaluatorFailClosed(wf.thread_id)"
+                  v-if="showReviewGateActions(wf.thread_id)"
                   variant="ghost"
                   size="sm"
                   class="border border-rose-200 !text-rose-500 hover:bg-rose-50"
@@ -1731,6 +1743,73 @@ const handleCancelConfirm = () => {
               </div>
             </div>
           </template>
+
+          <!-- Fail-closed past review_gate: no pending review payload, still need human CTAs. -->
+          <div
+            v-else-if="isEvaluatorFailClosed(wf.thread_id)"
+            class="p-4 md:p-5 space-y-3"
+          >
+            <p
+              v-if="getEvaluation(wf.thread_id)"
+              class="text-[10px] text-slate-500"
+            >
+              {{ t('review.evaluation.sectionHint') }}
+            </p>
+            <div
+              v-if="getEvaluation(wf.thread_id)"
+              class="dark-explicit rounded-md p-3 bg-white/60 border-l-2 border-rose-400 flex flex-col gap-2 dark:bg-slate-900/70"
+            >
+              <div class="flex items-baseline gap-1.5 flex-wrap">
+                <span class="text-[10px] text-slate-500">{{ t('review.evaluation.overall') }}</span>
+                <span
+                  class="text-2xl font-extrabold leading-none"
+                  :class="scoreClass(getEvaluation(wf.thread_id)!.overall_score, getEvaluationThresholds(wf.thread_id))"
+                >
+                  {{ getEvaluation(wf.thread_id)!.overall_score == null ? '—' : getEvaluation(wf.thread_id)!.overall_score?.toFixed(1) }}
+                </span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium dark:bg-slate-800 dark:text-slate-400">{{ t('review.evaluation.forReference') }}</span>
+              </div>
+              <div
+                class="inline-flex self-start px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                :class="decisionClass(getEvaluation(wf.thread_id)!.decision)"
+              >
+                {{ t(DECISION_KEYS[getEvaluation(wf.thread_id)!.decision ?? ''] ?? 'review.evaluation.decision.unknown') }}
+              </div>
+            </div>
+            <div class="dark-explicit sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-sticky -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
+              <p class="w-full text-[10px] text-amber-700 dark:text-amber-300 self-center">
+                {{ t('dashboard.actionButtons.evaluatorGateHint') }}
+              </p>
+              <NeonButton
+                variant="cyan"
+                size="sm"
+                :loading="failClosedPending.has(wf.thread_id)"
+                :disabled="failClosedPending.has(wf.thread_id)"
+                :title="t('dashboard.actionButtons.evaluatorGateApproveDesc')"
+                :aria-label="t('dashboard.actionButtons.evaluatorGateApprove')"
+                @click="decideEvaluatorFailClosed(wf.thread_id, 'approve')"
+              >
+                <span class="inline-flex items-center gap-1.5">
+                  <AppIcon name="CheckCircle" size="sm" variant="white" />
+                  <span class="font-semibold text-xs">{{ t('dashboard.actionButtons.evaluatorGateApprove') }}</span>
+                </span>
+              </NeonButton>
+              <NeonButton
+                variant="purple"
+                size="sm"
+                :loading="failClosedPending.has(wf.thread_id)"
+                :disabled="failClosedPending.has(wf.thread_id)"
+                :title="t('dashboard.actionButtons.evaluatorGateReviseDesc')"
+                :aria-label="t('dashboard.actionButtons.evaluatorGateRevise')"
+                @click="decideEvaluatorFailClosed(wf.thread_id, 'revise')"
+              >
+                <span class="inline-flex items-center gap-1.5">
+                  <AppIcon name="Edit3" size="sm" variant="white" />
+                  <span class="font-semibold text-xs">{{ t('dashboard.actionButtons.evaluatorGateRevise') }}</span>
+                </span>
+              </NeonButton>
+            </div>
+          </div>
 
           <!-- No review content available (workflow moved out of review) -->
           <div v-else class="px-4 py-3 text-xs text-slate-400 text-center">

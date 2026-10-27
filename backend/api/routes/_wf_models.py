@@ -123,10 +123,10 @@ class WorkflowStatusResponse(BaseModel):
     reselect_count: int = Field(default=0, description="重新选题次数")
     ripple_reason: str = Field(default="", description="Ripple 未运行原因")
     label: str = Field(default="", description="工作流名称")
-    # P0-W5: set when the evaluator quality gate parked the workflow
-    # ("evaluator_fail_closed"). The UI uses it to render an approve/revise
-    # decision prompt instead of a plain "resume" button, because /resume on
-    # such a thread REQUIRES an explicit human_decision.
+    # P0-W5: set when the RQGM/eligibility fail-closed channel parked the
+    # workflow ("evaluator_fail_closed"). AI scores are advisory; the UI
+    # renders a human approve/revise decision prompt instead of a plain
+    # "resume" button, because /resume REQUIRES an explicit human_decision.
     pause_reason: str | None = Field(
         default=None, description="原因：为何工作流停在 paused（如 evaluator_fail_closed）"
     )
