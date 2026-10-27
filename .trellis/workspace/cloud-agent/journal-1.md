@@ -109,3 +109,38 @@ Merged #719: plan_action(publish) auto-loads publish_eligibility from workflow c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Heavy residual: no auto-revise from evaluator
+
+**Date**: 2026-10-27
+**Task**: Heavy residual: no auto-revise from evaluator
+**Branch**: `main`
+
+### Summary
+
+Merged #720: quality needs_revision/rejected park for human via evaluator_fail_closed+/resume; removed revision-cap force-publish and auto revise_content; honor /resume approve over stamped eligibility deny; docs anchor retarget for CI.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `40a69674` | (see git log) |
+| `d0201d54` | (see git log) |
+| `57e87870` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
