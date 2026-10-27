@@ -13,7 +13,7 @@ import AccountViewNotice from '@/components/AccountViewNotice.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import { ReviewSkeleton } from '@/components/skeletons'
 import { useReviewStore, useToastStore, useAccountsStore } from '@/stores'
-import { listWorkflows, getWorkflowStatus, uploadImages } from '@/api/workflow'
+import { listWorkflows, getWorkflowStatus, uploadImages, resumeWorkflow } from '@/api/workflow'
 import { updateCopy } from '@/api/review'
 import { getEvaluationResult } from '@/api/evaluation'
 import type { ContentStatus } from '@/types'
@@ -680,6 +680,38 @@ function decisionClass(d: string | null | undefined): string {
   if (d === 'approved') return 'dark-explicit bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-300'
   if (d === 'needs_revision') return 'dark-explicit bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
   return 'dark-explicit bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
+}
+
+/** P0-W5: RQGM/eligibility fail-closed pause — human decide via /resume. */
+function isEvaluatorFailClosed(tid: string): boolean {
+  const detail = workflowDetails.value.get(tid)
+  return detail?.status === 'paused' && detail?.pause_reason === 'evaluator_fail_closed'
+}
+
+const failClosedPending = ref<Set<string>>(new Set())
+
+async function decideEvaluatorFailClosed(tid: string, decision: 'approve' | 'revise') {
+  if (failClosedPending.value.has(tid)) return
+  failClosedPending.value = new Set(failClosedPending.value).add(tid)
+  try {
+    const result = await resumeWorkflow(tid, undefined, decision)
+    toastStore.success(
+      (result as { message?: string }).message
+        || t(decision === 'approve'
+          ? 'dashboard.actionButtons.evaluatorGateApprove'
+          : 'dashboard.actionButtons.evaluatorGateRevise'),
+    )
+    // Drop from queue — thread is no longer awaiting human fail-closed decision.
+    workflows.value = workflows.value.filter(w => w.thread_id !== tid)
+    workflowDetails.value.delete(tid)
+    if (expandedThreadId.value === tid) expandedThreadId.value = null
+  } catch (e: any) {
+    toastStore.error(t('review.submitFailedTitle'), e?.message || String(e))
+  } finally {
+    const next = new Set(failClosedPending.value)
+    next.delete(tid)
+    failClosedPending.value = next
+  }
 }
 
 function scoreClass(s: number | null | undefined, thresholds: ScoreThresholds = SCORE_THRESHOLDS): string {
@@ -1459,13 +1491,14 @@ const handleCancelConfirm = () => {
                   <div class="space-y-3">
                     <!-- Overview + radar -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <!-- Overall score + decision -->
+                      <!-- Overall score + advisory decision -->
                       <div class="dark-explicit rounded-md p-3 bg-white/60 border-l-2 border-rose-400 flex flex-col gap-2 dark:bg-slate-900/70">
-                        <div class="flex items-baseline gap-1.5">
+                        <div class="flex items-baseline gap-1.5 flex-wrap">
                           <span class="text-[10px] text-slate-500">{{ t('review.evaluation.overall') }}</span>
                           <span class="text-2xl font-extrabold leading-none" :class="scoreClass(getEvaluation(wf.thread_id)!.overall_score, getEvaluationThresholds(wf.thread_id))">
                             {{ getEvaluation(wf.thread_id)!.overall_score?.toFixed(1) }}
                           </span>
+                          <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium dark:bg-slate-800 dark:text-slate-400">{{ t('review.evaluation.forReference') }}</span>
                         </div>
                         <div
                           class="inline-flex self-start px-2 py-0.5 rounded-full text-[10px] font-semibold"
@@ -1619,7 +1652,42 @@ const handleCancelConfirm = () => {
 
               <!-- Action buttons (offset above the fixed mobile tab bar) -->
               <div class="dark-explicit sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-sticky -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
+                <!-- Fail-closed: align Dashboard human-decision CTAs (not review_gate). -->
+                <template v-if="isEvaluatorFailClosed(wf.thread_id)">
+                  <p class="w-full text-[10px] text-amber-700 dark:text-amber-300 self-center">
+                    {{ t('dashboard.actionButtons.evaluatorGateHint') }}
+                  </p>
+                  <NeonButton
+                    variant="cyan"
+                    size="sm"
+                    :loading="failClosedPending.has(wf.thread_id)"
+                    :disabled="failClosedPending.has(wf.thread_id)"
+                    :title="t('dashboard.actionButtons.evaluatorGateApproveDesc')"
+                    :aria-label="t('dashboard.actionButtons.evaluatorGateApprove')"
+                    @click="decideEvaluatorFailClosed(wf.thread_id, 'approve')"
+                  >
+                    <span class="inline-flex items-center gap-1.5">
+                      <AppIcon name="CheckCircle" size="sm" variant="white" />
+                      <span class="font-semibold text-xs">{{ t('dashboard.actionButtons.evaluatorGateApprove') }}</span>
+                    </span>
+                  </NeonButton>
+                  <NeonButton
+                    variant="purple"
+                    size="sm"
+                    :loading="failClosedPending.has(wf.thread_id)"
+                    :disabled="failClosedPending.has(wf.thread_id)"
+                    :title="t('dashboard.actionButtons.evaluatorGateReviseDesc')"
+                    :aria-label="t('dashboard.actionButtons.evaluatorGateRevise')"
+                    @click="decideEvaluatorFailClosed(wf.thread_id, 'revise')"
+                  >
+                    <span class="inline-flex items-center gap-1.5">
+                      <AppIcon name="Edit3" size="sm" variant="white" />
+                      <span class="font-semibold text-xs">{{ t('dashboard.actionButtons.evaluatorGateRevise') }}</span>
+                    </span>
+                  </NeonButton>
+                </template>
                 <NeonButton
+                  v-if="!isEvaluatorFailClosed(wf.thread_id)"
                   variant="cyan"
                   size="sm"
                   :loading="isDecisionPending(wf.thread_id, 'approved')"
@@ -1633,6 +1701,7 @@ const handleCancelConfirm = () => {
                 </NeonButton>
 
                 <NeonButton
+                  v-if="!isEvaluatorFailClosed(wf.thread_id)"
                   variant="purple"
                   size="sm"
                   :loading="isDecisionPending(wf.thread_id, 'needs_revision')"
@@ -1646,6 +1715,7 @@ const handleCancelConfirm = () => {
                 </NeonButton>
 
                 <NeonButton
+                  v-if="!isEvaluatorFailClosed(wf.thread_id)"
                   variant="ghost"
                   size="sm"
                   class="border border-rose-200 !text-rose-500 hover:bg-rose-50"

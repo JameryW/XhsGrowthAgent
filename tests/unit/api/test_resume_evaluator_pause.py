@@ -129,6 +129,10 @@ class TestMissingDecisionIsRejected:
             payload = resp.json()
             assert payload["success"] is False
             assert "human_decision" in str(payload)
+            # Soft-aligned copy: human channel, not "LLM quality gate".
+            detail = str(payload)
+            assert "评估质量门" not in detail
+            assert "批准继续发布" in detail or "human_decision" in detail
             # Nothing written, nothing restarted — no silent pipeline re-run.
             graph.aupdate_state.assert_not_awaited()
             mock_resume.assert_not_awaited()
@@ -165,6 +169,8 @@ class TestApproveDecisionContinuesToPublisher:
         assert resp.status_code == 200, resp.text
         assert body["status"] == "running"
         assert body["human_decision"] == "approve"
+        assert "评估质量门" not in str(body.get("message", ""))
+        assert "批准继续发布" in str(body.get("message", ""))
         # Continued at the gate — never the whole-pipeline (SCOUTING) restart.
         assert body["phase"] == WorkflowPhase.PUBLISHING
 

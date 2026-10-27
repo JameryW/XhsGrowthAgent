@@ -419,11 +419,11 @@
       "pauseDesc": "Pause current workflow execution",
       "resume": "Resume Workflow",
       "resumeDesc": "Resume paused workflow execution",
-      "evaluatorGateHint": "The pre-publish quality gate did not pass (degraded evaluation or compliance block) — your decision is required",
-      "evaluatorGateApprove": "Override & publish",
-      "evaluatorGateApproveDesc": "You take over the gate and continue straight to publishing (creation is not re-run)",
-      "evaluatorGateRevise": "Send back for revision",
-      "evaluatorGateReviseDesc": "Return to content revision with the evaluator's hints and a fresh revision budget",
+      "evaluatorGateHint": "AI scores are advisory only. Publish needs eligibility plus your decision (paused after a degraded evaluation or compliance/eligibility block).",
+      "evaluatorGateApprove": "Approve & continue publishing",
+      "evaluatorGateApproveDesc": "You decide to continue publishing. AI scores are for reference; publish = eligibility check + human decision (creation is not re-run).",
+      "evaluatorGateRevise": "Request revision",
+      "evaluatorGateReviseDesc": "Send content back for revision with the evaluator's hints and a fresh revision budget",
       "refresh": "Refresh Status",
       "refreshDesc": "Refresh to get latest workflow status",
       "awaitingDraft": "Waiting for draft: fill in the optimization panel above to continue",
@@ -815,11 +815,12 @@
     },
     "evaluation": {
       "sectionTitle": "Evaluation Result",
-      "sectionHint": "Reference the evaluation while editing; saving auto re-evaluates",
+      "sectionHint": "RQGM scores are advisory only — use them while editing; saving auto re-evaluates",
       "empty": "No evaluation yet. Saving copy will trigger evaluation.",
       "loading": "Loading evaluation…",
       "loadFailed": "Failed to load evaluation",
       "overall": "RQGM content review score",
+      "forReference": "For reference only",
       "radarTitle": "6-Dimension Radar",
       "dimensionsTitle": "Dimension Details",
       "hintsTitle": "Revision Hints",
@@ -827,9 +828,9 @@
       "lexiconTitle": "Lexicon hits (deterministic scan)",
       "blocking": "BLOCKING",
       "decision": {
-        "approved": "Approved",
-        "needs_revision": "Needs Revision",
-        "rejected": "Rejected",
+        "approved": "Suggest approve",
+        "needs_revision": "Suggest revise",
+        "rejected": "Suggest do not publish",
         "unknown": "Unknown"
       }
     }
@@ -2709,12 +2710,14 @@
     },
     "empty": {
       "title": "No evaluation yet",
-      "desc": "This workflow has no evaluation result. The workflow evaluates automatically after human review approves, before publish; or trigger manually via omp's xhs_evaluation_run tool."
+      "desc": "This workflow has no evaluation result. RQGM runs after human review approves (scores are advisory, not a publish gate); or trigger manually via omp's xhs_evaluation_run tool."
     },
+    "forReference": "For reference only",
+    "advisoryHint": "RQGM scores and decisions are advisory. Publish requires eligibility plus a human decision — AI self-eval alone does not unlock publish.",
     "decision": {
-      "approved": "Approved",
-      "needs_revision": "Needs Revision",
-      "rejected": "Rejected",
+      "approved": "Suggest approve",
+      "needs_revision": "Suggest revise",
+      "rejected": "Suggest do not publish",
       "unknown": "Unknown"
     },
     "dim": {

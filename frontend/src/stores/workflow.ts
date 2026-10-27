@@ -277,8 +277,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     currentStatus.value === 'awaiting_blogger_selection'
   )
 
-  // P0-W5: the pre-publish quality gate parked this workflow on purpose
-  // (degraded evaluation or compliance rejection). /resume on such a thread
+  // P0-W5: RQGM/eligibility fail-closed pause. AI scores are advisory; /resume
   // REQUIRES an explicit human decision (approve / revise) — a plain resume is
   // rejected with 400 instead of restarting the whole pipeline.
   const evaluatorGatePaused = computed(() =>
@@ -1025,15 +1024,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
           ...state,
           status: result.status || 'running',
           phase: result.phase || state.phase,
-          // The decision consumed the gate pause; don't keep offering it until
-          // the next /status poll confirms from the checkpoint.
+          // Human decision consumed the fail-closed pause; don't keep offering
+          // it until the next /status poll confirms from the checkpoint.
           ...(humanDecision ? { pause_reason: null } : {}),
         } as WorkflowStateResponse
         workflowStates.value.set(threadId, nextState)
         updateProgressFromPhase(nextState.phase, nextState.progress_percent)
       }
       realtimeStore.subscribeWorkflow(threadId)
-      // A gate decision carries its own explanation from the backend; plain
+      // Fail-closed human decisions carry their own backend message; plain
       // resume keeps the generic toast.
       const decisionMessage = humanDecision ? (result as any).message : ''
       toastStore.success(

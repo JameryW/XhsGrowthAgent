@@ -144,14 +144,15 @@ def _resume_phase_for_next_nodes(
 
 # ── P0-W5 continuation channel: evaluator fail-closed pause ──────────────────
 #
-# The evaluator gate is fail-closed (heavy residual): a degraded evaluation,
-# quality needs_revision/rejected (including at revision cap — no force-publish),
-# or eligibility deny ends the run with phase=PAUSED +
+# Fail-closed human channel (heavy residual): a degraded evaluation, quality
+# needs_revision/rejected (including at revision cap — no force-publish), or
+# eligibility deny ends the run with phase=PAUSED +
 # pause_reason=evaluator_fail_closed (backend/graph/routers.py::
 # evaluator_requires_human is the single source of truth shared by node and
-# router). Such a thread must NEVER fall through to the legacy restart below —
-# ainvoke-from-scouting would re-run the whole creation pipeline. A human
-# decision continues it in place instead:
+# router). RQGM scores/hints remain advisory UI evidence — LLM decision alone
+# never unlocks publish. Such a thread must NEVER fall through to the legacy
+# restart below — ainvoke-from-scouting would re-run the whole creation
+# pipeline. A human decision continues it in place instead:
 #
 #   approve → evaluation_result is patched to APPROVED and the gate is replayed
 #             via aupdate_state(as_node="evaluator_gate"), so the conditional
@@ -243,10 +244,10 @@ async def _resume_past_evaluator_pause(
     if decision not in HUMAN_DECISIONS:
         raise ValidationError(
             "human_decision",
-            "该工作流停在评估质量门（evaluator_fail_closed），必须由人工显式决定如何继续："
-            '请求体需带 {"human_decision": "approve"}（放行发布）或 '
-            '"revise"（退回修订并给出新的修订额度）。'
-            "未提供决定时不会重跑创作流水线，也不会自动发布。",
+            "该工作流因评估未放行而暂停（evaluator_fail_closed），需人工显式决定如何继续："
+            '请求体需带 {"human_decision": "approve"}（批准继续发布）或 '
+            '"revise"（要求修订并给出新的修订额度）。'
+            "AI 评分仅供参考；未提供决定时不会重跑创作流水线，也不会自动发布。",
         )
 
     updates = build_evaluator_pause_resume_updates(state.values or {}, decision)
@@ -267,9 +268,9 @@ async def _resume_past_evaluator_pause(
             "human_decision": decision,
             "continued_from": "evaluator_gate",
             "message": (
-                "人工已放行评估质量门，继续发布（不会重跑创作链路）"
+                "人工已批准继续发布（AI 评分仅供参考；不会重跑创作链路）"
                 if decision == "approve"
-                else "人工选择修订：已退回内容修订环节，并授予新的修订额度"
+                else "人工要求修订：已退回内容修订环节，并授予新的修订额度"
             ),
         }
     )

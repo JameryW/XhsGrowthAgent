@@ -734,6 +734,9 @@ Indentation and surrounding punctuation/labels stay `DIM` so structure stays sca
   and keep the numeric fraction untouched outside presentation adapters.
 - Label published performance as “发布后表现分” and RQGM as “RQGM 内容评审分”;
   never render an unqualified “综合质量分”.
+- RQGM decision badges are advisory (`建议通过` / `建议修订` / `建议不发` + `仅供参考`);
+  fail-closed pause CTAs use human-decision wording (`批准继续发布` / `要求修订`), never
+  「质量门 / Override」 gate language. AI scores alone must not be framed as unlocking publish.
 - Null/degraded/failed scores render `—` and an unavailable/retry state; they
   do not map to zero or a green/approved badge. Threshold colors use response
   thresholds, falling back to one shared default constant only when absent.
