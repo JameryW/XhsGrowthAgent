@@ -95,7 +95,6 @@ class TestTheCompiledState:
     def test_it_seeds_exactly_the_keys_the_literal_did(self) -> None:
         assert set(_goal().compile_initial_state()) == SEEDED_KEYS
 
-
     def test_it_stamps_the_first_run_identity(self) -> None:
         state = _goal().compile_initial_state()
         assert state["run_seq"] == 1

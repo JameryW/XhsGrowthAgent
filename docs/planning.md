@@ -65,7 +65,7 @@
 | `brief_exclusions` | `6` | `len(PLAN_TEMPLATES[BRIEF].excludes)` |
 | `workflow_modes` | `brief, trend` | `sorted(WorkflowMode)` |
 | `plan_templates` | `brief, trend` | `sorted(PLAN_TEMPLATES)` |
-| `goal_initial_state_keys` | `25` | `len(Goal(...).compile_initial_state())` |
+| `goal_initial_state_keys` | `28` | `len(Goal(...).compile_initial_state())` |
 
 <!-- claim-table:end -->
 
