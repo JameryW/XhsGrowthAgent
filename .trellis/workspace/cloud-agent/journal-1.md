@@ -179,3 +179,36 @@ Merged #721: demoted RQGM to advisory on Dashboard/Review/Evaluation; human-deci
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Run 身份协议 —— run_id 区分 resume 与 rerun（票 5x）
+
+**Date**: 2026-10-29
+**Task**: Run 身份协议 —— run_id 区分 resume 与 rerun（票 5x）
+**Branch**: `main`
+
+### Summary
+
+Merged #722: Run identity stamps start/rerun; pause/error resume reuse; status echoes run_*; workflow-state spec + Trellis archive.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `443e5be5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

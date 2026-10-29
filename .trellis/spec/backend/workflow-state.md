@@ -261,6 +261,94 @@ Graph pauses at review_gate (interrupt_before) → API calls derive_status() →
 
 The `_emit_status_transition` function in `_runner.py` handles this automatically. It tracks the last known status per thread and only emits on transitions.
 
+## Run Identity (票 5x)
+
+### Scope / Trigger
+
+- Any code that starts, resumes, recovers, or reports `/status` for a workflow thread
+- Distinguishing **resume** (continue the same execution) from **rerun** (terminal restart on the same `thread_id`)
+- Emitting or reading `kind:"run"` telemetry
+
+`thread_id` is the **Task**. `run_id` is one **execution lifetime** within that Task. Attempt (票 5w) and Effect stay separate entities.
+
+### Signatures
+
+```python
+# backend/state/runs.py
+class RunCause(StrEnum):
+    START = "start"      # POST /start — mint
+    RESUME = "resume"    # pause / gate / error-stale — reuse (no mint event)
+    RERUN = "rerun"      # completed/cancelled terminal restart — mint
+    RECOVER = "recover"  # /recover strategies — reuse
+
+def run_id(thread_id: str, *, run_seq: int, started_at: str) -> str
+def run_entry(*, thread_id, run_seq, cause: RunCause, started_at) -> dict  # start|rerun only
+def mint_run_stamp(thread_id, *, cause, started_at, prior_seq=None) -> {"state", "entry"}
+def run_identity_view(values) -> {"run_id", "run_seq", "run_cause"}  # None on legacy
+```
+
+State fields (checkpoint): `run_id: str`, `run_seq: int`, `run_cause: str`.
+Event kind: `RUN_EVENT_KIND = "run"` ∈ `EVENT_KINDS`.
+
+### Contracts
+
+| Boundary | Behavior |
+|----------|----------|
+| `Goal.compile_initial_state` | Stamps `run_seq=1`, `run_cause=start`, deterministic `run_id` |
+| `POST /start` | Emits one `kind:"run"` entry; response echoes run identity |
+| Pause / error / stale `/resume` | **Reuses** stamp; does **not** mint; does **not** emit run event |
+| Completed / cancelled `/resume` | `mint_run_stamp(cause=rerun)` → `aupdate_state` + emit; `run_seq += 1` |
+| `POST /recover` | Reuses stamp (same failed execution); no mint |
+| `GET /status` (live + history) | Additive echo via `run_identity_view`; legacy → all `null` |
+| Docs claims | `goal_initial_state_keys` counts seeded keys (includes the three run fields); `aupdate_state` site counts shift when resume mints |
+
+### Validation & Error Matrix
+
+| Input | Result |
+|-------|--------|
+| `run_seq < 1` / non-int / bool | `ValueError` on `run_id` / `run_entry` / `mint_run_stamp` |
+| `cause` ∈ {resume, recover} passed to `run_entry` / `mint_run_stamp` | `ValueError` — reuse causes never mint |
+| Empty `thread_id` / `started_at` | `ValueError` |
+| Legacy checkpoint missing run_* | `run_identity_view` → `None`s; **do not** backfill on ordinary resume |
+
+### Good / Base / Bad Cases
+
+| Case | Expected |
+|------|----------|
+| Good: `/start` then pause resume | Same `run_id`, `run_seq=1` |
+| Good: completed → `/resume` | New `run_id`, `run_seq=2`, `cause=rerun`, one run event |
+| Base: legacy thread `/status` | `run_id`/`run_seq`/`run_cause` all `null` |
+| Bad: mint with `cause=resume` | Raises — would make "continue" look like "new open" |
+| Bad: id without `run_seq` | Two reruns at same timestamp collide |
+
+### Tests Required
+
+- `tests/unit/state/test_runs.py`: closed vocabulary, reserved keys, no content fields, id includes seq, resume/recover cannot mint, `next_run_seq`, `mint_run_stamp`
+- `tests/unit/state/test_goal.py`: initial state stamps seq=1 / cause=start
+- `tests/unit/api/test_run_identity_resume.py`: pause reuses; terminal restart mints + emits
+- Wire-shape / hydration: `run_*` are runtime scalars (like `pause_reason`), **not** `status_view` / `STAGE_VIEW_KEYS`
+- Docs anchors/claims retarget when `_wf_application` line numbers or key counts change
+
+### Wrong vs Correct
+
+```python
+# WRONG — terminal restart keeps the old run_id (resume ≡ rerun again)
+await graph.aupdate_state(config, {"phase": prev_phase, "error": None}, ...)
+
+# CORRECT — mint a new run on completed/cancelled restart
+stamped = mint_run_stamp(thread_id, cause=RunCause.RERUN, started_at=now, prior_seq=values.get("run_seq"))
+await graph.aupdate_state(config, {"phase": prev_phase, "error": None, **stamped["state"]}, ...)
+await emit_events(thread_id, [stamped["entry"]])
+```
+
+```python
+# WRONG — invent a run_id on read for legacy threads
+return {"run_id": values.get("run_id") or run_id(thread_id, run_seq=1, started_at=...)}
+
+# CORRECT — never invent on read
+return run_identity_view(values)  # nulls when absent / malformed
+```
+
 ## Workflow Metadata Persistence
 
 ### Status writes go to DB
