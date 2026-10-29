@@ -129,8 +129,8 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | 锚点 | 证据 | 分类 | 备注 |
 | --- | --- | --- | --- |
 | `backend/db/execution_leases.py:722` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:723`；由 `end_lease` 取消，取消即正常收尾 |
-| `backend/api/routes/_wf_runtime.py:364` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:366` |
-| `backend/api/routes/_wf_application.py:270` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:272` |
+| `backend/api/routes/_wf_runtime.py:367` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:369` |
+| `backend/api/routes/_wf_application.py:288` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:290` |
 | `backend/api/routes/_wf_actions.py:283` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
 | `backend/api/routes/_wf_actions.py:480` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:482` |
 | `backend/agents/content_strategist.py:618` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
@@ -195,7 +195,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 - `backend/api/routes/_wf_actions.py:426` `async def _run_publish_retry()` —— publish-retry。
 
 **判据。** 本文件早先的版本把这两条写成「直接写 checkpoint、**不取租约**」。按那条判据，
-树里要圈进 **20** 处：`await <graph>.aupdate_state(...)` 在统一入口之外有 20 个调用点、
+树里要圈进 **21** 处：`await <graph>.aupdate_state(...)` 在统一入口之外有 21 个调用点、
 分布在 **7** 个文件（`_wf_application.py` 8 · `review.py` 4 · `_wf_actions.py` 3 · `optimization.py` 2 ·
 `_wf_runtime.py` 1 · `blogger.py` 1 · `evaluation.py` 1）。其中 18 处写在**请求处理器的同步体内**：
 要么写完就返回、执行根本不发生（`start_workflow` 的 `waits_for_brief_upload` 分支、`pause_workflow`、
@@ -333,7 +333,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `backend/api/routes/_runner.py:51` | `process_has_active_task` | 串行化谓词（与状态谓词是两个问题） |
 | `backend/api/routes/_wf_actions.py:335` | `process_has_active_task` | 消费者 1：publish-retry 守卫 |
 | `backend/api/routes/_wf_actions.py:101` | `process_has_active_task` | ripple-retry 的守卫：与上一行同一个谓词 |
-| `backend/api/routes/_wf_application.py:1690` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
+| `backend/api/routes/_wf_application.py:1742` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
 | `backend/api/routes/_runner.py:134` | `process_has_active_task` | OR 进 `has_active_execution` 的那一处 |
 | `backend/api/routes/_wf_actions.py:178` | `asyncio.gather` | 两个 ripple 模拟的并发消费点（票 5p 起是 `gateway.invoke`，不再是 `submit_and_wait`）⇒ 窗口是 1 个 timeout |
 | `backend/api/routes/_wf_actions.py:149` | `ripple_timeout` | 窗口的那个 1800.0 |
@@ -377,7 +377,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `repair_paths_taking_the_lease` | `2` | `_wf_actions.py` 内 `_execution_lease` 的调用点数 —— 两条修复路径各一处 |
 | `lease_helper_definitions_in_the_runner` | `1` | `_runner.py` 内 `_execution_lease` 的定义数 —— 「取租约只有一处实现」的那个「一处」 |
 | `end_lease_call_sites_under_backend` | `1` | 全仓 `end_lease(` 的调用点数（在同一个 helper 里） |
-| `aupdate_state_call_sites_outside_the_unified_entry` | `20` | 宿主函数不是 `_run_graph_and_persist` 的 `aupdate_state` 调用点数 —— §7 的判据必须圈得住的两端 |
+| `aupdate_state_call_sites_outside_the_unified_entry` | `21` | 宿主函数不是 `_run_graph_and_persist` 的 `aupdate_state` 调用点数 —— §7 的判据必须圈得住的两端 |
 | `checkpoint_writer_files_outside_the_unified_entry` | `7` | 上一行涉及的**文件**数 |
 | `repair_paths_that_own_their_own_task` | `2` | 「处理器 `create_task` 起的嵌套协程**自己**写 checkpoint」的处数 —— §7 用来圈集合的那条判据 |
 | `expire_scan_call_sites_under_backend` | `1` | 全仓 `expire_scan(` 的调用点数（在 `takeover_scan` 里，由启动扫描与周期调度到达） |

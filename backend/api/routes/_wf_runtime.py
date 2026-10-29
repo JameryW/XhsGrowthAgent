@@ -260,6 +260,8 @@ async def _resume_past_evaluator_pause(
         thread_id,
         phase,
     )
+    from backend.state.runs import run_identity_view
+
     return success(
         data={
             "thread_id": thread_id,
@@ -272,6 +274,7 @@ async def _resume_past_evaluator_pause(
                 if decision == "approve"
                 else "人工要求修订：已退回内容修订环节，并授予新的修订额度"
             ),
+            **run_identity_view(state.values),
         }
     )
 

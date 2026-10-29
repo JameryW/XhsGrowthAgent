@@ -121,6 +121,10 @@ class Goal:
         schema declares them, and an absent key reads the same as an empty one to
         a reducer but not to a reader that asks whether the key exists.
         """
+        # Run identity (票 5x): the first run on a new thread is always seq 1
+        # with cause=start. Terminal restart mints later seqs at the resume path.
+        from backend.state.runs import RunCause, run_id
+
         state: dict[str, Any] = {
             "phase": self.start_phase,
             "current_agent": "orchestrator",
@@ -144,6 +148,9 @@ class Goal:
             "account_id": self.account_id,
             "session_id": self.thread_id,
             "thread_id": self.thread_id,
+            "run_seq": 1,
+            "run_cause": RunCause.START.value,
+            "run_id": run_id(self.thread_id, run_seq=1, started_at=self.created_at),
             "topic": self.topic,
             "niche": self.niche,
             "niche_resolution": dict(self.niche_resolution),

@@ -158,6 +158,10 @@ def test_status_view_covers_every_state_sourced_status_field():
         "updated_at",
         "pause_reason",
         "is_commercial",
+        # 票 5x Run identity — echoed via run_identity_view, not status_view:
+        "run_id",
+        "run_seq",
+        "run_cause",
     }
     assert state_sourced_response_fields == STAGE_VIEW_KEYS
 

@@ -89,6 +89,7 @@ from backend.state.hydration import (
 )
 from backend.state.machine import WorkflowStatus, derive_status
 from backend.state.modes import stored_mode
+from backend.state.runs import run_identity_view as _run_identity_view
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +217,22 @@ async def start_workflow(
     config = {"configurable": {"thread_id": thread_id}}
     now = goal.created_at
 
+    # 票 5x: emit the minted start-run event (best-effort telemetry).
+    from backend.state.events import emit_events
+    from backend.state.runs import RunCause, run_entry
+
+    await emit_events(
+        thread_id,
+        [
+            run_entry(
+                thread_id=thread_id,
+                run_seq=1,
+                cause=RunCause.START,
+                started_at=now,
+            )
+        ],
+    )
+
     # Register workflow in DB (no-op when DB unavailable)
     await _db_upsert(
         thread_id,
@@ -253,6 +270,7 @@ async def start_workflow(
                 "progress_percent": get_progress(actual_phase),
                 "sse_url": f"/api/workflow/stream/{thread_id}",
                 "websocket_url": "/api/realtime/ws",
+                **_run_identity_view(initial_state),
             }
         )
 
@@ -278,6 +296,7 @@ async def start_workflow(
                 "progress_percent": get_progress(start_phase_str),
                 "sse_url": f"/api/workflow/stream/{thread_id}",
                 "websocket_url": "/api/realtime/ws",
+                **_run_identity_view(initial_state),
             }
         )
     else:
@@ -303,6 +322,7 @@ async def start_workflow(
                 "status": final_status,
                 "phase": final_phase,
                 "progress_percent": 100 if final_status == "completed" else 0,
+                **_run_identity_view(initial_state),
             }
         )
 
@@ -462,6 +482,7 @@ async def get_workflow_status(
                 pause_reason=state.values.get("pause_reason"),
                 # P0-5: Review publish modal needs commercial flag for disclosure checkbox.
                 is_commercial=_state_is_commercial(live_values),
+                **_run_identity_view(state.values),
                 **status_view(live_values),
             ).model_dump()
         )
@@ -503,6 +524,7 @@ async def get_workflow_status(
                 ripple_progress={},  # History file has no live Ripple progress
                 label="",
                 is_commercial=_state_is_commercial(saved),
+                **_run_identity_view(saved),
                 **history_file_view(saved),
             ).model_dump()
         )
@@ -756,6 +778,7 @@ async def resume_workflow(
                 "thread_id": thread_id,
                 "status": "running",
                 "phase": prev_phase,
+                **_run_identity_view(saved),
             }
         )
 
@@ -828,6 +851,7 @@ async def resume_workflow(
                 "phase": result.get("phase", WorkflowPhase.BRIEFING)
                 if result
                 else WorkflowPhase.BRIEFING,
+                **_run_identity_view(state.values),
             }
         )
 
@@ -854,6 +878,7 @@ async def resume_workflow(
                 "phase": result.get("phase", WorkflowPhase.CREATING)
                 if result
                 else WorkflowPhase.CREATING,
+                **_run_identity_view(state.values),
             }
         )
 
@@ -881,6 +906,7 @@ async def resume_workflow(
                 "phase": result.get("phase", WorkflowPhase.CREATING)
                 if result
                 else WorkflowPhase.CREATING,
+                **_run_identity_view(state.values),
             }
         )
 
@@ -924,6 +950,7 @@ async def resume_workflow(
                 "phase": result.get("phase", WorkflowPhase.PUBLISHING)
                 if result
                 else WorkflowPhase.PUBLISHING,
+                **_run_identity_view(state.values),
             }
         )
 
@@ -1007,18 +1034,43 @@ async def resume_workflow(
     # resumes with None. This matches the workflow-state spec: stale/error
     # resume uses ainvoke(None).
     if can_retry_error or can_resume_stale:
+        # Same run: error/stale retry reuses the stamped run_id.
         await _start_resume_task(thread_id, graph, config, prev_phase)
+        resume_run = _run_identity_view(state.values)
+    elif can_restart_terminal:
+        # New run on the same Task: mint run_seq+1 and emit kind:"run".
+        from backend.state.events import emit_events
+        from backend.state.runs import RunCause, mint_run_stamp
+
+        started_at = datetime.now(UTC).isoformat()
+        stamped = mint_run_stamp(
+            thread_id,
+            cause=RunCause.RERUN,
+            started_at=started_at,
+            prior_seq=(state.values or {}).get("run_seq"),
+        )
+        await graph.aupdate_state(
+            config,
+            {"phase": prev_phase, "error": None, **stamped["state"]},
+            as_node=_get_as_node(state),
+        )
+        await emit_events(thread_id, [stamped["entry"]])
+        await _start_resume_task(thread_id, graph, config, prev_phase)
+        resume_run = stamped["state"]
     else:
+        # Pause resume: same run, phase restored from prev_phase.
         await graph.aupdate_state(
             config, {"phase": prev_phase, "error": None}, as_node=_get_as_node(state)
         )
         await _start_resume_task(thread_id, graph, config, prev_phase)
+        resume_run = _run_identity_view(state.values)
 
     return success(
         data={
             "thread_id": thread_id,
             "status": "running",
             "phase": prev_phase,
+            **_run_identity_view(resume_run),
         }
     )
 

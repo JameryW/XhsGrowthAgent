@@ -138,12 +138,14 @@ class TestTheRequestNoLongerOffersAPhase:
 
         def _stable(call: AsyncMock) -> dict[str, Any]:
             # ``thread_id`` (a random suffix) and ``created_at`` (now) are the
-            # two keys a run is allowed to differ in.
+            # keys a run is allowed to differ in. ``run_id`` is derived from
+            # ``(thread_id, run_seq, created_at)``, so it rides the clock too.
             state = dict(call.await_args.args[_GRAPH_INPUT_ARG])
             state.pop("thread_id")
             state.pop("session_id")
             state.pop("created_at")
             state.pop("updated_at")
+            state.pop("run_id")
             return state
 
         assert _stable(run_with) == _stable(run_without)
@@ -243,3 +245,35 @@ class TestTheModeReachesTheGraphInput:
     def test_the_default_is_the_declared_default(self) -> None:
         _, run_mock, _, _ = _start({})
         assert run_mock.await_args.args[_GRAPH_INPUT_ARG]["workflow_mode"] is WorkflowMode.TREND
+
+
+class TestStartMintsRunIdentity:
+    """票 5x: /start stamps run_id and emits kind:\"run\" (mutation: 删 run 记录 → 红)."""
+
+    def test_start_emits_run_event_matching_graph_input(self) -> None:
+        graph = _graph()
+        run_mock = AsyncMock(return_value={})
+        upsert_mock = AsyncMock(return_value=None)
+        with (
+            _start_env(run_mock, upsert_mock),
+            patch("backend.state.events.emit_events", new_callable=AsyncMock) as emit,
+        ):
+            try:
+                resp = _client(graph).post(
+                    "/api/workflow/start",
+                    json={"account_id": "acc1", "async_mode": True, "workflow_mode": "trend"},
+                )
+            finally:
+                _runner._background_tasks.clear()
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        state = run_mock.await_args.args[_GRAPH_INPUT_ARG]
+        assert data["run_id"] == state["run_id"]
+        assert data["run_seq"] == 1
+        assert data["run_cause"] == "start"
+        emit.assert_awaited()
+        entry = emit.await_args.args[1][0]
+        assert entry["kind"] == "run"
+        assert entry["cause"] == "start"
+        assert entry["run_id"] == state["run_id"]
+        assert entry["run_seq"] == 1
