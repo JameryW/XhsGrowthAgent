@@ -135,6 +135,19 @@ class WorkflowStatusResponse(BaseModel):
         default=False,
         description="True when the run is a commercial brief (or explicitly flagged)",
     )
+    # 票 5x: Run identity within a Task (thread_id). Absent on legacy threads.
+    run_id: str | None = Field(
+        default=None,
+        description="Current execution lifetime id within this thread (null on legacy)",
+    )
+    run_seq: int | None = Field(
+        default=None,
+        description="Monotonic run sequence on this thread (null on legacy)",
+    )
+    run_cause: str | None = Field(
+        default=None,
+        description="How the current run was minted: start / rerun (null on legacy)",
+    )
     checkpoint_lost: bool = Field(
         default=False,
         description="Checkpoint lost after container restart",

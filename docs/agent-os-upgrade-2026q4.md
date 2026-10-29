@@ -47,7 +47,7 @@
 | 实体 | 现状载体 | 判定 |
 |---|---|---|
 | Task | `thread_id`（workflow 实例） | 有，但"同 thread 多次 /start"会覆盖语义，run 边界不可见 |
-| Run | **无独立实体** | **缺口**：resume 与 rerun 无法从 ID 区分 |
+| Run | `run_id` + `run_seq` + `kind:"run"` 事件（票 5x，`backend/state/runs.py`） | **有**：`/start` 铸造 seq=1；pause/error resume 与 `/recover` 复用；completed/cancelled terminal restart 铸造新 `run_id`（seq+1，cause=`rerun`）。legacy 线程无 stamp 时 status 回显 null |
 | Step | graph node（superstep） | 有，checkpoint 天然记录 |
 | Attempt | 节点内结构化重试：`attempt_id` + `kind:"attempt"` 事件（票 5w，`backend/state/attempts.py`） | **有**：每次（档位 × 重试序号）一条事件，封闭 outcome（succeeded / payload_rejected / semantic_rejected / unreachable）、数据最小化、确定性 id。**节点内重试仍会重调 LLM**（§4.1 未变：本切片只补身份与遥测，不是重放） |
 | Effect | publish：`publish_id` + P0-B `EffectLedger`；互动两条：票 5c `engagement_effects` | **有**（两条路径）：PREPARED → IN_FLIGHT → CONFIRMED / FAILED / UNKNOWN（↔ RECONCILING）；键在提交动作前 claim |
@@ -57,14 +57,14 @@
 （逻辑动作的稳定键，重试复用）+ P0-B 六态 `EffectLedger`（含 `RECONCILING`）；互动两条是
 票 5c 的 `engagement_effects`（键 `eng:{kind}:{account_id}:{target_id}:{sha256[:16]}`，在
 提交前 claim）。Attempt 实体已由票 5w 补上（`attempt_id` + attempt 级事件）；
-**Run 仍缺**（resume 与 rerun 无法从 ID 区分），因此行 2 保持"部分"。
+**Run 已由票 5x 补上**（`run_id` / `run_seq` / cause 词表；resume 复用、rerun 铸造），行 2 的五实体现已齐。
 
 ## 3. 差距矩阵（原文十条 → 本仓库）
 
 | # | 原文主张 | 本仓库现状 | 差距等级 |
 |---|---|---|---|
 | 1 | 事件驱动状态机，不是追加 Chat Message | checkpoint 是状态、EventStore 是 telemetry；agent 层无 chat 追加 | ✅ 已满足 |
-| 2 | Task/Run/Step/Attempt/Effect 五实体 | Task/Step 有；**Attempt 有**（票 5w：attempt_id + `kind:"attempt"` 事件，封闭 outcome，数据最小化）；**Run 缺**（resume 与 rerun 无法从 ID 区分）；Effect 有 publish（P0-B 六态）+ 互动两条（票 5c `engagement_effects`） | ⚠️ 部分（Run 缺） |
+| 2 | Task/Run/Step/Attempt/Effect 五实体 | Task/Step 有；**Attempt 有**（票 5w）；**Run 有**（票 5x：`run_id` + `kind:"run"`，resume 复用 / rerun 铸造）；Effect 有 publish（P0-B 六态）+ 互动两条（票 5c `engagement_effects`） | ✅ 已满足 |
 | 3 | Event Log 是事实、Snapshot 是物化视图、Context 是临时视图 | 三者已分离（checkpoint / events / compiler） | ✅ 已满足 |
 | 4 | Replay 不重调 LLM，读已提交决策 | **节点级成立**（superstep 完成即不重跑）；**节点内不成立**（节点重试会重调 LLM） | ⚠️ 部分（见 §4） |
 | 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；票 5c 为互动两条加上 `engagement_effects`（提交前 claim）；对账仍为"记录 + ContentHistory 匹配"，无自动平台查询 | ✅ 已满足（对账增强留 P1） |
@@ -270,10 +270,26 @@ verification 判定（P1-B）、progress 信号（P0-A ×2）。**但没有任�
 | 接入 | `_llm_structured` 每次（档位 × 序号）尝试后 append 到既有 perf contextvar；`execute()` 的 drain/emit 路径不变（`emit_events` 仍是 best-effort） |
 | 事件类型 | `ATTEMPT_EVENT_KIND = "attempt"` 注册进 `EVENT_KINDS`（`tests/unit/state/test_attempts.py` 钉住声明与注册一致） |
 | 行为变更 | **零**：重试预算、控制流、prompt、模型调用都不改；只多一条遥测 |
-| 诚实边界 | 不是重放：节点内重试仍会重调 LLM（§4.1 的判据与触发条件不变）；不补 Run 实体（行 2 另一半，需动启动路径与状态） |
+| 诚实边界 | 不是重放：节点内重试仍会重调 LLM（§4.1 的判据与触发条件不变）；Run 实体由票 5x 单独落地（§5.10） |
 
 突变自检 9/9 断言红（不记录 / 两种拒绝混淆 / id 丢序号 / 负耗时 / 词表漂移 /
 事件类型未注册 / bool 当耗时 / 不可达记成成功 / error_class 变消息）。
+
+
+### 5.10 票 5x 落地记录（Run 身份协议）
+
+§2 的 Run 缺口：同一 `thread_id` 上 resume（继续）与 terminal restart（重开）无法从 ID 区分。
+
+| 项 | 实现 |
+|---|---|
+| 词表 | `RunCause`：`start / resume / rerun / recover`（封闭）。铸造事件只允许 `start`/`rerun` |
+| 身份 | `run_id(thread_id, run_seq, started_at)` = `run_` + sha256[:16]；**含 run_seq**，否则同 thread 重开会复用上一条 id |
+| 条目 | `run_entry(...)` → `kind:"run"`；键集合是保留位 |
+| 数据最小化 | 不含 goal / brief / 内容字段 |
+| 接入 | `Goal.compile_initial_state` 铸造 seq=1 + cause=`start`；`/start` emit；terminal restart（completed/cancelled）经 `mint_run_stamp(cause=rerun)` 写入 checkpoint 并 emit；pause/error resume 与 `/recover` **复用**既有 stamp |
+| 事件类型 | `RUN_EVENT_KIND = "run"` 注册进 `EVENT_KINDS` |
+| 行为变更 | **零控制流**：图重入语义不变；只多 stamp + 遥测；`/status` 与 start/resume 响应 additive 回显 |
+| 诚实边界 | legacy 无 stamp 时回显 null，不在普通 resume 上偷偷回填；不做 Run 级预算（F7 仍 SKIP） |
 
 ## 6. P0-A 切片设计：Progress Detector
 

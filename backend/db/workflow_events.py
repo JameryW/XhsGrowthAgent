@@ -54,6 +54,7 @@ EVENT_KINDS: frozenset[str] = frozenset(
         "verification",
         "progress",
         "attempt",
+        "run",
     }
 )
 

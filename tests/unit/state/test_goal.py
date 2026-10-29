@@ -50,6 +50,9 @@ SEEDED_KEYS = frozenset(
         "account_id",
         "session_id",
         "thread_id",
+        "run_id",
+        "run_seq",
+        "run_cause",
         "topic",
         "niche",
         "niche_resolution",
@@ -92,6 +95,15 @@ class TestTheCompiledState:
     def test_it_seeds_exactly_the_keys_the_literal_did(self) -> None:
         assert set(_goal().compile_initial_state()) == SEEDED_KEYS
 
+
+    def test_it_stamps_the_first_run_identity(self) -> None:
+        state = _goal().compile_initial_state()
+        assert state["run_seq"] == 1
+        assert state["run_cause"] == "start"
+        assert state["run_id"].startswith("run_")
+        # Same inputs → same id (deterministic).
+        assert state["run_id"] == _goal().compile_initial_state()["run_id"]
+
     def test_it_seeds_no_key_the_literal_did_not(self) -> None:
         # The other direction, spelled out: a superset would pass the equality
         # above only by failing this one, and a diff is easier to read than a
@@ -118,6 +130,9 @@ class TestTheCompiledState:
         assert state["account_id"] == "acc1"
         assert state["session_id"] == "xhs_acc1_deadbeef"
         assert state["thread_id"] == "xhs_acc1_deadbeef"
+        assert state["run_seq"] == 1
+        assert state["run_cause"] == "start"
+        assert isinstance(state["run_id"], str) and state["run_id"].startswith("run_")
         assert state["topic"] == "豆浆机推荐"
         assert state["niche"] == "母婴"
         assert state["niche_resolution"] == {"source": "manual"}

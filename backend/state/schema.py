@@ -196,6 +196,11 @@ class XHSGrowthState(TypedDict, total=False):
     account_id: str
     session_id: str
     thread_id: str
+    # Run identity (票 5x): one execution lifetime within a Task (thread_id).
+    # Minted on /start and on terminal restart; resume/recover reuse the stamp.
+    run_id: str
+    run_seq: int
+    run_cause: str
     created_at: str
     updated_at: str
 
