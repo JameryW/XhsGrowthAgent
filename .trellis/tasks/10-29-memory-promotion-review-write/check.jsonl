@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar for check: naming, tests, forbidden patterns"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify 404/409 mapping matches learning-review conflict scenario"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "API ↔ memory ↔ docs contracts stay consistent after review write lands"}
+{"file": "docs/memory-promotion.md", "reason": "Check docs no longer claim 'no write path'; human-review contract present"}
+{"file": ".trellis/tasks/10-29-memory-promotion-review-write/prd.md", "reason": "Acceptance criteria and locked same-request write-path decision"}

@@ -1,13 +1,15 @@
-# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选）
+# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选 + 人审写入）
 
-> 状态：**Slice A + Slice B（B1 库 / B2 接线）+ Slice C + Slice D 已落**（`backend/memory/promotion.py`
+> 状态：**Slice A–D + 人审写入面（票 5y）已落**（`backend/memory/promotion.py`
 > 协议；`promotion_ledger.py` append-only 账本；`promotion_observations.py` Creative Memory
 > style 观测的 observe-only 通道；`GET /api/creator-agent/memory-promotions` 只读管理面；
+> `POST .../memory-promotions/{id}/review` 人审关闭 REVIEW；
 > `scripts/observe_memory_promotions.py` 真实调用者；`promotion_source.py` 独立重读 +
-> `promotion_apply.py` 第一次晋升 + `context.retrieval` provenance 透传；`promotion_hy.py`
-> + `scripts/observe_hy_promotions.py`：hy-memory 候选 **REVIEW-only** 接入）。
+> `promotion_apply.py` 第一次机晋升 + `context.retrieval` provenance 透传；`promotion_hy.py`
+> + `scripts/observe_hy_promotions.py`：hy-memory 候选 **REVIEW** 接入；
+> `promotion_review.py`：人审 `approved`/`dismissed` 写路径）。
 > 设计依据：`.trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md`；
-> 现状侦察：同目录 `research/2026-10-21-recon.md`。
+> 人审票：`.trellis/tasks/10-29-memory-promotion-review-write/prd.md`。
 > 路线图出处：`docs/agent-os-upgrade-2026q4.md` §3 第 7 行。
 
 ## 1. 这一层是什么（以及不是什么）
@@ -76,11 +78,12 @@ provenance 词表，不另造一套）。
 `PromotionReason`：`source_missing` / `source_unversioned` / `source_degraded` /
 `ttl_expired` / `evidence_missing` / `insufficient_samples` / `duplicate` /
 `policy_blocked` / `needs_human_review` / `source_stale` / `verified_internal_fact` /
-`supersedes_older`。
+`supersedes_older` / `human_approved` / `human_dismissed`。
 
-成员集合由 `tests/unit/memory/test_promotion.py::TestEveryReasonIsReachable::
-test_the_vocabulary_is_the_published_set` 穷举，且**每个成员都有一个真实输入用例**——
-无法到达的枚举值是死词表，不允许存在。
+机器判决成员由 `tests/unit/memory/test_promotion.py::TestEveryReasonIsReachable`
+穷举 `decide_promotion` 可达性；`human_approved` / `human_dismissed` **只**由
+`promotion_review` 构造（绝不经 `decide_promotion`），由
+`tests/unit/memory/test_promotion_review.py` 覆盖——无法到达的枚举值是死词表，不允许存在。
 
 ## 5. 确定性
 
@@ -147,8 +150,9 @@ if decision.disposition is PromotionDisposition.PROMOTE:
 | `current_entries(records)` | 从 supersede 边**推导**当前记录：promote ∧ 未被任何记录取代；同键两条 current → 抛（协议只会 supersede，不会分叉） |
 | `promotion_id_for(decision, *, source_version)` | 确定性 id；`source_version` 是必要输入，否则 supersede 会覆盖它取代的版本记录 |
 
-`PromotionRecord` 的 14 个字段（含 `supersedes`、`recorded_at`）原样存取；`from_dict`
-对缺字段抛 `KeyError` —— 账本是**记录**，不是 best-effort 遥测，读不懂的行要炸出来。
+`PromotionRecord` 的 15 个字段（含 `supersedes`、`recorded_at`、`body` 快照）原样存取；
+`from_dict` 对缺核心字段抛 `KeyError`，`detail`/`body` 对旧行可缺省为空 —— 账本是**记录**，
+不是 best-effort 遥测，读不懂的行要炸出来。
 
 ### 7.3 observe-only 通道（`backend/memory/promotion_observations.py`）
 
@@ -173,8 +177,8 @@ if decision.disposition is PromotionDisposition.PROMOTE:
 - 鉴权与同目录的 evidence-proposals 一致：`require_owned_account(user, account_id)`；
 - 返回 `{account_id, available, complete, records[]}`；`records` 是账本行的原样 dict
   （`PromotionRecord.to_dict`），时间倒序；
-- **只读是结构事实**：账本没有 update/delete 面，这个路由也只有 GET（测试从 router
-  取出该方法集合断言 `{"GET"}`，不是靠约定）；
+- **列表只读是结构事实**：`/memory-promotions` 路由方法集合只有 GET（无 PATCH/DELETE）；
+  人审写入走同资源下的 `POST .../{promotion_id}/review`（票 5y，见 §9.1）；
 - 没配 store 时 `available=false`，不是"没有决定过"。
 
 **真实调用者** `scripts/observe_memory_promotions.py`：
@@ -217,10 +221,10 @@ python scripts/observe_memory_promotions.py --account-id acc-1 --dry-run  # 只�
 **CLI**：`--apply` 才走晋升（默认 observe-only）。`--apply --dry-run` 互斥（退出码 2）；
 `--apply` 同样要求 Postgres store。
 
-## 9. hy-memory 候选：REVIEW-only 接入（Slice D，票 5v）
+## 9. hy-memory 候选：REVIEW 接入（Slice D，票 5v）
 
 行 7 的原始动机（SDK 抽取的记忆从未经过任何闸门）到这里才真正接上。设计原则是
-**接进同一协议，但不给写路径**：
+**接进同一协议，机器侧不给写路径**（人审写路径见 §9.1）：
 
 - `promotion_hy.py::batch_from_retrieval` 接受 `recall_hy_memory` 的三种 mode：
   `HIT` → 行；`EMPTY` → 健康空读；`DEGRADED` → 必须带错误摘要（`HyMemoryBatch` 双向校验：
@@ -232,19 +236,46 @@ python scripts/observe_memory_promotions.py --account-id acc-1 --dry-run  # 只�
   其次 `memory_id`，最后**内容寻址**；版本优先 metadata，否则内容哈希。
 - **降级批次 → 一条 `REFUSE(source_degraded)` 账本记录**（key 由 scene+error 派生，
   幂等；错误摘要写进 `PromotionRecord.detail`）——"读不到"绝不渲染成"没有候选"。
-- **永不晋升护栏**：若策略错误地把 `MEMORY` 列入 `machine_promotable_classes`，
-  `observe_hy_candidates` 抛 `RuntimeError`，不写账本 —— 未验证来源的写入无法归因。
+- **永不机晋升护栏**：若策略错误地把 `MEMORY` 列入 `machine_promotable_classes`，
+  `observe_hy_candidates` 抛 `RuntimeError`，不写账本 —— 未验证来源的机器写入无法归因。
 
 **诚实边界（写进代码注释与 §10）**：
 
 1. SDK 没有可信的重读 API：search 故障会被吞成空结果，`last_error` 只覆盖 client 构建/
-   调用异常。所以 hy 行的版本是**文本版本**（内容哈希），不是行版本；`REVIEW` 是终点。
-2. 没有审核 UI / 审批写路径：REVIEW 行是审计记录；"人审通过后才允许写入"由「没有写路径」
-   保证，而不是由审批流保证。Q1（审核入口）仍是 PRD §9 的开放问题。
+   调用异常。所以 hy 行的版本是**文本版本**（内容哈希），不是行版本；机器侧 `REVIEW`
+   仍是终点（不能靠再跑 `decide_promotion` “变”成 PROMOTE）。
+2. ~~没有审批写路径~~ → **已由票 5y 补上**（§9.1）：人审通过后才能写入；机侧 observe
+   仍只产 REVIEW/REFUSE。
 
 调用者：`scripts/observe_hy_promotions.py`（`--account-id` / `--scene` / `--limit` /
 `--dry-run`；要求 Postgres store 且 `HYMEMORY_ENABLED=true`）。默认不接进 agent 流程 ——
 D 只产 REVIEW，接线无收益且有成本。
+
+### 9.1 人审写入面（票 5y / PRD §9 Q1）
+
+**入口**：`POST /api/creator-agent/memory-promotions/{promotion_id}/review`  
+body：`account_id` + `disposition`（`approved` \| `dismissed`，复用
+`CreatorReviewDisposition`）+ 可选 `review_note`。鉴权同 GET：`require_owned_account`。
+
+**契约**：
+
+| disposition | 账本 | 目标 ns |
+|---|---|---|
+| `approved` | 先 append 人审 `PROMOTE`（`decided_by=human`，`reason=human_approved`） | 同请求内 `write_promoted_memory`（顺序同 Slice C） |
+| `dismissed` | append 人审 `REFUSE`（`reason=human_dismissed`） | **不写** |
+
+- **不**再调用 `decide_promotion`：hy 的 `MEMORY` 永远机判 REVIEW；人审通过是
+  **human-authored** 后续账本行，不是协议翻转。
+- 旧 REVIEW 行**永不 mutate**；新行有新 `promotion_id`（id 含 disposition/reason）。
+- 新行 `detail` 为 JSON：`{"reviewed_promotion_id": "<原 REVIEW id>", "review_note": "..."}`；
+  `supersedes` 含原 REVIEW id（审计关联；`current_entries` 只看 promote 边，不受影响）。
+- 已有 human 关闭行 → **409**（`CreatorMemoryPromotionConflictError`）；缺失/跨账户 →
+  **404**；无 store → **503**（`available=false` 对称，不得成功 envelope）。
+- 候选 body：`creative-memory://style/<id>` 优先独立重读 durable 行；hy 等无可信重读
+  的来源用账本行在 observe 时快照的 `body`（`PromotionRecord.body`）。两者都缺 →
+  400（不写空记忆）。`dismissed` 不依赖 body 重读。
+
+实现：`backend/memory/promotion_review.py`；路由在 `creator_agent.py`。
 
 ## 10. 明确不在这里的东西
 
@@ -252,15 +283,18 @@ D 只产 REVIEW，接线无收益且有成本。
 - **不判语义重复**：键级去重是确定的；语义近邻需要 embedding 与判断，只作为审核提示，
   不在本函数内（PRD §3）；
 - **不算 TTL**：`SourceCheck.ttl_expired` 由调用方用真实时钟算好传入，本层保持纯函数；
-- **只晋升 style 一族**：plays/materials 的目标命名空间未裁决（PRD §9），未接；
-- **hy 候选只产 REVIEW**：没有重读就没有晋升（D 的 `REVIEW` 是终点）；
-- **不做审核 UI**：复用现有 evidence-proposal / learning-signal 面；
-- **不自动调度**：CLI 是真实调用者，但 cron/部署接线属于配置，不在代码里。
+- **只晋升 style 一族（机晋升）**：plays/materials 的目标命名空间未裁决（PRD §9），未接；
+- **hy 候选机器侧只产 REVIEW**：没有可信重读就没有机晋升；人审写入见 §9.1；
+- **不做独立审核 UI / 前端面板**：HTTP 面挂在既有 creator-agent 资源上；
+- **不自动调度**：CLI 是真实调用者，但 cron/部署接线属于配置，不在代码里；
+- **不做 pending 修复端点**：人审 approve 崩溃后「账本有行、目标缺失」仍按 Slice C
+  pending 语义可读（票 5y out of scope）。
 
-## 11. 下一片
+## 11. 下一片 / 已落清单
 
 - ~~B2：`GET` 只读管理面 + 调度/CLI 调用者~~ **已落（票 5t）**；
 - ~~Slice C：第一次 `internal_fact` 晋升 + retrieval 透传 provenance~~ **已落（票 5u）**；
 - ~~Slice D：hy-memory 候选（REVIEW only，DEGRADED 批次整体 REFUSE）~~ **已落（票 5v）**；
-- 行 7 的四片全部落地；剩下的是 PRD §9 的开放问题（人审入口、TTL 默认值、语义近邻成本、
+- ~~Q1 人审入口 + 人审写入面~~ **已落（票 5y）**：`POST .../memory-promotions/{id}/review`；
+- 行 7 的四片 + 人审写入全部落地；剩下的是 PRD §9 的开放问题（TTL 默认值、语义近邻成本、
   谁算 `decided_by="machine"` 的 policy 来源）—— 它们不再阻塞行 7 的"有显式流水线"判定。

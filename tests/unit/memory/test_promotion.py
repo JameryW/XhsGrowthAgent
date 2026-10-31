@@ -70,7 +70,11 @@ def _decision(**overrides: object):
 
 
 class TestEveryReasonIsReachable:
-    """One realistic input per closed-vocabulary member (the module's ratchet)."""
+    """Machine reasons: one realistic ``decide_promotion`` input each.
+
+    ``human_approved`` / ``human_dismissed`` are human-authored only (票 5y) and
+    are covered in ``test_promotion_review.py``, not by this parametrize.
+    """
 
     def test_the_vocabulary_is_the_published_set(self) -> None:
         assert {reason.value for reason in PromotionReason} == {
@@ -86,6 +90,9 @@ class TestEveryReasonIsReachable:
             "source_stale",
             "verified_internal_fact",
             "supersedes_older",
+            # Human-only (票 5y); reachable via promotion_review, not decide_promotion.
+            "human_approved",
+            "human_dismissed",
         }
 
     @pytest.mark.parametrize(

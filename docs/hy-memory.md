@@ -175,18 +175,20 @@ pro/lite 全链路读写召回、适配器、agent 接线、降级路径、多�
 仓库侧没有"这条抽取出来的记忆凭什么可信 / 与已有记忆重复吗 / 该不该进 prompt"的判断。
 `docs/agent-os-upgrade-2026q4.md` §3 第 7 行把这个缺口记为「Memory Promotion Pipeline」。
 
-**Slice A + Slice B + Slice C + Slice D 已落**（票 5r / 5s / 5t / 5u / 5v）：纯决策协议
+**Slice A–D + 人审写入（票 5r–5v / 5y）已落**：纯决策协议
 `backend/memory/promotion.py`、append-only 账本 `promotion_ledger.py`、Creative Memory style
-观测的 observe-only 通道 `promotion_observations.py`、只读管理面
-`GET /api/creator-agent/memory-promotions` 与调用者 `scripts/observe_memory_promotions.py`、
-独立重读验证 `promotion_source.py`、首次晋升 `promotion_apply.py`（`strategy_notes`）与
-retrieval provenance 透传、hy-memory 候选 **REVIEW-only** 接入 `promotion_hy.py` 与
-`scripts/observe_hy_promotions.py`，文档 `docs/memory-promotion.md`。
+观测的 observe-only 通道 `promotion_observations.py`、管理面
+`GET /api/creator-agent/memory-promotions` + `POST .../{id}/review` 与调用者
+`scripts/observe_memory_promotions.py`、独立重读验证 `promotion_source.py`、首次机晋升
+`promotion_apply.py`（`strategy_notes`）与 retrieval provenance 透传、hy-memory 候选
+**机器 REVIEW** 接入 `promotion_hy.py` / `scripts/observe_hy_promotions.py`、人审关闭
+`promotion_review.py`，文档 `docs/memory-promotion.md`。
 
-**D 片的语义（别读多也别读少）**：hy-memory 抽取的记忆现在能进入同一道闸门并被**记账**，
-但只产 `REVIEW(needs_human_review)` —— 没有写路径、没有审批 UI；`DEGRADED` 批次整体记一条
-`REFUSE(source_degraded)` 而不是渲染成"没有候选"；版本用内容寻址（SDK 无可信重读），
-因此 `REVIEW` 是终点，不是"待自动晋升"。
+**D + 5y 的语义（别读多也别读少）**：hy-memory 抽取的记忆现在能进入同一道闸门并被**记账**，
+机器侧只产 `REVIEW(needs_human_review)`（永不机晋升）；人审通过走
+`POST .../memory-promotions/{id}/review`（human-authored `PROMOTE`，不重跑
+`decide_promotion`）。`DEGRADED` 批次整体记一条 `REFUSE(source_degraded)` 而不是渲染成
+"没有候选"；版本用内容寻址（SDK 无可信重读），因此机器 `REVIEW` 不是"待自动晋升"。
 
 - PRD：`.trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md`
   （verify → dedupe → promote 三段、封闭拒因词表、append-only ledger、observe-only 先行的切片）；
