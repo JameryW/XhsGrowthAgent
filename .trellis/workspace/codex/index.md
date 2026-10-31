@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
-- **Last Active**: 2026-10-31
+- **Total Sessions**: 30
+- **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~979 | Active |
+| `journal-1.md` | ~1019 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-11-01 | B 类裁定落地：主链迁移方案 + outreach scope + 不可达路由 + 策略写路径（票 5au–5ax） | `1eebc352`, `3530cf04`, `14b37bb1`, `5b416698`, `2f682538`, `1ab37987`, `3a87bffd`, `5152de16` | `main` |
 | 29 | 2026-10-31 | CI 本地复演 + 跨平台临时目录修复（票 5as） | `c0c05107`, `784c99fa` | `main` |
 | 28 | 2026-10-31 | 继续收口：flaky 测试修复 + 可验证文档漂移（票 5aq / 5ar） | `c9162bca`, `37c169e5`, `c50100e8`, `e504f691` | `main` |
 | 27 | 2026-10-31 | 架构遗留收口：EVENT_KINDS 退休 + 记录纠偏（票 5ao / 5ap） | `cc92b052`, `cb6e4876`, `a4c48e7b`, `5d2d4e07` | `main` |

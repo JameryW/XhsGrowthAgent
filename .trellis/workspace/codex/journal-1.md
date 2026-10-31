@@ -977,3 +977,43 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: B 类裁定落地：主链迁移方案 + outreach scope + 不可达路由 + 策略写路径（票 5au–5ax）
+
+**Date**: 2026-11-01
+**Task**: B 类裁定落地：主链迁移方案 + outreach scope + 不可达路由 + 策略写路径（票 5au–5ax）
+**Branch**: `main`
+
+### Summary
+
+按用户 B 类裁定（全部四项）落地，并让本机全量测试归零。5at：修本机 206 个 tmp_path error（DSH 沙箱把 0700 翻成拒绝 ACL）+ 11 个 symlink 权限失败 → conftest 加 win32+DSH 守卫的 mkdir/temproot shim、chrome_launcher 加 symlink 能力 skipif；全量 4722 passed / 14 skipped / 0 failed / 0 errors。5au：主链迁控制面四阶段方案（文档，claim 起点/每阶段验收/回滚/不变量）。5av：xhs:outreach 语义收紧为机制∧策略（allows_engagement），挂进 comment_reply/dm_send 的 auth_scope；服务发送路径经 Gateway 携 granted_scopes 真检查（claim 前判定、timeout→unknown、_DISPATCH_TRANSPORT 防嵌套自锁）；scope 覆盖债务归零。5ax：触达策略管理写路径（delete_credential + 校验写/清/读回 + GET/PUT/DELETE API + 400/503 语义 + 测试），收口文档边界③。5aw：删除不可达路由 should_brief_or_optimize（含 wiring 豁免、planning 登记与 claim）。验证：全量 4722 passed、docs/claims/anchors/citations/capability 表全绿、ruff/format 绿。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1eebc352` | (see git log) |
+| `3530cf04` | (see git log) |
+| `14b37bb1` | (see git log) |
+| `5b416698` | (see git log) |
+| `2f682538` | (see git log) |
+| `1ab37987` | (see git log) |
+| `3a87bffd` | (see git log) |
+| `5152de16` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
