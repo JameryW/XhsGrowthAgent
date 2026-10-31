@@ -682,8 +682,8 @@ into typed responses:
   Store failure must not roll back durable rows and must not abort a durable
   deposit that has not yet written (e.g. optional `asearch` during style merge
   lookup).
-- Out of scope for this contract: `recall_*` swallow paths (`calibrate` raise
-  is 票 5af below).
+- Out of scope for this contract: `calibrate` raise is 票 5af；`recall_*` raise
+  is 票 5ag（both below).
 - Callers: creator-stats `import_bundle` already surfaces analysis errors
   without rolling back the import; workflow agents let `BaseAgent.__call__`
   record the failure.
@@ -721,7 +721,7 @@ async def deposit_style(self, style: StyleDNA) -> None:
   (票 5ae).
 - `calibrate` gathers the three namespaces; one durable raise fails the whole
   call (intentional honesty).
-- Out of scope: `recall_*` swallow paths.
+- `recall_*` durable raise is 票 5ag below.
 
 ### Wrong vs Correct
 
@@ -752,4 +752,48 @@ async def _calibrate_style(self, payload: CalibrationPayload) -> int:
         return 0                           # missing id = no-op
     await self._persist_style(...)         # durable persist failure propagates
     return 1
+```
+
+## Scenario: CreativeMemory recall durable raise (票 5ag)
+
+### Convention
+
+- `recall_style` / `recall_plays` / `recall_materials` / `recall_benchmark`
+  **propagate durable read failures**. Do not wrap durable `list_*` /
+  `get_benchmark` in `except Exception: logger.warning` — a fake empty list or
+  cold-start `_default_styles()` hides storage faults from callers.
+- True empty DB still returns `[]` / `None`. `recall_style` may call
+  `_default_styles()` **only when durable succeeded and no real styles exist**
+  (ADR-0006 cold-start contract).
+- Store `asearch` is optional semantic supplement: warn + continue with durable
+  rows (same secondary-index pattern as 票 5af store lookup).
+- Out of scope: `find_similar` swallow paths.
+
+### Wrong vs Correct
+
+#### Wrong
+```python
+async def recall_style(self, ...) -> list[StyleDNA]:
+    try:
+        durable = await cm_db.list_styles(...)
+        results.extend(durable)
+    except Exception as e:
+        logger.warning(f"recall_style durable failed: {e}")
+    # ... later:
+    return chosen if chosen else self._default_styles()  # fake cold-start on fault
+```
+
+#### Correct
+```python
+async def recall_style(self, ...) -> list[StyleDNA]:
+    durable = await cm_db.list_styles(...)  # durable failure propagates
+    results.extend(durable)
+    if self._has_store:
+        try:
+            items = await self._store.asearch(...)
+            ...
+        except Exception as e:
+            logger.warning(f"recall_style store failed: {e}")
+    # cold defaults only after durable succeeded with no real styles
+    return chosen if chosen else self._default_styles()
 ```

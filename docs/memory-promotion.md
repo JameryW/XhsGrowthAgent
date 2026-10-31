@@ -396,5 +396,8 @@ disposition 改成 REVIEW/REFUSE。
 - ~~邻近风险：`CreativeMemory.deposit_*` 吞 durable 写失败~~ **已落（票 5ae）**：
   durable 失败上抛；store dual-write 仍 best-effort warn。
 - ~~邻近风险：`CreativeMemory.calibrate` 吞 durable 读写失败返回假 0~~ **已落（票 5af）**：
-  durable get/persist 上抛；缺失 ID 仍 0；store lookup miss 仍 warn；召回 swallow
-  仍 out of scope。
+  durable get/persist 上抛；缺失 ID 仍 0；store lookup miss 仍 warn。
+- ~~邻近风险：`CreativeMemory.recall_*` 吞 durable 读失败伪空 / 伪冷启动~~ **已落（票 5ag）**：
+  durable `list_*` / `get_benchmark` 上抛；真实空库仍 `[]`/`None`（`recall_style`
+  仅 durable 成功且无真实 style 时冷默认）；store `asearch` 仍 best-effort warn；
+  `find_similar` swallow 仍 out of scope。

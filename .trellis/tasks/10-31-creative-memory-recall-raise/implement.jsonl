@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Align with 5ae/5af raise-vs-warn; add recall scenario"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar; no silent fake empty recall"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "§10 recall adjacent risk"}
+{"file": ".trellis/tasks/archive/2026-10/10-31-creative-memory-calibrate-raise/prd.md", "reason": "Prior ticket deferred recall swallow"}
+{"file": ".trellis/tasks/10-31-creative-memory-recall-raise/prd.md", "reason": "Locked durable-raise decision for recall_*"}

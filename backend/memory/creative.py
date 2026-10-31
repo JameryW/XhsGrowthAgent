@@ -83,16 +83,18 @@ class CreativeMemory:
         keywords: list[str] | None = None,
         filter: dict[str, Any] | None = None,
     ) -> list[StyleDNA]:
-        """召回匹配的风格指纹（持久化优先，store 语义检索补充）"""
+        """召回匹配的风格指纹（持久化优先，store 语义检索补充）.
+
+        Durable list failures propagate (票 5ag). Store ``asearch`` remains
+        best-effort warn; cold-start ``_default_styles()`` only when durable
+        succeeded and no real styles exist.
+        """
+        from backend.db import creative_memory as cm_db
+
         results: list[StyleDNA] = []
         # 1) Durable rows first (survive restarts / CLI import without store)
-        try:
-            from backend.db import creative_memory as cm_db
-
-            durable = await cm_db.list_styles(self.account_id, limit=max(limit * 2, 10))
-            results.extend(durable)  # type: ignore[arg-type]
-        except Exception as e:
-            logger.warning(f"recall_style durable failed: {e}")
+        durable = await cm_db.list_styles(self.account_id, limit=max(limit * 2, 10))
+        results.extend(durable)  # type: ignore[arg-type]
 
         # 2) Optional semantic search on LangGraph store
         if self._has_store:
@@ -156,21 +158,20 @@ class CreativeMemory:
         keywords: list[str] | None = None,
         filter: dict[str, Any] | None = None,
     ) -> list[ConversionPlay]:
-        """召回匹配场景的转化策略"""
-        results: list[ConversionPlay] = []
-        try:
-            from backend.db import creative_memory as cm_db
+        """召回匹配场景的转化策略.
 
-            # Prefer niche-matched + universal (empty niche) plays. If that yields
-            # nothing, fall back to all plays so topic-tag misuse still surfaces.
-            durable = await cm_db.list_plays(self.account_id, niche=niche, limit=max(limit * 2, 10))
-            if not durable and niche:
-                durable = await cm_db.list_plays(
-                    self.account_id, niche="", limit=max(limit * 2, 10)
-                )
-            results.extend(durable)  # type: ignore[arg-type]
-        except Exception as e:
-            logger.warning(f"recall_plays durable failed: {e}")
+        Durable list failures propagate (票 5ag). Store ``asearch`` remains
+        best-effort warn and does not mask durable rows.
+        """
+        from backend.db import creative_memory as cm_db
+
+        results: list[ConversionPlay] = []
+        # Prefer niche-matched + universal (empty niche) plays. If that yields
+        # nothing, fall back to all plays so topic-tag misuse still surfaces.
+        durable = await cm_db.list_plays(self.account_id, niche=niche, limit=max(limit * 2, 10))
+        if not durable and niche:
+            durable = await cm_db.list_plays(self.account_id, niche="", limit=max(limit * 2, 10))
+        results.extend(durable)  # type: ignore[arg-type]
 
         if self._has_store:
             try:
@@ -214,20 +215,21 @@ class CreativeMemory:
         keywords: list[str] | None = None,
         filter: dict[str, Any] | None = None,
     ) -> list[MaterialEntry]:
-        """召回优质素材（按 weight 排序）"""
-        results: list[MaterialEntry] = []
-        try:
-            from backend.db import creative_memory as cm_db
+        """召回优质素材（按 weight 排序）.
 
-            durable = await cm_db.list_materials(
-                self.account_id,
-                category=category,
-                tags=tags,
-                limit=max(limit * 2, 10),
-            )
-            results.extend(durable)  # type: ignore[arg-type]
-        except Exception as e:
-            logger.warning(f"recall_materials durable failed: {e}")
+        Durable list failures propagate (票 5ag). Store ``asearch`` remains
+        best-effort warn and does not mask durable rows.
+        """
+        from backend.db import creative_memory as cm_db
+
+        results: list[MaterialEntry] = []
+        durable = await cm_db.list_materials(
+            self.account_id,
+            category=category,
+            tags=tags,
+            limit=max(limit * 2, 10),
+        )
+        results.extend(durable)  # type: ignore[arg-type]
 
         if self._has_store:
             try:
@@ -265,15 +267,16 @@ class CreativeMemory:
         return ranked[:limit]
 
     async def recall_benchmark(self, niche: str) -> NicheBenchmark | None:
-        """召回行业基准"""
-        try:
-            from backend.db import creative_memory as cm_db
+        """召回行业基准.
 
-            durable = await cm_db.get_benchmark(niche)
-            if durable:
-                return durable  # type: ignore[return-value]
-        except Exception as e:
-            logger.warning(f"recall_benchmark durable failed: {e}")
+        Durable get failures propagate (票 5ag). Store ``asearch`` remains
+        best-effort warn after a durable miss.
+        """
+        from backend.db import creative_memory as cm_db
+
+        durable = await cm_db.get_benchmark(niche)
+        if durable:
+            return durable  # type: ignore[return-value]
 
         if not self._has_store:
             return None
