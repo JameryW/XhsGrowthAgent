@@ -871,3 +871,39 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: 架构遗留收口：EVENT_KINDS 退休 + 记录纠偏（票 5ao / 5ap）
+
+**Date**: 2026-10-31
+**Task**: 架构遗留收口：EVENT_KINDS 退休 + 记录纠偏（票 5ao / 5ap）
+**Branch**: `main`
+
+### Summary
+
+继续完成未完成的架构任务中仅剩的可执行项。票 5ao：把从未有发射者的 cost/error 两条 kind 从 EVENT_KINDS 退休（13->11）——成本已在 kind:llm 的 cost_usd、错误已在 realtime WORKFLOW_ERROR 与 kind:node 的 status/error，补发射端会造第二份真相；新增 tests/unit/db/test_workflow_events_kinds.py 钉住完整声明集，突变回加 cost 令两断言变红；publish-action-protocol 已知残留收口且 claim 值不变。票 5ap：给 09-11 runtime-upgrade 归档 notes 追加 CORRECTION 2（(1)(6) 已由 #635/#636、票 5p #709 关闭；(2)(4)(5)(7)(8) 仍为 B 类；(3) 保持回撤；原文未改），并订正 promotion_observations.py 的 PRD §9 旧措辞。验证：db/state/signal_inventory/retry-gate/memory 756 passed（9 个 tmp_path ERROR 为沙箱环境性），docs anchors/claims/citations 8 passed，ruff/format 绿。仍未做：P2/P3（需证据/评测集）与 B 类裁决（控制面迁移等，需拍板）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc92b052` | (see git log) |
+| `cb6e4876` | (see git log) |
+| `a4c48e7b` | (see git log) |
+| `5d2d4e07` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

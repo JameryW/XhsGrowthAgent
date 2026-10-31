@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~873 | Active |
+| `journal-1.md` | ~909 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-10-31 | 架构遗留收口：EVENT_KINDS 退休 + 记录纠偏（票 5ao / 5ap） | `cc92b052`, `cb6e4876`, `a4c48e7b`, `5d2d4e07` | `main` |
 | 26 | 2026-10-31 | 架构任务核验 + 重试撞重试闸门（票 5an） | `cfc33d7e`, `e0930d96`, `8af9094d`, `07910523` | `main` |
 | 25 | 2026-09-23 | 15 个残留分支审计与清理 | HEAD | `main` |
 | 24 | 2026-09-23 | 分支与垃圾清理 | HEAD | `main` |
