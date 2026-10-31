@@ -330,21 +330,14 @@ EDGES_BY_SOURCE: Final[dict[str, ConditionalEdge]] = _by_source(CONDITIONAL_EDGE
 
 #: Router-shaped functions in ``routers.py`` that no edge installs -- anything
 #: with a ``Literal`` return annotation that is not one of the eighteen above.
-#: Two of them, and the difference between the two is what the tests pin:
+#: One of them, and what makes it not a branch is what the tests pin:
 #:
 #: ``should_optimize``
 #:     a helper. ``shooting_planner_router`` delegates to it, so it is a
 #:     branch's callee rather than a branch.
-#: ``should_brief_or_optimize``
-#:     unreachable. It answers ``shooting_planner`` / ``__end__`` for the hop
-#:     after ``viral_matcher``, but the graph reaches ``blogger_scout`` from
-#:     there with a plain edge and has done since before this table existed, so
-#:     nothing calls it at all.
 #:
 #: Registered rather than deleted, because removing public code is a different
 #: decision from making the edge set declarable -- and registered rather than
-#: ignored, so that wiring either of them up later has to come here and delete
-#: the exemption (``tests/unit/graph/test_wiring_registry.py``).
-ROUTERS_WITHOUT_AN_EDGE: Final[frozenset[str]] = frozenset(
-    {"should_optimize", "should_brief_or_optimize"}
-)
+#: ignored, so that wiring it up later has to come here and delete the
+#: exemption (``tests/unit/graph/test_wiring_registry.py``).
+ROUTERS_WITHOUT_AN_EDGE: Final[frozenset[str]] = frozenset({"should_optimize"})

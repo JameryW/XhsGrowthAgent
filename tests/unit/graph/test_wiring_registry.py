@@ -249,15 +249,15 @@ class TestEveryRouterIsAccountedFor:
         source = inspect.getsource(routers_module)
         assert source.count("should_optimize(") == 2, "one definition, one call"
 
-    def test_the_unused_router_is_called_by_nothing(self):
-        """The reverse assertion on the exemption: if it is ever wired up, or
-        given a caller, the exemption has to be deleted rather than left to rot.
+    def test_the_registered_set_is_just_the_helper(self):
+        """The exemption is one name, and its reason is a callee rather than a
+        branch.
+
+        The unreachable router that used to share this table is gone (票 5aw);
+        keeping the expectation literal is what makes re-adding a second
+        exemption a deliberate act: it has to come here and say why.
         """
-        source = inspect.getsource(routers_module)
-        assert source.count("should_brief_or_optimize(") == 1, "its own definition only"
-        assert "should_brief_or_optimize" not in {
-            name for per in _branches().values() for name in per
-        }
+        assert sorted(ROUTERS_WITHOUT_AN_EDGE) == ["should_optimize"]
 
 
 class TestMalformedEntriesAreRefused:

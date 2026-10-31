@@ -91,7 +91,7 @@
 | `workflow_mode_reads_total` | `2` | AST：state 键的读取点，**两种形状都算**（`state.get("workflow_mode")` 与 `state["workflow_mode"]`） |
 | `workflow_mode_reads_outside_the_registry` | `0` | 上面那 2 处的文件不是 `backend/state/modes.py` 的个数 |
 | `run_graph_and_persist_call_sites` | `12` | AST：`_runner._run_graph_and_persist(...)` 的调用点 |
-| `routers_without_an_edge` | `should_brief_or_optimize, should_optimize` | `wiring.py` 的 `ROUTERS_WITHOUT_AN_EDGE` |
+| `routers_without_an_edge` | `should_optimize` | `wiring.py` 的 `ROUTERS_WITHOUT_AN_EDGE` |
 | `plan_registry_complaints_is_empty` | `true` | `plan_registry_complaints() == {}` |
 
 <!-- claim-table:end -->
@@ -156,13 +156,14 @@
 
 | # | 登记的事 | 位置 | 本片为什么不修 |
 | --- | --- | --- | --- |
-| 1 | `should_brief_or_optimize` **没有任何调用者** | `backend/graph/routers.py`；登记在 `backend/graph/wiring.py` 的 `ROUTERS_WITHOUT_AN_EDGE` | 删公开代码是另一个决定。登记时配了**反向断言**：它一旦被接上，`tests/unit/graph/test_wiring_registry.py` 当场红，强制来删这条豁免 |
-| 2 | trend 模式 `phase=creating` **静默落到 `trend_scout`** | `backend/state/modes.py` 的 `ModeSpec.route` 兜底 | 给它选一个目的地是另一次**行为**裁定（今天只把这个行为钉成测试） |
-| 3 | 11 个 `_run_graph_and_persist` 调用点的 `input_data` 构造**原样** | `blogger.py` 1 · `optimization.py` 2 · `review.py` 2 · `_wf_application.py` 6 · `_wf_runtime.py` 1 | `Goal` 让它们**可以**被收，但那是另一片；而它同时是 §2.4 的前置第 1 件 |
-| 4 | `_run_retry` **不注册进 `_background_tasks`**（连带不持租约） | `backend/api/routes/_wf_actions.py`，对比同文件里 publish-retry 那一处 | P2b 的 `docs/execution-plane.md` §7 已登记；票面红线「不顺手做第四件事」 |
-| 5 | `workflow_mode` 的 DB 列默认值与备选值 | `backend/db/workflows.py` 的 `TEXT NOT NULL DEFAULT 'trend'` | SQL 无法 import 注册表 —— **唯一结构性的字面量重复**，已在代码里注明（S3a） |
-| 6 | `WorkflowPhase` 的两份定义 | 见 §3 第 3 件 | 生成物边界之外 |
-| 7 | `execution_mode` 轴 | 见 §3 第 2 件 | 票面已裁界 |
+| 1 | trend 模式 `phase=creating` **静默落到 `trend_scout`** | `backend/state/modes.py` 的 `ModeSpec.route` 兜底 | 给它选一个目的地是另一次**行为**裁定（今天只把这个行为钉成测试） |
+| 2 | 11 个 `_run_graph_and_persist` 调用点的 `input_data` 构造**原样** | `blogger.py` 1 · `optimization.py` 2 · `review.py` 2 · `_wf_application.py` 6 · `_wf_runtime.py` 1 | `Goal` 让它们**可以**被收，但那是另一片；而它同时是 §2.4 的前置第 1 件 |
+| 3 | `_run_retry` **不注册进 `_background_tasks`**（连带不持租约） | `backend/api/routes/_wf_actions.py`，对比同文件里 publish-retry 那一处 | P2b 的 `docs/execution-plane.md` §7 已登记；票面红线「不顺手做第四件事」 |
+| 4 | `workflow_mode` 的 DB 列默认值与备选值 | `backend/db/workflows.py` 的 `TEXT NOT NULL DEFAULT 'trend'` | SQL 无法 import 注册表 —— **唯一结构性的字面量重复**，已在代码里注明（S3a） |
+| 5 | `WorkflowPhase` 的两份定义 | 见 §3 第 3 件 | 生成物边界之外 |
+| 6 | `execution_mode` 轴 | 见 §3 第 2 件 | 票面已裁界 |
+
+**已结（票 5aw）：不可达路由。** 本表原第 1 行登记的 `should_brief_or_optimize` 已从 `backend/graph/routers.py` 删除，`ROUTERS_WITHOUT_AN_EDGE` 只剩 `should_optimize`（它是 `shooting_planner_router` 的 helper，保留不动）。它自登记起就没有调用者 —— 图从 `viral_matcher` 走普通边到 `blogger_scout` —— 而保留一个「写好了但永远不跑」的路由，是把**未验证的行为伪装成能力**，所以 B 类裁定（用户 2026-10-31）选的是删除，不是继续登记。登记时配的反向断言随函数一起删了；豁免表现在只剩一个成员，由一条字面快照断言钉住（`test_the_registered_set_is_just_the_helper`）。
 
 **本片唯一改动的一行生产注释。** `backend/graph/plan.py` 的注释曾指向 `wiring.UNWIRED_ROUTERS`，而真实符号是 `ROUTERS_WITHOUT_AN_EDGE` —— 这是 S2 给它改名时留下的。已改。列出来的理由是它是「腐烂是静默的」的**又一个实例**：**一个指向不存在符号的注释不会报错，读它的人只会以为自己找错了地方。**（这正是 `docs/execution-plane.md` §8 立锚点门禁的同一条理由。）
 

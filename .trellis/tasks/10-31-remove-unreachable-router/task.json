@@ -1,0 +1,31 @@
+{
+  "id": "remove-unreachable-router",
+  "name": "remove-unreachable-router",
+  "title": "清理不可达路由 should_brief_or_optimize（票 5aw）",
+  "description": "B 类裁定：删除。删掉零调用者的 should_brief_or_optimize 函数、wiring 豁免、planning.md 登记行与相关断言。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/graph,tests/unit/graph,docs",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/graph/routers.py",
+    "backend/graph/wiring.py",
+    "tests/unit/graph/test_wiring_registry.py",
+    "docs/planning.md"
+  ],
+  "notes": "DONE 2026-10-31 (B-class ruling: remove). Deleted the unreachable public router should_brief_or_optimize from backend/graph/routers.py; the graph reaches blogger_scout from viral_matcher via a plain edge and nothing ever called it, so keeping it was presenting unverified behaviour as a capability. backend/graph/wiring.py: ROUTERS_WITHOUT_AN_EDGE is now just {\"should_optimize\"} (kept: it is shooting_planner_router's callee, so it must be registered) and the comment explains only that case while preserving the \"registered rather than deleted / wiring it up must delete the exemption\" reasoning. tests/unit/graph/test_wiring_registry.py: reverse assertions about the removed router replaced by a literal snapshot test (test_the_registered_set_is_just_the_helper) so re-adding a second exemption is a deliberate act; \"every router-shaped function is wired or registered\" and should_optimize-is-a-callee invariants kept. docs/planning.md: section 4 row 1 removed, remaining rows renumbered, a \"已结（票 5aw）\" paragraph records the decision, and the claim routers_without_an_edge is republished as should_optimize (recomputed by test_planning_claims). Verified: wiring registry + planning claims + routers 168 passed; whole tests/unit/graph 266 passed; ruff check/format green; repo-wide grep for the symbol only hits the resolution sentence in planning.md (archived .trellis text untouched by design).",
+  "meta": {}
+}

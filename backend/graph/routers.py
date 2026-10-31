@@ -450,16 +450,6 @@ def shooting_planner_router(
     return should_optimize(state)
 
 
-def should_brief_or_optimize(
-    state: XHSGrowthState,
-) -> Literal["shooting_planner", "__end__"]:
-    """Route after viral_matcher — both modes go to shooting_planner."""
-    if terminal := _check_terminal(state):
-        return terminal
-
-    return "shooting_planner"
-
-
 def blogger_gate_router(
     state: XHSGrowthState,
 ) -> Literal["copywriter", "draft_gate", "__end__"]:
