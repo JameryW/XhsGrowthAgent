@@ -569,6 +569,7 @@ async def test_reconcile_unknown_publish_finds_confirmed_record():
         compute_publish_id,
         reconcile_unknown_publish,
     )
+    from backend.state.effects import EffectLedger, EffectStatus
 
     state = _state(publish_options={"dry_run": False, "account_id": "acc_r"})
     store = _real_store()
@@ -579,16 +580,35 @@ async def test_reconcile_unknown_publish_finds_confirmed_record():
 
     recon = await reconcile_unknown_publish(state, store)
     assert recon["status"] == "published"
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.CONFIRMED
+    assert ledger.extra.get("reconcile_evidence", {}).get("source") == "idempotency_record"
 
 
 @pytest.mark.asyncio
 async def test_reconcile_unknown_publish_finds_history_match():
-    """A matching published entry in content history reconciles the unknown."""
-    from backend.agents.publisher import reconcile_unknown_publish
+    """A matching published entry in content history reconciles the unknown.
+
+    Seeds an UNKNOWN ledger row (the typical post-submit-no-verdict case) and
+    asserts local ContentHistory evidence advances UNKNOWN → CONFIRMED.
+    """
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
     from backend.memory.store import MemoryManager
+    from backend.state.effects import EffectLedger, EffectStatus
 
     state = _state(publish_options={"dry_run": False, "account_id": "acc_r2"})
     store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
     mm = MemoryManager("acc_r2")
     await store.aput(
         mm.content_history_ns,
@@ -598,15 +618,73 @@ async def test_reconcile_unknown_publish_finds_history_match():
 
     recon = await reconcile_unknown_publish(state, store)
     assert recon["status"] == "published"
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.CONFIRMED
+    assert ledger.extra.get("reconcile_evidence", {}).get("source") == "content_history"
+    assert ledger.extra.get("post_id") == "note-1"
 
 
 @pytest.mark.asyncio
 async def test_reconcile_unknown_publish_uncertain_without_evidence():
-    from backend.agents.publisher import reconcile_unknown_publish
+    """Uncertain reconcile must not mutate an UNKNOWN ledger row."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
 
     state = _state(publish_options={"dry_run": False, "account_id": "acc_r3"})
-    recon = await reconcile_unknown_publish(state, _real_store())
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+
+    recon = await reconcile_unknown_publish(state, store)
     assert recon["status"] == "uncertain"
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.UNKNOWN
+    assert "reconcile_evidence" not in ledger.extra
+
+
+@pytest.mark.asyncio
+async def test_reconcile_ledger_confirm_failure_does_not_block_return(monkeypatch):
+    """Ledger write failure is best-effort: reconcile still returns published."""
+    from backend.agents import publisher as publisher_mod
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_r4"})
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "published", "publish_id": pid, "post_id": "pp4"},
+    )
+
+    async def _boom(*_a, **_k):
+        raise RuntimeError("store down")
+
+    monkeypatch.setattr(publisher_mod.EffectLedger, "mark", _boom)
+
+    recon = await reconcile_unknown_publish(state, store)
+    assert recon["status"] == "published"
+    assert recon["evidence"]["source"] == "idempotency_record"
+    # mark blew up: seeded row stays CONFIRMED without reconcile_evidence.
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.CONFIRMED
+    assert "reconcile_evidence" not in ledger.extra
 
 
 def test_unknown_retry_requires_force_gate():

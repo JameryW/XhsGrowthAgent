@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Best-effort ledger write vs gate honesty"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar"}
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "Row 5 P1 reconcile enhancement target"}
+{"file": "backend/state/effects.py", "reason": "UNKNOWN→RECONCILING→CONFIRMED transition rules"}
+{"file": ".trellis/tasks/10-31-effect-reconcile-ledger-confirm/prd.md", "reason": "Locked ledger-confirm decision"}
