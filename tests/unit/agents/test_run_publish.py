@@ -687,6 +687,310 @@ async def test_reconcile_ledger_confirm_failure_does_not_block_return(monkeypatc
     assert "reconcile_evidence" not in ledger.extra
 
 
+# ── 票 5ak: platform note-list reconcile after local miss ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_default_platform_fetcher_skips_without_cookie(monkeypatch):
+    """Default fetcher: no cookie → empty list (no CreatorStatsClient call)."""
+    from backend.agents.publisher import _default_fetch_platform_notes
+    from backend.services.xhs_credentials import XhsCredential
+
+    async def _no_cookie(account_id: str, **_kw):
+        return XhsCredential(account_id=account_id, cookie="")
+
+    monkeypatch.setattr(
+        "backend.services.xhs_credentials.load_credential",
+        _no_cookie,
+    )
+
+    def _boom(*_a, **_k):
+        raise AssertionError("CreatorStatsClient must not run without cookie")
+
+    monkeypatch.setattr(
+        "backend.services.creator_stats.client.CreatorStatsClient",
+        _boom,
+    )
+    assert await _default_fetch_platform_notes("acc_nocookie") == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_platform_note_list_hit_confirms_ledger():
+    """Exact title on creator note list → published + EffectLedger CONFIRMED."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    state = _state(
+        copy_content={"selected_title": "平台命中标题", "body_text": "b"},
+        publish_options={"dry_run": False, "account_id": "acc_plat"},
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+    calls: list[str] = []
+
+    async def _fetcher(account_id: str):
+        calls.append(account_id)
+        return [
+            {"display_title": " 平台命中标题 ", "noteId": "note-plat-1"},
+            {"title": "其他", "id": "other"},
+        ]
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_fetcher)
+    assert recon["status"] == "published"
+    assert recon["evidence"]["source"] == "platform_note_list"
+    assert recon["evidence"]["post_id"] == "note-plat-1"
+    assert calls == ["acc_plat"]
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.CONFIRMED
+    assert ledger.extra.get("reconcile_evidence", {}).get("source") == "platform_note_list"
+    assert ledger.extra.get("post_id") == "note-plat-1"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_platform_note_list_empty_stays_uncertain():
+    """Empty platform list → uncertain; UNKNOWN ledger untouched."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    state = _state(
+        copy_content={"selected_title": "无命中", "body_text": "b"},
+        publish_options={"dry_run": False, "account_id": "acc_plat_empty"},
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+
+    async def _empty(_account_id: str):
+        return []
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_empty)
+    assert recon["status"] == "uncertain"
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.UNKNOWN
+    assert "reconcile_evidence" not in ledger.extra
+
+
+@pytest.mark.asyncio
+async def test_reconcile_platform_note_list_title_miss_stays_uncertain():
+    """Non-empty list without exact title match → uncertain (no fake-confirm)."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    state = _state(
+        copy_content={"selected_title": "目标标题", "body_text": "b"},
+        publish_options={"dry_run": False, "account_id": "acc_plat_miss"},
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+
+    async def _miss(_account_id: str):
+        return [
+            {"title": "目标标题相近", "id": "n-near"},
+            {"title": "完全不同", "note_id": "n-other"},
+        ]
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_miss)
+    assert recon["status"] == "uncertain"
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_reconcile_platform_note_list_title_without_id_stays_uncertain():
+    """Exact title but missing note id → uncertain (evidence requires post_id)."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    state = _state(
+        copy_content={"selected_title": "有标题无 id", "body_text": "b"},
+        publish_options={"dry_run": False, "account_id": "acc_plat_noid"},
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+
+    async def _no_id(_account_id: str):
+        return [{"display_title": "有标题无 id"}]
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_no_id)
+    assert recon["status"] == "uncertain"
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_reconcile_platform_note_list_fetcher_error_stays_uncertain():
+    """Fetcher raise → warn path → uncertain; never fake-confirm."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    state = _state(
+        copy_content={"selected_title": "拉列表失败", "body_text": "b"},
+        publish_options={"dry_run": False, "account_id": "acc_plat_err"},
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+
+    async def _boom(_account_id: str):
+        raise RuntimeError("creator stats HTTP 503")
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_boom)
+    assert recon["status"] == "uncertain"
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_reconcile_local_confirm_skips_platform_fetcher():
+    """Idempotency / ContentHistory hit must not call platform_note_fetcher."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_skip_plat"})
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "published", "publish_id": pid, "post_id": "local-pp"},
+    )
+    calls: list[str] = []
+
+    async def _fetcher(account_id: str):
+        calls.append(account_id)
+        return [{"title": "t", "id": "should-not-matter"}]
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_fetcher)
+    assert recon["status"] == "published"
+    assert recon["evidence"]["source"] == "idempotency_record"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_no_title_skips_platform_fetcher():
+    """Empty selected_title must not invoke platform_note_fetcher."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    state = _state(
+        copy_content={"selected_title": "   ", "body_text": "b"},
+        publish_options={"dry_run": False, "account_id": "acc_no_title"},
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+    calls: list[str] = []
+
+    async def _fetcher(account_id: str):
+        calls.append(account_id)
+        return [{"title": "anything", "id": "n1"}]
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_fetcher)
+    assert recon["status"] == "uncertain"
+    assert calls == []
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_reconcile_content_history_hit_skips_platform_fetcher():
+    """ContentHistory local confirm must not call the platform fetcher."""
+    from backend.agents.publisher import (
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.memory.store import MemoryManager
+
+    state = _state(
+        copy_content={"selected_title": "历史命中", "body_text": "b"},
+        publish_options={"dry_run": False, "account_id": "acc_hist_skip"},
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+    mm = MemoryManager("acc_hist_skip")
+    await store.aput(
+        mm.content_history_ns,
+        "hist-1",
+        {"title": "历史命中", "status": "published", "post_id": "hist-1"},
+    )
+    calls: list[str] = []
+
+    async def _fetcher(account_id: str):
+        calls.append(account_id)
+        raise AssertionError("platform must not run after local confirm")
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_fetcher)
+    assert recon["status"] == "published"
+    assert recon["evidence"]["source"] == "content_history"
+    assert calls == []
+
+
 def test_unknown_retry_requires_force_gate():
     """Endpoint gate: unknown + no force + uncertain reconciliation must be
     rejected (early response), never silently re-publish."""

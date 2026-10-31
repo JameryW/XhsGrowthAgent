@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import socket
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -271,7 +271,7 @@ async def _confirm_ledger_after_reconcile(
     publish_id: str,
     evidence: Mapping[str, Any],
 ) -> None:
-    """Best-effort: local reconcile confirmed → EffectLedger CONFIRMED.
+    """Best-effort: reconcile confirmed → EffectLedger CONFIRMED.
 
     Advances ``UNKNOWN → RECONCILING → CONFIRMED`` (or ``RECONCILING →
     CONFIRMED`` / create-via-RECONCILING when no row). Evidence is merged into
@@ -304,6 +304,102 @@ async def _confirm_ledger_after_reconcile(
         await ledger.mark(publish_id, EffectStatus.CONFIRMED, extra=extra)
     except Exception as e:  # best-effort by contract; includes ValueError/Stale
         logger.warning("reconcile ledger confirm failed (non-blocking): %s", e)
+
+
+def _platform_note_list_title(item: Mapping[str, Any]) -> str:
+    """Exact-match title from creator-center note list aliases (票 5ak).
+
+    Alias order matches ``normalize_note`` title keys; empty values fall through
+    so ``display_title`` / ``note_title`` / ``name`` still win when ``title`` is blank.
+    """
+    for key in ("title", "display_title", "note_title", "name"):
+        val = item.get(key)
+        if val is None or isinstance(val, (bool, dict, list)):
+            continue
+        text = str(val).strip()
+        if text:
+            return text
+    return ""
+
+
+def _platform_note_list_id(item: Mapping[str, Any]) -> str:
+    """Note id from creator-center list item aliases (reuse normalize helper)."""
+    from backend.services.creator_stats.normalize import _note_id_str
+
+    for key in ("note_id", "id", "noteId", "note_id_str"):
+        note_id = _note_id_str(item.get(key))
+        if note_id:
+            return note_id
+    return ""
+
+
+async def _default_fetch_platform_notes(account_id: str) -> list[dict[str, Any]]:
+    """Cookie httpx path: creator-center note list page 1 (page_size≤50).
+
+    No usable cookie → empty list (caller stays uncertain). Fetch errors
+    propagate to the reconcile outer catch (warn + uncertain, never fake
+    confirm). CDP is out of scope for 票 5ak.
+    """
+    from backend.services.creator_stats.client import CreatorStatsClient
+    from backend.services.creator_stats.normalize import extract_note_items
+    from backend.services.xhs_credentials import load_credential
+
+    account = (account_id or "").strip()
+    credential = await load_credential(account)
+    cookie = str(credential.cookie or "").strip()
+    if not cookie:
+        logger.warning(
+            "platform note-list reconcile skipped: no cookie account_id=%s",
+            account or "<blank>",
+        )
+        return []
+
+    client = CreatorStatsClient(cookie=cookie, account_id=account)
+    try:
+        raw = await client.fetch_note_list(page_num=1, page_size=50)
+    finally:
+        await client.aclose()
+
+    items = extract_note_items(raw)
+    return [item for item in items if isinstance(item, dict)]
+
+
+async def reconcile_platform_note_list(
+    account_id: str,
+    title: str,
+    *,
+    platform_note_fetcher: Callable[[str], Awaitable[list[dict[str, Any]]]] | None = None,
+) -> dict[str, Any] | None:
+    """Match ``title`` against creator-center note list page 1 (exact strip).
+
+    Returns evidence dict on hit, else ``None``. Never raises — fetch / credential
+    failures warn and return ``None`` (uncertain). Empty title skips the fetch.
+    """
+    wanted = str(title or "").strip()
+    if not wanted:
+        return None
+    fetcher = platform_note_fetcher or _default_fetch_platform_notes
+    try:
+        notes = await fetcher((account_id or "").strip())
+    except Exception as e:
+        logger.warning("platform note-list reconciliation failed: %s", e)
+        return None
+    if not notes:
+        return None
+    for item in notes:
+        if not isinstance(item, Mapping):
+            continue
+        if _platform_note_list_title(item) != wanted:
+            continue
+        # PRD evidence requires a note id — title-only rows stay uncertain.
+        note_id = _platform_note_list_id(item)
+        if not note_id:
+            continue
+        return {
+            "source": "platform_note_list",
+            "post_id": note_id,
+        }
+    return None
 
 
 def _blocked_duplicate_result(publish_id: str, prior: dict[str, Any]) -> dict[str, Any]:
@@ -382,24 +478,33 @@ def _missing_publish_credential(
     }
 
 
-async def reconcile_unknown_publish(state: dict[str, Any], store: BaseStore) -> dict[str, Any]:
+async def reconcile_unknown_publish(
+    state: dict[str, Any],
+    store: BaseStore,
+    *,
+    platform_note_fetcher: Callable[[str], Awaitable[list[dict[str, Any]]]] | None = None,
+) -> dict[str, Any]:
     """Reconcile a publish whose result is unknown BEFORE any re-publish.
 
-    Uses the two identity mechanisms that already exist:
+    Identity mechanisms, in order:
     1. the P0-W4 idempotency record (upgraded to "published" with the real
-       post_id by the completing run), and
-    2. the platform_post_id/link_status matching trail — ContentHistory rows
-       keyed by post_id carrying {title, status:"published"} — searched for a
-       recent note matching this workflow's title.
+       post_id by the completing run),
+    2. ContentHistory rows keyed by post_id carrying
+       ``{title, status:"published"}`` — recent note matching this workflow's
+       title, and
+    3. 票 5ak: creator-center note list page 1 (cookie httpx), exact title
+       strip match — only after both local paths miss and title is non-empty.
+       Inject ``platform_note_fetcher`` in tests; default loads cookie via
+       ``load_credential`` and skips when none is present.
 
     Returns {"status": "published", "evidence": {...}} when a match confirms
     the post exists, else {"status": "uncertain"} — the caller must then demand
     an explicit human force decision instead of silently re-posting.
 
-    On local confirmation, best-effort advances EffectLedger
+    On confirmation (local or platform list), best-effort advances EffectLedger
     ``UNKNOWN → RECONCILING → CONFIRMED`` (evidence in ``extra``). Uncertain
-    leaves the ledger untouched. Ledger write failures do not change the
-    returned reconcile dict (gate honesty).
+    leaves the ledger untouched. Ledger / platform fetch failures do not change
+    the returned reconcile dict (gate honesty; never fake-confirm).
     """
     publish_id = compute_publish_id(state)
     record = await _read_publish_record(store, publish_id)
@@ -433,6 +538,16 @@ async def reconcile_unknown_publish(state: dict[str, Any], store: BaseStore) -> 
                     return {"status": "published", "evidence": evidence}
         except Exception as e:
             logger.warning("unknown-publish reconciliation failed: %s", e)
+
+    # Local paths missed: optional platform note-list exact title match (票 5ak).
+    platform_hit = await reconcile_platform_note_list(
+        _publish_account_id(state),
+        title,
+        platform_note_fetcher=platform_note_fetcher,
+    )
+    if platform_hit is not None:
+        await _confirm_ledger_after_reconcile(store, publish_id, platform_hit)
+        return {"status": "published", "evidence": platform_hit}
     return {"status": "uncertain"}
 
 
