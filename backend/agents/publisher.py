@@ -266,6 +266,46 @@ async def _write_publish_record(
         logger.warning("publish idempotency record write failed (non-blocking): %s", e)
 
 
+async def _confirm_ledger_after_reconcile(
+    store: BaseStore | None,
+    publish_id: str,
+    evidence: Mapping[str, Any],
+) -> None:
+    """Best-effort: local reconcile confirmed → EffectLedger CONFIRMED.
+
+    Advances ``UNKNOWN → RECONCILING → CONFIRMED`` (or ``RECONCILING →
+    CONFIRMED`` / create-via-RECONCILING when no row). Evidence is merged into
+    ``extra`` as ``reconcile_evidence``. Already-``CONFIRMED`` rows only merge
+    evidence. Failures warn and never block the reconcile return value — same
+    contract as ``_write_publish_record``. Callers must not invoke this on the
+    uncertain path (uncertain leaves the ledger untouched).
+    """
+    if store is None or not publish_id:
+        return
+    extra: dict[str, Any] = {"reconcile_evidence": dict(evidence)}
+    post_id = str(evidence.get("post_id") or "")
+    if post_id:
+        extra["post_id"] = post_id
+    try:
+        ledger = EffectLedger(store, PUBLISH_IDEMPOTENCY_NS)
+        prior = await ledger.get(publish_id)
+        if prior is not None and prior.status is EffectStatus.CONFIRMED:
+            await ledger.mark(publish_id, EffectStatus.CONFIRMED, extra=extra)
+            return
+        if prior is None or prior.status is EffectStatus.UNKNOWN:
+            await ledger.mark(publish_id, EffectStatus.RECONCILING, extra=extra)
+        elif prior.status is not EffectStatus.RECONCILING:
+            logger.warning(
+                "reconcile ledger confirm skipped: status=%s publish_id=%s",
+                prior.status.value,
+                publish_id,
+            )
+            return
+        await ledger.mark(publish_id, EffectStatus.CONFIRMED, extra=extra)
+    except Exception as e:  # best-effort by contract; includes ValueError/Stale
+        logger.warning("reconcile ledger confirm failed (non-blocking): %s", e)
+
+
 def _blocked_duplicate_result(publish_id: str, prior: dict[str, Any]) -> dict[str, Any]:
     prior_status = str(prior.get("status") or "unknown")
     if prior_status in ("published", "confirmed"):
@@ -355,13 +395,20 @@ async def reconcile_unknown_publish(state: dict[str, Any], store: BaseStore) -> 
     Returns {"status": "published", "evidence": {...}} when a match confirms
     the post exists, else {"status": "uncertain"} — the caller must then demand
     an explicit human force decision instead of silently re-posting.
+
+    On local confirmation, best-effort advances EffectLedger
+    ``UNKNOWN → RECONCILING → CONFIRMED`` (evidence in ``extra``). Uncertain
+    leaves the ledger untouched. Ledger write failures do not change the
+    returned reconcile dict (gate honesty).
     """
     publish_id = compute_publish_id(state)
     record = await _read_publish_record(store, publish_id)
     # Read-side normalisation maps legacy "published" to "confirmed"; both
     # spellings may appear in evidence from pre-P0-B rows.
     if record and record.get("status") in ("published", "confirmed"):
-        return {"status": "published", "evidence": {"source": "idempotency_record", **record}}
+        evidence = {"source": "idempotency_record", **record}
+        await _confirm_ledger_after_reconcile(store, publish_id, evidence)
+        return {"status": "published", "evidence": evidence}
 
     copy = state.get("copy_content") or {}
     title = str(copy.get("selected_title") or "").strip()
@@ -378,13 +425,12 @@ async def reconcile_unknown_publish(state: dict[str, Any], store: BaseStore) -> 
                     and str(value.get("title") or "").strip() == title
                     and str(value.get("status") or "") == "published"
                 ):
-                    return {
-                        "status": "published",
-                        "evidence": {
-                            "source": "content_history",
-                            "post_id": str(value.get("post_id") or getattr(item, "key", "") or ""),
-                        },
+                    evidence = {
+                        "source": "content_history",
+                        "post_id": str(value.get("post_id") or getattr(item, "key", "") or ""),
                     }
+                    await _confirm_ledger_after_reconcile(store, publish_id, evidence)
+                    return {"status": "published", "evidence": evidence}
         except Exception as e:
             logger.warning("unknown-publish reconciliation failed: %s", e)
     return {"status": "uncertain"}

@@ -1,0 +1,3 @@
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "P1 reconcile scope note"}
+{"file": "backend/state/effects.py", "reason": "Transition legality"}
+{"file": ".trellis/tasks/10-31-effect-reconcile-ledger-confirm/prd.md", "reason": "Acceptance criteria"}

@@ -67,7 +67,7 @@
 | 2 | Task/Run/Step/Attempt/Effect 五实体 | Task/Step 有；**Attempt 有**（票 5w）；**Run 有**（票 5x：`run_id` + `kind:"run"`，resume 复用 / rerun 铸造）；Effect 有 publish（P0-B 六态）+ 互动两条（票 5c `engagement_effects`） | ✅ 已满足 |
 | 3 | Event Log 是事实、Snapshot 是物化视图、Context 是临时视图 | 三者已分离（checkpoint / events / compiler） | ✅ 已满足 |
 | 4 | Replay 不重调 LLM，读已提交决策 | **节点级成立**（superstep 完成即不重跑）；**节点内不成立**（节点重试会重调 LLM） | ⚠️ 部分（见 §4） |
-| 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；票 5c 为互动两条加上 `engagement_effects`（提交前 claim）；对账仍为"记录 + ContentHistory 匹配"，无自动平台查询 | ✅ 已满足（对账增强留 P1） |
+| 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；票 5c 为互动两条加上 `engagement_effects`（提交前 claim）；**票 5ai**：本地对账确认（幂等行 / ContentHistory）已写账本 `UNKNOWN→RECONCILING→CONFIRMED`；uncertain 不动账本；**自动平台列表/详情查询仍留 P1** | ✅ 已满足（平台查询对账留 P1） |
 | 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；票 5ad 起 `rerank_items` 乘 `TRUST_RERANK_WEIGHTS`（`verified`/TTL 仍不进排序） | ✅ 已满足 |
 | 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线；**四片 + 人审写入 + TTL / policy_version / 样本阈值 / 语义近邻 hint 已落**：A 纯决策协议；B 账本 + observe + 管理面 + 调用者；C 独立重读 + 首次机晋升 + provenance 透传；D hy 候选机器 REVIEW（`promotion_hy.py`）；票 5y `POST .../memory-promotions/{id}/review` 人审 `approved`/`dismissed`（`promotion_review.py`，human-authored 账本行，不重跑 `decide_promotion`）；票 5z 全 ns 默认 `ttl_seconds=null`（`promotion_ttl.py`，只靠 supersede）；票 5aa `DEFAULT_PROMOTION_POLICY_VERSION` + `default_promotion_policy()`（Git 常量权威，无 env/远端）；票 5ab `DEFAULT_PROMOTION_MIN_SAMPLES=5`（对齐 `CreativeMemory.MIN_SAMPLES`，无冷却）；票 5ac 仅 `NEEDS_REVIEW` 后语义近邻 hint（`promotion_semantic.py`，unavailable → skip-hint，永不自动合并）。PRD §9 开放项已清空 | ✅ 已满足（P1） |
 | 8 | 多 Agent 并行按 Artifact 分工 + Workspace 冲突 | 当前为单 Agent 串行图；无子 Agent、无并发 workspace | ❌ 缺（P2，先不建） |
@@ -157,6 +157,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 乐观锁 | `mark(..., expect_version=N)` 拒绝覆盖并发写入；**诚实边界：BaseStore 无 CAS，多写者部署需数据库唯一约束**（代码注释已写明） |
 | 旧词兼容 | 读侧归一化 `published → CONFIRMED`、未知状态 → `UNKNOWN`（绝不落 FAILED）；历史行零迁移 |
 | publish 接入 | 提交前写 `PREPARED`（意图落盘）→ `begin()` 领取 → 成功 `CONFIRMED` / 确定失败 `FAILED` / 提交后无判定 `UNKNOWN`（显式写入，不再靠"保持不写"隐含） |
+| 本地对账写账本（票 5ai） | `reconcile_unknown_publish` 本地证据确认 published 后 best-effort `UNKNOWN→RECONCILING→CONFIRMED`（evidence 入 `extra.reconcile_evidence`）；uncertain **不动**账本；写失败仅 warn，不阻断 gate 返回值；**不做**自动平台查询（后续 P1） |
 | 行为等价 | 既有 53 项 publish 测试全绿；对外 `publish_result.status` 词表（published/failed/unknown）未变 |
 
 ### 5.2 P1-A 落地记录（Context Provenance）
