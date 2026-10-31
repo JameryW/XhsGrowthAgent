@@ -456,3 +456,36 @@ Durable deposit_* failures now raise; dual-write stays best-effort. Closed Memor
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: CreativeMemory calibrate 失败即抛（票 5af）
+
+**Date**: 2026-10-31
+**Task**: CreativeMemory calibrate 失败即抛（票 5af）
+**Branch**: `cursor/creative-memory-calibrate-finish-5039`
+
+### Summary
+
+Closed PRD §10 adjacent risk 票 5af: CreativeMemory.calibrate durable write failures now raise (failure-is-not-data), matching deposit raise (5ae). Dual-write warn preserved. CI py3.12 disk-full flake retriggered green; merged as #737. Finish-work archives task + journal.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d5aefae0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
