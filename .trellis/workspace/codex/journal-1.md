@@ -835,3 +835,39 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: 架构任务核验 + 重试撞重试闸门（票 5an）
+
+**Date**: 2026-10-31
+**Task**: 架构任务核验 + 重试撞重试闸门（票 5an）
+**Branch**: `main`
+
+### Summary
+
+拉取最新代码（546c99c0）后四路核验：票 5a–5am 39/39 全部合入、Trellis 无活动任务、无未合并分支承载未完成工作；但架构路线图仍有 P2/P3 延后项与 1 条无票实锤缺口（execution-plane §7.1 重试撞重试无闸门）。本轮补完该缺口：新增 _runner._retry_tasks + claim/attach/abandon（claim 先于 create_task，done callback 释放，is 身份守卫），两入口守卫加 retry_in_flight，不扩宽通用 busy 谓词；测试 15 例 + 6 条 claim 值；§7.1 清空并将 §6 由 34 修正为 38；顺带修正 agent-os / memory-promotion 的已核实漂移。独立复审后补 publish 并发行为测试、收紧「不扩宽」断言（谓词两种拼法都扫），M1–M7 突变自检全部变红。定向 42 passed，ruff/format 绿；沙箱 tmp_path ACL 造成的 ERROR 属环境性。未 push。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cfc33d7e` | (see git log) |
+| `e0930d96` | (see git log) |
+| `8af9094d` | (see git log) |
+| `07910523` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
