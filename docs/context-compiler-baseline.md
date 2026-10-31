@@ -37,7 +37,7 @@ CI 对应 job：`Context Compiler Baseline`（`.github/workflows/ci.yml`）。
 | 不变量 | 断言 |
 |---|---|
 | `repeat` | 相同输入重复编译，render 结果逐字节一致 |
-| `shuffle` | 反转召回顺序不改变 render（rerank 确定性） |
+| `shuffle` | 反转召回顺序不改变 render（rerank 确定性：`priority` → `confidence * source_weight * trust_weight` → recency） |
 | `dedup` | 重复召回不撑大 prompt |
 | `budget` | 收紧预算从尾部（L5）开始裁，绝不碰 L0–L3 稳定前缀 |
 

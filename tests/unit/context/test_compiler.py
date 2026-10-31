@@ -2,13 +2,19 @@
 
 from datetime import UTC, datetime
 
-from backend.context.compiler import ContextCompiler, dedup_items, rerank_items
+from backend.context.compiler import (
+    TRUST_RERANK_WEIGHTS,
+    ContextCompiler,
+    dedup_items,
+    rerank_items,
+)
 from backend.context.models import (
     ContextItem,
     PromptLayer,
     RetrievalMode,
     RetrievalResult,
     RunContext,
+    TrustClass,
 )
 
 
@@ -19,6 +25,7 @@ def _item(
     priority: int = 0,
     confidence: float = 1.0,
     timestamp: datetime | None = None,
+    trust_class: TrustClass = TrustClass.UNSPECIFIED,
 ) -> ContextItem:
     return ContextItem(
         body=body,
@@ -26,6 +33,7 @@ def _item(
         priority=priority,
         confidence=confidence,
         timestamp=timestamp,
+        trust_class=trust_class,
     )
 
 
@@ -72,6 +80,68 @@ def test_rerank_source_weights_scale_confidence() -> None:
     assert ranked[0].body == "有权重命中"
     # Stable sort without weights: first recall order preserved on tie.
     assert [item.body for item in rerank_items(items)] == ["无权重命中", "有权重命中"]
+
+
+def test_trust_rerank_weights_are_closed_and_ordered() -> None:
+    """Relative order is load-bearing; every TrustClass member is covered."""
+    assert set(TRUST_RERANK_WEIGHTS) == set(TrustClass)
+    assert (
+        TRUST_RERANK_WEIGHTS[TrustClass.INTERNAL_FACT]
+        > TRUST_RERANK_WEIGHTS[TrustClass.MEMORY]
+        > TRUST_RERANK_WEIGHTS[TrustClass.MODEL_GENERATED]
+        > TRUST_RERANK_WEIGHTS[TrustClass.EXTERNAL_DOCUMENT]
+        > TRUST_RERANK_WEIGHTS[TrustClass.UNSPECIFIED]
+    )
+    assert TRUST_RERANK_WEIGHTS[TrustClass.INTERNAL_FACT] == 1.0
+    assert TRUST_RERANK_WEIGHTS[TrustClass.MEMORY] == 0.85
+    assert TRUST_RERANK_WEIGHTS[TrustClass.MODEL_GENERATED] == 0.7
+    assert TRUST_RERANK_WEIGHTS[TrustClass.EXTERNAL_DOCUMENT] == 0.55
+    assert TRUST_RERANK_WEIGHTS[TrustClass.UNSPECIFIED] == 0.5
+
+
+def test_rerank_trust_class_breaks_ties_on_same_priority_confidence_source() -> None:
+    """Same priority/confidence/source: internal_fact ranks before external_document."""
+    items = (
+        _item("外部文档", trust_class=TrustClass.EXTERNAL_DOCUMENT),
+        _item("内部事实", trust_class=TrustClass.INTERNAL_FACT),
+    )
+    ranked = rerank_items(items)
+    assert [item.body for item in ranked] == ["内部事实", "外部文档"]
+
+
+def test_rerank_trust_multiplies_with_source_weights() -> None:
+    """effective = confidence * source_weight * trust_weight (stackable)."""
+    # Without source weight: external (0.55) loses to memory (0.85).
+    # With source_weight=2 on the external item: 1.0*2*0.55=1.10 > 1.0*1*0.85=0.85.
+    items = (
+        _item("记忆项", source="memory:a", trust_class=TrustClass.MEMORY),
+        _item(
+            "加权外部",
+            source="doc:b",
+            trust_class=TrustClass.EXTERNAL_DOCUMENT,
+        ),
+    )
+    assert [item.body for item in rerank_items(items)] == ["记忆项", "加权外部"]
+    ranked = rerank_items(items, source_weights={"doc:b": 2.0})
+    assert [item.body for item in ranked] == ["加权外部", "记忆项"]
+
+
+def test_rerank_missing_trust_uses_unspecified_weight() -> None:
+    """Default ContextItem.trust_class is UNSPECIFIED; verified does not affect order."""
+    items = (
+        _item("默认", trust_class=TrustClass.UNSPECIFIED),
+        ContextItem(
+            body="已验证但未分类",
+            source="memory:performance_insights",
+            confidence=1.0,
+            verified=True,  # 票 5ad: verified is out of scope for ranking
+        ),
+        _item("内部", trust_class=TrustClass.INTERNAL_FACT),
+    )
+    ranked = rerank_items(items)
+    assert ranked[0].body == "内部"
+    # Two unspecified-weight items keep stable recall order.
+    assert [item.body for item in ranked[1:]] == ["默认", "已验证但未分类"]
 
 
 def test_compile_joins_sections_and_items_in_layer_order() -> None:
