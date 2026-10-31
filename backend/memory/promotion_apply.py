@@ -20,7 +20,7 @@ writes nothing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -44,6 +44,7 @@ from backend.memory.promotion_observations import (
     current_target_entries,
 )
 from backend.memory.promotion_source import CreativeMemoryPromotionSource
+from backend.memory.promotion_ttl import ttl_expired_for
 
 __all__ = [
     "AppliedPromotion",
@@ -121,6 +122,7 @@ async def promote_style_observations(
     source: CreativeMemoryPromotionSource | None = None,
     dry_run: bool = False,
     recorded_at: str | None = None,
+    now: datetime | None = None,
 ) -> PromotionApplication:
     """Verify, decide and (unless dry-run) apply promotion for style observations.
 
@@ -128,11 +130,14 @@ async def promote_style_observations(
     promotion. Every verdict is recorded (the ledger is the audit trail); only
     ``PROMOTE`` reaches the target namespace, and only after its ledger row was
     written.
+
+    ``now`` is injected for TTL expiry (票 5z); production callers omit it.
     """
     account_id = (account_id or "").strip()
     if not account_id:
         raise ValueError("account_id must be a non-empty string")
     verifier = source if source is not None else CreativeMemoryPromotionSource()
+    clock = now if now is not None else datetime.now(UTC)
 
     existing_entries, ledger_available = await current_target_entries(ledger, account_id)
     existing: list[ExistingEntry] = list(existing_entries)
@@ -144,6 +149,11 @@ async def promote_style_observations(
             continue
         candidate = candidate_from_observation(observation)
         check = await verifier.source_check(account_id, observation)
+        # Verifier owns present/version/evidence; TTL is the caller's clock job.
+        check = replace(
+            check,
+            ttl_expired=ttl_expired_for(candidate, now=clock, observed_at=candidate.observed_at),
+        )
         decision = decide_promotion(
             candidate,
             source=check,

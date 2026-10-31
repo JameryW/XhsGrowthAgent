@@ -142,6 +142,7 @@ class TestReviewPromotionApprove:
         assert written.value["note"] == "一条待人审的 hy 记忆"
         assert written.value["trust_class"] == TrustClass.MEMORY.value
         assert written.value["decided_by"] == HUMAN_DECIDED_BY
+        assert written.value["ttl_seconds"] is None  # 票 5z: ledger rebuild via resolve
 
     async def test_approve_appends_human_promote_and_writes_target(self) -> None:
         store = InMemoryStore()

@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from backend.context.models import RetrievalMode, RetrievalResult, TrustClass
@@ -37,6 +38,7 @@ from backend.memory.promotion import (
 )
 from backend.memory.promotion_ledger import LedgerAppendOutcome, PromotionLedger
 from backend.memory.promotion_observations import TARGET_NAMESPACE, current_target_entries
+from backend.memory.promotion_ttl import resolve_promotion_ttl, ttl_expired_for
 
 __all__ = [
     "HY_SOURCE_PREFIX",
@@ -199,6 +201,7 @@ def candidate_from_hy_memory(
         evidence_ids=(f"ev_hy_{_digest(source_ref)}",),
         sample_count=_as_count(metadata.get("sample_count")),
         measured_rate=_as_rate(metadata.get("measured_rate")),
+        ttl_seconds=resolve_promotion_ttl(TARGET_NAMESPACE),
         proposed_by="hy-memory",
     )
 
@@ -219,6 +222,7 @@ def degraded_batch_candidate(batch: HyMemoryBatch) -> PromotionCandidate:
         source_ref=f"{HY_SOURCE_PREFIX}batch/{batch.scene}/{fingerprint}",
         source_version=f"batch-{fingerprint}",
         observed_at=f"batch-{fingerprint}",
+        ttl_seconds=resolve_promotion_ttl(TARGET_NAMESPACE),
         proposed_by="hy-memory",
     )
 
@@ -253,12 +257,15 @@ async def observe_hy_candidates(
     *,
     policy: PromotionPolicy | None = None,
     record: bool = True,
+    now: datetime | None = None,
 ) -> HyPromotionPass:
     """Decide (and record) hy-memory candidates; never writes a memory.
 
     A policy that would machine-promote a ``MEMORY`` candidate is rejected: this
     slice has no verification reader for the SDK, so a promote here would be a
     write nobody could attribute.
+
+    ``now`` is injected for TTL expiry (票 5z); production callers omit it.
     """
     account_id = (account_id or "").strip()
     if not account_id:
@@ -271,6 +278,7 @@ async def observe_hy_candidates(
 
     existing_entries, ledger_available = await current_target_entries(ledger, account_id)
     existing: list[ExistingEntry] = list(existing_entries)
+    clock = now if now is not None else datetime.now(UTC)
 
     if batch.degraded:
         candidate = degraded_batch_candidate(batch)
@@ -306,6 +314,9 @@ async def observe_hy_candidates(
                 present=True,
                 version=candidate.source_version,
                 evidence_found=candidate.evidence_ids,
+                ttl_expired=ttl_expired_for(
+                    candidate, now=clock, observed_at=candidate.observed_at
+                ),
             ),
             existing=tuple(existing),
             policy=policy,

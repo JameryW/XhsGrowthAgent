@@ -188,6 +188,7 @@ backend/
 │   ├── content_history.py               # Content history helpers
 │   ├── scene_database.py                # SceneDatabase (7-day expiry, per-scene caching)
 │   ├── promotion.py                     # Pure decide_promotion protocol (Slice A)
+│   ├── promotion_ttl.py                 # TTL defaults (票 5z): resolve_promotion_ttl + ttl_expired_for (null=supersede-only)
 │   ├── promotion_ledger.py              # Append-only memory_promotions ledger (+ body snapshot)
 │   ├── promotion_apply.py               # Machine PROMOTE: ledger first, then write_promoted_memory
 │   ├── promotion_review.py              # Human REVIEW close (票 5y): decided_by=human, no decide_promotion re-run
