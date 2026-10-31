@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios'
+import { AUTH_TOKEN_KEY, AUTH_USER_KEY } from '@/types/auth'
 
 declare module 'axios' {
   interface AxiosRequestConfig {
@@ -115,6 +116,25 @@ client.interceptors.response.use(
         ? 'Request timeout'
         : error.message || 'Network error'
       apiError = new ApiError(message, 'NETWORK_ERROR')
+    }
+
+    // A dead console session is not an error the user can act on: drop the
+    // stale token and stay quiet instead of toasting "Token expired or
+    // invalid" on every page open (that toast used to be the entire UX of an
+    // expired session, even on the public landing page, which fires an authed
+    // /api/accounts call for the account widget). No forced navigation here:
+    // the router guard already redirects protected routes after
+    // authStore.initialize() clears the token, and public pages must keep
+    // rendering for anonymous visitors. Real login failures still toast.
+    const sessionGoneCodes = new Set([
+      'ERROR_AUTH_TOKEN_INVALID',
+      'ERROR_AUTH_TOKEN_MISSING',
+      'ERROR_AUTH_TOKEN_EXPIRED',
+    ])
+    if (sessionGoneCodes.has(apiError.code)) {
+      localStorage.removeItem(AUTH_TOKEN_KEY)
+      localStorage.removeItem(AUTH_USER_KEY)
+      return Promise.reject(apiError)
     }
 
     // Show toast notification for API errors (skip expected business-logic codes)
