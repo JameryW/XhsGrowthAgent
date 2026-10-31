@@ -501,9 +501,7 @@ async def _ensure_socat_forwarder(profile_path: str, port: int) -> int | None:
 
     if not pids:
         return None
-    (Path(profile_path) / "socat.pid").write_text(
-        " ".join(str(p) for p in pids), encoding="utf-8"
-    )
+    (Path(profile_path) / "socat.pid").write_text(" ".join(str(p) for p in pids), encoding="utf-8")
     return pids[0]
 
 
@@ -545,7 +543,6 @@ def _port_bound_inet(port: int) -> bool:
     resolves to loopback and would lie).
     """
     return any(local.endswith(f":{port}") for local in _ss_listen_locals())
-
 
 
 async def _stop_socat_forwarder(profile_path: str) -> None:
