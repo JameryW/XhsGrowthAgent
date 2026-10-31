@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time as _time
 from typing import Any, cast
 
 import httpx
@@ -439,8 +440,6 @@ class RippleService:
 
                         # Progress events carry simulation progress
                         if event_type.startswith("progress."):
-                            import time as _time
-
                             # Ripple event_bus wraps SimulationEvent fields in a
                             # "payload" sub-dict: {"type":"progress.wave_start",
                             # "payload":{"wave":3,"total_waves":8,...}}
@@ -803,8 +802,6 @@ class RippleService:
             RippleTimeoutError: 超过最大等待时间（携带 job_id）
             RuntimeError: 模拟失败
         """
-        import time as _time
-
         # Shared state updated by SSE consumer
         progress_state: dict[str, Any] = {
             "progress": 0.0,

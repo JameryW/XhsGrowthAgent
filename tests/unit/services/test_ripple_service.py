@@ -16,6 +16,28 @@ from backend.services.ripple_service import (
 )
 
 
+class _SteppingClock:
+    """Deterministic stand-in for ``ripple_service._time``.
+
+    Every ``monotonic()`` read advances by ``step`` seconds, so a test that asks
+    "did elapsed time produce a time-based estimate" answers from its own clock
+    instead of from how fast the machine happens to run three mocked polls.
+    Reading ``now`` does not advance.
+    """
+
+    def __init__(self, step: float = 0.02) -> None:
+        self._step = step
+        self._now = 0.0
+
+    def monotonic(self) -> float:
+        self._now += self._step
+        return self._now
+
+    @property
+    def now(self) -> float:
+        return self._now
+
+
 class TestRippleServiceSingleton:
     """测试单例模式"""
 
@@ -1154,6 +1176,7 @@ class TestWaitForCompletionWithSSE:
 
         svc = RippleService()
         emitted: list[dict] = []
+        clock = _SteppingClock()
 
         def mock_emit(
             job_id,
@@ -1174,6 +1197,10 @@ class TestWaitForCompletionWithSSE:
             patch.object(svc, "_stream_progress", new_callable=AsyncMock) as mock_sse,
             patch.object(svc, "_emit_progress", side_effect=mock_emit),
             patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+            # The elapsed time this test asserts on is produced by the module's
+            # `_time.monotonic()`. Replacing that source makes the assertion about
+            # the fallback logic, not about how fast three mocked polls run.
+            patch("backend.services.ripple_service._time", clock),
         ):
             mock_status.side_effect = [
                 {"status": "running"},
@@ -1187,8 +1214,8 @@ class TestWaitForCompletionWithSSE:
                 progress_state["progress"] = 0.0
                 progress_state["current_wave"] = 0
                 progress_state["total_waves"] = 0
-                # Set last_update_at far in the past → stale
-                progress_state["last_update_at"] = time.monotonic() - SSE_STALE_THRESHOLD - 10
+                # Set last_update_at far in the past → stale, on the injected clock
+                progress_state["last_update_at"] = clock.now - SSE_STALE_THRESHOLD - 10
 
             mock_sse.side_effect = sse_stale_zero
 
@@ -1198,14 +1225,17 @@ class TestWaitForCompletionWithSSE:
             )
 
         assert result["status"] == "completed"
-        # Non-final emits should use time-based estimate (progress based on elapsed/max_wait)
+        # Three running polls, then a terminal one: each running poll emits once.
+        # The injected clock owns the elapsed values, so this no longer depends on
+        # how fast the mocked polls run (that was the flake: elapsed stayed 0.0
+        # when the three polls completed inside one 10 ms tick).
         non_final = [e for e in emitted if e["progress"] < 1.0]
-        assert len(non_final) > 0
-        # With max_wait=1.0 and poll_interval=0.01, at least the 2nd/3rd poll
-        # should have elapsed > 0.01s, so progress > 0.01
+        assert len(non_final) == 3, non_final
         assert any(e["progress"] >= 0.01 for e in non_final), (
             f"Time-based fallback not working: {non_final}"
         )
+        progresses = [e["progress"] for e in non_final]
+        assert progresses == sorted(progresses), progresses
 
     @pytest.mark.asyncio
     async def test_fresh_sse_nonzero_progress_used_directly(self):

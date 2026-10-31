@@ -1,0 +1,29 @@
+{
+  "id": "flaky-ripple-sse-clock",
+  "name": "flaky-ripple-sse-clock",
+  "title": "稳定 ripple SSE 时间回退测试的时钟依赖（flaky）",
+  "description": "全量 pytest 中该用例偶发失败（elapsed 全为 0.0），根因是断言依赖真实时钟推进；改为注入确定性步进时钟，符合质量规范 10.2.5。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/services,tests/unit/services",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/services/ripple_service.py",
+    "tests/unit/services/test_ripple_service.py"
+  ],
+  "notes": "FIXED 2026-10-31. Root cause: test_stale_sse_zero_progress_falls_back_to_time_estimate asserted that SOME non-final emit had progress >= 0.01, where progress = elapsed/max_wait and elapsed comes from the real clock; when the three mocked polls completed inside one 10 ms tick, elapsed stayed 0.0 and the assertion failed (observed in a full-suite run; single-run passed). This is exactly the pattern quality-guidelines 10.2.5 forbids (inferring behaviour from clock samples). Fix, two halves: (1) equivalence refactor in backend/services/ripple_service.py -- hoisted the two function-local `import time as _time` to module scope so `_time` is a replaceable module seam (same semantics, same import timing class); (2) the test now injects `_SteppingClock` (each monotonic() read advances 0.02 s, `.now` does not advance) and asserts deterministically: exactly 3 non-final emits, at least one progress >= 0.01, and non-decreasing progress. Mutation check: making monotonic() constant turns the assertion red, so the test still tests the fallback. Verified: 20/20 targeted runs green; tests/unit/services 933 passed (98 sandbox tmp_path env errors, 0 failed); ruff check + format green.",
+  "meta": {}
+}
