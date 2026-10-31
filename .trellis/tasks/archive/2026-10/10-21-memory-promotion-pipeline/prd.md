@@ -178,12 +178,21 @@ PromotionDecision(frozen)
 
 ## 9. Open questions（实现前需要产品/架构裁决）
 
-1. **审核入口**：promotion 的 `REVIEW` 挂在 `GET /model/evidence-proposals` 旁，还是
-   `learning-signals/{id}/review` 上？两者的 disposition 语汇不同。
-2. **TTL 默认值**：策略笔记 / 受众偏好 / 洞察各自多久过期？还是全部 null（永不过期、
-   只靠 supersede）？
-3. **语义近邻去重的成本**：只在 `NEEDS_REVIEW` 时做（省一次 embedding）还是每次去重都做？
-   语义 index 不可用时是 `REVIEW` 还是 `REFUSE`？
+1. ~~**审核入口**：promotion 的 `REVIEW` 挂在 `GET /model/evidence-proposals` 旁，还是
+   `learning-signals/{id}/review` 上？~~ **已裁决（票 5y）**：挂在既有
+   creator-agent 资源上 —— `POST /api/creator-agent/memory-promotions/{id}/review`
+   （`approved`/`dismissed`）；人审写路径不重跑 `decide_promotion`（见
+   `docs/memory-promotion.md` §9.1）。
+2. ~~**TTL 默认值**：策略笔记 / 受众偏好 / 洞察各自多久过期？还是全部 null（永不过期、
+   只靠 supersede）？~~ **已裁决（票 5z）**：全目标 ns 默认 `ttl_seconds=null`
+   （永不过期、只靠 supersede）；`promotion_ttl.resolve_promotion_ttl` /
+   `ttl_expired_for` 为单一入口。
+3. ~~**语义近邻去重的成本**：只在 `NEEDS_REVIEW` 时做还是每次去重都做？index 不可用时
+   REVIEW 还是 REFUSE？~~ **已裁决（票 5ac）**：仅机判决 `dedupe == NEEDS_REVIEW`
+   **之后**付 embedding（post-decide hint → 账本 `detail`）；index/store 不可用或
+   `asearch` 抛错 → **skip-hint**（可记 `semantic_near_dupe.status=unavailable`），
+   **不**改 disposition；永不自动合并、不喂回 `ExistingEntry`。实现：
+   `backend/memory/promotion_semantic.py`；接线 observe / apply / hy append。
 4. ~~**machine-promote 阈值**：`sample_count >= 5` 是否够？要不要加"最近 N 天"冷却窗口？~~
    **已裁决（票 5ab）**：阈值保持 5，抽出 `DEFAULT_PROMOTION_MIN_SAMPLES`，与
    `CreativeMemory.MIN_SAMPLES` 对齐（单测护栏）；MVP **不做**冷却窗口（dedupe /

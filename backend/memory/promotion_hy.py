@@ -38,6 +38,7 @@ from backend.memory.promotion import (
 )
 from backend.memory.promotion_ledger import LedgerAppendOutcome, PromotionLedger
 from backend.memory.promotion_observations import TARGET_NAMESPACE, current_target_entries
+from backend.memory.promotion_semantic import detail_with_near_dupe_hint
 from backend.memory.promotion_ttl import resolve_promotion_ttl, ttl_expired_for
 
 __all__ = [
@@ -290,7 +291,17 @@ async def observe_hy_candidates(
         )
         recorded = 0
         if record:
-            outcome = await ledger.append(account_id, candidate, decision, detail=batch.error)
+            # Degraded refusals use a plain-text error summary in detail; the
+            # near-dupe helper returns None (dedupe is not NEEDS_REVIEW) and
+            # merge leaves that plain string alone.
+            detail = await detail_with_near_dupe_hint(
+                decision,
+                candidate,
+                store=ledger.store,
+                account_id=account_id,
+                existing_detail=batch.error,
+            )
+            outcome = await ledger.append(account_id, candidate, decision, detail=detail)
             if outcome is LedgerAppendOutcome.RECORDED:
                 recorded += 1
         return HyPromotionPass(
@@ -328,7 +339,13 @@ async def observe_hy_candidates(
                 "with a real verification reader"
             )
         if record:
-            outcome = await ledger.append(account_id, candidate, decision)
+            detail = await detail_with_near_dupe_hint(
+                decision,
+                candidate,
+                store=ledger.store,
+                account_id=account_id,
+            )
+            outcome = await ledger.append(account_id, candidate, decision, detail=detail)
             if outcome is LedgerAppendOutcome.RECORDED:
                 recorded += 1
         promotions.append(HyObservedPromotion(candidate=candidate, decision=decision))

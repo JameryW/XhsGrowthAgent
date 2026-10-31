@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Where promotion_* helpers live"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Degraded/skip-hint vs inventing REFUSE patterns"}
+{"file": "docs/memory-promotion.md", "reason": "Close Q3; protocol purity vs caller hint"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "Parent §9 Q3 and §3 hint-only rule"}
+{"file": ".trellis/tasks/10-31-memory-promotion-semantic-near-dupe/prd.md", "reason": "Locked A+C / skip-hint MVP"}
+{"file": ".trellis/tasks/10-31-memory-promotion-semantic-near-dupe/research/semantic-near-dupe-cost.md", "reason": "Call-site cost analysis and unavailable-index mapping"}

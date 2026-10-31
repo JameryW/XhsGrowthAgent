@@ -1,7 +1,8 @@
-# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选 + 人审写入 + TTL 默认 + policy_version + 样本阈值）
+# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选 + 人审写入 + TTL 默认 + policy_version + 样本阈值 + 语义近邻 hint）
 
 > 状态：**Slice A–D + 人审写入面（票 5y）+ TTL 默认（票 5z / PRD §9 Q2）+
-> policy_version 来源（票 5aa / PRD §9 Q6）+ 样本阈值（票 5ab / PRD §9 Q4）已落**
+> policy_version 来源（票 5aa / PRD §9 Q6）+ 样本阈值（票 5ab / PRD §9 Q4）+
+> 语义近邻成本（票 5ac / PRD §9 Q3）已落**
 > （`backend/memory/promotion.py` 协议；`promotion_ledger.py` append-only 账本；
 > `promotion_observations.py` Creative Memory style 观测的 observe-only 通道；
 > `GET /api/creator-agent/memory-promotions` 只读管理面；
@@ -14,12 +15,15 @@
 > 调用方 `ttl_expired_for` 助手；
 > `DEFAULT_PROMOTION_POLICY_VERSION` + `default_promotion_policy()`：机判决
 > `policy_version` 的 Git 常量权威来源；
-> `DEFAULT_PROMOTION_MIN_SAMPLES`：机晋升样本阈值（与 `CreativeMemory.MIN_SAMPLES` 对齐，无冷却））。
+> `DEFAULT_PROMOTION_MIN_SAMPLES`：机晋升样本阈值（与 `CreativeMemory.MIN_SAMPLES` 对齐，无冷却）；
+> `promotion_semantic.py`：仅 `dedupe==NEEDS_REVIEW` 后付 embedding，hint 进账本
+> `detail`，index 不可用 → skip-hint）。
 > 设计依据：`.trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md`；
 > 人审票：`.trellis/tasks/10-29-memory-promotion-review-write/prd.md`；
 > TTL 票：`.trellis/tasks/10-31-memory-promotion-ttl-defaults/prd.md`；
 > policy_version 票：`.trellis/tasks/10-31-memory-promotion-policy-version/prd.md`；
-> 样本阈值票：`.trellis/tasks/10-31-memory-promotion-sample-threshold/prd.md`。
+> 样本阈值票：`.trellis/tasks/10-31-memory-promotion-sample-threshold/prd.md`；
+> 语义近邻票：`.trellis/tasks/10-31-memory-promotion-semantic-near-dupe/prd.md`。
 > 路线图出处：`docs/agent-os-upgrade-2026q4.md` §3 第 7 行。
 
 ## 1. 这一层是什么（以及不是什么）
@@ -338,11 +342,31 @@ body：`account_id` + `disposition`（`approved` \| `dismissed`，复用
 
 **不在本票**：`proposals._DRAFT_MIN_SAMPLES=3` 是草稿门槛，不是晋升闸门，不改。
 
+## 10.3 语义近邻去重成本（票 5ac / PRD §9 Q3）
+
+**裁决**：语义近邻**只作审核提示、永不自动合并**；embedding 成本**仅在**机判决
+`dedupe == NEEDS_REVIEW` **之后**支付（post-decide）；store / semantic index 不可用或
+`asearch` 抛错 → **skip-hint**（可在 `detail` 记 `status=unavailable`），**不**把
+disposition 改成 REVIEW/REFUSE。
+
+| 职责 | 位置 |
+|---|---|
+| `near_dupe_hint_for` / `merge_promotion_detail` / `detail_with_near_dupe_hint` | `backend/memory/promotion_semantic.py` |
+| 接线 | `observe_style_promotions` / `promote_style_observations` / `observe_hy_candidates` 在 `ledger.append` 前合并 hint |
+| 协议 | `decide_promotion` / `_dedupe` 仍只做键级；无 I/O |
+
+**`detail` 编码**：hint 是 JSON 对象片段 `{"semantic_near_dupe": {...}}`。
+空 `detail` → 直接写该对象；已有 JSON 对象（人审等）→ 浅合并同名键；已有**纯文本**
+（hy 降级错误摘要）→ **不改写**（避免把错误串污染成半截 JSON）。
+
+**不做**：对所有 `disposition=REVIEW`（含 hy `MEMORY`+`NEW`）一律跑 hint；自动合并；
+把邻居喂回 `ExistingEntry`；缺 index 就拒绝机晋升。
+
 ## 11. 明确不在这里的东西
 
 - **协议层不读任何存储**：来源行、证据、已有记录都由调用方读好再传；
-- **不判语义重复**：键级去重是确定的；语义近邻需要 embedding 与判断，只作为审核提示，
-  不在本函数内（PRD §3）；
+- **协议不判语义重复**：键级去重是确定的；语义近邻由调用方在 post-decide 时写入
+  账本 `detail` 作审核提示（票 5ac），永不自动合并，也不喂回 `decide_promotion`；
 - **协议不算 TTL**：`SourceCheck.ttl_expired` 由调用方经 `promotion_ttl.ttl_expired_for`
   用真实时钟算好传入，本层保持纯函数（票 5z）；
 - **无冷却窗口**：MVP 不扫「最近 N 天」（票 5ab）；冷却另开票；
@@ -365,5 +389,7 @@ body：`account_id` + `disposition`（`approved` \| `dismissed`，复用
   `default_promotion_policy()`；审计跟 commit，无 env/远端；
 - ~~Q4 machine-promote 样本阈值~~ **已落（票 5ab）**：`DEFAULT_PROMOTION_MIN_SAMPLES=5`
   对齐 `CreativeMemory.MIN_SAMPLES`；冷却 out of scope；
-- 行 7 的四片 + 人审写入 + TTL 默认 + policy_version + 样本阈值全部落地；剩下的是
-  PRD §9 的开放问题（语义近邻成本）—— 它们不再阻塞行 7 的"有显式流水线"判定。
+- ~~Q3 语义近邻去重成本~~ **已落（票 5ac）**：仅 `NEEDS_REVIEW` 后 hint；unavailable →
+  skip-hint；`promotion_semantic.py`；
+- 行 7 的四片 + 人审写入 + TTL / policy_version / 样本阈值 / 语义近邻 hint 全部落地；
+  PRD §9 开放项已清空（账本存储 Q5 早已在 Slice B 裁决）。

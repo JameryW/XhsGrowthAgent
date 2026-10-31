@@ -590,6 +590,40 @@ policy = default_promotion_policy()
 assert policy.min_samples == DEFAULT_PROMOTION_MIN_SAMPLES
 ```
 
+## Scenario: Memory Promotion semantic near-dupe hint (票 5ac)
+
+### Convention
+
+- Semantic near-neighbors are **reviewer hints only**. Never auto-merge; never
+  feed neighbors back into `ExistingEntry` / `decide_promotion`.
+- Pay embedding **only after** `decision.dedupe == NEEDS_REVIEW` (post-decide).
+  Do not run `asearch` on every candidate.
+- Attach via `backend/memory/promotion_semantic.py` into ledger `detail` as
+  JSON `{"semantic_near_dupe": {...}}`. Merge into existing JSON objects; leave
+  plain-string detail (e.g. hy degraded errors) unchanged.
+- Store missing, semantic index disabled, or `asearch` raising → **skip-hint**
+  (`status=unavailable`); do **not** flip disposition to REVIEW/REFUSE.
+- `decide_promotion` stays pure (no store / index I/O).
+
+### Wrong vs Correct
+
+#### Wrong
+```python
+# embedding on every candidate, or refuse when index is off
+if not semantic_index_status()["enabled"]:
+    return PromotionDecision(..., disposition=REFUSE, reason=...)
+```
+
+#### Correct
+```python
+from backend.memory.promotion_semantic import detail_with_near_dupe_hint
+
+detail = await detail_with_near_dupe_hint(
+    decision, candidate, store=store, account_id=account_id
+)
+await ledger.append(account_id, candidate, decision, detail=detail)
+```
+
 ## Scenario: Creator Agent Evidence Graph lookup
 
 Evidence Graph detail routes translate a missing or cross-account node into
