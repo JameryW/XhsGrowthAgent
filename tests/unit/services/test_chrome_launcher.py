@@ -11,9 +11,11 @@ import asyncio
 import contextlib
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -33,6 +35,25 @@ from backend.services.chrome_launcher import (
     stop_all,
     stop_chrome,
 )
+
+
+def _symlinks_are_available() -> bool:
+    """Windows only lets privileged processes create symlinks (Developer Mode/admin)."""
+    probe = Path(tempfile.mkdtemp())
+    try:
+        (probe / "link").symlink_to("target")
+        return True
+    except (OSError, NotImplementedError):
+        return False
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
+_requires_symlink = pytest.mark.skipif(
+    not _symlinks_are_available(),
+    reason="creating symlinks needs Developer Mode or elevation on Windows",
+)
+
 
 # ── Account fixture ──
 
@@ -295,6 +316,7 @@ def test_clear_stale_lock_no_lock_returns_false(_profile_dir: Path):
     assert clear_stale_lock(str(_profile_dir)) is False
 
 
+@_requires_symlink
 def test_clear_stale_lock_removes_dead_pid_lock(_profile_dir: Path, monkeypatch):
     """Lock present, target PID dead → all three Singleton files removed."""
     lock = _profile_dir / "SingletonLock"
@@ -311,6 +333,7 @@ def test_clear_stale_lock_removes_dead_pid_lock(_profile_dir: Path, monkeypatch)
     assert not (_profile_dir / "SingletonSocket").exists()
 
 
+@_requires_symlink
 def test_clear_stale_lock_keeps_live_pid_lock(_profile_dir: Path, monkeypatch):
     """Lock present, target PID alive → DO NOT clear (Chrome running on that dir)."""
     lock = _profile_dir / "SingletonLock"
@@ -322,6 +345,7 @@ def test_clear_stale_lock_keeps_live_pid_lock(_profile_dir: Path, monkeypatch):
     assert lock.is_symlink()  # untouched
 
 
+@_requires_symlink
 def test_clear_stale_lock_unparseable_pid_clears(_profile_dir: Path, monkeypatch):
     """Lock symlink target doesn't match hostname-<pid> format → treat as stale, clear."""
     lock = _profile_dir / "SingletonLock"
@@ -333,6 +357,7 @@ def test_clear_stale_lock_unparseable_pid_clears(_profile_dir: Path, monkeypatch
     assert not lock.exists()
 
 
+@_requires_symlink
 def test_clear_stale_lock_unlink_oserror_log_includes_exception_type(
     _profile_dir: Path, monkeypatch, caplog
 ):
@@ -354,6 +379,7 @@ def test_clear_stale_lock_unlink_oserror_log_includes_exception_type(
 # ── _singleton_lock_pid ──
 
 
+@_requires_symlink
 def test_singleton_lock_pid_extracts_pid(_profile_dir: Path):
     os.symlink("myhost-4242", _profile_dir / "SingletonLock")
     assert cl._singleton_lock_pid(str(_profile_dir)) == 4242
@@ -363,6 +389,7 @@ def test_singleton_lock_pid_none_when_absent(_profile_dir: Path):
     assert cl._singleton_lock_pid(str(_profile_dir)) is None
 
 
+@_requires_symlink
 def test_singleton_lock_pid_none_when_unparseable(_profile_dir: Path):
     os.symlink("no-dash-here", _profile_dir / "SingletonLock")
     assert cl._singleton_lock_pid(str(_profile_dir)) is None
@@ -433,6 +460,7 @@ async def test_ensure_chrome_launches_when_down_and_no_lock(_profile_dir: Path, 
 
 
 @pytest.mark.asyncio
+@_requires_symlink
 async def test_ensure_chrome_repairs_forwarder_when_internal_port_alive(
     _profile_dir: Path, monkeypatch
 ):
@@ -459,6 +487,7 @@ async def test_ensure_chrome_repairs_forwarder_when_internal_port_alive(
 
 
 @pytest.mark.asyncio
+@_requires_symlink
 async def test_ensure_chrome_clears_stale_lock_then_launches(_profile_dir: Path, monkeypatch):
     """Port down, stale lock present → clear it, then launch."""
     lock = _profile_dir / "SingletonLock"
@@ -481,6 +510,7 @@ async def test_ensure_chrome_clears_stale_lock_then_launches(_profile_dir: Path,
 
 
 @pytest.mark.asyncio
+@_requires_symlink
 async def test_ensure_chrome_refuses_when_live_lock_holds_dir(_profile_dir: Path, monkeypatch):
     """Port down but SingletonLock PID alive → refuse to launch a second Chrome."""
     lock = _profile_dir / "SingletonLock"
@@ -631,6 +661,7 @@ async def test_stop_chrome_escalates_to_sigkill(_profile_dir: Path, monkeypatch)
 
 
 @pytest.mark.asyncio
+@_requires_symlink
 async def test_stop_chrome_no_pidfile_cleans_locks(_profile_dir: Path, monkeypatch):
     """No pidfile (Chrome already gone) → tidy stale locks, action=stopped."""
     lock = _profile_dir / "SingletonLock"
@@ -645,6 +676,7 @@ async def test_stop_chrome_no_pidfile_cleans_locks(_profile_dir: Path, monkeypat
 
 
 @pytest.mark.asyncio
+@_requires_symlink
 async def test_stop_chrome_dead_pid_in_pidfile_cleans(_profile_dir: Path, monkeypatch):
     """pidfile present but PID dead → treat as already-down, clean locks."""
     (_profile_dir / "chrome.pid").write_text("8888")

@@ -1,0 +1,29 @@
+{
+  "id": "dsh-sandbox-test-compat",
+  "name": "dsh-sandbox-test-compat",
+  "title": "让全量测试在 DSH 沙箱本机不再报错（tmp_path + symlink）",
+  "description": "全量 206 个 tmp_path error 源于 DSH 沙箱把 0700 目录翻译成拒绝本进程的 ACL；修掉后暴露 11 个 os.symlink 权限失败。conftest 加 win32+DSH 守卫的 mkdir/temproot shim，chrome_launcher 测试加 symlink 能力 skipif；目标本机 0 failed 0 errors，CI 语义不变。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "tests",
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "tests/conftest.py",
+    "tests/unit/services/test_chrome_launcher.py"
+  ],
+  "notes": "DONE 2026-10-31. Two environment-only defects kept the local suite red; both fixed at test-infra level, CI semantics unchanged. (1) 206 tmp_path errors: the DSH Windows sandbox translates POSIX 0700 into an ACL that denies the owning process, so pytest's mkdir(mode=0o700) base/per-test dirs (and tempfile.mkdtemp) are unreadable -> this is reproducible: os.mkdir(p, 0o700) then listdir gives WinError 5, mode 0777/default works. tests/conftest.py now, only under win32+DSH_SHELL=1, wraps os.mkdir to pass 0777 for 0700 and points PYTEST_DEBUG_TEMPROOT at a fresh mkdtemp root (the predictable pytest-of-<user> was already poisoned by earlier runs). On normal Windows mode is ignored anyway; Linux CI never enters the branch. (2) With tmp_path fixed, 11 chrome_launcher tests surfaced WinError 1314: they build SingletonLock with os.symlink, which needs Developer Mode/elevation on Windows. Added _symlinks_are_available() probe + pytest.mark.skipif on exactly those 11 tests (marker added, no behaviour change); CI Linux still runs them. Verification: full local pytest now 4668 passed / 14 skipped / 0 failed / 0 errors (was 206 errors + 11 failures); test_chrome_launcher.py 63 passed/11 skipped; ruff check+format green.",
+  "meta": {}
+}

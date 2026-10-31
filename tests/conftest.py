@@ -4,7 +4,29 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from unittest.mock import AsyncMock, MagicMock
+
+# --- DSH Windows sandbox compatibility -------------------------------------
+# The DSH sandbox translates a POSIX 0700 directory mode into an ACL that denies
+# the owning process, so every `mkdir(mode=0o700)` becomes a directory this
+# process cannot open or list. pytest's `tmp_path` factory creates its base and
+# per-test dirs exactly that way (as do `tempfile.mkdtemp`/`TemporaryDirectory`),
+# which turned a full run into ~200 fixture-setup errors under:
+#     PermissionError: [WinError 5] ...\Temp\dsh-*\pytest-of-<user>
+# On normal Windows, `mkdir` ignores the mode entirely, so stripping it here is
+# a no-op outside the sandbox. The predictable `pytest-of-<user>` root from
+# earlier runs is already unreadable, hence the fresh private temproot.
+if sys.platform == "win32" and os.environ.get("DSH_SHELL") == "1":
+    _real_mkdir = os.mkdir
+
+    def _mkdir_without_private_mode(path, mode=0o777, *, dir_fd=None):
+        return _real_mkdir(path, 0o777 if mode == 0o700 else mode, dir_fd=dir_fd)
+
+    os.mkdir = _mkdir_without_private_mode  # type: ignore[assignment]
+    os.environ.setdefault(
+        "PYTEST_DEBUG_TEMPROOT", tempfile.mkdtemp(prefix="dsh-pytest-temproot-")
+    )
 
 # Tests must never inherit a developer's local browser setting from `.env`.
 # The real-browser paths are opt-in and explicitly configured by the tests that
