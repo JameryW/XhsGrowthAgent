@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 19
 - **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~623 | Active |
+| `journal-1.md` | ~656 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-10-31 | Effect 对账平台笔记列表（票 5ak） | `13d21de1` | `cursor/effect-reconcile-platform-finish-5039` |
 | 18 | 2026-10-31 | MemoryManager 写入确定性 key（票 5aj） | `46abc64d` | `cursor/memory-manager-keys-finish-5039` |
 | 17 | 2026-10-31 | Effect 对账确认写入账本 CONFIRMED（票 5ai） | `eb5c4adc` | `cursor/effect-reconcile-ledger-finish-5039` |
 | 16 | 2026-10-31 | CreativeMemory find_similar 失败即抛（票 5ah） | `cfd59d99` | `cursor/creative-memory-find-similar-finish-5039` |
