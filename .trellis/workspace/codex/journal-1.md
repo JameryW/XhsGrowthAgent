@@ -907,3 +907,39 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: 继续收口：flaky 测试修复 + 可验证文档漂移（票 5aq / 5ar）
+
+**Date**: 2026-10-31
+**Task**: 继续收口：flaky 测试修复 + 可验证文档漂移（票 5aq / 5ar）
+**Branch**: `main`
+
+### Summary
+
+继续完成剩余可执行项。票 5aq：稳定 ripple SSE 时间回退测试的时钟依赖 —— 等价重构把 ripple_service 的两处函数内 import time as _time 提升到模块级，测试注入 _SteppingClock（每次单调读前进 0.02s），断言改为确定性（非终态 emit 恰 3 条、至少一条 progress>=0.01、单调不减）；20/20 通过，突变（时钟恒 0）令断言变红。票 5ar：修正可验证的文档陈旧内容 —— deployment/testing-guide/configuration 的旧包名 xhs_growth Python 路径改回 backend.*（所有 import 实跑验证）；error-handling 的 API/XHS/LLM 错误表与重试配置按代码重写（错误类 AST 校验全部存在）；agent-os 补 engagement_effects 的 DB 唯一约束+CAS 账本形状、写明 publish mark() 不传 expect_version、补 llm_route_benchmark 铺垫；顺带重映射 5aq 令 ripple_service 漂移的 3 条 execution-plane 锚点。验证：文档门禁 8 passed；tests/unit/services 933 passed（98 个沙箱 tmp_path ERROR，0 failed）；ruff/format 绿。仍未做：B 类裁定（控制面迁移等）与 P2/P3（等证据/评测集）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c9162bca` | (see git log) |
+| `37c169e5` | (see git log) |
+| `c50100e8` | (see git log) |
+| `e504f691` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
