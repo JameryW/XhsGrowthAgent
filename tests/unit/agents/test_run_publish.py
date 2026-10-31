@@ -991,6 +991,230 @@ async def test_reconcile_content_history_hit_skips_platform_fetcher():
     assert calls == []
 
 
+# ── 票 5al: default platform fetcher multi-page (max 3) ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_default_platform_fetcher_fetches_up_to_three_pages(monkeypatch):
+    """Full pages keep going until ``_PLATFORM_NOTE_LIST_MAX_PAGES`` (票 5al)."""
+    from backend.agents.publisher import (
+        _PLATFORM_NOTE_LIST_MAX_PAGES,
+        _PLATFORM_NOTE_LIST_PAGE_SIZE,
+        _default_fetch_platform_notes,
+    )
+    from backend.services.xhs_credentials import XhsCredential
+
+    async def _cookie(account_id: str, **_kw):
+        return XhsCredential(account_id=account_id, cookie="k=v")
+
+    monkeypatch.setattr(
+        "backend.services.xhs_credentials.load_credential",
+        _cookie,
+    )
+
+    calls: list[tuple[int, int]] = []
+
+    class _FakeClient:
+        def __init__(self, **_kw):
+            pass
+
+        async def fetch_note_list(self, *, page_num: int = 1, page_size: int = 50, **_kw):
+            calls.append((page_num, page_size))
+            return {
+                "notes": [
+                    {"title": f"t{page_num}-{i}", "id": f"n{page_num}-{i}"}
+                    for i in range(page_size)
+                ]
+            }
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(
+        "backend.services.creator_stats.client.CreatorStatsClient",
+        _FakeClient,
+    )
+
+    notes = await _default_fetch_platform_notes("acc_pages")
+    assert _PLATFORM_NOTE_LIST_MAX_PAGES == 3
+    assert calls == [
+        (1, _PLATFORM_NOTE_LIST_PAGE_SIZE),
+        (2, _PLATFORM_NOTE_LIST_PAGE_SIZE),
+        (3, _PLATFORM_NOTE_LIST_PAGE_SIZE),
+    ]
+    assert len(notes) == _PLATFORM_NOTE_LIST_MAX_PAGES * _PLATFORM_NOTE_LIST_PAGE_SIZE
+
+
+@pytest.mark.asyncio
+async def test_default_platform_fetcher_stops_on_short_page(monkeypatch):
+    """len(items) < page_size stops early — no further page requests."""
+    from backend.agents.publisher import (
+        _PLATFORM_NOTE_LIST_PAGE_SIZE,
+        _default_fetch_platform_notes,
+    )
+    from backend.services.xhs_credentials import XhsCredential
+
+    async def _cookie(account_id: str, **_kw):
+        return XhsCredential(account_id=account_id, cookie="k=v")
+
+    monkeypatch.setattr(
+        "backend.services.xhs_credentials.load_credential",
+        _cookie,
+    )
+
+    calls: list[int] = []
+
+    class _FakeClient:
+        def __init__(self, **_kw):
+            pass
+
+        async def fetch_note_list(self, *, page_num: int = 1, page_size: int = 50, **_kw):
+            calls.append(page_num)
+            if page_num == 1:
+                return {
+                    "notes": [
+                        {"title": f"p1-{i}", "id": f"a{i}"}
+                        for i in range(_PLATFORM_NOTE_LIST_PAGE_SIZE)
+                    ]
+                }
+            return {"notes": [{"title": "short-tail", "id": "tail-1"}]}
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(
+        "backend.services.creator_stats.client.CreatorStatsClient",
+        _FakeClient,
+    )
+
+    notes = await _default_fetch_platform_notes("acc_short")
+    assert calls == [1, 2]
+    assert len(notes) == _PLATFORM_NOTE_LIST_PAGE_SIZE + 1
+    assert notes[-1]["id"] == "tail-1"
+
+
+@pytest.mark.asyncio
+async def test_default_platform_fetcher_stops_on_empty_page(monkeypatch):
+    """Empty extract_note_items page stops early (no page 3)."""
+    from backend.agents.publisher import (
+        _PLATFORM_NOTE_LIST_PAGE_SIZE,
+        _default_fetch_platform_notes,
+    )
+    from backend.services.xhs_credentials import XhsCredential
+
+    async def _cookie(account_id: str, **_kw):
+        return XhsCredential(account_id=account_id, cookie="k=v")
+
+    monkeypatch.setattr(
+        "backend.services.xhs_credentials.load_credential",
+        _cookie,
+    )
+
+    calls: list[int] = []
+
+    class _FakeClient:
+        def __init__(self, **_kw):
+            pass
+
+        async def fetch_note_list(self, *, page_num: int = 1, page_size: int = 50, **_kw):
+            calls.append(page_num)
+            if page_num == 1:
+                return {
+                    "notes": [
+                        {"title": f"only-{i}", "id": f"o{i}"}
+                        for i in range(_PLATFORM_NOTE_LIST_PAGE_SIZE)
+                    ]
+                }
+            return {"notes": []}
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(
+        "backend.services.creator_stats.client.CreatorStatsClient",
+        _FakeClient,
+    )
+
+    notes = await _default_fetch_platform_notes("acc_empty_p2")
+    assert calls == [1, 2]
+    assert len(notes) == _PLATFORM_NOTE_LIST_PAGE_SIZE
+
+
+@pytest.mark.asyncio
+async def test_default_platform_fetcher_page_error_propagates(monkeypatch):
+    """Any page raise propagates (reconcile outer catch → uncertain)."""
+    from backend.agents.publisher import _default_fetch_platform_notes
+    from backend.services.xhs_credentials import XhsCredential
+
+    async def _cookie(account_id: str, **_kw):
+        return XhsCredential(account_id=account_id, cookie="k=v")
+
+    monkeypatch.setattr(
+        "backend.services.xhs_credentials.load_credential",
+        _cookie,
+    )
+
+    class _FakeClient:
+        def __init__(self, **_kw):
+            pass
+
+        async def fetch_note_list(self, *, page_num: int = 1, page_size: int = 50, **_kw):
+            if page_num == 1:
+                return {"notes": [{"title": "ok", "id": "n1"} for _ in range(50)]}
+            raise RuntimeError("creator stats HTTP 503 on page 2")
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(
+        "backend.services.creator_stats.client.CreatorStatsClient",
+        _FakeClient,
+    )
+
+    with pytest.raises(RuntimeError, match="page 2"):
+        await _default_fetch_platform_notes("acc_page_err")
+
+
+@pytest.mark.asyncio
+async def test_reconcile_platform_note_list_page2_hit_confirms_ledger():
+    """Title only after a full page of fillers still confirms (票 5al)."""
+    from backend.agents.publisher import (
+        _PLATFORM_NOTE_LIST_PAGE_SIZE,
+        PUBLISH_IDEMPOTENCY_NS,
+        compute_publish_id,
+        reconcile_unknown_publish,
+    )
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    state = _state(
+        copy_content={"selected_title": "第二页命中", "body_text": "b"},
+        publish_options={"dry_run": False, "account_id": "acc_plat_p2"},
+    )
+    store = _real_store()
+    pid = compute_publish_id(state)
+    await store.aput(
+        PUBLISH_IDEMPOTENCY_NS,
+        pid,
+        {"status": "unknown", "publish_id": pid},
+    )
+
+    async def _fetcher(_account_id: str):
+        fillers = [
+            {"title": f"filler-{i}", "id": f"f{i}"} for i in range(_PLATFORM_NOTE_LIST_PAGE_SIZE)
+        ]
+        return fillers + [{"title": "第二页命中", "note_id": "note-p2"}]
+
+    recon = await reconcile_unknown_publish(state, store, platform_note_fetcher=_fetcher)
+    assert recon["status"] == "published"
+    assert recon["evidence"]["source"] == "platform_note_list"
+    assert recon["evidence"]["post_id"] == "note-p2"
+    ledger = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(pid)
+    assert ledger is not None
+    assert ledger.status is EffectStatus.CONFIRMED
+    assert ledger.extra.get("reconcile_evidence", {}).get("source") == "platform_note_list"
+    assert ledger.extra.get("post_id") == "note-p2"
+
+
 def test_unknown_retry_requires_force_gate():
     """Endpoint gate: unknown + no force + uncertain reconciliation must be
     rejected (early response), never silently re-publish."""

@@ -333,12 +333,20 @@ def _platform_note_list_id(item: Mapping[str, Any]) -> str:
     return ""
 
 
-async def _default_fetch_platform_notes(account_id: str) -> list[dict[str, Any]]:
-    """Cookie httpx path: creator-center note list page 1 (page_size≤50).
+# 票 5al: default platform reconcile fetcher pagination (not env-configurable).
+_PLATFORM_NOTE_LIST_MAX_PAGES = 3
+_PLATFORM_NOTE_LIST_PAGE_SIZE = 50
 
-    No usable cookie → empty list (caller stays uncertain). Fetch errors
-    propagate to the reconcile outer catch (warn + uncertain, never fake
-    confirm). CDP is out of scope for 票 5ak.
+
+async def _default_fetch_platform_notes(account_id: str) -> list[dict[str, Any]]:
+    """Cookie httpx path: creator-center note list pages 1..N (票 5al).
+
+    Fetches up to ``_PLATFORM_NOTE_LIST_MAX_PAGES`` pages of
+    ``_PLATFORM_NOTE_LIST_PAGE_SIZE`` notes. Stops early when a page yields
+    no items or fewer than ``page_size`` items. No usable cookie → empty list
+    (caller stays uncertain). Any page fetch error propagates to the
+    reconcile outer catch (warn + uncertain, never fake confirm). CDP /
+    note-detail deep lookup remain out of scope.
     """
     from backend.services.creator_stats.client import CreatorStatsClient
     from backend.services.creator_stats.normalize import extract_note_items
@@ -355,13 +363,23 @@ async def _default_fetch_platform_notes(account_id: str) -> list[dict[str, Any]]
         return []
 
     client = CreatorStatsClient(cookie=cookie, account_id=account)
+    all_notes: list[dict[str, Any]] = []
     try:
-        raw = await client.fetch_note_list(page_num=1, page_size=50)
+        for page in range(1, _PLATFORM_NOTE_LIST_MAX_PAGES + 1):
+            raw = await client.fetch_note_list(
+                page_num=page,
+                page_size=_PLATFORM_NOTE_LIST_PAGE_SIZE,
+            )
+            items = extract_note_items(raw)
+            if not items:
+                break
+            all_notes.extend(item for item in items if isinstance(item, dict))
+            if len(items) < _PLATFORM_NOTE_LIST_PAGE_SIZE:
+                break
     finally:
         await client.aclose()
 
-    items = extract_note_items(raw)
-    return [item for item in items if isinstance(item, dict)]
+    return all_notes
 
 
 async def reconcile_platform_note_list(
@@ -370,10 +388,12 @@ async def reconcile_platform_note_list(
     *,
     platform_note_fetcher: Callable[[str], Awaitable[list[dict[str, Any]]]] | None = None,
 ) -> dict[str, Any] | None:
-    """Match ``title`` against creator-center note list page 1 (exact strip).
+    """Match ``title`` against creator-center note list pages (exact strip).
 
-    Returns evidence dict on hit, else ``None``. Never raises — fetch / credential
-    failures warn and return ``None`` (uncertain). Empty title skips the fetch.
+    Default fetcher covers up to ``_PLATFORM_NOTE_LIST_MAX_PAGES`` (票 5al).
+    Returns evidence dict on hit, else ``None``. Never raises — fetch /
+    credential failures warn and return ``None`` (uncertain). Empty title
+    skips the fetch.
     """
     wanted = str(title or "").strip()
     if not wanted:
@@ -492,9 +512,10 @@ async def reconcile_unknown_publish(
     2. ContentHistory rows keyed by post_id carrying
        ``{title, status:"published"}`` — recent note matching this workflow's
        title, and
-    3. 票 5ak: creator-center note list page 1 (cookie httpx), exact title
-       strip match — only after both local paths miss and title is non-empty.
-       Inject ``platform_note_fetcher`` in tests; default loads cookie via
+    3. 票 5ak / 5al: creator-center note list pages 1..3 (cookie httpx;
+       ``_PLATFORM_NOTE_LIST_MAX_PAGES``), exact title strip match — only after
+       both local paths miss and title is non-empty. Inject
+       ``platform_note_fetcher`` in tests; default loads cookie via
        ``load_credential`` and skips when none is present.
 
     Returns {"status": "published", "evidence": {...}} when a match confirms
