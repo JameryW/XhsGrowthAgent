@@ -123,7 +123,7 @@ def test_list_cdp_targets_filters_malformed_values():
 
 @pytest.mark.asyncio
 async def test_socat_start_oserror_log_includes_exception_type(tmp_path: Path, monkeypatch, caplog):
-    monkeypatch.setattr(cl, "_port_bound_inet", lambda port: False)
+    monkeypatch.setattr(cl, "_addr_bound", lambda port, addr: False)
     monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
     monkeypatch.setattr(cl.shutil, "which", lambda name: "/usr/bin/socat")
     monkeypatch.setattr(
@@ -137,6 +137,68 @@ async def test_socat_start_oserror_log_includes_exception_type(tmp_path: Path, m
 
     assert result is None
     assert any("OSError: exec denied" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_socat_binds_container_gateway_and_loopback_never_wildcard(tmp_path, monkeypatch):
+    """CDP is unauthenticated remote control: never listen on 0.0.0.0."""
+    monkeypatch.setattr(cl, "_addr_bound", lambda port, addr: False)
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl.shutil, "which", lambda name: "/usr/bin/socat")
+    calls: list[tuple] = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+        proc = MagicMock()
+        proc.pid = 1000 + len(calls)
+        return proc
+
+    monkeypatch.setattr(cl.asyncio, "create_subprocess_exec", fake_exec)
+
+    pid = await cl._ensure_socat_forwarder(str(tmp_path), 9223)
+
+    binds = [args[1] for args in calls]
+    assert binds == [
+        f"TCP-LISTEN:9223,bind={cl._SOCAT_CONTAINER_BIND},reuseaddr,fork",
+        "TCP-LISTEN:9223,bind=127.0.0.1,reuseaddr,fork",
+    ]
+    assert all("0.0.0.0" not in bind for bind in binds)
+    assert all(args[2] == "TCP:127.0.0.1:19223" for args in calls)
+    assert pid == 1001
+    assert (tmp_path / "socat.pid").read_text(encoding="utf-8") == "1001 1002"
+
+
+@pytest.mark.asyncio
+async def test_socat_skips_address_already_listening(tmp_path, monkeypatch):
+    monkeypatch.setattr(cl, "_addr_bound", lambda port, addr: addr == cl._SOCAT_CONTAINER_BIND)
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl.shutil, "which", lambda name: "/usr/bin/socat")
+    calls: list[tuple] = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+        proc = MagicMock()
+        proc.pid = 4242
+        return proc
+
+    monkeypatch.setattr(cl.asyncio, "create_subprocess_exec", fake_exec)
+
+    await cl._ensure_socat_forwarder(str(tmp_path), 9223)
+
+    assert len(calls) == 1
+    assert calls[0][1] == "TCP-LISTEN:9223,bind=127.0.0.1,reuseaddr,fork"
+
+
+@pytest.mark.asyncio
+async def test_stop_socat_forwarder_kills_every_recorded_pid(tmp_path, monkeypatch):
+    (tmp_path / "socat.pid").write_text("101 202", encoding="utf-8")
+    killed: list[int] = []
+    monkeypatch.setattr(cl.os, "kill", lambda pid, sig: killed.append(pid))
+
+    await cl._stop_socat_forwarder(str(tmp_path))
+
+    assert killed == [101, 202]
+    assert not (tmp_path / "socat.pid").exists()
 
 
 def test_blank_page_candidates_retain_one_page():
