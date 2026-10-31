@@ -353,3 +353,37 @@ Locked PRD §9 Q4: DEFAULT_PROMOTION_MIN_SAMPLES=5 aligned with CreativeMemory.M
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Memory Promotion 语义近邻去重成本（票 5ac）
+
+**Date**: 2026-10-31
+**Task**: Memory Promotion 语义近邻去重成本（票 5ac）
+**Branch**: `cursor/memory-promotion-semantic-finish-5039`
+
+### Summary
+
+Closed last PRD §9 Q3: post-decide near-dupe hints only when dedupe=NEEDS_REVIEW; skip-hint when index unavailable; never auto-merge. Memory Promotion §9 open items cleared. Archived after #731/#730 merge.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `17be0241` | (see git log) |
+| `5932cc37` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

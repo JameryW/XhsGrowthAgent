@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
+- **Total Sessions**: 11
 - **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~355 | Active |
+| `journal-1.md` | ~389 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-10-31 | Memory Promotion 语义近邻去重成本（票 5ac） | `17be0241`, `5932cc37` | `cursor/memory-promotion-semantic-finish-5039` |
 | 10 | 2026-10-31 | Memory Promotion machine-promote 阈值（票 5ab） | `ecbe7367`, `449fd44c` | `cursor/memory-promotion-sample-finish-5039` |
 | 9 | 2026-10-31 | Memory Promotion policy_version 来源（票 5aa） | `9a45bcf7`, `325af7bc`, `49eff922` | `cursor/memory-promotion-policy-finish-5039` |
 | 8 | 2026-10-31 | Memory Promotion TTL 默认值（票 5z） | `5377d639`, `0083e35f`, `8ada3543`, `1480c3aa` | `cursor/memory-promotion-ttl-finish-5039` |
