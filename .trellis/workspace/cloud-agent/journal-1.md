@@ -421,3 +421,38 @@ Folded TRUST_RERANK_WEIGHTS into deterministic rerank_items; cleared P1-A honest
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: CreativeMemory deposit 失败即抛（票 5ae）
+
+**Date**: 2026-10-31
+**Task**: CreativeMemory deposit 失败即抛（票 5ae）
+**Branch**: `cursor/creative-memory-deposit-finish-5039`
+
+### Summary
+
+Durable deposit_* failures now raise; dual-write stays best-effort. Closed Memory Promotion §10 deposit adjacent risk. Archived after #735/#734 merge.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d3faacbd` | (see git log) |
+| `3c3e16c1` | (see git log) |
+| `c4a1fbbe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
