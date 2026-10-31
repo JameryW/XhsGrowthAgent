@@ -33,7 +33,7 @@ promotion_id 走到证据 id 与源版本。
 |---|---|---|
 | hy-memory（外部引擎，默认关） | `remember` / `recall` / `last_error`；pro 模式在 SDK 内做 LLM 抽取与冲突调和（reconciler 对仓库不透明）；降级经 `recall_hy_memory` 的 `DEGRADED` 可见 | 仓库**没有**任何"这条 SDK 抽取的记忆可否被信任"的判断；候选的 `source_ref` 只是 metadata 里的一段字符串，没人验证 |
 | `MemoryManager`（4 个命名空间） | 4 个写入方法全部 `store.aput(key=uuid4(), value=...)`，只追加、不看已有 | 没有 verify、没有 dedupe、没有 supersede、没有 provenance 字段 |
-| Creative Memory（measured rows） | 行级实测（`engagement_rate` / `sample_count` / `proven_count` / `source_post_id`）；`deposit_style` 按 tone+visual 精确匹配合并并加权平均；`calibrate` 用实际结果回写 | 合并发生在**写入侧**且吞异常；没有"这条实测证据是否够格变成策略结论"的闸门；没有决定记录 |
+| Creative Memory（measured rows） | 行级实测（`engagement_rate` / `sample_count` / `proven_count` / `source_post_id`）；`deposit_style` 按 tone+visual 精确匹配合并并加权平均；`calibrate` 用实际结果回写；`deposit_*` durable 失败上抛（票 5ae） | 没有"这条实测证据是否够格变成策略结论"的闸门；没有决定记录（晋升闸门见本管道） |
 | Creator Agent（审查/学习） | ADR-0002 先审后学；`proposals.py` 把实测观测投影成确定性 `evidence_id`/`proposal_id` 的只读提案（Laplacian 置信度、按 `source_ref` 去重、草稿偏好有阈值）；`ModelRevision` append-only；`GET /model/evidence-proposals` + `POST /learning-signals/{id}/review` | 这条审查路径服务的是 **Creator Model**，不是 memory；没有任何东西把"证据 → 记忆"的晋升决策记下来 |
 | Context Compiler | `TrustClass`（`internal_fact` / `memory` / `external_document` / `model_generated` / `unspecified`）、`verified`、`ttl_seconds`、`source_version` 已存在并可选渲染；检索器把 content_history 映射为 `internal_fact`、其余三个命名空间为 `memory` | 这些字段是**渲染用的标签**，没有生产者做"验证"；trust 也还没参与 rerank（那是另一件事，见 §8） |
 
@@ -174,7 +174,7 @@ PromotionDecision(frozen)
 - 不做自动删除/过期清理（只标记 stale，删除另开任务并带审计）；
 - 不新建第二套审核 UI/流程（复用 evidence-proposal / learning-signal 面）；
 - 不把 trust 接进 rerank（P1-A 留的后续项，与本管道独立）；
-- 不顺手改 `deposit_*` 的 best-effort 吞异常（邻近风险，见 §10，另开票）。
+- ~~不顺手改 `deposit_*` 的 best-effort 吞异常~~ **已由票 5ae 解决**（durable 失败上抛；store dual-write 仍 warn）。
 
 ## 9. Open questions（实现前需要产品/架构裁决）
 
@@ -211,9 +211,10 @@ PromotionDecision(frozen)
 
 ## 10. 邻近风险（本 PRD 明确不解决，但要登记）
 
-- `CreativeMemory.deposit_*` 四个方法都是 `except Exception: logger.warning`（`creative.py:313`
-  等）—— 写入失败不抛、调用方当成功。它与「失败不是数据」冲突，但改它会动现有写入面，
-  应另开票（可纳入 `MEMORY_FALLBACKS` 的第五张表讨论）。
+- ~~`CreativeMemory.deposit_*` 四个方法都是 `except Exception: logger.warning`（`creative.py:313`
+  等）—— 写入失败不抛、调用方当成功。~~ **已解决（票 5ae）**：durable 写失败上抛；
+  BaseStore dual-write 仍 best-effort warn（durable 已成功不回滚）。召回 / `calibrate`
+  吞异常仍 out of scope。
 - hy-memory 的 `remember` 契约是"永不炸调用方 + 返回 None"（`docs/hy-memory.md` §1）——
   这是**外部增强层**的合理契约；本管道不依赖它做证明，但读取时要把 `last_error` 当事实。
 - `MemoryManager` 写入 key 是 `uuid4()`，所以今天**无法按键去重**；Slice C 引入确定性 key

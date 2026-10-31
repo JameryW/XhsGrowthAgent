@@ -393,3 +393,5 @@ disposition 改成 REVIEW/REFUSE。
   skip-hint；`promotion_semantic.py`；
 - 行 7 的四片 + 人审写入 + TTL / policy_version / 样本阈值 / 语义近邻 hint 全部落地；
   PRD §9 开放项已清空（账本存储 Q5 早已在 Slice B 裁决）。
+- ~~邻近风险：`CreativeMemory.deposit_*` 吞 durable 写失败~~ **已落（票 5ae）**：
+  durable 失败上抛；store dual-write 仍 best-effort warn。

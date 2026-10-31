@@ -435,9 +435,9 @@ async def deposit_from_analysis(
         coros.append(cm.deposit_material(body_entry))
         materials += 1
 
-    # deposit_style/play/material each self-isolate (try/except → logger.warning,
-    # return None), so bare coros in gather — no _safe_* wrapper needed. Writes are
-    # independent upsert-by-key with no cross-write read dependency (gather-safe).
+    # Durable deposit failures propagate (票 5ae). Bare gather keeps concurrency;
+    # callers (pipeline) already catch analysis errors without rolling back import.
+    # Writes are independent upsert-by-key with no cross-write read dependency.
     await asyncio.gather(*coros)
 
     analysis.styles_deposited = styles

@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "memory/creative layout"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Failure-is-not-data / raise vs degrade patterns"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar; forbidden silent success"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "§10 adjacent risk this ticket closes"}
+{"file": ".trellis/tasks/10-31-creative-memory-deposit-raise/prd.md", "reason": "Locked durable-raise / dual-write-warn decision"}
