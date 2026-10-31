@@ -139,7 +139,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/services/creator_stats/client.py:844` | `data_ready = asyncio.create_task(_wait_initial_data())` | REAL_TASK | 与 `:845` 竞速，先到先算 |
 | `backend/services/creator_stats/client.py:845` | `auth_ready = asyncio.create_task(auth_failed.wait())` | REAL_TASK | 同上 |
 | `backend/services/omp_bridge.py:2588` | `task = asyncio.create_task(` | REAL_TASK | 会话级任务 |
-| `backend/services/ripple_service.py:821` | `sse_task = asyncio.create_task(` | REAL_TASK | 消费 SSE，上界 3600s |
+| `backend/services/ripple_service.py:818` | `sse_task = asyncio.create_task(` | REAL_TASK | 消费 SSE，上界 3600s |
 | `backend/services/xhs_publisher.py:154` | `pending = {asyncio.create_task(_wait(selector))` | REAL_TASK | 多个选择器并发等待 |
 | `backend/services/chrome_launcher.py:1734` | `chrome_resources_task = asyncio.create_task(` | REAL_TASK | 与 `asyncio.to_thread` 的探测配合 |
 | `backend/agents/analyst.py:167` | `hy_recall_task = asyncio.ensure_future(` | REAL_TASK | hy-memory 召回与主 gather 并发，主 gather 等它；2026-10-17 引入的 `ensure_future` 形态 |
@@ -148,7 +148,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/services/omp_bridge.py:2160` | `asyncio.create_task(self._drain_stderr())` | IN_PROCESS_LOOP | 子进程 stderr 排空 |
 | `backend/services/omp_bridge.py:2163` | `self._reader_task = asyncio.create_task(self._read_stdout())` | IN_PROCESS_LOOP | 子进程 stdout 读取 |
 | `backend/services/omp_bridge.py:2867` | `self._idle_timers[session_id] = asyncio.create_task(_idle_timeout())` | IN_PROCESS_LOOP | 空闲超时器 |
-| `backend/services/ripple_service.py:280` | `self._bg_task = asyncio.create_task(self._health_check_loop` | IN_PROCESS_LOOP | 服务级健康循环 |
+| `backend/services/ripple_service.py:281` | `self._bg_task = asyncio.create_task(self._health_check_loop` | IN_PROCESS_LOOP | 服务级健康循环 |
 | `backend/api/app.py:1368` | `takeover_task = asyncio.create_task(` | IN_PROCESS_LOOP | 接管扫描；开关在 `:1352`，关停在 `:1475` |
 | `backend/api/app.py:1449` | `creator_stats_scheduler = asyncio.create_task(` | IN_PROCESS_LOOP | 采集调度器 |
 | `backend/api/routes/agent.py:89` | `_prewarm_tasks[session_mode] = asyncio.create_task(_warm())` | CACHE_WARMUP | 按会话模式预热 |
@@ -164,7 +164,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/realtime/websocket.py:80` | `asyncio.create_task(event_handler(event))` | POST_RESPONSE | 从同步 EventBus 回调跨线程调度，事件发送不回流给调用者 |
 | `backend/services/creator_stats/pipeline.py:513` | `asyncio.create_task(` | POST_RESPONSE | 弱标签演化写回（`_schedule_weak_label_evolve`），结果不回流 |
 | `backend/api/routes/_runner.py:508` | `heartbeat.add_done_callback(_on_heartbeat_done)` | PLANE | 不是新任务：把栅栏登记到租约心跳的结束回调上 |
-| `backend/services/ripple_service.py:230` | `loop.create_task(self._rebuild_client())` | POST_RESPONSE | 重建客户端 |
+| `backend/services/ripple_service.py:231` | `loop.create_task(self._rebuild_client())` | POST_RESPONSE | 重建客户端 |
 | `backend/services/xhs_risk_gate.py:748` | `_persist_task = loop.create_task(_run())` | POST_RESPONSE | 风控快照落盘 |
 
 <!-- anchor-table:end -->

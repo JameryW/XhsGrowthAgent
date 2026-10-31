@@ -14,7 +14,7 @@
 2. **真正的 P0 缺口只有两个**（审计时点；均已落地，见 §5）：
    - **Effect 账本只覆盖 publish 一个工具**，没有 PREPARED→IN_FLIGHT→
      CONFIRMED/UNKNOWN/RECONCILING 的统一状态机与对账动作 → **已补**：P0-B 统一
-     六态账本 + 票 5c 的互动账本（`engagement_effects`，提交前 claim）；
+     六态账本 + 票 5c 的互动账本（`engagement_effects`：DB 级唯一约束 + 提交前 claim）；
    - **没有 Progress Detector**：`revise_content` 回路只靠轮次上限兜底，
      无法区分"第 3 次修改在变好"与"第 3 次修改在原地打转" → **已补**：P0-A
      （`backend/state/progress.py`，§5.5）。
@@ -50,13 +50,15 @@
 | Run | `run_id` + `run_seq` + `kind:"run"` 事件（票 5x，`backend/state/runs.py`） | **有**：`/start` 铸造 seq=1；pause/error resume 与 `/recover` 复用；completed/cancelled terminal restart 铸造新 `run_id`（seq+1，cause=`rerun`）。legacy 线程无 stamp 时 status 回显 null |
 | Step | graph node（superstep） | 有，checkpoint 天然记录 |
 | Attempt | 节点内结构化重试：`attempt_id` + `kind:"attempt"` 事件（票 5w，`backend/state/attempts.py`） | **有**：每次（档位 × 重试序号）一条事件，封闭 outcome（succeeded / payload_rejected / semantic_rejected / unreachable）、数据最小化、确定性 id。**节点内重试仍会重调 LLM**（§4.1 未变：本切片只补身份与遥测，不是重放） |
-| Effect | publish：`publish_id` + P0-B `EffectLedger`；互动两条：票 5c `engagement_effects` | **有**（两条路径）：PREPARED → IN_FLIGHT → CONFIRMED / FAILED / UNKNOWN（↔ RECONCILING）；键在提交动作前 claim |
+| Effect | publish：`publish_id` + P0-B `EffectLedger`；互动两条：票 5c `engagement_effects`（DB 级唯一约束账本 + CAS 状态迁移） | **有**（两条路径）：publish 走 PREPARED → IN_FLIGHT → CONFIRMED / FAILED / UNKNOWN（↔ RECONCILING）；互动两条在提交动作前 claim |
 
 关键判断（与原文一致）：**Attempt 与 Effect 不能混用**。当前两条外部副作用路径都已经有
 独立的 Effect 层：publish 是 `compute_publish_id(account + content + images + window)`
 （逻辑动作的稳定键，重试复用）+ P0-B 六态 `EffectLedger`（含 `RECONCILING`）；互动两条是
 票 5c 的 `engagement_effects`（键 `eng:{kind}:{account_id}:{target_id}:{sha256[:16]}`，在
-提交前 claim）。Attempt 实体已由票 5w 补上（`attempt_id` + attempt 级事件）；
+提交前 claim；持久层是 DB 级唯一约束账本 —— `(account_id, idempotency_key)` UNIQUE +
+`INSERT ... ON CONFLICT DO NOTHING`，状态迁移走 CAS：`backend/db/engagement_effects.py` +
+`backend/services/xhs_effect_ledger.py`）。Attempt 实体已由票 5w 补上（`attempt_id` + attempt 级事件）；
 **Run 已由票 5x 补上**（`run_id` / `run_seq` / cause 词表；resume 复用、rerun 铸造），行 2 的五实体现已齐。
 
 ## 3. 差距矩阵（原文十条 → 本仓库）
@@ -145,7 +147,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | **P2-部分（已完成）** | 恢复策略分派 | `backend/models/recovery_policy.py`：按错误类型分派 retry/degrade/escalate/stop，retry 层记录决策（§5.4） | 文章 recovery 表可直接落地，且不需要多模型路由矩阵 |
 | P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产出时启动；**证据采集器已就绪（§5.6）** | 当前串行图无瓶颈证据，不提前建 |
 | **P3-前置（已完成）** | Harness Benchmarks 套件 | `scripts/benchmarks/harness_benchmarks.py` + CI job：F1/F2/F4 可跑，F5/F7/F8 记 SKIP（§8） | 评测集是 Adaptive Harness 的前提；先把确定性防线变成可跑的 gate |
-| P3 | Adaptive Harness | 依赖评测集 + A/B 门禁；P1b 基线是起点 | 无评测数据前做自适应是赌博 |
+| P3 | Adaptive Harness | 依赖评测集 + A/B 门禁；P1b 基线是起点；路由对照铺垫 `scripts/benchmarks/llm_route_benchmark.py` 已存在 | 无评测数据前做自适应是赌博 |
 
 ### 5.1 P0-B 落地记录（统一 Effect 账本）
 
@@ -154,7 +156,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 状态机 | `PREPARED → IN_FLIGHT → CONFIRMED / FAILED / UNKNOWN`；`UNKNOWN ↔ RECONCILING → CONFIRMED / FAILED`；`FAILED → IN_FLIGHT`（新一次尝试） |
 | 阻塞规则 | `IN_FLIGHT / CONFIRMED / UNKNOWN / RECONCILING` 阻塞重试；**`PREPARED`（仅意图）与 `FAILED`（明确未生效）不阻塞** |
 | 领取语义 | `EffectLedger.begin()` 一次完成读 + 判 + 写 IN_FLIGHT；被拦时抛 `EffectBlockedError`（携带记录，供调用方写拒绝结果） |
-| 乐观锁 | `mark(..., expect_version=N)` 拒绝覆盖并发写入；**诚实边界：BaseStore 无 CAS，多写者部署需数据库唯一约束**（代码注释已写明） |
+| 乐观锁 | `mark(..., expect_version=N)` 拒绝覆盖并发写入；**诚实边界：BaseStore 无 CAS，多写者部署需数据库唯一约束**（代码注释已写明）。**现状**：`backend/agents/publisher.py` 的 `EffectLedger.mark(...)` 写入点**今天不传** `expect_version` —— 发布路径的并发正确性靠租约 + 幂等键，不靠 CAS；不要把"能力存在"读成"已启用" |
 | 旧词兼容 | 读侧归一化 `published → CONFIRMED`、未知状态 → `UNKNOWN`（绝不落 FAILED）；历史行零迁移 |
 | publish 接入 | 提交前写 `PREPARED`（意图落盘）→ `begin()` 领取 → 成功 `CONFIRMED` / 确定失败 `FAILED` / 提交后无判定 `UNKNOWN`（显式写入，不再靠"保持不写"隐含） |
 | 接入边界（诚实披露） | 主链 `PublisherAgent` 与 free 路径已接账本（PREPARED + `EffectLedger.begin()`：`backend/agents/publisher.py:926-944`；free 路径经 `backend/api/routes/free.py:421` 调 `run_publish`）；**creator_agent 控制面 `execute` 路径直连 Gateway**（`backend/creator_agent/advisor.py:714-723` → `backend/creator_agent/execution.py:314-366`），**不经过 `EffectLedger`**，幂等仅靠 `ActionExecution` receipt（`backend/creator_agent/advisor.py:540-544`） |

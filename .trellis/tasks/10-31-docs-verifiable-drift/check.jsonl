@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a docs-only change"}
+{"file": "docs/execution-plane.md", "reason": "verify anchor/claim gates stay green after the remap"}

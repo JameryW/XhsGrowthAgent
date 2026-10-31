@@ -40,7 +40,7 @@ pytest tests/contract/ -v
 pytest tests/integration/ -v
 
 # 带覆盖率
-pytest tests/ -v --cov=xhs_growth --cov-report=term-missing
+pytest tests/ -v --cov=backend --cov-report=term-missing
 ```
 
 ### 单模块测试
@@ -271,7 +271,7 @@ def test_openapi_spec_valid():
 ```python
 def test_types_sync():
     """前端类型与后端同步"""
-    from xhs_growth.state.enums import WorkflowPhase
+    from backend.state.enums import WorkflowPhase
     from frontend.src.types.workflow import WorkflowPhaseType
     
     # 确保 enum 值一致

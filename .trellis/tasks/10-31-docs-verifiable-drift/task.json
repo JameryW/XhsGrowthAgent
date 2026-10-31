@@ -1,0 +1,33 @@
+{
+  "id": "docs-verifiable-drift",
+  "name": "docs-verifiable-drift",
+  "title": "文档可验证陈旧内容修正：包路径/错误类/账本与乐观锁精度（票 5ar）",
+  "description": "多处文档仍写旧包名 xhs_growth 的 Python 导入/路径（命令不可执行）、error-handling 的错误类表与实际类不符、agent-os 对 engagement_effects 账本形状与 expect_version 使用现状描述过宽、未提 llm_route_benchmark。逐条按代码核实后修正，不动数据库名与日志命名空间等真实值。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "docs",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/deployment.md",
+    "docs/testing-guide.md",
+    "docs/configuration.md",
+    "docs/error-handling.md",
+    "docs/agent-os-upgrade-2026q4.md",
+    "docs/execution-plane.md"
+  ],
+  "notes": "DONE 2026-10-31. Fixed verifiable C-class drift, docs only (no code): (1) stale Python package paths -- deployment.md's uvicorn/gunicorn/static examples and one path comment now use backend.api.app instead of the removed xhs_growth package; testing-guide's --cov source and WorkflowPhase import; configuration.md's two verification one-liners. Every documented import was executed and works. Left alone deliberately: database name xhs_growth, the xhs_growth.* logger namespaces and HY-MEMORY source values -- those are real values, not package paths. (2) error-handling.md: paths updated; the API error table now lists classes that actually exist (ValidationError 400, WorkflowNotFoundError 404, ReviewNotPendingError/ChoiceNotPendingError 400, AuthenticationError 401 + TokenMissing/TokenInvalid/LoginFailed, plus the Creator* family note) -- AST check confirms all eight named classes exist; XHS table gained XHSSignatureUnavailableError; the LLM error table became the real recovery_policy four-action dispatch table plus retry.py's transport-retry defaults; the retry-policy section now points at backend/graph/error_handling.py's exhaustive RETRY_POLICIES registry; user-recoverable table now uses PublishErrorType values. (3) agent-os-upgrade-2026q4.md: interaction Effect described by its real shape (DB unique-key ledger + CAS state transitions, backend/db/engagement_effects.py + backend/services/xhs_effect_ledger.py); the optimistic-lock row now says the publish mark() call sites do NOT pass expect_version (lease + idempotency key carry concurrency; capability != enabled); P3 row mentions scripts/benchmarks/llm_route_benchmark.py. (4) Also remapped the three execution-plane section 6 anchors that ticket 5aq's equivalence refactor shifted in backend/services/ripple_service.py (:821->818, :280->281, :230->231). Gates: docs_anchors + execution-plane claim recompute + residue claim recompute + docs citation corpus = 8 passed; every documented import verified by running it.",
+  "meta": {}
+}

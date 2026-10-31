@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "docs must agree with code; test/doc gate conventions"}
+{"file": "docs/execution-plane.md", "reason": "anchor-table convention and the three anchors this ticket remaps"}

@@ -4,18 +4,19 @@
 
 ## 错误类型
 
-### API 错误 (xhs_growth/api/errors.py)
+### API 错误 (backend/api/errors.py)
 
 | 错误类 | HTTP 状态码 | 说明 |
 |--------|-------------|------|
 | `ValidationError` | 400 | 参数验证失败 |
-| `NotFoundError` | 404 | 资源不存在 |
-| `WorkflowError` | 500 | 工作流执行错误 |
-| `AuthenticationError` | 401 | 认证失败 |
-| `RateLimitError` | 429 | 请求频率限制 |
-| `InternalError` | 500 | 内部服务器错误 |
+| `WorkflowNotFoundError` | 404 | 工作流线程不存在 |
+| `ReviewNotPendingError` | 400 | 当前没有待处理的审核门 |
+| `ChoiceNotPendingError` | 400 | 当前没有待处理的 choice 门 |
+| `AuthenticationError` | 401 | 认证失败（基类） |
+| `TokenMissingError` / `TokenInvalidError` / `LoginFailedError` | 401 | `AuthenticationError` 的三个子类 |
+| `APIError` 家族 | 400/404/409/501 等 | 另有 Creator* 系列（笔记/模型/决策/记忆晋升/Action 等）；完整清单以 `backend/api/errors.py` 为准 |
 
-### XHS 平台错误 (xhs_growth/services/xhs_client.py)
+### XHS 平台错误 (backend/services/xhs_client.py)
 
 | 错误类 | 说明 | 处理方式 |
 |--------|------|----------|
@@ -23,33 +24,36 @@
 | `XHSAuthError` | Cookie 过期或无效 | 通知用户刷新 |
 | `XHSPublishError` | 发布失败 | 检查内容合规性 |
 | `XHSApiError` | 一般 API 错误 | 记录日志，降级处理 |
+| `XHSSignatureUnavailableError` | 签名路径不可用（`XHSApiError` 子类） | 不走逆向签名路径，如实报错 |
 
-### LLM 错误
+### LLM 错误恢复分派（`backend/models/recovery_policy.py`）
 
-| 错误类型 | 说明 | 处理方式 |
-|----------|------|----------|
-| `TimeoutError` | LLM 响应超时 | 使用 fallback |
-| `RateLimitError` | API 额度耗尽 | 切换备用模型 |
-| `InvalidResponseError` | 返回无效 JSON | 使用算法降级 |
+| 类别 | 典型触发 | 处理 |
+|------|----------|------|
+| `RETRY_SAME` | 429 / 5xx / 网络 | 原模型重试 |
+| `DEGRADE_MODEL` | 400/404/409/422、schema、结构化解析失败 | 降级模型/结构化模式 |
+| `ESCALATE_MODEL` | 同错误重复（stalled） | 升级档位（未配置模型矩阵时为 `RETRY_SAME`） |
+| `STOP_AND_REPORT` | 401/403、内容策略拒绝、重试预算耗尽 | 停止并上报（拒绝优先，重试拒绝=绕过路径） |
+
+底层传输重试在 `backend/models/retry.py`：默认最多 3 次、base delay 1.0s、上限 30s，
+指数退避加抖动；可用 `XHS_LLM_MAX_RETRIES` / `XHS_LLM_RETRY_BASE_DELAY` /
+`XHS_LLM_RETRY_MAX_DELAY` 覆盖。
 
 ---
 
 ## 重试策略
 
-### graph/error_handling.py 配置
+### 图节点重试（`backend/graph/error_handling.py`）
 
-```python
-# 重试策略
-MAX_RETRIES = 3              # 最大重试次数
-RETRY_DELAY_BASE = 1.0       # 基础延迟（秒）
-RETRY_DELAY_MULTIPLIER = 2   # 延迟倍数（指数退避）
+`RETRY_POLICIES` 是穷举注册表：每个节点都必须登记（`RetryPolicy(max_attempts=N)` 或显式
+`None`），`get_retry_policy` 对未登记节点抛 `KeyError`；`tests/unit/graph/test_retry_registry.py`
+钉住 `build_graph()` 的全部节点都在表里。`publisher` 显式为 `None`（外部副作用节点，禁止
+generic auto-retry；发布重试只走 `/publish-retry` 的人工通道）。
 
-# 示例重试序列
-第1次失败 → 等待 1s → 重试
-第2次失败 → 等待 2s → 重试
-第3次失败 → 等待 4s → 重试
-第4次失败 → 进入 ERROR 阶段
-```
+### LLM 传输重试（`backend/models/retry.py`）
+
+只对可重试错误（429 / 5xx / 网络）重试，默认 3 次、指数退避 + 抖动、上限 30 秒；认证与
+参数错误直接传播。错误→动作的分派见上面 `recovery_policy` 表。
 
 ### 哪些操作会重试
 
@@ -135,13 +139,15 @@ async def __call__(state, *, store):
 
 ## 用户可恢复错误
 
-以下错误需要用户干预:
+下表按 `PublishErrorType`（`backend/api/errors.py`）列出发布相关的可恢复错误：
 
-| 错误 | 用户操作 |
+| 错误类型 | 用户操作 |
 |------|----------|
-| `XHSAuthError` | 重新获取 Cookie |
-| `ContentRejected` | 修改内容后重新审核 |
-| `PublishFailed` | 检查内容合规性，调整发布 |
+| `auth_expired` / `account_unverified` | 重新扫码登录 / 完成账号验证 |
+| `content_violation` | 修改内容后重新审核 |
+| `image_missing` | 补充图片后重试 |
+| `rate_limited` / `network_error` | 稍后重试（属于可自动重试类） |
+| `unknown` | 人工排查；结果不明时先对账再决定是否重试 |
 
 ---
 

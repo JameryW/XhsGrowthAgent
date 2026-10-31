@@ -230,8 +230,8 @@ hy-memory（腾讯混元双系统认知记忆，`hy-memory==2.0.1`）作为可�
 
 ```bash
 # 验证必填变量
-python -c "from xhs_growth.config.settings import Settings; s = Settings(); print(s.model_env)"
+python -c "from backend.config.settings import Settings; s = Settings(); print(s.model_env)"
 
 # 验证 LLM 连接
-python -c "from xhs_growth.models.router import get_model; print(get_model('writing'))"
+python -c "from backend.models.router import get_model; print(get_model('writing'))"
 ```

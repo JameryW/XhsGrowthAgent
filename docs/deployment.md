@@ -412,10 +412,10 @@ scripts/chrome-profiles.sh start
 
 ```bash
 # 单进程 (开发)
-uvicorn xhs_growth.api.app:app --reload
+uvicorn backend.api.app:app --reload
 
 # 多进程 (生产)
-uvicorn xhs_growth.api.app:app \
+uvicorn backend.api.app:app \
   --host 0.0.0.0 \
   --port 8000 \
   --workers 4 \
@@ -425,7 +425,7 @@ uvicorn xhs_growth.api.app:app \
 ### 使用 Gunicorn
 
 ```bash
-gunicorn xhs_growth.api.app:app \
+gunicorn backend.api.app:app \
   -k uvicorn.workers.UvicornWorker \
   -w 4 \
   -b 0.0.0.0:8000
@@ -446,7 +446,7 @@ npm run build
 2. **与 API 同源**: 通过 FastAPI static files
 
 ```python
-# xhs_growth/api/app.py
+# backend/api/app.py
 from fastapi.staticfiles import StaticFiles
 app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
 ```
