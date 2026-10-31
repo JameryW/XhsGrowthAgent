@@ -1,0 +1,3 @@
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "§5.1 reconcile honesty follow-up"}
+{"file": ".trellis/tasks/archive/2026-10/10-31-effect-reconcile-ledger-confirm/prd.md", "reason": "5ai ledger confirm; this ticket syncs workflow state"}
+{"file": ".trellis/tasks/10-31-effect-reconcile-publish-result-sync/prd.md", "reason": "Locked publish_result sync decision"}
