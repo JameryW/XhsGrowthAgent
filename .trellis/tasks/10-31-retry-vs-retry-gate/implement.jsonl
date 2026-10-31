@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "ruff/mypy/testing/API-route patterns for backend changes"}
+{"file": "docs/execution-plane.md", "reason": "§7/§7.1 ruling this ticket closes; claim-table conventions"}

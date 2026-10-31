@@ -92,13 +92,16 @@ async def retry_ripple_analysis(
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
-    # 并发守卫：与 retry_publish 同一条规则、同一个谓词、同一句文案。两处问的都是
+    # 并发守卫：与 retry_publish 同一条规则、同一句文案、同一组谓词。两处问的都是
     # "本进程要不要再起一份任务"，而租约答的是"有没有人在跑"，两个方向都会错（理由
     # 见 retry_publish 的同段注释与 tests/unit/api/test_serialization_guards_stay_local.py）。
-    # 范围：只挡"重试撞本进程的执行"，不挡反向的"执行撞重试"——ripple-retry 刻意不写
-    # _runner._background_tasks：那个 dict 每 thread 一槽，写入会顶掉工作流自己的条目，
-    # 把 /pause、/cancel、/resume 的 cancel() 靶子换成重试。
-    if _runner.process_has_active_task(thread_id):
+    # 第二个谓词回答槽答不了的那一格：本进程是否已有一次重试在起/在跑。ripple-retry
+    # 刻意不写 _runner._background_tasks（那个 dict 每 thread 一槽，写入会顶掉工作流
+    # 自己的条目，把 /pause、/cancel、/resume 的 cancel() 靶子换成重试），所以槽看不见
+    # 它；租约也看不见同进程的第二个持有者（owner_id 是进程，§7.1），于是由
+    # _runner._retry_tasks 单独登记，且只在这两个重试入口被读——不进通用 busy 谓词。
+    # 范围：只挡"重试撞本进程的执行/重试"，不挡反向的"执行撞重试"。
+    if _runner.process_has_active_task(thread_id) or _runner.retry_in_flight(thread_id):
         return success(
             data={
                 "thread_id": thread_id,
@@ -280,7 +283,23 @@ async def retry_ripple_analysis(
             if _runner._detached_tasks.get(thread_id) is asyncio.current_task():
                 _runner._detached_tasks.pop(thread_id, None)
 
-    task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
+    # 领取重试闸门：在 create_task 之前同步完成，中间没有 await，所以两个并发请求
+    # 不可能都领到 —— 输的那个根本不会创建任务。领不到说明另一次重试在起/在跑。
+    if not _runner.claim_retry(thread_id):
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "工作流正在运行，无法重试。",
+            }
+        )
+    try:
+        task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
+    except BaseException:
+        # 领取后没拿到任务就把闸门还回去，否则该线程到重启前都起不了重试。
+        _runner.abandon_claim(thread_id)
+        raise
+    _runner.attach_retry(thread_id, task)
     # Out-of-slot registry -- declaration and reasoning in _runner.py; §7.1.
     _runner._detached_tasks[thread_id] = task
     print(f"[ripple-retry] Task created for {thread_id}: {task.get_name()}", flush=True)
@@ -331,8 +350,11 @@ async def retry_publish(
     # 在跑"，两个方向都会错：租约写入是 best-effort，存储故障时会有"活任务却查不到
     # 租约"，据此放行就起第二份执行；反过来重启后死进程的租约在 TTL 内仍算活着，据此
     # 拒绝会让用户刚点的重试静默失效（200 但什么都没跑）。
+    # 第二个谓词回答槽答不了的那一格：本进程是否已有一次重试在起/在跑 —— ripple-retry
+    # 不进槽，槽看不见它；租约也看不见同进程的第二个持有者（§7.1）。它只在这两个重试
+    # 入口被读，不进通用 busy 谓词。
     # 两条都钉在 tests/unit/api/test_serialization_guards_stay_local.py。
-    has_active = _runner.process_has_active_task(thread_id)
+    has_active = _runner.process_has_active_task(thread_id) or _runner.retry_in_flight(thread_id)
     if has_active:
         return success(
             data={
@@ -499,7 +521,21 @@ async def retry_publish(
                 if _runner._background_tasks.get(thread_id) is asyncio.current_task():
                     _runner._background_tasks.pop(thread_id, None)
 
-    task = asyncio.create_task(_run_publish_retry(), name=f"publish-retry-{thread_id}")
+    # 领取重试闸门：同 _run_retry 的那一处，在 create_task 之前同步完成。
+    if not _runner.claim_retry(thread_id):
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "工作流正在运行，无法重试。",
+            }
+        )
+    try:
+        task = asyncio.create_task(_run_publish_retry(), name=f"publish-retry-{thread_id}")
+    except BaseException:
+        _runner.abandon_claim(thread_id)
+        raise
+    _runner.attach_retry(thread_id, task)
     task.add_done_callback(_on_task_done(thread_id))
     _runner._background_tasks[thread_id] = task
 

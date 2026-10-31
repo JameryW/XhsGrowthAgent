@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist: ruff/format/mypy, API route patterns, test conventions"}
+{"file": "docs/execution-plane.md", "reason": "the ruling and claim-table invariants this ticket must keep green"}

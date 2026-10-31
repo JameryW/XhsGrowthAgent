@@ -300,6 +300,28 @@ def _guard_calls(path: Path, handler: str) -> int:
     return sum(1 for call in _calls_in(path, handler) if _callee(call) == "process_has_active_task")
 
 
+def _gate_calls(path: Path, handler: str) -> int:
+    """Retry-gate reads in one repair path (``retry_in_flight``).
+
+    The third answer has exactly two readers -- the two repair entry points -- and
+    this number keeps the reader set from growing quietly.
+    """
+    return sum(1 for call in _calls_in(path, handler) if _callee(call) == "retry_in_flight")
+
+
+def _the_retry_gate_cleanup_is_a_done_callback(path: Path) -> bool:
+    """Whether ``attach_retry`` releases the gate through a done callback.
+
+    A ``finally`` inside the coroutine is not equivalent: a task cancelled before
+    its first turn never runs it, so the gate would stay closed for the thread
+    until the process restarted.
+    """
+    for func in _functions(ast.parse(path.read_text(encoding="utf-8"))):
+        if func.name == "attach_retry":
+            return "add_done_callback" in ast.unparse(func)
+    raise AssertionError(f"no attach_retry in {path.name}")
+
+
 def _done_callback_calls(path: Path, handler: str) -> int:
     """``add_done_callback`` in one repair path -- the DB-facing half of a retry."""
     return sum(1 for call in _calls_in(path, handler) if _callee(call) == "add_done_callback")
@@ -1108,6 +1130,19 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
     ),
     "the_detached_self_cleanup_is_identity_guarded": lambda: (
         the_detached_self_cleanup_is_identity_guarded(ACTIONS, "_run_retry")
+    ),
+    # §7.1 -- the retry gate (票 5an): a third answer, read by two handlers only
+    "retry_gate_task_write_sites": lambda: _registry_task_writes(BACKEND, "_retry_tasks"),
+    "retry_gate_predicate_definitions": lambda: _definitions(RUNNER, "retry_in_flight"),
+    "retry_handlers_reading_the_retry_gate": lambda: (
+        _gate_calls(ACTIONS, "retry_ripple_analysis") + _gate_calls(ACTIONS, "retry_publish")
+    ),
+    "retry_gate_claim_sites": lambda: len(_call_sites(BACKEND, "claim_retry")),
+    "busy_answerers_reading_the_retry_gate": lambda: _busy_answerers_reading(
+        RUNNER, "_retry_tasks"
+    ),
+    "retry_gate_cleanup_uses_a_done_callback": lambda: _the_retry_gate_cleanup_is_a_done_callback(
+        RUNNER
     ),
     "repair_paths_using_the_shared_serialization_sentence": lambda: (
         _paths_saying_the_serialization_sentence()

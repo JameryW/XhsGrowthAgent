@@ -100,6 +100,67 @@ async def cancel_detached_and_wait(thread_id: str) -> None:
     await asyncio.gather(task, return_exceptions=True)
 
 
+# Repairs (ripple-retry / publish-retry) that are being started or are in flight
+# *in this process*.  A third question, narrower than either answer above: the
+# slot asks "is the workflow running", ``_detached_tasks`` asks "what must the
+# preempting canceller stop", and this asks "may another repair start".  It exists
+# because two repairs could take flight together -- ripple-retry deliberately
+# stays out of the slot, so the guards, which read the slot, could not see each
+# other.  The lease cannot answer it either: a second holder inside this process
+# is granted, because ``owner_id`` identifies the process and not the task
+# (docs/execution-plane.md §7.1).  Nothing OR-s this table into
+# ``process_has_active_task`` / ``has_active_execution``: those are read by twelve
+# call sites, and a repair in flight is not "the workflow is running".
+_retry_tasks: dict[str, asyncio.Task[Any] | None] = {}
+
+
+def retry_in_flight(thread_id: str) -> bool:
+    """Whether a retry for *thread_id* is being started or is running here."""
+    if thread_id not in _retry_tasks:
+        return False
+    task = _retry_tasks[thread_id]
+    return task is None or not task.done()
+
+
+def claim_retry(thread_id: str) -> bool:
+    """Claim the thread's retry gate; ``False`` when one is already held.
+
+    Synchronous on purpose: the entry is planted in one event-loop step, so two
+    requests that both passed the read-only guard cannot both reach
+    ``create_task`` -- the loser never creates the task at all.  The value stays
+    ``None`` until :func:`attach_retry` binds the task; ``None`` means "claimed,
+    task not created yet" and answers :func:`retry_in_flight` as busy.
+    """
+    if retry_in_flight(thread_id):
+        return False
+    _retry_tasks[thread_id] = None
+    return True
+
+
+def attach_retry(thread_id: str, task: asyncio.Task[Any]) -> None:
+    """Bind the newly created *task* to its claim and release it on settle."""
+    _retry_tasks[thread_id] = task
+    task.add_done_callback(lambda done: _forget_retry(thread_id, done))
+
+
+def abandon_claim(thread_id: str) -> None:
+    """Drop a claim that never got a task (the ``create_task`` call raised)."""
+    if thread_id in _retry_tasks and _retry_tasks[thread_id] is None:
+        _retry_tasks.pop(thread_id, None)
+
+
+def _forget_retry(thread_id: str, task: asyncio.Task[Any]) -> None:
+    """Release the gate when *task* settles, including cancelled-before-start.
+
+    A ``finally`` inside the coroutine would not do: a task cancelled before its
+    first turn never runs it, and the gate would stay closed for the thread until
+    the process restarted.  The identity test keeps a stale callback from popping
+    a newer task's entry.
+    """
+    if _retry_tasks.get(thread_id) is task:
+        _retry_tasks.pop(thread_id, None)
+
+
 async def _lease_is_held(thread_id: str) -> bool:
     """Best-effort lease read. A broken store answers "not held", not "held"."""
     try:

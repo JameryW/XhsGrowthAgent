@@ -1,0 +1,32 @@
+{
+  "id": "retry-vs-retry-gate",
+  "name": "retry-vs-retry-gate",
+  "title": "重试撞重试串行化闸门 —— 一个既不该进槽、又该被守卫看见的表（票 5an）",
+  "description": "补 execution-plane §7.1 留给下一任务的唯一输入：同一进程内 ripple-retry / publish-retry 互相看不见，两次重试可同时在飞。实现一个不扩宽通用 busy 谓词的重试声明表 + 原子领取，覆盖两种重试的入口守卫；补抓测试、文档与 claim 值。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/api/routes,tests/unit/api,tests/unit/scripts,docs",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/api/routes/_runner.py",
+    "backend/api/routes/_wf_actions.py",
+    "tests/unit/api/test_retry_vs_retry_gate.py",
+    "tests/unit/scripts/test_execution_plane_claims.py",
+    "docs/execution-plane.md"
+  ],
+  "notes": "IMPLEMENTED 2026-10-31. Closes the single open input of execution-plane §7.1: two repairs could be in flight together because the guards read only the slot (ripple-retry deliberately stays out of it) and the lease grants a second holder of the same process. Shape chosen: a third table, `_runner._retry_tasks` (thread_id -> task | None), with claim-before-create_task (synchronous, so two concurrent requests cannot both start; the loser never creates a task), attach_retry binding the task + done callback (a `finally` would not run for a task cancelled before its first turn), abandon_claim for the create_task-raised path, and identity-guarded cleanup. Both entry guards now ask `process_has_active_task(...) or retry_in_flight(...)`; nothing OR-s the new table into the two general busy answers (claim `busy_answerers_reading_the_retry_gate = 0`). Not closed, deliberately: cross-process retry-vs-retry stays the lease's job; the execution-vs-retry direction is unchanged; pre-claim validation writes (publish-retry force) may be repeated by the loser (same value, idempotent). Tests: tests/unit/api/test_retry_vs_retry_gate.py 13 passed (both directions, concurrent rendezvous without clock samples, cancel-before-first-turn, abandon, identity guard, static non-widening assertions); execution-plane claim table + anchors + citation corpus green; claim test gained 6 values (2 write sites / 1 predicate / 2 handler readers / 2 claim sites / 0 busy answerers / done-callback cleanup). Docs: §7.1 input list now empty and records the ruling; §6 corrected 34 -> 38 rows (4 previously unlisted task-spawn sites) and line refs remapped; agent-os + memory-promotion drift fixed in the same round (separate commit). ruff check + ruff format --check green.",
+  "meta": {}
+}
