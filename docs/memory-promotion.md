@@ -1,6 +1,7 @@
-# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选 + 人审写入 + TTL 默认）
+# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选 + 人审写入 + TTL 默认 + policy_version）
 
-> 状态：**Slice A–D + 人审写入面（票 5y）+ TTL 默认（票 5z / PRD §9 Q2）已落**
+> 状态：**Slice A–D + 人审写入面（票 5y）+ TTL 默认（票 5z / PRD §9 Q2）+
+> policy_version 来源（票 5aa / PRD §9 Q6）已落**
 > （`backend/memory/promotion.py` 协议；`promotion_ledger.py` append-only 账本；
 > `promotion_observations.py` Creative Memory style 观测的 observe-only 通道；
 > `GET /api/creator-agent/memory-promotions` 只读管理面；
@@ -10,10 +11,13 @@
 > + `scripts/observe_hy_promotions.py`：hy-memory 候选 **REVIEW** 接入；
 > `promotion_review.py`：人审 `approved`/`dismissed` 写路径；
 > `promotion_ttl.py`：全 ns 默认 `ttl_seconds=null`（永不过期，只靠 supersede）+
-> 调用方 `ttl_expired_for` 助手）。
+> 调用方 `ttl_expired_for` 助手；
+> `DEFAULT_PROMOTION_POLICY_VERSION` + `default_promotion_policy()`：机判决
+> `policy_version` 的 Git 常量权威来源）。
 > 设计依据：`.trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md`；
 > 人审票：`.trellis/tasks/10-29-memory-promotion-review-write/prd.md`；
-> TTL 票：`.trellis/tasks/10-31-memory-promotion-ttl-defaults/prd.md`。
+> TTL 票：`.trellis/tasks/10-31-memory-promotion-ttl-defaults/prd.md`；
+> policy_version 票：`.trellis/tasks/10-31-memory-promotion-policy-version/prd.md`。
 > 路线图出处：`docs/agent-os-upgrade-2026q4.md` §3 第 7 行。
 
 ## 1. 这一层是什么（以及不是什么）
@@ -39,7 +43,7 @@ prompt"必须能从仓库自己的数据复算。所以 SDK 的抽取只是**候
 | `PromotionCandidate` | 候选来源适配器（Slice B/D） | `source_ref` 必须可解析；`source_version` 必须可排序（ISO-8601 或行版本） |
 | `SourceCheck` | 调用方的**窄 reader** | reader 读失败**抛异常**（本层没有 fallback）；"读到了但不存在"是 `present=False`；`degraded=True` 表示 reader 本身不可用 |
 | `ExistingEntry` | 目标命名空间的晋升记录（Slice B 的 ledger） | 只用于键级去重，不看正文 |
-| `PromotionPolicy` | 部署配置 | `min_samples` 默认 5；默认只允许 `internal_fact` 自动晋升；`allowed_namespaces=None` 表示不限制 |
+| `PromotionPolicy` | 部署配置（经 `default_promotion_policy()`） | `min_samples` 默认 5；默认只允许 `internal_fact` 自动晋升；`allowed_namespaces=None` 表示不限制；`policy_version` 来自 `DEFAULT_PROMOTION_POLICY_VERSION`（票 5aa） |
 
 **候选形状的硬约束**（`__post_init__` 校验，违反即 `ValueError`，不是 REFUSE）：
 非空 `namespace/key/body/source_ref/observed_at`；`sample_count >= 0`；
@@ -298,6 +302,23 @@ body：`account_id` + `disposition`（`approved` \| `dismissed`，复用
 将来若要给某 ns 设天数：只改 `PROMOTION_TTL_SECONDS` + 测试，不改 `decide_promotion`。
 不做自动扫 stale / 删除 / 重晋升（仍在 out of scope）。
 
+## 10.1 policy_version 来源（票 5aa / PRD §9 Q6）
+
+**裁决**：`decided_by="machine"` 时，`policy_version` 的唯一权威来源是 Git 模块常量
+`DEFAULT_PROMOTION_POLICY_VERSION`（当前值 `"v1"`），经 `default_promotion_policy()`
+工厂出口。不引入 env / 远端配置——同二进制同版本，审计跟 commit。
+
+| 职责 | 位置 |
+|---|---|
+| 常量 `DEFAULT_PROMOTION_POLICY_VERSION` | `backend/memory/promotion.py` |
+| 工厂 `default_promotion_policy() -> PromotionPolicy` | 同上；`decide_promotion(..., policy=None)` 走工厂 |
+| dataclass 默认 | `PromotionPolicy.policy_version` 引用同一常量（禁止散落字面量） |
+| 人审行 | 仍复用原 REVIEW 行的 `policy_version`（票 5y；不重新发明） |
+
+**Bump 规则**：改变会影响机判决的字段（`min_samples` /
+`machine_promotable_classes` / `allowed_namespaces` 语义）时**必须** bump 常量；
+仅文档/注释改动不 bump。将来改阈值：只改常量 + 测试 + 本段说明，不在调用方另写版本串。
+
 ## 11. 明确不在这里的东西
 
 - **协议层不读任何存储**：来源行、证据、已有记录都由调用方读好再传；
@@ -320,5 +341,7 @@ body：`account_id` + `disposition`（`approved` \| `dismissed`，复用
 - ~~Q1 人审入口 + 人审写入面~~ **已落（票 5y）**：`POST .../memory-promotions/{id}/review`；
 - ~~Q2 TTL 默认值~~ **已落（票 5z）**：全 ns 默认 `null` + supersede-only；
   `promotion_ttl.py` 单一解析/判定入口；
-- 行 7 的四片 + 人审写入 + TTL 默认全部落地；剩下的是 PRD §9 的开放问题（语义近邻成本、
-  谁算 `decided_by="machine"` 的 policy 来源）—— 它们不再阻塞行 7 的"有显式流水线"判定。
+- ~~Q6 `policy_version` 来源~~ **已落（票 5aa）**：`DEFAULT_PROMOTION_POLICY_VERSION` +
+  `default_promotion_policy()`；审计跟 commit，无 env/远端；
+- 行 7 的四片 + 人审写入 + TTL 默认 + policy_version 全部落地；剩下的是 PRD §9 的开放问题
+  （语义近邻成本、sample 冷却窗口）—— 它们不再阻塞行 7 的"有显式流水线"判定。

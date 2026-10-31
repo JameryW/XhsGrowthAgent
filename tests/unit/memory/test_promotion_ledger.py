@@ -17,6 +17,7 @@ from langgraph.store.memory import InMemoryStore
 
 from backend.context.models import TrustClass
 from backend.memory.promotion import (
+    DEFAULT_PROMOTION_POLICY_VERSION,
     ExistingEntry,
     PromotionCandidate,
     PromotionDecision,
@@ -101,7 +102,7 @@ def test_append_then_read_is_lossless() -> None:
     assert record.verified is True
     assert record.supersedes == ()
     assert record.decided_by == "machine"
-    assert record.policy_version == "v1"
+    assert record.policy_version == DEFAULT_PROMOTION_POLICY_VERSION
     assert record.recorded_at == "2026-10-21T10:00:00+00:00"
 
 
@@ -242,7 +243,7 @@ def test_current_entries_derives_from_supersede_edges() -> None:
             verified=True,
             supersedes=(),
             decided_by="machine",
-            policy_version="v1",
+            policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
             recorded_at="2026-10-21T09:00:00Z",
         ),
         PromotionRecord(
@@ -258,7 +259,7 @@ def test_current_entries_derives_from_supersede_edges() -> None:
             verified=True,
             supersedes=(old_id,),
             decided_by="machine",
-            policy_version="v1",
+            policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
             recorded_at="2026-10-21T10:00:00Z",
         ),
     )
@@ -282,7 +283,7 @@ def test_non_promote_records_never_enter_the_current_set() -> None:
         verified=True,
         supersedes=(),
         decided_by="machine",
-        policy_version="v1",
+        policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
     )
     record = PromotionRecord(
         promotion_id=promotion_id_for(duplicate, source_version=_VERSION),
@@ -297,7 +298,7 @@ def test_non_promote_records_never_enter_the_current_set() -> None:
         verified=True,
         supersedes=(),
         decided_by="machine",
-        policy_version="v1",
+        policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
         recorded_at="2026-10-21T09:00:00Z",
     )
     assert current_entries((record,)) == ()
@@ -318,7 +319,7 @@ def test_two_current_records_for_one_key_raise() -> None:
             verified=True,
             supersedes=(),
             decided_by="machine",
-            policy_version="v1",
+            policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
             recorded_at="2026-10-21T09:00:00Z",
         )
 
@@ -340,7 +341,7 @@ def test_a_record_round_trips_through_its_stored_dict() -> None:
         verified=True,
         supersedes=("promo_1", "promo_2"),
         decided_by="machine",
-        policy_version="v1",
+        policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
         recorded_at="2026-10-21T09:00:00Z",
     )
     assert PromotionRecord.from_dict(record.to_dict()) == record

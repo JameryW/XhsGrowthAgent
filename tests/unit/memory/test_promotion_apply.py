@@ -18,6 +18,7 @@ from langgraph.store.memory import InMemoryStore
 
 from backend.creator_agent.models import ContentObservation, ContentObservationKind
 from backend.memory.promotion import (
+    DEFAULT_PROMOTION_POLICY_VERSION,
     PromotionDisposition,
     PromotionReason,
     decide_promotion,
@@ -145,7 +146,7 @@ class TestWritePromotedMemory:
         assert value["trust_class"] == "internal_fact"
         assert value["ttl_seconds"] is None
         assert value["promoted_at"] == "2026-10-21T10:00:00+00:00"
-        assert value["policy_version"] == "v1"
+        assert value["policy_version"] == DEFAULT_PROMOTION_POLICY_VERSION
         assert value["decided_by"] == "machine"
         assert ledger is not None
 

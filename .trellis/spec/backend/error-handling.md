@@ -514,6 +514,43 @@ PromotionCandidate(..., ttl_seconds=resolve_promotion_ttl(namespace))
 # SourceCheck.ttl_expired = ttl_expired_for(candidate, now=clock)
 ```
 
+## Scenario: Memory Promotion policy_version source (票 5aa)
+
+### Convention
+
+- Machine `policy_version` has one Git-pinned authority:
+  `DEFAULT_PROMOTION_POLICY_VERSION` in `backend/memory/promotion.py`. No env
+  or remote config — audit follows the commit that last bumped the constant.
+- Default construction goes through `default_promotion_policy()` (and
+  `decide_promotion(..., policy=None)` uses that factory). Do not scatter a
+  hard-coded policy_version string at call sites.
+- Bump the constant when a change alters machine-decision semantics
+  (`min_samples`, `machine_promotable_classes`, or `allowed_namespaces`).
+  Docs/comment-only edits do not bump.
+- Human-review rows still reuse the REVIEW row's `policy_version` (票 5y);
+  they never re-mint from the constant.
+
+### Wrong vs Correct
+
+#### Wrong
+```python
+policy = PromotionPolicy(policy_version="v1")  # second authority / magic literal
+decision = decide_promotion(candidate, source=check, policy=policy)
+```
+
+#### Correct
+```python
+from backend.memory.promotion import (
+    DEFAULT_PROMOTION_POLICY_VERSION,
+    default_promotion_policy,
+    decide_promotion,
+)
+
+decision = decide_promotion(candidate, source=check)  # factory + constant
+assert decision.policy_version == DEFAULT_PROMOTION_POLICY_VERSION
+# or: policy = default_promotion_policy()
+```
+
 ## Scenario: Creator Agent Evidence Graph lookup
 
 Evidence Graph detail routes translate a missing or cross-account node into

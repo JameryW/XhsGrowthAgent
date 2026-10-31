@@ -45,6 +45,7 @@ from enum import StrEnum
 from backend.context.models import TrustClass
 
 __all__ = [
+    "DEFAULT_PROMOTION_POLICY_VERSION",
     "DedupeVerdict",
     "ExistingEntry",
     "PromotionCandidate",
@@ -55,7 +56,16 @@ __all__ = [
     "SourceCheck",
     "candidate_id_for",
     "decide_promotion",
+    "default_promotion_policy",
 ]
+
+#: Git-pinned authority for machine ``policy_version`` (票 5aa / PRD §9 Q6).
+#: Audit follows the commit that last changed this constant — not env / remote
+#: config. Bump when a change alters machine-decision semantics
+#: (``min_samples``, ``machine_promotable_classes``, or ``allowed_namespaces``);
+#: docs/comment-only edits do not bump. Human-review rows reuse the REVIEW
+#: row's ``policy_version`` and never re-mint from this constant.
+DEFAULT_PROMOTION_POLICY_VERSION = "v1"
 
 
 class PromotionDisposition(StrEnum):
@@ -234,12 +244,16 @@ class PromotionPolicy:
     ``backend.creator_agent.proposals`` answer the same question ("how much
     measured evidence counts"), so they are kept numerically aligned by
     convention; changing one without the other is a review point.
+
+    ``policy_version`` defaults to ``DEFAULT_PROMOTION_POLICY_VERSION``. Prefer
+    ``default_promotion_policy()`` over constructing a bare ``PromotionPolicy()``
+    when the intent is "use the Git-pinned deployment default".
     """
 
     min_samples: int = 5
     machine_promotable_classes: tuple[TrustClass, ...] = (TrustClass.INTERNAL_FACT,)
     allowed_namespaces: tuple[str, ...] | None = None
-    policy_version: str = "v1"
+    policy_version: str = DEFAULT_PROMOTION_POLICY_VERSION
 
     def __post_init__(self) -> None:
         if self.min_samples < 1:
@@ -249,6 +263,17 @@ class PromotionPolicy:
         for trust_class in self.machine_promotable_classes:
             if not isinstance(trust_class, TrustClass):
                 raise ValueError("machine_promotable_classes must hold TrustClass members")
+
+
+def default_promotion_policy() -> PromotionPolicy:
+    """Return the Git-pinned default policy (票 5aa).
+
+    Reads ``DEFAULT_PROMOTION_POLICY_VERSION`` at call time so tests can
+    monkeypatch the constant and observe the change on the next decision.
+    Do not scatter a hard-coded policy_version string at call sites — bump
+    the module constant instead.
+    """
+    return PromotionPolicy(policy_version=DEFAULT_PROMOTION_POLICY_VERSION)
 
 
 @dataclass(frozen=True)
@@ -368,7 +393,7 @@ def decide_promotion(
     which is why the unversioned check only has to look at the candidate.
     """
     if policy is None:
-        policy = PromotionPolicy()
+        policy = default_promotion_policy()
 
     if source.degraded:
         return _decision(

@@ -22,6 +22,7 @@ from backend.api.middleware import error_handler_middleware
 from backend.api.routes.creator_agent import router
 from backend.context.models import TrustClass
 from backend.memory.promotion import (
+    DEFAULT_PROMOTION_POLICY_VERSION,
     DedupeVerdict,
     PromotionCandidate,
     PromotionDecision,
@@ -111,7 +112,7 @@ def _seed_review(store: InMemoryStore) -> str:
         verified=True,
         supersedes=(),
         decided_by="machine",
-        policy_version="v1",
+        policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
     )
     asyncio.run(
         PromotionLedger(store).append(
@@ -154,7 +155,7 @@ def test_a_record_is_returned_losslessly(_owned: list[tuple[str, str]]) -> None:
     assert record["verified"] is True
     assert record["supersedes"] == []
     assert record["decided_by"] == "machine"
-    assert record["policy_version"] == "v1"
+    assert record["policy_version"] == DEFAULT_PROMOTION_POLICY_VERSION
     assert record["recorded_at"] == "2026-10-21T10:00:00+00:00"
 
 
@@ -238,7 +239,7 @@ def _seed_hy_review(store: InMemoryStore) -> str:
         verified=True,
         supersedes=(),
         decided_by="machine",
-        policy_version="v1",
+        policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
     )
     asyncio.run(
         PromotionLedger(store).append(
