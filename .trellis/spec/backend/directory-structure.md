@@ -186,7 +186,13 @@ backend/
 │   ├── __init__.py                      # Exports: MemoryManager, SceneDatabase
 │   ├── store.py                         # MemoryManager (namespace management per account)
 │   ├── content_history.py               # Content history helpers
-│   └── scene_database.py                # SceneDatabase (7-day expiry, per-scene caching)
+│   ├── scene_database.py                # SceneDatabase (7-day expiry, per-scene caching)
+│   ├── promotion.py                     # Pure decide_promotion protocol (Slice A)
+│   ├── promotion_ledger.py              # Append-only memory_promotions ledger (+ body snapshot)
+│   ├── promotion_apply.py               # Machine PROMOTE: ledger first, then write_promoted_memory
+│   ├── promotion_review.py              # Human REVIEW close (票 5y): decided_by=human, no decide_promotion re-run
+│   ├── promotion_hy.py                  # hy-memory candidates → machine REVIEW only
+│   └── promotion_observations.py        # Style observe-only pass + target entry helpers
 │
 └── omp/                                 # oh-my-pi (omp) terminal agent extensions
     └── extensions/
