@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "promotion module map"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar for constants/alignment tests"}
+{"file": "docs/memory-promotion.md", "reason": "Close Q4; document sample floor + no cooldown"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "Parent §9 Q4"}
+{"file": ".trellis/tasks/10-31-memory-promotion-sample-threshold/prd.md", "reason": "Locked keep-5 / no-cooldown decision"}

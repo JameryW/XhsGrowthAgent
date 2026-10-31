@@ -184,7 +184,11 @@ PromotionDecision(frozen)
    只靠 supersede）？
 3. **语义近邻去重的成本**：只在 `NEEDS_REVIEW` 时做（省一次 embedding）还是每次去重都做？
    语义 index 不可用时是 `REVIEW` 还是 `REFUSE`？
-4. **machine-promote 阈值**：`sample_count >= 5` 是否够？要不要加"最近 N 天"冷却窗口？
+4. ~~**machine-promote 阈值**：`sample_count >= 5` 是否够？要不要加"最近 N 天"冷却窗口？~~
+   **已裁决（票 5ab）**：阈值保持 5，抽出 `DEFAULT_PROMOTION_MIN_SAMPLES`，与
+   `CreativeMemory.MIN_SAMPLES` 对齐（单测护栏）；MVP **不做**冷却窗口（dedupe /
+   supersede 已处理同键更新；冷却另开票且需 `ExistingEntry` 带 promote 时钟）。改
+   `min_samples` 仍须 bump `DEFAULT_PROMOTION_POLICY_VERSION`（票 5aa）。
 5. **账本存储**：~~BaseStore namespace 还是 Postgres 表？~~ **已裁决（票 5s）：
    BaseStore namespace `accounts/<account>/memory_promotions`**。理由：记录不可变、id 由
    `(candidate_id, source_version, disposition, reason, policy_version)` 派生 ⇒ 同 key 写

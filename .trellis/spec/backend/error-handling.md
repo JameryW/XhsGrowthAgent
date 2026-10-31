@@ -551,6 +551,45 @@ assert decision.policy_version == DEFAULT_PROMOTION_POLICY_VERSION
 # or: policy = default_promotion_policy()
 ```
 
+## Scenario: Memory Promotion sample threshold (票 5ab)
+
+### Convention
+
+- Machine-promote sample floor has one named constant:
+  `DEFAULT_PROMOTION_MIN_SAMPLES` in `backend/memory/promotion.py` (value `5`).
+  `PromotionPolicy.min_samples` and `default_promotion_policy()` read it — do not
+  hard-code `5` at call sites.
+- Keep it equal to `CreativeMemory.MIN_SAMPLES`; a unit test asserts the
+  equality so drift fails CI.
+- Changing the numeric floor alters decision semantics and **must** bump
+  `DEFAULT_PROMOTION_POLICY_VERSION` (票 5aa rule).
+- No cooldown window in MVP: do not add `cooldown_days` or scan ledger time.
+  Same-key updates already go through dedupe / supersede. Cooldown needs a
+  separate ticket plus promote timestamps on `ExistingEntry`.
+- Do not conflate with `proposals._DRAFT_MIN_SAMPLES` (draft gate, not
+  promotion).
+
+### Wrong vs Correct
+
+#### Wrong
+```python
+policy = PromotionPolicy(min_samples=5)  # magic literal / second authority
+# or: add cooldown_days without ExistingEntry promote clock
+```
+
+#### Correct
+```python
+from backend.memory.creative import CreativeMemory
+from backend.memory.promotion import (
+    DEFAULT_PROMOTION_MIN_SAMPLES,
+    default_promotion_policy,
+)
+
+assert DEFAULT_PROMOTION_MIN_SAMPLES == CreativeMemory.MIN_SAMPLES
+policy = default_promotion_policy()
+assert policy.min_samples == DEFAULT_PROMOTION_MIN_SAMPLES
+```
+
 ## Scenario: Creator Agent Evidence Graph lookup
 
 Evidence Graph detail routes translate a missing or cross-account node into
