@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar for key contracts"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "§10 MemoryManager uuid4 adjacent risk"}
+{"file": "backend/memory/promotion.py", "reason": "candidate_id_for pattern to mirror"}
+{"file": ".trellis/tasks/10-31-memory-manager-deterministic-keys/prd.md", "reason": "Locked deterministic-key decision"}

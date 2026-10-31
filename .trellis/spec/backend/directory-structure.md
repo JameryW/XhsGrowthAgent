@@ -183,8 +183,8 @@ backend/
 │   └── visual_types.py                  # ColorPalette, LayoutOption, StyleOption, SceneAnalysisResult
 │
 ├── memory/                              # LangGraph BaseStore management
-│   ├── __init__.py                      # Exports: MemoryManager, SceneDatabase
-│   ├── store.py                         # MemoryManager (namespace management per account)
+│   ├── __init__.py                      # Exports: MemoryManager, SceneDatabase, memory_record_key
+│   ├── store.py                         # MemoryManager + memory_record_key (票 5aj deterministic upsert keys)
 │   ├── content_history.py               # Content history helpers
 │   ├── scene_database.py                # SceneDatabase (7-day expiry, per-scene caching)
 │   ├── promotion.py                     # Pure decide_promotion protocol (Slice A); DEFAULT_PROMOTION_POLICY_VERSION + default_promotion_policy() (票 5aa / Q6); DEFAULT_PROMOTION_MIN_SAMPLES (票 5ab / Q4)

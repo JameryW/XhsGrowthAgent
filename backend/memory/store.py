@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import uuid
+import hashlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -10,6 +10,24 @@ if TYPE_CHECKING:
     # module load pulls langchain_core.runnables (~0.4s) on every import of
     # backend.memory.store (pulled by agents.base → MemoryManager). Deferred.
     from langgraph.store.base import BaseStore
+
+
+def memory_record_key(kind: str, text: str) -> str:
+    """Deterministic store key for insight / preference / strategy_note rows.
+
+    Same ``kind`` + stripped ``text`` always yields the same key so repeated
+    writes upsert instead of stacking uuid rows (票 5aj; mirrors
+    ``candidate_id_for`` sha256 + short-hex style). Metadata is not part of the
+    key — same text with different metadata overwrites the value.
+
+    Raises:
+        ValueError: empty or whitespace-only ``text`` (illegal input).
+    """
+    stripped = text.strip()
+    if not stripped:
+        raise ValueError("memory record text must be a non-empty string")
+    digest = hashlib.sha256(f"{kind}\x1f{stripped}".encode()).hexdigest()
+    return f"mem_{digest[:16]}"
 
 
 def _keyword_filter(items: list[Any], keywords: list[str]) -> list[Any]:
@@ -66,7 +84,7 @@ class MemoryManager:
     async def store_insight(self, store: BaseStore, insight: str, metadata: dict[str, Any]) -> None:
         await store.aput(
             self.insights_ns,
-            key=str(uuid.uuid4()),
+            key=memory_record_key("insight", insight),
             value={"insight": insight, **metadata},
         )
 
@@ -75,14 +93,14 @@ class MemoryManager:
     ) -> None:
         await store.aput(
             self.audience_ns,
-            key=str(uuid.uuid4()),
+            key=memory_record_key("preference", preference),
             value={"preference": preference, **data},
         )
 
     async def store_strategy_note(self, store: BaseStore, note: str, data: dict[str, Any]) -> None:
         await store.aput(
             self.strategy_ns,
-            key=str(uuid.uuid4()),
+            key=memory_record_key("strategy_note", note),
             value={"note": note, **data},
         )
 

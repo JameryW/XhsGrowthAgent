@@ -4,7 +4,39 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.memory.store import MemoryManager, _keyword_filter
+from backend.memory.store import MemoryManager, _keyword_filter, memory_record_key
+
+
+class TestMemoryRecordKey:
+    """票 5aj — deterministic keys for insight / preference / strategy_note."""
+
+    def test_same_text_same_key(self):
+        assert memory_record_key("insight", "周末发布效果好") == memory_record_key(
+            "insight", "周末发布效果好"
+        )
+
+    def test_strips_whitespace_before_hash(self):
+        assert memory_record_key("insight", "  hello  ") == memory_record_key("insight", "hello")
+
+    def test_different_text_different_key(self):
+        assert memory_record_key("insight", "a") != memory_record_key("insight", "b")
+
+    def test_different_kind_different_key(self):
+        assert memory_record_key("insight", "same") != memory_record_key("preference", "same")
+
+    def test_prefix_and_hex_shape(self):
+        key = memory_record_key("strategy_note", "发布时段优化")
+        assert key.startswith("mem_")
+        assert len(key) == len("mem_") + 16
+        assert all(c in "0123456789abcdef" for c in key.removeprefix("mem_"))
+
+    def test_empty_text_raises(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            memory_record_key("insight", "")
+
+    def test_whitespace_only_raises(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            memory_record_key("preference", "   \t\n  ")
 
 
 class TestKeywordFilter:
@@ -110,30 +142,57 @@ class TestMemoryManager:
 
     @pytest.mark.asyncio
     async def test_store_insight(self, manager, mock_store):
-        """store_insight calls store.aput."""
-        await manager.store_insight(mock_store, "美食话题互动率高", {"post_id": "123"})
+        """store_insight calls store.aput with deterministic key."""
+        text = "美食话题互动率高"
+        await manager.store_insight(mock_store, text, {"post_id": "123"})
 
         mock_store.aput.assert_called_once()
         call_args = mock_store.aput.call_args
         assert call_args.args[0] == manager.insights_ns
+        assert call_args.kwargs.get("key") == memory_record_key("insight", text)
+        assert call_args.kwargs.get("value") == {"insight": text, "post_id": "123"}
 
     @pytest.mark.asyncio
     async def test_store_audience_preference(self, manager, mock_store):
-        """store_audience_preference calls store.aput."""
-        await manager.store_audience_preference(mock_store, "偏好美食内容", {"category": "food"})
+        """store_audience_preference calls store.aput with deterministic key."""
+        text = "偏好美食内容"
+        await manager.store_audience_preference(mock_store, text, {"category": "food"})
 
         mock_store.aput.assert_called_once()
         call_args = mock_store.aput.call_args
         assert call_args.args[0] == manager.audience_ns
+        assert call_args.kwargs.get("key") == memory_record_key("preference", text)
+        assert call_args.kwargs.get("value") == {"preference": text, "category": "food"}
 
     @pytest.mark.asyncio
     async def test_store_strategy_note(self, manager, mock_store):
-        """store_strategy_note calls store.aput."""
-        await manager.store_strategy_note(mock_store, "发布时段优化", {"time": "18:00"})
+        """store_strategy_note calls store.aput with deterministic key."""
+        text = "发布时段优化"
+        await manager.store_strategy_note(mock_store, text, {"time": "18:00"})
 
         mock_store.aput.assert_called_once()
         call_args = mock_store.aput.call_args
         assert call_args.args[0] == manager.strategy_ns
+        assert call_args.kwargs.get("key") == memory_record_key("strategy_note", text)
+        assert call_args.kwargs.get("value") == {"note": text, "time": "18:00"}
+
+    @pytest.mark.asyncio
+    async def test_store_insight_same_text_reuses_key(self, manager, mock_store):
+        """Repeated writes of the same insight text land on one key (upsert)."""
+        text = "周末发布效果好"
+        await manager.store_insight(mock_store, text, {"v": 1})
+        await manager.store_insight(mock_store, text, {"v": 2})
+
+        assert mock_store.aput.call_count == 2
+        keys = [c.kwargs.get("key") for c in mock_store.aput.call_args_list]
+        assert keys[0] == keys[1] == memory_record_key("insight", text)
+        assert keys[0].startswith("mem_")
+
+    @pytest.mark.asyncio
+    async def test_store_insight_rejects_empty_text(self, manager, mock_store):
+        with pytest.raises(ValueError, match="non-empty"):
+            await manager.store_insight(mock_store, "  ", {"post_id": "123"})
+        mock_store.aput.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_recall_similar_content_empty(self, manager, mock_store):

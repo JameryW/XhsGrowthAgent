@@ -32,14 +32,14 @@ promotion_id 走到证据 id 与源版本。
 | 层 | 今天有什么 | 缺什么 |
 |---|---|---|
 | hy-memory（外部引擎，默认关） | `remember` / `recall` / `last_error`；pro 模式在 SDK 内做 LLM 抽取与冲突调和（reconciler 对仓库不透明）；降级经 `recall_hy_memory` 的 `DEGRADED` 可见 | 仓库**没有**任何"这条 SDK 抽取的记忆可否被信任"的判断；候选的 `source_ref` 只是 metadata 里的一段字符串，没人验证 |
-| `MemoryManager`（4 个命名空间） | 4 个写入方法全部 `store.aput(key=uuid4(), value=...)`，只追加、不看已有 | 没有 verify、没有 dedupe、没有 supersede、没有 provenance 字段 |
+| `MemoryManager`（4 个命名空间） | `store_content_record` 用 `post_id`；insight / preference / strategy_note 用 `memory_record_key`（票 5aj，同文 upsert；历史 uuid 行不迁移） | 没有 verify、没有 dedupe、没有 supersede、没有 provenance 字段（晋升闸门见本管道） |
 | Creative Memory（measured rows） | 行级实测（`engagement_rate` / `sample_count` / `proven_count` / `source_post_id`）；`deposit_style` 按 tone+visual 精确匹配合并并加权平均；`calibrate` 用实际结果回写；`deposit_*` / `calibrate` / `recall_*` / `_find_similar_style` durable 失败上抛（票 5ae / 5af / 5ag / 5ah） | 没有"这条实测证据是否够格变成策略结论"的闸门；没有决定记录（晋升闸门见本管道） |
 | Creator Agent（审查/学习） | ADR-0002 先审后学；`proposals.py` 把实测观测投影成确定性 `evidence_id`/`proposal_id` 的只读提案（Laplacian 置信度、按 `source_ref` 去重、草稿偏好有阈值）；`ModelRevision` append-only；`GET /model/evidence-proposals` + `POST /learning-signals/{id}/review` | 这条审查路径服务的是 **Creator Model**，不是 memory；没有任何东西把"证据 → 记忆"的晋升决策记下来 |
 | Context Compiler | `TrustClass`（`internal_fact` / `memory` / `external_document` / `model_generated` / `unspecified`）、`verified`、`ttl_seconds`、`source_version` 已存在并可选渲染；检索器把 content_history 映射为 `internal_fact`、其余三个命名空间为 `memory` | 这些字段是**渲染用的标签**，没有生产者做"验证"；trust 也还没参与 rerank（那是另一件事，见 §8） |
 
 **为什么现在不做会继续坏**：hy-memory 一旦启用 pro 模式，SDK 的 reconciler 会替我们决定
-"哪条记忆覆盖哪条"，而这个决定不在仓库的可审计范围内；`MemoryManager` 的 UUID 追加会让
-同一结论以多条并存形式进入 prompt，且没有任何字段能回答"它凭什么可信"。
+"哪条记忆覆盖哪条"，而这个决定不在仓库的可审计范围内；即便写入键已确定性（票 5aj），
+没有任何字段能回答"它凭什么可信"，也没有 verify → promote 闸门把候选挡在 prompt 外。
 
 ## 3. Decision（ADR-lite）
 
@@ -229,8 +229,11 @@ PromotionDecision(frozen)
   真实 miss 仍 `None`；store `asearch` 仍 best-effort warn + `None`。
 - hy-memory 的 `remember` 契约是"永不炸调用方 + 返回 None"（`docs/hy-memory.md` §1）——
   这是**外部增强层**的合理契约；本管道不依赖它做证明，但读取时要把 `last_error` 当事实。
-- `MemoryManager` 写入 key 是 `uuid4()`，所以今天**无法按键去重**；Slice C 引入确定性 key
-  （由 `candidate_id` 派生）会改变"同一结论可并存多条"的现状，需要迁移说明。
+- ~~`MemoryManager` 写入 key 是 `uuid4()`，所以今天**无法按键去重**~~
+  **已解决（票 5aj）**：`store_insight` / `store_audience_preference` /
+  `store_strategy_note` 改用 `memory_record_key(kind, text)`（`mem_` + sha256[:16]）；
+  同文 upsert；空 text `ValueError`；历史 uuid 行**不迁移**（新旧可并存，语义检索仍可见）；
+  `store_content_record` 仍用 `post_id`。Slice C 晋升写入继续用 `candidate_id_for`。
 
 ## 11. Definition of Done
 
