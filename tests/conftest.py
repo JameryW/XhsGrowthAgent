@@ -24,9 +24,7 @@ if sys.platform == "win32" and os.environ.get("DSH_SHELL") == "1":
         return _real_mkdir(path, 0o777 if mode == 0o700 else mode, dir_fd=dir_fd)
 
     os.mkdir = _mkdir_without_private_mode  # type: ignore[assignment]
-    os.environ.setdefault(
-        "PYTEST_DEBUG_TEMPROOT", tempfile.mkdtemp(prefix="dsh-pytest-temproot-")
-    )
+    os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", tempfile.mkdtemp(prefix="dsh-pytest-temproot-"))
 
 # Tests must never inherit a developer's local browser setting from `.env`.
 # The real-browser paths are opt-in and explicitly configured by the tests that
