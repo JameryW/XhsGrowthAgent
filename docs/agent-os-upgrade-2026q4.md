@@ -68,7 +68,7 @@
 | 3 | Event Log 是事实、Snapshot 是物化视图、Context 是临时视图 | 三者已分离（checkpoint / events / compiler） | ✅ 已满足 |
 | 4 | Replay 不重调 LLM，读已提交决策 | **节点级成立**（superstep 完成即不重跑）；**节点内不成立**（节点重试会重调 LLM） | ⚠️ 部分（见 §4） |
 | 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；票 5c 为互动两条加上 `engagement_effects`（提交前 claim）；对账仍为"记录 + ContentHistory 匹配"，无自动平台查询 | ✅ 已满足（对账增强留 P1） |
-| 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；trust 尚未参与 rerank | ✅ 已满足（排序融合留 P1 后续） |
+| 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；票 5ad 起 `rerank_items` 乘 `TRUST_RERANK_WEIGHTS`（`verified`/TTL 仍不进排序） | ✅ 已满足 |
 | 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线；**四片 + 人审写入 + TTL / policy_version / 样本阈值 / 语义近邻 hint 已落**：A 纯决策协议；B 账本 + observe + 管理面 + 调用者；C 独立重读 + 首次机晋升 + provenance 透传；D hy 候选机器 REVIEW（`promotion_hy.py`）；票 5y `POST .../memory-promotions/{id}/review` 人审 `approved`/`dismissed`（`promotion_review.py`，human-authored 账本行，不重跑 `decide_promotion`）；票 5z 全 ns 默认 `ttl_seconds=null`（`promotion_ttl.py`，只靠 supersede）；票 5aa `DEFAULT_PROMOTION_POLICY_VERSION` + `default_promotion_policy()`（Git 常量权威，无 env/远端）；票 5ab `DEFAULT_PROMOTION_MIN_SAMPLES=5`（对齐 `CreativeMemory.MIN_SAMPLES`，无冷却）；票 5ac 仅 `NEEDS_REVIEW` 后语义近邻 hint（`promotion_semantic.py`，unavailable → skip-hint，永不自动合并）。PRD §9 开放项已清空 | ✅ 已满足（P1） |
 | 8 | 多 Agent 并行按 Artifact 分工 + Workspace 冲突 | 当前为单 Agent 串行图；无子 Agent、无并发 workspace | ❌ 缺（P2，先不建） |
 | 9 | Model Gateway 按阶段路由 + Verifier 触发公式 | P1-B Verifier 触发（§5.3）+ P2 恢复策略分派（§5.4）；`router.py` 仍按 TaskType 路由，无阶段/推理预算矩阵 | ⚠️ 部分（Verifier ✅ / 恢复分派 ✅ / 阶段路由 P2） |
@@ -140,7 +140,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 |---|---|---|---|
 | **P0-A（已完成）** | Progress Detector | `backend/state/progress.py` 纯函数库 + `kind:"progress"` 事件契约 + 单测；已接入结构化重试循环（log-only，§5.5）与 revise 回路（`detect_revision_stall`，§5.7） | 零行为变更即可先观测；为 revise 回路提供"是否在变好"的客观信号 |
 | **P0-B（已完成）** | 统一 Effect 账本 | `backend/state/effects.py` 六态账本；publish 成为第一个消费者（下文 §5.1） | 第二个外部副作用工具出现前必须完成，否则 F2 类故障会重演 |
-| **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
+| **P1-A（已完成）** | Context Provenance 扩展 | `ContextItem` 增加 `trust_class / verified / ttl_seconds / source_version`；渲染可选标注（默认关闭，基线零漂移）；票 5ad 起 trust 乘数进 `rerank_items`（§5.2） | 外部网页/记忆注入风险随 hy-memory 接入上升 |
 | **P1-B（已完成）** | Verifier 触发 | `backend/services/verification_policy.py`：风险下限 + 期望成本公式 + 预算降级；真实发布路径发射判定事件（§5.3） | 有 acceptance_signoff 人工验收作基线 |
 | **P2-部分（已完成）** | 恢复策略分派 | `backend/models/recovery_policy.py`：按错误类型分派 retry/degrade/escalate/stop，retry 层记录决策（§5.4） | 文章 recovery 表可直接落地，且不需要多模型路由矩阵 |
 | P2 | 子 Agent 并行（按 Artifact 分工） | 仅当出现明确的独立验收产出时启动；**证据采集器已就绪（§5.6）** | 当前串行图无瓶颈证据，不提前建 |
@@ -168,7 +168,8 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 生产方标注 | `item_to_context_item`：content_history → `INTERNAL_FACT`，其余三命名空间 → `MEMORY`；hy-memory 召回 → `MEMORY` + `verified=False` |
 | 渲染 | `compile(..., annotate_provenance=True)` 追加单行标签 `[source=… trust=… verified version=… ttl=…]`；**默认 False** —— P1b 基线钉住渲染字节，开启标注必须是显式迁移（同一次改动刷新快照） |
 | 零漂移证明 | `context_compiler_baseline.py --compare --drift-pct 5` → `drift within threshold`，107 项 context 测试全绿 |
-| 未做（诚实边界） | trust 尚未进入 rerank 排序；`verified=True` 本切片无任何生产者（没有可校验的来源），字段先就位 |
+| 排序融合（票 5ad） | `rerank_items` 有效置信度 = `confidence * source_weight * trust_weight`；封闭表 `TRUST_RERANK_WEIGHTS`（`internal_fact=1.0` / `memory=0.85` / `model_generated=0.7` / `external_document=0.55` / `unspecified=0.5`）；始终应用、无开关；缺字段走 `UNSPECIFIED` |
+| 诚实边界（仍成立） | `verified` / TTL **仍不**进排序（生产者仍少）；无 LLM rerank；`verified=True` 生产者仍稀缺，字段先就位 |
 
 ### 5.3 P1-B 落地记录（Verifier 触发）
 

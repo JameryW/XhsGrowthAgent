@@ -18,6 +18,7 @@ from backend.context.models import (
     PromptLayer,
     RetrievalResult,
     RunContext,
+    TrustClass,
 )
 from backend.context.segments import parse_system_segments
 
@@ -27,6 +28,16 @@ _TRIM_ORDER: tuple[PromptLayer, ...] = (
     PromptLayer.L5_OBSERVATION,
     PromptLayer.L4_MEMORY,
 )
+
+# Closed trust multipliers for deterministic rerank (票 5ad / P1-A follow-up).
+# Relative order is load-bearing; values are measurable constants, not learned.
+TRUST_RERANK_WEIGHTS: Mapping[TrustClass, float] = {
+    TrustClass.INTERNAL_FACT: 1.0,
+    TrustClass.MEMORY: 0.85,
+    TrustClass.MODEL_GENERATED: 0.7,
+    TrustClass.EXTERNAL_DOCUMENT: 0.55,
+    TrustClass.UNSPECIFIED: 0.5,
+}
 
 
 def dedup_items(items: tuple[ContextItem, ...]) -> tuple[ContextItem, ...]:
@@ -55,20 +66,27 @@ def _recency_key(item: ContextItem) -> tuple[int, float]:
     return (0, -item.timestamp.timestamp())
 
 
+def _trust_weight(item: ContextItem) -> float:
+    """Lookup :data:`TRUST_RERANK_WEIGHTS`; missing/unknown → ``UNSPECIFIED``."""
+    return TRUST_RERANK_WEIGHTS.get(item.trust_class, TRUST_RERANK_WEIGHTS[TrustClass.UNSPECIFIED])
+
+
 def rerank_items(
     items: tuple[ContextItem, ...],
     source_weights: Mapping[str, float] | None = None,
 ) -> tuple[ContextItem, ...]:
     """Deterministic rerank (info.md D6').
 
-    Order: ``priority`` desc, then effective confidence (``confidence``
-    scaled by an optional per-source weight) desc, then recency desc.  The
-    sort is stable, so equal keys keep recall order.
+    Order: ``priority`` desc, then effective confidence
+    (``confidence * source_weight * trust_weight``) desc, then recency desc.
+    ``trust_weight`` always applies from :data:`TRUST_RERANK_WEIGHTS`
+    (``verified`` / TTL are not factors). The sort is stable, so equal keys
+    keep recall order.
     """
     weights = source_weights or {}
 
     def key(item: ContextItem) -> tuple[int, float, tuple[int, float]]:
-        effective = item.confidence * weights.get(item.source, 1.0)
+        effective = item.confidence * weights.get(item.source, 1.0) * _trust_weight(item)
         return (-item.priority, -effective, _recency_key(item))
 
     return tuple(sorted(items, key=key))

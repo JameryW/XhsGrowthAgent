@@ -1,6 +1,7 @@
 """Context Compiler package (P1b-S1 skeleton — decisions D1'-D6' in task info.md)."""
 
 from backend.context.compiler import (
+    TRUST_RERANK_WEIGHTS,
     ContextCompiler,
     apply_item_budget,
     dedup_items,
@@ -15,10 +16,12 @@ from backend.context.models import (
     RetrievalMode,
     RetrievalResult,
     RunContext,
+    TrustClass,
 )
 
 __all__ = [
     "LAYER_ORDER",
+    "TRUST_RERANK_WEIGHTS",
     "CompiledPrompt",
     "ContextCompiler",
     "ContextItem",
@@ -26,6 +29,7 @@ __all__ = [
     "RetrievalMode",
     "RetrievalResult",
     "RunContext",
+    "TrustClass",
     "apply_item_budget",
     "dedup_items",
     "estimate_tokens",

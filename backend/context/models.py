@@ -55,8 +55,8 @@ class TrustClass(StrEnum):
     Relevance and trust are different axes: an external page can match the
     query perfectly and still carry instructions we must not follow. The class
     is descriptive — enforcement stays in the Tool Gateway — but it travels
-    with the item so a rendered prompt (and any future ranker) can see where
-    the text came from.
+    with the item so a rendered prompt and deterministic ``rerank_items``
+    (via ``TRUST_RERANK_WEIGHTS``) can see where the text came from.
 
     ``UNSPECIFIED`` is the conservative default: a producer that never set a
     class must not be presented as trustworthy.
