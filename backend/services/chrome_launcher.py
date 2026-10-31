@@ -76,6 +76,15 @@ _SAFE_CACHE_DIR_NAMES = frozenset(
         "optimization_guide_model_store",
     }
 )
+# socat listen addresses for the CDP forwarder (see _ensure_socat_forwarder).
+# 10.0.0.10 is the podman host-gateway that containers resolve as
+# host.containers.internal — that is the only non-loopback address CDP needs.
+# 127.0.0.1 keeps host-side probe_port()/count_open_pages() working.
+# Override with XHS_SOCAT_CONTAINER_BIND=0.0.0.0 only for debugging on an
+# isolated host: CDP is unauthenticated remote control of a signed-in profile.
+_SOCAT_CONTAINER_BIND = os.environ.get("XHS_SOCAT_CONTAINER_BIND", "10.0.0.10")
+_SOCAT_HOST_BIND = "127.0.0.1"
+
 _DEFAULT_IDLE_TIMEOUT_SECONDS = 1800.0
 _DEFAULT_DISK_CACHE_SIZE_MB = 128
 _DEFAULT_MEMORY_WARNING_MB = 0
@@ -435,19 +444,27 @@ def _write_pidfile(profile_path: str, pid: int) -> None:
 
 
 async def _ensure_socat_forwarder(profile_path: str, port: int) -> int | None:
-    """Start a socat forwarder 0.0.0.0:<port> → 127.0.0.1:<internal_port>.
+    """Start socat forwarders ``<bind>:<port>`` → 127.0.0.1:<internal_port>.
 
     Chrome 144+ binds 127.0.0.1 only (ignores --remote-debugging-address=0.0.0.0),
-    so the backend container (via host.containers.internal) can't connect. socat
-    exposes the public ``port`` on 0.0.0.0 and forwards to Chrome's internal
-    loopback port. Chrome and socat use *different* ports (0.0.0.0:port would
-    conflict with 127.0.0.1:port since 0.0.0.0 subsumes loopback).
+    so the backend container can't connect directly. socat re-exposes the public
+    ``port`` on exactly two addresses:
 
-    No-op if 0.0.0.0:<port> is already listening (socat already up) or socat
-    isn't installed. Returns the socat pid, or None when not started.
+    * ``_SOCAT_CONTAINER_BIND`` (10.0.0.10 = ``host.containers.internal``) — the
+      address the backend container dials;
+    * ``127.0.0.1`` — so host-side callers (``probe_port`` / ``count_open_pages``
+      default to loopback, and the launcher itself polls the public port) keep
+      working.
+
+    ``0.0.0.0`` is deliberately never used: CDP has no authentication, so a
+    forwarder on the public NIC hands full remote control of a signed-in XHS
+    profile to anyone who can reach the port. Chrome and socat use *different*
+    ports (``<addr>:port`` would conflict with ``127.0.0.1:port`` otherwise).
+
+    Per-address idempotent: an address that already has a listener is skipped.
+    Returns the first socat pid, or None when nothing needed starting / socat is
+    missing / Chrome's internal port isn't up yet.
     """
-    if _port_bound_inet(port):
-        return None
     internal = _internal_cdp_port(port)
     if not await probe_port(internal, host="127.0.0.1"):
         return None
@@ -458,31 +475,38 @@ async def _ensure_socat_forwarder(profile_path: str, port: int) -> int | None:
             internal,
         )
         return None
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            bin_,
-            f"TCP-LISTEN:{port},bind=0.0.0.0,reuseaddr,fork",
-            f"TCP:127.0.0.1:{internal}",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-            start_new_session=True,
+
+    pids: list[int] = []
+    for addr in (_SOCAT_CONTAINER_BIND, _SOCAT_HOST_BIND):
+        if _addr_bound(port, addr):
+            continue
+        if addr == _SOCAT_HOST_BIND and _addr_bound(port, "0.0.0.0"):
+            continue  # an explicit 0.0.0.0 override already covers loopback
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                bin_,
+                f"TCP-LISTEN:{port},bind={addr},reuseaddr,fork",
+                f"TCP:127.0.0.1:{internal}",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError as e:
+            logger.warning("socat forwarder 启动失败 (port %d): %s: %s", port, type(e).__name__, e)
+            continue
+        pids.append(proc.pid)
+        logger.info(
+            "socat forwarder up: %s:%d → 127.0.0.1:%d (pid %d)", addr, port, internal, proc.pid
         )
-    except OSError as e:
-        logger.warning("socat forwarder 启动失败 (port %d): %s: %s", port, type(e).__name__, e)
+
+    if not pids:
         return None
-    (Path(profile_path) / "socat.pid").write_text(str(proc.pid), encoding="utf-8")
-    logger.info("socat forwarder up: 0.0.0.0:%d → 127.0.0.1:%d (pid %d)", port, internal, proc.pid)
-    return proc.pid
+    (Path(profile_path) / "socat.pid").write_text(" ".join(str(p) for p in pids), encoding="utf-8")
+    return pids[0]
 
 
-def _port_bound_inet(port: int) -> bool:
-    """Return True if any process is listening on 0.0.0.0:<port> (all interfaces).
-
-    Used to decide whether socat forwarding is needed: Chrome 144 binds only
-    127.0.0.1 even when --remote-debugging-address=0.0.0.0 is passed, so we check
-    the actual socket table rather than HTTP-probing (0.0.0.0 as a connect target
-    resolves to loopback and would lie).
-    """
+def _ss_listen_locals() -> list[str]:
+    """Return the local address:port strings of every LISTEN socket."""
     import subprocess
 
     try:
@@ -490,26 +514,51 @@ def _port_bound_inet(port: int) -> bool:
             ["ss", "-tlnH"], capture_output=True, text=True, timeout=2, check=False
         ).stdout
     except (FileNotFoundError, subprocess.SubprocessError):
-        return False
+        return []
+    locals_: list[str] = []
     for line in out.splitlines():
         parts = line.split()
         if len(parts) >= 4 and parts[0] == "LISTEN":
-            local = parts[3]
-            # local like "0.0.0.0:9224" or "[::]:9224"
-            if local.endswith(f":{port}") and ("0.0.0.0" in local or "::" in local):
-                return True
+            locals_.append(parts[3])
+    return locals_
+
+
+def _addr_bound(port: int, addr: str) -> bool:
+    """True when something listens on ``addr:port`` (a wildcard binding counts)."""
+    for local in _ss_listen_locals():
+        if not local.endswith(f":{port}"):
+            continue
+        host = local.rsplit(":", 1)[0].strip("[]")
+        if host in (addr, "0.0.0.0", "*", "::"):
+            return True
     return False
+
+
+def _port_bound_inet(port: int) -> bool:
+    """Return True if any process is listening on ``<port>`` on any address.
+
+    Used to decide whether socat forwarding is needed: Chrome 144 binds only
+    127.0.0.1 even when --remote-debugging-address=0.0.0.0 is passed, so we check
+    the actual socket table rather than HTTP-probing (0.0.0.0 as a connect target
+    resolves to loopback and would lie).
+    """
+    return any(local.endswith(f":{port}") for local in _ss_listen_locals())
 
 
 async def _stop_socat_forwarder(profile_path: str) -> None:
     """Terminate the socat forwarder for this profile (best-effort)."""
     pidfile = Path(profile_path) / "socat.pid"
     try:
-        pid = int(pidfile.read_text(encoding="utf-8").strip())
-    except (FileNotFoundError, ValueError, OSError):
+        raw = pidfile.read_text(encoding="utf-8").strip()
+    except (FileNotFoundError, OSError):
         return
-    with contextlib.suppress(ProcessLookupError, OSError):
-        os.kill(pid, signal.SIGTERM)
+    for token in raw.split():
+        try:
+            pid = int(token)
+        except ValueError:
+            continue
+        with contextlib.suppress(ProcessLookupError, OSError):
+            os.kill(pid, signal.SIGTERM)
     with contextlib.suppress(FileNotFoundError, OSError):
         pidfile.unlink()
 
