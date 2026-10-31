@@ -49,6 +49,8 @@ from backend.services.xhs_outreach_policy import (
     DAILY_PROACTIVE_CAP_KEY,
     MODE_KEY,
     OUTREACH_CONFIRMED,
+    OUTREACH_INBOUND,
+    OUTREACH_NOBODY,
     XhsOutreachPolicy,
 )
 from backend.tools.runtime.catalog import build_registry
@@ -236,10 +238,16 @@ class TestUsability:
 
         assert credential.usable is False
 
-    async def test_one_usable_credential_grants_both_scopes(self):
+    async def test_one_usable_credential_grants_read_write_and_engagement(self):
+        """The safe-default policy allows engagement, so the tier is granted too.
+
+        票 5av: the third scope is not withheld for lacking a *cold-start* mode;
+        the default ``inbound_only`` account can engage (and will be judged per
+        target by the service layer).
+        """
         credential = await load_credential("acc-1", reader=_reader(**{COOKIE_KEY: VALID}))
 
-        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
+        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_granted_scopes_is_the_same_answer_as_the_credential(self):
         """One rule, two readers — asserted rather than assumed.
@@ -272,16 +280,23 @@ class TestUsability:
             for scope in registry.spec(capability).auth_scope
         }
 
-        assert {XHS_READ_SCOPE, XHS_WRITE_SCOPE} <= declared
+        assert {XHS_READ_SCOPE, XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE} <= declared
         assert registry.spec("xhs.publish").auth_scope == (XHS_WRITE_SCOPE,)
         assert XHS_CREDENTIAL_KEYS == (COOKIE_KEY, USER_ID_KEY)
 
-        # ``xhs:outreach`` is in the vocabulary and deliberately **not** in the
-        # catalog: no capability declares it while the engagement tools stay
-        # unregistered (§9.4 — registering is the moment agents can reach out).
-        # When they register, this goes red on purpose and the declaring
-        # capability must be named here in the same commit.
-        assert XHS_OUTREACH_SCOPE not in declared
+        # 票 5av: the engagement capabilities declare the tier this constant
+        # names, and the service send path passes the grant to the Gateway
+        # (``test_xhs_engagement_gateway``).  Before that slice the absence was
+        # pinned on purpose ("no capability declares it while no caller checks
+        # it"); the caller exists now, so the pin moved to the declaration.
+        assert registry.spec("xhs.comment_reply").auth_scope == (
+            XHS_WRITE_SCOPE,
+            XHS_OUTREACH_SCOPE,
+        )
+        assert registry.spec("xhs.dm_send").auth_scope == (
+            XHS_WRITE_SCOPE,
+            XHS_OUTREACH_SCOPE,
+        )
 
 
 class TestScopesFollowTheMechanism:
@@ -293,23 +308,29 @@ class TestScopesFollowTheMechanism:
     bound profile is enough there.  Granting the two together, which is what the
     owner did before this slice, refused publishes the deployment can actually
     perform.
+
+    票 5av keeps the third tier orthogonal: whenever the write mechanism holds,
+    the *safe-default* outreach policy (``inbound_only``, which allows
+    engagement) grants ``xhs:outreach`` too.  The assertions below therefore
+    spell out three scopes where they used to spell out two — the mechanism
+    question they pin did not change, the policy half of ``scopes`` did.
     """
 
-    async def test_a_cookie_grants_both(self):
+    async def test_a_cookie_grants_read_write_and_engagement(self):
         credential = await load_credential(
             "acc-1", reader=_reader(**{COOKIE_KEY: VALID}), profile_reader=_binding("")
         )
 
-        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
+        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
-    async def test_a_bound_profile_grants_write_and_not_read(self):
+    async def test_a_bound_profile_grants_write_and_engagement_but_not_read(self):
         credential = await load_credential(
             "acc-1", reader=_reader(), profile_reader=_binding("http://127.0.0.1:9333")
         )
 
         assert credential.usable is False
         assert credential.profile_bound is True
-        assert credential.scopes == (XHS_WRITE_SCOPE,)
+        assert credential.scopes == (XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_a_stale_cookie_with_a_bound_profile_keeps_the_write_grant(self):
         """The case the cookie-only rule answered wrongly.
@@ -325,7 +346,7 @@ class TestScopesFollowTheMechanism:
         )
 
         assert credential.source == SOURCE_ACCOUNT
-        assert credential.scopes == (XHS_WRITE_SCOPE,)
+        assert credential.scopes == (XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_a_failed_binding_read_denies_the_write(self):
         credential = await load_credential(
@@ -338,14 +359,14 @@ class TestScopesFollowTheMechanism:
         assert credential.scopes == ()
 
     async def test_a_failed_binding_read_does_not_withdraw_the_cookie(self):
-        """Independence cuts both ways: the cookie covers both scopes by itself."""
+        """Independence cuts both ways: the cookie covers read/write/engagement."""
         credential = await load_credential(
             "acc-1",
             reader=_reader(**{COOKIE_KEY: VALID}),
             profile_reader=_binding_that_raises(),
         )
 
-        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
+        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_a_blank_account_is_bound_by_the_declared_deployment_endpoint(self, monkeypatch):
         """With no account to look up, the deployment's declaration answers.
@@ -363,7 +384,7 @@ class TestScopesFollowTheMechanism:
 
         assert credential.account_id == ""
         assert credential.profile_bound is True
-        assert credential.scopes == (XHS_WRITE_SCOPE,)
+        assert credential.scopes == (XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_a_blank_account_does_not_borrow_a_named_accounts_binding(self, monkeypatch):
         """The blank path must not hit the account store at all."""
@@ -403,7 +424,7 @@ class TestScopesFollowTheMechanism:
 
         assert asked == [""]
         assert credential.profile_bound is True
-        assert credential.scopes == (XHS_WRITE_SCOPE,)
+        assert credential.scopes == (XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_an_unreadable_credential_store_does_not_withdraw_the_binding(self):
         """Each fact is decided by its own read, not by the other one's failure.
@@ -423,7 +444,7 @@ class TestScopesFollowTheMechanism:
         )
 
         assert credential.source == ""
-        assert credential.scopes == (XHS_WRITE_SCOPE,)
+        assert credential.scopes == (XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_the_default_profile_seam_reads_the_accounts_cdp_binding(self, monkeypatch):
         """The production path, asserted end to end.
@@ -445,7 +466,7 @@ class TestScopesFollowTheMechanism:
         credential = await load_credential("acc-1", reader=_reader())
 
         assert credential.profile_bound is True
-        assert credential.scopes == (XHS_WRITE_SCOPE,)
+        assert credential.scopes == (XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_an_account_with_no_cdp_port_is_not_bound(self, monkeypatch):
         monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
@@ -572,34 +593,64 @@ def _outreach_rows(**rows: str):
 class TestTheOutreachTierIsMechanismAndPolicy:
     """``xhs:outreach`` — the one scope a policy can withhold (§9.5).
 
-    Mechanism answers "can this account log in"; policy answers "may it start
-    conversations".  Two accounts with identical cookies get different scopes
+    Mechanism answers "can this account log in"; policy answers "may it touch
+    people at all".  Two accounts with identical cookies get different scopes
     here, which is the discrimination the credential table could never make
     when everything was derived from the login alone.
+
+    票 5av redefined the tier: it mirrors
+    :attr:`XhsOutreachPolicy.allows_engagement` (``mode != nobody``), not
+    ``allows_proactive``.  Cold-start permission and the proactive budget stay
+    service-layer questions, so "reply-only" no longer withholds the tier.
     """
 
     async def test_the_same_mechanism_gets_different_scopes_under_different_policies(self):
-        permitted = await load_credential(
+        engaged = await load_credential(
             "acc-1",
             reader=_reader(**{COOKIE_KEY: VALID}),
             profile_reader=_binding(""),
-            outreach_reader=_outreach_rows(
-                **{MODE_KEY: OUTREACH_CONFIRMED, DAILY_PROACTIVE_CAP_KEY: "3"}
-            ),
+            outreach_reader=_outreach_rows(**{MODE_KEY: OUTREACH_CONFIRMED}),
         )
-        reply_only = await load_credential(
+        suspended = await load_credential(
             "acc-1",
             reader=_reader(**{COOKIE_KEY: VALID}),
             profile_reader=_binding(""),
-            outreach_reader=_outreach_rows(),
+            outreach_reader=_outreach_rows(**{MODE_KEY: OUTREACH_NOBODY}),
         )
 
-        assert permitted.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
-        assert reply_only.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
+        assert engaged.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
+        assert suspended.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
 
-    async def test_a_reply_only_account_keeps_write(self):
-        """Answering someone who wrote first is not outreach — the default
-        policy withholds ``xhs:outreach`` and nothing else."""
+    @pytest.mark.parametrize(
+        ("mode", "expect_outreach"),
+        [
+            (OUTREACH_NOBODY, False),
+            (OUTREACH_INBOUND, True),
+            (OUTREACH_CONFIRMED, True),
+        ],
+    )
+    async def test_the_tier_mirrors_mode_not_nobody(self, mode, expect_outreach):
+        """The grant matrix across the three policy modes (票 5av)."""
+        credential = await load_credential(
+            "acc-1",
+            reader=_reader(**{COOKIE_KEY: VALID}),
+            profile_reader=_binding(""),
+            outreach_reader=_outreach_rows(**{MODE_KEY: mode}),
+        )
+
+        expected = [XHS_READ_SCOPE, XHS_WRITE_SCOPE]
+        if expect_outreach:
+            expected.append(XHS_OUTREACH_SCOPE)
+        assert credential.scopes == tuple(expected)
+
+    async def test_a_reply_only_account_holds_the_engagement_tier(self):
+        """The default policy is allowed to engage — it only withholds cold starts.
+
+        The old rule derived the tier from ``allows_proactive``, so the product
+        default (``inbound_only``) could not reach the engagement capabilities
+        at all.  Answering someone who wrote first is engagement; it is not
+        proactive outreach, and the tier now says so.
+        """
         credential = await load_credential(
             "acc-1",
             reader=_reader(**{COOKIE_KEY: VALID}),
@@ -607,39 +658,44 @@ class TestTheOutreachTierIsMechanismAndPolicy:
         )
 
         assert credential.outreach == XhsOutreachPolicy(account_id="acc-1")
-        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
+        assert credential.outreach.allows_proactive is False
+        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE)
 
     async def test_policy_alone_grants_nothing(self):
         """A permission without a mechanism is a permission to be nobody.
 
-        The outreach policy says this account *may* start conversations; it
-        never says *as whom*.  Without a cookie or a bound profile there is no
-        identity to act under, so the mechanism half of the ∧ still fails.
+        The outreach policy says this account *may* touch people; it never says
+        *as whom*.  Without a cookie or a bound profile there is no identity to
+        act under, so the mechanism half of the ∧ still fails.
         """
         credential = await load_credential(
             "acc-1",
             reader=_reader(),
             profile_reader=_binding(""),
-            outreach_reader=_outreach_rows(
-                **{MODE_KEY: OUTREACH_CONFIRMED, DAILY_PROACTIVE_CAP_KEY: "3"}
-            ),
+            outreach_reader=_outreach_rows(**{MODE_KEY: OUTREACH_CONFIRMED}),
         )
 
-        assert credential.outreach.allows_proactive is True
+        assert credential.outreach.allows_engagement is True
         assert credential.scopes == ()
 
-    async def test_the_cap_is_half_of_the_answer(self):
-        """``confirmed_anyone`` with a zero budget still reaches nobody."""
+    async def test_the_cap_does_not_gate_the_tier(self):
+        """``confirmed_anyone`` with a zero budget still may engage.
+
+        The tier is the account-wide switch; the daily budget is a cold-start
+        question the service layer answers per target
+        (``check_dm_target_allowed`` / ``allows_proactive``).  Encoding the
+        budget in the scope would withhold replies from an account whose only
+        limit is "start nothing new".
+        """
         credential = await load_credential(
             "acc-1",
             reader=_reader(**{COOKIE_KEY: VALID}),
             profile_reader=_binding(""),
-            outreach_reader=_outreach_rows(
-                **{MODE_KEY: OUTREACH_CONFIRMED, DAILY_PROACTIVE_CAP_KEY: "0"}
-            ),
+            outreach_reader=_outreach_rows(**{MODE_KEY: OUTREACH_CONFIRMED}),
         )
 
-        assert credential.scopes == (XHS_READ_SCOPE, XHS_WRITE_SCOPE)
+        assert credential.outreach.allows_proactive is False
+        assert XHS_OUTREACH_SCOPE in credential.scopes
 
     async def test_granted_scopes_carries_the_policy_half(self):
         """The dispatcher's grant and the executor's credential stay one answer."""

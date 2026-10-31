@@ -25,14 +25,23 @@ refuse publishes the deployment can actually perform — the state
 browser profile is bound to the account (or, for a blank account id, declared by
 the deployment), and the write scope is granted on either mechanism.
 
-And one tier is **mechanism ∧ policy** (§9.5): proactive outreach needs the
-write mechanism *and* the account's own permission to reach out, which comes
-from :mod:`backend.services.xhs_outreach_policy`.  Two accounts with identical
-logins can be allowed different things there — the question "may this account
-proactively DM anyone" was never one a credential could answer.  The policy
-rides the same :class:`XhsCredential` so the two readers — scopes to the
-Gateway, cookie to the client — cannot disagree about it either.
+And one tier is **mechanism ∧ policy** (§9.5): the engagement tier needs the
+write mechanism *and* the account's own permission to touch people at all,
+which comes from :mod:`backend.services.xhs_outreach_policy`.  Two accounts
+with identical logins can be allowed different things there — the question
+"may this account reach out" was never one a credential could answer.  The
+policy rides the same :class:`XhsCredential` so the two readers — scopes to
+the Gateway, cookie to the client — cannot disagree about it either.
 :attr:`XhsCredential.scopes` states the rule.
+
+Read the §9.5 vocabulary in the direction it was tightened (票 5av): the tier
+means **"this account's outreach policy allows engagement"** (``mode !=
+nobody``, i.e. :attr:`XhsOutreachPolicy.allows_engagement`), *not* "this
+account may start cold conversations".  Cold-start permission and the daily
+proactive budget are still enforced by the service layer
+(``check_dm_target_allowed`` + ``EngagementApproval``); no scope can express
+them.  Withholding the tier is therefore exactly the operator's ``nobody``
+switch, which is the one thing a scope is entitled to say about policy.
 
 Where the credential comes from, in the order it is consulted:
 
@@ -101,12 +110,15 @@ __all__ = [
 # rename on either side cannot drift.
 XHS_READ_SCOPE = "xhs:read"
 XHS_WRITE_SCOPE = "xhs:write"
-#: The proactive tier.  Derived from **mechanism ∧ policy** — the only entry in
-#: the vocabulary that a policy can withhold from an account whose mechanism is
-#: perfect, because "logged in" was never the question it answers.  No catalog
-#: capability declares it yet (engagement tools stay unregistered while
-#: §9.4 says agents must not reach out); ``test_xhs_credentials`` pins that
-#: deliberate absence so registration forces the decision.
+#: The engagement tier.  Derived from **mechanism ∧ policy** — the only entry
+#: in the vocabulary that a policy can withhold from an account whose mechanism
+#: is perfect, because "logged in" was never the question it answers.  Its
+#: meaning was tightened by 票 5av: it says *the account's outreach policy
+#: allows engagement* (``mode != nobody``), not "cold outreach is enabled".
+#: ``xhs.comment_reply`` / ``xhs.dm_send`` declare it (见 ``catalog``), and
+#: the service send path resolves it through :func:`granted_scopes`.  A
+#: ``nobody`` account loses this tier and keeps nothing writable for
+#: engagement, but never loses ``xhs:write`` for publishing.
 XHS_OUTREACH_SCOPE = "xhs:outreach"
 
 COOKIE_KEY = "XHS_COOKIE"
@@ -187,7 +199,7 @@ class XhsCredential:
 
         Two capabilities, two mechanisms, and then one tier that is **mechanism
         ∧ policy** — the table stopped being derivable from mechanism alone
-        when "this account may proactively reach out" became a question, which
+        when "may this account reach out at all" became a question, which
         the catalog cannot answer and a login cannot imply (§9.5):
 
         * ``xhs:read`` needs the cookie.  Every read capability builds an
@@ -198,10 +210,20 @@ class XhsCredential:
           CDP, so a bound profile is sufficient there; the comment/DM path still
           posts over HTTP and is covered by the cookie.
         * ``xhs:outreach`` needs the write mechanism **and**
-          :attr:`outreach`'s permission.  Two accounts with identical logins
-          can be allowed different things here, and a reply-only account — the
-          default — does not lose ``xhs:write`` for it: answering someone who
-          wrote first is not outreach.
+          :attr:`outreach`'s permission — specifically
+          :attr:`XhsOutreachPolicy.allows_engagement`, *not*
+          ``allows_proactive``.  The tier was redefined in 票 5av (§9.5):
+          "this account may touch people at all" is the property a scope can
+          state, because it is the account-wide ``nobody`` switch.  Whether a
+          *particular* touch is a cold start, and whether the proactive budget
+          allows it, is a per-target question the service layer answers
+          (``check_dm_target_allowed`` + ``EngagementApproval``); trying to
+          encode it here is what made the old rule say "only cold-start mode
+          gets the tier", which withheld it from a reply-only account that is
+          perfectly allowed to answer its comments.  A ``nobody`` account
+          loses this tier and keeps nothing writable for engagement, but a
+          reply-only account keeps ``xhs:write``: answering someone who wrote
+          first is not cold outreach.
 
         The profile half is **binding, not reachability**.  ``profile_bound``
         records that the account has a CDP port bound to it; it never records
@@ -225,7 +247,8 @@ class XhsCredential:
             scopes.append(XHS_READ_SCOPE)
         if self.usable or self.profile_bound:
             scopes.append(XHS_WRITE_SCOPE)
-            if self.outreach.allows_proactive:
+            # 票 5av: tier = mechanism ∧ policy(engagement), i.e. mode != nobody.
+            if self.outreach.allows_engagement:
                 scopes.append(XHS_OUTREACH_SCOPE)
         return tuple(scopes)
 

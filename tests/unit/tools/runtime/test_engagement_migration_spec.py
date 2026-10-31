@@ -68,7 +68,9 @@ class TestTheSpecIsNowWired:
         assert spec.latency is LatencyClass.SLOW
         assert spec.retry_policy.max_attempts == 1, "§3.3: a retry double-sends"
         assert spec.effective_timeout_s == 300, "§6: _ENGAGEMENT_SAFETY_NET_S"
-        assert spec.auth_scope == ("xhs:write",), "§3.1: xhs:outreach stays undeclared"
+        # 票 5av: §3.1's "do not declare xhs:outreach until a caller checks it"
+        # is satisfied — the service send path resolves the grant and passes it.
+        assert spec.auth_scope == ("xhs:write", "xhs:outreach"), "§3.1 landed (票 5av)"
         assert spec.max_concurrency == 1, "§3.2: one in-flight per account"
 
     def test_both_tools_still_exist_as_tool_decorated_functions(self):

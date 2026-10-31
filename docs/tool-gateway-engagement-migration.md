@@ -47,7 +47,7 @@ return {"success": True, "message_id": f"dm_{int(time.time())}"}
 这不是边缘情况：`query_selector` 返回 `None` 本来就是"没找到"，被写成可选分支就等于
 把"没找到"当成了"不需要"。
 
-**修后**：`backend/services/xhs_engagement.py:594` 起，按钮缺失直接返回
+**修后**：`backend/services/xhs_engagement.py:1008` 起，按钮缺失直接返回
 `FAILED` + `send_button_missing`；配额改由 `send_dm` 读判决后记账，只在
 `status ∈ {sent, unknown}` 时增加。守护：
 `tests/unit/services/test_xhs_engagement_verdicts.py::TestDirectMessageVerdicts::test_a_missing_send_button_no_longer_reports_success`。
@@ -189,7 +189,7 @@ ToolSpec(
     pass_style=PassStyle.INVOKE,        # 两个都是 LangChain @tool
     retry_policy=RetryPolicy(),         # 1 次，见 §3.3
     timeout_s=_ENGAGEMENT_SAFETY_NET_S,
-    auth_scope=("xhs:write",),          # 见 §3.1：不是不想细分，是分不出来
+    auth_scope=("xhs:write", "xhs:outreach"),   # 票 5av：见 §3.1 末段
     max_concurrency=1,
 )
 
@@ -202,17 +202,17 @@ ToolSpec(
     pass_style=PassStyle.INVOKE,
     retry_policy=RetryPolicy(),         # 1 次：重试的代价是骚扰真人
     timeout_s=_ENGAGEMENT_SAFETY_NET_S,
-    auth_scope=("xhs:write",),          # 同上
+    auth_scope=("xhs:write", "xhs:outreach"),   # 同上
     max_concurrency=1,
 )
 ```
 
-### 3.1 为什么 auth_scope 只能是 `xhs:write`
+### 3.1 为什么 auth_scope 曾经只能是 `xhs:write`（票 5av 已改成 `xhs:write` + `xhs:outreach`）
 
 第一版草案写的是 `xhs:engagement:write` / `xhs:dm:write`，看起来更细，实测后撤回了。
 原因只有一个：**这个仓库里唯一的 scope 来源不能表达这种区分。**
 
-`backend/services/xhs_credentials.py:223-230`：
+`backend/services/xhs_credentials.py:245-253`（票 5av 后的形态；改动见本节末段）：
 
 ```python
 scopes: list[str] = []
@@ -220,7 +220,7 @@ if self.usable:
     scopes.append(XHS_READ_SCOPE)
 if self.usable or self.profile_bound:
     scopes.append(XHS_WRITE_SCOPE)
-    if self.outreach.allows_proactive:
+    if self.outreach.allows_engagement:      # 票 5av：原为 allows_proactive
         scopes.append(XHS_OUTREACH_SCOPE)
 return tuple(scopes)
 ```
@@ -237,12 +237,49 @@ return tuple(scopes)
 `XhsOutreachPolicy`（谁被允许主动触达、每日主动上限、是否只允许应答式）随
 `load_credential` 装进 `XhsCredential.outreach`，于是有了第三档
 `xhs:outreach` = **机制 ∧ 策略** —— 这正是"评论/私信 与 发布 不是同一档权限"的
-可表达形式。剩下没做的是把它挂到 capability 的 `auth_scope` 上：
-`xhs.dm_send` 的 spec 仍声明 `("xhs:write",)`，因为策略检查今天发生在服务层
-（`check_dm_target_allowed` + 入口的 `allows_engagement`），还没走到 Gateway 的
-scope 检查。**别把 `xhs:outreach` 声明进任何 capability**，直到 Gateway 侧真有
-调用方传 `granted_scopes` 并按它分支 —— 声明一个没人检查的 scope 就是 §9.5 第 6 条
-那个洞的原样复发。
+可表达形式。
+
+#### 3.1.1 末段：`xhs:outreach` 已挂进 engagement capability（票 5av，2026-10-31）
+
+上一版这里写的是"**别把 `xhs:outreach` 声明进任何 capability**，直到 Gateway 侧
+真有调用方传 `granted_scopes` 并按它分支"。票 5av 补齐了那个前提，并把语义收紧
+过一次，两条一起读：
+
+1. **语义（locked）**：`xhs:outreach` = 「**该账号的触达策略允许触达**」，即
+   *机制 ∧ 策略*，策略那半边是 `XhsOutreachPolicy.allows_engagement`
+   （`mode != nobody`），**不再只表示冷启动可达**。冷启动的"目标是否允许、预算是
+   否够"仍由服务层回答（`check_dm_target_allowed` + `EngagementApproval` +
+   `allows_proactive`）—— scope 只表达"账号被允许触达"，表达不了"这一条是冷启动
+   且批过了"。旧的 `allows_proactive` 口径把产品默认（`inbound_only`）的账号挡在
+   触达能力之外，反而是错的：应答式回复也是触达。
+2. **授予**：`XhsCredential.scopes` 在 `allows_engagement` 时授予该档
+   （`backend/services/xhs_credentials.py`）；`nobody` 账号失去它，但**不失去**
+   `xhs:write`（发布与触达是两件事）。机制半边照旧：没有 cookie/绑定 profile 就
+   没有"以谁的身份触达"，策略不能借出机制。
+3. **声明**：`xhs.comment_reply` / `xhs.dm_send` 的 `auth_scope` 现在是
+   `("xhs:write", "xhs:outreach")`。声明不再是装饰：
+4. **调用点**：`XhsEngagement.reply_to_comment` / `send_dm` 是这两个 capability
+   的真实调用点 —— 解析 `granted_scopes(account_id)`（可注入 seam，默认是
+   `backend.services.xhs_credentials.granted_scopes`），**在 Effect 账本 claim
+   之前**判定（缺 scope 直接 `blocked/permission_denied`，不写 intent 行、不碰
+   浏览器），再把同一元组交给
+   `shared_gateway().invoke(capability, payload, thread_id=..., granted_scopes=...)`。
+   配额/账本/审批的既有顺序不变：门禁 → 策略 → scope → claim → 发送 → 记账 →
+   配额（§5.1 "先记账再动手" 仍是 claim 在浏览器提交之前）。
+5. **发送动作仍在服务实例里**：Gateway 调起的 capability 实现
+   （`tools/xhs/engagement.py`）回调服务实例的 transport（`_DISPATCH_TRANSPORT`
+   这一跳），所以锁、账本与浏览器页都还是调用方那一个实例的；直接经 Gateway 调
+   capability 的实例（`inside_capability=True`）外层已经就是那次 Gateway 调用，
+   不会再嵌套一层（嵌套会等自己的 `max_concurrency=1` 名额）。
+6. **覆盖面**：`xhs.comment_reply` / `xhs.dm_send` 从"没有已检查调用点"变成
+   `backend/services/xhs_engagement.py` 两处，§9 第 6 条里"没有已检查调用点的能力"
+   从 2 归零（`test_scope_coverage.py` 复算）。
+
+**诚实边界**：直接经 Gateway 调 capability 的调用方**不传** `granted_scopes` 时
+仍是 §7.1 的 opt-in 语义（`None` = 不检查）—— 本票把强制点放在了服务发送路径，
+没有把 Gateway 的 scope 检查改成默认拒绝（那会是一次全局行为变更，不属本票）。
+也就是说：服务路径上"缺 scope"一定会被拒；绕过服务、直接调 capability 的调用方
+仍可与今天一样选择不检查，这与其它 manual-only 能力一致。
 
 ### 3.2 为什么 `max_concurrency=1`
 
@@ -269,7 +306,7 @@ PG 不可用时降级为进程内）。CDP 锁已经提供了**跨进程**的每
 
 ### 3.3 为什么 `max_attempts` 保持 1
 
-与 `backend/tools/runtime/catalog.py:647-655` 对 `xhs.publish` 的理由逐字同构，且更重：一次 Gateway 超时是
+与 `backend/tools/runtime/catalog.py:679-691` 对 `xhs.publish` 的理由逐字同构，且更重：一次 Gateway 超时是
 在浏览器**提交动作进行中**取消调用，调用方无法区分"提交前失败"与"提交了但答复丢了"。
 重试后者 = 给同一个真人发两条一样的私信。`requires_idempotency_key=True` 只满足
 `ToolSpec` 的构造前置条件，**它不回答重试真正要回答的问题**。等 §5 的和解路径存在，
@@ -398,10 +435,10 @@ claim / 判决 / 读回 API）。接线进 `send_dm` / `reply_to_comment`：浏�
 
 | 组成 | 取值 | 出处 |
 |---|---|---|
-| CDP 锁获取 | 120s 默认（`XHS_CDP_ENGAGEMENT_LOCK_TIMEOUT_S`） | `backend/services/xhs_engagement.py:222-227` |
-| 元素等待 | 10s + 5s | `xhs_engagement.py:305, 330` |
-| 每个浏览器动作的冷却 | 5s 默认（`XHS_ENGAGEMENT_COOLDOWN_SECONDS`） | `backend/services/xhs_engagement.py:90-97` |
-| 一次回复的动作数 | ≤ 6（goto / 查询 / fill / click / 断言 ×2） | `backend/services/xhs_engagement.py:301-305` |
+| CDP 锁获取 | 120s 默认（`XHS_CDP_ENGAGEMENT_LOCK_TIMEOUT_S`） | `backend/services/xhs_engagement.py:418-421` |
+| 元素等待 | 10s + 5s | `backend/services/xhs_engagement.py:698` / `:744` |
+| 每个浏览器动作的冷却 | 5s 默认（`XHS_ENGAGEMENT_COOLDOWN_SECONDS`） | `backend/services/xhs_engagement.py:235-241` |
+| 一次回复的动作数 | ≤ 6（goto / 查询 / fill / click / 断言 ×2） | `backend/services/xhs_engagement.py:682-745` |
 | **合计上界** | **≈ 165s** | |
 
 `LatencyClass.SLOW` 的默认 120s **小于**工具自身预算，会取消一次仍在合法进行的提交，
@@ -478,8 +515,9 @@ Phase A 里必须同时钉住：配额记账只在判决为 `sent` / `unknown` �
 **Phase B（注册）—— 已落地（票 5f，2026-10-20）** —— 前置三项已全部满足（§5 账本 ✅ 票 5c、§7.2
 审批闸门 ✅ 票 5c、Phase A 全绿 ✅），§9.4 拍板"允许"后完成注册：
 `xhs.comment_reply` / `xhs.dm_send` 进 `build_registry()`（SIDE_EFFECTING、
-`max_attempts=1`、`_ENGAGEMENT_SAFETY_NET_S=300`、`max_concurrency=1`、
-`auth_scope=("xhs:write",)`——按 §3.1 不声明 `xhs:outreach`），非 sent 判决按
+`max_attempts=1`、`_ENGAGEMENT_SAFETY_NET_S=300`、`max_concurrency=1`；票 5f 当时的
+`auth_scope` 只有 `("xhs:write",)`，票 5av 改成
+`("xhs:write", "xhs:outreach")`——见 §3.1.1），非 sent 判决按
 publisher 同一条规则报 `DomainOutcome`（§9.1 的答案）。注册后 agent 第一次能调到
 它们，这一刻就是 `docs/agent-os-upgrade-2026q4.md` §4.1 所说的"可及的外部副作用面
 发生变化"——可及 ≠ 自动触发：冷启动外发仍被 §7.2 的逐条审批拦着。
@@ -544,8 +582,10 @@ Phase B（在 A 之上追加）：
    账号行（带策略键即终局）→ 部署 env（含遗留全局开关 `XHS_ALLOW_OUTBOUND_DM`，
    映射为 `confirmed_anyone`）→ 安全默认（`inbound_only`, cap 0），**只朝限制方向
    失败安全**（reader 抛异常/坏值/未知 mode 全部落到更严）。`XhsCredential.scopes`
-   已按"机制 ∧ 策略"出第三档 `xhs:outreach`（仅冷启动需要；应答式回复只吃
-   `xhs:write`）。门禁 `check_dm_target_allowed` 改为 policy 驱动（DI 传入），
+   已按"机制 ∧ 策略"出第三档 `xhs:outreach`；**语义在票 5av 收紧为
+   `allows_engagement`（mode != nobody）**，即"账号被允许触达"，不再只表示冷启动
+   （应答式回复同样需要它；冷启动的目标/预算判定仍留在服务层）。门禁
+   `check_dm_target_allowed` 改为 policy 驱动（DI 传入），
    旧的 `outbound_dm_allowed(account_id)`（签名撒谎：无视 account_id 读全局 env）
    已删除。**诚实边界**：①~~per-account 的 `dm_daily_limit` / `comment_reply_daily_limit`
    覆盖仍结构不可达~~ **已修（票 5b，2026-10-19）**：读者（`_policy_value`）本来就在查
@@ -554,9 +594,27 @@ Phase B（在 A 之上追加）：
    没有这两键、`global_cooldown_defaults` 也没有 ⇒ per-account 请求永远落到全局 env。
    现四面对齐（白名单/写入器/默认表/API `CooldownPolicyRequest`），配额门禁
    `check_dm_quota` / `check_comment_reply_quota` 立即按账号生效，覆盖跨重启存活
-   （hydrate 往返有测试钉住）；②`xhs:outreach` 尚未挂进任何 capability 的
-   `auth_scope`（见 §3.1 末段）；③策略表是进程内解析 + DB 读，没有管理界面/写路径，
-   账号行策略需直接写 `account_credentials`。
+   （hydrate 往返有测试钉住）；②~~`xhs:outreach` 尚未挂进任何 capability 的
+   `auth_scope`~~ **已落地（票 5av，2026-10-31）**：`xhs:outreach` =
+   机制 ∧ 策略（`allows_engagement`），两个 engagement capability 声明
+   `("xhs:write", "xhs:outreach")`，服务发送路径解析 `granted_scopes(account_id)`
+   并在 Effect claim 前判定、再交 Gateway 强制，见 §3.1.1；③~~策略表是进程内解析 +
+   DB 读，没有管理界面/写路径，账号行策略需直接写 `account_credentials`~~
+   **已落地（票 5ax，2026-10-31）**：服务层有了校验过的写/清函数
+   （`set_outreach_policy` / `clear_outreach_policy`，见
+   `backend/services/xhs_outreach_policy.py`），API 与 cool-down policy 同层：
+   - `GET /api/system/outreach-policy/{account_id}` → `effective` + `overrides`
+     （`overrides` 是账号行原文；只有 `effective` 分不出"账号覆盖"与"部署默认"）；
+   - `PUT /api/system/outreach-policy/{account_id}`（body `{"mode"?, "daily_proactive_cap"?}`）
+     → 只写显式给定的键，写后读回返回 `effective`；非法 mode/cap 走
+     `ValidationError`（400 信封），账号库不可用走 `ERROR_SERVICE_UNAVAILABLE`
+     （503）——管理写**不会**静默 best-effort（读侧仍失败安全）；
+   - `DELETE /api/system/outreach-policy/{account_id}` → 删除该账号两把键
+     （`backend/db/accounts.py::delete_credential`），回落到部署默认，返回
+     `removed` + 删除后的 `effective`。
+   API 形状以 `tests/unit/api/test_system_outreach_policy.py` 与
+   `tests/unit/services/test_xhs_outreach_policy_write.py` 钉住；读侧优先级
+   （账号行 → 部署 env → 安全默认）不变。
 6. **scope 到底该接在哪一层？**（原写作"agent 发布路径要不要补 `granted_scopes`"，
    实测后问题变大了，见下。）
 
@@ -594,7 +652,7 @@ Phase B（在 A 之上追加）：
    - `xhs:write` ⟸ cookie 可用 **∨** 账号已绑定浏览器 profile。发布走 CDP，评论/私信
      走 HTTP，两条路各自成立就够了。
    - **绑定 ≠ 可达**：`profile_bound` 只读账号行的 `cdp_port`（
-     `backend/db/accounts.py:483` 的 `get_account_cdp_endpoint`），不建连接、不探测。
+     `backend/db/accounts.py:533` 的 `get_account_cdp_endpoint`），不建连接、不探测。
      "浏览器没开"仍由发布工具自己报 `cdp_unavailable`，而不是被 Gateway 说成"没被授权"。
    - 两个事实各自由自己那次读取决定：cookie 行读取失败仍然是 fail-closed（不回退部署
      身份），但**不会顺手抹掉** binding —— 绑定来自另一次成功读取，且属于这个账号本身。
@@ -633,10 +691,17 @@ Phase B（在 A 之上追加）：
 
    覆盖面 **2 → 6 个调用点**，`UNCHECKED_CALL_SITES` **归零**：现存调用点里再没有
    "声明了但没检查"，trace 的 `scopes: unchecked` 对现存调用点已不可达（新漏接的调用点
-   仍会让登记表变红，它就是为那一刻留的）。"没有已检查调用点的能力"**6 → 2**：
+   仍会让登记表变红，它就是为那一刻留的）。当时"没有已检查调用点的能力"**6 → 2**：
    `xhs.comment_reply` / `xhs.dm_send` 注册了但**还没有任何 `.invoke(...)` 调用点**——
    可及 ≠ 被调用；它们第一个调用点出现时只有两种写法（传 grant / 登记为债务），
    没有第三种。
+
+   **收尾（票 5av，2026-10-31）：这个数字归零。** 两条 engagement 能力的第一个
+   `.invoke(...)` 调用点就是服务发送路径（`backend/services/xhs_engagement.py` 的
+   `reply_to_comment` / `send_dm`），并且都传 `granted_scopes`（见 §3.1.1）——
+   不是登记成债务。于是 `CHECKED_CALL_SITES` 覆盖全部 7 个声明了 scope 的能力、
+   8 个调用点，"没有已检查调用点的能力"= **0**；登记表本身留着，新能力/新调用点
+   出现时它仍会变红。
 
    **读路径接线的一处诚实代价（票 5j 已偿还）**（与发布路径不同的取舍）：缺 `xhs:read`
    时三次调用**一次都不发**，5g 当时 trace 里因此没有事件（改前会留一条 `ok=False`）。

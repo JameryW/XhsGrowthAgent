@@ -57,12 +57,21 @@ async def test_cdp_connects_and_reuses_existing_xhs_page() -> None:
     playwright.stop.assert_awaited_once()
 
 
+async def _grant_all_scopes(_account_id: str) -> tuple[str, ...]:
+    """The grant a working mechanism + an allowing policy holds (票 5av)."""
+    return ("xhs:write", "xhs:outreach")
+
+
 @pytest.mark.asyncio
 async def test_risk_page_blocks_note_navigation_without_retry() -> None:
     page = MagicMock(url="https://www.xiaohongshu.com/explore/note-1")
     page.evaluate = AsyncMock(return_value="风险控制 安全验证")
     page.goto = AsyncMock()
-    engagement = XHSEngagement(cdp_endpoint="http://127.0.0.1:9224")
+    engagement = XHSEngagement(
+        cdp_endpoint="http://127.0.0.1:9224",
+        account_id="acc-1",
+        scope_resolver=_grant_all_scopes,
+    )
     engagement._ensure_page = AsyncMock(return_value=page)
 
     result = await engagement.reply_to_comment(

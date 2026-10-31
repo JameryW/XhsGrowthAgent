@@ -42,7 +42,10 @@ _GRANTED_SCOPES = "backend.services.xhs_credentials.granted_scopes"
 
 #: Distinguishable on purpose: a call site that hardcodes ``("xhs:read",)``
 #: instead of handing over the tuple it resolved fails the equality below.
-_GRANT = ("xhs:read", "xhs:write")
+#: 票 5av adds the engagement tier to the resolved grant: a usable cookie whose
+#: outreach policy allows engagement (the safe default does) resolves to all
+#: three scopes, so "handed the real resolver's answer" means this tuple.
+_GRANT = ("xhs:read", "xhs:write", "xhs:outreach")
 
 
 class _RecordingTools:

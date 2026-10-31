@@ -10,8 +10,10 @@ import asyncio
 import logging
 import os
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import partial
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -52,6 +54,49 @@ _TRANSIENT_ERROR_CODES = frozenset(
 # purpose: a possible send has to be treated as a send, or the ceiling stops
 # bounding anything — the operator cannot un-send it to stay under the limit.
 _QUOTA_STATUSES = frozenset({SENT, UNKNOWN})
+
+# ── Tool Gateway integration (票 5av) ────────────────────────────────────────
+# The capability ids this service dispatches through.  Module-level constants
+# (not literals inside a helper) because ``test_scope_coverage`` recomputes the
+# checked call sites from the AST and resolves names against module constants.
+COMMENT_REPLY_CAPABILITY = "xhs.comment_reply"
+DM_CAPABILITY = "xhs.dm_send"
+
+# What each capability declares (mirror of ``catalog``; pinned together by
+# ``test_xhs_engagement_gateway``).  The service resolves the account's grant
+# and applies it *before* the Effect ledger claim, so an unauthorized send
+# leaves no intent row behind; the same tuple travels to the Gateway, which
+# re-applies it as the runtime backstop (same "判定在门前，执行在运行时"
+# pattern the read paths use).
+_ENGAGEMENT_REQUIRED_SCOPES: dict[str, tuple[str, ...]] = {
+    COMMENT_REPLY_CAPABILITY: ("xhs:write", "xhs:outreach"),
+    DM_CAPABILITY: ("xhs:write", "xhs:outreach"),
+}
+
+EngagementTransport = Callable[[], Awaitable[dict[str, Any]]]
+"""The browser half of one send, bound to the instance that owns the locks."""
+
+ScopeResolver = Callable[[str], Awaitable[tuple[str, ...]]]
+"""How the account's grant is resolved (injectable seam for tests)."""
+
+_DISPATCH_TRANSPORT: ContextVar[EngagementTransport | None] = ContextVar(
+    "engagement_dispatch_transport", default=None
+)
+"""Which instance's browser step an in-flight Gateway dispatch should run.
+
+The service method is the checked call site: it claims the Effect intent, then
+invokes the capability through ``shared_gateway().invoke(...)``.  The Gateway
+calls back into the capability implementation (``tools/xhs/engagement.py``),
+which calls this service again — and that second entry must run the *outer*
+instance's browser step rather than re-enter the Gateway (a nested invocation
+of the same capability would wait forever on its own ``max_concurrency=1``
+slot).  This ContextVar is that hand-off: set around the ``invoke`` call,
+read at the top of the public send methods.
+
+A direct capability invocation (operator → Gateway → tool) does not set it:
+the tool's instance is marked ``inside_capability`` and runs the browser step
+directly, because the outer call already went through the Gateway.
+"""
 
 # §5.3 读回判决三值。安全不对称决定词汇量：假 MISS 会解锁重臂（同一效果再发
 # 一次 = 给同一个真人发两条），假 HIT 只是把键永久锁死（没有双发）。所以
@@ -166,6 +211,9 @@ class XHSEngagement:
         cdp_endpoint: str = "",
         account_id: str = "",
         cooldown_seconds: float | None = None,
+        gateway: Any | None = None,
+        scope_resolver: ScopeResolver | None = None,
+        inside_capability: bool = False,
     ) -> None:
         # Kept for source compatibility with older callers. Cookies/headless are
         # deliberately not used by the persistent-CDP implementation.
@@ -175,6 +223,18 @@ class XHSEngagement:
         self.slow_mo = slow_mo
         self.cdp_endpoint = (cdp_endpoint or "").strip()
         self.account_id = (account_id or "").strip()
+        # Tool Gateway seam: the process-wide gateway by default, a test double
+        # when injected.  Resolved lazily so importing this module never builds
+        # the catalogue.
+        self._gateway = gateway
+        # Scope seam: ``xhs_credentials.granted_scopes`` by default.  Injectable
+        # so the service path can be tested without a credential store — not so
+        # the grant can be skipped.
+        self._scope_resolver = scope_resolver
+        # Set by the capability implementation (``tools/xhs/engagement.py``).
+        # The outer call it serves already went through the Gateway, so this
+        # instance executes the browser step directly instead of re-entering it.
+        self._inside_capability = bool(inside_capability)
         if cooldown_seconds is None:
             try:
                 cooldown_seconds = float(
@@ -393,6 +453,82 @@ class XHSEngagement:
             )
         return None
 
+    # -- Tool Gateway seam (票 5av) ------------------------------------------
+
+    def _gateway_instance(self) -> Any:
+        """The Gateway this service dispatches through (process-wide by default)."""
+        if self._gateway is None:
+            from backend.tools.runtime.bridge import shared_gateway
+
+            self._gateway = shared_gateway()
+        return self._gateway
+
+    async def _resolve_granted_scopes(self) -> tuple[str, ...]:
+        """The account's grant, resolved by the credential owner.
+
+        Default is :func:`backend.services.xhs_credentials.granted_scopes`; a
+        resolver that raises is treated as *no* grant (fail-closed, the same
+        direction every other reader in this repo fails in).
+        """
+        resolver = self._scope_resolver
+        if resolver is None:
+            from backend.services.xhs_credentials import granted_scopes
+
+            resolver = granted_scopes
+        try:
+            return tuple(await resolver(self.account_id))
+        except Exception as exc:  # fail-closed: unknown is not permission
+            logger.warning(
+                "engagement scope resolution failed: account_id=%s err=%s: %s",
+                self.account_id or "*",
+                type(exc).__name__,
+                exc,
+            )
+            return ()
+
+    @staticmethod
+    def _missing_scopes(capability: str, granted: tuple[str, ...]) -> tuple[str, ...]:
+        """Which of the capability's declared scopes the grant does not hold."""
+        return tuple(
+            scope for scope in _ENGAGEMENT_REQUIRED_SCOPES[capability] if scope not in granted
+        )
+
+    @staticmethod
+    def _verdict_from_tool_result(result: Any, *, correlation_id: str) -> dict[str, Any]:
+        """Translate one ``ToolResult`` back into this module's verdict vocabulary.
+
+        ``ok=True`` carries the tool's ``sent`` dict.  A domain outcome carries
+        the platform verdict untouched (the tool raises it for every non-``sent``
+        answer).  A Gateway timeout is *not* a failure — the browser submit may
+        already have happened — so it lands on ``unknown``, which the ledger
+        keeps blocked for re-arm until a read-back resolves it (§5.3).  Any
+        other transport failure is equally unprovable and gets the same answer;
+        the safe direction is one the operator must reconcile, never a silent
+        re-send.
+        """
+        from backend.tools.runtime.models import ErrorKind
+
+        if result.ok:
+            value = result.value
+            if isinstance(value, Mapping):
+                return dict(value)
+            return XHSEngagement._result(SENT, correlation_id=correlation_id)
+        if result.error_kind is ErrorKind.DOMAIN and result.domain:
+            return {str(key): value for key, value in result.domain.items()}
+        if result.error_kind is ErrorKind.TIMEOUT:
+            return XHSEngagement._result(
+                UNKNOWN,
+                error_code="gateway_timeout",
+                error=result.error,
+                correlation_id=correlation_id,
+            )
+        return XHSEngagement._result(
+            UNKNOWN,
+            error_code="gateway_error",
+            error=result.error,
+            correlation_id=correlation_id,
+        )
+
     async def reply_to_comment(
         self,
         note_id: str,
@@ -409,6 +545,16 @@ class XHSEngagement:
         Effect 账本（§5）：浏览器提交动作之前先 claim intent 行，判决之后按
         ``state_for_engagement_verdict`` 记账 —— 顺序即安全属性，崩在中途也有
         据可查（§5.1 "先记账再动手"）。同键二次调用在提交前被拒（§4）。
+
+        Gateway（票 5av）：这里的发送调用是 ``xhs.comment_reply`` 的真实调用
+        点 ——授予的 scopes 由 ``granted_scopes(account_id)`` 解析，先在门前
+        判定（缺 scope 直接 blocked，不写账本），再由
+        ``shared_gateway().invoke(..., granted_scopes=...)`` 执行发送。真正的
+        浏览器动作由 capability 实现（``tools/xhs/engagement.py``）回调到本实例
+        的 transport（见 ``_DISPATCH_TRANSPORT``），锁与账本仍在本实例手里。
+        当本实例本身就是 capability 实现创建的（``inside_capability=True``，
+        直接经 Gateway 调用），外层已经是那次 Gateway 调用，故直接执行浏览器
+        步骤而不嵌套 Gateway（嵌套会等自己的 ``max_concurrency=1`` 名额）。
         """
         from backend.services.cdp_session_lock import CdpSessionBusyError
         from backend.services.xhs_effect_ledger import (
@@ -417,6 +563,13 @@ class XHSEngagement:
             EngagementEffectLedger,
         )
         from backend.services.xhs_outreach_policy import load_outreach_policy
+
+        # A Gateway dispatch re-entered this method through the capability
+        # implementation: the outer call owns gates/locks/ledger and the
+        # browser step is already bound to it. Run it and return.
+        dispatched = _DISPATCH_TRANSPORT.get()
+        if dispatched is not None:
+            return await dispatched()
 
         correlation_id = self._correlation_id("comment_reply")
         blocked = self._precheck_engagement(kind="comment_reply", correlation_id=correlation_id)
@@ -433,6 +586,22 @@ class XHSEngagement:
                 correlation_id=correlation_id,
             )
 
+        granted: tuple[str, ...] = ()
+        if not self._inside_capability:
+            # 判定在门前：缺 scope 的调用连 intent 行都不写，也不碰浏览器。
+            granted = await self._resolve_granted_scopes()
+            missing = self._missing_scopes(COMMENT_REPLY_CAPABILITY, granted)
+            if missing:
+                return self._blocked_result(
+                    "permission_denied",
+                    (
+                        f"账号未持有 {', '.join(missing)}（评论回复要求写机制 + 触达策略"
+                        "允许触达）。scope 由 XhsCredential.scopes 推导，检查该账号的"
+                        "登录/绑定浏览器与触达策略。"
+                    ),
+                    correlation_id=correlation_id,
+                )
+
         ledger = EngagementEffectLedger()
         try:
             async with await self._hold_cdp(), self._guard.lock:
@@ -443,9 +612,42 @@ class XHSEngagement:
                     content=reply_content,
                     approval=approval,
                 )
-                result = await self._reply_to_comment_locked(
-                    note_id, comment_id, reply_content, correlation_id=correlation_id
-                )
+                if self._inside_capability:
+                    result = await self._reply_to_comment_locked(
+                        note_id, comment_id, reply_content, correlation_id=correlation_id
+                    )
+                else:
+                    gateway = self._gateway_instance()
+                    thread_id = approval.thread_id if approval is not None else ""
+                    token = _DISPATCH_TRANSPORT.set(
+                        partial(
+                            self._reply_to_comment_locked,
+                            note_id,
+                            comment_id,
+                            reply_content,
+                            correlation_id=correlation_id,
+                        )
+                    )
+                    try:
+                        tool_result = await gateway.invoke(
+                            COMMENT_REPLY_CAPABILITY,
+                            {
+                                "comment_id": comment_id,
+                                "post_id": note_id,
+                                "reply_content": reply_content,
+                                "account_id": self.account_id,
+                                "approved_by": approval.approved_by if approval else "",
+                                "approved_at": approval.approved_at if approval else "",
+                                "thread_id": thread_id,
+                            },
+                            thread_id=thread_id,
+                            granted_scopes=granted,
+                        )
+                    finally:
+                        _DISPATCH_TRANSPORT.reset(token)
+                    result = self._verdict_from_tool_result(
+                        tool_result, correlation_id=correlation_id
+                    )
             await _record_effect_outcome(effect, result)
             # Quota counts a *possible* send too: an unknown submit cannot be
             # un-sent, so letting it go uncounted would make the ceiling stop
@@ -596,6 +798,13 @@ class XHSEngagement:
         bool —— 调用方自声明的 bool 不可信任）。入站应答不需要逐条审批；
         冷启动由 ``check_dm_target_allowed`` 在提交前要求它。Effect 账本接线
         与 ``reply_to_comment`` 同构：提交前 claim，判决后记账。
+
+        Gateway（票 5av）：与 ``reply_to_comment`` 同构 —— 发送调用是
+        ``xhs.dm_send`` 的真实调用点，scopes 由 ``granted_scopes(account_id)``
+        解析，门前判定后交 ``shared_gateway().invoke(..., granted_scopes=...)``
+        执行；浏览器动作由 capability 实现回调本实例的 transport。直接经
+        Gateway 调用本 capability 的实例（``inside_capability=True``）外层已经
+        是那次 Gateway 调用，故直接执行浏览器步骤。
         """
         from backend.services.cdp_session_lock import CdpSessionBusyError
         from backend.services.xhs_effect_ledger import (
@@ -610,6 +819,12 @@ class XHSEngagement:
             note_dm_sent,
             note_engagement_risk_pause,
         )
+
+        # See ``reply_to_comment``: a Gateway dispatch re-entered this method
+        # through the capability implementation; run the outer browser step.
+        dispatched = _DISPATCH_TRANSPORT.get()
+        if dispatched is not None:
+            return await dispatched()
 
         correlation_id = self._correlation_id("dm")
         blocked = self._precheck_engagement(kind="dm", correlation_id=correlation_id)
@@ -639,6 +854,22 @@ class XHSEngagement:
         # anything the target gate let through as cold outreach does.
         proactive = not is_inbound_peer(self.account_id, target_user_id)
 
+        granted: tuple[str, ...] = ()
+        if not self._inside_capability:
+            # 判定在门前：缺 scope 的调用连 intent 行都不写，也不碰浏览器。
+            granted = await self._resolve_granted_scopes()
+            missing = self._missing_scopes(DM_CAPABILITY, granted)
+            if missing:
+                return self._blocked_result(
+                    "permission_denied",
+                    (
+                        f"账号未持有 {', '.join(missing)}（私信要求写机制 + 触达策略"
+                        "允许触达）。scope 由 XhsCredential.scopes 推导，检查该账号的"
+                        "登录/绑定浏览器与触达策略。"
+                    ),
+                    correlation_id=correlation_id,
+                )
+
         ledger = EngagementEffectLedger()
         try:
             async with await self._hold_cdp(), self._guard.lock:
@@ -649,12 +880,45 @@ class XHSEngagement:
                     content=message,
                     approval=approval,
                 )
-                result = await self._send_dm_locked(
-                    target_user_id,
-                    message,
-                    approval=approval,
-                    correlation_id=correlation_id,
-                )
+                if self._inside_capability:
+                    result = await self._send_dm_locked(
+                        target_user_id,
+                        message,
+                        approval=approval,
+                        correlation_id=correlation_id,
+                    )
+                else:
+                    gateway = self._gateway_instance()
+                    thread_id = approval.thread_id if approval is not None else ""
+                    token = _DISPATCH_TRANSPORT.set(
+                        partial(
+                            self._send_dm_locked,
+                            target_user_id,
+                            message,
+                            approval=approval,
+                            correlation_id=correlation_id,
+                        )
+                    )
+                    try:
+                        tool_result = await gateway.invoke(
+                            DM_CAPABILITY,
+                            {
+                                "message_id": "",
+                                "sender_id": target_user_id,
+                                "reply_content": message,
+                                "account_id": self.account_id,
+                                "approved_by": approval.approved_by if approval else "",
+                                "approved_at": approval.approved_at if approval else "",
+                                "thread_id": thread_id,
+                            },
+                            thread_id=thread_id,
+                            granted_scopes=granted,
+                        )
+                    finally:
+                        _DISPATCH_TRANSPORT.reset(token)
+                    result = self._verdict_from_tool_result(
+                        tool_result, correlation_id=correlation_id
+                    )
             await _record_effect_outcome(effect, result)
             # Same rule as the comment path: a *possible* send counts against
             # the daily ceiling, because it cannot be taken back.

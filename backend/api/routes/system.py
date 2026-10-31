@@ -717,3 +717,160 @@ async def get_acceptance_signoff(
 
     del user  # auth gate only
     return success(load_signoff_board())
+
+
+# ── Outreach policy management (票 5ax) ──────────────────────────────────────
+# The write half of the per-account outreach policy table. Mirrors the cool-down
+# policy endpoints above: same auth dependency, same ``success(...)`` envelope,
+# same account-in-path shape — the two policy tables are operated side by side.
+# Appended at the end of the file on purpose: ``docs/execution-plane.md`` pins
+# this module's line numbers, and new routes must not shift existing anchors.
+
+
+class OutreachPolicyRequest(BaseModel):
+    """Per-account outreach policy overrides (票 5ax).
+
+    Fields are optional because the setter writes only what it is given; an
+    omitted field keeps the account's existing answer.  Enum/range checks live
+    in the service layer (``set_outreach_policy``) so a bad value comes back in
+    the unified envelope instead of FastAPI's 422 shape.
+    """
+
+    mode: str | None = Field(
+        default=None,
+        description="nobody / inbound_only / confirmed_anyone",
+    )
+    daily_proactive_cap: int | None = Field(
+        default=None,
+        description="Proactive touches allowed per UTC day (>= 0).",
+    )
+
+
+def _outreach_policy_payload(policy: Any) -> dict[str, Any]:
+    from dataclasses import asdict
+
+    return asdict(policy)
+
+
+def _outreach_store_unavailable(exc: Exception) -> Exception:
+    """Map the service's explicit store error onto the API error family (503)."""
+    from backend.api.errors import APIError, ErrorCode
+
+    return APIError(
+        code=ErrorCode.SERVICE_UNAVAILABLE,
+        message=str(exc),
+        status_code=503,
+    )
+
+
+@router.get("/outreach-policy/{account_id}")
+async def get_outreach_policy_endpoint(
+    account_id: str,
+    _: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Effective outreach policy for one account, plus its account-row overrides.
+
+    ``effective`` is the resolved answer the gates use; ``overrides`` is what
+    the account's own rows say — without it an override and a deployment
+    default look identical.
+    """
+    from backend.services.xhs_outreach_policy import (
+        OutreachPolicyStoreUnavailableError,
+        load_outreach_policy,
+        read_outreach_overrides,
+    )
+
+    account = (account_id or "").strip()
+    try:
+        policy = await load_outreach_policy(account)
+        overrides = await read_outreach_overrides(account)
+    except OutreachPolicyStoreUnavailableError as exc:
+        raise _outreach_store_unavailable(exc) from exc
+    return success(
+        {
+            "account_id": account,
+            "effective": _outreach_policy_payload(policy),
+            "overrides": overrides,
+        }
+    )
+
+
+@router.put("/outreach-policy/{account_id}")
+async def put_outreach_policy_endpoint(
+    account_id: str,
+    body: OutreachPolicyRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Create/update the account's outreach policy rows (validated write)."""
+    from backend.api.errors import ValidationError
+    from backend.services.xhs_outreach_policy import (
+        OutreachPolicyStoreUnavailableError,
+        read_outreach_overrides,
+        set_outreach_policy,
+    )
+
+    account = (account_id or "").strip()
+    try:
+        policy = await set_outreach_policy(
+            account,
+            mode=body.mode,
+            daily_proactive_cap=body.daily_proactive_cap,
+        )
+        overrides = await read_outreach_overrides(account)
+    except ValueError as exc:
+        raise ValidationError("outreach_policy", str(exc)) from exc
+    except OutreachPolicyStoreUnavailableError as exc:
+        raise _outreach_store_unavailable(exc) from exc
+    clear_health_cache()
+    logger.info(
+        "outreach policy updated by user=%s account=%s mode=%s cap=%s",
+        user.get("username") or user.get("id"),
+        account,
+        policy.mode,
+        policy.daily_proactive_cap,
+    )
+    return success(
+        {
+            "account_id": account,
+            "effective": _outreach_policy_payload(policy),
+            "overrides": overrides,
+        }
+    )
+
+
+@router.delete("/outreach-policy/{account_id}")
+async def delete_outreach_policy_endpoint(
+    account_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Clear the account's policy rows so the deployment default applies again."""
+    from backend.services.xhs_outreach_policy import (
+        OUTREACH_POLICY_KEYS,
+        OutreachPolicyStoreUnavailableError,
+        clear_outreach_policy,
+        read_outreach_overrides,
+    )
+
+    account = (account_id or "").strip()
+    try:
+        existing = await read_outreach_overrides(account)
+        policy = await clear_outreach_policy(account)
+        remaining = await read_outreach_overrides(account)
+    except OutreachPolicyStoreUnavailableError as exc:
+        raise _outreach_store_unavailable(exc) from exc
+    removed = [key for key in OUTREACH_POLICY_KEYS if key in existing]
+    clear_health_cache()
+    logger.info(
+        "outreach policy cleared by user=%s account=%s removed=%s",
+        user.get("username") or user.get("id"),
+        account,
+        removed,
+    )
+    return success(
+        {
+            "account_id": account,
+            "removed": removed,
+            "effective": _outreach_policy_payload(policy),
+            "overrides": remaining,
+        }
+    )

@@ -43,8 +43,16 @@ def _result_or_outcome(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _get_engagement(cdp_endpoint: str = "", account_id: str = "") -> XHSEngagement:
-    """获取 XHSEngagement 实例"""
+def _get_engagement(
+    cdp_endpoint: str = "", account_id: str = "", *, inside_capability: bool = False
+) -> XHSEngagement:
+    """获取 XHSEngagement 实例。
+
+    ``inside_capability`` 是票 5av 的重入标记：这两个 ``@tool`` 是
+    ``xhs.comment_reply`` / ``xhs.dm_send`` 的 capability 实现，正常由 Tool
+    Gateway 调起 —— 外层那次调用已经是 Gateway 调用，因此服务层拿到这个实例时
+    不再嵌套调用 Gateway（嵌套会等自己的 ``max_concurrency=1`` 名额而死锁）。
+    """
     from backend.config.settings import Settings
     from backend.services.xhs_engagement import XHSEngagement
 
@@ -54,6 +62,7 @@ def _get_engagement(cdp_endpoint: str = "", account_id: str = "") -> XHSEngageme
         headless=False,
         cdp_endpoint=cdp_endpoint or settings.platform.cdp_endpoint,
         account_id=account_id,
+        inside_capability=inside_capability,
     )
 
 
@@ -144,6 +153,7 @@ async def comment_replier(
     engagement = _get_engagement(
         cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
         account_id=account_id,
+        inside_capability=True,
     )
     try:
         verdict = await engagement.reply_to_comment(
@@ -209,6 +219,7 @@ async def dm_handler(
     engagement = _get_engagement(
         cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
         account_id=account_id,
+        inside_capability=True,
     )
     try:
         verdict = await engagement.send_dm(

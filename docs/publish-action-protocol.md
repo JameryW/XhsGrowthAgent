@@ -77,7 +77,7 @@ plan_action ──policy (+ stamped / account-level judgers)──▶ ActionInte
 |---|---|---|
 | `xhs:read` | cookie 可用 | 读只有 HTTP 这一条路，没有 cookie 就没有可用的身份 |
 | `xhs:write` | cookie 可用 **∨** 已绑定 profile | 发布走 CDP，评论/私信走 HTTP，两条机制任一成立即可 |
-| `xhs:outreach` | （cookie 可用 **∨** 已绑定 profile）**∧** 该账号的触达策略允许主动触达 | 唯一一个**机制 ∧ 策略**档：两个登录完全相同的账号可以在这里不同。策略默认 `inbound_only`（只应答先来信的人），所以**回复永远不需要它**；只有主动新建私信（冷启动）才查它。策略解析见 `docs/tool-gateway-engagement-migration.md` §9.5 |
+| `xhs:outreach` | （cookie 可用 **∨** 已绑定 profile）**∧** 该账号的触达策略允许触达（`mode != nobody`） | 唯一一个**机制 ∧ 策略**档：两个登录完全相同的账号可以在这里不同。票 5av 起它的语义收紧为「账号被允许触达」而不是「允许冷启动」：默认 `inbound_only` 也持有它（应答式回复本就允许），`nobody` 才失去它；某个目标是不是冷启动、是否超每日主动预算，仍是服务层按目标 + 人工确认把关（scope 无法表达条件权限）。策略解析见 `docs/tool-gateway-engagement-migration.md` §9.5 |
 
 "已绑定 profile"对**具名账号**读的是它自己的 `cdp_port`；对**空 account_id** 读的是
 部署声明的 `XHS_CDP_ENDPOINT`（单账号部署就是"这个部署有一台自己的浏览器"，与

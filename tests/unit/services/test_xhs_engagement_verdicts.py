@@ -49,6 +49,12 @@ def _engagement(page: Any) -> XHSEngagement:
 
     ``_hold_cdp`` is replaced by a no-op because the real one takes a CDP lock
     and sleeps out account cool-downs; neither is what these tests are about.
+
+    Since 票 5av the send call is a checked ``xhs.comment_reply`` /
+    ``xhs.dm_send`` Gateway invocation: the service resolves the account's
+    grant before the Effect claim.  ``scope_resolver`` injects the grant these
+    tests assume, so the seam never turns a verdict assertion into a credential
+    test — the scope matrix has its own file (``test_xhs_engagement_gateway``).
     """
     engagement = XHSEngagement(
         cdp_endpoint="http://127.0.0.1:9224",
@@ -56,10 +62,16 @@ def _engagement(page: Any) -> XHSEngagement:
         # The real 5s cooldown between browser actions would make this file
         # slow without testing anything it means to test.
         cooldown_seconds=0.0,
+        scope_resolver=_grant_all_scopes,
     )
     engagement._ensure_page = AsyncMock(return_value=page)
     engagement._hold_cdp = AsyncMock(side_effect=lambda: _noop_hold())
     return engagement
+
+
+async def _grant_all_scopes(_account_id: str) -> tuple[str, ...]:
+    """The grant an account with a working mechanism + allowing policy holds."""
+    return ("xhs:write", "xhs:outreach")
 
 
 def _page(*query_results: Any) -> MagicMock:

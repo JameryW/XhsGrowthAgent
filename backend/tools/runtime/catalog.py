@@ -695,9 +695,20 @@ def build_registry() -> ToolRegistry:
     # spec). Registration is the reachability boundary (§7.1): everything that
     # must exist *before* this line — the Effect ledger (§5), the approval
     # gate (§7.2), read-back reconciliation (§5.3) and an account-keyed
-    # in-flight ceiling (§3.2) — exists. ``auth_scope`` stays ``xhs:write``,
-    # not ``xhs:outreach``: per §3.1 a scope nobody checks is the §9.5-6 hole
-    # again, and no call site passes ``granted_scopes`` for these yet.
+    # in-flight ceiling (§3.2) — exists.
+    #
+    # 票 5av declares ``xhs:outreach`` next to ``xhs:write``.  The tier's
+    # meaning was tightened in the same slice: it states *the account's
+    # outreach policy allows engagement* (``XhsOutreachPolicy.allows_engagement``,
+    # i.e. mode != nobody), not "cold outreach is enabled" — cold-start
+    # permission stays a service-layer question (``check_dm_target_allowed`` +
+    # ``EngagementApproval``), because no account-wide scope can answer "is
+    # this particular target a cold start and does the budget allow it".
+    # The declaration is no longer decorative: the service send path
+    # (``XhsEngagement.reply_to_comment`` / ``send_dm``) resolves
+    # ``granted_scopes(account_id)`` and passes it to
+    # ``shared_gateway().invoke(...)``, so the Gateway really applies both
+    # scopes there; ``test_scope_coverage`` names that call site.
     _register(
         registry,
         capability="xhs.comment_reply",
@@ -712,7 +723,7 @@ def build_registry() -> ToolRegistry:
         # is computed from the effect (§4.1) and guards the ledger, not this.
         retry=RetryPolicy(),
         timeout_s=_ENGAGEMENT_SAFETY_NET_S,
-        auth_scope=("xhs:write",),
+        auth_scope=("xhs:write", "xhs:outreach"),
         max_concurrency=1,
     )
     _register(
@@ -726,7 +737,7 @@ def build_registry() -> ToolRegistry:
         cost=CostClass.CHEAP,
         retry=RetryPolicy(),
         timeout_s=_ENGAGEMENT_SAFETY_NET_S,
-        auth_scope=("xhs:write",),
+        auth_scope=("xhs:write", "xhs:outreach"),
         max_concurrency=1,
     )
 

@@ -151,9 +151,13 @@ def xhs_read_grant(monkeypatch):
     invoke). The refusal side is pinned separately in
     ``tests/unit/agents/test_scope_wiring.py``, which needs a grant it can
     withhold — not one this fixture hands to everybody.
+
+    票 5av: the third tier is part of the real answer now.  ``xhs:outreach`` is
+    granted whenever the account's outreach policy allows engagement (the safe
+    default ``inbound_only`` does), so a usable cookie resolves to all three.
     """
     monkeypatch.setenv("XHS_COOKIE", "a1=0123456789abcdef0123")
-    return ("xhs:read", "xhs:write")
+    return ("xhs:read", "xhs:write", "xhs:outreach")
 
 
 @pytest.fixture

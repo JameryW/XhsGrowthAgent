@@ -489,6 +489,25 @@ async def upsert_credential(account_id: str, key_name: str, value: str) -> None:
         )
 
 
+async def delete_credential(account_id: str, key_name: str) -> bool:
+    """Delete one credential row for an account; ``True`` when one was removed.
+
+    The delete half of the account store, added by 票 5ax for the outreach
+    policy's management write path: clearing a policy means *removing* the two
+    rows so the deployment default applies again, which an empty-value upsert
+    cannot express (an empty row is itself a statement — see
+    ``services.xhs_credentials``). Idempotent: deleting a row that is not there
+    is ``False``, not an error.
+    """
+    pool = get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "DELETE FROM account_credentials WHERE account_id = %s AND key_name = %s",
+            (account_id, key_name),
+        )
+    return int(getattr(cur, "rowcount", 0) or 0) == 1
+
+
 def _resolve_cdp_host() -> str:
     """Resolve the host that the per-account Chrome's CDP port is reachable on.
 

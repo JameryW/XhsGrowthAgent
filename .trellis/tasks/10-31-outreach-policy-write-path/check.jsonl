@@ -1,0 +1,2 @@
+{"file": "docs/tool-gateway-engagement-migration.md", "reason": "verify the landed write path matches the documented semantics"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for validation and failure handling"}

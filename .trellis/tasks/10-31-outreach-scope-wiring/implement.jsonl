@@ -1,0 +1,2 @@
+{"file": "docs/tool-gateway-engagement-migration.md", "reason": "the scope/declaration/call-site design this change implements"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "code/test conventions for a gateway + scope change"}

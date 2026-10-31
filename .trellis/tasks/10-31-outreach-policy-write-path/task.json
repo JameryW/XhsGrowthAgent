@@ -1,0 +1,31 @@
+{
+  "id": "outreach-policy-write-path",
+  "name": "outreach-policy-write-path",
+  "title": "触达策略表的管理写路径（票 5ax）",
+  "description": "B 类裁定：实现。为 XhsOutreachPolicy 加服务层写/清函数 + GET/PUT/DELETE API + 校验与测试，收口文档边界③。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/services,backend/db,backend/api,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/services/xhs_outreach_policy.py",
+    "backend/db/accounts.py",
+    "backend/api/routes/system.py",
+    "docs/tool-gateway-engagement-migration.md"
+  ],
+  "notes": "DONE 2026-10-31 (B-class ruling: implement the management write path). Read side unchanged and still fail-safe; writes fail loudly. (1) backend/db/accounts.py: new idempotent delete_credential(account_id, key_name) -> bool (the delete half of the account store did not exist). (2) backend/services/xhs_outreach_policy.py: set_outreach_policy validates mode in OUTREACH_MODES and a non-negative non-bool int cap, writes only the named keys via upsert_credential, reads the effective policy back without the read-side fallback (a write whose read-back fails raises instead of claiming a policy), raises OutreachPolicyStoreUnavailableError when the pool is not ready; clear_outreach_policy deletes both rows so the deployment default applies again and returns the effective policy; read_outreach_overrides exposes the overrides half for audit display. (3) backend/api/routes/system.py: GET/PUT/DELETE /api/system/outreach-policy/{account_id} mirroring the cooldown-policy endpoints (same auth dep, success envelope; ValueError -> ValidationError 400, store unavailable -> APIError SERVICE_UNAVAILABLE 503; PUT logs user+effective values; appended at EOF so docs/execution-plane anchors do not shift). (4) Tests: test_account_credentials_delete.py, test_xhs_outreach_policy_write.py (write/read-back, partial writes, precedence over env, invalid mode/cap incl. bool/float/str, no-pool error, non-persisted write error, clear fallback + idempotency, overrides allow-list), test_system_outreach_policy.py (GET effective+overrides+precedence+no-store default; PUT success/read-back and 400/503; DELETE fallback to env confirmed_anyone + legacy cap 20, idempotency, 503) -- DB mocked at account-store seams, no Postgres. (5) Docs: tool-gateway §9.5-③ landed with endpoint shapes and 503 semantics; the stale 'no management UI/write path' boundary is closed. Registered residuals (PRD §4): partial write has no transaction (per-field honest), unknown account surfaces FK 500 rather than 404 (same as cooldown policy).",
+  "meta": {}
+}

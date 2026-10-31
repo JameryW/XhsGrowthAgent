@@ -49,6 +49,11 @@ def _approval() -> EngagementApproval:
     )
 
 
+async def _grant_all_scopes(_account_id: str) -> tuple[str, ...]:
+    """The grant an account with a working mechanism + allowing policy holds."""
+    return ("xhs:write", "xhs:outreach")
+
+
 def _engagement(page: Any) -> XHSEngagement:
     from contextlib import asynccontextmanager
 
@@ -60,6 +65,9 @@ def _engagement(page: Any) -> XHSEngagement:
         cdp_endpoint="http://127.0.0.1:9224",
         account_id="acc-1",
         cooldown_seconds=0.0,
+        # 票 5av: the send is a checked Gateway invocation; see
+        # ``test_xhs_engagement_verdicts._engagement``.
+        scope_resolver=_grant_all_scopes,
     )
     engagement._ensure_page = AsyncMock(return_value=page)
     engagement._hold_cdp = AsyncMock(side_effect=lambda: _noop_hold())

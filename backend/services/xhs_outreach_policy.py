@@ -46,6 +46,16 @@ resolver must not invent identity.
 Reading is injectable (:class:`OutreachReader`) so the precedence rule can be
 tested without a Postgres — not so the rule can be skipped.  The default reader
 is the production read.
+
+**Management writes (票 5ax).**  Until this slice the two keys could only be
+written by hand into ``account_credentials``.  :func:`set_outreach_policy` and
+:func:`clear_outreach_policy` are the validated write path: they accept only
+the declared mode names / a non-negative integer cap, write only the keys the
+caller named, and read the policy back so the caller sees the effective answer
+rather than "saved".  Writes fail loudly (``OutreachPolicyStoreUnavailableError``)
+when the account store is not available — the opposite of the read side's
+fail-safe posture, because a management write that silently no-ops is worse
+than an error: the operator would believe a suspension they never applied.
 """
 
 from __future__ import annotations
@@ -64,10 +74,14 @@ __all__ = [
     "OUTREACH_MODES",
     "OUTREACH_NOBODY",
     "OUTREACH_POLICY_KEYS",
+    "OutreachPolicyStoreUnavailableError",
     "OutreachReader",
     "XhsOutreachPolicy",
+    "clear_outreach_policy",
     "load_outreach_policy",
     "policy_from_values",
+    "read_outreach_overrides",
+    "set_outreach_policy",
 ]
 
 #: ③ Nobody at all — even replies are suspended.  The operator's "stop touching
@@ -263,3 +277,150 @@ async def load_outreach_policy(
         if _carries_policy(stored):
             return policy_from_values(account, stored, fallback=safe)
     return policy_from_values(account, _deployment_values(), fallback=safe)
+
+
+# ── Management write path (票 5ax) ───────────────────────────────────────────
+
+
+class OutreachPolicyStoreUnavailableError(RuntimeError):
+    """The account store cannot take a management write.
+
+    Deliberately an error rather than a fallback: the read side may answer a
+    broken store with the safe default (unknown is not permission), but a
+    *write* that reports success while writing nothing would leave the operator
+    believing a suspension they never applied.  The API maps this to 503.
+    """
+
+
+def _require_account(account_id: str) -> str:
+    account = (account_id or "").strip()
+    if not account:
+        raise ValueError("account_id is required for an outreach policy write")
+    return account
+
+
+def _normalize_mode(mode: object) -> str:
+    text = str(mode or "").strip().lower()
+    if text not in OUTREACH_MODES:
+        raise ValueError(
+            f"unknown outreach mode {mode!r}; expected one of {', '.join(OUTREACH_MODES)}"
+        )
+    return text
+
+
+def _validate_cap(daily_proactive_cap: object) -> int:
+    if isinstance(daily_proactive_cap, bool) or not isinstance(daily_proactive_cap, int):
+        raise ValueError(
+            f"daily_proactive_cap must be a non-negative int (got {daily_proactive_cap!r})"
+        )
+    if daily_proactive_cap < 0:
+        raise ValueError("daily_proactive_cap must be a non-negative int")
+    return daily_proactive_cap
+
+
+async def set_outreach_policy(
+    account_id: str,
+    *,
+    mode: str | None = None,
+    daily_proactive_cap: int | None = None,
+) -> XhsOutreachPolicy:
+    """Write the named policy keys and return the *effective* policy.
+
+    Only the fields the caller passes are written — an omitted field keeps the
+    account's existing answer (or the deployment default if it has none), which
+    is the same per-field semantics the reader already applies.  A body that
+    names nothing is refused: a management write that writes nothing is a
+    caller mistake, not a no-op worth reporting as success.
+
+    The return value is read back from the account store, so it is what the
+    gates will see — not a reconstruction of the request.
+    """
+    from backend.db.pool import is_pool_ready
+
+    account = _require_account(account_id)
+    if mode is None and daily_proactive_cap is None:
+        raise ValueError("set_outreach_policy needs at least one of mode / daily_proactive_cap")
+    normalized_mode = _normalize_mode(mode) if mode is not None else None
+    normalized_cap = _validate_cap(daily_proactive_cap) if daily_proactive_cap is not None else None
+    if not is_pool_ready():
+        raise OutreachPolicyStoreUnavailableError(
+            "outreach policy write needs the account store (Postgres pool is not ready)"
+        )
+
+    from backend.db.accounts import upsert_credential
+
+    if normalized_mode is not None:
+        await upsert_credential(account, MODE_KEY, normalized_mode)
+    if normalized_cap is not None:
+        await upsert_credential(account, DAILY_PROACTIVE_CAP_KEY, str(normalized_cap))
+
+    stored = await _read_store_for_write(account)
+    if not _carries_policy(stored):
+        raise OutreachPolicyStoreUnavailableError(
+            f"outreach policy write did not persist for account {account!r}"
+        )
+    return policy_from_values(account, stored)
+
+
+async def clear_outreach_policy(account_id: str) -> XhsOutreachPolicy:
+    """Delete the account's two policy rows and return the effective policy.
+
+    Removing the rows is what "clear" must mean: an upsert with an empty value
+    would still be an account-level statement (see the module docstring), so
+    the deployment default would never apply again.  Idempotent — clearing a
+    policy that was never overridden removes nothing and still returns the
+    effective answer.
+    """
+    from backend.db.pool import is_pool_ready
+
+    account = _require_account(account_id)
+    if not is_pool_ready():
+        raise OutreachPolicyStoreUnavailableError(
+            "outreach policy clear needs the account store (Postgres pool is not ready)"
+        )
+
+    from backend.db.accounts import delete_credential
+
+    for key in OUTREACH_POLICY_KEYS:
+        await delete_credential(account, key)
+    # After the delete the account has no policy rows, so the deployment
+    # default applies again — resolve it through the one owner of that rule.
+    return await load_outreach_policy(account)
+
+
+async def read_outreach_overrides(account_id: str) -> dict[str, str]:
+    """The account's own policy rows — the ``overrides`` half of the GET payload.
+
+    Displaying them is what makes a policy change auditable: "effective" alone
+    cannot tell an override apart from the deployment default.  No pool means
+    there is no account store (a configuration fact), so the honest answer is
+    "no overrides"; an unreadable store is reported as unavailable rather than
+    rendered as an empty override set.
+    """
+    from backend.db.pool import is_pool_ready
+
+    account = (account_id or "").strip()
+    if not account or not is_pool_ready():
+        return {}
+    try:
+        return dict(await _read_stored(account))
+    except Exception as exc:
+        raise OutreachPolicyStoreUnavailableError(
+            f"outreach policy rows unreadable for account {account!r}: {type(exc).__name__}: {exc}"
+        ) from exc
+
+
+async def _read_store_for_write(account_id: str) -> Mapping[str, str]:
+    """Read the rows a write just touched, without the read side's fallback.
+
+    ``load_outreach_policy`` would answer a failed read with the safe default,
+    which after a successful write would claim a policy the account does not
+    have.  A write's read-back must fail loudly instead.
+    """
+    try:
+        return await _read_stored(account_id)
+    except Exception as exc:
+        raise OutreachPolicyStoreUnavailableError(
+            f"outreach policy read-back failed for account {account_id!r}: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc

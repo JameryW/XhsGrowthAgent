@@ -237,9 +237,9 @@ token，所有调用方都拿到 `ripple:read`"。那不是一个权限，是一
 | `ripple.validate_pmf` | read_only | kwargs | — | — | **3600** |
 | `search.fetch` | read_only | invoke | — | — | 60 |
 | `search.web` | read_only | invoke | — | — | 60 |
-| `xhs.comment_reply` | **side_effecting** | invoke | — | `xhs:write` | **300** |
+| `xhs.comment_reply` | **side_effecting** | invoke | — | `xhs:write, xhs:outreach` | **300** |
 | `xhs.competitor_analyzer` | read_only | invoke | — | `xhs:read` | 120 |
-| `xhs.dm_send` | **side_effecting** | invoke | — | `xhs:write` | **300** |
+| `xhs.dm_send` | **side_effecting** | invoke | — | `xhs:write, xhs:outreach` | **300** |
 | `xhs.keyword_monitor` | read_only | invoke | — | `xhs:read` | 120 |
 | `xhs.publish` | **side_effecting** | invoke | — | `xhs:write` | **900** |
 | `xhs.trending` | read_only | invoke | — | `xhs:read` | 120 |

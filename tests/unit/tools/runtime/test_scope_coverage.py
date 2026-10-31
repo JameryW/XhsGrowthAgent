@@ -43,9 +43,9 @@ BACKEND = REPO / "backend"
 # Recomputed from ``build_registry()`` -- declared, whether or not anyone applies it.
 DECLARED_SCOPES: dict[str, tuple[str, ...]] = {
     "analysis.topic_scorer": ("xhs:read",),
-    "xhs.comment_reply": ("xhs:write",),
+    "xhs.comment_reply": ("xhs:write", "xhs:outreach"),
     "xhs.competitor_analyzer": ("xhs:read",),
-    "xhs.dm_send": ("xhs:write",),
+    "xhs.dm_send": ("xhs:write", "xhs:outreach"),
     "xhs.keyword_monitor": ("xhs:read",),
     "xhs.publish": ("xhs:write",),
     "xhs.trending": ("xhs:read",),
@@ -61,9 +61,18 @@ DECLARED_SCOPES: dict[str, tuple[str, ...]] = {
 # invocations, and ``analysis.topic_scorer`` resolves one grant per scoring
 # pass in ``content_strategist``. One judgement, three enforcements: a refusal
 # cannot say one thing at the call site and do another at the runtime.
+#
+# The two engagement capabilities joined in 票 5av. ``XHSEngagement`` used to
+# drive the browser directly, so they had no call site at all; now the service
+# send methods resolve ``granted_scopes(account_id)`` (injectable seam), judge
+# it before the Effect ledger claim, and hand the same tuple to
+# ``shared_gateway().invoke(...)``. One file because the two paths are the
+# same shape (comment reply / DM) in one class.
 CHECKED_CALL_SITES: dict[str, tuple[str, ...]] = {
     "analysis.topic_scorer": ("backend/agents/content_strategist.py",),
+    "xhs.comment_reply": ("backend/services/xhs_engagement.py",),
     "xhs.competitor_analyzer": ("backend/agents/trend_scout.py",),
+    "xhs.dm_send": ("backend/services/xhs_engagement.py",),
     "xhs.keyword_monitor": ("backend/agents/trend_scout.py",),
     "xhs.publish": (
         "backend/agents/publisher.py",
@@ -199,9 +208,10 @@ class TestDeclaredScopes:
         """The denominator matters: "some capabilities are scoped" hides the ratio.
 
         Seven of fourteen after Phase B (票 5f): the two engagement
-        capabilities joined with ``xhs:write``. Five was not eight for the
-        ripple three earlier -- removing a declaration is the one change this
-        file is meant to *allow*, see ``test_no_declared_scope_is_unsatisfiable``.
+        capabilities joined with ``xhs:write``, and 票 5av added
+        ``xhs:outreach`` to both. Five was not eight for the ripple three
+        earlier -- removing a declaration is the one change this file is meant
+        to *allow*, see ``test_no_declared_scope_is_unsatisfiable``.
         """
         specs = build_registry().specs()
         assert len(specs) == 14
@@ -219,10 +229,17 @@ class TestDeclaredScopes:
         Read from :func:`build_registry`, **not** from ``DECLARED_SCOPES``: the
         register is the thing a hurried change would update alongside the code,
         and a guard that only compares two registers fires on nothing.
-        """
-        from backend.services.xhs_credentials import XHS_READ_SCOPE, XHS_WRITE_SCOPE
 
-        grantable = {XHS_READ_SCOPE, XHS_WRITE_SCOPE}
+        票 5av made ``xhs:outreach`` grantable (mode != nobody), so it joined
+        the set instead of being the exception this test exists to catch.
+        """
+        from backend.services.xhs_credentials import (
+            XHS_OUTREACH_SCOPE,
+            XHS_READ_SCOPE,
+            XHS_WRITE_SCOPE,
+        )
+
+        grantable = {XHS_READ_SCOPE, XHS_WRITE_SCOPE, XHS_OUTREACH_SCOPE}
         declared = {scope for spec in build_registry().specs() for scope in spec.auth_scope}
         assert declared - grantable == set(), (
             "A capability declares a scope that granted_scopes() can never "
@@ -232,7 +249,7 @@ class TestDeclaredScopes:
 
 
 class TestWhereTheCheckIsApplied:
-    def test_six_call_sites_apply_a_scope(self):
+    def test_eight_call_sites_apply_a_scope(self):
         checked = _group(_call_sites(), checked=True)
         assert checked == CHECKED_CALL_SITES, (
             "The set of scope-checking call sites changed. If you just wired one, "
@@ -265,27 +282,23 @@ class TestWhereTheCheckIsApplied:
             "would immediately be unpaid, so they stay pinned."
         )
 
-    def test_two_scoped_capabilities_have_no_checked_caller(self):
+    def test_every_scoped_capability_has_a_checked_caller(self):
         """The number §9.6 quotes. It is a debt figure, not a target.
 
         Was seven while ripple declared ``ripple:read``; was four when this
         file was written; was six after 票 5f registered the two engagement
-        capabilities; is **two** after 票 5g wired every existing call site.
-        Removing a declaration retires the debt honestly -- those three
-        capabilities are not "partly protected", they are not identity-scoped
-        at all. Debt is counted per capability, not per site: a capability
-        with one checked caller is not "partly protected".
+        capabilities; became **two** after 票 5g wired every existing call
+        site; is **zero** after 票 5av wired the last two.
 
-        What remains is a different animal from what this register once
-        measured: ``xhs.comment_reply`` and ``xhs.dm_send`` declare
-        ``xhs:write`` and have **no call site at all** -- registered means
-        reachable, not invoked. There is no site to skip a check at. When one
-        first gets an ``.invoke(...)``, either pass ``granted_scopes``
-        (checked) or record the site (debt) -- there is no third option, and
-        this test is where the third option fails.
+        The pair that used to be listed here (``xhs.comment_reply`` /
+        ``xhs.dm_send``) had no call site at all — registered means reachable,
+        not invoked. 票 5av made the service send path their first call site
+        and passes ``granted_scopes`` there, so the debt is retired per
+        capability. Removing a declaration retires debt honestly too — those
+        capabilities are not "partly protected", they are not identity-scoped
+        at all. Debt is counted per capability, not per site.
         """
         unscoped_but_declared = set(DECLARED_SCOPES) - set(CHECKED_CALL_SITES)
-        assert len(unscoped_but_declared) == 2
-        assert unscoped_but_declared == {"xhs.comment_reply", "xhs.dm_send"}
+        assert unscoped_but_declared == set()
         assert "xhs.publish" not in unscoped_but_declared  # the one that started it all
         assert UNCHECKED_CALL_SITES == {}, "a site skips its own declaration"

@@ -1564,7 +1564,9 @@ async def test_the_resolved_grant_travels_with_the_invocation(
 
     # No cookie in this environment: the grant is the browser, so it is write
     # only.  A read scope here would claim an HTTP identity that does not exist.
-    assert tools.seen == [("xhs.publish", ("xhs:write",))]
+    # 票 5av: the engagement tier travels too — the safe-default outreach policy
+    # allows engagement, and a published account may answer/engage afterwards.
+    assert tools.seen == [("xhs.publish", ("xhs:write", "xhs:outreach"))]
 
 
 @pytest.mark.asyncio
