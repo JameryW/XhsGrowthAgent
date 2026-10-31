@@ -131,18 +131,124 @@ class TestColdStart:
         assert result is None
 
 
-# ── Graceful Fallback ──
+# ── Graceful Fallback / Durable Raise ──
 
 
 class TestFallback:
     @pytest.mark.asyncio
-    async def test_recall_style_falls_back_on_exception(self):
+    async def test_recall_style_store_failure_returns_cold_defaults_when_empty(self):
+        """Store asearch failure is best-effort; empty durable → cold defaults (票 5ag)."""
         store = AsyncMock()
         store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
-        cm = CreativeMemory("test_acct", store=store)
-        result = await cm.recall_style()
-        # Should return defaults, not raise
+        cm = CreativeMemory("test_acct_recall_store_empty", store=store)
+        with patch.object(cm_db, "list_styles", new=AsyncMock(return_value=[])):
+            result = await cm.recall_style()
         assert len(result) == 3
+        assert all(str(s.get("style_id", "")).startswith("default_") for s in result)
+
+    @pytest.mark.asyncio
+    async def test_recall_style_raises_on_durable_failure(self):
+        """Durable list failure propagates (票 5ag) — no fake cold-start defaults."""
+        cm = CreativeMemory("test_acct", store=None)
+        with (
+            patch.object(
+                cm_db,
+                "list_styles",
+                new=AsyncMock(side_effect=RuntimeError("durable list down")),
+            ),
+            pytest.raises(RuntimeError, match="durable list down"),
+        ):
+            await cm.recall_style()
+
+    @pytest.mark.asyncio
+    async def test_recall_plays_raises_on_durable_failure(self):
+        cm = CreativeMemory("test_acct", store=None)
+        with (
+            patch.object(
+                cm_db,
+                "list_plays",
+                new=AsyncMock(side_effect=RuntimeError("durable list down")),
+            ),
+            pytest.raises(RuntimeError, match="durable list down"),
+        ):
+            await cm.recall_plays()
+
+    @pytest.mark.asyncio
+    async def test_recall_materials_raises_on_durable_failure(self):
+        cm = CreativeMemory("test_acct", store=None)
+        with (
+            patch.object(
+                cm_db,
+                "list_materials",
+                new=AsyncMock(side_effect=RuntimeError("durable list down")),
+            ),
+            pytest.raises(RuntimeError, match="durable list down"),
+        ):
+            await cm.recall_materials()
+
+    @pytest.mark.asyncio
+    async def test_recall_benchmark_raises_on_durable_failure(self):
+        cm = CreativeMemory("test_acct", store=None)
+        with (
+            patch.object(
+                cm_db,
+                "get_benchmark",
+                new=AsyncMock(side_effect=RuntimeError("durable get down")),
+            ),
+            pytest.raises(RuntimeError, match="durable get down"),
+        ):
+            await cm.recall_benchmark("母婴")
+
+    @pytest.mark.asyncio
+    async def test_recall_style_store_failure_still_returns_durable(self):
+        """Store asearch failure warns; durable rows still returned (票 5ag)."""
+        durable_style = _sample_style(tone="治愈", visual="温暖治愈", rate=0.12, n=4)
+        durable_style["style_id"] = "style_durable_ok"
+        store = AsyncMock()
+        store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
+        cm = CreativeMemory("test_acct_recall_store", store=store)
+        with patch.object(cm_db, "list_styles", new=AsyncMock(return_value=[durable_style])):
+            result = await cm.recall_style()
+        assert any(s.get("style_id") == "style_durable_ok" for s in result)
+
+    @pytest.mark.asyncio
+    async def test_recall_plays_store_failure_still_returns_durable(self):
+        durable_play = ConversionPlay(
+            play_id="play_durable_ok",
+            trigger_condition="新品首发",
+            avg_engagement_rate=0.1,
+        )
+        store = AsyncMock()
+        store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
+        cm = CreativeMemory("test_acct_recall_play_store", store=store)
+        with patch.object(cm_db, "list_plays", new=AsyncMock(return_value=[dict(durable_play)])):
+            result = await cm.recall_plays()
+        assert any(p.get("play_id") == "play_durable_ok" for p in result)
+
+    @pytest.mark.asyncio
+    async def test_recall_materials_store_failure_still_returns_durable(self):
+        durable_mat = MaterialEntry(
+            material_id="mat_durable_ok",
+            category="标题模板",
+            content="test",
+            weight=2.0,
+        )
+        store = AsyncMock()
+        store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
+        cm = CreativeMemory("test_acct_recall_mat_store", store=store)
+        with patch.object(cm_db, "list_materials", new=AsyncMock(return_value=[dict(durable_mat)])):
+            result = await cm.recall_materials()
+        assert any(m.get("material_id") == "mat_durable_ok" for m in result)
+
+    @pytest.mark.asyncio
+    async def test_recall_benchmark_store_failure_after_durable_miss_returns_none(self):
+        """Durable miss + store failure → None (warn), not raise (票 5ag)."""
+        store = AsyncMock()
+        store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
+        cm = CreativeMemory("test_acct_recall_bench_store", store=store)
+        with patch.object(cm_db, "get_benchmark", new=AsyncMock(return_value=None)):
+            result = await cm.recall_benchmark("母婴")
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_deposit_style_raises_on_durable_failure(self):

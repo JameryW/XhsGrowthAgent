@@ -33,7 +33,7 @@ promotion_id 走到证据 id 与源版本。
 |---|---|---|
 | hy-memory（外部引擎，默认关） | `remember` / `recall` / `last_error`；pro 模式在 SDK 内做 LLM 抽取与冲突调和（reconciler 对仓库不透明）；降级经 `recall_hy_memory` 的 `DEGRADED` 可见 | 仓库**没有**任何"这条 SDK 抽取的记忆可否被信任"的判断；候选的 `source_ref` 只是 metadata 里的一段字符串，没人验证 |
 | `MemoryManager`（4 个命名空间） | 4 个写入方法全部 `store.aput(key=uuid4(), value=...)`，只追加、不看已有 | 没有 verify、没有 dedupe、没有 supersede、没有 provenance 字段 |
-| Creative Memory（measured rows） | 行级实测（`engagement_rate` / `sample_count` / `proven_count` / `source_post_id`）；`deposit_style` 按 tone+visual 精确匹配合并并加权平均；`calibrate` 用实际结果回写；`deposit_*` / `calibrate` durable 失败上抛（票 5ae / 5af） | 没有"这条实测证据是否够格变成策略结论"的闸门；没有决定记录（晋升闸门见本管道） |
+| Creative Memory（measured rows） | 行级实测（`engagement_rate` / `sample_count` / `proven_count` / `source_post_id`）；`deposit_style` 按 tone+visual 精确匹配合并并加权平均；`calibrate` 用实际结果回写；`deposit_*` / `calibrate` / `recall_*` durable 失败上抛（票 5ae / 5af / 5ag） | 没有"这条实测证据是否够格变成策略结论"的闸门；没有决定记录（晋升闸门见本管道） |
 | Creator Agent（审查/学习） | ADR-0002 先审后学；`proposals.py` 把实测观测投影成确定性 `evidence_id`/`proposal_id` 的只读提案（Laplacian 置信度、按 `source_ref` 去重、草稿偏好有阈值）；`ModelRevision` append-only；`GET /model/evidence-proposals` + `POST /learning-signals/{id}/review` | 这条审查路径服务的是 **Creator Model**，不是 memory；没有任何东西把"证据 → 记忆"的晋升决策记下来 |
 | Context Compiler | `TrustClass`（`internal_fact` / `memory` / `external_document` / `model_generated` / `unspecified`）、`verified`、`ttl_seconds`、`source_version` 已存在并可选渲染；检索器把 content_history 映射为 `internal_fact`、其余三个命名空间为 `memory` | 这些字段是**渲染用的标签**，没有生产者做"验证"；trust 也还没参与 rerank（那是另一件事，见 §8） |
 
@@ -176,6 +176,7 @@ PromotionDecision(frozen)
 - 不把 trust 接进 rerank（P1-A 留的后续项，与本管道独立）；
 - ~~不顺手改 `deposit_*` 的 best-effort 吞异常~~ **已由票 5ae 解决**（durable 失败上抛；store dual-write 仍 warn）。
 - ~~不顺手改 `calibrate` 的 durable 吞异常假 0~~ **已由票 5af 解决**（durable get/persist 上抛；缺失 ID 仍 0）。
+- ~~不顺手改 `recall_*` 的 durable 吞异常伪空 / 伪冷启动~~ **已由票 5ag 解决**（durable 读失败上抛；store `asearch` 仍 warn；真实空库行为不变）。
 
 ## 9. Open questions（实现前需要产品/架构裁决）
 
@@ -217,8 +218,11 @@ PromotionDecision(frozen)
   BaseStore dual-write 仍 best-effort warn（durable 已成功不回滚）。
 - ~~`CreativeMemory.calibrate` / `_calibrate_*` 吞 durable 读写失败后返回假 0~~
   **已解决（票 5af）**：durable get/persist 失败上抛；缺失 ID 仍 0；store aget 在
-  durable miss 后 warn+当 miss；dual-write 仍经 `_persist_*` best-effort。召回
-  `recall_*` 吞异常仍 out of scope。
+  durable miss 后 warn+当 miss；dual-write 仍经 `_persist_*` best-effort。
+- ~~`CreativeMemory.recall_*` 吞 durable 读失败后伪空 / 伪冷启动~~
+  **已解决（票 5ag）**：durable `list_*` / `get_benchmark` 失败上抛；真实空库仍
+  `[]`/`None`（`recall_style` 仅在 durable 成功且无真实 style 时走 `_default_styles()`）；
+  store `asearch` 仍 best-effort warn。`find_similar` swallow 仍 out of scope。
 - hy-memory 的 `remember` 契约是"永不炸调用方 + 返回 None"（`docs/hy-memory.md` §1）——
   这是**外部增强层**的合理契约；本管道不依赖它做证明，但读取时要把 `last_error` 当事实。
 - `MemoryManager` 写入 key 是 `uuid4()`，所以今天**无法按键去重**；Slice C 引入确定性 key
