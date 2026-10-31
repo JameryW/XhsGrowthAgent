@@ -943,3 +943,37 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: CI 本地复演 + 跨平台临时目录修复（票 5as）
+
+**Date**: 2026-10-31
+**Task**: CI 本地复演 + 跨平台临时目录修复（票 5as）
+**Branch**: `main`
+
+### Summary
+
+按 ci.yml 在本地重演门禁（harness benchmarks pass=3 skip=3、context compiler baseline drift within 5%、tool runtime gate、stealth gate、frontend type-check、i18n 2372 keys、ruff；mypy/OMP 因本地环境跳过）。全量 pytest 暴露唯一确定性失败：图片上传写死 /tmp/xhs_images（Windows 解析成盘符根、Errno 13），publisher 封面同款。票 5as 改为 tempfile.gettempdir() 派生（Linux/容器行为不变），新增 AST 静态守卫 tests/unit/test_no_hardcoded_tmp_paths.py（突变回 /tmp 会红），并重映射因此漂移的 execution-plane/agent-os/tool-gateway 行号（tool-gateway 的 publisher :735 本就指错分支，改为真实 :1044）。复跑全量：4473 passed / 0 failed / 3 skipped / 206 errors（全部为沙箱 tmp_path ACL 环境性），确定性红归零。文档门禁 8 passed，ruff/format 绿。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c0c05107` | (see git log) |
+| `784c99fa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
+- **Total Sessions**: 29
 - **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~945 | Active |
+| `journal-1.md` | ~979 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 29 | 2026-10-31 | CI 本地复演 + 跨平台临时目录修复（票 5as） | `c0c05107`, `784c99fa` | `main` |
 | 28 | 2026-10-31 | 继续收口：flaky 测试修复 + 可验证文档漂移（票 5aq / 5ar） | `c9162bca`, `37c169e5`, `c50100e8`, `e504f691` | `main` |
 | 27 | 2026-10-31 | 架构遗留收口：EVENT_KINDS 退休 + 记录纠偏（票 5ao / 5ap） | `cc92b052`, `cb6e4876`, `a4c48e7b`, `5d2d4e07` | `main` |
 | 26 | 2026-10-31 | 架构任务核验 + 重试撞重试闸门（票 5an） | `cfc33d7e`, `e0930d96`, `8af9094d`, `07910523` | `main` |
