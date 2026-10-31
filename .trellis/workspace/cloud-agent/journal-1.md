@@ -687,3 +687,37 @@ Default platform note-list reconcile fetcher walks up to 3 pages with early stop
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: 对账确认同步 publish_result（票 5am）
+
+**Date**: 2026-10-31
+**Task**: 对账确认同步 publish_result（票 5am）
+**Branch**: `cursor/effect-reconcile-publish-result-finish-5039`
+
+### Summary
+
+On publish-retry reconciled gate, best-effort sync checkpoint publish_result to published; retargeted execution-plane anchors/claims. Merged #751.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f4942530` | (see git log) |
+| `2e890a5b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
