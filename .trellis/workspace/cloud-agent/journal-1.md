@@ -212,3 +212,39 @@ Merged #722: Run identity stamps start/rerun; pause/error resume reuse; status e
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Memory Promotion 人审写入面（票 5y）
+
+**Date**: 2026-10-31
+**Task**: Memory Promotion 人审写入面（票 5y）
+**Branch**: `cursor/memory-promotion-5y-finish-5039`
+
+### Summary
+
+Locked PRD Q1 + same-request approve write; implemented POST .../memory-promotions/{id}/review (human PROMOTE then write_promoted_memory; dismiss REFUSE); body snapshot for hy; PR #723 merged; captured 7-section error-handling + directory map specs; archived task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `72475be3` | (see git log) |
+| `f9109107` | (see git log) |
+| `ae2f0257` | (see git log) |
+| `37efa124` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
