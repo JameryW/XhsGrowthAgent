@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Policy → decision → ledger → docs consistency"}
+{"file": "docs/memory-promotion.md", "reason": "Q6 closed; bump rule present"}
+{"file": ".trellis/tasks/10-31-memory-promotion-policy-version/prd.md", "reason": "Acceptance criteria"}

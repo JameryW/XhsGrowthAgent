@@ -13,6 +13,7 @@ import pytest
 
 from backend.context.models import TrustClass
 from backend.memory.promotion import (
+    DEFAULT_PROMOTION_POLICY_VERSION,
     DedupeVerdict,
     ExistingEntry,
     PromotionCandidate,
@@ -22,6 +23,7 @@ from backend.memory.promotion import (
     SourceCheck,
     candidate_id_for,
     decide_promotion,
+    default_promotion_policy,
 )
 
 _VERSION = "2026-10-01T00:00:00Z"
@@ -371,6 +373,49 @@ class TestPolicy:
             _candidate(), source=_source(), policy=PromotionPolicy(policy_version="v9")
         )
         assert decision.policy_version == "v9"
+
+
+class TestPolicyVersionSource:
+    """票 5aa / PRD §9 Q6: Git constant is the only machine policy_version authority."""
+
+    def test_factory_uses_the_module_constant(self) -> None:
+        policy = default_promotion_policy()
+        assert policy.policy_version == DEFAULT_PROMOTION_POLICY_VERSION
+        assert policy.min_samples == 5
+        assert policy.machine_promotable_classes == (TrustClass.INTERNAL_FACT,)
+        assert policy.allowed_namespaces is None
+
+    def test_dataclass_default_matches_the_constant(self) -> None:
+        assert PromotionPolicy().policy_version == DEFAULT_PROMOTION_POLICY_VERSION
+
+    def test_default_decision_carries_the_constant(self) -> None:
+        decision = decide_promotion(_candidate(), source=_source())
+        assert decision.policy_version == DEFAULT_PROMOTION_POLICY_VERSION
+        assert decision.decided_by == "machine"
+
+    def test_monkeypatching_the_constant_is_observable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("backend.memory.promotion.DEFAULT_PROMOTION_POLICY_VERSION", "v-test")
+        assert default_promotion_policy().policy_version == "v-test"
+        decision = decide_promotion(_candidate(), source=_source())
+        assert decision.policy_version == "v-test"
+
+    def test_no_scattered_policy_version_literal_in_protocol_module(self) -> None:
+        """The only authority spelling is the constant assignment itself."""
+        from pathlib import Path
+
+        pin = DEFAULT_PROMOTION_POLICY_VERSION
+        source = Path(decide_promotion.__code__.co_filename).read_text(encoding="utf-8")
+        # Strip the constant definition line, then forbid other copies of the same
+        # spelling that could silently become a second policy_version authority.
+        without_constant = source.replace(
+            f'DEFAULT_PROMOTION_POLICY_VERSION = "{pin}"',
+            "DEFAULT_PROMOTION_POLICY_VERSION = <pin>",
+            1,
+        )
+        assert f'"{pin}"' not in without_constant
+        assert f"'{pin}'" not in without_constant
 
 
 class TestContractViolationsRaise:

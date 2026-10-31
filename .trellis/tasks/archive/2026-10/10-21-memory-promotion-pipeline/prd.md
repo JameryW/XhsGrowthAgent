@@ -192,8 +192,9 @@ PromotionDecision(frozen)
    跨账号查询时再镜像到 Postgres —— 写入口只有 `PromotionLedger.append` 一处，决策对象不变。
    代价（诚实边界）：BaseStore 无 CAS，多写者并发同键依赖"字节相同"这一性质；读页满
    （`complete=False`）必须拒绝据此去重，已写进协议。
-6. **谁算 `decided_by="machine"` 的责任人**：审计要能定位策略版本；`policy_version` 的
-   来源（常量？配置文件？）需要定。
+6. ~~**谁算 `decided_by="machine"` 的责任人**~~：**已裁决（票 5aa）** —
+   Git 模块常量 `DEFAULT_PROMOTION_POLICY_VERSION` + `default_promotion_policy()`；
+   无 env/远端；改机判决语义必须 bump；人审复用 REVIEW 行版本。
 
 ## 10. 邻近风险（本 PRD 明确不解决，但要登记）
 

@@ -16,7 +16,10 @@ import pytest
 
 from backend.context.models import TrustClass
 from backend.creator_agent.models import ContentObservation, ContentObservationKind
-from backend.memory.promotion import PromotionCandidate
+from backend.memory.promotion import (
+    DEFAULT_PROMOTION_POLICY_VERSION,
+    PromotionCandidate,
+)
 from backend.memory.promotion_hy import (
     HyMemoryBatch,
     candidate_from_hy_memory,
@@ -171,7 +174,7 @@ class TestCandidateWiring:
             verified=True,
             supersedes=(),
             decided_by="machine",
-            policy_version="v1",
+            policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
             recorded_at=_OBSERVED,
             body="一条待人审的 hy 记忆",
         )

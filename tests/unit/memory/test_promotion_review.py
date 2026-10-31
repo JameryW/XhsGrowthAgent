@@ -16,6 +16,7 @@ from langgraph.store.memory import InMemoryStore
 from backend.context.models import TrustClass
 from backend.creator_agent.models import CreatorReviewDisposition
 from backend.memory.promotion import (
+    DEFAULT_PROMOTION_POLICY_VERSION,
     DedupeVerdict,
     PromotionCandidate,
     PromotionDecision,
@@ -79,7 +80,7 @@ def _review_decision(candidate: PromotionCandidate) -> PromotionDecision:
         verified=True,
         supersedes=(),
         decided_by="machine",
-        policy_version="v1",
+        policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
     )
 
 
@@ -290,7 +291,7 @@ class TestReviewPromotionConflicts:
             verified=True,
             supersedes=(),
             decided_by="machine",
-            policy_version="v1",
+            policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
         )
         await PromotionLedger(store).append(_ACCOUNT, candidate, decision, recorded_at=_RECORDED)
         promo_id = promotion_id_for(decision, source_version=candidate.source_version)
