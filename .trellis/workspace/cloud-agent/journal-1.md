@@ -248,3 +248,39 @@ Locked PRD Q1 + same-request approve write; implemented POST .../memory-promotio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Memory Promotion TTL 默认值（票 5z）
+
+**Date**: 2026-10-31
+**Task**: Memory Promotion TTL 默认值（票 5z）
+**Branch**: `cursor/memory-promotion-ttl-finish-5039`
+
+### Summary
+
+Locked PRD §9 Q2: all namespaces ttl_seconds=None (supersede-only). Added promotion_ttl resolve/expiry helpers; wired observe/hy/apply/human-review. Merged #725 after conflict resolve with #724. Archived task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5377d639` | (see git log) |
+| `0083e35f` | (see git log) |
+| `8ada3543` | (see git log) |
+| `1480c3aa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
