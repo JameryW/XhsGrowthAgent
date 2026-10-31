@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Where API routes, memory modules, and creator_agent models live — keep review write in the existing layered layout"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Learning-review 404/409 conflict translation pattern the promotion review route must mirror"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Forbidden patterns and code-quality bar while adding promotion_review + route tests"}
+{"file": "docs/memory-promotion.md", "reason": "Authoritative Slice A–D contracts: ledger-first write order, REVIEW-only hy honesty, docs that this ticket must rewrite"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "Parent PRD §9 Q1 open question this ticket closes; disposition vocabulary and out-of-scope constraints"}

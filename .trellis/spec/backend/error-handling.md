@@ -407,6 +407,27 @@ Learning review routes translate domain exceptions into typed API errors:
 The adapter must raise before committing when a revision or disposition check
 fails. Routes must not catch these failures and return a successful envelope.
 
+## Scenario: Creator Agent memory-promotion review conflicts
+
+Human review of an open Memory Promotion `REVIEW` row
+(`POST /api/creator-agent/memory-promotions/{promotion_id}/review`) mirrors the
+learning-signal conflict shape:
+
+- a missing or cross-account / non-REVIEW id is
+  `CreatorMemoryPromotionNotFoundError` (`404`);
+- a REVIEW that already has a human closure row is
+  `CreatorMemoryPromotionConflictError` (`409`);
+- no memory store configured is `SERVICE_UNAVAILABLE` (`503`) with
+  `details.available=false` — never a successful envelope;
+- body reconstruction failure for `approved` is `ValidationError` (`400`).
+  Reconstruction prefers a Creative Memory style re-read when
+  `source_ref` is `creative-memory://style/<id>`; otherwise (and on re-read
+  miss) it uses `PromotionRecord.body` snapshotted at observe/append time.
+  hy-memory has no trusted re-read, so approve depends on that snapshot.
+
+Domain logic lives in `backend/memory/promotion_review.py`; the route must not
+re-run `decide_promotion` to flip REVIEW→PROMOTE.
+
 ## Scenario: Creator Agent Evidence Graph lookup
 
 Evidence Graph detail routes translate a missing or cross-account node into

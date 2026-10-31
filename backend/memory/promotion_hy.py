@@ -1,18 +1,18 @@
-"""hy-memory candidates at the promotion gate (Slice D, 票 5v) — REVIEW-only.
+"""hy-memory candidates at the promotion gate (Slice D, 票 5v) — machine REVIEW.
 
 The gap row 7 started from: the SDK's LLM-extracted memories never passed any
 gate. This module lets them enter the *same* protocol, but only as ``REVIEW``
 candidates — nothing here writes a memory, and ``observe_hy_candidates`` refuses
-a policy that would machine-promote them (that decision belongs to a later slice
-with a real verification reader).
+a policy that would machine-promote them. Human approval (and the target write)
+lives in ``promotion_review`` (票 5y), not by re-running ``decide_promotion``.
 
-Honest limits, from ``docs/hy-memory.md`` §9:
+Honest limits, from ``docs/hy-memory.md`` §9 / ``docs/memory-promotion.md`` §9:
 
 - **The SDK has no trustworthy re-read.** ``search`` failures are swallowed into
   "empty"; ``last_error`` only covers client-build/call failures. So a hy row can
   be *read* but not *independently verified*: its version is content-addressed
-  (a hash of the text and its metadata), not a store revision, and the protocol's
-  ``REVIEW`` path is terminal here — no write path exists in Slice D.
+  (a hash of the text and its metadata), not a store revision, and the machine
+  protocol's ``REVIEW`` path is terminal here.
 - **Degradation is not the candidate's fault.** A degraded batch is recorded as
   one ``REFUSE(source_degraded)`` row (keyed by its error), so "could not read"
   is never presented as "nothing there"; a healthy read of zero rows stays empty.

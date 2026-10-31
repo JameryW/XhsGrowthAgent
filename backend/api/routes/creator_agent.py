@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from backend.api.account_scope import require_owned_account
 from backend.api.deps import get_current_user
 from backend.api.errors import (
+    APIError,
     CreatorActionCapabilityNotWiredError,
     CreatorActionConflictError,
     CreatorActionCredentialUnavailableError,
@@ -25,8 +26,11 @@ from backend.api.errors import (
     CreatorFeedbackAudienceMismatchError,
     CreatorLearningSignalConflictError,
     CreatorLearningSignalNotFoundError,
+    CreatorMemoryPromotionConflictError,
+    CreatorMemoryPromotionNotFoundError,
     CreatorModelNotFoundError,
     CreatorModelRevisionNotFoundError,
+    ErrorCode,
     ValidationError,
 )
 from backend.api.errors import (
@@ -82,6 +86,13 @@ from backend.creator_agent.repository import (
 from backend.db.creator_agent import get_repository
 from backend.memory.creator_agent_observations import CreativeMemoryObservationSource
 from backend.memory.promotion_ledger import PromotionLedger
+from backend.memory.promotion_review import (
+    PromotionReviewBodyUnavailableError,
+    PromotionReviewConflictError,
+    PromotionReviewMissingError,
+    PromotionStoreUnavailableError,
+    review_promotion,
+)
 from backend.state.events import (
     ACTION_POLICY_DENIED,
     ACTION_PUBLISH_BLOCKED,
@@ -117,6 +128,12 @@ class ReviewLearningSignalRequest(BaseModel):
     review_note: str = Field(default="", max_length=2000)
     expected_revision: int | None = Field(default=None, ge=0)
     model: CreatorModelDefinition | None = None
+
+
+class ReviewMemoryPromotionRequest(BaseModel):
+    account_id: str = Field(min_length=1, max_length=128)
+    disposition: CreatorReviewDisposition
+    review_note: str = Field(default="", max_length=2000)
 
 
 def _advisor(
@@ -303,6 +320,66 @@ async def list_memory_promotions(
             "available": page.available,
             "complete": page.complete,
             "records": [record.to_dict() for record in page.records],
+        }
+    )
+
+
+@router.post("/memory-promotions/{promotion_id}/review")
+async def review_memory_promotion(
+    promotion_id: str,
+    request: ReviewMemoryPromotionRequest,
+    http_request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[dict[str, Any]]:
+    """Human-close one open REVIEW ledger row (approve writes; dismiss refuses).
+
+    ``approved`` appends a human ``PROMOTE`` then writes the target namespace in
+    the same request (Slice C order). ``dismissed`` appends a human ``REFUSE``
+    only. The original REVIEW row is never mutated. A deployment without a
+    memory store is an explicit error — never a successful empty envelope.
+    """
+    account_id = request.account_id.strip()
+    promotion_id = (promotion_id or "").strip()
+    if not account_id:
+        raise ValidationError("account_id", "account_id cannot be empty")
+    if not promotion_id:
+        raise ValidationError("promotion_id", "promotion_id cannot be empty")
+    await require_owned_account(str(user["id"]), account_id)
+
+    graph = getattr(http_request.app.state, "graph", None)
+    store = getattr(graph, "store", None) if graph is not None else None
+    ledger = PromotionLedger(store)
+    try:
+        result = await review_promotion(
+            ledger,
+            store,
+            account_id,
+            promotion_id,
+            request.disposition,
+            review_note=request.review_note,
+        )
+    except PromotionReviewMissingError as exc:
+        raise CreatorMemoryPromotionNotFoundError(exc.promotion_id) from exc
+    except PromotionReviewConflictError as exc:
+        raise CreatorMemoryPromotionConflictError(
+            exc.promotion_id, exc.existing_disposition
+        ) from exc
+    except PromotionStoreUnavailableError as exc:
+        raise APIError(
+            code=ErrorCode.SERVICE_UNAVAILABLE,
+            message="Memory promotion store is unavailable",
+            details={"available": False},
+            status_code=503,
+        ) from exc
+    except PromotionReviewBodyUnavailableError as exc:
+        raise ValidationError("promotion_id", str(exc)) from exc
+    return success(
+        data={
+            "account_id": account_id,
+            "disposition": result.disposition.value,
+            "applied": result.applied,
+            "review": result.review_record.to_dict(),
+            "closure": result.closure_record.to_dict(),
         }
     )
 

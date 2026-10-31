@@ -113,6 +113,13 @@ class PromotionReason(StrEnum):
     SUPERSEDES_OLDER = "supersedes_older"
     """Same key and source family, newer version: replaces the stored record."""
 
+    # ── human review outcomes (票 5y; never produced by decide_promotion) ──
+    HUMAN_APPROVED = "human_approved"
+    """A person approved a REVIEW row; the write path appends a human PROMOTE."""
+
+    HUMAN_DISMISSED = "human_dismissed"
+    """A person dismissed a REVIEW row; the write path appends a human REFUSE."""
+
 
 class DedupeVerdict(StrEnum):
     """How the candidate relates to what the target namespace already holds."""

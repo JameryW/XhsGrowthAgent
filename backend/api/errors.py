@@ -25,6 +25,8 @@ class ErrorCode(StrEnum):
     CREATOR_AUDIENCE_NOT_FOUND = "ERROR_CREATOR_AUDIENCE_NOT_FOUND"
     CREATOR_LEARNING_SIGNAL_NOT_FOUND = "ERROR_CREATOR_LEARNING_SIGNAL_NOT_FOUND"
     CREATOR_LEARNING_SIGNAL_CONFLICT = "ERROR_CREATOR_LEARNING_SIGNAL_CONFLICT"
+    CREATOR_MEMORY_PROMOTION_NOT_FOUND = "ERROR_CREATOR_MEMORY_PROMOTION_NOT_FOUND"
+    CREATOR_MEMORY_PROMOTION_CONFLICT = "ERROR_CREATOR_MEMORY_PROMOTION_CONFLICT"
     CREATOR_EVIDENCE_NOT_FOUND = "ERROR_CREATOR_EVIDENCE_NOT_FOUND"
     CREATOR_ACTION_NOT_FOUND = "ERROR_CREATOR_ACTION_NOT_FOUND"
     CREATOR_ACTION_CONFLICT = "ERROR_CREATOR_ACTION_CONFLICT"
@@ -197,6 +199,30 @@ class CreatorLearningSignalConflictError(APIError):
             code=ErrorCode.CREATOR_LEARNING_SIGNAL_CONFLICT,
             message="Creator learning signal has already been reviewed",
             details={"signal_id": signal_id, "status": status},
+            status_code=409,
+        )
+
+
+class CreatorMemoryPromotionNotFoundError(APIError):
+    """Promotion REVIEW row is missing or not visible to the account owner."""
+
+    def __init__(self, promotion_id: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_MEMORY_PROMOTION_NOT_FOUND,
+            message=f"Creator memory promotion '{promotion_id}' not found",
+            details={"promotion_id": promotion_id},
+            status_code=404,
+        )
+
+
+class CreatorMemoryPromotionConflictError(APIError):
+    """A human-closed REVIEW cannot be reviewed again."""
+
+    def __init__(self, promotion_id: str, status: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_MEMORY_PROMOTION_CONFLICT,
+            message="Creator memory promotion has already been reviewed",
+            details={"promotion_id": promotion_id, "status": status},
             status_code=409,
         )
 

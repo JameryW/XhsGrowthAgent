@@ -105,6 +105,9 @@ class PromotionRecord:
     policy_version: str
     recorded_at: str
     detail: str = ""
+    # Snapshot of the candidate body at append time. Required for human approve
+    # of sources without a trusted re-read (hy-memory); additive for older rows.
+    body: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +126,7 @@ class PromotionRecord:
             "policy_version": self.policy_version,
             "recorded_at": self.recorded_at,
             "detail": self.detail,
+            "body": self.body,
         }
 
     @classmethod
@@ -146,6 +150,7 @@ class PromotionRecord:
             policy_version=str(raw["policy_version"]),
             recorded_at=str(raw["recorded_at"]),
             detail=str(raw.get("detail") or ""),
+            body=str(raw.get("body") or ""),
         )
 
 
@@ -213,6 +218,7 @@ class PromotionLedger:
             policy_version=decision.policy_version,
             recorded_at=recorded_at or datetime.now(UTC).isoformat(),
             detail=detail,
+            body=candidate.body,
         )
         await self._store.aput(
             self.namespace(account_id),
