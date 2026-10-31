@@ -7,8 +7,9 @@ Creative Memory style rows read through the existing
 a prompt (Slice C performs the first promotion, behind the same ledger).
 
 Only ``style`` observations are in scope. Plays and materials are deliberately
-left out: their target namespace has not been decided (PRD §9), and inventing a
-mapping now would put a product decision behind a test fixture.
+left out: their target namespace is a product decision (PRD §9 is closed -- its
+six questions were decided in 票 5y/5z/5aa/5ab/5ac), and inventing a mapping now
+would put that decision behind a test fixture.
 
 Failure semantics (keep them):
 

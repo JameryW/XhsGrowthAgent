@@ -1,0 +1,29 @@
+{
+  "id": "arch-closeout-record-drift",
+  "name": "arch-closeout-record-drift",
+  "title": "架构收口：历史收口记录纠偏 + 注释旧措辞（票 5ap）",
+  "description": "09-11 runtime-upgrade 归档 notes 里 (1)(6) 两项其实已被后续票关闭（#635/#636 租约、票 5p #709 Gateway），(2)(4)(5)(7)(8) 仍按记录开放；promotion_observations.py 的 docstring 仍写 PRD §9 未裁决。追加 CORRECTION 并订正注释措辞，不改历史原文。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/memory,.trellis/tasks/archive/2026-09",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/archive/2026-09/09-11-runtime-upgrade/task.json",
+    "backend/memory/promotion_observations.py"
+  ],
+  "notes": "DONE 2026-10-31. Two C-class record drifts closed without touching history or behaviour. (1) Appended CORRECTION 2 to the archived 09-11 runtime-upgrade notes: items (1) lease and (6) ripple-retry-via-Gateway are now closed by later work (#635/#636; ticket 5p #709) and must not be read from the old list; (2)(4)(5)(7)(8) stand as recorded B-class (decision + trigger / pinned constraint / ruling); item (3) stays retracted; original text untouched, JSON still valid (notes now 10331 chars). (2) backend/memory/promotion_observations.py docstring: plays/materials target namespace is a product decision, not an open PRD section 9 question (its six questions were decided in tickets 5y/5z/5aa/5ab/5ac); wording only, no behaviour change. Verified: json.load OK; tests/unit/memory 335 passed + 4 sandbox tmp_path env errors; ruff check + format green.",
+  "meta": {}
+}
