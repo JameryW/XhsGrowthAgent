@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
+- **Total Sessions**: 14
 - **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~458 | Active |
+| `journal-1.md` | ~491 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-10-31 | CreativeMemory calibrate 失败即抛（票 5af） | `d5aefae0` | `cursor/creative-memory-calibrate-finish-5039` |
 | 13 | 2026-10-31 | CreativeMemory deposit 失败即抛（票 5ae） | `d3faacbd`, `3c3e16c1`, `c4a1fbbe` | `cursor/creative-memory-deposit-finish-5039` |
 | 12 | 2026-10-31 | Context trust_class 进入 rerank（票 5ad） | `ae7ec2d3`, `51fb6337` | `cursor/context-trust-rerank-finish-5039` |
 | 11 | 2026-10-31 | Memory Promotion 语义近邻去重成本（票 5ac） | `17be0241`, `5932cc37` | `cursor/memory-promotion-semantic-finish-5039` |
