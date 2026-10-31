@@ -1,0 +1,4 @@
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "Row 5 platform query P1 target"}
+{"file": ".trellis/tasks/archive/2026-10/10-31-effect-reconcile-ledger-confirm/prd.md", "reason": "5ai ledger confirm helper to reuse"}
+{"file": "backend/services/creator_stats/normalize.py", "reason": "extract_note_items / title aliases"}
+{"file": ".trellis/tasks/10-31-effect-reconcile-platform-notes/prd.md", "reason": "Locked platform-list reconcile decision"}
