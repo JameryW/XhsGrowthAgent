@@ -682,7 +682,8 @@ into typed responses:
   Store failure must not roll back durable rows and must not abort a durable
   deposit that has not yet written (e.g. optional `asearch` during style merge
   lookup).
-- Out of scope for this contract: `recall_*` and `calibrate` swallow paths.
+- Out of scope for this contract: `recall_*` swallow paths (`calibrate` raise
+  is 票 5af below).
 - Callers: creator-stats `import_bundle` already surfaces analysis errors
   without rolling back the import; workflow agents let `BaseAgent.__call__`
   record the failure.
@@ -704,4 +705,51 @@ async def deposit_style(self, style: StyleDNA) -> None:
 async def deposit_style(self, style: StyleDNA) -> None:
     await cm_db.upsert_style(...)          # durable failure propagates
     await self._sync_style_store(...)      # store dual-write warns only
+```
+
+## Scenario: CreativeMemory calibrate durable raise (票 5af)
+
+### Convention
+
+- `_calibrate_style` / `_calibrate_play` / material `_update_one` **propagate
+  durable get/persist failures**. Do not wrap durable paths in
+  `except Exception: logger.warning; return 0` — a fake zero looks like
+  "nothing to update" and hides write failures from calibrator retries.
+- Missing / not-found IDs still return `0` (legitimate no-op, not an error).
+- Store `aget` after a durable miss is optional index lookup: warn + treat as
+  miss; do not block calibrate. Dual-write remains best-effort via `_persist_*`
+  (票 5ae).
+- `calibrate` gathers the three namespaces; one durable raise fails the whole
+  call (intentional honesty).
+- Out of scope: `recall_*` swallow paths.
+
+### Wrong vs Correct
+
+#### Wrong
+```python
+async def _calibrate_style(self, payload: CalibrationPayload) -> int:
+    try:
+        old = await cm_db.get_style(...)
+        ...
+        await self._persist_style(...)
+        return 1
+    except Exception as e:
+        logger.warning(f"calibrate style failed: {e}")
+        return 0  # fake "nothing updated"
+```
+
+#### Correct
+```python
+async def _calibrate_style(self, payload: CalibrationPayload) -> int:
+    old = await cm_db.get_style(...)       # durable get failure propagates
+    if old is None and self._has_store:
+        try:
+            item = await self._store.aget(...)
+            ...
+        except Exception as e:
+            logger.warning("... store lookup failed (treating as miss): %s", e)
+    if old is None:
+        return 0                           # missing id = no-op
+    await self._persist_style(...)         # durable persist failure propagates
+    return 1
 ```

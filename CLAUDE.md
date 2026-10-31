@@ -284,7 +284,7 @@ LangGraph BaseStore integration with namespaces per account, semantic search, an
   - `recall_style(query, limit, *, keywords, filter)` — returns `StyleDNA` list, falls back to default styles
   - `recall_plays(condition, niche, limit, *, keywords, filter)` — returns `ConversionPlay` list
   - `recall_materials(category, tags, limit, *, keywords, filter)` — returns `MaterialEntry` list, sorted by weight
-- `calibrate(payload)`: Updates engagement rates, proven counts, and effectiveness using `aget(namespace, key=id)` for direct ID lookup (not asearch) — more reliable when semantic search is disabled or data volume is large
+- `calibrate(payload)`: Updates engagement rates, proven counts, and effectiveness using durable get + optional store `aget` for ID lookup (not asearch). Durable get/persist failures propagate (票 5af); missing IDs return 0; store dual-write stays best-effort via `_persist_*`
 - Deposit methods: `deposit_style` (merges similar styles), `deposit_play`, `deposit_material`, `deposit_benchmark`
 - Cold-start threshold: `MIN_SAMPLES = 5`; soft downgrade: effectiveness < 0.3 reduces weight by 0.8x
 
