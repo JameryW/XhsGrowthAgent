@@ -145,28 +145,118 @@ class TestFallback:
         assert len(result) == 3
 
     @pytest.mark.asyncio
-    async def test_deposit_style_silent_on_exception(self):
-        store = AsyncMock()
-        store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
-        cm = CreativeMemory("test_acct", store=store)
-        # Should not raise
-        await cm.deposit_style(_sample_style())
+    async def test_deposit_style_raises_on_durable_failure(self):
+        """Durable upsert failure propagates (票 5ae) — no silent swallow."""
+        cm = CreativeMemory("test_acct", store=None)
+        with (
+            patch(
+                "backend.db.creative_memory.upsert_style",
+                new=AsyncMock(side_effect=RuntimeError("durable down")),
+            ),
+            pytest.raises(RuntimeError, match="durable down"),
+        ):
+            await cm.deposit_style(_sample_style())
 
     @pytest.mark.asyncio
-    async def test_deposit_play_silent_on_exception(self):
+    async def test_deposit_play_raises_on_durable_failure(self):
+        cm = CreativeMemory("test_acct", store=None)
+        with (
+            patch(
+                "backend.db.creative_memory.upsert_play",
+                new=AsyncMock(side_effect=RuntimeError("durable down")),
+            ),
+            pytest.raises(RuntimeError, match="durable down"),
+        ):
+            await cm.deposit_play(ConversionPlay(play_id="p1", trigger_condition="test"))
+
+    @pytest.mark.asyncio
+    async def test_deposit_material_raises_on_durable_failure(self):
+        cm = CreativeMemory("test_acct", store=None)
+        with (
+            patch(
+                "backend.db.creative_memory.upsert_material",
+                new=AsyncMock(side_effect=RuntimeError("durable down")),
+            ),
+            pytest.raises(RuntimeError, match="durable down"),
+        ):
+            await cm.deposit_material(
+                MaterialEntry(material_id="m1", category="标题模板", content="test")
+            )
+
+    @pytest.mark.asyncio
+    async def test_deposit_benchmark_raises_on_durable_failure(self):
+        cm = CreativeMemory("test_acct", store=None)
+        with (
+            patch(
+                "backend.db.creative_memory.upsert_benchmark",
+                new=AsyncMock(side_effect=RuntimeError("durable down")),
+            ),
+            pytest.raises(RuntimeError, match="durable down"),
+        ):
+            await cm.deposit_benchmark(
+                "母婴",
+                NicheBenchmark(niche="母婴", trending_formulas=["数字+痛点"]),
+            )
+
+    @pytest.mark.asyncio
+    async def test_deposit_style_store_dual_write_failure_does_not_raise(self):
+        """Style store dual-write stays best-effort after durable success."""
+        store = AsyncMock()
+        store.asearch = AsyncMock(return_value=[])
+        store.aput = AsyncMock(side_effect=RuntimeError("store unavailable"))
+        cm = CreativeMemory("test_acct_dual_style", store=store)
+        style = _sample_style()
+        style["style_id"] = "style_dual_ok"
+        await cm.deposit_style(style)
+        rows = await cm_db.list_styles("test_acct_dual_style", limit=10)
+        assert any(r.get("style_id") == "style_dual_ok" for r in rows)
+
+    @pytest.mark.asyncio
+    async def test_deposit_play_store_dual_write_failure_does_not_raise(self):
+        """Store dual-write stays best-effort after durable success."""
         store = AsyncMock()
         store.aput = AsyncMock(side_effect=RuntimeError("store unavailable"))
-        cm = CreativeMemory("test_acct", store=store)
+        cm = CreativeMemory("test_acct_dual_play", store=store)
         await cm.deposit_play(ConversionPlay(play_id="p1", trigger_condition="test"))
+        rows = await cm_db.list_plays("test_acct_dual_play", limit=10)
+        assert any(r.get("play_id") == "p1" for r in rows)
 
     @pytest.mark.asyncio
-    async def test_deposit_material_silent_on_exception(self):
+    async def test_deposit_material_store_dual_write_failure_does_not_raise(self):
         store = AsyncMock()
         store.aput = AsyncMock(side_effect=RuntimeError("store unavailable"))
-        cm = CreativeMemory("test_acct", store=store)
+        cm = CreativeMemory("test_acct_dual_mat", store=store)
         await cm.deposit_material(
             MaterialEntry(material_id="m1", category="标题模板", content="test")
         )
+        rows = await cm_db.list_materials("test_acct_dual_mat", limit=10)
+        assert any(r.get("material_id") == "m1" for r in rows)
+
+    @pytest.mark.asyncio
+    async def test_deposit_benchmark_store_dual_write_failure_does_not_raise(self):
+        store = AsyncMock()
+        store.aput = AsyncMock(side_effect=RuntimeError("store unavailable"))
+        cm = CreativeMemory("test_acct_dual_bench", store=store)
+        await cm.deposit_benchmark(
+            "母婴",
+            NicheBenchmark(niche="母婴", trending_formulas=["数字+痛点"]),
+        )
+        row = await cm_db.get_benchmark("母婴")
+        assert row is not None
+        assert row.get("niche") == "母婴"
+
+    @pytest.mark.asyncio
+    async def test_deposit_style_store_search_failure_still_writes_durable(self):
+        """Optional store merge lookup failure must not block durable deposit."""
+        store = AsyncMock()
+        store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
+        store.aput = AsyncMock()
+        cm = CreativeMemory("test_acct_style_store", store=store)
+        style = _sample_style()
+        style["style_id"] = "style_store_ok"
+        await cm.deposit_style(style)
+        rows = await cm_db.list_styles("test_acct_style_store", limit=10)
+        assert any(r.get("style_id") == "style_store_ok" for r in rows)
 
 
 # ── Style Merging ──

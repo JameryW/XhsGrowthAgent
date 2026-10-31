@@ -668,3 +668,40 @@ into typed responses:
   `CreatorActionExecutionNotFoundError` (`404`), including foreign accounts;
 - repeated execution returns the original immutable payload and is not treated
   as a conflict.
+
+## Scenario: CreativeMemory deposit durable raise (票 5ae)
+
+### Convention
+
+- `deposit_style` / `deposit_play` / `deposit_material` / `deposit_benchmark`
+  **propagate durable write failures**. Do not wrap the durable path in
+  `except Exception: logger.warning` — callers must not treat an empty return
+  as a successful write (promotion / observation honesty).
+- LangGraph `BaseStore` dual-write stays **best-effort warn** after durable
+  success (`_sync_*_store` / `_persist_*` store branch / benchmark `aput`).
+  Store failure must not roll back durable rows and must not abort a durable
+  deposit that has not yet written (e.g. optional `asearch` during style merge
+  lookup).
+- Out of scope for this contract: `recall_*` and `calibrate` swallow paths.
+- Callers: creator-stats `import_bundle` already surfaces analysis errors
+  without rolling back the import; workflow agents let `BaseAgent.__call__`
+  record the failure.
+
+### Wrong vs Correct
+
+#### Wrong
+```python
+async def deposit_style(self, style: StyleDNA) -> None:
+    try:
+        await cm_db.upsert_style(...)
+        await self._sync_style_store(...)
+    except Exception as e:
+        logger.warning(f"deposit_style failed: {e}")  # silent "success"
+```
+
+#### Correct
+```python
+async def deposit_style(self, style: StyleDNA) -> None:
+    await cm_db.upsert_style(...)          # durable failure propagates
+    await self._sync_style_store(...)      # store dual-write warns only
+```

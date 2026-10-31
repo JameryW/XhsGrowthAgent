@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Raise vs best-effort dual-write"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Callers must observe deposit failures"}
+{"file": ".trellis/tasks/10-31-creative-memory-deposit-raise/prd.md", "reason": "Acceptance criteria"}

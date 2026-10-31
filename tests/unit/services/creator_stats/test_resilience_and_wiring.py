@@ -449,9 +449,8 @@ async def test_deposit_from_analysis_gathers_writes():
     CreativeMemory deposit records a start/finish window and yields via
     asyncio.sleep(0). Under gather the writes overlap; under serial ``await``
     loops the intervals are disjoint. This avoids patching asyncio.gather
-    globally (the shared-asyncio-module leak trap from #515). deposit_* methods
-    self-isolate (try/except → logger.warning), so no _safe_* wrapper is used —
-    the bare coros are gathered directly.
+    globally (the shared-asyncio-module leak trap from #515). Durable deposit
+    failures propagate (票 5ae); bare coros are gathered so callers see errors.
     """
     notes = [
         NoteStats(
@@ -538,6 +537,36 @@ async def test_deposit_from_analysis_cold_start_no_writes():
     assert result.styles_deposited == 0
     assert result.materials_deposited == 0
     assert result.plays_deposited == 0
+
+
+@pytest.mark.asyncio
+async def test_deposit_from_analysis_propagates_durable_failure():
+    """Durable deposit raise is visible to callers (票 5ae) — not swallowed as success."""
+    notes = [
+        NoteStats(
+            note_id="n_fail",
+            account_id="acct_fail",
+            title="失败可见｜沉淀必须上抛",
+            body_text="开头",
+            views=1000,
+            likes=200,
+            comments=50,
+            collects=50,
+            engagement_rate=0.30,
+        ),
+    ]
+    analysis = analyze_notes(notes, "acct_fail")
+
+    async def _boom(self_cm, payload):
+        raise RuntimeError("durable deposit failed")
+
+    with (
+        patch("backend.memory.creative.CreativeMemory.deposit_style", new=_boom),
+        patch("backend.memory.creative.CreativeMemory.deposit_play", new=_boom),
+        patch("backend.memory.creative.CreativeMemory.deposit_material", new=_boom),
+        pytest.raises(RuntimeError, match="durable deposit failed"),
+    ):
+        await deposit_from_analysis(analysis, notes, store=None)
 
 
 @pytest.mark.asyncio

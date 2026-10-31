@@ -291,71 +291,72 @@ class CreativeMemory:
     # ── 沉淀：创作后写入 ──
 
     async def deposit_style(self, style: StyleDNA) -> None:
-        """沉淀风格指纹（同风格合并，累加 sample_count）— 持久化 + 可选 store"""
-        try:
-            from backend.db import creative_memory as cm_db
+        """沉淀风格指纹（同风格合并，累加 sample_count）— 持久化 + 可选 store.
 
-            tone = str(style.get("tone") or "")
-            visual = str(style.get("visual_style") or "")
-            async with (
-                cm_db.get_style_merge_lock(self.account_id, tone, visual),
-                cm_db.style_merge_transaction(self.account_id, tone, visual) as conn,
-            ):
-                existing = await self._find_similar_style(style, conn=conn)
-                if existing:
-                    key, old = existing
-                    payload = self._merge_style(old, style)
-                else:
-                    key = style.get("style_id") or str(uuid.uuid4())
-                    style.setdefault("sample_count", 1)
-                    style.setdefault("last_used", datetime.now(UTC).isoformat())
-                    payload = dict(style)
-                style["style_id"] = key
-                payload["style_id"] = key
-                await cm_db.upsert_style(self.account_id, key, payload, conn=conn)
-            await self._sync_style_store(key, payload)
-        except Exception as e:
-            logger.warning(f"deposit_style failed: {e}")
+        Durable write failures propagate (票 5ae). LangGraph store dual-write
+        remains best-effort after durable success.
+        """
+        from backend.db import creative_memory as cm_db
+
+        tone = str(style.get("tone") or "")
+        visual = str(style.get("visual_style") or "")
+        async with (
+            cm_db.get_style_merge_lock(self.account_id, tone, visual),
+            cm_db.style_merge_transaction(self.account_id, tone, visual) as conn,
+        ):
+            existing = await self._find_similar_style(style, conn=conn)
+            if existing:
+                key, old = existing
+                payload = self._merge_style(old, style)
+            else:
+                key = style.get("style_id") or str(uuid.uuid4())
+                style.setdefault("sample_count", 1)
+                style.setdefault("last_used", datetime.now(UTC).isoformat())
+                payload = dict(style)
+            style["style_id"] = key
+            payload["style_id"] = key
+            await cm_db.upsert_style(self.account_id, key, payload, conn=conn)
+        await self._sync_style_store(key, payload)
 
     async def deposit_play(self, play: ConversionPlay) -> None:
-        """沉淀转化策略 — 持久化 + 可选 store"""
-        try:
-            key = play.get("play_id") or str(uuid.uuid4())
-            play["play_id"] = key
-            play.setdefault("proven_count", 0)
-            play.setdefault("last_proven", datetime.now(UTC).isoformat())
-            await self._persist_play(key, dict(play))
-        except Exception as e:
-            logger.warning(f"deposit_play failed: {e}")
+        """沉淀转化策略 — 持久化 + 可选 store.
+
+        Durable write failures propagate (票 5ae); store dual-write is best-effort.
+        """
+        key = play.get("play_id") or str(uuid.uuid4())
+        play["play_id"] = key
+        play.setdefault("proven_count", 0)
+        play.setdefault("last_proven", datetime.now(UTC).isoformat())
+        await self._persist_play(key, dict(play))
 
     async def deposit_material(self, entry: MaterialEntry) -> None:
-        """沉淀优质素材 — 持久化 + 可选 store"""
-        try:
-            key = entry.get("material_id") or str(uuid.uuid4())
-            entry["material_id"] = key
-            entry.setdefault("reuse_count", 0)
-            entry.setdefault("effectiveness", 0.5)
-            entry.setdefault("weight", 1.0)
-            entry.setdefault("created_at", datetime.now(UTC).isoformat())
-            await self._persist_material(key, dict(entry))
-        except Exception as e:
-            logger.warning(f"deposit_material failed: {e}")
+        """沉淀优质素材 — 持久化 + 可选 store.
+
+        Durable write failures propagate (票 5ae); store dual-write is best-effort.
+        """
+        key = entry.get("material_id") or str(uuid.uuid4())
+        entry["material_id"] = key
+        entry.setdefault("reuse_count", 0)
+        entry.setdefault("effectiveness", 0.5)
+        entry.setdefault("weight", 1.0)
+        entry.setdefault("created_at", datetime.now(UTC).isoformat())
+        await self._persist_material(key, dict(entry))
 
     async def deposit_benchmark(self, niche: str, benchmark: NicheBenchmark) -> None:
-        """沉淀行业基准 — 持久化 + 可选 store"""
-        try:
-            from backend.db import creative_memory as cm_db
+        """沉淀行业基准 — 持久化 + 可选 store.
 
-            benchmark["updated_at"] = datetime.now(UTC).isoformat()
-            await cm_db.upsert_benchmark(niche, dict(benchmark))
-            if self._has_store:
-                try:
-                    ns = self.benchmark_ns(niche)
-                    await self._store.aput(ns, key=niche, value=benchmark)  # type: ignore[union-attr]
-                except Exception as e:
-                    logger.warning("benchmark store dual-write failed (durable ok): %s", e)
-        except Exception as e:
-            logger.warning(f"deposit_benchmark failed: {e}")
+        Durable write failures propagate (票 5ae); store dual-write is best-effort.
+        """
+        from backend.db import creative_memory as cm_db
+
+        benchmark["updated_at"] = datetime.now(UTC).isoformat()
+        await cm_db.upsert_benchmark(niche, dict(benchmark))
+        if self._has_store:
+            try:
+                ns = self.benchmark_ns(niche)
+                await self._store.aput(ns, key=niche, value=benchmark)  # type: ignore[union-attr]
+            except Exception as e:
+                logger.warning("benchmark store dual-write failed (durable ok): %s", e)
 
     async def _persist_style(self, key: str, payload: dict[str, Any]) -> None:
         from backend.db import creative_memory as cm_db
@@ -532,7 +533,12 @@ class CreativeMemory:
         q = f"{tone} {visual}".strip()
         if not q:
             return None
-        items = await self._store.asearch(self.style_dna_ns, query=q, limit=5)  # type: ignore[union-attr]
+        # Optional semantic index — store miss/failure must not block durable deposit.
+        try:
+            items = await self._store.asearch(self.style_dna_ns, query=q, limit=5)  # type: ignore[union-attr]
+        except Exception as e:
+            logger.warning("find_similar store search failed (durable path continues): %s", e)
+            return None
         for item in items:
             v = item.value
             if v.get("tone") == tone and v.get("visual_style") == visual:

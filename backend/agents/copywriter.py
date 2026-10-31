@@ -323,8 +323,8 @@ class CopywriterAgent(BaseAgent):
 
         deposited_material_ids: list[str] = []
 
-        # 标题 + 开头素材并发沉淀（写-gather 变体 #512：deposit_material 内部
-        # try/except 吞异常，部分失败不中断其余；entry 各自独立 mutate material_id）
+        # 标题 + 开头素材并发沉淀（写-gather 变体 #512）。durable 失败上抛（票 5ae）；
+        # store dual-write 仍 best-effort。entry 各自独立 mutate material_id。
         selected_title = copy_content.get("selected_title", "")
         body_text = copy_content.get("body_text", "")
         title_entry = (
