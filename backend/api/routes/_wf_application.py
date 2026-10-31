@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import tempfile
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1810,7 +1811,10 @@ async def upload_images(
     allowed_types = {"image/jpeg", "image/png", "image/webp"}
     max_size = 10 * 1024 * 1024  # 10MB per file
 
-    image_dir = Path(f"/tmp/xhs_images/{thread_id}")
+    # 系统临时目录而非硬编码 /tmp：Linux/容器上 gettempdir() 就是 /tmp（行为不变），
+    # Windows 上落到用户临时目录 —— 硬编码 "/tmp/..." 在 Windows 会解析成当前盘符根
+    # 目录（\\tmp\\...）并可能不可写（票 5as）。
+    image_dir = Path(tempfile.gettempdir()) / "xhs_images" / thread_id
     image_dir.mkdir(parents=True, exist_ok=True)
 
     saved_paths: list[str] = []

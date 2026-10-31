@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import socket
+import tempfile
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from pathlib import Path
@@ -1003,8 +1004,10 @@ async def run_publish(
             image_paths = _as_str_list(visual.get("generated_images"))
         if not image_paths:
             title = copy.get("selected_title") or plan.get("selected_topic") or "小红书笔记"
-            output_dir = Path("/tmp/xhs_generated_covers") / str(
-                state.get("session_id") or "default"
+            output_dir = (
+                Path(tempfile.gettempdir())
+                / "xhs_generated_covers"
+                / str(state.get("session_id") or "default")
             )
             cover_path = generate_text_cover_image(
                 title=str(title),

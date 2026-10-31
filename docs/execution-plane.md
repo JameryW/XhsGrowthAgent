@@ -16,7 +16,7 @@
 | # | 证据 | 为什么它反驳「占用」 |
 | --- | --- | --- |
 | A | 38 条执行点逐行分类（§6），其中的长任务**全部**由 `asyncio.create_task` 起 | 它们在 await 上跑，不阻塞事件循环 —— 占住的是 thread，不是进程 |
-| B | 「请求内同步跑完整条工作流」的路径**存在**（`backend/api/routes/_wf_application.py:271` 的 `else` 分支 → `:275` 的 `_run_graph_and_persist`）但**非默认**（`backend/api/routes/_wf_models.py:31` `async_mode: bool = Field(default=True`） | 唯一真正「占住请求」的形状是可选路径；默认形状不占 |
+| B | 「请求内同步跑完整条工作流」的路径**存在**（`backend/api/routes/_wf_application.py:303` 的 `else` 分支 → `:307` 的 `_run_graph_and_persist`）但**非默认**（`backend/api/routes/_wf_models.py:31` `async_mode: bool = Field(default=True`） | 唯一真正「占住请求」的形状是可选路径；默认形状不占 |
 | C | 长任务的时长有界，且界可静态读出：通用工具网 `backend/tools/runtime/catalog.py:513` `timeout_s=120.0`、发布 `:92` `_PUBLISH_SAFETY_NET_S = 900.0`、Ripple `:82` `_RIPPLE_SAFETY_NET_S = 3600.0` | 「占住」的签名是**无界**；这里有界，且界都落在等外部上 |
 | D | 本机无真实运行样本：`.xhs/checkpoints.sqlite` 0 行，`history/*.json` 全是 21 字节的测试残留 | 没有样本，「实测占用」这一档证据拿不到 |
 
@@ -130,7 +130,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | --- | --- | --- | --- |
 | `backend/db/execution_leases.py:722` | `asyncio.create_task(` | LEASE_HEARTBEAT | 被调名在 `:723`；由 `end_lease` 取消，取消即正常收尾 |
 | `backend/api/routes/_wf_runtime.py:367` | `task = asyncio.create_task(_resume_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:369` |
-| `backend/api/routes/_wf_application.py:288` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:290` |
+| `backend/api/routes/_wf_application.py:289` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:291` |
 | `backend/api/routes/_wf_actions.py:297` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
 | `backend/api/routes/_wf_actions.py:534` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:540` |
 | `backend/agents/content_strategist.py:618` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
@@ -231,7 +231,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 
 **代价（三条都量过，都要登记）：**
 
-- 修复期间它被算作「有人在跑」⇒ `/recover` 在修复期间拒绝（`backend/api/routes/_wf_application.py:1077`
+- 修复期间它被算作「有人在跑」⇒ `/recover` 在修复期间拒绝（`backend/api/routes/_wf_application.py:1149`
   只放行 error/stale）。ripple-retry 最长 **1800s**。
 - `derive_status` 里 `has_active_task` 只在**优先级 9/10**起作用（`backend/state/machine.py:46-47`）
   ⇒ 这次改动的可见面**只有** `stale → running` 一格，其余分支全部短路。
@@ -271,9 +271,9 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 
 **★ 登记表为什么不能补：它的 key 就是 `thread_id`。** `backend/api/routes/_runner.py:45` 声明的是
 `dict[str, asyncio.Task[Any]]` ⇒ **每个 thread 只有一个槽**。仓里有 3 处写入者，而 **3** 处读者读的
-就是槽里的那一个任务并**取消它**：`backend/api/routes/_wf_application.py:663`（`pause_workflow`）、
-`:1209`（`cancel_workflow`）、`backend/api/routes/_wf_runtime.py:331`（`_start_resume_task`）；
-另有一处（`backend/api/routes/_wf_application.py:1516`，`delete_workflow`）在槽被占用时**拒绝删除**。
+就是槽里的那一个任务并**取消它**：`backend/api/routes/_wf_application.py:703`（`pause_workflow`）、
+`:1279`（`cancel_workflow`）、`backend/api/routes/_wf_runtime.py:331`（`_start_resume_task`）；
+另有一处（`backend/api/routes/_wf_application.py:1585`，`delete_workflow`）在槽被占用时**拒绝删除**。
 
 探针实测（真模块，不是推的）：同一 thread 写两次之后只剩 1 条，槽里是后写的那个，前一个**从登记表里
 消失**，`pause`/`cancel` 的 `cancel()` **打到重试身上**，而工作流照跑 —— 库里写着 `paused`/`cancelled`，
@@ -356,7 +356,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `backend/api/routes/_runner.py:51` | `process_has_active_task` | 串行化谓词（与状态谓词是两个问题） |
 | `backend/api/routes/_wf_actions.py:357` | `process_has_active_task` | 消费者 1：publish-retry 守卫 |
 | `backend/api/routes/_wf_actions.py:104` | `process_has_active_task` | ripple-retry 的守卫：与上一行同一个谓词 |
-| `backend/api/routes/_wf_application.py:1742` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
+| `backend/api/routes/_wf_application.py:1743` | `process_has_active_task` | 消费者 2：brief 上传自动 resume |
 | `backend/api/routes/_runner.py:195` | `process_has_active_task` | OR 进 `has_active_execution` 的那一处 |
 | `backend/api/routes/_runner.py:114` | `_retry_tasks` | 重试闸门：每 thread 至多一个「在起 / 在跑」的重试；**不**进两个通用 busy 谓词 |
 | `backend/api/routes/_runner.py:125` | `claim_retry` | 同步占位（`None`）发生在 `create_task` 之前 —— 并发请求只起一个任务的那一处 |

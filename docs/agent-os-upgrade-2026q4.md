@@ -46,7 +46,7 @@
 
 | 实体 | 现状载体 | 判定 |
 |---|---|---|
-| Task | `thread_id`（workflow 实例） | **有**：Task 即 `thread_id`（`/start` 每次生成新 id，`backend/api/routes/_wf_application.py:176`）；run 边界见 Run 行（票 5x） |
+| Task | `thread_id`（workflow 实例） | **有**：Task 即 `thread_id`（`/start` 每次生成新 id，`backend/api/routes/_wf_application.py:177`）；run 边界见 Run 行（票 5x） |
 | Run | `run_id` + `run_seq` + `kind:"run"` 事件（票 5x，`backend/state/runs.py`） | **有**：`/start` 铸造 seq=1；pause/error resume 与 `/recover` 复用；completed/cancelled terminal restart 铸造新 `run_id`（seq+1，cause=`rerun`）。legacy 线程无 stamp 时 status 回显 null |
 | Step | graph node（superstep） | 有，checkpoint 天然记录 |
 | Attempt | 节点内结构化重试：`attempt_id` + `kind:"attempt"` 事件（票 5w，`backend/state/attempts.py`） | **有**：每次（档位 × 重试序号）一条事件，封闭 outcome（succeeded / payload_rejected / semantic_rejected / unreachable）、数据最小化、确定性 id。**节点内重试仍会重调 LLM**（§4.1 未变：本切片只补身份与遥测，不是重放） |
@@ -159,7 +159,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 乐观锁 | `mark(..., expect_version=N)` 拒绝覆盖并发写入；**诚实边界：BaseStore 无 CAS，多写者部署需数据库唯一约束**（代码注释已写明）。**现状**：`backend/agents/publisher.py` 的 `EffectLedger.mark(...)` 写入点**今天不传** `expect_version` —— 发布路径的并发正确性靠租约 + 幂等键，不靠 CAS；不要把"能力存在"读成"已启用" |
 | 旧词兼容 | 读侧归一化 `published → CONFIRMED`、未知状态 → `UNKNOWN`（绝不落 FAILED）；历史行零迁移 |
 | publish 接入 | 提交前写 `PREPARED`（意图落盘）→ `begin()` 领取 → 成功 `CONFIRMED` / 确定失败 `FAILED` / 提交后无判定 `UNKNOWN`（显式写入，不再靠"保持不写"隐含） |
-| 接入边界（诚实披露） | 主链 `PublisherAgent` 与 free 路径已接账本（PREPARED + `EffectLedger.begin()`：`backend/agents/publisher.py:926-944`；free 路径经 `backend/api/routes/free.py:421` 调 `run_publish`）；**creator_agent 控制面 `execute` 路径直连 Gateway**（`backend/creator_agent/advisor.py:714-723` → `backend/creator_agent/execution.py:314-366`），**不经过 `EffectLedger`**，幂等仅靠 `ActionExecution` receipt（`backend/creator_agent/advisor.py:540-544`） |
+| 接入边界（诚实披露） | 主链 `PublisherAgent` 与 free 路径已接账本（PREPARED + `EffectLedger.begin()`：`backend/agents/publisher.py:927-945`；free 路径经 `backend/api/routes/free.py:421` 调 `run_publish`）；**creator_agent 控制面 `execute` 路径直连 Gateway**（`backend/creator_agent/advisor.py:714-723` → `backend/creator_agent/execution.py:314-366`），**不经过 `EffectLedger`**，幂等仅靠 `ActionExecution` receipt（`backend/creator_agent/advisor.py:540-544`） |
 | 本地对账写账本（票 5ai） | `reconcile_unknown_publish` 本地证据确认 published 后 best-effort `UNKNOWN→RECONCILING→CONFIRMED`（evidence 入 `extra.reconcile_evidence`）；uncertain **不动**账本；写失败仅 warn，不阻断 gate 返回值 |
 | 平台列表对账（票 5ak） | 本地幂等行 / ContentHistory 均 miss 且 title 非空 → cookie httpx 拉创作者中心笔记列表标题 **精确** strip 匹配；命中则 `source=platform_note_list` + note id，走同一 `_confirm_ledger_after_reconcile`；无 cookie / fetch 失败 / 未命中 → `uncertain`（warn，不 raise、不伪确认）；可注入 `platform_note_fetcher`；**CDP / 详情页深查 out of scope** |
 | 平台列表多页（票 5al） | 默认 `_default_fetch_platform_notes` 循环 page 1..`_PLATFORM_NOTE_LIST_MAX_PAGES`（锁定 **3**），`page_size=50`；某页 `extract_note_items` 为空或 `len(items) < page_size` 提前停；任一页抛错 → 整次平台刀 `uncertain`（与 5ak 一致）；匹配/确认语义不变；**CDP / 详情页深查仍 out of scope**；`max_pages` 不配 env |

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for the portability fix"}
+{"file": "docs/execution-plane.md", "reason": "verify remapped anchors and prose refs stay green"}

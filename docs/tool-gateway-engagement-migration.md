@@ -433,7 +433,7 @@ if scopes is None:
     scopes = await (scope_resolver or resolve_scopes)(request.account_id)
 ```
 
-而另一条发布路径 `backend/agents/publisher.py:735` 是这样的：
+而另一条发布路径 `backend/agents/publisher.py:1044` 是这样的：
 
 ```python
 tool_result = await runtime.tools.invoke("xhs.publish", payload, thread_id=...)

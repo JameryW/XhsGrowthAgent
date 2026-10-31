@@ -1,0 +1,30 @@
+{
+  "id": "portabile-tmp-dirs",
+  "name": "portabile-tmp-dirs",
+  "title": "跨平台临时目录：去掉硬编码 /tmp 路径（票 5as）",
+  "description": "全量门禁里唯一确定性的本地失败来自硬编码 /tmp：上传图片写 /tmp/xhs_images、封面生成写 /tmp/xhs_generated_covers，Windows 下解析成盘符根目录并可能不可写。改用 tempfile.gettempdir()，Linux/容器行为不变；加静态回归测试禁止 backend 再出现 /tmp/ 字面量。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/api/routes,backend/agents,tests/unit",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/api/routes/_wf_application.py",
+    "backend/agents/publisher.py",
+    "tests/unit/test_no_hardcoded_tmp_paths.py"
+  ],
+  "notes": "FIXED 2026-10-31. Portability bug surfaced by the local CI rehearsal: the full suite's only deterministic failure was test_upload_images_updates_previous_node_without_advancing_review_gate, because the image-upload handler wrote to Path(\"/tmp/xhs_images/{thread_id}\") -- on Windows that resolves to the current drive root (\\tmp\\...) and can be unwritable (Errno 13 in this sandbox). publisher.py had the same pattern for generated covers (/tmp/xhs_generated_covers). Both now derive from Path(tempfile.gettempdir()) with the same subdirectory names, so Linux/container behaviour is unchanged (gettempdir() is /tmp there; TMPDIR override is standard). Guard: tests/unit/test_no_hardcoded_tmp_paths.py scans backend/**/*.py ASTs for string constants equal to or starting with /tmp (docstrings/comments exempt) and pins the previously-red integration test's cause; mutation check (reverting one path to /tmp) turns the scan red. Verification: the integration test that failed is now green on Windows; related set 62 passed (1 test_text_cover sandbox tmp_path ERROR is environmental); ruff check + format green.",
+  "meta": {}
+}
