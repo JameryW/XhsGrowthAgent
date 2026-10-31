@@ -119,9 +119,17 @@ def _bypass_cdp_hold(monkeypatch: pytest.MonkeyPatch):
         "_EXISTING_LOGIN_POLL_S",
         "_QR_READY_POLL_S",
         "_EXPLORE_POLL_S",
-        "_QR_CONFIRM_TIMEOUT_S",
     ):
         monkeypatch.setattr("backend.services.xhs_login." + _c, 0.01)
+    # _QR_CONFIRM_TIMEOUT_S is NOT a settle delay: it is the "is the QR still
+    # fresh" window used by get_status()/_is_qr_expired(). Shrinking it to 0.01s
+    # here made every test that polls without pinning _qr_created_at race a 10ms
+    # clock: under runner load the QR looked expired before the poll, so the test
+    # took the refresh path and died in LoginError("刷新二维码失败：未找到登录二维码")
+    # (Test (py3.12) flaked on 3 CI runs in a row, main included). 2s keeps the
+    # fresh paths deterministic; tests that must exercise expiry pin
+    # _qr_created_at well past it.
+    monkeypatch.setattr("backend.services.xhs_login._QR_CONFIRM_TIMEOUT_S", 2.0)
     # QR create wait is deliberately NOT shrunk here.
     #
     # Success-path tests fire the qrcode/create handler at 0.02–0.05s after
@@ -678,7 +686,7 @@ class TestGetStatus:
             )
             await handler(status_resp)
             # Even with an expired QR clock, codeStatus=2 must win over refresh.
-            session._qr_created_at = time.time() - 1
+            session._qr_created_at = time.time() - 10
             result = await session.get_status()
         assert result["status"] == "confirmed"
         assert result["url"] == ""  # url cleared on confirm
@@ -815,10 +823,10 @@ class TestGetStatus:
         ):
             await self._start_session(session, on_calls)
             # Force expiry deterministically rather than sleeping past the
-            # autouse-shrunk _QR_CONFIRM_TIMEOUT_S (0.01s). A real-time sleep at
+            # autouse-shrunk _QR_CONFIRM_TIMEOUT_S (2.0s). A real-time sleep at
             # that margin flakes under suite load (import-timing shifts the
             # created_at baseline); pinning created_at to the past is exact.
-            session._qr_created_at = time.time() - 1
+            session._qr_created_at = time.time() - 10
 
             # get_status will detect expiry → _refresh_qr → goto + wait for new create.
             # Fire a new create response after get_status's refresh goto lands.
@@ -1000,7 +1008,7 @@ class TestGetStatus:
         ):
             await self._start_session(session, on_calls)
             # Force expiry deterministically (sleep-at-margin flakes under load).
-            session._qr_created_at = time.time() - 1
+            session._qr_created_at = time.time() - 10
             await session.get_status()  # expired → refresh → goto raises
         # refresh-failure path closed context (no zombie)
         assert session._context is None
