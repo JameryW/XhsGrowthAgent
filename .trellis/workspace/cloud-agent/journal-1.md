@@ -555,3 +555,36 @@ Closed last CreativeMemory §10 adjacent risk: _find_similar_style durable find 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Effect 对账确认写入账本 CONFIRMED（票 5ai）
+
+**Date**: 2026-10-31
+**Task**: Effect 对账确认写入账本 CONFIRMED（票 5ai）
+**Branch**: `cursor/effect-reconcile-ledger-finish-5039`
+
+### Summary
+
+agent-os 行5对账增强第一刀: reconcile_unknown_publish 本地确认后 UNKNOWN→RECONCILING→CONFIRMED; uncertain 不动账本. Merged #743.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eb5c4adc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
