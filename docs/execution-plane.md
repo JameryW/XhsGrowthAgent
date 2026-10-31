@@ -400,7 +400,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `retry_gate_predicate_definitions` | `1` | `_runner.py` 内 `retry_in_flight` 的定义数 —— 只有一个「是否在起 / 在跑」的答者 |
 | `retry_handlers_reading_the_retry_gate` | `2` | 两个重试入口里 `retry_in_flight` 的调用点数（各 1）—— 读者集刻意只有这两个 |
 | `retry_gate_claim_sites` | `2` | 全仓 `claim_retry(` 的调用点数（两个入口各 1） |
-| `busy_answerers_reading_the_retry_gate` | `0` | 两个「忙不忙」答者（`process_has_active_task` / `has_active_execution`）里有几个提到 `_retry_tasks`。**必须停在 0**：与 `_detached_tasks` 那条是同一个反面 —— 谓词不是取消者，也不该是这一次的修复面 |
+| `busy_answerers_reading_the_retry_gate` | `0` | 两个「忙不忙」答者（`process_has_active_task` / `has_active_execution`）里有几个提到 `_retry_tasks` **或谓词 `retry_in_flight`**（两种拼法都算 —— 只扫表名会漏掉「把谓词 OR 进去」这种扩宽）。**必须停在 0**：与 `_detached_tasks` 那条是同一个反面 —— 谓词不是取消者，也不该是这一次的修复面 |
 | `retry_gate_cleanup_uses_a_done_callback` | `true` | `attach_retry` 是否用 done callback 释放闸门 —— 协程 `finally` 在「任务未获得首轮」时不执行，那会把线程锁到进程重启 |
 | `repair_paths_using_the_shared_serialization_sentence` | `2` | 两条修复路径里含同一句拒绝文案的函数数 |
 | `start_lease_call_sites_in_wf_actions` | `0` | `_wf_actions.py` 内 `start_lease` 的调用点数 —— 两条修复路径取的是共享的 `_execution_lease`，所以「0 处」现在说的是「这里没有第二个实现」，而**不是**「没有租约」 |

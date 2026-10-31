@@ -277,6 +277,60 @@ async def test_two_concurrent_requests_only_one_starts() -> None:
     assert _runner.retry_in_flight("t1") is False
 
 
+async def test_two_concurrent_publish_retries_only_one_starts() -> None:
+    """The publish entry has the same race, and its own claim to close it.
+
+    Without a *behavioural* case here, deleting the publish entry's claim would
+    only move a static counter -- the double-publish risk itself would be
+    unpinned.
+    """
+    graph = _graph()
+    request = _request(graph)
+    entered, release = asyncio.Event(), asyncio.Event()
+    resolve_calls = {"n": 0}
+    both_in = asyncio.Event()
+
+    async def _slow_resolve(_store: Any, _tid: str, values: Any) -> Any:
+        resolve_calls["n"] += 1
+        if resolve_calls["n"] >= 2:
+            both_in.set()
+        if resolve_calls["n"] <= 2:
+            await both_in.wait()
+        return values
+
+    async def _publish(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        entered.set()
+        await release.wait()
+        return {"publish_result": {"status": "failed", "error": "x"}, "publish_options": None}
+
+    with (
+        patch(_OWNED, new_callable=AsyncMock),
+        patch(_RUN_PUBLISH, side_effect=_publish) as publish,
+        patch(_DB_UPSERT, new_callable=AsyncMock),
+        patch(_EVENT_BUS) as bus,
+        patch(f"{_ARTIFACTS}.resolve_state", side_effect=_slow_resolve),
+        patch(
+            f"{_ARTIFACTS}.refify_updates",
+            AsyncMock(side_effect=lambda _store, _tid, updates, **_kw: updates),
+        ),
+    ):
+        bus.get_instance.return_value = MagicMock()
+        first, second = await asyncio.gather(
+            _wf_actions.retry_publish("t1", request, _USER),
+            _wf_actions.retry_publish("t1", request, _USER),
+        )
+        statuses = sorted([first.data["status"], second.data["status"]])
+        assert statuses == ["retrying", "skipped"], statuses
+
+        holder = _runner._retry_tasks["t1"]
+        await entered.wait()
+        release.set()
+        await asyncio.wait_for(holder, timeout=2)
+
+    publish.assert_awaited_once()
+    assert _runner.retry_in_flight("t1") is False
+
+
 async def test_the_gate_opens_again_after_the_retry_finishes() -> None:
     graph = _graph()
     request = _request(graph)
@@ -376,6 +430,35 @@ async def test_abandon_claim_opens_the_gate() -> None:
     _runner.abandon_claim("t1")
 
 
+async def test_a_handler_that_cannot_create_the_task_gives_the_claim_back() -> None:
+    """The abandon path, exercised through the handler rather than the helper."""
+
+    class _NoCreateTask:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(asyncio, name)
+
+        def create_task(self, coro: Any, **_kwargs: Any) -> Any:
+            coro.close()
+            raise RuntimeError("event loop is closed")
+
+    graph = _graph()
+    request = _request(graph)
+    resolve_state, refify_updates = _identity_artifacts()
+
+    with (
+        patch(_OWNED, new_callable=AsyncMock),
+        patch(_GATEWAY, return_value=MagicMock()),
+        patch("backend.api.routes._wf_actions.asyncio", _NoCreateTask()),
+        resolve_state,
+        refify_updates,
+        pytest.raises(RuntimeError, match="event loop is closed"),
+    ):
+        await _wf_actions.retry_ripple_analysis("t1", request, _USER)
+
+    assert _runner.retry_in_flight("t1") is False
+    assert _runner._retry_tasks.get("t1") is None
+
+
 async def test_claim_retry_refuses_a_second_task_for_a_live_thread() -> None:
     async def _never() -> None:
         await asyncio.Event().wait()
@@ -421,14 +504,22 @@ def _functions(tree: ast.Module) -> list[ast.AsyncFunctionDef | ast.FunctionDef]
 
 
 def test_the_retry_gate_is_not_a_general_busy_answer() -> None:
-    """The ruling: nothing OR-s ``_retry_tasks`` into the two busy answers."""
+    """Nothing widens the two busy answers -- neither the table nor the predicate.
+
+    Checking only the literal ``_retry_tasks`` is not enough: OR-ing
+    ``retry_in_flight`` into ``has_active_execution`` never writes the table's
+    name, so this scan has to know the predicate spelling too (a mutation that
+    did exactly that stayed green before this line existed).
+    """
     tree = ast.parse(_RUNNER.read_text(encoding="utf-8"))
     busy = {"process_has_active_task", "has_active_execution"}
-    leaked = [
-        func.name
-        for func in _functions(tree)
-        if func.name in busy and "_retry_tasks" in ast.unparse(func)
-    ]
+    leaked = []
+    for func in _functions(tree):
+        if func.name not in busy:
+            continue
+        body = ast.unparse(func)
+        if "_retry_tasks" in body or "retry_in_flight" in body:
+            leaked.append(func.name)
     assert leaked == [], f"the gate widened a general busy answer: {leaked}"
 
 

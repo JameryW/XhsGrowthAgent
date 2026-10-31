@@ -517,6 +517,24 @@ def _busy_answerers_reading(path: Path, name: str) -> int:
     )
 
 
+def _busy_answerers_reading_either(path: Path, *names: str) -> int:
+    """The busy-answerers whose body mentions any of *names* -- published as 0.
+
+    Split from :func:`_busy_answerers_reading` for the retry gate: the *predicate*
+    is the leak this scan must catch, not just the table's spelling.  A mutation
+    that OR-s ``retry_in_flight`` into ``has_active_execution`` never writes
+    ``_retry_tasks``, so a literal scan of the table alone would stay green while
+    the same twelve call sites were widened.
+    """
+    wanted = {"process_has_active_task", "has_active_execution"}
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    return sum(
+        1
+        for func in _functions(module)
+        if func.name in wanted and any(name in ast.unparse(func) for name in names)
+    )
+
+
 def the_detached_self_cleanup_is_identity_guarded(path: Path, name: str) -> bool:
     """Whether the ``finally`` pop sits inside an ``is asyncio.current_task()`` test.
 
@@ -1138,8 +1156,8 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
         _gate_calls(ACTIONS, "retry_ripple_analysis") + _gate_calls(ACTIONS, "retry_publish")
     ),
     "retry_gate_claim_sites": lambda: len(_call_sites(BACKEND, "claim_retry")),
-    "busy_answerers_reading_the_retry_gate": lambda: _busy_answerers_reading(
-        RUNNER, "_retry_tasks"
+    "busy_answerers_reading_the_retry_gate": lambda: _busy_answerers_reading_either(
+        RUNNER, "_retry_tasks", "retry_in_flight"
     ),
     "retry_gate_cleanup_uses_a_done_callback": lambda: _the_retry_gate_cleanup_is_a_done_callback(
         RUNNER
