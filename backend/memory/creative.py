@@ -44,6 +44,10 @@ class CreativeMemory:
     for semantic search when present. Deposits work even when ``store is None``.
     """
 
+    # Same floor as the module constant; class attribute so
+    # ``CreativeMemory.MIN_SAMPLES`` matches docs / promotion alignment (票 5ab).
+    MIN_SAMPLES = MIN_SAMPLES
+
     def __init__(self, account_id: str, store: BaseStore | None = None):
         self.account_id = (account_id or "").strip() or "default"
         self._store = store

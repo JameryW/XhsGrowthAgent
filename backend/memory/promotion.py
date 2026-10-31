@@ -45,6 +45,7 @@ from enum import StrEnum
 from backend.context.models import TrustClass
 
 __all__ = [
+    "DEFAULT_PROMOTION_MIN_SAMPLES",
     "DEFAULT_PROMOTION_POLICY_VERSION",
     "DedupeVerdict",
     "ExistingEntry",
@@ -66,6 +67,13 @@ __all__ = [
 #: docs/comment-only edits do not bump. Human-review rows reuse the REVIEW
 #: row's ``policy_version`` and never re-mint from this constant.
 DEFAULT_PROMOTION_POLICY_VERSION = "v1"
+
+#: Machine-promote sample floor (票 5ab / PRD §9 Q4). Kept equal to
+#: ``CreativeMemory.MIN_SAMPLES`` — both answer "how many measured samples
+#: count". Changing this value alters decision semantics and **must** bump
+#: ``DEFAULT_PROMOTION_POLICY_VERSION``. No cooldown window in MVP (dedupe /
+#: supersede already handle same-key updates).
+DEFAULT_PROMOTION_MIN_SAMPLES = 5
 
 
 class PromotionDisposition(StrEnum):
@@ -240,17 +248,16 @@ class ExistingEntry:
 class PromotionPolicy:
     """The thresholds a deployment may tune; defaults mirror the PRD.
 
-    ``min_samples`` and the Laplacian prior in
-    ``backend.creator_agent.proposals`` answer the same question ("how much
-    measured evidence counts"), so they are kept numerically aligned by
-    convention; changing one without the other is a review point.
+    ``min_samples`` defaults to ``DEFAULT_PROMOTION_MIN_SAMPLES`` and must stay
+    equal to ``CreativeMemory.MIN_SAMPLES`` (票 5ab). Draft-proposal floors
+    (``_DRAFT_MIN_SAMPLES``) are a different gate and are not this constant.
 
     ``policy_version`` defaults to ``DEFAULT_PROMOTION_POLICY_VERSION``. Prefer
     ``default_promotion_policy()`` over constructing a bare ``PromotionPolicy()``
     when the intent is "use the Git-pinned deployment default".
     """
 
-    min_samples: int = 5
+    min_samples: int = DEFAULT_PROMOTION_MIN_SAMPLES
     machine_promotable_classes: tuple[TrustClass, ...] = (TrustClass.INTERNAL_FACT,)
     allowed_namespaces: tuple[str, ...] | None = None
     policy_version: str = DEFAULT_PROMOTION_POLICY_VERSION
@@ -266,14 +273,19 @@ class PromotionPolicy:
 
 
 def default_promotion_policy() -> PromotionPolicy:
-    """Return the Git-pinned default policy (票 5aa).
+    """Return the Git-pinned default policy (票 5aa / 5ab).
 
-    Reads ``DEFAULT_PROMOTION_POLICY_VERSION`` at call time so tests can
-    monkeypatch the constant and observe the change on the next decision.
-    Do not scatter a hard-coded policy_version string at call sites — bump
-    the module constant instead.
+    Reads ``DEFAULT_PROMOTION_POLICY_VERSION`` and
+    ``DEFAULT_PROMOTION_MIN_SAMPLES`` at call time so tests can monkeypatch
+    either constant and observe the change on the next decision. Do not
+    scatter hard-coded policy_version / min_samples literals at call sites —
+    bump the module constants instead (and bump policy_version when
+    min_samples semantics change).
     """
-    return PromotionPolicy(policy_version=DEFAULT_PROMOTION_POLICY_VERSION)
+    return PromotionPolicy(
+        min_samples=DEFAULT_PROMOTION_MIN_SAMPLES,
+        policy_version=DEFAULT_PROMOTION_POLICY_VERSION,
+    )
 
 
 @dataclass(frozen=True)

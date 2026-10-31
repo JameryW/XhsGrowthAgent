@@ -12,7 +12,10 @@ from __future__ import annotations
 import pytest
 
 from backend.context.models import TrustClass
+from backend.memory.creative import MIN_SAMPLES as CREATIVE_MIN_SAMPLES
+from backend.memory.creative import CreativeMemory
 from backend.memory.promotion import (
+    DEFAULT_PROMOTION_MIN_SAMPLES,
     DEFAULT_PROMOTION_POLICY_VERSION,
     DedupeVerdict,
     ExistingEntry,
@@ -348,6 +351,17 @@ class TestPolicy:
         )
         assert lenient.disposition is PromotionDisposition.PROMOTE
 
+    def test_default_floor_refuses_one_below_min_samples(self) -> None:
+        """票 5ab: sample_count=4 refuses; the floor itself stays at 5."""
+        decision = _decision(sample_count=DEFAULT_PROMOTION_MIN_SAMPLES - 1)
+        assert decision.disposition is PromotionDisposition.REFUSE
+        assert decision.reason is PromotionReason.INSUFFICIENT_SAMPLES
+
+    def test_default_floor_allows_exactly_min_samples(self) -> None:
+        decision = _decision(sample_count=DEFAULT_PROMOTION_MIN_SAMPLES)
+        assert decision.disposition is PromotionDisposition.PROMOTE
+        assert decision.reason is PromotionReason.VERIFIED_INTERNAL_FACT
+
     def test_a_measured_flag_is_required_even_with_samples(self) -> None:
         decision = _decision(measured_rate=None)
         assert decision.reason is PromotionReason.INSUFFICIENT_SAMPLES
@@ -381,12 +395,13 @@ class TestPolicyVersionSource:
     def test_factory_uses_the_module_constant(self) -> None:
         policy = default_promotion_policy()
         assert policy.policy_version == DEFAULT_PROMOTION_POLICY_VERSION
-        assert policy.min_samples == 5
+        assert policy.min_samples == DEFAULT_PROMOTION_MIN_SAMPLES
         assert policy.machine_promotable_classes == (TrustClass.INTERNAL_FACT,)
         assert policy.allowed_namespaces is None
 
     def test_dataclass_default_matches_the_constant(self) -> None:
         assert PromotionPolicy().policy_version == DEFAULT_PROMOTION_POLICY_VERSION
+        assert PromotionPolicy().min_samples == DEFAULT_PROMOTION_MIN_SAMPLES
 
     def test_default_decision_carries_the_constant(self) -> None:
         decision = decide_promotion(_candidate(), source=_source())
@@ -416,6 +431,31 @@ class TestPolicyVersionSource:
         )
         assert f'"{pin}"' not in without_constant
         assert f"'{pin}'" not in without_constant
+
+
+class TestSampleThresholdAlignment:
+    """票 5ab / PRD §9 Q4: floor is a named constant aligned with CreativeMemory."""
+
+    def test_default_min_samples_matches_creative_memory(self) -> None:
+        assert DEFAULT_PROMOTION_MIN_SAMPLES == CreativeMemory.MIN_SAMPLES
+        assert CreativeMemory.MIN_SAMPLES == CREATIVE_MIN_SAMPLES
+        assert DEFAULT_PROMOTION_MIN_SAMPLES == 5
+
+    def test_factory_and_dataclass_share_the_floor_constant(self) -> None:
+        assert default_promotion_policy().min_samples == DEFAULT_PROMOTION_MIN_SAMPLES
+        assert PromotionPolicy().min_samples == DEFAULT_PROMOTION_MIN_SAMPLES
+
+    def test_monkeypatching_min_samples_is_observable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("backend.memory.promotion.DEFAULT_PROMOTION_MIN_SAMPLES", 99)
+        assert default_promotion_policy().min_samples == 99
+        decision = decide_promotion(
+            _candidate(sample_count=10),
+            source=_source(),
+        )
+        assert decision.disposition is PromotionDisposition.REFUSE
+        assert decision.reason is PromotionReason.INSUFFICIENT_SAMPLES
 
 
 class TestContractViolationsRaise:
