@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~389 | Active |
+| `journal-1.md` | ~423 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-10-31 | Context trust_class 进入 rerank（票 5ad） | `ae7ec2d3`, `51fb6337` | `cursor/context-trust-rerank-finish-5039` |
 | 11 | 2026-10-31 | Memory Promotion 语义近邻去重成本（票 5ac） | `17be0241`, `5932cc37` | `cursor/memory-promotion-semantic-finish-5039` |
 | 10 | 2026-10-31 | Memory Promotion machine-promote 阈值（票 5ab） | `ecbe7367`, `449fd44c` | `cursor/memory-promotion-sample-finish-5039` |
 | 9 | 2026-10-31 | Memory Promotion policy_version 来源（票 5aa） | `9a45bcf7`, `325af7bc`, `49eff922` | `cursor/memory-promotion-policy-finish-5039` |

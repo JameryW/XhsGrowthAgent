@@ -387,3 +387,37 @@ Closed last PRD §9 Q3: post-decide near-dupe hints only when dedupe=NEEDS_REVIE
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Context trust_class 进入 rerank（票 5ad）
+
+**Date**: 2026-10-31
+**Task**: Context trust_class 进入 rerank（票 5ad）
+**Branch**: `cursor/context-trust-rerank-finish-5039`
+
+### Summary
+
+Folded TRUST_RERANK_WEIGHTS into deterministic rerank_items; cleared P1-A honest boundary. Archived after #733/#732 merge.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ae7ec2d3` | (see git log) |
+| `51fb6337` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
