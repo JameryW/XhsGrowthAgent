@@ -319,3 +319,37 @@ Locked PRD §9 Q6: machine policy_version = Git constant DEFAULT_PROMOTION_POLIC
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Memory Promotion machine-promote 阈值（票 5ab）
+
+**Date**: 2026-10-31
+**Task**: Memory Promotion machine-promote 阈值（票 5ab）
+**Branch**: `cursor/memory-promotion-sample-finish-5039`
+
+### Summary
+
+Locked PRD §9 Q4: DEFAULT_PROMOTION_MIN_SAMPLES=5 aligned with CreativeMemory.MIN_SAMPLES; no cooldown MVP. Archived after #729/#728 merge.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ecbe7367` | (see git log) |
+| `449fd44c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
