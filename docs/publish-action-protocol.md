@@ -162,7 +162,8 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 - **主链仍不经控制面**：`publisher` 直接调 `run_publish`（S4a/S4b 的刻意决定），所以
   intent → policy → confirm → execute 这条链今天只在 **API 路径**上。这也意味着
-  **待决问题 1 仍无落点**（见下）。
+  **待决问题 1 仍无落点**（见下）。**迁移方案（四阶段）见文末
+  「主链迁移控制面：阶段方案（票 5au）」**。
   - ⚠️ **名字**：计划行把这一环写成 `PublishIntent`，**落地对象叫 `ActionIntent`**
     （`backend/creator_agent/models.py`）—— `grep -rn PublishIntent backend/` 是**零命中**。
     下面表里的主张一律用落地名：一条点名了「树里不存在的对象」的主张，会让读者连
@@ -219,3 +220,76 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 **这是一个裁决 + 一个触发条件，不是一条待办**：今天没有任何产生 PublishIntent 的主链调用者
 （主链直接 `run_publish`），所以这个裁决没有可落地的代码位置；它约束的是**将来那次迁移**。
+
+## 主链迁移控制面：阶段方案（票 5au）
+
+> 裁定（2026-10-31）：迁移。上文「已知残留」第一条的开放状态不变——**本方案只切阶段，
+> 不改今天的行为**；每个阶段单独开票、单独验收、单独回滚，stage 边界由 claim 表数值定义。
+
+### 起点（可复算）
+
+| 事实 | 今天 | 复核 |
+| --- | --- | --- |
+| 主链直调 `run_publish` | `mainline_run_publish_direct_call_sites = 3` | claim 表（AST） |
+| 主链产出 `ActionIntent` | `mainline_action_intent_producers = 0` | claim 表（AST） |
+| 控制面 intent 构造点 | `action_intent_construction_sites = 1`（仅在 `backend/creator_agent/`） | claim 表（AST） |
+
+三处直调位置：`backend/agents/publisher.py`（主链发布）、`backend/api/routes/_wf_actions.py`
+（publish-retry 通道）、`backend/api/routes/free.py`（free 模式）。它们共享同一个
+`backend/tools/xhs/publisher.py:run_publish` 工具实现，这正是迁移最后必须替换的那层。
+
+### 可复用的控制面零件（不重写）
+
+- `ActionIntent` + 请求/回执模型：`backend/creator_agent/models.py`；
+- intent 构造与审批入口：`backend/creator_agent/advisor.py`；
+- policy 评估：`backend/creator_agent/policy.py`；
+- 执行 dispatcher（Gateway `xhs.publish` + `granted_scopes` + 账本/回执）：
+  `backend/creator_agent/execution.py`（其 `PublishDispatcher` 就是可注入的 seam）；
+- capability 声明与 scope 检查：`backend/tools/runtime/catalog.py`、`backend/tools/runtime/gateway.py`。
+
+### 阶段
+
+**P1 — 显式账号 + 意图生产者（不改执行器）**
+主链每次发布前显式解析 `account_id`：缺失即 typed 拒绝，**不落 `""`、不落 `default`**
+（待决问题 1 的裁决）。解析成功后构造 `ActionIntent`（动作类型 = publish），但**仍由
+`run_publish` 执行**——这一步只让「意图」可表达、可审计。
+- claim：`mainline_action_intent_producers` 0 → ≥1；`mainline_run_publish_direct_call_sites` 保持 `3`。
+- 验收：三处直调点都有账号解析；空账号路径有测试；发布结果与今天逐字段一致（回归测试）。
+- 回滚：删生产者调用即可，执行器未变。
+
+**P2 — 策略门禁（复用同一份规则）**
+在 intent 构造后调用 `policy.py` 的发布策略评估；拒绝返回 typed 结果且**不写回执**，
+与 creator_agent API 路径的拒绝语义一致。禁止复制一份策略逻辑到主链——只允许调用。
+- claim：不变（没有换执行器、没有新增构造点之外的生产者）。
+- 验收：允许/拒绝矩阵有测试；拒绝不产生 `UNKNOWN` 账本状态；与 API 路径共用规则（有测试断言同一函数被调用）。
+- 回滚：去掉 gate 调用，回到 P1。
+
+**P3 — 换执行器**
+发布执行改走 Tool Gateway `xhs.publish` + `granted_scopes`（复用
+`backend/creator_agent/execution.py` 的 dispatcher），`run_publish` 降为该 capability 的工具实现；
+主链的 `EffectLedger` 六态语义、幂等键与 human review gate 的先后关系必须逐条对齐（先写测试再切换）。
+- claim：`mainline_run_publish_direct_call_sites` 3 → 0；生产者数不变。
+- 验收：三条路径（主链/retry/free）都经 Gateway；scope 违规被拒且有测试；幂等键跨重试稳定；
+  重复提交不产生第二次平台副作用。
+- 回滚：dispatcher 注入回退到直接 `run_publish`（本阶段保留该注入点）。
+
+**P4 — 收口**
+删除直调分支与「主链不经控制面」残留条目，清理为兼容保留的开关，claim 归零并删除对应行。
+- 验收：`mainline_run_publish_direct_call_sites = 0` 且不再有 `run_publish` 直调；文档不再声明残留；
+  `tests/unit/scripts/test_residue_claims.py` 重算绿。
+
+### 不变量（每阶段都必须保持）
+
+1. **永不发明账号**：`account_id` 必须显式解析，空则拒。
+2. **不双执行**：迁移期间 intent 与 `run_publish` 只能有一个执行入口；两阶段切换点由测试钉住，
+   禁止「先两边都写、后面再删」。
+3. **回执/账本不撒谎**：拒绝不写回执；`UNKNOWN ≠ FAILED` 语义沿用控制面裁决。
+4. **人类审批边界不变**：主链的 review gate 仍是审批点，控制面 confirmation 不得绕过它。
+5. **claim 表与散文同步**：每阶段结束更新 claim 数并重算；否则判据红。
+
+### 不做 / 触发条件
+
+- 不在 P1/P2 阶段改 `run_publish` 内部实现（先让意图与策略就位）。
+- 不在没有跨进程幂等证据前进入 P3（否则重试可能变成第二次真实发布）。
+- 迁移的每一步都是**独立票**；本票只交方案，不写生产代码。
+

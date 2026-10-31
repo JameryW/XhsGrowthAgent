@@ -1,0 +1,28 @@
+{
+  "id": "mainline-control-plane-plan",
+  "name": "mainline-control-plane-plan",
+  "title": "主链迁移控制面：分阶段方案（票 5au）",
+  "description": "B 类裁定：主链迁移控制面。本票交付分阶段方案（文档章节 + 每阶段验收/claim 迁移/回滚），不改生产代码。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "docs",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "PLAN DELIVERED 2026-10-31 (B-class ruling: migrate). Scope of this ticket is the phased plan only, no production code. Added docs/publish-action-protocol.md section '主链迁移控制面：阶段方案（票 5au）': start state pinned to the claim table (direct run_publish calls = 3, mainline ActionIntent producers = 0, control-plane construction sites = 1) with the three call sites named; reusable control-plane parts listed (models/advisor/policy/execution dispatcher/catalog+gateway); four sequential, independently reversible phases -- P1 explicit account resolution + intent producer (producers 0->N, direct calls stay 3), P2 policy gate by calling the existing rules only (no copy), P3 executor cutover through Gateway xhs.publish with granted_scopes (direct calls 3->0), P4 removal of the residual (claim 0, row deleted); invariants that must hold across every phase (never invent an account, never double-execute, receipts/ledger never lie, human review gate stays the approval point, claim table and prose stay in sync); explicit non-goals and trigger conditions. The 'known residual' bullet now points at the plan while keeping the open fact. Verified: residue claim recompute + docs anchors + docs citations = 7 passed; git diff limited to the doc and task dir. Follow-up implementation tickets start from P1.",
+  "meta": {}
+}
