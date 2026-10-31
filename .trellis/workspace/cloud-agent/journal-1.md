@@ -588,3 +588,36 @@ agent-os 行5对账增强第一刀: reconcile_unknown_publish 本地确认后 UN
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: MemoryManager 写入确定性 key（票 5aj）
+
+**Date**: 2026-10-31
+**Task**: MemoryManager 写入确定性 key（票 5aj）
+**Branch**: `cursor/memory-manager-keys-finish-5039`
+
+### Summary
+
+Closed last Memory Promotion §10 uuid4 risk: store_insight/preference/strategy_note use mem_+sha256 keys for upsert. Empty text ValueError; no historical migration. Merged #745.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `46abc64d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
