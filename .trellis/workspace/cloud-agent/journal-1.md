@@ -621,3 +621,36 @@ Closed last Memory Promotion §10 uuid4 risk: store_insight/preference/strategy_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Effect 对账平台笔记列表（票 5ak）
+
+**Date**: 2026-10-31
+**Task**: Effect 对账平台笔记列表（票 5ak）
+**Branch**: `cursor/effect-reconcile-platform-finish-5039`
+
+### Summary
+
+Platform note-list title match in reconcile_unknown_publish after local uncertain; hits confirm EffectLedger; no cookie/fetch miss stays uncertain. Merged #747.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13d21de1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
