@@ -403,3 +403,7 @@ disposition 改成 REVIEW/REFUSE。
 - ~~邻近风险：`CreativeMemory._find_similar_style` 吞 durable find 伪 miss~~ **已落（票 5ah）**：
   durable `find_style_by_tone_visual` 上抛（`deposit_style` 不再静默新建 uuid）；
   真实 miss 仍 `None`；store `asearch` 仍 best-effort warn。
+- ~~邻近风险：`MemoryManager` 三写入用 `uuid4()` 无法按键去重~~ **已落（票 5aj）**：
+  `memory_record_key(kind, text)` → `mem_` + sha256[:16]；同文 upsert；空 text 拒；
+  **不迁移**历史 uuid 行（新旧并存，召回仍走 asearch）。`store_content_record` /
+  CreativeMemory keys 不在本票。
