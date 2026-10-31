@@ -522,3 +522,36 @@ Closed last CreativeMemory §10 adjacent risk: durable recall_* read failures no
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: CreativeMemory find_similar 失败即抛（票 5ah）
+
+**Date**: 2026-10-31
+**Task**: CreativeMemory find_similar 失败即抛（票 5ah）
+**Branch**: `cursor/creative-memory-find-similar-finish-5039`
+
+### Summary
+
+Closed last CreativeMemory §10 adjacent risk: _find_similar_style durable find failures raise so deposit_style cannot silent-mint uuid styles. Store asearch stays warn. Merged as #741.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cfd59d99` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
