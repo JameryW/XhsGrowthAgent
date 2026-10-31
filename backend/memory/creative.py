@@ -296,8 +296,8 @@ class CreativeMemory:
     async def deposit_style(self, style: StyleDNA) -> None:
         """沉淀风格指纹（同风格合并，累加 sample_count）— 持久化 + 可选 store.
 
-        Durable write failures propagate (票 5ae). LangGraph store dual-write
-        remains best-effort after durable success.
+        Durable find/write failures propagate (票 5ae / 5ah). LangGraph store
+        dual-write remains best-effort after durable success.
         """
         from backend.db import creative_memory as cm_db
 
@@ -530,20 +530,23 @@ class CreativeMemory:
     async def _find_similar_style(
         self, style: StyleDNA, *, conn: Any | None = None
     ) -> tuple[str, dict[str, Any]] | None:
-        """查找相似风格（同 tone + visual_style 视为同风格）"""
+        """查找相似风格（同 tone + visual_style 视为同风格）.
+
+        Durable ``find_style_by_tone_visual`` failures propagate (票 5ah) — a
+        fake miss would let ``deposit_style`` silently create a duplicate uuid
+        row. True miss still returns ``None``. Store ``asearch`` remains
+        best-effort warn + ``None`` (optional index; must not block deposit).
+        """
         tone = style.get("tone", "")
         visual = style.get("visual_style", "")
         if not tone and not visual:
             return None
-        # Durable exact match first
-        try:
-            from backend.db import creative_memory as cm_db
+        # Durable exact match first — failures propagate (no fake miss).
+        from backend.db import creative_memory as cm_db
 
-            hit = await cm_db.find_style_by_tone_visual(self.account_id, tone, visual, conn=conn)
-            if hit:
-                return hit
-        except Exception as e:
-            logger.debug("find_similar durable failed: %s", e)
+        hit = await cm_db.find_style_by_tone_visual(self.account_id, tone, visual, conn=conn)
+        if hit:
+            return hit
 
         if not self._has_store:
             return None

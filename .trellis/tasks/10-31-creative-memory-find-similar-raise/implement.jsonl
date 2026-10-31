@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Align with 5ae–5ag raise-vs-warn; add find_similar scenario"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar; no silent duplicate deposit on lookup fault"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "§10 find_similar adjacent risk"}
+{"file": ".trellis/tasks/archive/2026-10/10-31-creative-memory-recall-raise/prd.md", "reason": "Prior ticket deferred find_similar swallow"}
+{"file": ".trellis/tasks/10-31-creative-memory-find-similar-raise/prd.md", "reason": "Locked durable-raise decision for find_similar"}

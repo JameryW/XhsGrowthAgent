@@ -683,7 +683,7 @@ into typed responses:
   deposit that has not yet written (e.g. optional `asearch` during style merge
   lookup).
 - Out of scope for this contract: `calibrate` raise is 票 5af；`recall_*` raise
-  is 票 5ag（both below).
+  is 票 5ag；`_find_similar_style` durable raise is 票 5ah（all below).
 - Callers: creator-stats `import_bundle` already surfaces analysis errors
   without rolling back the import; workflow agents let `BaseAgent.__call__`
   record the failure.
@@ -767,7 +767,7 @@ async def _calibrate_style(self, payload: CalibrationPayload) -> int:
   (ADR-0006 cold-start contract).
 - Store `asearch` is optional semantic supplement: warn + continue with durable
   rows (same secondary-index pattern as 票 5af store lookup).
-- Out of scope: `find_similar` swallow paths.
+- `_find_similar_style` durable raise is 票 5ah below.
 
 ### Wrong vs Correct
 
@@ -796,4 +796,48 @@ async def recall_style(self, ...) -> list[StyleDNA]:
             logger.warning(f"recall_style store failed: {e}")
     # cold defaults only after durable succeeded with no real styles
     return chosen if chosen else self._default_styles()
+```
+
+## Scenario: CreativeMemory find_similar durable raise (票 5ah)
+
+### Convention
+
+- `_find_similar_style` **propagates durable** `find_style_by_tone_visual`
+  failures. Do not wrap that call in `except Exception: logger.debug` and
+  continue — a fake miss lets `deposit_style` silently create a new uuid style
+  row and breaks tone+visual merge semantics.
+- True miss (no matching row) still returns `None` (legitimate create path).
+- Store `asearch` remains optional secondary index: warn + `return None` on
+  failure (must not block an already-successful durable miss path). Same
+  best-effort pattern as 票 5af / 5ag store lookups.
+- Only caller today: `deposit_style` (same-conn transaction). No new public API.
+
+### Wrong vs Correct
+
+#### Wrong
+```python
+async def _find_similar_style(self, style, *, conn=None):
+    try:
+        hit = await cm_db.find_style_by_tone_visual(...)
+        if hit:
+            return hit
+    except Exception as e:
+        logger.debug("find_similar durable failed: %s", e)  # fake miss
+    # ... store asearch or return None → deposit_style creates new uuid
+```
+
+#### Correct
+```python
+async def _find_similar_style(self, style, *, conn=None):
+    hit = await cm_db.find_style_by_tone_visual(...)  # durable failure propagates
+    if hit:
+        return hit
+    if self._has_store:
+        try:
+            items = await self._store.asearch(...)
+            ...
+        except Exception as e:
+            logger.warning("find_similar store search failed (...): %s", e)
+            return None
+    return None  # true miss only
 ```

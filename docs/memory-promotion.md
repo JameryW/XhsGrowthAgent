@@ -399,5 +399,7 @@ disposition 改成 REVIEW/REFUSE。
   durable get/persist 上抛；缺失 ID 仍 0；store lookup miss 仍 warn。
 - ~~邻近风险：`CreativeMemory.recall_*` 吞 durable 读失败伪空 / 伪冷启动~~ **已落（票 5ag）**：
   durable `list_*` / `get_benchmark` 上抛；真实空库仍 `[]`/`None`（`recall_style`
-  仅 durable 成功且无真实 style 时冷默认）；store `asearch` 仍 best-effort warn；
-  `find_similar` swallow 仍 out of scope。
+  仅 durable 成功且无真实 style 时冷默认）；store `asearch` 仍 best-effort warn。
+- ~~邻近风险：`CreativeMemory._find_similar_style` 吞 durable find 伪 miss~~ **已落（票 5ah）**：
+  durable `find_style_by_tone_visual` 上抛（`deposit_style` 不再静默新建 uuid）；
+  真实 miss 仍 `None`；store `asearch` 仍 best-effort warn。

@@ -264,6 +264,38 @@ class TestFallback:
             await cm.deposit_style(_sample_style())
 
     @pytest.mark.asyncio
+    async def test_deposit_style_raises_on_durable_find_failure(self):
+        """Durable find_style_by_tone_visual failure propagates (票 5ah).
+
+        Must not fake a miss — that would silently create a new uuid style.
+        """
+        cm = CreativeMemory("test_acct_find_fail", store=None)
+        upsert = AsyncMock()
+        with (
+            patch(
+                "backend.db.creative_memory.find_style_by_tone_visual",
+                new=AsyncMock(side_effect=RuntimeError("durable find down")),
+            ),
+            patch("backend.db.creative_memory.upsert_style", new=upsert),
+            pytest.raises(RuntimeError, match="durable find down"),
+        ):
+            await cm.deposit_style(_sample_style())
+        upsert.assert_not_called()
+        rows = await cm_db.list_styles("test_acct_find_fail", limit=10)
+        assert rows == []
+
+    @pytest.mark.asyncio
+    async def test_find_similar_true_miss_returns_none(self):
+        """True durable miss still returns None (合法新建) — 票 5ah."""
+        cm = CreativeMemory("test_acct_find_miss", store=None)
+        with patch(
+            "backend.db.creative_memory.find_style_by_tone_visual",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await cm._find_similar_style(_sample_style())
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_deposit_play_raises_on_durable_failure(self):
         cm = CreativeMemory("test_acct", store=None)
         with (
@@ -353,7 +385,7 @@ class TestFallback:
 
     @pytest.mark.asyncio
     async def test_deposit_style_store_search_failure_still_writes_durable(self):
-        """Optional store merge lookup failure must not block durable deposit."""
+        """Optional store merge lookup failure must not block durable deposit (票 5ah)."""
         store = AsyncMock()
         store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
         store.aput = AsyncMock()
@@ -363,6 +395,19 @@ class TestFallback:
         await cm.deposit_style(style)
         rows = await cm_db.list_styles("test_acct_style_store", limit=10)
         assert any(r.get("style_id") == "style_store_ok" for r in rows)
+
+    @pytest.mark.asyncio
+    async def test_find_similar_store_failure_after_durable_miss_returns_none(self):
+        """Durable miss + store asearch failure → None (warn), not raise (票 5ah)."""
+        store = AsyncMock()
+        store.asearch = AsyncMock(side_effect=RuntimeError("store unavailable"))
+        cm = CreativeMemory("test_acct_find_store_miss", store=store)
+        with patch(
+            "backend.db.creative_memory.find_style_by_tone_visual",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await cm._find_similar_style(_sample_style())
+        assert result is None
 
 
 # ── Style Merging ──
