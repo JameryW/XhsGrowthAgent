@@ -12,6 +12,16 @@ import {
 /** Skip network when a recent successful fetch is still warm (page re-entry). */
 const ACCOUNTS_FRESH_MS = 30_000
 
+/** Console endpoints need a bearer token; a 401 for a guest is expected, not a
+ *  failure to report. (The Navbar/tab bars call fetchAccounts on every page,
+ *  including the public landing page, so an anonymous visitor used to get a
+ *  "token expired or invalid" error banner on a site they never logged into.) */
+const SESSION_GONE_CODES = new Set([
+  'ERROR_AUTH_TOKEN_INVALID',
+  'ERROR_AUTH_TOKEN_MISSING',
+  'ERROR_AUTH_TOKEN_EXPIRED',
+])
+
 export const useAccountsStore = defineStore('accounts', () => {
   // ── State ──
   const accounts = ref<Account[]>([])
@@ -52,7 +62,10 @@ export const useAccountsStore = defineStore('accounts', () => {
         activeAccount.value = active
         lastFetchedAt.value = Date.now()
       } catch (e: any) {
-        error.value = e.message
+        // A dead/absent console session is not a fetch failure worth shouting
+        // about: api/client.ts already dropped the stale token and the router
+        // guard sends protected pages to /login.
+        error.value = SESSION_GONE_CODES.has(e?.code) ? null : e.message
       } finally {
         isLoading.value = false
         inFlight = null
