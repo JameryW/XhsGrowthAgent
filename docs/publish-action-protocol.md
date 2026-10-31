@@ -167,12 +167,16 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
     （`backend/creator_agent/models.py`）—— `grep -rn PublishIntent backend/` 是**零命中**。
     下面表里的主张一律用落地名：一条点名了「树里不存在的对象」的主张，会让读者连
     对的那半句一起怀疑。
-- **`EVENT_KINDS` 的 `cost` / `error` 仍无发射者**：`error` 走的是 realtime
-  `EventBusService`，不是 `workflow_events` 这一层；`ripple` 只出现在 S2 迁入的历史条目里。
-  `EVENT_KINDS` 现在有**一个**外部读者 —— `backend/services/signal_inventory.py`
-  把未声明的 `kind` 报成"声明漂移"（#676 那类事故的唯一可见出口）。声明集因此不再是
-  无人消费的死表；但读者**不会**替发射端兜底：`cost` / `error` 的发射者缺口仍然开放，
-  这两条 kind 依旧只会出现在历史条目里。
+- ~~**`EVENT_KINDS` 的 `cost` / `error` 仍无发射者**~~ **已收口（票 5ao）**：两条 kind
+  从 `EVENT_KINDS` 退休 —— 它们从来没有发射者，且各自已有权威载体：cost 落在
+  `kind:"llm"` 条目的 `cost_usd`（`/analytics/costs` 从这里聚合），error 的实时通道是
+  realtime `EventBusService.WORKFLOW_ERROR`、持久面是 `kind:"node"` 的 `status`/`error`。
+  补发射端会给同一事实造第二份真相，所以选择让**声明集追上发射面**；现在的声明集由
+  `tests/unit/db/test_workflow_events_kinds.py` 钉成字面量（加回任何 kind —— 包括这两条
+  —— 都要改它，即一次有意识的决定）。`EVENT_KINDS` 仍有**一个**外部读者
+  `backend/services/signal_inventory.py`，它把未声明的 `kind` 报成"声明漂移"（#676
+  那类事故的唯一可见出口）；读者不替发射端兜底的性质没变，变的是不再有"声明了但没人写"
+  的条目藏在声明集里。
 - ~~**`account_credentials` 表仍无写入者**~~ **已解决（票 5n）**：扫码登录确认成功后，
   `XhsLoginSession._persist_login_cookie` 把 cookie 经 `db.crypto` 加密 upsert 进
   `account_credentials`（`(account_id, key_name)` 唯一，重登即替换）。三条护栏：只写
@@ -187,7 +191,10 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 记录继续声称它开放」的经历（`docs/planning.md` 的 `orchestrator_router` 缺键那条，
 见 `tests/unit/graph/test_routers.py` 的 `test_brief_mode_creating_routes_to_the_copywriter`），
 而当时没有任何机制察觉。散文写的残留就是那个机制缺口。票 5n 刚走过一次这个机制：写入者
-从 0 变 1，表同步改成 1。
+从 0 变 1，表同步改成 1。★ 票 5ao 的收口形状不同：它不是把某个值从 0 变 1，而是把
+**声明面缩到与发射面一致**（删掉两条从未被写入的 kind）—— 因此没有 claim 值可改，
+守卫落在那条钉住完整声明集的单测里；`event_kinds_readers_outside_its_defining_module`
+仍为 1。
 
 <!-- claim-table:begin -->
 

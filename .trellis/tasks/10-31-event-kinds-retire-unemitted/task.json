@@ -1,0 +1,30 @@
+{
+  "id": "event-kinds-retire-unemitted",
+  "name": "event-kinds-retire-unemitted",
+  "title": "EVENT_KINDS 收口：退休从未发射的 cost / error 两条声明（票 5ao）",
+  "description": "cost/error 两条 kind 自 P1a 起声明却从未有发射者（cost 落在 kind:llm 的 cost_usd，error 走 realtime WORKFLOW_ERROR + kind:node 的 status/error）。退休它们，让声明集等于发射端能产出的集合，并用测试钉住；同步 publish-action-protocol 已知残留。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/db,tests/unit/db,docs",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/db/workflow_events.py",
+    "tests/unit/db/test_workflow_events_kinds.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "IMPLEMENTED 2026-10-31. Retired 'cost' and 'error' from EVENT_KINDS (13 -> 11). Evidence: neither was ever emitted (git log -S over backend had zero hits), and both already have canonical homes -- cost on kind:\"llm\" entries' cost_usd (aggregated by /analytics/costs), errors on the realtime EventBusService.WORKFLOW_ERROR channel and on kind:\"node\" entries' status/error. Emitting them would create a second truth for the same fact; the declaration now matches what writers produce. Guard: tests/unit/db/test_workflow_events_kinds.py pins the full declared set as a literal and asserts the two retired names stay out, so re-adding a kind is a deliberate edit. Docs: publish-action-protocol's 'known residual' bullet is closed with the canonical homes and the shape of this close-out (no claim value changed -- the claim event_kinds_readers_outside_its_defining_module stays 1). Mutations: re-adding 'cost' turned both new tests red; restored. Test runs: 41 passed (signal_inventory/events) with 2 sandbox tmp_path env errors; residue claims 4 passed + 3 env errors; claim recompute green; ruff/format green.",
+  "meta": {}
+}

@@ -37,9 +37,16 @@ logger = logging.getLogger("xhs_growth.db.workflow_events")
 
 # Event kinds. The first four are carried over verbatim from the
 # ``performance_log`` entries S2 migrates (``kind`` was already the
-# discriminator there); tool/cost/error/action are the forward-looking set from
-# the P1a prd that later slices will start emitting. ``context`` is the P1b-S2
-# recall-telemetry kind (RetrievalResult.mode observability, info.md D6').
+# discriminator there); tool/action/context are emitted by later slices.
+# ``cost`` and ``error`` were declared here as "forward-looking" from the P1a
+# prd but never got an emitter (票 5ao retired them): cost rides on the
+# ``kind:"llm"`` entry's ``cost_usd`` (the ``/analytics/costs`` reader aggregates
+# that), and errors have two homes already -- the realtime
+# ``EventBusService.WORKFLOW_ERROR`` channel and the ``kind:"node"`` entry's
+# ``status``/``error``.  A declared kind with no writer is invisible debt by
+# construction: ``signal_inventory`` only reports *undeclared* kinds as drift.
+# ``tests/unit/db/test_workflow_events_kinds.py`` pins the declared set, so
+# re-adding a kind (or a retired one) is a deliberate edit.
 EVENT_KINDS: frozenset[str] = frozenset(
     {
         "node",
@@ -47,8 +54,6 @@ EVENT_KINDS: frozenset[str] = frozenset(
         "ripple",
         "human_wait",
         "tool",
-        "cost",
-        "error",
         "action",
         "context",
         "verification",

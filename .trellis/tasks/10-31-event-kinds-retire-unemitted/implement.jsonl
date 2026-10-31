@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "ruff/stdlib + test conventions for backend and test changes"}
+{"file": "docs/publish-action-protocol.md", "reason": "the 'known residual' this ticket closes and the claim table it must not move"}
