@@ -284,3 +284,38 @@ Locked PRD §9 Q2: all namespaces ttl_seconds=None (supersede-only). Added promo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Memory Promotion policy_version 来源（票 5aa）
+
+**Date**: 2026-10-31
+**Task**: Memory Promotion policy_version 来源（票 5aa）
+**Branch**: `cursor/memory-promotion-policy-finish-5039`
+
+### Summary
+
+Locked PRD §9 Q6: machine policy_version = Git constant DEFAULT_PROMOTION_POLICY_VERSION + default_promotion_policy(). Closed Q6 in docs; archived task after #727/#726 merge.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9a45bcf7` | (see git log) |
+| `325af7bc` | (see git log) |
+| `49eff922` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
