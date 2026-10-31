@@ -385,6 +385,28 @@ async def retry_publish(
         reconciled = await reconcile_unknown_publish(values, request.app.state.graph.store)
         gate = evaluate_unknown_publish_retry(pr_status, force_retry, reconciled)
         if gate is not None:
+            # 票 5am：对账确认已发布时，同步 checkpoint publish_result 与账本同形
+            # （status=published），避免状态 API / UI 仍显示 unknown。uncertain /
+            # requires_force 不写。写失败 best-effort warn，不阻断 gate 返回。
+            if gate.get("status") == "reconciled":
+                evidence = gate.get("evidence") or {}
+                synced_pr: dict[str, Any] = {
+                    **(pr if isinstance(pr, dict) else {}),
+                    "status": "published",
+                    "result_known": True,
+                    "reconcile_evidence": dict(evidence),
+                }
+                post_id = evidence.get("post_id")
+                if post_id:
+                    synced_pr["post_id"] = post_id
+                try:
+                    await graph.aupdate_state(
+                        config,
+                        {"publish_result": synced_pr},
+                        as_node=_get_as_node(state),
+                    )
+                except Exception as e:
+                    logger.warning("reconcile publish_result sync failed (non-blocking): %s", e)
             return success(
                 data={
                     "thread_id": thread_id,

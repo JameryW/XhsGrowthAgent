@@ -288,3 +288,64 @@ def test_unknown_publish_without_force_is_refused(app_and_client):
     assert body["status"] == "requires_force"
     assert "force" in body["message"]
     mock_rp.assert_not_awaited()
+    # 票 5am: requires_force must not sync publish_result to published
+    graph.aupdate_state.assert_not_awaited()
+
+
+def test_reconciled_syncs_publish_result_to_published(app_and_client):
+    """票 5am: gate status=reconciled → aupdate_state publish_result.status=published
+    with evidence / result_known, before returning the early success response."""
+    app, client, graph = app_and_client
+    evidence = {"source": "idempotency", "post_id": "note-42"}
+    graph.aget_state.return_value.values = _values(
+        publish_result={"status": "unknown", "error": "timeout", "post_id": ""}
+    )
+
+    with (
+        patch(_RUN_PUBLISH, new_callable=AsyncMock) as mock_rp,
+        patch(
+            "backend.api.routes._wf_actions.reconcile_unknown_publish",
+            new_callable=AsyncMock,
+            return_value={"status": "published", "evidence": evidence},
+        ),
+    ):
+        resp = client.post("/api/workflow/publish-retry/thr1", json={})
+
+    body = resp.json()["data"]
+    assert body["status"] == "reconciled"
+    mock_rp.assert_not_awaited()
+    graph.aupdate_state.assert_awaited()
+    assert graph.aupdate_state.await_args.kwargs.get("as_node") == "orchestrator"
+    updates = graph.aupdate_state.await_args.args[1]
+    pr = updates["publish_result"]
+    assert pr["status"] == "published"
+    assert pr["result_known"] is True
+    assert pr["post_id"] == "note-42"
+    assert pr["reconcile_evidence"] == evidence
+    # prior fields retained
+    assert pr["error"] == "timeout"
+
+
+def test_reconciled_publish_result_sync_failure_still_returns_gate(app_and_client):
+    """票 5am: aupdate_state failure is best-effort — API still returns reconciled."""
+    app, client, graph = app_and_client
+    graph.aget_state.return_value.values = _values(publish_result={"status": "unknown"})
+    graph.aupdate_state = AsyncMock(side_effect=RuntimeError("checkpoint write failed"))
+
+    with (
+        patch(_RUN_PUBLISH, new_callable=AsyncMock) as mock_rp,
+        patch(
+            "backend.api.routes._wf_actions.reconcile_unknown_publish",
+            new_callable=AsyncMock,
+            return_value={
+                "status": "published",
+                "evidence": {"source": "content_history"},
+            },
+        ),
+    ):
+        resp = client.post("/api/workflow/publish-retry/thr1", json={})
+
+    body = resp.json()["data"]
+    assert body["status"] == "reconciled"
+    mock_rp.assert_not_awaited()
+    assert resp.json()["success"] is True
