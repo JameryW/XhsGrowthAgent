@@ -489,3 +489,36 @@ Closed PRD §10 adjacent risk 票 5af: CreativeMemory.calibrate durable write fa
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: CreativeMemory recall 失败即抛（票 5ag）
+
+**Date**: 2026-10-31
+**Task**: CreativeMemory recall 失败即抛（票 5ag）
+**Branch**: `cursor/creative-memory-recall-finish-5039`
+
+### Summary
+
+Closed last CreativeMemory §10 adjacent risk: durable recall_* read failures now raise (no fake empty/cold-start). Store asearch stays best-effort warn. Spec scenario + docs. Merged as #739.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cd0b100e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
