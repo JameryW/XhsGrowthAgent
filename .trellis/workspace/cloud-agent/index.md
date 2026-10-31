@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
-- **Last Active**: 2026-10-29
+- **Total Sessions**: 7
+- **Last Active**: 2026-10-31
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~214 | Active |
+| `journal-1.md` | ~250 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-10-31 | Memory Promotion 人审写入面（票 5y） | `72475be3`, `f9109107`, `ae2f0257`, `37efa124` | `cursor/memory-promotion-5y-finish-5039` |
 | 6 | 2026-10-29 | Run 身份协议 —— run_id 区分 resume 与 rerun（票 5x） | `443e5be5` | `main` |
 | 5 | 2026-10-27 | RQGM advisory UI + human-decision fail-closed CTAs | `15effa2c`, `badbd20f`, `e785c826` | `main` |
 | 4 | 2026-10-27 | Heavy residual: no auto-revise from evaluator | `40a69674`, `d0201d54`, `57e87870` | `main` |

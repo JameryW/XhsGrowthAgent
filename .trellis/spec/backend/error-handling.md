@@ -407,26 +407,85 @@ Learning review routes translate domain exceptions into typed API errors:
 The adapter must raise before committing when a revision or disposition check
 fails. Routes must not catch these failures and return a successful envelope.
 
-## Scenario: Creator Agent memory-promotion review conflicts
+## Scenario: Creator Agent memory-promotion review (票 5y)
 
-Human review of an open Memory Promotion `REVIEW` row
-(`POST /api/creator-agent/memory-promotions/{promotion_id}/review`) mirrors the
-learning-signal conflict shape:
+### 1. Scope / Trigger
 
-- a missing or cross-account / non-REVIEW id is
-  `CreatorMemoryPromotionNotFoundError` (`404`);
-- a REVIEW that already has a human closure row is
-  `CreatorMemoryPromotionConflictError` (`409`);
-- no memory store configured is `SERVICE_UNAVAILABLE` (`503`) with
-  `details.available=false` — never a successful envelope;
-- body reconstruction failure for `approved` is `ValidationError` (`400`).
-  Reconstruction prefers a Creative Memory style re-read when
-  `source_ref` is `creative-memory://style/<id>`; otherwise (and on re-read
-  miss) it uses `PromotionRecord.body` snapshotted at observe/append time.
-  hy-memory has no trusted re-read, so approve depends on that snapshot.
+- Trigger: new write API on the promotion ledger closes Slice D's "no write
+  path" honesty boundary; human `approved` must change recallable memory.
+- Cross-layer: FastAPI route ↔ `promotion_review.py` ↔ append-only ledger ↔
+  `write_promoted_memory` target namespace.
 
-Domain logic lives in `backend/memory/promotion_review.py`; the route must not
-re-run `decide_promotion` to flip REVIEW→PROMOTE.
+### 2. Signatures
+
+- `POST /api/creator-agent/memory-promotions/{promotion_id}/review`
+- Domain: `review_promotion(ledger, store, account_id, promotion_id, disposition, review_note=..., *, rebuild_candidate=...)`
+- Ledger: `PromotionRecord.body` snapshotted on every `append` (hy approve has
+  no trusted SDK re-read)
+
+### 3. Contracts
+
+- Request: `account_id` (non-empty), `disposition` ∈
+  `CreatorReviewDisposition` (`approved` | `dismissed`), optional `review_note`
+- Auth: `require_owned_account` before any ledger read/write
+- Success response: reviewed row + applied flag (target write only on approve)
+- Human decision: construct `PromotionDecision` with `decided_by="human"` and
+  reasons `human_approved` / `human_dismissed` — **never** re-run
+  `decide_promotion` (MEMORY cannot machine-flip to PROMOTE)
+- Order on `approved`: ledger append **first**, then `write_promoted_memory`
+  (Slice C crash = pending, not unattributable memory)
+- Closure link: new row `detail={"reviewed_promotion_id","review_note"}` and
+  `supersedes=(review_id,)`; old REVIEW row never mutated
+
+### 4. Validation & Error Matrix
+
+| Condition | Error |
+|-----------|-------|
+| Missing / cross-account / not an open REVIEW | `CreatorMemoryPromotionNotFoundError` (`404`) |
+| REVIEW already closed by a later human PROMOTE/REFUSE whose detail links this id | `CreatorMemoryPromotionConflictError` (`409`) |
+| No memory store configured | `SERVICE_UNAVAILABLE` (`503`), `details.available=false` — never success envelope |
+| `approved` but body cannot be rebuilt (no style re-read and empty snapshot) | `ValidationError` (`400`) |
+
+Body rebuild preference: `creative-memory://style/<id>` durable re-read when
+present; else / on miss → `PromotionRecord.body` snapshot.
+
+### 5. Good / Base / Bad Cases
+
+- Good: open REVIEW + `approved` → new human PROMOTE ledger row +
+  `strategy_notes` write; `dismissed` → human REFUSE, zero target writes
+- Base: second review of the same REVIEW id → `409`; unknown id → `404`
+- Bad: re-running `decide_promotion` to "approve"; mutating the REVIEW row;
+  returning success when `store is None`; writing an empty body
+
+### 6. Tests Required
+
+- Unit (`tests/unit/memory/test_promotion_review.py`): approve/dismiss order,
+  conflict detection via `reviewed_promotion_id`, hy body-snapshot approve,
+  empty-body refuse
+- API (`tests/unit/api/test_memory_promotions_route.py`): GET+POST method set,
+  200/404/409/503/400, owned-account gate
+- Protocol vocab: `human_approved` / `human_dismissed` enumerated in
+  `test_promotion.py`
+
+### 7. Wrong vs Correct
+
+#### Wrong
+```python
+decision = decide_promotion(candidate, source=check)  # still REVIEW for MEMORY
+# or mutate the REVIEW row in place
+```
+
+#### Correct
+```python
+decision = PromotionDecision(
+    ...,
+    disposition=PromotionDisposition.PROMOTE,
+    reason=PromotionReason.HUMAN_APPROVED,
+    decided_by="human",
+)
+await ledger.append(...)          # first
+await write_promoted_memory(...)  # second
+```
 
 ## Scenario: Creator Agent Evidence Graph lookup
 
