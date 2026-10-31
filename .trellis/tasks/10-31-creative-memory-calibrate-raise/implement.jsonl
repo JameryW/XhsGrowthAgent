@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Align with 5ae raise-vs-warn deposit scenario"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar; no silent fake zeros"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "§10 calibrate adjacent risk"}
+{"file": ".trellis/tasks/10-31-creative-memory-calibrate-raise/prd.md", "reason": "Locked durable-raise decision"}

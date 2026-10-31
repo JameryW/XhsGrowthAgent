@@ -609,6 +609,90 @@ class TestCalibrateStats:
         assert stats["plays"] == 0
         assert stats["materials"] == 0
 
+    @pytest.mark.asyncio
+    async def test_missing_ids_return_zero_not_raise(self):
+        """Missing / not-found IDs are a no-op (票 5af) — not a durable failure."""
+        cm = CreativeMemory("test_acct", store=None)
+        payload = CalibrationPayload(
+            account_id="test_acct",
+            style_id="missing_style",
+            play_id="missing_play",
+            material_effectiveness={"missing_mat": 0.5},
+            actual_engagement_rate=0.08,
+            actual_save_rate=0.02,
+        )
+        with (
+            patch.object(cm_db, "get_style", new=AsyncMock(return_value=None)),
+            patch.object(cm_db, "get_play", new=AsyncMock(return_value=None)),
+            patch.object(cm_db, "get_material", new=AsyncMock(return_value=None)),
+        ):
+            stats = await cm.calibrate(payload)
+        assert stats == {"styles": 0, "plays": 0, "materials": 0}
+
+    @pytest.mark.asyncio
+    async def test_calibrate_raises_on_durable_get_failure(self):
+        """Durable get failure propagates (票 5af) — no silent fake 0."""
+        cm = CreativeMemory("test_acct", store=None)
+        payload = CalibrationPayload(
+            account_id="test_acct",
+            style_id="s1",
+            actual_engagement_rate=0.08,
+            actual_save_rate=0.02,
+        )
+        with (
+            patch.object(
+                cm_db,
+                "get_style",
+                new=AsyncMock(side_effect=RuntimeError("durable get down")),
+            ),
+            pytest.raises(RuntimeError, match="durable get down"),
+        ):
+            await cm.calibrate(payload)
+
+    @pytest.mark.asyncio
+    async def test_calibrate_raises_on_durable_persist_failure(self):
+        """Durable persist failure propagates (票 5af) — not counted as 0 updates."""
+        style = StyleDNA(style_id="s1", tone="治愈", sample_count=1, engagement_rate=0.05)
+        cm = CreativeMemory("test_acct", store=None)
+        payload = CalibrationPayload(
+            account_id="test_acct",
+            style_id="s1",
+            actual_engagement_rate=0.08,
+            actual_save_rate=0.02,
+        )
+        with (
+            patch.object(cm_db, "get_style", new=AsyncMock(return_value=dict(style))),
+            patch.object(
+                cm_db,
+                "upsert_style",
+                new=AsyncMock(side_effect=RuntimeError("durable upsert down")),
+            ),
+            pytest.raises(RuntimeError, match="durable upsert down"),
+        ):
+            await cm.calibrate(payload)
+
+    @pytest.mark.asyncio
+    async def test_calibrate_store_lookup_failure_treated_as_miss(self):
+        """Store aget after durable miss warns + miss; does not raise (票 5af)."""
+        store = _make_store(get_result=None)
+        store.aget = AsyncMock(side_effect=RuntimeError("store index down"))
+        cm = CreativeMemory("test_acct", store=store)
+        payload = CalibrationPayload(
+            account_id="test_acct",
+            style_id="s1",
+            play_id="p1",
+            material_effectiveness={"m1": 0.5},
+            actual_engagement_rate=0.08,
+            actual_save_rate=0.02,
+        )
+        with (
+            patch.object(cm_db, "get_style", new=AsyncMock(return_value=None)),
+            patch.object(cm_db, "get_play", new=AsyncMock(return_value=None)),
+            patch.object(cm_db, "get_material", new=AsyncMock(return_value=None)),
+        ):
+            stats = await cm.calibrate(payload)
+        assert stats == {"styles": 0, "plays": 0, "materials": 0}
+
 
 # ── Calibrate Concurrency ──
 
@@ -623,8 +707,6 @@ class TestCalibrateConcurrency:
         blocks would peak at 1. Also asserts the stats dict is still correct
         (each block updated exactly once).
         """
-        import asyncio
-
         style = StyleDNA(style_id="s1", tone="治愈", sample_count=1, engagement_rate=0.05)
         play = ConversionPlay(play_id="p1", trigger_condition="新品首发", proven_count=1)
         material = MaterialEntry(
@@ -681,12 +763,11 @@ class TestCalibrateConcurrency:
         assert stats == {"styles": 1, "plays": 1, "materials": 1}, stats
 
     @pytest.mark.asyncio
-    async def test_partial_failure_does_not_abort_other_namespaces(self):
-        """Style block raises, play + material blocks still update.
+    async def test_durable_failure_fails_whole_calibrate(self):
+        """One namespace durable failure fails the whole calibrate (票 5af honesty).
 
-        Each block has its own try/except (swallow + log) — gather cannot raise
-        where serial did not. Asserts play + material stats populated despite
-        style failure.
+        Previously each block swallowed exceptions and returned 0, so a durable
+        write failure looked like "nothing to update". Now gather propagates.
         """
         play = ConversionPlay(play_id="p1", trigger_condition="新品首发", proven_count=1)
         material = MaterialEntry(
@@ -726,10 +807,9 @@ class TestCalibrateConcurrency:
             patch.object(cm_db, "get_style", new=_raise),
             patch.object(cm_db, "get_play", new=_get_play),
             patch.object(cm_db, "get_material", new=_get_material),
+            pytest.raises(RuntimeError, match="style db down"),
         ):
-            stats = await cm.calibrate(payload)
-
-        assert stats == {"styles": 0, "plays": 1, "materials": 1}, stats
+            await cm.calibrate(payload)
 
 
 # ── Keyword Recall ──

@@ -395,3 +395,6 @@ disposition 改成 REVIEW/REFUSE。
   PRD §9 开放项已清空（账本存储 Q5 早已在 Slice B 裁决）。
 - ~~邻近风险：`CreativeMemory.deposit_*` 吞 durable 写失败~~ **已落（票 5ae）**：
   durable 失败上抛；store dual-write 仍 best-effort warn。
+- ~~邻近风险：`CreativeMemory.calibrate` 吞 durable 读写失败返回假 0~~ **已落（票 5af）**：
+  durable get/persist 上抛；缺失 ID 仍 0；store lookup miss 仍 warn；召回 swallow
+  仍 out of scope。
