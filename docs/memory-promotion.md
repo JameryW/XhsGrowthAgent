@@ -176,7 +176,8 @@ if decision.disposition is PromotionDisposition.PROMOTE:
 - `candidate_from_observation`：`strategy_notes` / key `style:<source_id>` /
   `INTERNAL_FACT` / `source_ref=creative-memory://style/<id>` /
   `evidence_ids=(ev_style_<id>,)` / `sample_count`、`measured_rate` 原样带上；
-  **只有 style 在范围内**（plays/materials 的目标命名空间未裁决）；缺时间戳的行**抛**，
+  **只有 style 在范围内**（plays/materials 尚未接 promote 目标命名空间 —— 这是产品裁决，
+  不是 PRD §9 开放问题，六问已全部关闭）；缺时间戳的行**抛**，
   不静默跳过（它无法被版本化，判 `source_unversioned` 会对着一个谎话判）。
 - `observe_style_promotions(ledger, account_id, observations)`：读当前账本 → 逐个判决 →
   每个判决都 `append`（observe-only：**不写**目标命名空间）；同一 pass 内若同键出现更新
@@ -370,7 +371,7 @@ disposition 改成 REVIEW/REFUSE。
 - **协议不算 TTL**：`SourceCheck.ttl_expired` 由调用方经 `promotion_ttl.ttl_expired_for`
   用真实时钟算好传入，本层保持纯函数（票 5z）；
 - **无冷却窗口**：MVP 不扫「最近 N 天」（票 5ab）；冷却另开票；
-- **只晋升 style 一族（机晋升）**：plays/materials 的目标命名空间未裁决（PRD §9），未接；
+- **只晋升 style 一族（机晋升）**：plays/materials 未接 promote 目标命名空间（当前唯一目标 ns 是 `strategy_notes`，`backend/memory/promotion_observations.py:63-65`），也不进 `promotion_ttl.py` 常量表（`backend/memory/promotion_ttl.py:27-32`）；这是产品裁决，不是 PRD §9 的开放问题（§9 六问已全部关闭）；
 - **hy 候选机器侧只产 REVIEW**：没有可信重读就没有机晋升；人审写入见 §9.1；
 - **不做独立审核 UI / 前端面板**：HTTP 面挂在既有 creator-agent 资源上；
 - **不自动调度**：CLI 是真实调用者，但 cron/部署接线属于配置，不在代码里；

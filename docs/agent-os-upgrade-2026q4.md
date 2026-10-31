@@ -46,7 +46,7 @@
 
 | 实体 | 现状载体 | 判定 |
 |---|---|---|
-| Task | `thread_id`（workflow 实例） | 有，但"同 thread 多次 /start"会覆盖语义，run 边界不可见 |
+| Task | `thread_id`（workflow 实例） | **有**：Task 即 `thread_id`（`/start` 每次生成新 id，`backend/api/routes/_wf_application.py:176`）；run 边界见 Run 行（票 5x） |
 | Run | `run_id` + `run_seq` + `kind:"run"` 事件（票 5x，`backend/state/runs.py`） | **有**：`/start` 铸造 seq=1；pause/error resume 与 `/recover` 复用；completed/cancelled terminal restart 铸造新 `run_id`（seq+1，cause=`rerun`）。legacy 线程无 stamp 时 status 回显 null |
 | Step | graph node（superstep） | 有，checkpoint 天然记录 |
 | Attempt | 节点内结构化重试：`attempt_id` + `kind:"attempt"` 事件（票 5w，`backend/state/attempts.py`） | **有**：每次（档位 × 重试序号）一条事件，封闭 outcome（succeeded / payload_rejected / semantic_rejected / unreachable）、数据最小化、确定性 id。**节点内重试仍会重调 LLM**（§4.1 未变：本切片只补身份与遥测，不是重放） |
@@ -67,7 +67,7 @@
 | 2 | Task/Run/Step/Attempt/Effect 五实体 | Task/Step 有；**Attempt 有**（票 5w）；**Run 有**（票 5x：`run_id` + `kind:"run"`，resume 复用 / rerun 铸造）；Effect 有 publish（P0-B 六态）+ 互动两条（票 5c `engagement_effects`） | ✅ 已满足 |
 | 3 | Event Log 是事实、Snapshot 是物化视图、Context 是临时视图 | 三者已分离（checkpoint / events / compiler） | ✅ 已满足 |
 | 4 | Replay 不重调 LLM，读已提交决策 | **节点级成立**（superstep 完成即不重跑）；**节点内不成立**（节点重试会重调 LLM） | ⚠️ 部分（见 §4） |
-| 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 全量接入；票 5c 为互动两条加上 `engagement_effects`（提交前 claim）；**票 5ai**：本地对账确认（幂等行 / ContentHistory）已写账本 `UNKNOWN→RECONCILING→CONFIRMED`；uncertain 不动账本；**票 5ak**：本地均 miss 且 title 非空时，创作者中心笔记列表标题精确匹配 → 同路径确认账本（`source=platform_note_list`）；**票 5al**：默认 fetcher 最多拉 3 页（`page_size=50`，空页/短页提前停）；无 cookie / 拉列表失败 / 未命中 → uncertain；**票 5am**：`/publish-retry` reconciled 早退同步 checkpoint `publish_result`→`published`（与账本同形）；**笔记详情页深查 / CDP 仍可后续** | ✅ 已满足（详情页深查可后续） |
+| 5 | Effect Ledger + UNKNOWN ≠ FAILED | P0-B 已落地六态账本（§5.1）；publish 主链全量接入（`backend/agents/publisher.py`；free.py 经 `run_publish`），但 **creator_agent 控制面 execute 路径直连 Gateway、未过账本**（`backend/creator_agent/advisor.py:714-723` → `backend/creator_agent/execution.py:314-366`；幂等仅靠 execution receipt，见 `backend/creator_agent/advisor.py:540-544`）；票 5c 为互动两条加上 `engagement_effects`（提交前 claim）；**票 5ai**：本地对账确认（幂等行 / ContentHistory）已写账本 `UNKNOWN→RECONCILING→CONFIRMED`；uncertain 不动账本；**票 5ak**：本地均 miss 且 title 非空时，创作者中心笔记列表标题精确匹配 → 同路径确认账本（`source=platform_note_list`）；**票 5al**：默认 fetcher 最多拉 3 页（`page_size=50`，空页/短页提前停）；无 cookie / 拉列表失败 / 未命中 → uncertain；**票 5am**：`/publish-retry` reconciled 早退同步 checkpoint `publish_result`→`published`（与账本同形）；**笔记详情页深查 / CDP 仍可后续** | ✅ 已满足（主链；控制面路径未接账本；详情页深查可后续） |
 | 6 | Context Compiler（P0-P5 优先级 + provenance） | L0-L5 分层、budget、stability 门禁已有；P1-A 补齐 trust_class / verified / ttl / source_version 与可选标注渲染（§5.2）；票 5ad 起 `rerank_items` 乘 `TRUST_RERANK_WEIGHTS`（`verified`/TTL 仍不进排序） | ✅ 已满足 |
 | 7 | Memory Promotion Pipeline | hy-memory 有 LLM 抽取 + reconciler，无"来源验证→去重→晋升"显式流水线；**四片 + 人审写入 + TTL / policy_version / 样本阈值 / 语义近邻 hint 已落**：A 纯决策协议；B 账本 + observe + 管理面 + 调用者；C 独立重读 + 首次机晋升 + provenance 透传；D hy 候选机器 REVIEW（`promotion_hy.py`）；票 5y `POST .../memory-promotions/{id}/review` 人审 `approved`/`dismissed`（`promotion_review.py`，human-authored 账本行，不重跑 `decide_promotion`）；票 5z 全 ns 默认 `ttl_seconds=null`（`promotion_ttl.py`，只靠 supersede）；票 5aa `DEFAULT_PROMOTION_POLICY_VERSION` + `default_promotion_policy()`（Git 常量权威，无 env/远端）；票 5ab `DEFAULT_PROMOTION_MIN_SAMPLES=5`（对齐 `CreativeMemory.MIN_SAMPLES`，无冷却）；票 5ac 仅 `NEEDS_REVIEW` 后语义近邻 hint（`promotion_semantic.py`，unavailable → skip-hint，永不自动合并）。PRD §9 开放项已清空 | ✅ 已满足（P1） |
 | 8 | 多 Agent 并行按 Artifact 分工 + Workspace 冲突 | 当前为单 Agent 串行图；无子 Agent、无并发 workspace | ❌ 缺（P2，先不建） |
@@ -157,6 +157,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 乐观锁 | `mark(..., expect_version=N)` 拒绝覆盖并发写入；**诚实边界：BaseStore 无 CAS，多写者部署需数据库唯一约束**（代码注释已写明） |
 | 旧词兼容 | 读侧归一化 `published → CONFIRMED`、未知状态 → `UNKNOWN`（绝不落 FAILED）；历史行零迁移 |
 | publish 接入 | 提交前写 `PREPARED`（意图落盘）→ `begin()` 领取 → 成功 `CONFIRMED` / 确定失败 `FAILED` / 提交后无判定 `UNKNOWN`（显式写入，不再靠"保持不写"隐含） |
+| 接入边界（诚实披露） | 主链 `PublisherAgent` 与 free 路径已接账本（PREPARED + `EffectLedger.begin()`：`backend/agents/publisher.py:926-944`；free 路径经 `backend/api/routes/free.py:421` 调 `run_publish`）；**creator_agent 控制面 `execute` 路径直连 Gateway**（`backend/creator_agent/advisor.py:714-723` → `backend/creator_agent/execution.py:314-366`），**不经过 `EffectLedger`**，幂等仅靠 `ActionExecution` receipt（`backend/creator_agent/advisor.py:540-544`） |
 | 本地对账写账本（票 5ai） | `reconcile_unknown_publish` 本地证据确认 published 后 best-effort `UNKNOWN→RECONCILING→CONFIRMED`（evidence 入 `extra.reconcile_evidence`）；uncertain **不动**账本；写失败仅 warn，不阻断 gate 返回值 |
 | 平台列表对账（票 5ak） | 本地幂等行 / ContentHistory 均 miss 且 title 非空 → cookie httpx 拉创作者中心笔记列表标题 **精确** strip 匹配；命中则 `source=platform_note_list` + note id，走同一 `_confirm_ledger_after_reconcile`；无 cookie / fetch 失败 / 未命中 → `uncertain`（warn，不 raise、不伪确认）；可注入 `platform_note_fetcher`；**CDP / 详情页深查 out of scope** |
 | 平台列表多页（票 5al） | 默认 `_default_fetch_platform_notes` 循环 page 1..`_PLATFORM_NOTE_LIST_MAX_PAGES`（锁定 **3**），`page_size=50`；某页 `extract_note_items` 为空或 `len(items) < page_size` 提前停；任一页抛错 → 整次平台刀 `uncertain`（与 5ak 一致）；匹配/确认语义不变；**CDP / 详情页深查仍 out of scope**；`max_pages` 不配 env |
@@ -171,7 +172,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 默认值 | `trust_class=unspecified`、`verified=False` —— 未标注的生产者不得被呈现为可信 |
 | 生产方标注 | `item_to_context_item`：content_history → `INTERNAL_FACT`，其余三命名空间 → `MEMORY`；hy-memory 召回 → `MEMORY` + `verified=False` |
 | 渲染 | `compile(..., annotate_provenance=True)` 追加单行标签 `[source=… trust=… verified version=… ttl=…]`；**默认 False** —— P1b 基线钉住渲染字节，开启标注必须是显式迁移（同一次改动刷新快照） |
-| 零漂移证明 | `context_compiler_baseline.py --compare --drift-pct 5` → `drift within threshold`，107 项 context 测试全绿 |
+| 零漂移证明 | `context_compiler_baseline.py --compare --drift-pct 5` → `drift within threshold`，115 项 context 测试全绿 |
 | 排序融合（票 5ad） | `rerank_items` 有效置信度 = `confidence * source_weight * trust_weight`；封闭表 `TRUST_RERANK_WEIGHTS`（`internal_fact=1.0` / `memory=0.85` / `model_generated=0.7` / `external_document=0.55` / `unspecified=0.5`）；始终应用、无开关；缺字段走 `UNSPECIFIED` |
 | 诚实边界（仍成立） | `verified` / TTL **仍不**进排序（生产者仍少）；无 LLM rerank；`verified=True` 生产者仍稀缺，字段先就位 |
 
@@ -190,7 +191,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 
 | 项 | 实现 |
 |---|---|
-| 四档动作 | `RETRY_SAME`（429/5xx/网络）/ `DEGRADE_MODEL`（400/422/schema/结构化解析失败）/ `ESCALATE_MODEL`（同错误重复 = stalled）/ `STOP_AND_REPORT`（401/403/内容策略/重试预算耗尽） |
+| 四档动作 | `RETRY_SAME`（429/5xx/网络）/ `DEGRADE_MODEL`（400/404/409/422/schema/结构化解析失败）/ `ESCALATE_MODEL`（同错误重复 = stalled）/ `STOP_AND_REPORT`（401/403/内容策略/重试预算耗尽） |
 | 优先级 | **拒绝优先**：401/403/策略拒绝即使同时"像瞬时错误"也直接 STOP——重试拒绝就是绕过路径 |
 | 与 retry 层一致 | 一致性测试：`retry._is_retryable(exc)` 为真 ⇔ 分类为 `RETRY_SAME`（两张规则表不允许漂移） |
 | 接入 | `retry._RetryChatModel` 的放弃路径记录分类（log-only，行为零变更） |
@@ -277,8 +278,12 @@ verification 判定（P1-B）、progress 信号（P0-A ×2）。**但没有任�
 | 行为变更 | **零**：重试预算、控制流、prompt、模型调用都不改；只多一条遥测 |
 | 诚实边界 | 不是重放：节点内重试仍会重调 LLM（§4.1 的判据与触发条件不变）；Run 实体由票 5x 单独落地（§5.10） |
 
-突变自检 9/9 断言红（不记录 / 两种拒绝混淆 / id 丢序号 / 负耗时 / 词表漂移 /
-事件类型未注册 / bool 当耗时 / 不可达记成成功 / error_class 变消息）。
+可复核的防线在 `tests/unit/state/test_attempts.py:40-81`：字段白名单
+`test_the_entry_has_exactly_the_reserved_keys`、词表封闭
+`test_the_outcome_vocabulary_is_closed`、`EVENT_KINDS` 注册
+`test_the_kind_is_registered_once`、数据最小化
+`test_the_entry_carries_no_content`。原文的「突变自检 9/9 断言红」
+**无仓内产物**（仅 PRD 把它列为验收要求），不能作为可复核证据。
 
 
 ### 5.10 票 5x 落地记录（Run 身份协议）
