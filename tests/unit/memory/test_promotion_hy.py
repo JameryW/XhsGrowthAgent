@@ -167,6 +167,7 @@ class TestCandidateMapping:
         assert candidate.source_version.startswith("content-")
         assert candidate.observed_at == candidate.source_version
         assert candidate.evidence_ids == (f"ev_hy_{candidate.key.removeprefix('hy:')}",)
+        assert candidate.ttl_seconds is None  # 票 5z: default null / supersede-only
         assert candidate.proposed_by == "hy-memory"
 
     def test_metadata_carries_the_version_when_present(self) -> None:

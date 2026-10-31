@@ -25,6 +25,7 @@ Failure semantics (keep them):
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from backend.context.models import TrustClass
 from backend.creator_agent.models import ContentObservation, ContentObservationKind
@@ -48,6 +49,7 @@ from backend.memory.promotion_ledger import (
     current_entries,
     promotion_id_for,
 )
+from backend.memory.promotion_ttl import resolve_promotion_ttl, ttl_expired_for
 
 __all__ = [
     "ObservedPromotion",
@@ -105,17 +107,30 @@ def candidate_from_observation(observation: ContentObservation) -> PromotionCand
         evidence_ids=(observation_evidence_id(observation),),
         sample_count=observation.sample_count,
         measured_rate=observation.measured_rate,
+        ttl_seconds=resolve_promotion_ttl(TARGET_NAMESPACE),
         proposed_by="creative-memory-observation",
     )
 
 
-def source_check_from_observation(observation: ContentObservation) -> SourceCheck:
+def source_check_from_observation(
+    observation: ContentObservation,
+    *,
+    candidate: PromotionCandidate | None = None,
+    now: datetime | None = None,
+) -> SourceCheck:
     """The observe-only check: the row we just read is the source, at the version
-    it reports. Slice C replaces this with an independent re-read before a write."""
+    it reports. Slice C replaces this with an independent re-read before a write.
+
+    ``ttl_expired`` is computed here (via ``ttl_expired_for``) so the protocol
+    stays clock-free; default TTL is ``None`` and the flag stays ``False``.
+    """
+    cand = candidate if candidate is not None else candidate_from_observation(observation)
+    clock = now if now is not None else datetime.now(UTC)
     return SourceCheck(
         present=True,
         version=observation.observed_at,
         evidence_found=(observation_evidence_id(observation),),
+        ttl_expired=ttl_expired_for(cand, now=clock, observed_at=observation.observed_at),
     )
 
 
@@ -150,6 +165,7 @@ async def observe_style_promotions(
     *,
     policy: PromotionPolicy | None = None,
     record: bool = True,
+    now: datetime | None = None,
 ) -> ObservationPass:
     """Decide (and record) a promotion verdict for every style observation.
 
@@ -161,9 +177,12 @@ async def observe_style_promotions(
     ``record=False`` is the dry-run switch: the ledger is still **read** (a
     decision made without its current records would be a different decision),
     but nothing is written and ``recorded`` stays 0.
+
+    ``now`` is injected for TTL expiry (票 5z); production callers omit it.
     """
     existing_entries, ledger_available = await current_target_entries(ledger, account_id)
     existing: list[ExistingEntry] = list(existing_entries)
+    clock = now if now is not None else datetime.now(UTC)
 
     promotions: list[ObservedPromotion] = []
     recorded = 0
@@ -173,7 +192,7 @@ async def observe_style_promotions(
         candidate = candidate_from_observation(observation)
         decision = decide_promotion(
             candidate,
-            source=source_check_from_observation(observation),
+            source=source_check_from_observation(observation, candidate=candidate, now=clock),
             existing=tuple(existing),
             policy=policy,
         )

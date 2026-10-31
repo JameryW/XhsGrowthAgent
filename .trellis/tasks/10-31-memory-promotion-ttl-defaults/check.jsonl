@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar for check"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Candidate → SourceCheck → decide_promotion → docs stay consistent"}
+{"file": "docs/memory-promotion.md", "reason": "Q2 closed; protocol still clock-free; caller helper documented"}
+{"file": ".trellis/tasks/10-31-memory-promotion-ttl-defaults/prd.md", "reason": "Acceptance criteria for null defaults + single resolve point"}

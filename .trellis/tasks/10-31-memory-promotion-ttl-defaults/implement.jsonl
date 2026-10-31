@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Where promotion_* modules live; add promotion_ttl beside them"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Code quality bar for new helper module + tests"}
+{"file": "docs/memory-promotion.md", "reason": "Authoritative TTL/supersede contracts and §9/§10 open-question list to update"}
+{"file": ".trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md", "reason": "Parent §3 expiry decision and §9 Q2 wording this ticket closes"}
+{"file": ".trellis/tasks/10-31-memory-promotion-ttl-defaults/prd.md", "reason": "Locked null-default TTL decision and acceptance criteria"}

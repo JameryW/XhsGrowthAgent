@@ -69,6 +69,7 @@ class TestCandidateMapping:
         assert candidate.evidence_ids == ("ev_style_style_1",)
         assert candidate.sample_count == 10
         assert candidate.measured_rate == 0.4
+        assert candidate.ttl_seconds is None  # 票 5z: default null / supersede-only
         assert candidate.proposed_by == "creative-memory-observation"
 
     @pytest.mark.parametrize("kind", [ContentObservationKind.PLAY, ContentObservationKind.MATERIAL])
@@ -95,6 +96,7 @@ class TestCandidateMapping:
         assert check.version == _VERSION
         assert check.evidence_found == ("ev_style_style_1",)
         assert check.evidence_missing == ()
+        assert check.ttl_expired is False  # null TTL ⇒ never expired
 
 
 class TestObservationPass:

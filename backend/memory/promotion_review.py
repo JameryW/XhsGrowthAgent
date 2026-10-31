@@ -45,6 +45,7 @@ from backend.memory.promotion_ledger import (
 )
 from backend.memory.promotion_observations import candidate_from_observation
 from backend.memory.promotion_source import StyleRowReader, read_style_row
+from backend.memory.promotion_ttl import resolve_promotion_ttl
 
 __all__ = [
     "HUMAN_DECIDED_BY",
@@ -215,6 +216,9 @@ def _candidate_from_ledger_body(record: PromotionRecord) -> PromotionCandidate:
         source_ref=record.source_ref,
         source_version=record.source_version,
         observed_at=record.source_version,
+        # Same resolve entry as observe/hy — human approve must not invent a
+        # different TTL than the table (票 5z single resolve point).
+        ttl_seconds=resolve_promotion_ttl(record.namespace),
         proposed_by="human-review",
     )
 

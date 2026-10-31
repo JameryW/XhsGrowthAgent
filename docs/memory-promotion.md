@@ -1,15 +1,19 @@
-# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选 + 人审写入）
+# Memory Promotion Pipeline（协议层 + observe-only 通道 + 管理面 + 晋升 + hy 候选 + 人审写入 + TTL 默认）
 
-> 状态：**Slice A–D + 人审写入面（票 5y）已落**（`backend/memory/promotion.py`
-> 协议；`promotion_ledger.py` append-only 账本；`promotion_observations.py` Creative Memory
-> style 观测的 observe-only 通道；`GET /api/creator-agent/memory-promotions` 只读管理面；
+> 状态：**Slice A–D + 人审写入面（票 5y）+ TTL 默认（票 5z / PRD §9 Q2）已落**
+> （`backend/memory/promotion.py` 协议；`promotion_ledger.py` append-only 账本；
+> `promotion_observations.py` Creative Memory style 观测的 observe-only 通道；
+> `GET /api/creator-agent/memory-promotions` 只读管理面；
 > `POST .../memory-promotions/{id}/review` 人审关闭 REVIEW；
 > `scripts/observe_memory_promotions.py` 真实调用者；`promotion_source.py` 独立重读 +
 > `promotion_apply.py` 第一次机晋升 + `context.retrieval` provenance 透传；`promotion_hy.py`
 > + `scripts/observe_hy_promotions.py`：hy-memory 候选 **REVIEW** 接入；
-> `promotion_review.py`：人审 `approved`/`dismissed` 写路径）。
+> `promotion_review.py`：人审 `approved`/`dismissed` 写路径；
+> `promotion_ttl.py`：全 ns 默认 `ttl_seconds=null`（永不过期，只靠 supersede）+
+> 调用方 `ttl_expired_for` 助手）。
 > 设计依据：`.trellis/tasks/archive/2026-10/10-21-memory-promotion-pipeline/prd.md`；
-> 人审票：`.trellis/tasks/10-29-memory-promotion-review-write/prd.md`。
+> 人审票：`.trellis/tasks/10-29-memory-promotion-review-write/prd.md`；
+> TTL 票：`.trellis/tasks/10-31-memory-promotion-ttl-defaults/prd.md`。
 > 路线图出处：`docs/agent-os-upgrade-2026q4.md` §3 第 7 行。
 
 ## 1. 这一层是什么（以及不是什么）
@@ -277,12 +281,30 @@ body：`account_id` + `disposition`（`approved` \| `dismissed`，复用
 
 实现：`backend/memory/promotion_review.py`；路由在 `creator_agent.py`。
 
-## 10. 明确不在这里的东西
+## 10. TTL 默认（票 5z / PRD §9 Q2）与协议边界
+
+**裁决**：全部目标命名空间默认 `ttl_seconds=null`（永不过期，只靠 supersede）。
+不为 `strategy_notes` / `audience_preferences` / `performance_insights` /
+`content_history` 发明未校准的天数；plays / materials 仍不进常量表，解析未知 ns →
+`None`（不抛）。
+
+| 职责 | 位置 |
+|---|---|
+| 常量表 + `resolve_promotion_ttl(namespace)` | `backend/memory/promotion_ttl.py` |
+| 过期判定 `ttl_expired_for(candidate, *, now, observed_at)` | 同上；`ttl_seconds is None` ⇒ 恒 `False` |
+| 候选填 TTL | `candidate_from_observation` / hy 候选构造经 `resolve_promotion_ttl` |
+| `SourceCheck.ttl_expired` | 观测 / hy / apply 调用方用助手填；协议层仍不算时钟 |
+
+将来若要给某 ns 设天数：只改 `PROMOTION_TTL_SECONDS` + 测试，不改 `decide_promotion`。
+不做自动扫 stale / 删除 / 重晋升（仍在 out of scope）。
+
+## 11. 明确不在这里的东西
 
 - **协议层不读任何存储**：来源行、证据、已有记录都由调用方读好再传；
 - **不判语义重复**：键级去重是确定的；语义近邻需要 embedding 与判断，只作为审核提示，
   不在本函数内（PRD §3）；
-- **不算 TTL**：`SourceCheck.ttl_expired` 由调用方用真实时钟算好传入，本层保持纯函数；
+- **协议不算 TTL**：`SourceCheck.ttl_expired` 由调用方经 `promotion_ttl.ttl_expired_for`
+  用真实时钟算好传入，本层保持纯函数（票 5z）；
 - **只晋升 style 一族（机晋升）**：plays/materials 的目标命名空间未裁决（PRD §9），未接；
 - **hy 候选机器侧只产 REVIEW**：没有可信重读就没有机晋升；人审写入见 §9.1；
 - **不做独立审核 UI / 前端面板**：HTTP 面挂在既有 creator-agent 资源上；
@@ -290,11 +312,13 @@ body：`account_id` + `disposition`（`approved` \| `dismissed`，复用
 - **不做 pending 修复端点**：人审 approve 崩溃后「账本有行、目标缺失」仍按 Slice C
   pending 语义可读（票 5y out of scope）。
 
-## 11. 下一片 / 已落清单
+## 12. 下一片 / 已落清单
 
 - ~~B2：`GET` 只读管理面 + 调度/CLI 调用者~~ **已落（票 5t）**；
 - ~~Slice C：第一次 `internal_fact` 晋升 + retrieval 透传 provenance~~ **已落（票 5u）**；
 - ~~Slice D：hy-memory 候选（REVIEW only，DEGRADED 批次整体 REFUSE）~~ **已落（票 5v）**；
 - ~~Q1 人审入口 + 人审写入面~~ **已落（票 5y）**：`POST .../memory-promotions/{id}/review`；
-- 行 7 的四片 + 人审写入全部落地；剩下的是 PRD §9 的开放问题（TTL 默认值、语义近邻成本、
+- ~~Q2 TTL 默认值~~ **已落（票 5z）**：全 ns 默认 `null` + supersede-only；
+  `promotion_ttl.py` 单一解析/判定入口；
+- 行 7 的四片 + 人审写入 + TTL 默认全部落地；剩下的是 PRD §9 的开放问题（语义近邻成本、
   谁算 `decided_by="machine"` 的 policy 来源）—— 它们不再阻塞行 7 的"有显式流水线"判定。

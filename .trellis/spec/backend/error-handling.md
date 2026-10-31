@@ -428,6 +428,33 @@ learning-signal conflict shape:
 Domain logic lives in `backend/memory/promotion_review.py`; the route must not
 re-run `decide_promotion` to flip REVIEW→PROMOTE.
 
+## Scenario: Memory Promotion TTL defaults (票 5z)
+
+### Convention
+
+- Default TTL for every registered namespace is `None` (never expire; leave
+  "current" only via supersede). Do not invent day counts at call sites.
+- Candidates set `ttl_seconds` only via `resolve_promotion_ttl(namespace)` in
+  `backend/memory/promotion_ttl.py`. Unknown / undecided namespaces → `None`.
+- Callers set `SourceCheck.ttl_expired` via `ttl_expired_for(...)` (False when
+  TTL is `None`). `decide_promotion` stays clock-free.
+- Human-review rebuild and hy degraded-batch candidates must also go through
+  `resolve_promotion_ttl` so a future positive table value cannot leave a path
+  stuck at hard-coded `None`.
+
+### Wrong vs Correct
+
+#### Wrong
+```python
+PromotionCandidate(..., ttl_seconds=7 * 86400)  # magic default at call site
+```
+
+#### Correct
+```python
+PromotionCandidate(..., ttl_seconds=resolve_promotion_ttl(namespace))
+# SourceCheck.ttl_expired = ttl_expired_for(candidate, now=clock)
+```
+
 ## Scenario: Creator Agent Evidence Graph lookup
 
 Evidence Graph detail routes translate a missing or cross-account node into
