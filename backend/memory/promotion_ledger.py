@@ -181,6 +181,11 @@ class PromotionLedger:
     def __init__(self, store: Any | None) -> None:
         self._store = store
 
+    @property
+    def store(self) -> Any | None:
+        """Injected BaseStore (or ``None`` when the deployment has no memory backend)."""
+        return self._store
+
     @staticmethod
     def namespace(account_id: str) -> tuple[str, str, str]:
         return ("accounts", account_id, _NAMESPACE_SUFFIX)

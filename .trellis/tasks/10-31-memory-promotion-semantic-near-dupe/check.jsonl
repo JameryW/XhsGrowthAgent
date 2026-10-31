@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Protocol vs observe enrichment consistency"}
+{"file": "docs/memory-promotion.md", "reason": "Q3 closed; never auto-merge"}
+{"file": ".trellis/tasks/10-31-memory-promotion-semantic-near-dupe/prd.md", "reason": "Acceptance criteria"}
+{"file": ".trellis/tasks/10-31-memory-promotion-semantic-near-dupe/research/semantic-near-dupe-cost.md", "reason": "Verify MVP matches research recommendation"}

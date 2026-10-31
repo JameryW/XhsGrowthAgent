@@ -43,6 +43,7 @@ from backend.memory.promotion_observations import (
     candidate_from_observation,
     current_target_entries,
 )
+from backend.memory.promotion_semantic import detail_with_near_dupe_hint
 from backend.memory.promotion_source import CreativeMemoryPromotionSource
 from backend.memory.promotion_ttl import ttl_expired_for
 
@@ -162,7 +163,13 @@ async def promote_style_observations(
         )
         was_applied = False
         if not dry_run:
-            outcome = await ledger.append(account_id, candidate, decision)
+            detail = await detail_with_near_dupe_hint(
+                decision,
+                candidate,
+                store=store,
+                account_id=account_id,
+            )
+            outcome = await ledger.append(account_id, candidate, decision, detail=detail)
             if outcome is LedgerAppendOutcome.RECORDED:
                 recorded += 1
                 if decision.disposition is PromotionDisposition.PROMOTE:

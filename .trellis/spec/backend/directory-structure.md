@@ -189,6 +189,7 @@ backend/
 │   ├── scene_database.py                # SceneDatabase (7-day expiry, per-scene caching)
 │   ├── promotion.py                     # Pure decide_promotion protocol (Slice A); DEFAULT_PROMOTION_POLICY_VERSION + default_promotion_policy() (票 5aa / Q6); DEFAULT_PROMOTION_MIN_SAMPLES (票 5ab / Q4)
 │   ├── promotion_ttl.py                 # TTL defaults (票 5z): resolve_promotion_ttl + ttl_expired_for (null=supersede-only)
+│   ├── promotion_semantic.py            # Post-decide near-dupe hint (票 5ac / Q3): NEEDS_REVIEW only → ledger detail; skip-hint if index unavailable
 │   ├── promotion_ledger.py              # Append-only memory_promotions ledger (+ body snapshot)
 │   ├── promotion_apply.py               # Machine PROMOTE: ledger first, then write_promoted_memory
 │   ├── promotion_review.py              # Human REVIEW close (票 5y): decided_by=human, no decide_promotion re-run

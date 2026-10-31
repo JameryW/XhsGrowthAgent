@@ -49,6 +49,7 @@ from backend.memory.promotion_ledger import (
     current_entries,
     promotion_id_for,
 )
+from backend.memory.promotion_semantic import detail_with_near_dupe_hint
 from backend.memory.promotion_ttl import resolve_promotion_ttl, ttl_expired_for
 
 __all__ = [
@@ -197,7 +198,13 @@ async def observe_style_promotions(
             policy=policy,
         )
         if record:
-            outcome = await ledger.append(account_id, candidate, decision)
+            detail = await detail_with_near_dupe_hint(
+                decision,
+                candidate,
+                store=ledger.store,
+                account_id=account_id,
+            )
+            outcome = await ledger.append(account_id, candidate, decision, detail=detail)
             if outcome is LedgerAppendOutcome.RECORDED:
                 recorded += 1
         if decision.disposition is PromotionDisposition.PROMOTE:
