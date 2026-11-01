@@ -84,7 +84,10 @@ def test_prompt_loader_reads_a_utf8_prompt_regardless_of_host_locale() -> None:
     from backend.agents.base import BaseAgent
     from backend.config.models import TaskType
 
-    prompts_dir = Path("backend/config/prompts").resolve()
+    # Resolve the prompts dir from this file, not from the process cwd: a test
+    # that changes cwd must not be able to turn this into "file not found"
+    # (票 5az — the cwd-relative form was exactly that order-dependent).
+    prompts_dir = Path(__file__).resolve().parents[3] / "backend" / "config" / "prompts"
     prompt_file = prompts_dir / "_test_encoding_prompt.yaml"
     prompt_file.write_text(
         f'system: "你是{CHINESE}领域的写手"\nuser_template: "为 {{topic}} 生成标题"\n',

@@ -1,0 +1,29 @@
+{
+  "id": "fix-test-cwd-leak",
+  "name": "fix-test-cwd-leak",
+  "title": "修复测试 cwd 泄漏导致的全量顺序 flaky（票 5az）",
+  "description": "test_mode_and_fixture_path 把 repo root 算成 tests/（parents[3] 少一层）并 os.chdir，泄漏 cwd；后面的 test_text_io_encoding 用 cwd 相对路径写 prompt 文件，组合运行时 FileNotFoundError（单跑通过）。改为 parents[4]+monkeypatch.chdir，并让 prompt 测试用 __file__ 定位仓库根。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "tests/unit/services/creator_stats/test_mode_and_fixture_path.py",
+    "tests/unit/api/test_text_io_encoding.py"
+  ],
+  "notes": "DONE 2026-11-01. Root cause of the order-dependent failure seen when running services+api in one process: test_resolve_fixture_path_relative_from_other_cwd computed the repo root as parents[3] -- from tests/unit/services/creator_stats that is tests/, not the repo root -- and the manual finally restored cwd to that wrong root, so a later cwd-relative test failed with FileNotFoundError: ...\\tests\\backend\\config\\prompts\\_test_encoding_prompt.yaml (single-run passed because cwd happened to be the repo root). Fixed in two places so neither the leak nor the victim depends on ambient cwd: the cwd test uses parents[4] and monkeypatch.chdir (auto-restores even on failure, unused os import removed); the prompt test resolves the prompts directory from Path(__file__).resolve().parents[3] instead of Path(...).resolve(). Verification: exact failing order (cwd test then prompt test) now 2 passed; combined services+api+db+tools-runtime run has no instance of this failure; ruff check/format green.",
+  "meta": {}
+}

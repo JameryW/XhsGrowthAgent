@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -55,26 +54,27 @@ async def test_get_suggestions_for_mode_accepts_uppercase_free():
     assert any(s.category != "cold_start" for s in items)
 
 
-def test_resolve_fixture_path_relative_from_other_cwd(tmp_path):
+def test_resolve_fixture_path_relative_from_other_cwd(tmp_path, monkeypatch):
     """Relative fixture path must resolve via project root when cwd is elsewhere."""
     assert DEFAULT_FIXTURE_PATH.is_file()
     rel = Path("tests/fixtures/creator_stats_sample.json")
     # ponytail: derive repo root from this file, not a hardcoded absolute path
-    # (CI runners don't have /test/xhs). parents[3] = repo root from tests/.../creator_stats/
-    project_root = Path(__file__).resolve().parents[3]
+    # (CI runners don't have /test/xhs). parents[0]=creator_stats, [1]=services,
+    # [2]=unit, [3]=tests, [4]=repo root — one more than the naive count; the
+    # wrong value left cwd at tests/ and leaked into later tests (票 5az).
+    project_root = Path(__file__).resolve().parents[4]
     # From project root works
-    os.chdir(project_root)
+    monkeypatch.chdir(project_root)
     assert _resolve_fixture_path(rel).is_file()
-    # From unrelated cwd still works
-    os.chdir(tmp_path)
-    try:
-        resolved = _resolve_fixture_path(rel)
-        assert resolved.is_file(), resolved
-        payload = load_fixture_payload(rel)
-        assert "notes" in payload
-        assert len(payload["notes"]) >= 3
-    finally:
-        os.chdir(project_root)
+    # From unrelated cwd still works.  monkeypatch restores the cwd even on
+    # failure; the manual try/finally this replaced restored it to the wrong
+    # root and made an unrelated prompt-loading test order-dependent.
+    monkeypatch.chdir(tmp_path)
+    resolved = _resolve_fixture_path(rel)
+    assert resolved.is_file(), resolved
+    payload = load_fixture_payload(rel)
+    assert "notes" in payload
+    assert len(payload["notes"]) >= 3
 
 
 @pytest.mark.asyncio
