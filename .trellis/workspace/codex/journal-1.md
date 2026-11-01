@@ -1495,3 +1495,41 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 45: 目标轮：分支 B B1/B2 落地 + CLI 测试移植性修复（票 5bn/5bo/5bp）
+
+**Date**: 2026-11-01
+**Task**: 目标轮：分支 B B1/B2 落地 + CLI 测试移植性修复（票 5bn/5bo/5bp）
+**Branch**: `main`
+
+### Summary
+
+环境恢复后完成分支 B 前两片：B1（票 5bn）PublishOutcome 平台审计字段 + execute receipt 透传 + execute_action operator-only force seam（贯通 EffectLedger.begin(force=)），5 个新用例；B2（票 5bo）mainline intent 提前到 PREPARED/ledger claim 之前，新增『账本 begin 抛错后 intent 仍存在』的顺序测试；顺带修掉全量唯一一红（票 5bp）：login 测试硬编码 /tmp 改为 tmp_path（沙箱下目录被清理导致 mkdir 被拒、CliRunner 吞异常）。验证：定向 313 passed、CLI 14 passed、全量 4806 passed / 14 skipped / 0 failed / 0 errors、ruff 绿；B1/B2/5bp 均已提交归档。下一步 B3：入口用 execute_action 替换执行段；已识别关键难点为 force 语义（现有 receipt 早退 + 主链 force 需再发布）与 artifact/内容哈希对齐，需先核查 receipt 唯一性与 attempt 语义。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `844d8dfb` | (see git log) |
+| `381ed954` | (see git log) |
+| `af6f792a` | (see git log) |
+| `0bebbb58` | (see git log) |
+| `1aeb24f1` | (see git log) |
+| `67cf13f5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
