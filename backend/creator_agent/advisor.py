@@ -79,6 +79,7 @@ from backend.creator_agent.repository import (
     ActionPublishAlreadyAttemptedError,
     ActionPublishContentUnavailableError,
     ActionPublishEligibilityDeniedError,
+    ActionPublishRequestNotBoundError,
     ActionValidationError,
     CreatorAgentRepository,
     CreatorModelMissingError,
@@ -546,7 +547,12 @@ class CreatorAdvisor:
         )
 
     async def execute_action(
-        self, account_id: str, action_id: str, *, force: bool = False
+        self,
+        account_id: str,
+        action_id: str,
+        *,
+        force: bool = False,
+        request: PublishRequest | None = None,
     ) -> ActionExecution:
         """Execute one confirmed intent with a deterministic local executor.
 
@@ -613,7 +619,7 @@ class CreatorAdvisor:
         # side effect must never sit on a path that is about to fail.
         publish_outcome: PublishOutcome | None = None
         if action.action_kind is ActionCapability.PUBLISH:
-            publish_outcome = await self._execute_publish(action, force=force)
+            publish_outcome = await self._execute_publish(action, force=force, request=request)
 
         if mainline:
             # Publish is the only capability a mainline intent can carry (P1b-2);
@@ -722,7 +728,11 @@ class CreatorAdvisor:
         return await self._repository.create_action_execution(execution)
 
     async def _execute_publish(
-        self, action: ActionIntent, *, force: bool = False
+        self,
+        action: ActionIntent,
+        *,
+        force: bool = False,
+        request: PublishRequest | None = None,
     ) -> PublishOutcome:
         """Resolve one confirmed publish intent, then hand it over exactly once.
 
@@ -730,6 +740,12 @@ class CreatorAdvisor:
         points at, so the same intent always builds the same payload.  Every
         refusal happens *before* the Gateway is reached: a half-resolved publish
         must not turn into a side effect.
+
+        ``request`` is the branch-B seam (票 5br): the mainline entry resolves
+        content itself and passes the request in, because it owns the generated
+        cover set.  The request must still bind to the intent field-by-field
+        (account/thread/artifact-ref/content-hash/idempotency-key), and the full
+        publish judgers run on the supplied content before the Gateway.
         """
         action_id = action.action_id
         # Entitlement comes first, and not only because it is the cheapest
@@ -748,26 +764,39 @@ class CreatorAdvisor:
                 f"credential source: {credential.source or 'none'}",
             )
         thread_id = (action.thread_id or "").strip()
-        if not thread_id:
-            raise ActionPublishContentUnavailableError(
-                action_id,
-                "intent has no thread_id, so its artifact_ref cannot be resolved",
-            )
-        artifact_ref = (action.artifact_ref or "").strip()
-        body = await self._read_publish_content(thread_id=thread_id, artifact_ref=artifact_ref)
-        content = load_publish_content(body)
-        if content is None:
-            raise ActionPublishContentUnavailableError(
-                action_id, f"artifact {artifact_ref!r} has no publishable body"
-            )
-        # The hash is what a human confirmed.  Publishing a body that does not
-        # match it would post something nobody approved, so the mismatch is a
-        # refusal rather than a warning.
-        expected_hash = (action.content_hash or "").strip()
-        if content_hash_of(body) != expected_hash:
-            raise ActionPublishContentUnavailableError(
-                action_id, "artifact body does not match the confirmed content_hash"
-            )
+        if request is not None:
+            # Branch B (票 5br): the caller already resolved the content.
+            self._assert_request_binds_intent(action, request, thread_id=thread_id)
+            content = request.content
+            judge_body: Mapping[str, Any] = {
+                "title": content.title,
+                "body": content.body,
+                "hashtags": list(content.hashtags),
+                "image_paths": list(content.image_paths),
+            }
+            expected_hash = (action.content_hash or "").strip()
+        else:
+            if not thread_id:
+                raise ActionPublishContentUnavailableError(
+                    action_id,
+                    "intent has no thread_id, so its artifact_ref cannot be resolved",
+                )
+            artifact_ref = (action.artifact_ref or "").strip()
+            body = await self._read_publish_content(thread_id=thread_id, artifact_ref=artifact_ref)
+            content = load_publish_content(body)
+            if content is None:
+                raise ActionPublishContentUnavailableError(
+                    action_id, f"artifact {artifact_ref!r} has no publishable body"
+                )
+            # The hash is what a human confirmed.  Publishing a body that does not
+            # match it would post something nobody approved, so the mismatch is a
+            # refusal rather than a warning.
+            expected_hash = (action.content_hash or "").strip()
+            if content_hash_of(body) != expected_hash:
+                raise ActionPublishContentUnavailableError(
+                    action_id, "artifact body does not match the confirmed content_hash"
+                )
+            judge_body = body if isinstance(body, Mapping) else {}
         # Full publish judgers after the body is known and before Gateway.
         # Shared engine with the workflow / plan path — never a second rule table.
         from backend.services.compliance.judgers import decide_publish_eligibility
@@ -775,7 +804,7 @@ class CreatorAdvisor:
 
         try:
             projected = project_artifact_body_for_judgers(
-                body if isinstance(body, Mapping) else {},
+                judge_body,
                 account_id=action.account_id,
                 title=content.title,
                 text=content.body,
@@ -803,15 +832,43 @@ class CreatorAdvisor:
                 thread_id=thread_id,
                 eligibility=eligibility.to_audit_dict(),
             )
-        request = PublishRequest(
-            account_id=action.account_id,
-            thread_id=thread_id,
-            idempotency_key=action.idempotency_key,
-            artifact_ref=artifact_ref,
-            content_hash=expected_hash,
-            content=content,
-        )
+        if request is None:
+            request = PublishRequest(
+                account_id=action.account_id,
+                thread_id=thread_id,
+                idempotency_key=action.idempotency_key,
+                artifact_ref=(action.artifact_ref or "").strip(),
+                content_hash=expected_hash,
+                content=content,
+            )
         return await self._publish_with_effect_ledger(action, request, force=force)
+
+    def _assert_request_binds_intent(
+        self, action: ActionIntent, request: PublishRequest, *, thread_id: str
+    ) -> None:
+        """Refuse a caller-supplied request the immutable intent does not bind."""
+        checks: tuple[tuple[str, str, str], ...] = (
+            ("account_id", request.account_id.strip(), action.account_id.strip()),
+            ("thread_id", request.thread_id.strip(), thread_id),
+            (
+                "artifact_ref",
+                request.artifact_ref.strip(),
+                (action.artifact_ref or "").strip(),
+            ),
+            (
+                "content_hash",
+                request.content_hash.strip(),
+                (action.content_hash or "").strip(),
+            ),
+            (
+                "idempotency_key",
+                request.idempotency_key.strip(),
+                action.idempotency_key.strip(),
+            ),
+        )
+        for binding, supplied, bound in checks:
+            if supplied != bound:
+                raise ActionPublishRequestNotBoundError(action.action_id, binding)
 
     async def _publish_with_effect_ledger(
         self, action: ActionIntent, request: PublishRequest, *, force: bool = False

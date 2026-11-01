@@ -1,0 +1,31 @@
+{
+  "id": "executor-resolved-request",
+  "name": "executor-resolved-request",
+  "title": "P4 分支 B 预备：executor 接受 caller-supplied publish request（票 5br）",
+  "description": "execute_action 增加 request 参数：mainline 自带解析好的 PublishRequest（含生成的封面图）交给 executor；executor 仍逐字段校验 account/thread/artifact_ref/content_hash/idempotency_key 与不可变 intent 绑定，不符抛 ActionPublishRequestNotBoundError（无副作用、无 receipt）；judgers 改在 request.content 投影上运行。新增绑定请求被派发（用封面图证明）与不绑定被拒两个用例。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/advisor.py",
+    "backend/creator_agent/repository.py",
+    "backend/creator_agent/__init__.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (branch-B prerequisite B3b; mainline dispatch untouched). Why the seam exists: the mainline entry resolves the final content itself (it generates a text cover when the state has no images) while the executor's default path re-reads publish_content_body from the artifact, which by construction lacks that generated cover — so a straight switch would silently publish without it. execute_action now accepts keyword-only request: PublishRequest | None; _execute_publish validates the supplied request field-by-field against the immutable intent (account_id, thread_id, artifact_ref, content_hash, idempotency_key) and raises ActionPublishRequestNotBoundError(action_id, field) on any mismatch before the Gateway (no dispatch, no receipt). Entitlement (credential) checks still run first, and the full publish judgers still run before the Gateway, now projected from request.content's body shape rather than from the artifact body — the checks are not skipped, only their input changes. The artifact path is byte-for-byte unchanged when request is None. Tests: a bound request carrying /tmp/generated-cover.png is what the dispatcher receives even though the artifact body points at /tmp/a.png; a foreign-account request is refused with field=account_id, dispatcher called 0 times and no receipt written. Docs: publish-action-protocol records B3 preparation and that B3 wiring/B4 remain. Verification: creator_agent 233 passed; ruff check/format green; full suite in the journal.",
+  "meta": {}
+}

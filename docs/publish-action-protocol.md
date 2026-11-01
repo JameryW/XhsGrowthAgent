@@ -417,6 +417,13 @@ receipt 并直接返回，**不再真正发布**——这是行为回归，不�
 返回**最新** attempt、传 attempt 则精确读取；`execute_action` 对 **KNOWN FAILED** 的
 receipt 允许无 force 重试（与账本非 blocking 语义一致），对 **SUCCEEDED/UNKNOWN** 仍
 终态，只有 operator 显式 `force` 才重执行，每次执行写各自 attempt 的 receipt。
+**B3 预备已落地（票 5br）**：`execute_action(..., request=None)` 接受 caller-supplied
+`PublishRequest`（mainline 持有最终图片/封面集合，不再让 executor 重读 artifact）。executor
+仍逐字段校验 account / thread / artifact_ref / content_hash / idempotency_key 与不可变
+intent 一致，不符抛 `ActionPublishRequestNotBoundError`（无副作用、无 receipt）；完整
+publish judgers 改在 request.content 投影上运行。测试用"请求携带生成的封面路径、artifact
+正文不含它"证明实际派发的是 caller 的内容，并钉住未绑定的拒绝。
+
 剩余：B3 接线（入口用 `execute_action` 替换执行段）、B4（claim 更新与回归收口）。
 注意：Postgres 迁移路径本地无 PG 实例，只由 CI 的 parity 套件覆盖。
 

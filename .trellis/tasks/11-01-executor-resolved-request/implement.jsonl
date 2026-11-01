@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the branch-B plan this seam advances"}
+{"file": "backend/creator_agent/execution.py", "reason": "PublishRequest/PublishContent definitions the seam accepts"}

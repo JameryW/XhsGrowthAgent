@@ -175,6 +175,25 @@ class ActionPublishContentUnavailableError(Exception):
         super().__init__(f"publish intent {action_id!r} has no usable content: {reason}")
 
 
+class ActionPublishRequestNotBoundError(Exception):
+    """A caller-supplied publish request does not belong to the confirmed intent.
+
+    The mainline entry resolves content itself (it owns the generated cover set)
+    and hands the request to the executor instead of making the executor re-read
+    the artifact.  That seam must not become a way to publish something the
+    intent does not bind: account, thread, artifact ref, content hash and
+    idempotency key all have to agree with the immutable intent.  Refused before
+    any side effect, like every other publish refusal.
+    """
+
+    def __init__(self, action_id: str, field: str) -> None:
+        self.action_id = action_id
+        self.field = field
+        super().__init__(
+            f"publish request for intent {action_id!r} does not match the intent's {field!r}"
+        )
+
+
 class ActionPublishEligibilityDeniedError(Exception):
     """Deterministic publish judgers refused the confirmed intent before Gateway.
 

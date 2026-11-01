@@ -922,3 +922,70 @@ class TestThePlatformAuditFieldsTravelThroughTheOutcome:
         assert outcome.status is PublishStatus.FAILED
         assert outcome.error_type == "auth_expired"
         assert outcome.recovery == {"action": "relogin"}
+
+
+class TestACallerSuppliedRequestBindsToTheIntent:
+    """票 5br: the mainline may hand the executor a pre-resolved request.
+
+    The mainline entry owns content resolution (it generates the final cover
+    set), so branch B lets it pass a ``PublishRequest``.  That seam is only
+    acceptable if the request still binds to the immutable intent field by
+    field — otherwise an upstream bug becomes a publish nobody confirmed.
+    """
+
+    async def test_a_bound_request_is_dispatched_instead_of_the_artifact_body(self):
+        from backend.creator_agent.execution import PublishContent
+
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+        supplied = PublishRequest(
+            account_id=ACCOUNT,
+            thread_id=THREAD,
+            idempotency_key=KEY,
+            artifact_ref=ref,
+            content_hash=digest,
+            content=PublishContent(
+                title="一条耐用的笔记",
+                body="正文内容",
+                hashtags=("耐用",),
+                image_paths=("/tmp/generated-cover.png",),
+            ),
+        )
+
+        await advisor.execute_action(ACCOUNT, intent.action_id, request=supplied)
+
+        assert len(recorder.requests) == 1
+        # The artifact body points at /tmp/a.png; the supplied request carries the
+        # mainline-generated cover instead — proving the request was dispatched.
+        assert recorder.requests[0].content.image_paths == ("/tmp/generated-cover.png",)
+
+    async def test_a_request_that_does_not_bind_is_refused_before_the_gateway(self):
+        from backend.creator_agent import ActionPublishRequestNotBoundError
+
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+        foreign = PublishRequest(
+            account_id="account-other",
+            thread_id=THREAD,
+            idempotency_key=KEY,
+            artifact_ref=ref,
+            content_hash=digest,
+            content=load_publish_content(BODY),  # type: ignore[arg-type]
+        )
+
+        with pytest.raises(ActionPublishRequestNotBoundError) as refused:
+            await advisor.execute_action(ACCOUNT, intent.action_id, request=foreign)
+
+        assert refused.value.field == "account_id"
+        assert recorder.requests == []
+        assert await advisor.get_action_execution(ACCOUNT, intent.action_id) is None

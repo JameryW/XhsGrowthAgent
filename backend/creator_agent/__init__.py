@@ -100,6 +100,7 @@ from backend.creator_agent.repository import (
     ActionPublishAlreadyAttemptedError,
     ActionPublishContentUnavailableError,
     ActionPublishEligibilityDeniedError,
+    ActionPublishRequestNotBoundError,
     ModelRevisionMissingError,
 )
 from backend.creator_agent.revisions import build_model_revision_page
@@ -114,6 +115,7 @@ __all__ = [
     "ActionPublishAlreadyAttemptedError",
     "ActionPublishContentUnavailableError",
     "ActionPublishEligibilityDeniedError",
+    "ActionPublishRequestNotBoundError",
     "EligibilityContextUnavailableError",
     "PolicyId",
     "PolicyVerdict",
