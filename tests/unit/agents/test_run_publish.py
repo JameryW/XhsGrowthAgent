@@ -1689,6 +1689,63 @@ async def test_an_approved_real_publish_records_a_mainline_intent(
 
 
 @pytest.mark.asyncio
+async def test_the_mainline_intent_is_persisted_before_the_effect_claim(
+    _browser_settings, mock_store, monkeypatch
+):
+    """Branch B B2 (票 5bo): the intent lands before any durable effect.
+
+    The ordering is the point: if the process dies between "we decided to
+    publish" and the submit, the audit trail must already name the decision.
+    Proven by making the ledger claim explode — the intent must still exist,
+    which is only possible if it was written before ``EffectLedger.begin``.
+    """
+    from types import SimpleNamespace
+
+    from backend.creator_agent import ActionOrigin
+    from backend.db import creator_agent as creator_agent_db
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_b2"})
+        state["publish_decision"] = {
+            "decision_id": "mainline:unit-b2",
+            "source": "mainline_review",
+            "thread_id": "test_session",
+            "account_id": "acc_b2",
+            "content_hash": content_hash(publish_content_body(state)),
+            "approved_by": "u-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+
+        class _ExplodingLedger:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def begin(self, *args, **kwargs):
+                raise RuntimeError("ledger unavailable")
+
+        # Patch the module-level class the attempt constructs, not the real one.
+        monkeypatch.setattr("backend.agents.publisher.EffectLedger", _ExplodingLedger)
+
+        with pytest.raises(RuntimeError, match="ledger unavailable"):
+            await run_publish(
+                state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools())
+            )
+
+        rows = list(creator_agent_db._mem_actions.values())
+        assert len(rows) == 1, rows
+        assert rows[0].origin is ActionOrigin.MAINLINE
+        assert rows[0].decision_id == "mainline:unit-b2"
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
 async def test_a_publish_without_an_approval_decision_records_no_intent(
     _browser_settings, mock_store, monkeypatch
 ):

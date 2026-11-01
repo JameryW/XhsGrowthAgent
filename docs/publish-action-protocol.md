@@ -390,7 +390,11 @@ publish 现在也在 dispatch 前 claim、按 outcome 结算。若未来要做�
   `result`；`execute_action` 增加 operator-only 的 `force` seam（默认 off、不进 HTTP
   API），用于对账后越过 ledger 阻挡。这两项是"receipt 结果映射回 publish_result"与
   "force 语义对齐"的前置。
-- **剩余**：B2（intent 提前到 effect 之前落库）、B3（入口用 `execute_action` 替换执行段，
+- **B2 已落地（票 5bo）**：mainline intent 的落库提前到 `publish_intent_material`
+  之后、**PREPARED 记录与 `EffectLedger.begin` 之前**——意图先于任何持久效果，崩溃
+  窗口内也留有审计身份；producer 仍按 `(account, publish_id)` 幂等。测试用"账本 claim
+  抛错后 intent 仍存在"钉住顺序。
+- **剩余**：B3（入口用 `execute_action` 替换执行段，
   含 artifact/内容哈希语义对齐与 `test_run_publish` 适配）、B4（claim 更新与回归收口）。
 
 ### 不变量（每阶段都必须保持）

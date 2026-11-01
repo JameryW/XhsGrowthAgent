@@ -1,0 +1,30 @@
+{
+  "id": "branch-b-intent-first",
+  "name": "branch-b-intent-first",
+  "title": "P4 分支 B slice2：mainline intent 先于任何持久效果（票 5bo）",
+  "description": "把 record_mainline_publish_intent 从 ledger claim 之后提前到 publish_intent_material 之后、PREPARED 记录与 EffectLedger claim 之前，使崩溃窗口内的审计意图先行落库；producer 幂等，retry 返回同一行。新增测试：让 EffectLedger.begin 抛错，仍能读到 mainline intent。未切换 mainline dispatch（B3）。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/agents,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/agents/publisher.py",
+    "tests/unit/agents/test_run_publish.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (branch B slice 2). record_mainline_publish_intent moved from after the EffectLedger claim to right after publish_intent_material, i.e. BEFORE the PREPARED record and the ledger claim, so the audit intent exists even if the process dies before any durable effect; the producer stays idempotent on (account, publish_id) so retries/force-retries return the same row and a refusal/storage failure still does not change the publish. The old claim-then-intent block and its comment were removed. New test test_the_mainline_intent_is_persisted_before_the_effect_claim monkeypatches the module-level EffectLedger to raise RuntimeError at begin and then asserts the mainline ActionIntent is already present — if the producer were still after the claim the assertion could not pass. Docs record B2 landed and leave B3 (entry swaps the execution段 onto execute_action, incl. artifact/content-hash semantics and test_run_publish adaptation) plus B4 as remaining. Verification: new test passed standalone; targeted 313 passed after B1+B2; ruff check/format green; full suite in the journal.",
+  "meta": {}
+}

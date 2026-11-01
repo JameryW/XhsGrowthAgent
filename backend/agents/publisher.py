@@ -1039,6 +1039,20 @@ async def _run_publish_attempt(
     material = await publish_intent_material(
         store, intent_thread_id, publish_id, state, principal=principal
     )
+    # P1b-2 / branch B B2 (票 5bo): the durable decision's intent is persisted
+    # BEFORE any durable effect — ahead of the PREPARED record and the ledger
+    # claim — so "we decided to publish" is on the audit trail even if the
+    # process dies between claim and submit.  The producer is idempotent on
+    # (account, publish_id), so a retry/force retry returns the same row; a
+    # refusal or storage failure still changes nothing about the publish.
+    publish_decision = state.get("publish_decision")
+    await record_mainline_publish_intent(
+        state,
+        publish_id=publish_id,
+        material=material,
+        principal=principal,
+        decision=publish_decision if isinstance(publish_decision, Mapping) else None,
+    )
     # P0-B: the intent is durable BEFORE anything is submitted (PREPARED), so a
     # crash between "we decided to publish" and "we called the platform" is
     # distinguishable from "the platform may already have the note".
@@ -1086,18 +1100,8 @@ async def _run_publish_attempt(
             "phase": WorkflowPhase.PUBLISHING,
         }
 
-    # P1b-2: now that the effect is claimed, persist the durable decision's
-    # intent (origin=mainline). Audit only — the publish itself still executes
-    # below through the shared dispatcher; a refusal or storage failure here
-    # changes nothing.
-    publish_decision = state.get("publish_decision")
-    await record_mainline_publish_intent(
-        state,
-        publish_id=publish_id,
-        material=material,
-        principal=principal,
-        decision=publish_decision if isinstance(publish_decision, Mapping) else None,
-    )
+    # P1b-2: intent already persisted above (branch B B2) — before the PREPARED
+    # record and the ledger claim, not after them.
 
     # P1-B: record *why* this publish is gated. Telemetry only — the gate
     # itself stays the existing human publish_gate; this line exists so an

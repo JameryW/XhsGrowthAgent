@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "branch-B step 1 (intent before effects) that this slice implements"}
+{"file": "backend/services/publish_intent.py", "reason": "the idempotent mainline intent producer being reordered"}
