@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 # --- DSH Windows sandbox compatibility -------------------------------------
@@ -24,7 +25,17 @@ if sys.platform == "win32" and os.environ.get("DSH_SHELL") == "1":
         return _real_mkdir(path, 0o777 if mode == 0o700 else mode, dir_fd=dir_fd)
 
     os.mkdir = _mkdir_without_private_mode  # type: ignore[assignment]
-    os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", tempfile.mkdtemp(prefix="dsh-pytest-temproot-"))
+    # The sandbox's system temp dir is not writable, so ``mkdtemp`` falls back to
+    # the *current directory* (the repo root).  An earlier version therefore
+    # leaked ``dsh-pytest-temproot-*`` directories into the checkout; they are not
+    # dot-prefixed, so the docs-citation corpus walk counted their files as "ours"
+    # and bare ``host:port``/``postgres:15`` tokens started resolving as
+    # citations.  Keep the root dot-prefixed (the corpus rule treats a dot-prefixed
+    # component as not ours) and gitignored, so a leaked run cannot pollute name
+    # resolution again.
+    _temproot = Path(__file__).resolve().parents[1] / ".dsh-pytest-temproot"
+    os.makedirs(_temproot, mode=0o777, exist_ok=True)
+    os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", tempfile.mkdtemp(prefix="run-", dir=_temproot))
 
 # Tests must never inherit a developer's local browser setting from `.env`.
 # The real-browser paths are opt-in and explicitly configured by the tests that

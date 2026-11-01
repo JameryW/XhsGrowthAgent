@@ -1,0 +1,2 @@
+{"file": "tests/unit/scripts/docs_citation_rule.py", "reason": "the corpus walk whose dot-prefix rule this fix relies on"}
+{"file": "tests/unit/scripts/test_docs_citations.py", "reason": "the gate that surfaced the leaked directories"}

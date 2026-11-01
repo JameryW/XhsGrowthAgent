@@ -1,0 +1,29 @@
+{
+  "id": "pytest-temproot-dot-prefix",
+  "name": "pytest-temproot-dot-prefix",
+  "title": "test: pytest 临时根目录放回仓库内且点号前缀，避免污染 docs 引用扫描（票 5cb）",
+  "description": "沙箱系统 temp 不可写导致 tempfile.mkdtemp 回落到仓库根，泄漏 dsh-pytest-temproot-* 非点号目录；docs_citation_rule 的 _walk 把它当成『我们的文件』，bare host:port / postgres:15 被解析成引用，docs citations 与 execution-plane claim 出现假红。改为在仓库内创建 .dsh-pytest-temproot/（点号前缀，corpus 规则跳过）并把 run 目录放进去，gitignore 该目录；清理已有泄漏目录。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "tests/conftest.py",
+    ".gitignore"
+  ],
+  "notes": "DONE 2026-11-01 (test infrastructure). Root cause confirmed: under the DSH sandbox the system temp dir is not writable, so tempfile.gettempdir() falls back to the repository root; the old conftest called tempfile.mkdtemp(prefix='dsh-pytest-temproot-') without dir=, leaking non-dot-prefixed directories into the checkout. docs_citation_rule._walk only skips path components that start with a dot, so it treated those leaked files as 'ours', and bare host:port / 'postgres:15' tokens in the docs started resolving as citations: test_docs_citations reported bare basenames shared by two files and test_execution_plane_claims saw line_number_references_in_this_document recompute 162 instead of the published 159. Fix: conftest now creates a dot-prefixed root at <repo>/.dsh-pytest-temproot (os.makedirs with 0o777, writable in the sandbox) and puts each run's PYTEST_DEBUG_TEMPROOT inside it; .gitignore covers the directory. Deleted the four leaked dsh-pytest-temproot-* directories from this session. Verification: the two failing gate modules pass again (33 passed; claim back to 159); tests/unit/scripts 108 passed; new runs create only .dsh-pytest-temproot/run-*; ruff green; full suite in the journal.",
+  "meta": {}
+}
