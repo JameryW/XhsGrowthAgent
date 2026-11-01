@@ -78,10 +78,12 @@ from backend.creator_agent.policy import (
     PolicyVerdict,
     RiskVerdict,
     build_action_policy_snapshot,
+    build_policy_snapshot_for_capability,
     evaluate_action_policy,
 )
 from backend.creator_agent.policy_context import (
     EligibilityContextUnavailableError,
+    action_policy_context_from_values,
     load_action_policy_context_from_thread,
     thread_policy_context_loader,
 )
@@ -120,10 +122,12 @@ __all__ = [
     "PublishRequest",
     "PublishStatus",
     "build_action_policy_snapshot",
+    "build_policy_snapshot_for_capability",
     "build_publish_payload",
     "evaluate_action_policy",
     "interpret_publish_result",
     "load_action_policy_context_from_thread",
+    "action_policy_context_from_values",
     "load_publish_content",
     "thread_policy_context_loader",
     "build_decision_dataset_page",

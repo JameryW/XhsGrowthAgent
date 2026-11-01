@@ -16,6 +16,7 @@ from backend.creator_agent.policy import ActionPolicyContext
 __all__ = [
     "EligibilityContextUnavailableError",
     "PolicyContextLoader",
+    "action_policy_context_from_values",
     "load_action_policy_context_from_thread",
     "thread_policy_context_loader",
 ]
@@ -91,6 +92,26 @@ def _stamped_eligibility(values: Mapping[str, Any]) -> dict[str, Any] | None:
     return dict(stamped)
 
 
+def action_policy_context_from_values(values: Mapping[str, Any]) -> ActionPolicyContext:
+    """Project workflow state values onto the policy's input (P2, 票 5bd).
+
+    This is the *values* half of the checkpoint loader, extracted so the mainline
+    publish path — which already holds the resolved state — can run the same
+    policy without re-reading a checkpoint or duplicating the projection rules.
+    Use the shared commercial detector (mode_spec / brief), never bare
+    ``values.get("is_commercial")`` alone: same contract as the judgers.
+    """
+    from backend.services.compliance_policy import state_is_commercial
+
+    return ActionPolicyContext(
+        publish_eligibility=_stamped_eligibility(values),
+        niche=_niche_from_values(values),
+        auto_publish=_auto_publish_from_values(values),
+        is_commercial=state_is_commercial(dict(values)),
+        extra=_extra_from_values(values),
+    )
+
+
 async def load_action_policy_context_from_thread(
     thread_id: str,
     account_id: str = "",
@@ -122,18 +143,7 @@ async def load_action_policy_context_from_thread(
             f"workflow checkpoint could not be read: {type(exc).__name__}"
         ) from exc
 
-    values = _checkpoint_values(snapshot)
-    # Use the shared commercial detector (mode_spec / brief), never bare
-    # ``state.get("is_commercial")`` alone — same contract as judgers.
-    from backend.services.compliance_policy import state_is_commercial
-
-    return ActionPolicyContext(
-        publish_eligibility=_stamped_eligibility(values),
-        niche=_niche_from_values(values),
-        auto_publish=_auto_publish_from_values(values),
-        is_commercial=state_is_commercial(dict(values)),
-        extra=_extra_from_values(values),
-    )
+    return action_policy_context_from_values(_checkpoint_values(snapshot))
 
 
 def thread_policy_context_loader(graph: Any) -> PolicyContextLoader:

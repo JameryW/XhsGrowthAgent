@@ -239,14 +239,37 @@ def build_action_policy_snapshot(
     ``policy_context`` supplies optional stamped eligibility / niche /
     auto_publish flags without reading an artifact at plan time.
     """
+    return build_policy_snapshot_for_capability(
+        request.action_kind,
+        request.account_id,
+        cooldown_checker=cooldown_checker,
+        policy_context=policy_context,
+    )
+
+
+def build_policy_snapshot_for_capability(
+    capability: ActionCapability,
+    account_id: str,
+    *,
+    cooldown_checker: CooldownChecker | None = None,
+    policy_context: ActionPolicyContext | None = None,
+) -> ActionPolicySnapshot:
+    """Collect a snapshot without an ``ActionIntentRequest`` (P2, 票 5bd).
+
+    The mainline publish path is not planning an intent when it gates a publish —
+    it already has the workflow state — so it needs the same snapshot the plan
+    path builds without fabricating a request (a fake ``decision_id`` would be an
+    invented identity).  ``build_action_policy_snapshot`` delegates here, so the
+    rule engine and both callers share one collection path.
+    """
     checker = cooldown_checker or _risk_gate_publish_verdict
     risk = None
-    if request.action_kind in _SIDE_EFFECTING_CAPABILITIES:
-        risk = _consult_checker(checker, request.account_id.strip())
+    if capability in _SIDE_EFFECTING_CAPABILITIES:
+        risk = _consult_checker(checker, account_id.strip())
     ctx = policy_context or ActionPolicyContext()
     return ActionPolicySnapshot(
-        capability=request.action_kind,
-        account_id=request.account_id,
+        capability=capability,
+        account_id=account_id,
         risk=risk,
         publish_eligibility=ctx.publish_eligibility,
         niche=ctx.niche,

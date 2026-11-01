@@ -1859,3 +1859,99 @@ async def test_a_successful_publish_records_no_blocked_event(_browser_settings, 
 
     assert result["publish_result"]["status"] == "published"
     assert await _publish_blocked_events(state) == []
+
+
+@pytest.mark.asyncio
+async def test_a_policy_denial_refuses_before_any_durable_effect(
+    _browser_settings, mock_store, monkeypatch
+):
+    """P2 (票 5bd): the shared publish policy runs before PREPARED/ledger/intent.
+
+    A denial is a typed refusal: no PREPARED record, no ledger claim, no intent,
+    and no Tool Gateway call.  The stamped eligibility is the same audit the
+    control plane reads, so the mainline cannot grow a second rule set.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_g"})
+    state["evaluation_result"] = {
+        "publish_eligibility": {"allowed": False, "blocking_failures": ["lexicon_hit"]}
+    }
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _mock_history(monkeypatch)
+    tools = _RecordingTools()
+
+    with patch("backend.agents.publisher._write_publish_record", new=AsyncMock()) as recorded:
+        result = await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=tools))
+
+    publish_result = result["publish_result"]
+    assert publish_result["status"] == "failed"
+    assert publish_result["error_type"] == "publish_policy_denied"
+    assert publish_result["policy_id"] == "policy.action.publish_eligibility_denied"
+    assert "lexicon_hit" in publish_result["error"]
+    assert publish_result["recovery"]["action"] == "reconfigure"
+    from backend.state.enums import WorkflowPhase
+
+    assert recorded.await_count == 0
+    assert tools.seen == []
+    assert result["phase"] == WorkflowPhase.PUBLISHING
+
+
+@pytest.mark.asyncio
+async def test_a_risk_cooldown_is_a_typed_refusal_with_a_retry_hint(
+    _browser_settings, mock_store, monkeypatch
+):
+    """P2 (票 5bd): the real risk gate feeds the same policy verdict."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_g"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _mock_history(monkeypatch)
+    monkeypatch.setattr(
+        "backend.services.xhs_risk_gate.check_publish_allowed",
+        lambda **_kwargs: SimpleNamespace(message="发布冷却中", retry_after_seconds=125),
+    )
+    tools = _RecordingTools()
+
+    with patch("backend.agents.publisher._write_publish_record", new=AsyncMock()) as recorded:
+        result = await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=tools))
+
+    publish_result = result["publish_result"]
+    assert publish_result["error_type"] == "publish_policy_denied"
+    assert publish_result["policy_id"] == "policy.action.risk_cooldown"
+    assert publish_result["retry_after_seconds"] == 125
+    assert publish_result["recovery"]["action"] == "wait"
+    assert recorded.await_count == 0
+    assert tools.seen == []
+
+
+@pytest.mark.asyncio
+async def test_the_deployment_principal_is_out_of_the_account_policy_scope(
+    _browser_settings, mock_store, monkeypatch
+):
+    """P2 boundary: the rule engine is account-scoped by contract.
+
+    A deployment publish has no account to evaluate account-level judgers
+    against; it still ends at the human review approval, and the refusal to
+    *invent* an account for it is the same rule P1a/P1b follow.
+    """
+    from types import SimpleNamespace
+
+    state = _state(publish_options={"dry_run": False})
+    state["evaluation_result"] = {
+        "publish_eligibility": {"allowed": False, "blocking_failures": ["lexicon_hit"]}
+    }
+    monkeypatch.setenv("XHS_COOKIE", "a1=0123456789abcdef0123")
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
+    _mock_history(monkeypatch)
+
+    result = await run_publish(
+        state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools())
+    )
+
+    assert result["publish_result"]["status"] == "published"
+    assert "error_type" not in result["publish_result"]

@@ -83,6 +83,12 @@ BLOCKED_ACCOUNT_INACTIVE = "account_inactive"
 BLOCKED_MISSING_CDP_ENDPOINT = "missing_cdp_endpoint"
 BLOCKED_MISSING_CREDENTIAL = "missing_credential"
 BLOCKED_DUPLICATE_PUBLISH = "duplicate_publish"
+#: Mainline publish path: the same publish policy the control plane runs
+#: (``creator_agent.policy``) refused before any durable effect — no PREPARED
+#: record, no ledger claim, no intent, no receipt.  Distinct from
+#: ``BLOCKED_PUBLISH_ELIGIBILITY`` (control-plane execute) so an operator can
+#: tell which path refused, even though the rule engine is shared.
+BLOCKED_PUBLISH_POLICY = "publish_policy_denied"
 #: Control-plane execute path: artifact matched hash, but deterministic
 #: publish judgers refused before Tool Gateway (Action plan/execute shared
 #: ``decide_publish_eligibility``).

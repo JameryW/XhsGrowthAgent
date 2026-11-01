@@ -26,6 +26,7 @@ from backend.state.events import (
     BLOCKED_DUPLICATE_PUBLISH,
     BLOCKED_MISSING_CDP_ENDPOINT,
     BLOCKED_MISSING_CREDENTIAL,
+    BLOCKED_PUBLISH_POLICY,
     action_perf_entry,
     has_inline_perf_log,
     inline_perf_log,
@@ -210,7 +211,7 @@ class TestTheActionEntry:
         }
 
     def test_the_publish_blocked_reasons_are_closed_and_distinct(self):
-        """One action, five causes — and the causes are a vocabulary, not free
+        """One action, six causes — and the causes are a vocabulary, not free
         text, so a reader can count them. The set is closed on purpose: a new
         precondition must name itself here (the same ratchet the Gateway's
         ``event`` field and ``scopes`` vocabulary use)."""
@@ -222,6 +223,7 @@ class TestTheActionEntry:
             BLOCKED_MISSING_CREDENTIAL,
             BLOCKED_DUPLICATE_PUBLISH,
             BLOCKED_PUBLISH_ELIGIBILITY,
+            BLOCKED_PUBLISH_POLICY,
         }
         assert reasons == {
             "account_inactive",
@@ -229,6 +231,7 @@ class TestTheActionEntry:
             "missing_credential",
             "duplicate_publish",
             "publish_eligibility_denied",
+            "publish_policy_denied",
         }
 
     async def test_the_entry_round_trips_through_the_store(self):

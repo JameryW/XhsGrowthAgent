@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "verify the landed gate matches P2 and the documented deployment boundary"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a gate that must not copy rules or change publish behaviour"}

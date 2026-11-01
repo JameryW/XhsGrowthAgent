@@ -308,6 +308,21 @@ creator-agent 仓库落库。**执行仍走 `run_publish`**；构造失败/不�
 - 验收：允许/拒绝矩阵有测试；拒绝不产生 `UNKNOWN` 账本状态；与 API 路径共用规则（有测试断言同一函数被调用）。
 - 回滚：去掉 gate 调用，回到 P1。
 
+**P2 已落地（票 5bd，2026-11-01）**：`run_publish` 在写 grant 检查之后、**任何持久副作用之前**
+调用 `creator_agent.policy`：`build_policy_snapshot_for_capability(PUBLISH, principal.account_id,
+policy_context=action_policy_context_from_values(state))` → `evaluate_action_policy` ——
+同一个引擎、同一份规则表、同一份 checkpoint 投影（新增的两个共享函数让主链不必伪造
+`ActionIntentRequest`，也不必复制投影逻辑）。拒绝时返回 typed `publish_result`
+（`error_type="publish_policy_denied"` + verdict 的 `policy_id`/`retry_after_seconds` +
+结构化 `recovery`），并写一条 `publish_blocked` 事件（`reason="publish_policy_denied"`）；
+**不写 PREPARED 记录、不 claim 账本、不产 intent、不写回执、不调 Gateway**。
+- 已知边界：部署本体（无 account）发布**不走**该策略——规则引擎按契约为 account-scoped，
+  没有 account 就没有可评估的账号级判定；该路径仍由人工 review 审批把关，且不构造
+  account-scoped intent（P1b-2 同一条边界）。
+- 测试：stamped eligibility 拒绝 / 风险冷静期拒绝（typed + retry hint）/ 拒绝时零副作用 /
+  部署主体边界 / capability 快照与 request 快照等价 / 非副作用 capability 不咨询 gate。
+- claim：不变（直调仍 3、构造点仍 2）。
+
 **P3 — 换执行器**
 发布执行改走 Tool Gateway `xhs.publish` + `granted_scopes`（复用
 `backend/creator_agent/execution.py` 的 dispatcher），`run_publish` 降为该 capability 的工具实现；

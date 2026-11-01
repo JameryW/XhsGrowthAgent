@@ -261,3 +261,43 @@ class TestPlanActionAutoLoadsStamp:
         assert intent.action_id
         # Loader must not have been consulted when context is explicit.
         graph.aget_state.assert_not_called()
+
+
+class TestTheValuesProjectionTheMainlineUses:
+    """P2 (票 5bd): the values→context projection is shared, not copied.
+
+    The mainline publish path already holds resolved state, so it must reuse this
+    projection instead of re-deriving stamped eligibility / niche / auto-publish
+    from the same keys.  These pin the two fields the policy actually gates on.
+    """
+
+    def test_it_mirrors_the_checkpoint_loader_fields(self):
+        from backend.creator_agent.policy_context import action_policy_context_from_values
+
+        context = action_policy_context_from_values(
+            {
+                "evaluation_result": {
+                    "publish_eligibility": {"allowed": False, "blocking_failures": ["lexicon"]}
+                },
+                "content_plan": {"niche": "数码"},
+                "auto_publish": True,
+                "publish_options": {"disclosure_confirmed": True},
+            }
+        )
+
+        assert context.publish_eligibility == {
+            "allowed": False,
+            "blocking_failures": ["lexicon"],
+        }
+        assert context.niche == "数码"
+        assert context.auto_publish is True
+        assert context.extra is not None
+        assert "publish_options" in context.extra
+
+    def test_missing_stamp_is_none_not_a_deny(self):
+        from backend.creator_agent.policy_context import action_policy_context_from_values
+
+        context = action_policy_context_from_values({})
+
+        assert context.publish_eligibility is None
+        assert context.extra is None

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from langgraph.store.base import BaseStore
 
     from backend.config.settings import Settings
+    from backend.creator_agent.policy import PolicyVerdict
     from backend.state.schema import XHSGrowthState
 
 from backend.agents.base import BaseAgent
@@ -35,6 +36,7 @@ from backend.state.events import (
     BLOCKED_DUPLICATE_PUBLISH,
     BLOCKED_MISSING_CDP_ENDPOINT,
     BLOCKED_MISSING_CREDENTIAL,
+    BLOCKED_PUBLISH_POLICY,
     action_perf_entry,
     emit_events,
     resolve_thread_id,
@@ -64,6 +66,11 @@ PUBLISH_IDEMPOTENCY_NS: tuple[str, ...] = ("publish", "idempotency")
 _PUBLISH_ID_WINDOW_SECONDS = 6 * 3600
 
 _PUBLISH_BLOCKED_ERROR_TYPE = "duplicate_publish_blocked"
+# P2 (票 5bd): the shared publish policy (creator_agent.policy) refused. Unlike
+# the blocked preconditions above this one has many causes (stamped eligibility,
+# account-level judgers, risk cooldown), so the verdict's own policy_id/reason
+# travel on the typed result; this string only says *which* gate refused.
+_PUBLISH_POLICY_DENIED = "publish_policy_denied"
 # P0-W4 (F2): the submit action was initiated and the platform gave us no
 # verdict (post-click timeout, dead page, "发布状态未知"). Reporting that as
 # "failed" would release the idempotency guard and invite a duplicate note, so
@@ -795,6 +802,79 @@ async def _record_publish_blocked(
     )
 
 
+def _evaluate_mainline_publish_policy(
+    state: Mapping[str, Any], account_id: str
+) -> PolicyVerdict:
+    """Run the shared publish policy on a mainline publish's state (P2, 票 5bd).
+
+    Same module, same rule table and the same checkpoint projection the control
+    plane uses — the mainline never grows a second copy of the rules.
+    ``account_id`` is the explicit publish principal (not
+    ``state["account_id"]``, which is only a workflow label).
+    """
+    from backend.creator_agent.models import ActionCapability
+    from backend.creator_agent.policy import (
+        build_policy_snapshot_for_capability,
+        evaluate_action_policy,
+    )
+    from backend.creator_agent.policy_context import action_policy_context_from_values
+
+    snapshot = build_policy_snapshot_for_capability(
+        ActionCapability.PUBLISH,
+        account_id,
+        policy_context=action_policy_context_from_values(state),
+    )
+    return evaluate_action_policy(snapshot)
+
+
+def _publish_policy_denied(
+    state: XHSGrowthState | dict[str, Any], verdict: PolicyVerdict
+) -> dict[str, Any]:
+    """Typed refusal for a publish the shared policy denied — before any effect.
+
+    No PREPARED record, no ledger claim, no intent and no receipt are written;
+    the refusal is the whole outcome.  Shape matches the other refusals (typed
+    ``error_type`` + structured ``recovery``) so the dashboard can render it,
+    and the verdict's stable ``policy_id`` travels for operators.
+    """
+    retry_after = verdict.retry_after_seconds
+    reason = verdict.reason or "publish policy denied"
+    logger.warning(
+        "发布策略拒绝: policy_id=%s reason=%s", verdict.policy_id, reason
+    )
+    recovery: dict[str, Any]
+    if retry_after:
+        recovery = {
+            "message": f"发布策略要求稍后重试：{reason}",
+            "action": "wait",
+            "action_label": "稍后重试",
+            "hint": f"请等待约 {retry_after} 秒后再试；若持续被拒请检查账号状态。",
+        }
+    else:
+        recovery = {
+            "message": f"发布策略拒绝：{reason}",
+            "action": "reconfigure",
+            "action_label": "检查发布配置",
+            "hint": "请按拒绝原因检查账号状态、商业内容披露与合规项后再试。",
+        }
+    return {
+        "publish_result": _with_publish_link_metadata(
+            {
+                "post_id": "",
+                "post_url": "",
+                "status": "failed",
+                "error": f"发布策略拒绝：{reason}",
+                "error_type": _PUBLISH_POLICY_DENIED,
+                "policy_id": str(verdict.policy_id),
+                "retry_after_seconds": retry_after,
+                "recovery": recovery,
+            },
+            state,
+        ),
+        "phase": WorkflowPhase.PUBLISHING,
+    }
+
+
 async def run_publish(
     state: XHSGrowthState | dict[str, Any],
     store: BaseStore,
@@ -920,6 +1000,24 @@ async def run_publish(
     if XHS_WRITE_SCOPE not in granted:
         await _record_publish_blocked(state, BLOCKED_MISSING_CREDENTIAL, account_id=grant_account)
         return _missing_publish_credential(state, grant_account)
+
+    # ── P2 policy gate (票 5bd) ──
+    # The mainline runs the same publish policy the control plane runs, from the
+    # same module and the same checkpoint projection.  A denial is a typed
+    # refusal BEFORE any durable effect: no PREPARED record, no ledger claim, no
+    # intent, no receipt.  Deployment-principal publishes stay out of scope: the
+    # rule engine is account-scoped by contract (no account = nothing to
+    # evaluate), and that path already ends at the human review approval.
+    if principal.is_account:
+        verdict = _evaluate_mainline_publish_policy(state, principal.account_id)
+        if not verdict.allowed:
+            await _record_publish_blocked(
+                state,
+                BLOCKED_PUBLISH_POLICY,
+                account_id=grant_account,
+                policy_id=str(verdict.policy_id),
+            )
+            return _publish_policy_denied(state, verdict)
 
     # ── P0-W4 idempotency gate (real publish path only) ──
     # Deterministic key recorded BEFORE the real submit action. A previous

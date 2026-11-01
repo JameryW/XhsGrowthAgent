@@ -1,0 +1,32 @@
+{
+  "id": "mainline-policy-gate",
+  "name": "mainline-policy-gate",
+  "title": "P2：主链发布策略门禁（复用 creator_agent.policy 同一规则）（票 5bd）",
+  "description": "run_publish 在 grant 检查后、任何持久副作用前调用共享 publish policy（build_policy_snapshot_for_capability + evaluate_action_policy + action_policy_context_from_values）；拒绝返回 typed publish_result（publish_policy_denied + policy_id/retry hint）并不写 PREPARED/账本/intent/回执、不调 Gateway；新增共享投影函数避免伪造 request；部署本体为文档化边界。claim 不变。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/creator_agent,backend/agents,backend/state,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/policy.py",
+    "backend/creator_agent/policy_context.py",
+    "backend/agents/publisher.py",
+    "backend/state/events.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (P2 of the 5au plan). The mainline now runs the SAME publish policy the control plane runs, from the same module and rule table, with no copied rules and no fabricated ActionIntentRequest: policy.py gained build_policy_snapshot_for_capability(capability, account_id, *, cooldown_checker, policy_context) and build_action_policy_snapshot delegates to it (they are asserted equal for PUBLISH by a test); policy_context.py gained the public action_policy_context_from_values(values) projection and the checkpoint loader now uses it, so the mainline (which already holds resolved state) neither re-reads a checkpoint nor re-derives stamped eligibility/niche/auto_publish/is_commercial/extra. run_publish gates AFTER the xhs:write grant check and BEFORE any durable effect: if principal.is_account, it evaluates PUBLISH and on denial returns a typed publish_result (error_type='publish_policy_denied', verdict policy_id, retry_after_seconds, structured recovery) plus one publish_blocked event (reason publish_policy_denied, new BLOCKED_PUBLISH_POLICY) and writes NOTHING else — no PREPARED record, no ledger claim, no mainline intent, no receipt, no Gateway call (pinned by a zero-side-effects test). Documented boundary: deployment-principal publishes are outside the account-scoped policy engine by contract (no account to evaluate), still end at human review approval, and still do not construct an account-scoped intent (same boundary as P1b-2) — pinned by a test that a denial-stamped deployment publish still publishes. Claims unchanged: direct run_publish call sites 3, construction sites 2, mainline producers 1. The blocked-reason vocabulary grew from five to six and tests/unit/state/test_events.py now pins the closed set. Tests: stamped-eligibility denial, risk-cooldown denial (typed + retry hint + real gate seam), zero side effects on denial, deployment boundary, capability-vs-request snapshot equality, non-side-effecting capability never consults the gate, values-projection fields and missing-stamp semantics. Verification: run_publish suite 58 passed (55 existing + 3 new), new/policy/context cases 46 passed, affected dirs (agents + creator_agent + state + scripts) 1085 passed, full suite 4773 passed / 14 skipped / 0 failed / 0 errors, ruff check green.",
+  "meta": {}
+}

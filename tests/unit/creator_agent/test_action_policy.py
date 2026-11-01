@@ -36,6 +36,7 @@ from backend.creator_agent import (
     PolicyVerdict,
     RiskVerdict,
     build_action_policy_snapshot,
+    build_policy_snapshot_for_capability,
     evaluate_action_policy,
 )
 from backend.db import creator_agent as creator_agent_db
@@ -511,3 +512,46 @@ class TestTheApiSurfaceForADeniedAction:
             ActionPolicySnapshot(capability=ActionCapability.PUBLISH, account_id="account-a")
         )
         assert isinstance(verdict.policy_id, PolicyId)
+
+
+class TestTheCapabilitySnapshotIsTheSameCollectionPath:
+    """P2 (票 5bd): the mainline gates by capability, not by a fake request.
+
+    The publish path already holds workflow state and has no intent to validate;
+    it must still collect exactly the snapshot the plan path collects, or the two
+    callers would slowly diverge on what the policy is allowed to see.
+    """
+
+    def test_it_equals_the_request_snapshot_for_publish(self):
+        context = ActionPolicyContext(
+            publish_eligibility={"allowed": False, "blocking_failures": ["dual_auto"]},
+            niche="数码",
+            auto_publish=True,
+            is_commercial=True,
+        )
+
+        def clear(_account_id: str) -> None:
+            return None
+
+        from_capability = build_policy_snapshot_for_capability(
+            ActionCapability.PUBLISH,
+            "account-a",
+            cooldown_checker=clear,
+            policy_context=context,
+        )
+        from_request = build_action_policy_snapshot(
+            _request(), cooldown_checker=clear, policy_context=context
+        )
+
+        assert from_capability == from_request
+
+    def test_a_non_side_effecting_capability_never_consults_the_gate(self):
+        def boom(_account_id: str):
+            raise AssertionError("the gate must not be consulted for this capability")
+
+        snapshot = build_policy_snapshot_for_capability(
+            ActionCapability.COMPARE_OPTIONS, "account-a", cooldown_checker=boom
+        )
+
+        assert snapshot.risk is None
+        assert snapshot.capability is ActionCapability.COMPARE_OPTIONS
