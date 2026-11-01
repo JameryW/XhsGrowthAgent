@@ -1,6 +1,7 @@
-# Adaptive Harness 评测集方案（提案 → 已拍板，E1 已交付）
+# Adaptive Harness 评测集方案（提案 → 已拍板，E1/E2 已交付）
 
-> **状态：决策已拍板（2026-11-01），E1 已交付；E2–E4 未开始。**
+> **状态：决策已拍板（2026-11-01）；E1（语料抽取）与 E2（策略接口）已交付，
+> E2 只提供可注入接口、未接线、默认行为不变；E3/E4 未开始。**
 > 关联：`docs/agent-os-upgrade-2026q4.md` 路线图 10（P3 = Adaptive Harness + A/B 门禁）、
 > §8 Harness Benchmarks、§9 剩余工作清单。
 
@@ -106,6 +107,25 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
 **本地现实说明**：本 checkout 的 `.xhs/checkpoints.sqlite` 是空的（0 checkpoints），
 因此 E1 的"真实语料"要在有数据的部署（Postgres）或已填充的 sqlite 上生成；E1 自身的
 正确性由上述种子库测试覆盖，而不是靠本地空库。
+
+## 6.6 E2 已交付：可注入策略接口（票 5ce，未接线）
+
+`backend/harness/policy.py`（+ `backend/harness/__init__.py`）：
+
+| 决策点 | 默认实现（= 现行行为，逐项委托） |
+|---|---|
+| 模型路由 | `DefaultHarnessPolicy.route_model` → `config.models.resolve_model_id` |
+| 上下文预算 | `context_budget()` → `None`（今天 agents 调 `compile_prompt` 不传 budget） |
+| 工具重试/并发/超时 | `tool_limits(capability)` → 工具目录 `ToolSpec.max_concurrency` / `effective_timeout_s` |
+| 升级/降级触发 | `escalation_targets()` → `()`（今天只有 `MODEL_FALLBACKS` 兜底，没有升级） |
+
+- `HarnessPolicy` 是 `runtime_checkable` Protocol；`describe(policy)` 输出**可 JSON 序列化
+  的决策快照**（models / context_budget / escalation / tool_limits），E3 用它做 baseline
+  与 variant 的 diff。
+- **未接线**：生产代码没有任何调用点使用这个接口，因此默认行为零变化。接线（默认值是否
+  允许被变体替换）依赖提案第 6 节问题 5/6 的拍板。
+- 测试：`tests/unit/harness/test_policy.py` 8 passed，逐项对比 router/目录的当前答案，
+  并钉住"未知名能力必须拒绝而不是编造"以及 snapshot 的 diff 行为。
 
 ## 7. 明确不做
 

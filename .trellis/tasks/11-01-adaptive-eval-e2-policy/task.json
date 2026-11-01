@@ -1,0 +1,31 @@
+{
+  "id": "adaptive-eval-e2-policy",
+  "name": "adaptive-eval-e2-policy",
+  "title": "feat(harness): P3/E2 可注入策略接口——默认即现行行为（票 5ce）",
+  "description": "按提案 E2 落地 HarnessPolicy 接口：四类决策（模型路由/上下文预算/工具并发超时/升级触发）统一为 runtime_checkable Protocol + DefaultHarnessPolicy（逐项委托 resolve_model_id、compile_prompt 默认 budget=None、工具目录 ToolSpec、空升级列表）。describe(policy) 输出可 JSON 序列化的决策快照供 E3 diff。刻意不接线生产调用点，默认行为零变化；接线依赖提案问题 5/6 拍板。8 个单测逐项对比当前答案并验证未知名能力拒绝、snapshot diff。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/harness/policy.py",
+    "backend/harness/__init__.py",
+    "tests/unit/harness/test_policy.py",
+    "docs/adaptive-harness-eval-plan.md"
+  ],
+  "notes": "DONE 2026-11-01 (P3/E2; interface only, deliberately unwired, zero behaviour change). backend/harness/policy.py defines the four decisions a variant may change as a runtime_checkable HarnessPolicy protocol plus DefaultHarnessPolicy, which delegates each answer to the module that already owns it instead of duplicating literals: route_model -> config.models.resolve_model_id; context_budget -> None (agents call compile_prompt without a budget today, i.e. no trimming); tool_limits -> the catalogue's ToolSpec.max_concurrency / effective_timeout_s; escalation_targets -> () (only MODEL_FALLBACKS exists today, there is no escalation path). describe(policy) returns a JSON-able snapshot (models / context_budget / escalation / tool_limits) that E3 will diff between baseline and variant. Nothing in production imports the module, which is the point: wiring it into router/compiler/gateway changes defaults and depends on proposal questions 5 (defaults vs A/B-only) and 6 (gate hardness), so it stays a separate decision. Tests: 8 cases — protocol conformance, route equality for every TaskType, budget None with/without phase, empty escalation, xhs.publish limits equal to the catalogue spec (and float-normalised timeout), unknown capability raises UnknownCapabilityError instead of inventing limits, describe is JSON-serialisable and agrees with direct calls, and a subclassed variant's snapshot differs only in models. Verification: harness tests 8 passed; mypy --python-version 3.12 backend -> Success, 264 source files; ruff green; docs/claim gates and full suite in the journal.",
+  "meta": {}
+}

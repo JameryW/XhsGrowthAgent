@@ -1,0 +1,3 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the E2 definition and the open wiring decisions this ticket honours"}
+{"file": "backend/config/models.py", "reason": "resolve_model_id / MODEL_FALLBACKS, the routing owner the default policy delegates to"}
+{"file": "backend/tools/runtime/registry.py", "reason": "ToolSpec limits + UnknownCapabilityError used by tool_limits"}
