@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 42
+- **Total Sessions**: 43
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1429 | Active |
+| `journal-1.md` | ~1463 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 43 | 2026-11-01 | 继续：CI 本地核对 + P4 分支 B 方案 + 旧符号注释清理（票 5bl） | `f5e61995`, `f6987c58` | `main` |
 | 42 | 2026-11-01 | 继续：修复 CI mypy 预存类型错误（票 5bk） | `b23dea2f`, `7d6b942a` | `main` |
 | 41 | 2026-11-01 | 继续：ruff format 对齐 CI（票 5bj） | `1a52418a`, `c70e6432` | `main` |
 | 40 | 2026-11-01 | 继续：控制面 execute 接入 EffectLedger 六态账本（票 5bi） | `31839dbb`, `90af2a93` | `main` |

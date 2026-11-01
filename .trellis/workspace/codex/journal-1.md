@@ -1427,3 +1427,37 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: 继续：CI 本地核对 + P4 分支 B 方案 + 旧符号注释清理（票 5bl）
+
+**Date**: 2026-11-01
+**Task**: 继续：CI 本地核对 + P4 分支 B 方案 + 旧符号注释清理（票 5bl）
+**Branch**: `main`
+
+### Summary
+
+本地逐项核对 CI：4 个 Python 作业全绿（ruff check、mypy --python-version 3.12 backend=262 files 通过（本地 numpy stub 限制）、pytest 4800 passed、context_compiler_baseline OK、harness_benchmarks pass=3 fail=0 skip=3（F5/F7/F8 为文档化缺口）、tool_runtime_gate OK、stealth_default_off OK）；frontend type-check 与 i18n:check 通过；frontend vitest 因 DSH 沙箱 EPERM spawn 无法运行（环境限制），OMP typecheck 需 npm install（未装 node_modules，跳过）。另：把 P4 分支 B 的方案补进 docs/publish-action-protocol.md（前提已由 5bi 解除，含 5 步迁移/幂等键同源/测试/回滚/待拍板说明），修正 P4 段一处不精确表述，并清理 backend 注释中已删除符号 run_publish 的 4 处引用。验证：doc gates 98 passed；全量 4800 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。工作树干净（仅历史未跟踪 .workbuddy/），无活动 Trellis 任务，69 个本地提交未 push。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5e61995` | (see git log) |
+| `f6987c58` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
