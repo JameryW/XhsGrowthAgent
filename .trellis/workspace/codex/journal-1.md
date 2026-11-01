@@ -1634,3 +1634,36 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 49: 继续：本地 CI 等价检查脚本（票 5bw）
+
+**Date**: 2026-11-01
+**Task**: 继续：本地 CI 等价检查脚本（票 5bw）
+**Branch**: `main`
+
+### Summary
+
+新增 scripts/ci_local.py：七个作业（lint/format/mypy/gates/tests/frontend/omp），--list/--only/--skip-tests，PASS/FAIL/SKIP 摘要。format 用 LF 归一化临时树避免 Windows CRLF 假阳性（mkdtemp 0700 在沙箱不可写，改 mkdir(0o777)，残留 gitignore）；mypy 仅在本轮 numpy stub 语法错误时回退 3.12 target 并注明；子进程输出走文件重定向避免 pipe 限制；frontend/omp 缺 deps 时显式 SKIP。配套 5 个单测、CLAUDE.md 命令、.gitignore。顺带修两个文件格式。本轮还确认：frontend npm install 因沙箱 EPERM(-4048) 无法完成、frontend/node_modules 已不在；Postgres 5432/5433/5434 无监听，parity 仍只能 CI 跑。验证：runner 子集全 PASS（format 681 文件）、全量 4823 passed / 14 skipped / 0 failed / 0 errors。票 5bw 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc62000d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
