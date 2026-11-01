@@ -1832,3 +1832,36 @@ ci_local.py 的 tests 作业现在镜像 CI 的 parity 复查：全量通过后�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 55: 继续：测试临时目录彻底收进仓库内 .dsh-tmp（票 5cc）
+
+**Date**: 2026-11-01
+**Task**: 继续：测试临时目录彻底收进仓库内 .dsh-tmp（票 5cc）
+**Branch**: `main`
+
+### Summary
+
+5cb 的后续：tempfile.gettempdir() 在沙箱内回落到仓库根，导致 xhs_images/ 与 tiktoken 的 data-gym-cache/ 泄漏到仓库根。conftest 现在创建 .dsh-tmp/ 并覆盖 TMPDIR/TEMP/TMP，同时显式重置 tempfile.tempdir 缓存（pytest 可能在 conftest 前已缓存仓库根）；temproot 放到 .dsh-tmp/pytest-temproot；gitignore .dsh-tmp/。全量后仓库根干净、两个产物出现在 .dsh-tmp 下；全量 4827 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。票 5cc 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e5d04d67` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
