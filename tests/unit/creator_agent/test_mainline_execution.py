@@ -105,9 +105,7 @@ class _Recorder:
 async def _advisor(store: Any, publish: Any) -> tuple[CreatorAdvisor, Any]:
     repo = creator_agent_db.DurableCreatorAgentRepository()
     await repo.save_model(ACCOUNT, _definition(), expected_revision=0)
-    advisor = CreatorAdvisor(
-        repo, artifact_store=store, publish=publish, credentials=_credentialed
-    )
+    advisor = CreatorAdvisor(repo, artifact_store=store, publish=publish, credentials=_credentialed)
     return advisor, repo
 
 
@@ -187,9 +185,7 @@ class TestTheExecutorRunsAMainlineIntent:
 
     async def test_a_failed_publish_is_a_failed_receipt(self):
         store = InMemoryStore()
-        recorder = _Recorder(
-            PublishOutcome(status=PublishStatus.FAILED, error="platform said no")
-        )
+        recorder = _Recorder(PublishOutcome(status=PublishStatus.FAILED, error="platform said no"))
         ref, digest = await _stored(store, BODY)
         advisor, repo = await _advisor(store, recorder)
         intent = _mainline_intent(artifact_ref=ref, content_hash=digest)

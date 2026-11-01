@@ -1,0 +1,2 @@
+{"file": ".github/workflows/ci.yml", "reason": "the lint-format job this ticket aligns with"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "formatting/line-ending conventions"}

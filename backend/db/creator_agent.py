@@ -1084,9 +1084,7 @@ class DurableCreatorAgentRepository:
                     raise ActionExecutionNotAllowedError(execution.action_id, action.status)
                 _validate_action_execution_source(action, execution)
                 if action.origin is not ActionOrigin.MAINLINE:
-                    decision = _mem_decisions.get(
-                        (execution.account_id, execution.decision_id)
-                    )
+                    decision = _mem_decisions.get((execution.account_id, execution.decision_id))
                     if decision is None:
                         raise DecisionRecordMissingError(execution.decision_id)
                     if decision.model_revision != execution.model_revision:

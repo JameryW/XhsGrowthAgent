@@ -89,6 +89,7 @@ def publish_effect_id(account_id: str, idempotency_key: str) -> str:
     """
     return f"{account_id.strip()}::{idempotency_key.strip()}"
 
+
 # The platform layer's own status vocabulary (``services.xhs_publisher``
 # P0-W4): ``published`` is the only success; ``unknown``/``pending`` mean "a
 # submit was issued and the outcome is not known", which is *not* a failure and

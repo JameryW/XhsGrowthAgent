@@ -124,9 +124,7 @@ class _Recorder:
 async def _advisor(store: Any, publish: Any) -> tuple[CreatorAdvisor, str]:
     repo = creator_agent_db.DurableCreatorAgentRepository()
     await repo.save_model(ACCOUNT, _definition(), expected_revision=0)
-    advisor = CreatorAdvisor(
-        repo, artifact_store=store, publish=publish, credentials=_credentialed
-    )
+    advisor = CreatorAdvisor(repo, artifact_store=store, publish=publish, credentials=_credentialed)
     decision = await advisor.decide(_decision_request())
     return advisor, decision.decision_id
 
