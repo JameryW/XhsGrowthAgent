@@ -272,6 +272,19 @@ ranked candidates）。所以在主链构造控制面对象 = 发明身份，正
   涉及 `ActionIntent`/`ActionIntentRequest` 模型与 intent 表的列迁移。
 - **B**：主链自有意图模型 + 执行器适配层（控制面不泛化，切换成本在 P3 体现）。
 
+**A 的模型半步已落地（票 5bb，2026-11-01）**：`ActionIntent` 新增 `origin`
+（`ActionOrigin.CREATOR` / `MAINLINE`）；creator origin 强制 `creator_id`/`audience_id`
+非空，mainline origin 禁止携带二者（不能借创作者的身份证）；`/creator_agent` 既有
+构造路径与 API 契约不变，旧行缺 `origin` 时读作 creator。存储是整行 `payload_json`，
+因此**无需列迁移**。构造点仍只有 `creator_agent/advisor.py` 一处 ——
+`action_intent_construction_sites` 仍为 `1`。
+
+**P1b-2（剩余半步）**：主链 review 审批产生一个持久的 mainline decision 身份
+（decision_id + thread_id + account_id + publish_id + approved_by/at + content_hash/
+artifact_ref），`run_publish` 用它构造 `origin=mainline` 的 `ActionIntent` 并落库
+（仍由 `run_publish` 执行）——那一步才会让 `mainline_action_intent_producers`
+从 0 变 ≥1。
+
 拍板前 `mainline_action_intent_producers` 保持 `0` —— 它是"真的构造了控制面对象"的
 度量；为让数字好看而构造一个无效对象，是把判据本身变成装饰。
 

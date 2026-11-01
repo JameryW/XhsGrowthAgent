@@ -1,0 +1,30 @@
+{
+  "id": "action-intent-origin",
+  "name": "action-intent-origin",
+  "title": "P1b-1：控制面意图身份模型泛化（origin + mainline 空 creator/audience）（票 5bb）",
+  "description": "Option A 的模型半步：ActionIntent 加 origin（creator/mainline），creator origin 强制 creator/audience 非空，mainline origin 不得借用二者；payload_json 存储无需 DB 迁移；旧行缺 origin 默认 creator。creator_agent 既有行为不变，另加矩阵与往返测试。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/creator_agent,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/models.py",
+    "backend/creator_agent/__init__.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (P1b-1, option A model half). ActionOrigin (creator/mainline) added to backend/creator_agent/models.py; ActionIntent now defaults origin=creator, creator_id/audience_id default to blank strings, and a model validator enforces agreement: creator origin requires both ids non-blank (whitespace refused), mainline origin forbids carrying either (the mainline must not borrow a creator identity). No DB migration: creator_agent_actions stores the whole row as payload_json and reads it back with ActionIntent.model_validate, so pre-P1b rows without an origin key validate as creator (pinned by test). ActionIntentRequest/public API/executor semantics untouched; the only construction site is still creator_agent/advisor.py, so action_intent_construction_sites stays 1 and mainline_action_intent_producers stays 0 until P1b-2. Tests: new tests/unit/creator_agent/test_action_intent_origin.py (13 tests: creator missing/blank id refused, mainline blank accepted, mainline carrying ids refused, legacy payload reads creator, real repository round-trip preserves origin for both origins, serialized row names origin). Verification: creator_agent 197 passed; api+contract 712 passed (origin field additive, OpenAPI static spec unaffected); doc/claim gates 12 passed; ruff/format green; full suite 4754 passed / 14 skipped / 0 failed / 0 errors.",
+  "meta": {}
+}

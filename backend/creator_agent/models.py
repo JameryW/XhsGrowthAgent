@@ -131,6 +131,22 @@ class ActionStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ActionOrigin(StrEnum):
+    """Who produced an intent — and therefore which identities it must carry.
+
+    ``CREATOR`` intents come from a creator decision: a :class:`DecisionRecord`
+    names the creator and the audience, so both halves are required.  ``MAINLINE``
+    intents (P1b, 票 5bb) come from the workflow's own human review approval,
+    which has neither concept; filling them with a creator's identity would be
+    borrowing an identity the mainline never had.  The origin is part of the
+    durable row rather than something inferred from blank strings, because the
+    two halves of the executor read different things.
+    """
+
+    CREATOR = "creator"
+    MAINLINE = "mainline"
+
+
 class ActionResolutionDisposition(StrEnum):
     """Explicit user disposition; neither disposition executes an action."""
 
@@ -671,8 +687,13 @@ class ActionIntent(BaseModel):
 
     action_id: str = Field(min_length=1, max_length=128)
     account_id: str = Field(min_length=1, max_length=128)
-    creator_id: str = Field(min_length=1, max_length=128)
-    audience_id: str = Field(min_length=1, max_length=128)
+    # ``origin`` decides whether the creator/audience pair is required (P1b,
+    # 票 5bb): creator intents must name both; mainline intents must leave them
+    # blank rather than borrow a creator's identity.  The default keeps every
+    # pre-P1b row and every existing construction path on creator semantics.
+    origin: ActionOrigin = ActionOrigin.CREATOR
+    creator_id: str = Field(default="", max_length=128)
+    audience_id: str = Field(default="", max_length=128)
     decision_id: str = Field(min_length=1, max_length=128)
     action_kind: ActionCapability
     candidate_ids: list[str] = Field(default_factory=list, max_length=100)
@@ -685,6 +706,24 @@ class ActionIntent(BaseModel):
     artifact_ref: str | None = None
     content_hash: str | None = None
     thread_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_origin_identity(self) -> ActionIntent:
+        """The origin and the identity pair must agree.
+
+        A creator-origin row without a creator/audience would be an intent the
+        executor cannot attribute; a mainline-origin row carrying them would be
+        the mainline pretending to be a creator.  Neither is a warning: the row
+        is durable, so it is refused at the boundary.
+        """
+        creator = (self.creator_id or "").strip()
+        audience = (self.audience_id or "").strip()
+        if self.origin is ActionOrigin.CREATOR:
+            if not creator or not audience:
+                raise ValueError("creator-origin intents require creator_id and audience_id")
+        elif creator or audience:
+            raise ValueError("mainline-origin intents must not carry creator/audience ids")
+        return self
 
     @model_validator(mode="after")
     def validate_publish_payload(self) -> ActionIntent:

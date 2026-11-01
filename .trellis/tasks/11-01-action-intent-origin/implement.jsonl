@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the P1b identity decision this model half implements"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "pydantic model validation conventions for durable records"}
