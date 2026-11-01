@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "verify the tests assert the documented branch-B semantics"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for test-only hardening"}

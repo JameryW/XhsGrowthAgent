@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the branch-B semantics these tests pin"}
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "the execution-boundary disclosure for the cutover"}

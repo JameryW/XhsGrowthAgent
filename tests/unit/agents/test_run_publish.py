@@ -1844,6 +1844,205 @@ async def test_a_blocked_duplicate_never_reaches_the_executor(_browser_settings,
 
 
 @pytest.mark.asyncio
+async def test_a_forced_retry_re_executes_through_the_executor(
+    _browser_settings, mock_store, monkeypatch
+):
+    """Force is one-shot on the mainline and an explicit re-execution on the executor.
+
+    The ledger claim is bypassed by force; the executor's attempt-scoped receipts
+    are what keep the second dispatch honest (attempt 2, not a stale receipt).
+    """
+    from types import SimpleNamespace
+
+    from backend.creator_agent import ActionExecutionStatus
+    from backend.db import creator_agent as creator_agent_db
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_b3f"})
+        state["publish_decision"] = {
+            "decision_id": "mainline:unit-b3f",
+            "source": "mainline_review",
+            "thread_id": "test_session",
+            "account_id": "acc_b3f",
+            "content_hash": content_hash(publish_content_body(state)),
+            "approved_by": "u-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+        tools = _RecordingTools()
+
+        first = await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=tools))
+        assert first["publish_result"]["status"] == "published"
+
+        forced_state = dict(state)
+        forced_state["publish_options"] = {
+            "dry_run": False,
+            "account_id": "acc_b3f",
+            "force_publish": True,
+        }
+        second = await run_publish(
+            forced_state, store=mock_store, agent=SimpleNamespace(tools=tools)
+        )
+
+        assert second["publish_result"]["status"] == "published"
+        assert second["publish_options"]["force_publish"] is False
+        assert len(tools.seen) == 2
+        executions = sorted(
+            creator_agent_db._mem_action_executions.values(), key=lambda item: item.attempt
+        )
+        assert [item.attempt for item in executions] == [1, 2]
+        assert all(item.status is ActionExecutionStatus.SUCCEEDED for item in executions)
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_executor_outcome_keeps_the_mainline_semantics(
+    _browser_settings, monkeypatch
+):
+    """A submitted-but-unanswered publish stays UNKNOWN through the receipt path.
+
+    The executor records a failed receipt whose ``result["status"]`` is
+    ``unknown``; the mainline must still classify it as "result unknown" (guard
+    armed) rather than as a definite failure (which would invite a duplicate).
+    """
+    from types import SimpleNamespace
+
+    from backend.creator_agent import ActionExecutionStatus
+    from backend.db import creator_agent as creator_agent_db
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+    from backend.state.effects import EffectLedger
+    from backend.tools.runtime.models import ErrorKind, ToolResult
+
+    class _UnknownTools:
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        async def invoke(
+            self,
+            capability: str,
+            payload: object,
+            *,
+            thread_id: str = "",
+            granted_scopes: tuple[str, ...] | None = None,
+        ):
+            self.seen.append(capability)
+            return ToolResult(
+                capability=capability,
+                ok=False,
+                error="submit lost",
+                error_kind=ErrorKind.DOMAIN,
+                domain={"status": "unknown", "error": "submit lost"},
+            )
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_b3u"})
+        state["publish_decision"] = {
+            "decision_id": "mainline:unit-b3u",
+            "source": "mainline_review",
+            "thread_id": "test_session",
+            "account_id": "acc_b3u",
+            "content_hash": content_hash(publish_content_body(state)),
+            "approved_by": "u-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+        tools = _UnknownTools()
+        store = _real_store()
+
+        result = await run_publish(state, store=store, agent=SimpleNamespace(tools=tools))
+
+        pr = result["publish_result"]
+        assert pr["status"] == "unknown"
+        assert pr["error_type"] == "publish_result_unknown"
+        assert pr["result_known"] is False
+        executions = list(creator_agent_db._mem_action_executions.values())
+        assert len(executions) == 1
+        assert executions[0].status is ActionExecutionStatus.FAILED
+        assert executions[0].result["status"] == "unknown"
+        from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
+        from backend.state.effects import EffectStatus
+
+        record = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(
+            compute_publish_id(state)
+        )
+        assert record is not None and record.status is EffectStatus.UNKNOWN
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
+async def test_a_timeout_from_the_executor_is_unknown_and_writes_no_receipt(
+    _browser_settings, monkeypatch
+):
+    """A raised submit timeout never becomes a definite failure or a receipt."""
+    from types import SimpleNamespace
+
+    from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
+    from backend.db import creator_agent as creator_agent_db
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    class _TimeoutTools:
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        async def invoke(
+            self,
+            capability: str,
+            payload: object,
+            *,
+            thread_id: str = "",
+            granted_scopes: tuple[str, ...] | None = None,
+        ):
+            self.seen.append(capability)
+            raise TimeoutError("submit timed out")
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_b3t"})
+        state["publish_decision"] = {
+            "decision_id": "mainline:unit-b3t",
+            "source": "mainline_review",
+            "thread_id": "test_session",
+            "account_id": "acc_b3t",
+            "content_hash": content_hash(publish_content_body(state)),
+            "approved_by": "u-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+        tools = _TimeoutTools()
+        store = _real_store()
+
+        result = await run_publish(state, store=store, agent=SimpleNamespace(tools=tools))
+
+        pr = result["publish_result"]
+        assert pr["status"] == "unknown"
+        assert pr["result_known"] is False
+        assert tools.seen == ["xhs.publish"]
+        # No verdict → no receipt; the ledger keeps the guard armed.
+        assert creator_agent_db._mem_action_executions == {}
+        record = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(
+            compute_publish_id(state)
+        )
+        assert record is not None and record.status is EffectStatus.UNKNOWN
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
 async def test_a_publish_without_an_approval_decision_records_no_intent(
     _browser_settings, mock_store, monkeypatch
 ):
