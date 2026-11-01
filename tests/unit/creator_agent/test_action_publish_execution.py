@@ -808,3 +808,70 @@ class TestTheRuntimeBudget:
         assert spec.latency is LatencyClass.SLOW
         assert spec.timeout_s is not None, "publish must carry its own net"
         assert spec.timeout_s > generic
+
+
+class TestTheSharedRequestCarriesMainlineFactsWithoutChangingTheControlPlane:
+    """P3 (票 5be): one payload definition for both execution paths.
+
+    The control-plane request must keep exactly the keys it always had; the
+    mainline adds three facts (private / scheduled_time / already-resolved
+    endpoint) that it alone resolves from workflow state.  If the extras ever
+    leak into a control-plane payload, this is where it shows up.
+    """
+
+    def test_the_control_plane_payload_keeps_its_old_keys(self):
+        payload = build_publish_payload(_request())
+
+        assert set(payload) == {
+            "title",
+            "body",
+            "hashtags",
+            "image_paths",
+            "category",
+            "location",
+            "account_id",
+            "idempotency_key",
+            "cdp_endpoint",
+        }
+
+    def test_a_mainline_request_adds_its_three_facts(self):
+        from dataclasses import replace
+
+        request = replace(
+            _request(),
+            private=False,
+            scheduled_time="2026-11-02T10:00:00+08:00",
+            cdp_endpoint="http://account-browser:9223",
+        )
+
+        payload = build_publish_payload(request)
+
+        assert payload["is_private"] is False
+        assert payload["scheduled_time"] == "2026-11-02T10:00:00+08:00"
+        assert payload["cdp_endpoint"] == "http://account-browser:9223"
+
+    async def test_the_request_endpoint_wins_over_the_resolver(self):
+        seen: list[dict[str, Any]] = []
+
+        class _Gateway:
+            async def invoke(self, capability, payload, *, thread_id="", granted_scopes=None):
+                seen.append({"capability": capability, "payload": payload, "thread_id": thread_id})
+                return ToolResult(capability=capability, ok=True, value={"status": "published"})
+
+        def _must_not_be_called(_account_id: str) -> str:
+            raise AssertionError("the request already carries the endpoint")
+
+        from dataclasses import replace
+
+        request = replace(_request(), account_id="", cdp_endpoint="http://explicit:9223")
+        dispatch = gateway_publish_dispatcher(
+            gateway=_Gateway(),
+            granted_scopes=("xhs:write",),
+            endpoint_resolver=_must_not_be_called,
+        )
+
+        outcome = await dispatch(request)
+
+        assert outcome.status is PublishStatus.PUBLISHED
+        assert seen[0]["payload"]["cdp_endpoint"] == "http://explicit:9223"
+        assert seen[0]["capability"] == "xhs.publish"

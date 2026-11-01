@@ -1149,33 +1149,48 @@ async def run_publish(
             image_paths = [cover_path]
             logger.info("无素材图，已生成文字封面: %s", cover_path)
 
-        # 构造发布数据 —— 与旧 XHSPost 字段逐一对应。
-        payload: dict[str, Any] = {
-            "title": copy.get("selected_title", ""),
-            "body": copy.get("body_text", ""),
-            "hashtags": copy.get("hashtags", []),
-            "image_paths": image_paths,
-            "category": cast(str, plan.get("category", "")),
-            "location": cast(str, plan.get("location", "")),
-            "is_private": False,
-            "scheduled_time": _normalize_scheduled_time(plan.get("suggested_timing", "")),
-            # 记账用：给了 account_id，按账号的发布冷却才有生产写入者
-            # （S2 钉的缺口；S3 只关了控制面那一条路径，主链是另一条）。
-            "account_id": _publish_gateway_account_id(state),
+        # 构造共享 PublishRequest（P3，票 5be）：发布载荷的定义只有
+        # ``creator_agent.execution.build_publish_payload`` 一份 —— 控制面从不可变
+        # intent + artifact 解析它，主链从 workflow state 解析同一结构。这是把
+        # 三条直调路径接到控制面执行器上的前置条件，也是防止两份字段表漂移的
+        # 唯一办法。``private`` / ``scheduled_time`` / ``cdp_endpoint`` 是主链侧
+        # 事实（控制面保持默认，载荷逐字段不变）。
+        from backend.creator_agent.execution import (
+            PublishContent,
+            PublishRequest,
+            build_publish_payload,
+        )
+
+        publish_request = PublishRequest(
+            account_id=_publish_gateway_account_id(state),
+            thread_id=str(state.get("session_id") or state.get("thread_id") or ""),
             # 请求级幂等键 = 主链自己的内容级 publish_id。两者不是一层东西：
             # publish_id 跨请求去重（主链幂等护栏），idempotency_key 是运行时
             # 重试护栏的输入与排查关联 id（待决问题 3）。
-            "idempotency_key": publish_id,
+            idempotency_key=publish_id,
+            artifact_ref=material.artifact_ref,
+            content_hash=material.content_hash,
+            content=PublishContent(
+                title=str(copy.get("selected_title") or ""),
+                body=str(copy.get("body_text") or ""),
+                hashtags=tuple(_as_str_list(copy.get("hashtags"))),
+                image_paths=tuple(image_paths),
+                category=str(plan.get("category") or ""),
+                location=str(plan.get("location") or ""),
+            ),
+            private=False,
+            scheduled_time=_normalize_scheduled_time(plan.get("suggested_timing", "")),
             # 按账号解析出的浏览器 profile —— 不给它，多账号发布会静默
             # 回到全局 endpoint（工具的默认值）。
-            "cdp_endpoint": cdp_endpoint,
-        }
+            cdp_endpoint=cdp_endpoint,
+        )
+        payload = dict(build_publish_payload(publish_request))
 
         # 执行发布（真实提交动作 —— 之后的一切超时都是结果不明，而非确定失败）
         tool_result = await runtime.tools.invoke(
             "xhs.publish",
             payload,
-            thread_id=str(state.get("session_id") or state.get("thread_id") or ""),
+            thread_id=publish_request.thread_id,
             # The scope requirement used to be decorative on this path: the
             # Gateway reads ``None`` as *unchecked*, so ``xhs.publish``'s
             # declared ``auth_scope`` cost nothing here. The tuple resolved

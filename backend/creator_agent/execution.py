@@ -98,7 +98,14 @@ class PublishContent:
 
 @dataclass(frozen=True)
 class PublishRequest:
-    """Everything one publish needs, and nothing the caller can improvise."""
+    """Everything one publish needs, and nothing the caller can improvise.
+
+    The control plane derives all of it from the immutable intent + artifact.  The
+    mainline publish path (P3, 票 5be) resolves the same facts from workflow state
+    and reuses this request so there is exactly **one** payload definition; the
+    three trailing fields are mainline-only facts, and leaving them at their
+    defaults keeps a control-plane payload byte-identical.
+    """
 
     account_id: str
     thread_id: str
@@ -106,6 +113,14 @@ class PublishRequest:
     artifact_ref: str
     content_hash: str
     content: PublishContent
+    #: Mainline's explicit private flag; ``None`` means "not part of this request"
+    #: (the tool's own default applies).  The control plane never sets it.
+    private: bool | None = None
+    #: Mainline's future-publish schedule ("" = publish now).
+    scheduled_time: str = ""
+    #: Already-resolved browser endpoint.  Non-empty wins over the per-request
+    #: resolver; the control plane leaves it empty and lets the resolver answer.
+    cdp_endpoint: str = ""
 
 
 @dataclass(frozen=True)
@@ -215,9 +230,11 @@ def build_publish_payload(
     account authorized by a bound profile would publish through whichever
     session that global Chrome happens to hold.  The agent path already resolves
     it per account (``agents/publisher.py``); the control-plane path is what
-    this parameter gives the same ability.
+    this parameter gives the same ability.  A request may carry its own already
+    resolved endpoint (mainline, P3): that one wins, because the caller resolved
+    it from the same account the grant was judged on.
     """
-    return {
+    payload: dict[str, Any] = {
         "title": request.content.title,
         "body": request.content.body,
         "hashtags": list(request.content.hashtags),
@@ -226,8 +243,15 @@ def build_publish_payload(
         "location": request.content.location,
         "account_id": request.account_id,
         "idempotency_key": request.idempotency_key,
-        "cdp_endpoint": (cdp_endpoint or "").strip(),
+        "cdp_endpoint": (request.cdp_endpoint or cdp_endpoint or "").strip(),
     }
+    # Mainline-only facts: emitted only when the request sets them, so a
+    # control-plane payload keeps exactly the keys it always had.
+    if request.private is not None:
+        payload["is_private"] = request.private
+    if request.scheduled_time:
+        payload["scheduled_time"] = request.scheduled_time
+    return payload
 
 
 def interpret_publish_result(result: ToolResult) -> PublishOutcome:
@@ -352,8 +376,8 @@ def gateway_publish_dispatcher(
         scopes = granted_scopes
         if scopes is None:
             scopes = await (scope_resolver or resolve_scopes)(request.account_id)
-        endpoint = ""
-        if (request.account_id or "").strip():
+        endpoint = request.cdp_endpoint
+        if not endpoint and (request.account_id or "").strip():
             endpoint = await (endpoint_resolver or _account_cdp_endpoint)(request.account_id)
         result = await target.invoke(
             PUBLISH_CAPABILITY,

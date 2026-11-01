@@ -332,6 +332,18 @@ policy_context=action_policy_context_from_values(state))` → `evaluate_action_p
   重复提交不产生第二次平台副作用。
 - 回滚：dispatcher 注入回退到直接 `run_publish`（本阶段保留该注入点）。
 
+**P3a 已落地（票 5be，2026-11-01）：共享执行请求。** 主链不再自建 `xhs.publish`
+载荷字段表：`run_publish` 构造共享 `PublishRequest`（account / thread / idempotency_key /
+artifact_ref / content_hash / content + 主链侧 `private` / `scheduled_time` /
+`cdp_endpoint`）并调用 `creator_agent.execution.build_publish_payload` —— 与控制面执行器
+**同一份**载荷定义。主链侧三个事实留在 request 上，控制面保持默认，因此控制面载荷键集合
+逐字段不变（有测试钉住）；dispatcher 也改为优先使用 request 上**已解析**的 endpoint，
+避免同一账号被解析两次或解析漂移。
+- 本阶段**不改**三条直调：claim 仍 `3`。剩余 P3b：把主链/retry/free 三条路径接到
+  控制面执行器（单执行入口；`EffectLedger` 六态语义、幂等键与 human review gate 的先后
+  逐条对齐），再按 P3 验收把 claim 3→0。
+- 回滚：恢复 `run_publish` 内联载荷构造；共享 request 的字段可保留（控制面不用默认值）。
+
 **P4 — 收口**
 删除直调分支与「主链不经控制面」残留条目，清理为兼容保留的开关，claim 归零并删除对应行。
 - 验收：`mainline_run_publish_direct_call_sites = 0` 且不再有 `run_publish` 直调；文档不再声明残留；

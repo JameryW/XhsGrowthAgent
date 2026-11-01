@@ -1670,9 +1670,7 @@ async def test_an_approved_real_publish_records_a_mainline_intent(
         _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
         _mock_history(monkeypatch)
 
-        await run_publish(
-            state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools())
-        )
+        await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools()))
 
         rows = list(creator_agent_db._mem_actions.values())
         assert len(rows) == 1, rows
@@ -1705,9 +1703,7 @@ async def test_a_publish_without_an_approval_decision_records_no_intent(
         _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
         _mock_history(monkeypatch)
 
-        await run_publish(
-            state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools())
-        )
+        await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools()))
 
         assert creator_agent_db._mem_actions == {}
     finally:
@@ -1955,3 +1951,59 @@ async def test_the_deployment_principal_is_out_of_the_account_policy_scope(
 
     assert result["publish_result"]["status"] == "published"
     assert "error_type" not in result["publish_result"]
+
+
+@pytest.mark.asyncio
+async def test_the_gateway_payload_comes_from_the_shared_request_builder(
+    _browser_settings, mock_store, monkeypatch
+):
+    """P3 (票 5be): the mainline no longer owns a second payload field list.
+
+    The payload handed to ``xhs.publish`` is built by
+    ``creator_agent.execution.build_publish_payload`` from a shared
+    ``PublishRequest`` — the same definition the control-plane executor uses.
+    The mainline-only facts (private / endpoint) travel on the request, so the
+    control-plane payload keeps exactly its old keys.
+    """
+    from types import SimpleNamespace
+    from typing import Any
+
+    from backend.tools.runtime.models import ToolResult
+
+    seen: list[dict[str, Any]] = []
+
+    class _PayloadTools:
+        async def invoke(self, capability, payload, *, thread_id="", granted_scopes=None):
+            seen.append(
+                {
+                    "capability": capability,
+                    "payload": dict(payload),
+                    "thread_id": thread_id,
+                    "scopes": granted_scopes,
+                }
+            )
+            return ToolResult(
+                capability=capability, ok=True, value={"post_id": "p1", "status": "published"}
+            )
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_g"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _mock_history(monkeypatch)
+
+    await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=_PayloadTools()))
+
+    assert len(seen) == 1
+    call = seen[0]
+    payload = call["payload"]
+    assert call["capability"] == "xhs.publish"
+    assert call["thread_id"] == "test_session"
+    assert payload["title"] == "t"
+    assert payload["body"] == "b"
+    assert payload["image_paths"] == ["/tmp/x.png"]
+    assert payload["account_id"] == "acc_g"
+    assert payload["idempotency_key"]
+    assert payload["is_private"] is False
+    assert payload["cdp_endpoint"] == "http://127.0.0.1:9223"
+    # scheduled_time="" is omitted: the tool's own default is the same empty value.
+    assert "scheduled_time" not in payload

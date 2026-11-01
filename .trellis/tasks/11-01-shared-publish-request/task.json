@@ -1,0 +1,30 @@
+{
+  "id": "shared-publish-request",
+  "name": "shared-publish-request",
+  "title": "P3a：主链发布执行载荷接入共享 PublishRequest（票 5be）",
+  "description": "扩展 creator_agent.execution.PublishRequest 承载主链侧 private/scheduled_time/已解析 cdp_endpoint；build_publish_payload 条件包含且 request endpoint 优先；publisher 改用共享 builder，不再自建载荷字段表；控制面载荷键集合不变。P3 分阶段第一步，claim 仍 3；P3b 再接三条直调。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/creator_agent,backend/agents,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/execution.py",
+    "backend/agents/publisher.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (P3a, prerequisite slice of P3). PublishRequest now carries the three mainline-side facts it needs to keep its payload byte-compatible: private: bool | None = None (None = not part of the request, the tool's default applies), scheduled_time: str = '' and cdp_endpoint: str = '' (an already-resolved account browser). build_publish_payload emits is_private only when private is not None and scheduled_time only when non-empty, and takes the request endpoint over its parameter, so a control-plane request produces exactly the nine keys it always produced (pinned by a test). gateway_publish_dispatcher prefers a request-supplied endpoint and does not call the endpoint resolver in that case (pinned by a test that the resolver would raise), keeping its existing account-scoped resolver behaviour otherwise. backend/agents/publisher.py no longer writes its own payload field table: run_publish builds PublishRequest(account from _publish_gateway_account_id, thread, idempotency_key=publish_id, artifact_ref/content_hash from the P1a material, PublishContent from state copy/visual incl. generated cover fallback, private=False, scheduled_time=_normalize_scheduled_time(plan suggested_timing), cdp_endpoint=resolved endpoint) and calls build_publish_payload; the Gateway invocation itself (runtime.tools.invoke with granted_scopes) is unchanged, so the three direct run_publish call sites and the claim mainline_run_publish_direct_call_sites=3 are untouched by design. This removes the second payload definition the P3 cutover would otherwise have to reconcile; P3b is the remaining work: route the three call sites through one control-plane execution entry and align the EffectLedger six-state/idempotency ordering before flipping the claim 3->0. Tests: control-plane key set unchanged, mainline extras conditionally emitted, request endpoint wins (resolver not called), mainline gateway payload built by the shared builder (title/body/images/account/idempotency/is_private/endpoint; empty scheduled_time omitted). Verification: creator_agent execution suite 33 passed, run_publish suite 62 passed (58 existing + 4 new), full suite 4777 passed / 14 skipped / 0 failed / 0 errors; ruff green.",
+  "meta": {}
+}
