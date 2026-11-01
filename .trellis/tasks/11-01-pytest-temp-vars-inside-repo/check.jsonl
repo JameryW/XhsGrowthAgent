@@ -1,0 +1,2 @@
+{"file": "tests/unit/scripts/docs_citation_rule.py", "reason": "verify the temp root is still excluded from the corpus"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for test-infrastructure changes"}

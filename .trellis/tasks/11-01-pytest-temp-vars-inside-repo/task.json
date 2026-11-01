@@ -1,0 +1,29 @@
+{
+  "id": "pytest-temp-vars-inside-repo",
+  "name": "pytest-temp-vars-inside-repo",
+  "title": "test(infra): 把 TMPDIR/TEMP/TMP 指向仓库内 .dsh-tmp，杜绝测试产物落在仓库根（票 5cc）",
+  "description": "5cb 只把 pytest 的 temproot 放进点号目录，但 tempfile.gettempdir() 仍因系统 temp 不可写而回落到仓库根：全量跑完泄漏 xhs_images/（上传图）与 data-gym-cache/（模型缓存）两个非点号目录，同样会污染 docs 引用扫描。改为在 conftest 里把 TMPDIR/TEMP/TMP 指向仓库内 .dsh-tmp/（点号 + gitignore），所有测试临时文件（上传图/封面/缓存）都落在其中；删除本次泄漏目录并验证全量后仓库根不再出现非点号产物。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "tests/conftest.py",
+    ".gitignore"
+  ],
+  "notes": "DONE 2026-11-01 (test infrastructure; CI is unaffected because the branch requires DSH_SHELL=1). Follow-up to 5cb: that ticket only relocated pytest's own temproot, but the wider cause is that tempfile.gettempdir() falls back to the current directory when the sandbox's system temp is not writable, so any test using it writes into the checkout root. A full run actually left xhs_images/ (the upload dir from backend/api/routes/_wf_application.py) and data-gym-cache/ (a dependency cache) behind — both non-dot-prefixed, so they can pollute the docs-citation corpus walk again and dirty the worktree. Fix: in conftest's DSH branch, create <repo>/.dsh-tmp (os.makedirs 0o777) and OVERRIDE TMPDIR/TEMP/TMP to it (setdefault would keep the existing but unwritable system values), put the private temproot under .dsh-tmp/pytest-temproot, and gitignore .dsh-tmp/. Deleted the two leaked directories. Verification: docs-citation gate 9 passed; full suite result and the post-run root listing are in the journal (root should show only the repo directories plus the historical unreadable tmpprobe-* entries that os.walk skips); ruff green.",
+  "meta": {}
+}

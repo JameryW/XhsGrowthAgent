@@ -25,15 +25,25 @@ if sys.platform == "win32" and os.environ.get("DSH_SHELL") == "1":
         return _real_mkdir(path, 0o777 if mode == 0o700 else mode, dir_fd=dir_fd)
 
     os.mkdir = _mkdir_without_private_mode  # type: ignore[assignment]
-    # The sandbox's system temp dir is not writable, so ``mkdtemp`` falls back to
-    # the *current directory* (the repo root).  An earlier version therefore
-    # leaked ``dsh-pytest-temproot-*`` directories into the checkout; they are not
-    # dot-prefixed, so the docs-citation corpus walk counted their files as "ours"
-    # and bare ``host:port``/``postgres:15`` tokens started resolving as
-    # citations.  Keep the root dot-prefixed (the corpus rule treats a dot-prefixed
-    # component as not ours) and gitignored, so a leaked run cannot pollute name
-    # resolution again.
-    _temproot = Path(__file__).resolve().parents[1] / ".dsh-pytest-temproot"
+    # The sandbox's system temp dir is not writable, so ``tempfile.gettempdir()``
+    # falls back to the *current directory* (the repo root).  That is how the
+    # leaked ``dsh-pytest-temproot-*`` / ``xhs_images`` / ``data-gym-cache``
+    # directories appeared in the checkout: the docs-citation corpus walk then
+    # counted their files as "ours" and bare ``host:port`` tokens started
+    # resolving as citations.  Point the standard temp variables at a
+    # dot-prefixed, gitignored directory inside the repo (the corpus rule treats
+    # a dot-prefixed component as not ours) so every test-created temp file stays
+    # out of the checkout root and out of citation resolution.
+    _tempdir = Path(__file__).resolve().parents[1] / ".dsh-tmp"
+    os.makedirs(_tempdir, mode=0o777, exist_ok=True)
+    for _temp_var in ("TMPDIR", "TEMP", "TMP"):
+        os.environ[_temp_var] = str(_tempdir)
+    # ``tempfile`` caches the first answer in ``tempfile.tempdir``; pytest itself
+    # may already have asked before this conftest ran, caching the repo root.  Set
+    # the cache directly, otherwise tiktoken's cache dir and the upload dir keep
+    # landing in the checkout root despite the environment override.
+    tempfile.tempdir = str(_tempdir)
+    _temproot = _tempdir / "pytest-temproot"
     os.makedirs(_temproot, mode=0o777, exist_ok=True)
     os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", tempfile.mkdtemp(prefix="run-", dir=_temproot))
 

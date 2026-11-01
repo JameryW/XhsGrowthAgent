@@ -1,0 +1,2 @@
+{"file": "backend/api/routes/_wf_application.py", "reason": "the gettempdir()-based upload dir that leaked into the checkout root"}
+{"file": "tests/unit/scripts/docs_citation_rule.py", "reason": "the corpus walk the dot-prefixed temp root must stay invisible to"}
