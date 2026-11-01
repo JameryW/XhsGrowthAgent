@@ -1257,3 +1257,37 @@ P3b 切换前的前置能力：让 CreatorAdvisor.execute_action 执行 origin=m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: 目标轮 8：P3b-2 主链单一控制面执行入口（票 5bg）
+
+**Date**: 2026-11-01
+**Task**: 目标轮 8：P3b-2 主链单一控制面执行入口（票 5bg）
+**Branch**: `main`
+
+### Summary
+
+P3 收口切片：workflow 节点/publish-retry/free 三条主链发布路径统一经 creator_agent.mainline_publish.execute_mainline_publish。入口决定身份：review 审批原样传递、free 由认证操作员产生 free_publish_operator 身份（账号+内容哈希+approved_by/at，不伪装 review）、无账号不产生；合成身份只落浅拷贝不改调用方。实现体私有化为 publisher._run_publish_attempt，遗留 run_publish 别名仅兼容（backend 零调用，P4 删）。retry/free 传认证操作员；claim mainline_run_publish_direct_call_sites 3→0，并补 zero-claim 阳性对照；文档残留/起点/claim/阶段段与 execution-plane 锚点同步。测试：新增入口 5 用例、更新 retry/free/lease/gate patch 目标；定向 147+181 passed、doc 98 passed、全量 4790 passed / 14 skipped / 0 failed / 0 errors、ruff 绿。目标保持 active：剩余 P4（实现体移入入口背后、入口落控制面 execute_action 回执、删别名与 claim 行）及路线图/外部验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cfb9ae2d` | (see git log) |
+| `62787d8a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

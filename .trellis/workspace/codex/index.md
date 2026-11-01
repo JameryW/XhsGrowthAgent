@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 37
+- **Total Sessions**: 38
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1259 | Active |
+| `journal-1.md` | ~1293 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 38 | 2026-11-01 | 目标轮 8：P3b-2 主链单一控制面执行入口（票 5bg） | `cfb9ae2d`, `62787d8a` | `main` |
 | 37 | 2026-11-01 | 目标轮 7：P3b-1 控制面执行器支持 mainline-origin intent 与回执（票 5bf） | `11456ba5`, `02acba7c` | `main` |
 | 36 | 2026-11-01 | 目标轮 6：P3a 主链发布载荷接入共享 PublishRequest（票 5be） | `6193118c`, `9a8d99a9` | `main` |
 | 35 | 2026-11-01 | 目标轮 5：P2 主链发布策略门禁（票 5bd） | `ba8c14b4`, `3cd63ab8` | `main` |
