@@ -1087,3 +1087,37 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: 目标轮 3：P1b-1 意图身份模型泛化（票 5bb）
+
+**Date**: 2026-11-01
+**Task**: 目标轮 3：P1b-1 意图身份模型泛化（票 5bb）
+**Branch**: `main`
+
+### Summary
+
+继续主链迁移：P1b 卡在 ActionIntent 需要 creator/audience/decision 身份而主链没有，故先落地 Option A 的模型半步。ActionIntent 新增 ActionOrigin（creator/mainline）：creator 强制 creator_id/audience_id 非空（空白也拒），mainline 禁止携带二者；存储是整行 payload_json 无需列迁移，旧行缺 origin 读作 creator；ActionIntentRequest/公开 API/执行器不变，唯一构造点仍是 advisor（claim 不变）。新增 13 个模型/兼容/仓库往返测试。验证：creator_agent 197 passed；api+contract 712 passed；doc/claim 门禁 12 passed；全量 4754 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。目标未完成，保持 active：剩余 P1b-2（mainline decision 身份 + 主链构造 origin=mainline 的 intent）与 P2–P4。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f42aa1a5` | (see git log) |
+| `67e57372` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
