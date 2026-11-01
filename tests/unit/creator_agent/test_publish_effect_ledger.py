@@ -323,3 +323,72 @@ class TestTheEffectKeyIsAccountScoped:
                 updated_at="now",
             )
         assert ActionStatus.CONFIRMED.value == "confirmed"
+
+
+class TestTheOutcomeAuditFieldsAndForce:
+    """票 5bn: mainline branch-B prerequisites.
+
+    The receipt must be able to carry the platform's audit fields back to the
+    workflow's ``publish_result`` mapping, and an operator-explicit ``force``
+    must be able to claim a reconciled effect again — the two things the mainline
+    executor wiring needs before it can replace the legacy dispatch段.
+    """
+
+    async def test_the_receipt_carries_the_platform_audit_fields(self):
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        outcome = PublishOutcome(
+            status=PublishStatus.PUBLISHED,
+            note_id="note-audit",
+            published_at="2026-01-01T00:00:00",
+            result_known=True,
+        )
+        advisor, decision_id = await _advisor(store, _Recorder(outcome))
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        receipt = await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert receipt.result["published_at"] == "2026-01-01T00:00:00"
+        assert receipt.result["result_known"] is True
+        assert receipt.result["note_id"] == "note-audit"
+
+    async def test_a_failed_receipt_keeps_error_type_and_recovery(self):
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        outcome = PublishOutcome(
+            status=PublishStatus.FAILED,
+            error="login expired",
+            error_type="auth_expired",
+            recovery={"action": "relogin", "hint": "扫码后重试"},
+        )
+        advisor, decision_id = await _advisor(store, _Recorder(outcome))
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        receipt = await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert receipt.result["error_type"] == "auth_expired"
+        assert receipt.result["recovery"] == {"action": "relogin", "hint": "扫码后重试"}
+
+    async def test_force_claims_a_reconciled_unknown_effect_again(self):
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+        ledger = await _ledger(store)
+        await ledger.begin(publish_effect_id(ACCOUNT, KEY), tool_name="xhs.publish")
+        await ledger.mark(publish_effect_id(ACCOUNT, KEY), EffectStatus.UNKNOWN, error="lost")
+
+        receipt = await advisor.execute_action(ACCOUNT, intent.action_id, force=True)
+
+        assert len(recorder.requests) == 1
+        assert receipt.status is ActionExecutionStatus.SUCCEEDED
+        record = await _record(store)
+        assert record is not None and record.status is EffectStatus.CONFIRMED
+        assert record.attempt == 2

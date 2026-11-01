@@ -1,0 +1,30 @@
+{
+  "id": "branch-b-prerequisites",
+  "name": "branch-b-prerequisites",
+  "title": "P4 分支 B slice1：outcome 审计字段 + force seam（票 5bn）",
+  "description": "分支 B 的前置：PublishOutcome 携带平台审计字段（published_at/error_type/recovery/result_known）并进入 execute receipt result；execute_action 增加 force（默认 off，不进 HTTP API）用于操作员对账后重试被 ledger 阻挡的 effect。mainline 执行仍走旧 attempt（未切换），保持全量绿。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/creator_agent,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/execution.py",
+    "backend/creator_agent/advisor.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (branch B slice 1, no mainline behaviour change). PublishOutcome gained the platform audit fields published_at/error_type/recovery/result_known (all optional, empty by default); interpret_publish_result/_outcome_from_status now reads them from the domain payload with type-guarded parsing, and _publish_receipt_result writes them into the execution receipt result using the same omit-when-empty rule as the rest of the receipt. CreatorAdvisor.execute_action gained a keyword-only force: bool = False that flows through _execute_publish and _publish_with_effect_ledger into EffectLedger.begin(force=...), so an operator who reconciled a blocking effect can claim it again; an existing receipt is still returned as-is and no HTTP endpoint exposes force (it exists for the mainline entry's operator force-retry). Mainline dispatch is untouched in this slice (still the private attempt), so the suite stays green. Tests added: receipt carries published_at/result_known on success and error_type/recovery on failure; platform payload -> outcome audit parsing; prior UNKNOWN effect blocks without force and dispatches exactly once with force (receipt succeeded, ledger CONFIRMED, attempt=2). Docs: publish-action-protocol branch-B section records that the plan was approved and that B1 landed, with B2 (intent before effect) and B3 (entry swaps the execution段 onto execute_action, incl. artifact/hash alignment and test_run_publish adaptation) listed as remaining. Verification: creator_agent+API 251 passed; doc gates 98 passed; full suite 4805 passed / 14 skipped / 0 failed / 0 errors; ruff green.",
+  "meta": {}
+}

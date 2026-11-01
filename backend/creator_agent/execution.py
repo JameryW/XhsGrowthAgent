@@ -147,13 +147,25 @@ class PublishRequest:
 
 @dataclass(frozen=True)
 class PublishOutcome:
-    """The result of one publish attempt."""
+    """The result of one publish attempt.
+
+    ``published_at`` / ``error_type`` / ``recovery`` / ``result_known`` are the
+    platform layer's own audit fields (P4 branch B, 票 5bn).  The control plane
+    does not need them to decide success, but a caller that *maps this outcome
+    back* to the workflow's ``publish_result`` does — dropping them here would
+    force every such caller to keep a second, raw-result path alive.  They stay
+    optional and empty-by-default so existing outcomes remain untouched.
+    """
 
     status: PublishStatus
     note_id: str = ""
     note_url: str = ""
     error: str = ""
     retry_after_seconds: int | None = None
+    published_at: str = ""
+    error_type: str = ""
+    recovery: Mapping[str, Any] | None = None
+    result_known: bool | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -305,11 +317,23 @@ def _outcome_from_status(payload: Mapping[str, Any]) -> PublishOutcome:
     status = _as_text(payload.get("status"))
     error = _as_text(payload.get("error"))
     retry_after = _as_int(payload.get("retry_after_seconds"))
+    # Audit fields the workflow maps back into ``publish_result`` (票 5bn).
+    audit = {
+        "published_at": _as_text(payload.get("published_at")),
+        "error_type": _as_text(payload.get("error_type")),
+        "recovery": payload.get("recovery")
+        if isinstance(payload.get("recovery"), Mapping)
+        else None,
+        "result_known": payload.get("result_known")
+        if isinstance(payload.get("result_known"), bool)
+        else None,
+    }
     if status in _PUBLISHED_STATUSES:
         return PublishOutcome(
             status=PublishStatus.PUBLISHED,
             note_id=_as_text(payload.get("post_id")),
             note_url=_as_text(payload.get("post_url")),
+            **audit,
         )
     if status in _AMBIGUOUS_STATUSES:
         # Not a failure: a submit went out and the answer was lost.  Reported as
@@ -318,11 +342,13 @@ def _outcome_from_status(payload: Mapping[str, Any]) -> PublishOutcome:
             status=PublishStatus.UNKNOWN,
             error=error or "publish submitted, outcome unknown",
             retry_after_seconds=retry_after,
+            **audit,
         )
     return PublishOutcome(
         status=PublishStatus.FAILED,
         error=error or "publish did not report success",
         retry_after_seconds=retry_after,
+        **audit,
     )
 
 

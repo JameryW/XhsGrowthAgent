@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the branch-B plan and its B1 progress note"}
+{"file": "backend/state/effects.py", "reason": "the six-state ledger API force semantics this slice uses"}

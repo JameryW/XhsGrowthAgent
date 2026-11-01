@@ -382,7 +382,16 @@ publish 现在也在 dispatch 前 claim、按 outcome 结算。若未来要做�
    receipt 与工作流事件不冲突；
 5. 回滚：入口内保留 dispatch 开关，回退到 attempt 即可。
 - 未做原因：这会改变主链执行语义，并牵动 `test_run_publish` 约 500 行既有假设，
-  需要产品/架构拍板后单独立项。
+  需要产品/架构拍板后单独立项。**2026-11-01 已获拍板开始实施**，见下方进度。
+
+**分支 B 实施进度（逐轮）**
+- **B1 已落地（票 5bn）**：`PublishOutcome` 增加平台审计字段
+  （`published_at`/`error_type`/`recovery`/`result_known`）并写入 execute receipt 的
+  `result`；`execute_action` 增加 operator-only 的 `force` seam（默认 off、不进 HTTP
+  API），用于对账后越过 ledger 阻挡。这两项是"receipt 结果映射回 publish_result"与
+  "force 语义对齐"的前置。
+- **剩余**：B2（intent 提前到 effect 之前落库）、B3（入口用 `execute_action` 替换执行段，
+  含 artifact/内容哈希语义对齐与 `test_run_publish` 适配）、B4（claim 更新与回归收口）。
 
 ### 不变量（每阶段都必须保持）
 

@@ -875,3 +875,50 @@ class TestTheSharedRequestCarriesMainlineFactsWithoutChangingTheControlPlane:
         assert outcome.status is PublishStatus.PUBLISHED
         assert seen[0]["payload"]["cdp_endpoint"] == "http://explicit:9223"
         assert seen[0]["capability"] == "xhs.publish"
+
+
+class TestThePlatformAuditFieldsTravelThroughTheOutcome:
+    """票 5bn: the outcome keeps published_at / error_type / recovery.
+
+    The control plane decides success from ``status`` alone, but a caller that
+    maps the outcome back to the workflow's publish_result would otherwise need a
+    second raw-result path just to keep these fields. They are carried here.
+    """
+
+    def test_a_published_payload_keeps_published_at_and_result_known(self):
+        result = ToolResult(
+            capability=PUBLISH_CAPABILITY,
+            ok=True,
+            value={
+                "status": "published",
+                "post_id": "note-1",
+                "published_at": "2026-01-01T00:00:00",
+                "result_known": True,
+            },
+        )
+
+        outcome = interpret_publish_result(result)
+
+        assert outcome.status is PublishStatus.PUBLISHED
+        assert outcome.published_at == "2026-01-01T00:00:00"
+        assert outcome.result_known is True
+
+    def test_a_domain_failure_keeps_error_type_and_recovery(self):
+        result = ToolResult(
+            capability=PUBLISH_CAPABILITY,
+            ok=False,
+            error="login expired",
+            error_kind=ErrorKind.DOMAIN,
+            domain={
+                "status": "failed",
+                "error": "login expired",
+                "error_type": "auth_expired",
+                "recovery": {"action": "relogin"},
+            },
+        )
+
+        outcome = interpret_publish_result(result)
+
+        assert outcome.status is PublishStatus.FAILED
+        assert outcome.error_type == "auth_expired"
+        assert outcome.recovery == {"action": "relogin"}

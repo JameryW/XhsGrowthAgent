@@ -150,6 +150,17 @@ def _publish_receipt_result(outcome: PublishOutcome) -> dict[str, object]:
         result["error"] = outcome.error
     if outcome.retry_after_seconds is not None:
         result["retry_after_seconds"] = outcome.retry_after_seconds
+    # Platform audit fields carried for a caller that maps this receipt back to
+    # the workflow's publish_result (P4 branch B, 票 5bn).  Same omit-when-empty
+    # rule as above: absent and empty are different claims.
+    if outcome.published_at:
+        result["published_at"] = outcome.published_at
+    if outcome.error_type:
+        result["error_type"] = outcome.error_type
+    if outcome.recovery:
+        result["recovery"] = dict(outcome.recovery)
+    if outcome.result_known is not None:
+        result["result_known"] = outcome.result_known
     return result
 
 
@@ -534,7 +545,9 @@ class CreatorAdvisor:
             account_id.strip(), action_id.strip(), resolution
         )
 
-    async def execute_action(self, account_id: str, action_id: str) -> ActionExecution:
+    async def execute_action(
+        self, account_id: str, action_id: str, *, force: bool = False
+    ) -> ActionExecution:
         """Execute one confirmed intent with a deterministic local executor.
 
         The receipt is built from the revision-pinned Decision Record snapshot
@@ -548,6 +561,12 @@ class CreatorAdvisor:
         difference: there is no Decision Record to load, because the approval
         identity *is* ``decision_id``.  The receipt records the mainline origin
         and leaves the creator half empty instead of borrowing one.
+
+        ``force`` (票 5bn, default off) lets an operator who has *reconciled* a
+        prior blocking effect state claim it again.  It only bypasses the
+        effect-ledger block; an existing receipt is still returned as-is, and no
+        HTTP endpoint exposes this flag — it exists for the mainline executor
+        wiring, where a human force-retry already carries that decision.
         """
         normalized_account_id = account_id.strip()
         normalized_action_id = action_id.strip()
@@ -584,7 +603,7 @@ class CreatorAdvisor:
         # side effect must never sit on a path that is about to fail.
         publish_outcome: PublishOutcome | None = None
         if action.action_kind is ActionCapability.PUBLISH:
-            publish_outcome = await self._execute_publish(action)
+            publish_outcome = await self._execute_publish(action, force=force)
 
         if mainline:
             # Publish is the only capability a mainline intent can carry (P1b-2);
@@ -688,7 +707,9 @@ class CreatorAdvisor:
         )
         return await self._repository.create_action_execution(execution)
 
-    async def _execute_publish(self, action: ActionIntent) -> PublishOutcome:
+    async def _execute_publish(
+        self, action: ActionIntent, *, force: bool = False
+    ) -> PublishOutcome:
         """Resolve one confirmed publish intent, then hand it over exactly once.
 
         Everything is derived from the immutable intent plus the artifact it
@@ -776,10 +797,10 @@ class CreatorAdvisor:
             content_hash=expected_hash,
             content=content,
         )
-        return await self._publish_with_effect_ledger(action, request)
+        return await self._publish_with_effect_ledger(action, request, force=force)
 
     async def _publish_with_effect_ledger(
-        self, action: ActionIntent, request: PublishRequest
+        self, action: ActionIntent, request: PublishRequest, *, force: bool = False
     ) -> PublishOutcome:
         """Dispatch one publish under the six-state effect ledger (票 5bi).
 
@@ -801,6 +822,7 @@ class CreatorAdvisor:
                     tool_name=PUBLISH_CAPABILITY,
                     task_id=action.action_id,
                     request_digest=request.content_hash,
+                    force=force,
                 )
             except EffectBlockedError as exc:
                 raise ActionPublishAlreadyAttemptedError(
