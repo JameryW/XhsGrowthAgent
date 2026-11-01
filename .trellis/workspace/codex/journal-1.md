@@ -1567,3 +1567,37 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: 继续：B3 切换语义加固（票 5bu）
+
+**Date**: 2026-11-01
+**Task**: 继续：B3 切换语义加固（票 5bu）
+**Branch**: `main`
+
+### Summary
+
+目标完成后继续加固分支 B 的执行段切换：新增 3 个回归用例覆盖 force 重试（Gateway 两调、receipt attempt [1,2]、force 一次性清理）、执行器 unknown 结果（receipt FAILED/result.status=unknown、主链 publish_result_unknown+result_known=False、账本 UNKNOWN）、执行器 TimeoutError（主链 unknown、无 receipt、账本 UNKNOWN）。测试写作中发现：账本断言要用真实 InMemoryStore（mock_store 是 AsyncMock 取不到 record）；force 重试依赖 5bq 的 attempt 级 receipt。验证：三例单跑通过；全量 4818 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。票 5bu 已提交归档，工作树干净。Postgres parity 仍无法本地跑（无 podman/docker/DB 凭据），迁移路径只由 CI 覆盖。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `89cc8b49` | (see git log) |
+| `5bcd2b19` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
