@@ -1461,3 +1461,37 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 44: 目标轮 1：剩余工作清单 + CI 本地核对矩阵（票 5bm）
+
+**Date**: 2026-11-01
+**Task**: 目标轮 1：剩余工作清单 + CI 本地核对矩阵（票 5bm）
+**Branch**: `main`
+
+### Summary
+
+新目标『完成所有剩余任务』第 1 轮：把剩余工作可审计化。在 docs/agent-os-upgrade-2026q4.md 增第 9 节：CI 各作业本地核对矩阵（lint/format 绿；mypy 在本地 numpy stub 限制下用 --python-version 3.12 得 262 files 0 issues；pytest 4800 passed / 14 skipped；context baseline OK；harness benchmarks pass=3 fail=0 skip=3（F5/F7/F8 文档化缺口）；tool-runtime gate OK；compliance gate OK；frontend type-check/i18n OK，vitest 被沙箱 spawn EPERM 阻断，OMP typecheck 需 npm install 被沙箱拒绝写缓存，PG parity 需 CI service）与剩余工作分类（P4 分支 B 工程可选需拍板；路线图 8 裁定先不建；路线图 10 需评测集先行；external-only；环境项 CI 覆盖），结论：本地可执行/可验证的剩余任务已清零。验证 doc gates 98 passed、ruff 绿。目标保持 active：仅剩决策/外部依赖项，待人工拍板分支 B 或按现状收口。工作树干净（仅历史未跟踪 .workbuddy/），无活动 Trellis 任务，72 个本地提交未 push。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5bb4bf0a` | (see git log) |
+| `5dc86d3c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
