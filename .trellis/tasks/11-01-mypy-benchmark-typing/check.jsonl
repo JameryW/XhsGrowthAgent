@@ -1,0 +1,2 @@
+{"file": ".github/workflows/ci.yml", "reason": "verify the mypy invocation this fix unblocks"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a type-only change"}

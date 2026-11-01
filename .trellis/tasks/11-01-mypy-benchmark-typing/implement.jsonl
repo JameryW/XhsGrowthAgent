@@ -1,0 +1,2 @@
+{"file": ".github/workflows/ci.yml", "reason": "the mypy job this fix targets"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "typing conventions for TypedDict-to-store writes"}

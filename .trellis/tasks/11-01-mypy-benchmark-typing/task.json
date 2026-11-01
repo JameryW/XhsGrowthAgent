@@ -1,0 +1,28 @@
+{
+  "id": "mypy-benchmark-typing",
+  "name": "mypy-benchmark-typing",
+  "title": "fix(typing): 修复 mypy 2.3 下的 benchmark 双写类型错误（票 5bk）",
+  "description": "mypy 2.3 + langgraph BaseStore.aput(value: dict) 把 NicheBenchmark(TypedDict) 判为不兼容；CI 的 mypy 作业（未装 numpy 的干净环境）会因此失败。把 dual-write 的 value 改为 dict(benchmark)（运行时等价，仅类型收窄）。本地用 python_version=3.12 绕过 numpy>=2.5 stub 的 PEP695 语法限制后 mypy backend 全绿（262 files）。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/memory,pyproject",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/memory/creative.py"
+  ],
+  "notes": "DONE 2026-11-01. While auditing the branch for CI compliance I found the mypy job (which runs `mypy backend` strict with python_version=3.11 on a clean install) would fail on a pre-existing error unrelated to this branch's migration work: backend/memory/creative.py:360 passed a NicheBenchmark (a TypedDict) to langgraph BaseStore.aput(value: dict[str, Any]); mypy 2.3 reports arg-type and the existing '# type: ignore[union-attr]' does not cover it. Fixed by passing dict(benchmark) to the store dual-write (runtime-equivalent: a TypedDict is already a dict; this only narrows the static type), leaving the union-attr ignore in place because `_has_store` does not narrow `_store`. I also tried a mypy override ('numpy.* follow_imports=skip') to make local mypy usable despite the local numpy 2.5.1 stubs using PEP 695 type statements the 3.11 target rejects; it does not suppress stub parsing, so I removed it rather than leave misleading config (pyproject has no diff). Local verification therefore uses `mypy --python-version 3.12 backend` → Success: no issues found in 262 source files. Behaviour: no change (memory creative suite 339 passed; full suite in the journal); ruff check green on the touched file.",
+  "meta": {}
+}
