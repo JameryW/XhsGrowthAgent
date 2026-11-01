@@ -1,0 +1,30 @@
+{
+  "id": "publish-intent-material",
+  "name": "publish-intent-material",
+  "title": "主链迁移 P1 第一切片：principal + 发布内容材料（票 5ba）",
+  "description": "P1 的可落地前置：解析发布 principal（具名账号 vs 部署本体，不发明账号），把发布内容写成 artifact://publish_content/<publish_id> 并算 sha256，作为 PREPARED 记录的 principal_kind/artifact_ref/content_hash 落地；执行器不变。P1b（构造 ActionIntent）因主链缺 creator/audience/decision 身份，先写身份模型设计说明。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/services,backend/agents,backend/state,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/services/publish_intent.py",
+    "backend/agents/publisher.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (P1 first slice). The full 5au P1 turned out to rest on a false premise: ActionIntentRequest requires decision_id and ActionIntent additionally requires creator_id/audience_id, while the mainline has none of those and DecisionRecord is a creator-agent concept (audience_id, model_revision, ranked candidates). Constructing one would mean inventing identities the plan forbids, so P1 was split. P1a (this ticket, landed): new backend/services/publish_intent.py derives the two honest inputs -- resolve_publish_principal classifies the actor as a named account or explicitly the deployment (never an invented account; state['account_id'] is a workflow label, the publish path has always used publish_options), publish_content_body gives the canonical submitted content, write_publish_content_artifact stores it as artifact://publish_content/<publish_id> with sha256 via the Artifact Store's own put_artifact (best-effort), and publish_intent_material bundles principal + ref + hash. backend/agents/publisher.py now classifies via that function (same actor value, explicit classification) and the PREPARED record carries principal_kind / principal_account_id / artifact_ref / content_hash; a storage failure leaves the fields empty and never changes publish behaviour. No executor, publish_result, or idempotency change: existing run_publish tests unchanged and green. P1b is documented in the plan with the identity-model options (A: narrow control-plane generalization with origin='mainline' + nullable creator/audience + a minimal mainline decision record, needs intent-table column migration; B: mainline-native intent + executor adapter) and the claim mainline_action_intent_producers deliberately stays 0 until a real control-plane object is constructed. Tests: new tests/unit/services/test_publish_intent.py (principal matrix incl. blank/None/non-str, content shape, deterministic hash, artifact body/ref agreement, storage failure -> empty material) plus two run_publish tests (account principal and deployment principal both produce the material on PREPARED). Verification: targeted 70 run_publish tests + 15 P1 tests green; doc/claim gates 13 passed; full suite 4741 passed / 14 skipped / 0 failed / 0 errors; ruff check/format green.",
+  "meta": {}
+}

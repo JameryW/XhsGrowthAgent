@@ -819,7 +819,16 @@ async def run_publish(
     copy = state.get("copy_content", {})
     plan = state.get("content_plan", {})
     publish_options = state.get("publish_options") or {}
-    publish_account_id = publish_options.get("account_id")
+    # 票 5ba: classify the actor explicitly instead of carrying a raw mapping
+    # value.  Same key the path has always used; a blank value is the
+    # deployment principal (never an invented account).
+    from backend.services.publish_intent import (
+        publish_intent_material,
+        resolve_publish_principal,
+    )
+
+    principal = resolve_publish_principal(publish_options)
+    publish_account_id = principal.account_id or None
     from backend.config.settings import Settings
 
     settings = Settings()
@@ -921,6 +930,13 @@ async def run_publish(
     # mock branch above).
     publish_id = compute_publish_id(state)
     force_publish = bool(publish_options.get("force_publish"))
+    intent_thread_id = str(state.get("session_id") or state.get("thread_id") or "")
+    # 票 5ba: the derivable half of a durable publish intent — who publishes and
+    # which content — rides on the PREPARED record.  Best-effort: a storage
+    # failure leaves the fields empty and changes nothing about the publish.
+    material = await publish_intent_material(
+        store, intent_thread_id, publish_id, state, principal=principal
+    )
     # P0-B: the intent is durable BEFORE anything is submitted (PREPARED), so a
     # crash between "we decided to publish" and "we called the platform" is
     # distinguishable from "the platform may already have the note".
@@ -931,9 +947,13 @@ async def run_publish(
             "status": "prepared",
             "publish_id": publish_id,
             "account_id": _publish_account_id(state),
-            "thread_id": str(state.get("session_id") or state.get("thread_id") or ""),
+            "thread_id": intent_thread_id,
             "recorded_at": datetime.now().isoformat(),
             "forced": force_publish,
+            "principal_kind": material.principal.kind,
+            "principal_account_id": material.principal.account_id,
+            "artifact_ref": material.artifact_ref,
+            "content_hash": material.content_hash,
         },
     )
     # Claim the effect: read the prior record, refuse when it may already have

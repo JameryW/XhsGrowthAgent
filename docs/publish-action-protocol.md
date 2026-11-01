@@ -249,13 +249,35 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 ### 阶段
 
-**P1 — 显式账号 + 意图生产者（不改执行器）**
-主链每次发布前显式解析 `account_id`：缺失即 typed 拒绝，**不落 `""`、不落 `default`**
-（待决问题 1 的裁决）。解析成功后构造 `ActionIntent`（动作类型 = publish），但**仍由
-`run_publish` 执行**——这一步只让「意图」可表达、可审计。
-- claim：`mainline_action_intent_producers` 0 → ≥1；`mainline_run_publish_direct_call_sites` 保持 `3`。
-- 验收：三处直调点都有账号解析；空账号路径有测试；发布结果与今天逐字段一致（回归测试）。
-- 回滚：删生产者调用即可，执行器未变。
+**P1 — 显式主体 + 意图生产者（不改执行器）**
+
+P1 在落地时被切成两半，因为一个前提不成立：控制面的意图对象**不是主链能直接构造的**。
+
+**P1a — 可派生的部分（已落地，票 5ba）**：主链发布前把行为主体**显式分类**为
+「具名账号」或「部署本体」（`backend/services/publish_intent.py` 的
+`resolve_publish_principal`），并把本次提交内容写成
+`artifact://publish_content/<publish_id>` + sha256；PREPARED 记录携带
+`principal_kind` / `principal_account_id` / `artifact_ref` / `content_hash`。
+空账号仍表示部署本体（凭证解析器本来就按部署声明解析它，不是发明账号），
+执行器、幂等键与 publish_result 全部不变。claim 不变：直调仍 `3`、生产者仍 `0`。
+
+**P1b — 身份模型（未拍板，先别构造 `ActionIntent`）**：`ActionIntentRequest` 需要
+`decision_id`，`ActionIntent` 还要 `creator_id` / `audience_id`；主链三者都没有，
+而 `DecisionRecord` 是 creator_agent 概念（`audience_id`、`model_revision`、
+ranked candidates）。所以在主链构造控制面对象 = 发明身份，正是待决问题 1 禁止的方向。
+需要先选一条路：
+- **A（推荐，窄版）**：控制面接受 `origin="mainline"` 的意图，`creator_id`/`audience_id`
+  对 mainline origin 可空，并让主链审批时间点产生一条**最小 decision 记录**
+  （decision_id、thread_id、account_id、publish_id、approved_by/at、content_hash、artifact_ref）；
+  涉及 `ActionIntent`/`ActionIntentRequest` 模型与 intent 表的列迁移。
+- **B**：主链自有意图模型 + 执行器适配层（控制面不泛化，切换成本在 P3 体现）。
+
+拍板前 `mainline_action_intent_producers` 保持 `0` —— 它是"真的构造了控制面对象"的
+度量；为让数字好看而构造一个无效对象，是把判据本身变成装饰。
+
+- claim（P1b 完成后才变）：`mainline_action_intent_producers` 0 → ≥1；直调仍 `3`。
+- 验收（P1a）：两类主体都有测试；PREPARED 带材料；发布结果逐字段不变——已满足。
+- 回滚：P1a 是纯派生（删调用即回到裸取 account_id），执行器未变。
 
 **P2 — 策略门禁（复用同一份规则）**
 在 intent 构造后调用 `policy.py` 的发布策略评估；拒绝返回 typed 结果且**不写回执**，

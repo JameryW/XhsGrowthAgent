@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "verify the P1a/P1b split matches what was actually implemented and deferred"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a best-effort derivation change"}

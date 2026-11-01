@@ -1570,6 +1570,74 @@ async def test_the_resolved_grant_travels_with_the_invocation(
 
 
 @pytest.mark.asyncio
+async def test_the_prepared_record_carries_principal_and_content_material(
+    _browser_settings, mock_store, monkeypatch
+):
+    """票 5ba: PREPARED already carries who publishes and which content.
+
+    The pair (artifact ref + content hash) is what a durable publish intent will
+    carry once the mainline moves onto the control plane; pinning it on the
+    record now means the executor cutover has something to hand over.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_g"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _mock_history(monkeypatch)
+
+    with patch("backend.agents.publisher._write_publish_record", new=AsyncMock()) as recorded:
+        await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools()))
+
+    prepared = [
+        call.args[2]
+        for call in recorded.await_args_list
+        if call.args[2].get("status") == "prepared"
+    ]
+    assert len(prepared) == 1, prepared
+    record = prepared[0]
+    assert record["principal_kind"] == "account"
+    assert record["principal_account_id"] == "acc_g"
+    assert record["artifact_ref"].startswith("artifact://publish_content/")
+    assert len(record["content_hash"]) == 64
+
+
+@pytest.mark.asyncio
+async def test_a_deployment_publish_is_classified_as_the_deployment(
+    _browser_settings, mock_store, monkeypatch
+):
+    """No account named → the deployment principal, explicitly (票 5ba).
+
+    This is the identity the credential resolver already uses for a blank
+    account; the assertion is that the record *says* it, rather than leaving the
+    blank indistinguishable from an unresolved one.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    state = _state(publish_options={"dry_run": False})
+    # The deployment's own credential is what makes the blank account a real
+    # principal: without a cookie/profile the scope gate refuses before the
+    # PREPARED record (that refusal has its own test).
+    monkeypatch.setenv("XHS_COOKIE", "a1=0123456789abcdef0123")
+    _browser_settings.platform.cdp_endpoint = "http://global:9223"
+    _mock_history(monkeypatch)
+
+    with patch("backend.agents.publisher._write_publish_record", new=AsyncMock()) as recorded:
+        await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools()))
+
+    prepared = [
+        call.args[2]
+        for call in recorded.await_args_list
+        if call.args[2].get("status") == "prepared"
+    ]
+    assert prepared and prepared[0]["principal_kind"] == "deployment"
+    assert prepared[0]["principal_account_id"] == ""
+    assert prepared[0]["artifact_ref"].startswith("artifact://publish_content/")
+
+
+@pytest.mark.asyncio
 async def test_the_refusal_leaves_no_durable_trace(_browser_settings, monkeypatch):
     """An unauthorized publish must not write the PREPARED record.
 
