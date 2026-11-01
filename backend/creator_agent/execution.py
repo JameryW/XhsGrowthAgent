@@ -318,22 +318,28 @@ def _outcome_from_status(payload: Mapping[str, Any]) -> PublishOutcome:
     error = _as_text(payload.get("error"))
     retry_after = _as_int(payload.get("retry_after_seconds"))
     # Audit fields the workflow maps back into ``publish_result`` (票 5bn).
-    audit = {
-        "published_at": _as_text(payload.get("published_at")),
-        "error_type": _as_text(payload.get("error_type")),
-        "recovery": payload.get("recovery")
-        if isinstance(payload.get("recovery"), Mapping)
-        else None,
-        "result_known": payload.get("result_known")
-        if isinstance(payload.get("result_known"), bool)
-        else None,
-    }
+    # Spelled as typed locals rather than a ``**audit`` dict on purpose: mypy
+    # cannot narrow a heterogeneous dict to the dataclass's individual field
+    # types, and CI runs strict mypy.
+    published_at = _as_text(payload.get("published_at"))
+    error_type = _as_text(payload.get("error_type"))
+    recovery_payload = payload.get("recovery")
+    recovery: Mapping[str, Any] | None = (
+        recovery_payload if isinstance(recovery_payload, Mapping) else None
+    )
+    result_known_payload = payload.get("result_known")
+    result_known: bool | None = (
+        result_known_payload if isinstance(result_known_payload, bool) else None
+    )
     if status in _PUBLISHED_STATUSES:
         return PublishOutcome(
             status=PublishStatus.PUBLISHED,
             note_id=_as_text(payload.get("post_id")),
             note_url=_as_text(payload.get("post_url")),
-            **audit,
+            published_at=published_at,
+            error_type=error_type,
+            recovery=recovery,
+            result_known=result_known,
         )
     if status in _AMBIGUOUS_STATUSES:
         # Not a failure: a submit went out and the answer was lost.  Reported as
@@ -342,13 +348,19 @@ def _outcome_from_status(payload: Mapping[str, Any]) -> PublishOutcome:
             status=PublishStatus.UNKNOWN,
             error=error or "publish submitted, outcome unknown",
             retry_after_seconds=retry_after,
-            **audit,
+            published_at=published_at,
+            error_type=error_type,
+            recovery=recovery,
+            result_known=result_known,
         )
     return PublishOutcome(
         status=PublishStatus.FAILED,
         error=error or "publish did not report success",
         retry_after_seconds=retry_after,
-        **audit,
+        published_at=published_at,
+        error_type=error_type,
+        recovery=recovery,
+        result_known=result_known,
     )
 
 

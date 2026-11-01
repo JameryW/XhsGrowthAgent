@@ -1,0 +1,29 @@
+{
+  "id": "branch-b-mypy-fix",
+  "name": "branch-b-mypy-fix",
+  "title": "fix(typing): 修复分支 B 新代码的 mypy 错误（票 5bv）",
+  "description": "CI 的 mypy 作业会失败：_outcome_from_status 用 **audit 异构 dict 传给 PublishOutcome 的强类型字段（10 个 arg-type），_execute_publish 的 content 变量在 request/artifact 两分支被推断成 PublishContent|None（1 个 assignment）。改为显式类型局部变量与 loaded 中转；mypy --python-version 3.12 backend 恢复 262 files 0 issues。纯类型修复，无行为变化。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/execution.py",
+    "backend/creator_agent/advisor.py"
+  ],
+  "notes": "DONE 2026-11-01 (type-only; no behaviour change). While auditing CI parity after branch B I found the last five commits would fail the CI mypy job: (1) _outcome_from_status expanded a heterogeneous **audit dict into PublishOutcome's strongly-typed fields, producing 10 arg-type errors (str / int|None / Mapping|None / bool|None all rejected); (2) _execute_publish assigned load_publish_content()'s PublishContent | None into a variable mypy had already narrowed to PublishContent from the request branch (assignment error). Fixed by spelling the audit values as explicitly annotated locals and passing them field-by-field in all three outcome branches, and by declaring content: PublishContent up front with a `loaded` temp in the artifact branch. No field values, checks or runtime paths changed. Verification: mypy --python-version 3.12 backend -> Success: no issues found in 262 source files (same 3.12-target workaround as ticket 5bk because the local numpy 2.5 stubs cannot be parsed under python_version=3.11); ruff check/format green; full suite in the journal. Also confirmed this round: OMP typecheck can run locally after `npm install --cache <workspace>/.npm-cache` (sandbox refuses the default %LOCALAPPDATA% npm cache) and `tsc --noEmit` exits 0; the npm cache dir was deleted afterwards and node_modules is gitignored. Postgres parity remains impossible locally: no listener on 5432/5433/5434 despite postgres processes existing.",
+  "meta": {}
+}

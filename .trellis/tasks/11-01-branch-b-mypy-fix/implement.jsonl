@@ -1,0 +1,2 @@
+{"file": ".github/workflows/ci.yml", "reason": "the mypy job this fix unblocks"}
+{"file": "docs/publish-action-protocol.md", "reason": "the branch-B semantics the code must keep while being retyped"}

@@ -11,6 +11,7 @@ from typing import Any
 from backend.creator_agent.execution import (
     PUBLISH_CAPABILITY,
     PUBLISH_EFFECT_NAMESPACE,
+    PublishContent,
     PublishDispatcher,
     PublishOutcome,
     PublishRequest,
@@ -764,6 +765,7 @@ class CreatorAdvisor:
                 f"credential source: {credential.source or 'none'}",
             )
         thread_id = (action.thread_id or "").strip()
+        content: PublishContent
         if request is not None:
             # Branch B (票 5br): the caller already resolved the content.
             self._assert_request_binds_intent(action, request, thread_id=thread_id)
@@ -783,11 +785,12 @@ class CreatorAdvisor:
                 )
             artifact_ref = (action.artifact_ref or "").strip()
             body = await self._read_publish_content(thread_id=thread_id, artifact_ref=artifact_ref)
-            content = load_publish_content(body)
-            if content is None:
+            loaded = load_publish_content(body)
+            if loaded is None:
                 raise ActionPublishContentUnavailableError(
                     action_id, f"artifact {artifact_ref!r} has no publishable body"
                 )
+            content = loaded
             # The hash is what a human confirmed.  Publishing a body that does not
             # match it would post something nobody approved, so the mismatch is a
             # refusal rather than a warning.
