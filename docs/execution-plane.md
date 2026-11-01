@@ -46,7 +46,7 @@
 1. **「问不到」不阻止执行，「有人正持有」会 —— 这两件事直到本片才是两个值。**
    `backend/db/execution_leases.py:683` 的 `start_lease` 返回一个 `LeaseHold`（`AcquireOutcome` + 心跳），三条路各按原因裁定：
    - `UNKNOWN`（存储答不上来、或模块都导不进来）**runner 照样跑**，没有栅栏可装。这不是疏漏，是裁定 2：把执行挂在租约的回答上，会在存储答不上来的时候 fail-closed，而那正是租约从「观测」变成「闸门」的方式。
-   - `HELD_BY_LIVE_OWNER`（活着的外部持有者）是**证据**，不是证据的缺席 —— 裁定 2 覆盖不到它。两条修复路径因此 **stand down**：不写 checkpoint、不跑 `run_publish`，只留一条 `action` 事件（§7）。统一入口仍然照跑，它的拒绝语义属于 `/recover` 等端点。
+   - `HELD_BY_LIVE_OWNER`（活着的外部持有者）是**证据**，不是证据的缺席 —— 裁定 2 覆盖不到它。两条修复路径因此 **stand down**：不写 checkpoint、不跑发布执行，只留一条 `action` 事件（§7）。统一入口仍然照跑，它的拒绝语义属于 `/recover` 等端点。
    - 接管扫描两档都当终局（`backend/api/routes/_takeover.py:136` 的闸门），因为「不恢复」是那个决定的**安全侧**。
    在此之前这三件事被写成一个 `False`：`acquire` 有 **3** 个 `False` 出口而内存后端只有 **1** 个（它不会失败）⇒ 两个后端对同一个问题**答的集合不一样**。这是本条要消掉的形状，但**不是无条件的** —— 判据是这一条：
 
@@ -158,7 +158,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/system.py:324` | `ripple_task = asyncio.create_task(_check_ripple())` | CACHE_WARMUP | 健康检查里的预热 |
 | `backend/api/routes/system.py:325` | `memory_task = asyncio.create_task(_check_memory_store())` | CACHE_WARMUP | 健康检查里的预热 |
 | `backend/agents/analyst.py:347` | `asyncio.create_task(_safe_evolve` | POST_RESPONSE | 演化写回不回流 |
-| `backend/api/routes/free.py:919` | `asyncio.create_task(` | POST_RESPONSE | 响应后收尾 |
+| `backend/api/routes/free.py:920` | `asyncio.create_task(` | POST_RESPONSE | 响应后收尾 |
 | `backend/memory/calibrator.py:73` | `return asyncio.create_task(` | POST_RESPONSE | 校准写回不回流 |
 | `backend/api/routes/_wf_runtime.py:102` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
 | `backend/realtime/websocket.py:80` | `asyncio.create_task(event_handler(event))` | POST_RESPONSE | 从同步 EventBus 回调跨线程调度，事件发送不回流给调用者 |
@@ -243,7 +243,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 
 **★ 留下的那一格，已由本片关闭。** `_ACQUIRE_SQL` 仍然答不出是哪种拒绝 —— `backend/db/execution_leases.py:300` 的 `WHERE` 把三个条件或在一起，一个 `INSERT ... ON CONFLICT` 的**行数**说不出是哪一格拦下的。分开它们的不是改那句 SQL，而是把判据**重述成合取**：行存在 · `state == held` · `owner_id != 本实例` · 未过期 —— 与内存后端逐字对应，于是 `acquire_outcome` 判得出 `HELD_BY_LIVE_OWNER`，两条修复路径对它就 stand down。
 窗口（「`/status` 开始报 stale」到「扫描的下一趟接管」，即一个 `takeover_interval_seconds`，默认 60s 量级）里「扫描先接走、修复后到 ⇒ 两个写者」不再成立。
-★ **单进程部署形态下这条改动不可观测**：`_ACQUIRE_SQL` 的 `WHERE` 含 `owner_id = EXCLUDED.owner_id` ⇒ 本进程永远能重新授予自己，这一格只有**≥2 个持有者同时活着**时才出现 —— 滚动发布就是。判据在 `tests/unit/db/test_acquire_outcome.py`（两个后端对同一场景答同一个值）与 `tests/unit/api/test_repair_paths_take_the_lease.py`（该档下 `aupdate_state` 零调用、`run_publish` 零调用）。
+★ **单进程部署形态下这条改动不可观测**：`_ACQUIRE_SQL` 的 `WHERE` 含 `owner_id = EXCLUDED.owner_id` ⇒ 本进程永远能重新授予自己，这一格只有**≥2 个持有者同时活着**时才出现 —— 滚动发布就是。判据在 `tests/unit/db/test_acquire_outcome.py`（两个后端对同一场景答同一个值）与 `tests/unit/api/test_repair_paths_take_the_lease.py`（该档下 `aupdate_state` 零调用、发布执行入口零调用）。
 
 ### 7.1 兄弟路径那四条性质，以及登记表的裁定（#634）
 

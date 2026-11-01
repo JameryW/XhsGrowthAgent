@@ -116,7 +116,7 @@ def _mainline_publish_decision(
     This is an **identity**, not an option: a client cannot set it, a dry-run never
     gets one, and it is bound to the content it approved by ``content_hash`` (not
     by a time-windowed publish id, so a publish that crosses a window boundary is
-    still the approved content).  ``run_publish`` consumes it to construct an
+    still the approved content).  the publish entry consumes it to construct an
     ``origin=mainline`` ActionIntent; it does not change what the publish does.
     """
     from backend.services.publish_intent import publish_content_body

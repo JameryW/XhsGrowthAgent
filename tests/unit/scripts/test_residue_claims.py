@@ -102,24 +102,6 @@ def _show(path: Path) -> str:
         return path.as_posix()
 
 
-def _run_publish_calls(root: Path = BACKEND) -> list[Path]:
-    """Call sites of ``run_publish`` as bare names or attributes.
-
-    The ``async def run_publish`` header is not a ``Call`` node, so the one
-    definition in the tree excludes itself -- no special case needed, which is
-    exactly what makes this a shape and not a guess.
-    """
-    found: list[Path] = []
-    for path, tree in _trees(root):
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                func = node.func
-                name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
-                if name == "run_publish":
-                    found.append(path)
-    return sorted(found)
-
-
 def _action_intent_constructions(root: Path = BACKEND) -> list[Path]:
     """Every place that builds an ``ActionIntent``.
 
@@ -231,8 +213,6 @@ def _ripple_direct_call_sites(root: Path = API_ROUTES) -> list[str]:
 # ── the recalculators, one per published claim ───────────────────────────────
 
 _CLAIMS: dict[str, Callable[[], Any]] = {
-    # docs/publish-action-protocol.md -- "主链仍不经控制面"
-    "mainline_run_publish_direct_call_sites": lambda: len(_run_publish_calls()),
     "action_intent_construction_sites": lambda: len(_action_intent_constructions()),
     "mainline_action_intent_producers": lambda: len(
         _outside(CONTROL_PLANE, _action_intent_constructions())
@@ -395,20 +375,20 @@ def test_the_credential_scanner_counts_an_insert_and_not_a_read(tmp_path: Path):
     assert writer.exists()
 
 
-def test_the_run_publish_scan_finds_a_call_and_not_a_back_compat_alias(tmp_path: Path):
-    """Positive control for ``mainline_run_publish_direct_call_sites`` (now 0).
+def test_the_ripple_direct_call_scan_finds_a_call_and_not_a_plain_mention(tmp_path: Path):
+    """Positive control for ``ripple_service_direct_call_sites_in_api_routes`` (0).
 
-    The fixture **discriminates**: one real call site and one alias assignment.
-    A scanner matching the *name* answers 2; the AST scan asks for a ``Call`` and
-    answers 1, so the published zero means "no caller left", not "gutted scanner".
+    The fixture **discriminates**: one real ``.submit_and_wait(`` call and one
+    mention without the attribute dot.  A scanner matching bare text answers 2;
+    the documented scan answers 1.
     """
-    caller = _write(
+    _write(
         tmp_path,
-        "routes/retry.py",
-        "async def go(state, store):\n    await run_publish(state, store)\n",
+        "routes/_wf_actions.py",
+        "async def go(ripple, payload):\n    await ripple.submit_and_wait(payload)\n",
     )
-    _write(tmp_path, "agents/publisher.py", "run_publish = _run_publish_attempt\n")
+    _write(tmp_path, "routes/free.py", "# the old endpoint called submit_and_wait(payload)\n")
 
-    calls = _run_publish_calls(tmp_path)
+    calls = _ripple_direct_call_sites(tmp_path)
 
-    assert calls == [caller], calls
+    assert len(calls) == 1, calls

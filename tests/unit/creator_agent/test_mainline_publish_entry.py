@@ -115,3 +115,29 @@ async def test_an_existing_decision_is_never_replaced_by_the_operator(attempt):
     forwarded = attempt.await_args.args[0]
     assert forwarded["publish_decision"] is decision
     assert forwarded["publish_decision"]["approved_by"] == "reviewer-9"
+
+
+def test_the_private_attempt_has_exactly_one_caller():
+    """P4 (票 5bh): only the entry reaches the private attempt.
+
+    This is the invariant the deleted claim row used to approximate: the attempt
+    is an implementation detail, so its one call site is the entry module and
+    nothing else in ``backend/`` may reach it.
+    """
+    import ast
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[3]
+    backend = repo / "backend"
+    allowed = {backend / "creator_agent" / "mainline_publish.py"}
+    found: list[Path] = []
+    for path in sorted(backend.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "_run_publish_attempt"
+            ):
+                found.append(path)
+
+    assert set(found) == allowed, sorted({str(p) for p in found})

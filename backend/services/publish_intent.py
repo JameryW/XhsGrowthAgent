@@ -1,7 +1,7 @@
 """The mainline's side of the control-plane migration — P1 first slice (票 5ba).
 
 P1 of ``docs/publish-action-protocol.md`` asks the mainline publish to stop being
-an unstructured ``run_publish`` call.  The full slice needs an identity the
+an unstructured direct publish call.  The full slice needs an identity the
 mainline does not have yet — ``ActionIntent`` requires ``creator_id`` /
 ``audience_id`` / ``decision_id``, and a ``DecisionRecord`` is a creator-agent
 concept (it needs an audience and a model revision).  Inventing those is exactly

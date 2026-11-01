@@ -160,19 +160,12 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 ## 已知残留
 
-- **主链执行已收口到单一入口，但尚未换成控制面回执路径**：票 5bg 起 workflow 节点 /
-  publish-retry / free 三条路径都经
-  `backend/creator_agent/mainline_publish.py:execute_mainline_publish`
-  （claim `mainline_run_publish_direct_call_sites = 0`）。该入口负责**决定身份**：review
-  审批原样传递（票 5bc）、free 发布产生操作员身份（`free_publish_operator`，账号 + 内容
-  哈希 + approved_by/at，不伪装 review）、无账号则不产生身份；实现体已是私有的
-  `agents/publisher.py:_run_publish_attempt`（遗留 `run_publish` 别名只为既有 import 保留）。
-  仍缺的最后一块（P4）：让入口落到控制面 `execute_action` 回执语义、把实现体也移入入口
-  背后，并删除遗留符号/别名与 claim 行。policy（P2）已在发布前生效；intent 目前是审计/交接对象。
-  - ⚠️ **名字**：计划行把这一环写成 `PublishIntent`，**落地对象叫 `ActionIntent`**
-    （`backend/creator_agent/models.py`）—— `grep -rn PublishIntent backend/` 是**零命中**。
-    下面表里的主张一律用落地名：一条点名了「树里不存在的对象」的主张，会让读者连
-    对的那半句一起怀疑。
+> 主链迁移（票 5au 四阶段 P1–P4）已收口：三条主链发布路径统一经
+> `backend/creator_agent/mainline_publish.py:execute_mainline_publish`（P3b-2，票 5bg），
+> 实现体为私有 `agents/publisher.py:_run_publish_attempt` 且无公开别名（P4，票 5bh）；
+> 该入口决定身份（review 审批原样传递 / free 的操作员身份 / 无账号不产生），发布前
+> 已跑共享策略（P2），主链发布 intent 由入口链路产出并落库（P1b）。下面剩余条目属于
+> 其他主题，不再涉及主链执行边界。
 - ~~**`EVENT_KINDS` 的 `cost` / `error` 仍无发射者**~~ **已收口（票 5ao）**：两条 kind
   从 `EVENT_KINDS` 退休 —— 它们从来没有发射者，且各自已有权威载体：cost 落在
   `kind:"llm"` 条目的 `cost_usd`（`/analytics/costs` 从这里聚合），error 的实时通道是
@@ -206,7 +199,6 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 | 主张 | 发布的值 | 复核方式 |
 | --- | --- | --- |
-| `mainline_run_publish_direct_call_sites` | `0` | AST：`backend/**/*.py` 里对遗留符号 `run_publish(...)` 的**调用点**（函数定义、别名赋值都不算）。票 5bg 起三条主链路径统一经 `creator_agent.mainline_publish.execute_mainline_publish`；实现私有化为 `agents/publisher.py:_run_publish_attempt`，P4 删除遗留符号后本行随之删除 |
 | `action_intent_construction_sites` | `2` | AST：全仓 `ActionIntent(...)` 的构造点；advisor 一处 + 主链 producer 一处（票 5bc） |
 | `mainline_action_intent_producers` | `1` | 上一个集合里落在 `backend/creator_agent/` **之外**的个数（上一条是它的阳性对照） |
 | `event_kinds_readers_outside_its_defining_module` | `1` | AST：除 `backend/db/workflow_events.py` 外，import 或引用 `EVENT_KINDS` 的文件数（**注释不算**）；今天那 1 个是 `backend/services/signal_inventory.py` 的漂移检测 |
@@ -223,8 +215,9 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 `"default"`（"未归属的发布不该落进 `default` 账号的冷却桶"）；同一个不变量在这里就是
 "**永不发明账号**"—— 与 S5b 的"没有 `thread_id` 时不发明线程"是同一条。
 
-**这是一个裁决 + 一个触发条件，不是一条待办**：今天没有任何产生 PublishIntent 的主链调用者
-（主链直接 `run_publish`），所以这个裁决没有可落地的代码位置；它约束的是**将来那次迁移**。
+**这是一个裁决 + 一个触发条件，不是一条待办**：迁移（票 5au）已经让主链**显式解析**发布主体并
+尊重这条裁决 —— review 审批产生 mainline 身份、部署本体不构造 account-scoped intent；将来若引入
+新的发布主体，仍必须先满足它。
 
 ## 主链迁移控制面：阶段方案（票 5au）
 
@@ -235,18 +228,17 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 | 事实 | 今天 | 复核 |
 | --- | --- | --- |
-| 主链直调 `run_publish` | `mainline_run_publish_direct_call_sites = 0`（票 5bg 起改走单一执行入口） | claim 表（AST） |
+| 主链执行入口 | 单一入口 `execute_mainline_publish`；无公开直调符号（票 5bg/5bh） | AST 不变量测试（`test_mainline_publish_entry.py`） |
 | 主链产出 `ActionIntent` | `mainline_action_intent_producers = 1`（票 5bc 起） | claim 表（AST） |
 | 控制面 intent 构造点 | `action_intent_construction_sites = 2`（advisor + 主链 producer） | claim 表（AST） |
 
 三条主链发布路径：`backend/agents/publisher.py`（主链发布节点）、
 `backend/api/routes/_wf_actions.py`（publish-retry 通道）、`backend/api/routes/free.py`
-（free 模式）。票 5bg 起它们都经**单一执行入口**
+（free 模式）。它们都经**单一执行入口**
 `backend/creator_agent/mainline_publish.py:execute_mainline_publish` —— 该入口负责
 **决定身份**（review 审批原样传递；free 发布由操作员显式产生
 `free_publish_operator` 身份；无账号则不产生身份），实现体
-`agents/publisher.py:_run_publish_attempt` 变为私有。P4 会把实现体也移入入口背后并
-删除遗留符号（`run_publish` 别名）。
+`agents/publisher.py:_run_publish_attempt` 为私有、无公开别名（P4 收口）。
 
 ### 可复用的控制面零件（不重写）
 
@@ -293,16 +285,16 @@ ranked candidates）。所以在主链构造控制面对象 = 发明身份，正
 `state["publish_decision"]` —— `decision_id`（`mainline:<uuid>`，审批事件自己的身份，
 不由内容派生）、`thread_id`、`account_id`、`content_hash`（审批时内容哈希，绑定
 "批准了哪份内容"而不绑定时间窗漂移的 publish_id）、`approved_by`/`approved_at`。
-`run_publish` 在 Effect 账本 claim 成功后消费它：只有 **account-scoped**（部署本体不构造：
-模型是 account-scoped 的）、内容哈希一致、账号一致、thread 非空时，才构造
+`execute_mainline_publish`（单一入口）在 Effect 账本 claim 成功后消费它：只有 **account-scoped**
+（部署本体不构造：模型是 account-scoped 的）、内容哈希一致、账号一致、thread 非空时，才构造
 `origin=mainline` 的 `ActionIntent`（`creator_id`/`audience_id` 为空、
 `status=CONFIRMED`、`resolved_at=approved_at`、`idempotency_key=publish_id`）并经
-creator-agent 仓库落库。**执行仍走 `run_publish`**；构造失败/不匹配一律 best-effort
-跳过并记日志，绝不影响发布。因此 `action_intent_construction_sites` = `2`
+creator-agent 仓库落库。**执行仍走入口背后的私有 attempt**（票 5bg/5bh）；构造失败/不匹配一律
+best-effort 跳过并记日志，绝不影响发布。因此 `action_intent_construction_sites` = `2`
 （advisor + `services/publish_intent.py`），`mainline_action_intent_producers` = `1`；
-直调仍 `3`（P3 才变 0）。
+直调 `3` 已在 P3b-2 降为 `0`。
 
-- claim：`mainline_action_intent_producers` 0 → **1**；直调仍 `3`（P3 目标 0）。
+- claim：`mainline_action_intent_producers` 0 → **1**；直调 `3`（P3b-2 后为 `0`）。
 - 验收（P1a/P1b）：两类主体（account/deployment）行为与测试齐；批准路径有 decision 身份、
   内容哈希不匹配/账号不匹配/部署主体都不产出 intent；发布结果逐字段不变。
 - 回滚：P1a/P1b 都是旁路写入（artifact、账本 extra、intent 行）；删调用即回到裸取
@@ -315,7 +307,7 @@ creator-agent 仓库落库。**执行仍走 `run_publish`**；构造失败/不�
 - 验收：允许/拒绝矩阵有测试；拒绝不产生 `UNKNOWN` 账本状态；与 API 路径共用规则（有测试断言同一函数被调用）。
 - 回滚：去掉 gate 调用，回到 P1。
 
-**P2 已落地（票 5bd，2026-11-01）**：`run_publish` 在写 grant 检查之后、**任何持久副作用之前**
+**P2 已落地（票 5bd，2026-11-01）**：发布入口在写 grant 检查之后、**任何持久副作用之前**
 调用 `creator_agent.policy`：`build_policy_snapshot_for_capability(PUBLISH, principal.account_id,
 policy_context=action_policy_context_from_values(state))` → `evaluate_action_policy` ——
 同一个引擎、同一份规则表、同一份 checkpoint 投影（新增的两个共享函数让主链不必伪造
@@ -332,15 +324,15 @@ policy_context=action_policy_context_from_values(state))` → `evaluate_action_p
 
 **P3 — 换执行器**
 发布执行改走 Tool Gateway `xhs.publish` + `granted_scopes`（复用
-`backend/creator_agent/execution.py` 的 dispatcher），`run_publish` 降为该 capability 的工具实现；
+`backend/creator_agent/execution.py` 的 dispatcher），私有 attempt 成为该 capability 的实现、入口统一调用；
 主链的 `EffectLedger` 六态语义、幂等键与 human review gate 的先后关系必须逐条对齐（先写测试再切换）。
-- claim：`mainline_run_publish_direct_call_sites` 3 → 0；生产者数不变。
+- claim：直调 3 → 0（票 5bh 后该 claim 行已删除）；生产者数不变。
 - 验收：三条路径（主链/retry/free）都经 Gateway；scope 违规被拒且有测试；幂等键跨重试稳定；
   重复提交不产生第二次平台副作用。
-- 回滚：dispatcher 注入回退到直接 `run_publish`（本阶段保留该注入点）。
+- 回滚：dispatcher 注入回退到直接调用 attempt（本阶段保留该注入点）。
 
 **P3a 已落地（票 5be，2026-11-01）：共享执行请求。** 主链不再自建 `xhs.publish`
-载荷字段表：`run_publish` 构造共享 `PublishRequest`（account / thread / idempotency_key /
+载荷字段表：发布入口构造共享 `PublishRequest`（account / thread / idempotency_key /
 artifact_ref / content_hash / content + 主链侧 `private` / `scheduled_time` /
 `cdp_endpoint`）并调用 `creator_agent.execution.build_publish_payload` —— 与控制面执行器
 **同一份**载荷定义。主链侧三个事实留在 request 上，控制面保持默认，因此控制面载荷键集合
@@ -349,7 +341,7 @@ artifact_ref / content_hash / content + 主链侧 `private` / `scheduled_time` /
 - 本阶段**不改**三条直调：claim 仍 `3`。剩余 P3b：把主链/retry/free 三条路径接到
   控制面执行器（单执行入口；`EffectLedger` 六态语义、幂等键与 human review gate 的先后
   逐条对齐），再按 P3 验收把 claim 3→0。
-- 回滚：恢复 `run_publish` 内联载荷构造；共享 request 的字段可保留（控制面不用默认值）。
+- 回滚：恢复内联载荷构造；共享 request 的字段可保留（控制面不用默认值）。
 
 **P3b-1 已落地（票 5bf，2026-11-01）：控制面执行器支持 mainline-origin intent。**
 主链接下来的执行入口是同一个 `CreatorAdvisor.execute_action`，所以先让它能执行
@@ -367,21 +359,17 @@ artifact_ref / content_hash / content + 主链侧 `private` / `scheduled_time` /
   mainline intent 被拒且无回执。creator_agent 既有 204 用例全绿。
 **P3b-2 已落地（票 5bg）：单一执行入口 + 决定身份。** 三条路径改为调用
 `creator_agent.mainline_publish.execute_mainline_publish`；实现体私有化为
-`agents/publisher.py:_run_publish_attempt`（遗留 `run_publish` 别名仅为既有 import/测试
-保留，P4 删除）。入口负责决定身份：review 审批原样传递；free 发布由操作员显式产生
-`free_publish_operator` 身份（账号 + 内容哈希 + approved_by/at；不伪装 review，无账号则
-不产生）；legacy retry 无身份时不产 intent（行为不变）。claim
-`mainline_run_publish_direct_call_sites` 3 → 0，并由 `test_residue_claims` 的
-“zero-claim must be pointed at a positive fixture” 规则守住扫描器本身。
-- 剩余（P4）：把实现体移入入口背后并删除遗留符号/别名；让入口落到控制面
-  `execute_action` 回执语义；删除 claim 行与残留声明。
+`agents/publisher.py:_run_publish_attempt`。入口负责决定身份：review 审批原样传递；free
+发布由操作员显式产生 `free_publish_operator` 身份（账号 + 内容哈希 + approved_by/at；不伪装
+review，无账号则不产生）；legacy retry 无身份时不产 intent（行为不变）。claim
+`mainline_run_publish_direct_call_sites` 3 → 0。
 
-**P4 — 收口**
-删除遗留符号/别名与「主链执行尚未换成控制面回执」残留条目，清理为兼容保留的开关，
-claim 归零并删除对应行。
-- 验收：实现体在入口背后（或入口直接落到控制面 `execute_action` 回执路径）、
-  `run_publish` 别名与 `mainline_run_publish_direct_call_sites` 行一并删除；文档不再声明
-  残留；`tests/unit/scripts/test_residue_claims.py` 重算绿。
+**P4 已落地（票 5bh）：收口。** 选择验收分支 **A（实现体在入口背后）**：`_run_publish_attempt`
+保持私有、无公开别名，只被 `execute_mainline_publish` 调用（新增 AST 不变量测试钉住
+"除定义模块与入口模块外零调用"）；claim 行与残留声明删除。分支 B（入口直接落到控制面
+`execute_action` 回执路径）**未采用**：主链仍需 `EffectLedger` 六态/幂等键语义，而控制面
+receipt 路径不承载六态；若未来采用，需先让执行器吸收六态账本，届时单独开票。
+- 迁移四阶段 P1/P2/P3/P4 至此收口；`run_publish` 符号已从 backend 删除，不存在兼容别名。
 
 ### 不变量（每阶段都必须保持）
 
@@ -394,7 +382,7 @@ claim 归零并删除对应行。
 
 ### 不做 / 触发条件
 
-- 不在 P1/P2 阶段改 `run_publish` 内部实现（先让意图与策略就位）。
+- 不在 P1/P2 阶段改发布 attempt 内部实现（先让意图与策略就位）。
 - 不在没有跨进程幂等证据前进入 P3（否则重试可能变成第二次真实发布）。
-- 迁移的每一步都是**独立票**；本票只交方案，不写生产代码。
+- 迁移的每一步都是**独立票**；本方案每阶段单独落地、单独验收。
 

@@ -12,7 +12,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.agents.publisher import _resolve_cdp_endpoint, run_publish
+from backend.agents.publisher import _resolve_cdp_endpoint
+from backend.agents.publisher import _run_publish_attempt as run_publish  # noqa: F401
 
 
 def _state(**overrides):

@@ -1087,8 +1087,9 @@ async def _run_publish_attempt(
         }
 
     # P1b-2: now that the effect is claimed, persist the durable decision's
-    # intent (origin=mainline). Audit only — the publish still executes below
-    # through run_publish; a refusal or storage failure here changes nothing.
+    # intent (origin=mainline). Audit only — the publish itself still executes
+    # below through the shared dispatcher; a refusal or storage failure here
+    # changes nothing.
     publish_decision = state.get("publish_decision")
     await record_mainline_publish_intent(
         state,
@@ -1371,11 +1372,6 @@ async def _run_publish_attempt(
     }
 
 
-# ── Back-compat alias（票 5bg）──
-# The real-publish attempt is a private implementation now: every in-repo entry
-# point goes through ``creator_agent.mainline_publish.execute_mainline_publish``
-# (the control-plane-owned execution entry).  This alias remains only because
-# existing tests/external imports name ``run_publish``; nothing under
-# ``backend/`` calls it, and P4 removes it together with the claim row once the
-# implementation itself moves behind the entry.
-run_publish = _run_publish_attempt
+# 票 5bh (P4): no public alias.  Every in-repo entry point goes through
+# ``creator_agent.mainline_publish.execute_mainline_publish``; tests exercise the
+# private implementation by importing ``_run_publish_attempt`` directly.

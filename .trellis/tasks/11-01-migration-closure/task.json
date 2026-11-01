@@ -1,0 +1,32 @@
+{
+  "id": "migration-closure",
+  "name": "migration-closure",
+  "title": "P4：主链迁移收口（删遗留符号/claim 行/残留）（票 5bh）",
+  "description": "P4 收口：删除 run_publish 公开别名（尝试体保持私有、仅入口调用，新增 AST 单调用点不变量测试）；删除 residue claim 行与 mainline 残留声明，residue-claims 移除旧扫描器并为剩余 zero-claim（ripple 直调）补阳性对照；文档四处（publish-action-protocol/execution-plane/agent-os）与代码 docstring 同步；四阶段 P1-P4 收口。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/agents,backend/api,backend/services,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/agents/publisher.py",
+    "backend/creator_agent/mainline_publish.py",
+    "docs/publish-action-protocol.md",
+    "docs/execution-plane.md",
+    "tests/unit/scripts/test_residue_claims.py"
+  ],
+  "notes": "DONE 2026-11-01 (P4, closing the 5au four-phase migration). Removed the back-compat run_publish alias from backend/agents/publisher.py: the attempt is now a private implementation whose single call site is creator_agent/mainline_publish.py:execute_mainline_publish, pinned by a new AST invariant test in tests/unit/creator_agent/test_mainline_publish_entry.py (a call to _run_publish_attempt anywhere else in backend/ fails the test). tests/unit/agents/test_run_publish.py now imports the private implementation by name (as run_publish for readability only). Deleted the residue claim row mainline_run_publish_direct_call_sites plus its _run_publish_calls scanner, _CLAIMS entry and positive-control fixture; because the zero-claim rule still applies to the remaining zero (ripple_service_direct_call_sites_in_api_routes), a discriminating positive control was added for it (one real .submit_and_wait( call and one plain mention -> scan answers 1) and the positive-control preamble now names that single zero. Docs closed: docs/publish-action-protocol.md no longer declares a mainline-execution residue (known-residues section now opens with a closure note), claim table row removed, start-point table and P3/P3a/P1b-2/P2 prose updated to the entry/attempt vocabulary, and the P4 section records the chosen acceptance branch A (implementation behind the entry) with the explicit reason branch B (entry onto control-plane execute_action receipts) was NOT taken: the mainline still needs EffectLedger six-state/idempotency semantics, which the receipt path does not carry — future work needs a separate ticket. execution-plane.md/agent-os-upgrade-2026q4.md phrasing and code docstrings (free.py, review.py, publish_intent.py) no longer name the deleted symbol; execution-plane anchor for free.py updated after formatting. Verification: targeted run_publish+api+entry 210 passed; full suite 4791 passed / 14 skipped / 0 failed / 0 errors; doc/claims/anchors/citations 98 passed; ruff green.",
+  "meta": {}
+}

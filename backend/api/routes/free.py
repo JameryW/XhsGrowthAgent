@@ -11,7 +11,8 @@ NOT enter the LangGraph checkpoint and never participate in workflow
 resume/retry — free mode is fully isolated from the fixed workflow.
 
 Reuse: evaluation delegates to `EvaluatorAgent.execute` (fed a synthesized
-minimal state), publish delegates to `run_publish` (the same real-publish path
+minimal state), publish delegates to the control-plane entry
+`execute_mainline_publish` (the same real-publish path
 the PublisherAgent uses). Neither primitive is thread-bound; only the
 checkpoint storage was.
 """
@@ -198,11 +199,11 @@ def _build_eval_state(draft: dict[str, Any]) -> XHSGrowthState:
 
 
 def _build_publish_state(draft: dict[str, Any]) -> XHSGrowthState:
-    """Synthesize a minimal XHSGrowthState for run_publish.
+    """Synthesize a minimal XHSGrowthState for the publish attempt.
 
-    run_publish reads copy_content / content_plan / visual_plan / account_id /
+    The publish attempt reads copy_content / content_plan / visual_plan / account_id /
     publish_options.account_id. We thread account_id through publish_options so
-    run_publish's per-account CDP resolution kicks in.
+    the attempt's per-account CDP resolution kicks in.
     """
     account_id = draft.get("account_id", "default")
     state: XHSGrowthState = cast(
@@ -214,7 +215,7 @@ def _build_publish_state(draft: dict[str, Any]) -> XHSGrowthState:
                 "selected_topic": draft.get("title", ""),
                 "content_angle": draft.get("content_angle", ""),
                 # Creative-memory anchor (task 08-25-free-style-anchors):
-                # run_publish's ContentHistory record reads play_id from here.
+                # the attempt's ContentHistory record reads play_id from here.
                 "play_id": str(draft.get("play_id", "") or ""),
             },
             "visual_plan": {
@@ -403,12 +404,12 @@ async def publish_draft(
 ) -> ApiResponse[Any]:
     """Publish a free draft to Xiaohongshu (thread-less).
 
-    Loads the draft, synthesizes a minimal state, and calls run_publish — the
+    Loads the draft, synthesizes a minimal state, and calls the control-plane entry — the
     same real-publish path PublisherAgent uses (CDP resolution, account
     validation, the ``xhs.publish`` capability through the Tool Gateway —
     ``xhs_publisher`` → ``XHSPublisher.publish_note``, not the deleted
     ``XHSClient.publish_post`` — ContentHistory recording). Publish
-    results are recorded to account memory by run_publish itself.
+    results are recorded to account memory by the publish attempt itself.
     """
     account_id = await resolve_required_account_id(str(user["id"]), ref.account_id)
     draft = await _load_draft(request, account_id, ref.draft_id)
@@ -723,7 +724,7 @@ async def delete_draft(
 async def _resolve_free_cdp_endpoint(account_id: str) -> str:
     """Resolve the CDP endpoint for a free-mode account (thread-less).
 
-    Mirrors run_publish's per-account CDP resolution: start from the global
+    Mirrors the publish attempt's per-account CDP resolution: start from the global
     _resolve_cdp_endpoint(settings), then override with the per-account
     endpoint if one is bound. Returns "" when no endpoint is available.
     """
@@ -792,7 +793,7 @@ async def _backfill_content_history(
     Same aget→mutate→aput pattern as backend/agents/analyst.py — free posts
     enter the same content-history memory the fixed workflow writes. Skips
     silently when no record exists for the post_id (the record is created by
-    run_publish at publish time; its absence means nothing to label).
+    the publish attempt at publish time; its absence means nothing to label).
     """
     from backend.memory.store import MemoryManager
 
