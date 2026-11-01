@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 40
+- **Total Sessions**: 41
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1361 | Active |
+| `journal-1.md` | ~1395 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 41 | 2026-11-01 | 继续：ruff format 对齐 CI（票 5bj） | `1a52418a`, `c70e6432` | `main` |
 | 40 | 2026-11-01 | 继续：控制面 execute 接入 EffectLedger 六态账本（票 5bi） | `31839dbb`, `90af2a93` | `main` |
 | 39 | 2026-11-01 | 目标轮 9：P4 主链迁移收口（票 5bh）——四阶段完成 | `080416e9`, `70744f1a` | `main` |
 | 38 | 2026-11-01 | 目标轮 8：P3b-2 主链单一控制面执行入口（票 5bg） | `cfb9ae2d`, `62787d8a` | `main` |
