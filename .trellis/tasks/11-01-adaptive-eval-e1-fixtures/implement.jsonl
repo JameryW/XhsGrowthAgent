@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the E1 plan and the decisions this ticket implements"}
+{"file": "backend/graph/builder.py", "reason": "how dev/prod checkpoints are stored (the extractor's real sources)"}

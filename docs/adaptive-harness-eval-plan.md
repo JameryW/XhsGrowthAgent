@@ -1,8 +1,16 @@
-# Adaptive Harness 评测集方案（提案，待拍板）
+# Adaptive Harness 评测集方案（提案 → 已拍板，E1 已交付）
 
-> **状态：提案，未实施。** 本文件只定义评测口径、资产复用与分阶段落地顺序，不含实现。
+> **状态：决策已拍板（2026-11-01），E1 已交付；E2–E4 未开始。**
 > 关联：`docs/agent-os-upgrade-2026q4.md` 路线图 10（P3 = Adaptive Harness + A/B 门禁）、
-> §8 Harness Benchmarks、§9 剩余工作清单。裁决前不要据此写代码。
+> §8 Harness Benchmarks、§9 剩余工作清单。
+
+## 0. 已拍板（2026-11-01）
+
+| 问题 | 决定 | 对方案的影响 |
+|---|---|---|
+| 评测口径 | **都需要**：决策正确性 + 内容质量 | L3（质量维度）是必须项，不能只做 L1/L2 |
+| 数据来源 | **真实**：真实 workflow checkpoint | 需要 E1 抽取器 + 强制脱敏；fixture 本地生成、gitignore |
+| 预算 | **可配置或选择** | `--limit`/`--all`、`--phases`、可选 `--postgres-uri`/`--sqlite-path`；L3 用同一套开关 |
 
 ## 1. 为什么需要评测集
 
@@ -73,6 +81,31 @@
 4. **judge**：允许 LLM-as-judge 吗？是否需要双盲人工复核？
 5. **变体边界**：允许改线上默认路由，还是只允许 A/B 分流、默认值保持不变？
 6. **门禁强度**：评测红是阻断合并，还是只产出报告供人判断？
+
+## 6.5 E1 已交付：数据集框架（票 5cd）
+
+`scripts/eval/extract_fixtures.py` + `scripts/eval/fixtures.py`：
+
+| 能力 | 实现 |
+|---|---|
+| 真实来源 | `--sqlite-path`（默认 `.xhs/checkpoints.sqlite`）或 `--postgres-uri`；只读 `AsyncSqliteSaver`/`AsyncPostgresSaver` 的 `alist` |
+| 预算可配置 | `--limit N`（默认 100）、`--all`、`--phases a,b`、`--include-messages`、`--dry-run` |
+| 脱敏（唯一实现） | 标识符 → 稳定假名（`acct_/thread_/session_/user_`…）；cookie/token/api_key 等 → 空；`cdp_endpoint`/`chrome_profile_path` → 空；图片路径 → `image/NN.ext`；`messages` 默认丢弃；**内容字段保留**（质量评测需要） |
+| 语料格式 | `fixture-<id>.json`（`EvalFixture`）+ `manifest.json`（计数、每文件 sha256、跳过明细）；schema/版本号显式 |
+| 本地安全 | 输出目录默认 `.eval-fixtures/`（gitignore）；测试断言写入物中不含账号/线程/路径/密钥明文 |
+| 验证 | `tests/unit/scripts/test_eval_fixtures.py` 10 passed（含"真实 sqlite 往返"：用 AsyncSqliteSaver 播种子后跑完整抽取管线） |
+
+用法：
+
+```bash
+python scripts/eval/extract_fixtures.py --dry-run
+python scripts/eval/extract_fixtures.py --limit 20 --phases reviewing,publishing
+python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
+```
+
+**本地现实说明**：本 checkout 的 `.xhs/checkpoints.sqlite` 是空的（0 checkpoints），
+因此 E1 的"真实语料"要在有数据的部署（Postgres）或已填充的 sqlite 上生成；E1 自身的
+正确性由上述种子库测试覆盖，而不是靠本地空库。
 
 ## 7. 明确不做
 

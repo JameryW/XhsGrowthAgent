@@ -75,3 +75,4 @@ verify_*.py
 .ci-local-*/
 .dsh-pytest-temproot/
 .dsh-tmp/
+.eval-fixtures/

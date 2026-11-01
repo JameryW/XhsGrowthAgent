@@ -1,0 +1,32 @@
+{
+  "id": "adaptive-eval-e1-fixtures",
+  "name": "adaptive-eval-e1-fixtures",
+  "title": "feat(eval): E1 评测语料抽取器——真实 checkpoint + 强制脱敏 + 可配置预算（票 5cd）",
+  "description": "按已拍板三项（口径都需要/数据真实/预算可配置）落地 E1：scripts/eval/fixtures.py 定义 EvalFixture/FixtureManifest schema 与唯一脱敏 pass（标识符稳定假名、密钥/位置清空、图片路径规范化、messages 默认丢弃、内容保留）；scripts/eval/extract_fixtures.py 只读 AsyncSqliteSaver/AsyncPostgresSaver 的 alist 抽取最新 per-thread 状态，支持 --limit/--all/--phases/--include-messages/--dry-run，写 fixture json + manifest（sha256）。10 个单测含真实 sqlite 种子往返。输出目录 .eval-fixtures/ gitignore。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/eval/fixtures.py",
+    "scripts/eval/extract_fixtures.py",
+    "tests/unit/scripts/test_eval_fixtures.py",
+    "docs/adaptive-harness-eval-plan.md",
+    ".gitignore"
+  ],
+  "notes": "DONE 2026-11-01 (E1 of the Adaptive Harness evaluation plan; offline tool, no production behaviour change). The three decisions are implemented as follows: 'both dimensions needed' => fixtures keep content-bearing fields (copy_content/visual_plan/plan) so quality can be scored while identity is removed; 'real data' => the extractor reads actual LangGraph checkpoints through AsyncSqliteSaver/AsyncPostgresSaver alist() and takes the latest checkpoint per thread; 'configurable budget' => --limit (default 100, 0/--all for none), --phases, --include-messages, --dry-run, and a selectable source (--sqlite-path default .xhs/checkpoints.sqlite, or --postgres-uri). Redaction lives in exactly one place (scripts/eval/fixtures.py redact_state): identifiers become stable kind_<sha12> pseudonyms, secret-ish keys are blanked, cdp_endpoint/chrome_profile_path are blanked, image paths become image/NN.ext, messages are dropped by default, non-JSON state is refused, depth capped at 12. Output is fixture-<id>.json plus manifest.json (counts, per-file sha256, skip breakdown) under .eval-fixtures/ which is gitignored. Tests (10) cover: redaction categories/counters, determinism, include-messages, hash identity, latest-per-thread + phase filter + limit budget, manifest hashes and a no-plaintext assertion on the written bytes, a real end-to-end extraction from a temp SQLite checkpoint store seeded via AsyncSqliteSaver, dry-run writing nothing, and the source-exclusivity check. Local reality recorded in the doc: this checkout's .xhs/checkpoints.sqlite has zero checkpoints, so a real corpus must be produced from a populated deployment/sqlite; E1 correctness is covered by the seeded-store test. Verification: new module tests 10 passed; docs/claim gates and full suite in the journal; ruff green.",
+  "meta": {}
+}
