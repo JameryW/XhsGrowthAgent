@@ -1533,3 +1533,37 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: 目标收口：分支 B B3/B4 落地，所有本地可执行剩余任务清零（票 5bs）
+
+**Date**: 2026-11-01
+**Task**: 目标收口：分支 B B3/B4 落地，所有本地可执行剩余任务清零（票 5bs）
+**Branch**: `main`
+
+### Summary
+
+分支 B 全部落地并收口：B1（5bn）outcome 审计字段+force seam；B2（5bo）intent 先于持久效果；5bq attempt 级 receipt（保留 KNOWN FAILED 可重试语义）；5br executor 接受 caller-supplied request（含生成封面）且逐字段绑定校验；B3/B4（5bs）有 intent 的发布经 execute_action 执行、主链保留唯一个账本 claim，claim 表新增 mainline_direct_publish_invocations=1 与 mainline_executor_dispatch_sites=1（带区分性阳性对照），架构文档接入边界与 §9 剩余工作表同步更新。验证：全量 4815 passed / 14 skipped / 0 failed / 0 errors；doc/claims gates 绿；ruff 绿；B1/B2/5bq/5br/5bs 全部提交归档，工作树干净。目标『完成所有剩余任务』达成：仓库内可本地执行/验证的任务清零，剩余仅为已裁定延后项（路线图 8/10）与外部/环境依赖项（真实账号验证、CI 才覆盖的 vitest/OMP/PG parity）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4842b405` | (see git log) |
+| `4465f7d7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

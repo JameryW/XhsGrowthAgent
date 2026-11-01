@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 45
+- **Total Sessions**: 46
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1535 | Active |
+| `journal-1.md` | ~1569 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 46 | 2026-11-01 | 目标收口：分支 B B3/B4 落地，所有本地可执行剩余任务清零（票 5bs） | `4842b405`, `4465f7d7` | `main` |
 | 45 | 2026-11-01 | 目标轮：分支 B B1/B2 落地 + CLI 测试移植性修复（票 5bn/5bo/5bp） | `844d8dfb`, `381ed954`, `af6f792a`, `0bebbb58`, `1aeb24f1`, `67cf13f5` | `main` |
 | 44 | 2026-11-01 | 目标轮 1：剩余工作清单 + CI 本地核对矩阵（票 5bm） | `5bb4bf0a`, `5dc86d3c` | `main` |
 | 43 | 2026-11-01 | 继续：CI 本地核对 + P4 分支 B 方案 + 旧符号注释清理（票 5bl） | `f5e61995`, `f6987c58` | `main` |
