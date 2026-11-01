@@ -374,3 +374,35 @@ detect_revision_stall(rounds, *, window=2, min_gain=1.0) -> ProgressSignal  # §
 SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip 清单，只对 FAIL
 返回非零退出码。F1 的边界：这里测的是**副作用层**恢复（账本）；节点内 LLM
 决策仍未持久化（§4.1 已披露），F1 的 full 版本需要 attempt 级决策记录。
+
+## 9. 剩余工作与本地 CI 核对（2026-11-01）
+
+> 目的：让「所有剩余任务」可审计——哪些能本地跑、哪些是决策/外部/环境依赖。
+> 本轮已在本地逐项核对 CI；后端测试 4800 passed / 14 skipped / 0 failed。
+
+### 9.1 CI 作业本地核对矩阵
+
+| CI 作业 | 本地核对方式 | 结果 |
+|---|---|---|
+| Lint & Format | `ruff check` + 改动文件 `ruff format --check` | ✅ 绿；6 个未改动文件的本地提示是 CRLF 假阳性（LF 副本通过） |
+| Mypy | `mypy --python-version 3.12 backend`（本地 numpy 2.5.1 stub 与 `python_version=3.11` 冲突） | ✅ 262 source files，0 issues |
+| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
+| Context Compiler Baseline | `python scripts/benchmarks/context_compiler_baseline.py --compare --drift-pct 5` | ✅ drift within threshold |
+| Harness Benchmarks | `python scripts/benchmarks/harness_benchmarks.py` | ✅ pass=3 fail=0 skip=3（F5/F7/F8 是文档化缺口） |
+| Tool Runtime Gate | `python scripts/gates/tool_runtime_gate.py` | ✅ P1c-S5 OK |
+| Compliance Baseline Gate | `python scripts/gates/stealth_default_off.py` | ✅ OK |
+| Frontend（type-check/test/i18n） | `npm run type-check` / `i18n:check` | ✅ type-check、i18n(2372 keys) 通过；`vitest` 本地被沙箱禁止 spawn（EPERM），属环境限制 |
+| OMP Typecheck | `npm install && npm run typecheck` | ⚠️ 本地 `npm install` 被沙箱拒绝写缓存目录；CI 覆盖该作业 |
+
+### 9.2 剩余工作（本地可执行项已清零）
+
+| 项 | 类型 | 状态 / 触发条件 |
+|---|---|---|
+| P4 分支 B：入口直落 `execute_action` 回执路径 | 工程·可选 | 方案已写入 `docs/publish-action-protocol.md`；前提（控制面六态账本）已由 5bi 解除；需产品/架构拍板后立项（会改变主链执行语义） |
+| 路线图 8：多 Agent 并行 / workspace 冲突（F5） | 裁定 | 本文档裁定「先不建」，F5 保持 SKIP |
+| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 依赖 | 需评测集/A-B 前提先行；未启动 |
+| 私信 DOM 真机读法、笔记详情页深查/CDP | external-only | 需真实账号与平台环境，沙箱内不可验证 |
+| frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地沙箱/凭据限制，非仓库缺陷 |
+
+**结论**：仓库内可本地执行、可验证的剩余任务已清零；其余为需要拍板的工程项
+（分支 B）、已裁定的延后项（路线图 8/10）与外部/环境依赖项。

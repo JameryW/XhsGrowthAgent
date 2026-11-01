@@ -1,0 +1,28 @@
+{
+  "id": "open-work-registry",
+  "name": "open-work-registry",
+  "title": "docs: 剩余工作清单 + CI 本地核对矩阵（票 5bm）",
+  "description": "把「所有剩余任务」写清并核对：在 docs/agent-os-upgrade-2026q4.md 增加第 9 节（CI 作业逐项本地核对矩阵 + 剩余工作分类：分支 B 待拍板、路线图 P2 先不建、P3 需评测集、external-only、本地沙箱限制），作为后续 goal 轮的判据；纯文档。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "docs",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/agent-os-upgrade-2026q4.md"
+  ],
+  "notes": "DONE 2026-11-01 (documentation only). docs/agent-os-upgrade-2026q4.md gained section 9, which makes 'all remaining tasks' auditable: 9.1 is a CI-job-by-CI-job local verification matrix (lint/format; mypy via --python-version 3.12 due to the local numpy 2.5.1 stub vs python_version=3.11 conflict; pytest 4800 passed / 14 skipped; context-compiler baseline OK; harness benchmarks pass=3 fail=0 skip=3 with F5/F7/F8 documented gaps; tool-runtime gate OK; compliance gate OK; frontend type-check + i18n OK with vitest blocked by the sandbox's spawn EPERM; OMP typecheck needs npm install which the sandbox rejects; PG parity needs the CI postgres service). 9.2 classifies what is actually left: P4 branch B (engineering, optional; plan exists in publish-action-protocol.md and its prerequisite was removed by 5bi; needs a product/architecture decision because it changes mainline execution semantics), roadmap item 8 multi-agent/workspace (decision: not building), roadmap item 10 Adaptive Harness/A-B (dependency: eval set first), external-only DM DOM/note-detail-CDP validation, and local sandbox/environment limits that CI covers. Conclusion recorded: no locally executable and verifiable remaining task exists; what is left is decision-gated, explicitly deferred, or external/environmental. Verification: doc/claims/anchors/citations 98 passed; ruff green.",
+  "meta": {}
+}
