@@ -224,6 +224,27 @@ class ActionCredentialUnavailableError(Exception):
         super().__init__(f"account {account_id!r} holds no credential for {scopes}: {reason}")
 
 
+class ActionPublishAlreadyAttemptedError(Exception):
+    """A prior attempt of this intent's effect may already exist (票 5bi).
+
+    Raised before the Gateway when the ``EffectLedger`` says the same
+    ``(account, idempotency_key)`` is IN_FLIGHT / CONFIRMED / UNKNOWN /
+    RECONCILING.  The executor used to rely on its receipt alone, which is
+    written *after* the platform call — a crash in between looked like "never
+    attempted" and a retry could post twice.  The ledger's record is written
+    *before* the submit, so this refusal means "go reconcile", never "try again
+    blindly".
+    """
+
+    def __init__(self, action_id: str, account_id: str, prior_status: str) -> None:
+        self.action_id = action_id
+        self.account_id = account_id
+        self.prior_status = prior_status
+        super().__init__(
+            f"publish for {action_id!r} already has an effect in state {prior_status!r}"
+        )
+
+
 class LearningSignalMissingError(Exception):
     def __init__(self, signal_id: str) -> None:
         self.signal_id = signal_id
@@ -356,6 +377,7 @@ __all__ = [
     "ActionIntentMissingError",
     "ActionExecutionNotAllowedError",
     "ActionCredentialUnavailableError",
+    "ActionPublishAlreadyAttemptedError",
     "ActionResolutionConflictError",
     "ActionValidationError",
     "CreatorModelMissingError",

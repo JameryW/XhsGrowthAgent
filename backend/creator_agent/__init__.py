@@ -97,6 +97,7 @@ from backend.creator_agent.proposals import (
 from backend.creator_agent.repository import (
     ActionCredentialUnavailableError,
     ActionPolicyDeniedError,
+    ActionPublishAlreadyAttemptedError,
     ActionPublishContentUnavailableError,
     ActionPublishEligibilityDeniedError,
     ModelRevisionMissingError,
@@ -110,6 +111,7 @@ __all__ = [
     "ActionPolicyContext",
     "ActionPolicyDeniedError",
     "ActionPolicySnapshot",
+    "ActionPublishAlreadyAttemptedError",
     "ActionPublishContentUnavailableError",
     "ActionPublishEligibilityDeniedError",
     "EligibilityContextUnavailableError",

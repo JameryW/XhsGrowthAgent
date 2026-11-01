@@ -18,6 +18,7 @@ from backend.api.errors import (
     CreatorActionExecutionNotFoundError,
     CreatorActionNotFoundError,
     CreatorActionPolicyDeniedError,
+    CreatorActionPublishAlreadyAttemptedError,
     CreatorActionPublishContentUnavailableError,
     CreatorActionPublishEligibilityDeniedError,
     CreatorAudienceNotFoundError,
@@ -70,6 +71,7 @@ from backend.creator_agent.repository import (
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionPolicyDeniedError,
+    ActionPublishAlreadyAttemptedError,
     ActionPublishContentUnavailableError,
     ActionPublishEligibilityDeniedError,
     ActionResolutionConflictError,
@@ -96,6 +98,7 @@ from backend.memory.promotion_review import (
 from backend.state.events import (
     ACTION_POLICY_DENIED,
     ACTION_PUBLISH_BLOCKED,
+    BLOCKED_DUPLICATE_PUBLISH,
     BLOCKED_PUBLISH_ELIGIBILITY,
 )
 
@@ -649,6 +652,20 @@ async def execute_creator_action(
             account_id=exc.account_id,
             required_scopes=exc.required_scopes,
             reason=exc.reason,
+        ) from exc
+    except ActionPublishAlreadyAttemptedError as exc:
+        await _record_action_refusal(
+            exc.account_id,
+            "",
+            ACTION_PUBLISH_BLOCKED,
+            reason=BLOCKED_DUPLICATE_PUBLISH,
+            action_id=exc.action_id,
+            prior_status=exc.prior_status,
+        )
+        raise CreatorActionPublishAlreadyAttemptedError(
+            action_id=exc.action_id,
+            account_id=exc.account_id,
+            prior_status=exc.prior_status,
         ) from exc
     except ActionCapabilityNotWiredError as exc:
         raise CreatorActionCapabilityNotWiredError(exc.action_id, exc.kind_label) from exc

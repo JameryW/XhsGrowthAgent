@@ -1,0 +1,3 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the publish effect/ledger contract the executor follows"}
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "the row-5 residual this ticket closes"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "durable write and idempotency conventions"}

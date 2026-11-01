@@ -961,3 +961,58 @@ def test_a_capability_without_an_executor_returns_its_own_501(client, monkeypatc
         params={"account_id": "account-a"},
     )
     assert missing.status_code == 404
+
+
+def test_an_already_attempted_publish_maps_to_its_own_409(client, monkeypatch):
+    """票 5bi: the ledger refusal must reach the caller as a typed 409.
+
+    A domain error without an API mapping surfaces as a 500, which tells the
+    caller nothing it can act on -- and this refusal is the one that says "do
+    not retry, reconcile".  The event telemetry must be emitted with the same
+    machine-readable prior status.
+    """
+    import backend.api.routes.creator_agent as creator_agent_routes
+    from backend.creator_agent.repository import ActionPublishAlreadyAttemptedError
+
+    async def _owned(_user_id: str, _account_id: str):
+        return object()
+
+    monkeypatch.setattr("backend.api.routes.creator_agent.require_owned_account", _owned)
+    refusals: list[dict] = []
+
+    async def _record_refusal(account_id, thread_id, action, **fields):
+        refusals.append(
+            {"account_id": account_id, "thread_id": thread_id, "action": action, **fields}
+        )
+
+    monkeypatch.setattr("backend.api.routes.creator_agent._record_action_refusal", _record_refusal)
+
+    class _Advisor:
+        async def execute_action(self, account_id: str, action_id: str):
+            raise ActionPublishAlreadyAttemptedError(action_id, account_id, "confirmed")
+
+    monkeypatch.setattr(creator_agent_routes, "_advisor", lambda **kwargs: _Advisor())
+
+    response = client.post(
+        "/api/creator-agent/actions/act-1/execute",
+        json={"account_id": "account-a"},
+    )
+
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "ERROR_CREATOR_ACTION_PUBLISH_ALREADY_ATTEMPTED"
+    assert error["details"] == {
+        "action_id": "act-1",
+        "account_id": "account-a",
+        "prior_status": "confirmed",
+    }
+    assert refusals == [
+        {
+            "account_id": "account-a",
+            "thread_id": "",
+            "action": "publish_blocked",
+            "reason": "duplicate_publish",
+            "action_id": "act-1",
+            "prior_status": "confirmed",
+        }
+    ]

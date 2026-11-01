@@ -1,0 +1,33 @@
+{
+  "id": "control-plane-publish-ledger",
+  "name": "control-plane-publish-ledger",
+  "title": "控制面 execute 路径接入 EffectLedger 六态账本（票 5bi）",
+  "description": "收掉架构升级 row 5 的最后残留：creator_agent execute 的 publish 路径在 dispatch 前用 EffectLedger.begin claim（IN_FLIGHT）、dispatch 后按 outcome mark CONFIRMED/UNKNOWN/FAILED；重复/不明 attempt 以 typed 409 拒绝（ActionPublishAlreadyAttemptedError + CreatorActionPublishAlreadyAttemptedError）；账本 namespace 与主链 publish_id 账本分离；测试覆盖 crash-window/重复阻止/异常 UNKNOWN/API 映射；文档更新 row 5。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/creator_agent,backend/api,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/advisor.py",
+    "backend/creator_agent/execution.py",
+    "backend/creator_agent/repository.py",
+    "backend/api/errors.py",
+    "backend/api/routes/creator_agent.py",
+    "docs/agent-os-upgrade-2026q4.md"
+  ],
+  "notes": "DONE 2026-11-01 (closes the last row-5 residual of the architecture upgrade table). The control-plane publish execute path now runs under the same six-state EffectLedger the workflow uses. backend/creator_agent/execution.py gained PUBLISH_EFFECT_NAMESPACE=('publish','intent_effects') and publish_effect_id(account_id, idempotency_key) — a separate namespace on purpose: the mainline keys entries by a content-derived publish_id, the control plane by the caller's idempotency key, and sharing one key space would let an unrelated string collide with a content hash. CreatorAdvisor now keeps the artifact store as its effect store and _execute_publish delegates to _publish_with_effect_ledger: EffectLedger.begin runs BEFORE the dispatcher (IN_FLIGHT record = the crash marker), outcome settles to CONFIRMED/UNKNOWN/FAILED, a raised dispatcher is settled UNKNOWN and re-raised (never FAILED — FAILED would invite the retry the guard exists to stop), and a prior blocking state (IN_FLIGHT/CONFIRMED/UNKNOWN/RECONCILING) raises the new ActionPublishAlreadyAttemptedError before any dispatch. No store means the artifact read already refuses the publish, so the ledger is only used when a store exists (no fake empty ledger). API mapping: new ErrorCode CREATOR_ACTION_PUBLISH_ALREADY_ATTEMPTED + CreatorActionPublishAlreadyAttemptedError 409 with details {action_id, account_id, prior_status}, and execute_creator_action records a publish_blocked event with reason duplicate_publish before raising it. Docs: docs/agent-os-upgrade-2026q4.md row 5 and its honest-disclosure table row now state the control-plane execute path is ledger-guarded. Tests: new tests/unit/creator_agent/test_publish_effect_ledger.py (8: IN_FLIGHT visible to the dispatcher, CONFIRMED/FAILED/UNKNOWN settlement, raised dispatcher -> UNKNOWN + no receipt, crash-window after submit blocks the retry with prior_status=confirmed and still one dispatch, prior UNKNOWN blocks before dispatch, account-scoped effect ids, receipt validator unchanged); tests/unit/api/test_creator_agent.py gained the 409 mapping test (code/details/event telemetry). Verification: creator_agent 217 passed before the new tests, ledger file 8 passed, API file 21 passed; full suite 4800 passed / 14 skipped / 0 failed / 0 errors; ruff green.",
+  "meta": {}
+}

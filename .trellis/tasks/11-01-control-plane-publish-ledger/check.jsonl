@@ -1,0 +1,2 @@
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "verify the row-5 disclosure now matches the code"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a pre-Gateway durability write"}

@@ -48,6 +48,7 @@ from backend.tools.runtime.models import ErrorKind, ToolResult
 
 __all__ = [
     "PUBLISH_CAPABILITY",
+    "PUBLISH_EFFECT_NAMESPACE",
     "EndpointResolver",
     "PublishContent",
     "PublishContentReader",
@@ -62,11 +63,31 @@ __all__ = [
     "gateway_publish_dispatcher",
     "interpret_publish_result",
     "load_publish_content",
+    "publish_effect_id",
 ]
 
 #: The capability the executor publishes through.  A dotted name, not a module
 #: path: the runtime resolves it per call.
 PUBLISH_CAPABILITY = "xhs.publish"
+
+#: Ledger namespace for control-plane publish attempts (票 5bi).
+#:
+#: Deliberately separate from the workflow's ``("publish", "idempotency")``
+#: namespace: the mainline keys entries by a content-derived ``publish_id``, the
+#: control plane by the intent's caller-supplied ``idempotency_key``.  Sharing one
+#: key space would let an unrelated string collide with a content hash and turn a
+#: malformed request into a false duplicate (or the reverse).
+PUBLISH_EFFECT_NAMESPACE: tuple[str, ...] = ("publish", "intent_effects")
+
+
+def publish_effect_id(account_id: str, idempotency_key: str) -> str:
+    """One ledger key per ``(account, intent idempotency key)``.
+
+    The intent repository already scopes idempotency keys per account; the ledger
+    namespace is global, so the account has to be part of the key here or two
+    accounts reusing ``"publish-1"`` would block each other.
+    """
+    return f"{account_id.strip()}::{idempotency_key.strip()}"
 
 # The platform layer's own status vocabulary (``services.xhs_publisher``
 # P0-W4): ``published`` is the only success; ``unknown``/``pending`` mean "a

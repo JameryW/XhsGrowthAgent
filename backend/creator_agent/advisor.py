@@ -10,13 +10,16 @@ from typing import Any
 
 from backend.creator_agent.execution import (
     PUBLISH_CAPABILITY,
+    PUBLISH_EFFECT_NAMESPACE,
     PublishDispatcher,
     PublishOutcome,
     PublishRequest,
+    PublishStatus,
     artifact_store_content_reader,
     content_hash_of,
     gateway_publish_dispatcher,
     load_publish_content,
+    publish_effect_id,
 )
 from backend.creator_agent.models import (
     ActionCapability,
@@ -73,6 +76,7 @@ from backend.creator_agent.repository import (
     ActionExecutionNotAllowedError,
     ActionIntentMissingError,
     ActionPolicyDeniedError,
+    ActionPublishAlreadyAttemptedError,
     ActionPublishContentUnavailableError,
     ActionPublishEligibilityDeniedError,
     ActionValidationError,
@@ -200,6 +204,10 @@ class CreatorAdvisor:
         # the store gets a loud 409 instead of publishing a body built from
         # nothing.
         self._read_publish_content = artifact_store_content_reader(artifact_store)
+        # The same store backs the publish effect ledger (票 5bi).  ``None``
+        # means the reader above will refuse the publish before any Gateway call,
+        # so no ledger write is ever attempted without a store.
+        self._effect_store = artifact_store
         self._publish: PublishDispatcher = (
             publish if publish is not None else gateway_publish_dispatcher()
         )
@@ -760,16 +768,66 @@ class CreatorAdvisor:
                 thread_id=thread_id,
                 eligibility=eligibility.to_audit_dict(),
             )
-        return await self._publish(
-            PublishRequest(
-                account_id=action.account_id,
-                thread_id=thread_id,
-                idempotency_key=action.idempotency_key,
-                artifact_ref=artifact_ref,
-                content_hash=expected_hash,
-                content=content,
-            )
+        request = PublishRequest(
+            account_id=action.account_id,
+            thread_id=thread_id,
+            idempotency_key=action.idempotency_key,
+            artifact_ref=artifact_ref,
+            content_hash=expected_hash,
+            content=content,
         )
+        return await self._publish_with_effect_ledger(action, request)
+
+    async def _publish_with_effect_ledger(
+        self, action: ActionIntent, request: PublishRequest
+    ) -> PublishOutcome:
+        """Dispatch one publish under the six-state effect ledger (票 5bi).
+
+        The execution receipt is written **after** the platform call, so on its
+        own it cannot answer "did a submit already go out?" during the window
+        between begin and receipt.  The ledger is written **before** the call
+        (IN_FLIGHT) and settled after it, and a prior blocking state refuses the
+        attempt as a typed error instead of dispatching a second time.
+        """
+        from backend.state.effects import EffectBlockedError, EffectLedger, EffectStatus
+
+        ledger: EffectLedger | None = None
+        effect_id = publish_effect_id(request.account_id, request.idempotency_key)
+        if self._effect_store is not None:
+            ledger = EffectLedger(self._effect_store, PUBLISH_EFFECT_NAMESPACE)
+            try:
+                await ledger.begin(
+                    effect_id,
+                    tool_name=PUBLISH_CAPABILITY,
+                    task_id=action.action_id,
+                    request_digest=request.content_hash,
+                )
+            except EffectBlockedError as exc:
+                raise ActionPublishAlreadyAttemptedError(
+                    action.action_id, action.account_id, exc.record.status.value
+                ) from exc
+        try:
+            outcome = await self._publish(request)
+        except Exception:
+            # A submit may have reached the platform; UNKNOWN is the honest
+            # ledger verdict (FAILED would invite the retry this guard exists to
+            # stop).  The original exception still propagates.
+            if ledger is not None:
+                await ledger.mark(effect_id, EffectStatus.UNKNOWN, error="dispatcher raised")
+            raise
+        if ledger is not None:
+            status = {
+                PublishStatus.PUBLISHED: EffectStatus.CONFIRMED,
+                PublishStatus.UNKNOWN: EffectStatus.UNKNOWN,
+                PublishStatus.FAILED: EffectStatus.FAILED,
+            }[outcome.status]
+            await ledger.mark(
+                effect_id,
+                status,
+                result_ref=outcome.note_id,
+                error=outcome.error,
+            )
+        return outcome
 
     async def get_action_execution(self, account_id: str, action_id: str) -> ActionExecution | None:
         """Read one immutable receipt within the account scope."""

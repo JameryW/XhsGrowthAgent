@@ -37,6 +37,9 @@ class ErrorCode(StrEnum):
     CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE = "ERROR_CREATOR_ACTION_PUBLISH_CONTENT_UNAVAILABLE"
     CREATOR_ACTION_PUBLISH_ELIGIBILITY_DENIED = "ERROR_CREATOR_ACTION_PUBLISH_ELIGIBILITY_DENIED"
     CREATOR_ACTION_CREDENTIAL_UNAVAILABLE = "ERROR_CREATOR_ACTION_CREDENTIAL_UNAVAILABLE"
+    CREATOR_ACTION_PUBLISH_ALREADY_ATTEMPTED = (
+        "ERROR_CREATOR_ACTION_PUBLISH_ALREADY_ATTEMPTED"
+    )
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -390,6 +393,31 @@ class CreatorActionCredentialUnavailableError(APIError):
             code=ErrorCode.CREATOR_ACTION_CREDENTIAL_UNAVAILABLE,
             message=reason or "Creator action account has no usable credential",
             details={"account_id": account_id, "required_scopes": list(required_scopes)},
+            status_code=409,
+        )
+
+
+class CreatorActionPublishAlreadyAttemptedError(APIError):
+    """The same publish intent already has an effect in an unresolved state.
+
+    409, like the other pre-Gateway refusals: the ledger record is written
+    *before* the platform call, so a prior attempt may already have posted.
+    Retrying blindly could publish twice; the honest remedy is reconciliation,
+    exactly the rule the workflow's ``UNKNOWN`` state encodes (P0-W4).
+    """
+
+    def __init__(self, *, action_id: str, account_id: str, prior_status: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_ACTION_PUBLISH_ALREADY_ATTEMPTED,
+            message=(
+                "a previous attempt of this publish may already have reached the "
+                "platform; reconcile it before retrying"
+            ),
+            details={
+                "action_id": action_id,
+                "account_id": account_id,
+                "prior_status": prior_status,
+            },
             status_code=409,
         )
 
