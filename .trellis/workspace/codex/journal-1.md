@@ -1121,3 +1121,37 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: 目标轮 4：P1b-2 主链 decision 身份与 origin=mainline intent 生产者（票 5bc）
+
+**Date**: 2026-11-01
+**Task**: 目标轮 4：P1b-2 主链 decision 身份与 origin=mainline intent 生产者（票 5bc）
+**Branch**: `main`
+
+### Summary
+
+完成 5au 计划 P1 的最后一块。review 审批端点对批准的非 dry-run 发布写 state['publish_decision']（mainline:<uuid> decision_id、thread、account、审批时内容哈希、approved_by/at；dry-run 不写）；run_publish 在 Effect 账本 claim 后消费该身份，仅在具名账号+decision_id+账号/哈希一致+thread 非空+材料齐备时构造 ActionIntent(origin=MAINLINE, creator/audience 空, CONFIRMED, resolved_at=approved_at, idempotency_key=publish_id) 并经 creator-agent 仓库落库（payload_json、幂等重试同一行）；部署主体/不匹配/无决策/存储失败一律 None+日志，绝不影响发布；执行仍走 run_publish。claim：construction sites 1→2、mainline producers 0→1、直调仍 3；文档残留/起点表/plan/claim 同步。验证：定向 125 passed；scripts/doc 97 passed；全量 4766 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。目标未完成，保持 active：剩余 P2 策略门禁、P3 执行器切换（直调 3→0）、P4 收口，及 P2/P3 路线图与外部验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `809f5951` | (see git log) |
+| `2fb7c859` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

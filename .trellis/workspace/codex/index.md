@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 33
+- **Total Sessions**: 34
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1123 | Active |
+| `journal-1.md` | ~1157 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 34 | 2026-11-01 | 目标轮 4：P1b-2 主链 decision 身份与 origin=mainline intent 生产者（票 5bc） | `809f5951`, `2fb7c859` | `main` |
 | 33 | 2026-11-01 | 目标轮 3：P1b-1 意图身份模型泛化（票 5bb） | `f42aa1a5`, `67e57372` | `main` |
 | 32 | 2026-11-01 | 目标轮 2：主链迁移 P1a 落地（principal + 发布内容材料，票 5ba） | `e9b9cc9a`, `485bc5ca` | `main` |
 | 31 | 2026-11-01 | 目标轮：收口策略写路径残余 + 修复测试 cwd flaky（票 5ay / 5az） | `6fe2aa08`, `8861cd18`, `d348abf8`, `4dbac635` | `main` |
