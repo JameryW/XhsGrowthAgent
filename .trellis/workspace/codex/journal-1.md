@@ -1155,3 +1155,37 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: 目标轮 5：P2 主链发布策略门禁（票 5bd）
+
+**Date**: 2026-11-01
+**Task**: 目标轮 5：P2 主链发布策略门禁（票 5bd）
+**Branch**: `main`
+
+### Summary
+
+5au 计划 P2 落地：主链在 grant 检查后、任何持久副作用前跑同一份发布策略。policy.py 提取 build_policy_snapshot_for_capability（request 路径委托它，测试断言 PUBLISH 快照等价），policy_context.py 提取公开 action_policy_context_from_values 供已有 state 的主链复用（不重读 checkpoint、不复制投影）。run_publish 拒绝时返回 typed publish_result（publish_policy_denied + policy_id/retry_after_seconds + recovery）并写 publish_blocked 事件（新增 BLOCKED_PUBLISH_POLICY，封闭词表五→六）；不写 PREPARED、不 claim 账本、不产 intent、不写回执、不调 Gateway。文档化边界：部署本体发布不进入 account-scoped 策略（仍由 review 审批把关，且不构造 account-scoped intent，与 P1b-2 同边界），不为过门禁发明账号。claim 不变（直调 3/构造点 2/生产者 1）。测试：stamped eligibility 拒绝、风险冷静期、拒绝零副作用、部署边界、快照等价、非副作用 capability 不咨询 gate、values 投影；run_publish 58 passed，受影响目录 1085 passed，全量 4773 passed / 14 skipped / 0 failed / 0 errors，ruff 绿。目标保持 active：剩余 P3 执行器切换（直调 3→0）、P4 收口，及路线图与外部验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ba8c14b4` | (see git log) |
+| `3cd63ab8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
