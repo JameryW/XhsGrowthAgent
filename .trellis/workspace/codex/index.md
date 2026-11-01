@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 47
+- **Total Sessions**: 48
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1603 | Active |
+| `journal-1.md` | ~1636 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 48 | 2026-11-01 | 继续：修复分支 B 的 CI mypy 阻断 + 本地 OMP typecheck（票 5bv） | `6205c510` | `main` |
 | 47 | 2026-11-01 | 继续：B3 切换语义加固（票 5bu） | `89cc8b49`, `5bcd2b19` | `main` |
 | 46 | 2026-11-01 | 目标收口：分支 B B3/B4 落地，所有本地可执行剩余任务清零（票 5bs） | `4842b405`, `4465f7d7` | `main` |
 | 45 | 2026-11-01 | 目标轮：分支 B B1/B2 落地 + CLI 测试移植性修复（票 5bn/5bo/5bp） | `844d8dfb`, `381ed954`, `af6f792a`, `0bebbb58`, `1aeb24f1`, `67cf13f5` | `main` |
