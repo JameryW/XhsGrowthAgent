@@ -1898,3 +1898,36 @@ ci_local.py 的 tests 作业现在镜像 CI 的 parity 复查：全量通过后�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 57: P3/E2：HarnessPolicy 可注入接口（票 5ce）
+
+**Date**: 2026-11-01
+**Task**: P3/E2：HarnessPolicy 可注入接口（票 5ce）
+**Branch**: `main`
+
+### Summary
+
+按评测方案 E2 落地 backend/harness/policy.py：HarnessPolicy Protocol + DefaultHarnessPolicy（模型路由委托 resolve_model_id、上下文预算 None、工具 limits 读目录 ToolSpec、升级为空）+ describe() JSON 快照供 E3 diff；刻意不接线，默认行为零变化（接线依赖提案问题 5/6）。8 个单测逐项对比现行答案并验证未知名能力拒绝与 snapshot diff；mypy 264 files 0 issues；docs/claim 118 passed；全量 4845 passed / 14 skipped / 0 failed / 0 errors。票 5ce 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `06a8232e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
