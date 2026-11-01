@@ -1,0 +1,2 @@
+{"file": "docs/tool-gateway-engagement-migration.md", "reason": "verify the doc now matches the atomic write and 404 semantics"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for the write path change"}

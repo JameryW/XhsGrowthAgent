@@ -74,6 +74,7 @@ __all__ = [
     "OUTREACH_MODES",
     "OUTREACH_NOBODY",
     "OUTREACH_POLICY_KEYS",
+    "OutreachPolicyAccountNotFoundError",
     "OutreachPolicyStoreUnavailableError",
     "OutreachReader",
     "XhsOutreachPolicy",
@@ -292,6 +293,21 @@ class OutreachPolicyStoreUnavailableError(RuntimeError):
     """
 
 
+class OutreachPolicyAccountNotFoundError(RuntimeError):
+    """A management write named an account that does not exist.
+
+    The write path validates the account before touching its rows (票 5ay): a
+    policy row for a nonexistent account is invisible to every reader, so
+    accepting the write would report success for a suspension that can never
+    take effect.  The API maps this to 404.  ``account_id`` is carried so the
+    error says *which* account.
+    """
+
+    def __init__(self, account_id: str) -> None:
+        super().__init__(f"account {account_id!r} does not exist")
+        self.account_id = account_id
+
+
 def _require_account(account_id: str) -> str:
     account = (account_id or "").strip()
     if not account:
@@ -334,6 +350,10 @@ async def set_outreach_policy(
 
     The return value is read back from the account store, so it is what the
     gates will see — not a reconstruction of the request.
+
+    写是原子的（票 5ay）：命名的键走 ``upsert_credentials`` 的单事务批量写，
+    不会在崩溃时留下只写了一半的覆盖；账号必须先存在（未知账号 → 404），
+    否则写下的行对任何读者都不可见。
     """
     from backend.db.pool import is_pool_ready
 
@@ -347,12 +367,17 @@ async def set_outreach_policy(
             "outreach policy write needs the account store (Postgres pool is not ready)"
         )
 
-    from backend.db.accounts import upsert_credential
+    from backend.db.accounts import get_account, upsert_credentials
 
+    if await get_account(account) is None:
+        raise OutreachPolicyAccountNotFoundError(account)
+
+    values: dict[str, str] = {}
     if normalized_mode is not None:
-        await upsert_credential(account, MODE_KEY, normalized_mode)
+        values[MODE_KEY] = normalized_mode
     if normalized_cap is not None:
-        await upsert_credential(account, DAILY_PROACTIVE_CAP_KEY, str(normalized_cap))
+        values[DAILY_PROACTIVE_CAP_KEY] = str(normalized_cap)
+    await upsert_credentials(account, values)
 
     stored = await _read_store_for_write(account)
     if not _carries_policy(stored):

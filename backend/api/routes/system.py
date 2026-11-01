@@ -802,8 +802,9 @@ async def put_outreach_policy_endpoint(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Create/update the account's outreach policy rows (validated write)."""
-    from backend.api.errors import ValidationError
+    from backend.api.errors import AccountNotFoundError, ValidationError
     from backend.services.xhs_outreach_policy import (
+        OutreachPolicyAccountNotFoundError,
         OutreachPolicyStoreUnavailableError,
         read_outreach_overrides,
         set_outreach_policy,
@@ -817,6 +818,10 @@ async def put_outreach_policy_endpoint(
             daily_proactive_cap=body.daily_proactive_cap,
         )
         overrides = await read_outreach_overrides(account)
+    except OutreachPolicyAccountNotFoundError as exc:
+        # A policy row for a nonexistent account is invisible to every reader;
+        # reporting success would claim a suspension that cannot take effect.
+        raise AccountNotFoundError(exc.account_id) from exc
     except ValueError as exc:
         raise ValidationError("outreach_policy", str(exc)) from exc
     except OutreachPolicyStoreUnavailableError as exc:

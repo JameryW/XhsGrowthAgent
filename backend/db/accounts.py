@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -474,19 +475,41 @@ async def upsert_credential(account_id: str, key_name: str, value: str) -> None:
     The upsert is keyed by ``(account_id, key_name)``: re-login replaces the
     previous cookie instead of accumulating rows, so a reader never has to guess
     which of two rows is current.
+
+    The single-key form of :func:`upsert_credentials`; both share the same row
+    shape so a caller that needs several keys to land together (票 5ay) uses the
+    multi-key form instead of this one.
     """
-    encrypted = encrypt_value(value)
+    await upsert_credentials(account_id, {key_name: value})
+
+
+async def upsert_credentials(account_id: str, values: Mapping[str, str]) -> None:
+    """Write (or replace) several encrypted credential rows in one transaction.
+
+    The multi-key form of :func:`upsert_credential`, added by 票 5ay so a policy
+    write that names two keys (``XHS_OUTREACH_MODE`` + the daily proactive cap)
+    either lands whole or not at all: the statements share one connection
+    context, which is one transaction, so a crash between them cannot leave a
+    half-applied override.  An empty mapping is a no-op (the service layer
+    refuses a write that names nothing before reaching here).
+
+    Encryption and upsert semantics are exactly the single-key form's: the same
+    ``(account_id, key_name)`` conflict target, the same value encryption.
+    """
+    if not values:
+        return
     pool = get_pool()
     async with pool.connection() as conn:
-        await conn.execute(
-            """
-            INSERT INTO account_credentials (account_id, key_name, encrypted_value)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (account_id, key_name)
-            DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value
-            """,
-            (account_id, key_name, encrypted),
-        )
+        for key_name, value in values.items():
+            await conn.execute(
+                """
+                INSERT INTO account_credentials (account_id, key_name, encrypted_value)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (account_id, key_name)
+                DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value
+                """,
+                (account_id, key_name, encrypt_value(value)),
+            )
 
 
 async def delete_credential(account_id: str, key_name: str) -> bool:

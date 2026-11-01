@@ -28,6 +28,7 @@ from backend.services.xhs_outreach_policy import (
     OUTREACH_CONFIRMED,
     OUTREACH_INBOUND,
     OUTREACH_NOBODY,
+    OutreachPolicyAccountNotFoundError,
     OutreachPolicyStoreUnavailableError,
     clear_outreach_policy,
     load_outreach_policy,
@@ -50,6 +51,7 @@ def _clean_deployment(monkeypatch: pytest.MonkeyPatch):
 def store(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
     """An in-memory ``account_credentials`` behind the real reader/writer seams."""
     rows: dict[tuple[str, str], str] = {}
+    known_accounts = {"acc-1"}
 
     monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
 
@@ -60,15 +62,20 @@ def store(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
             if account == account_id
         ]
 
-    async def _upsert(account_id: str, key_name: str, value: str) -> None:
-        rows[(account_id, key_name)] = value
+    async def _upsert(account_id: str, values: dict[str, str]) -> None:
+        for key_name, value in values.items():
+            rows[(account_id, key_name)] = value
 
     async def _delete(account_id: str, key_name: str) -> bool:
         return rows.pop((account_id, key_name), None) is not None
 
+    async def _get_account(account_id: str) -> Any:
+        return SimpleNamespace(id=account_id) if account_id in known_accounts else None
+
     monkeypatch.setattr("backend.db.accounts.list_credentials", _list)
-    monkeypatch.setattr("backend.db.accounts.upsert_credential", _upsert)
+    monkeypatch.setattr("backend.db.accounts.upsert_credentials", _upsert)
     monkeypatch.setattr("backend.db.accounts.delete_credential", _delete)
+    monkeypatch.setattr("backend.db.accounts.get_account", _get_account)
     return rows
 
 
@@ -110,6 +117,31 @@ class TestSetWritesAndReadsBack:
         assert policy.mode == OUTREACH_CONFIRMED
         assert policy.daily_proactive_cap == 9
 
+    async def test_both_keys_land_in_one_multi_key_write(self, store, monkeypatch):
+        """Atomicity by construction (票 5ay): one ``upsert_credentials`` call."""
+        calls: list[dict[str, str]] = []
+        real = store
+
+        async def _record(account_id: str, values: dict[str, str]) -> None:
+            calls.append(dict(values))
+            for key_name, value in values.items():
+                real[(account_id, key_name)] = value
+
+        monkeypatch.setattr("backend.db.accounts.upsert_credentials", _record)
+
+        await set_outreach_policy("acc-1", mode=OUTREACH_CONFIRMED, daily_proactive_cap=3)
+
+        assert calls == [{MODE_KEY: OUTREACH_CONFIRMED, DAILY_PROACTIVE_CAP_KEY: "3"}]
+
+
+class TestTheAccountMustExist:
+    async def test_an_unknown_account_is_refused_before_any_write(self, store):
+        with pytest.raises(OutreachPolicyAccountNotFoundError) as exc:
+            await set_outreach_policy("ghost", mode=OUTREACH_CONFIRMED)
+
+        assert exc.value.account_id == "ghost"
+        assert store == {}
+
 
 class TestValidationRefusesBadWrites:
     @pytest.mark.parametrize("mode", ["everyone", "", "  ", "PROACTIVE"])
@@ -147,12 +179,12 @@ class TestTheStoreMustBeAvailable:
             await clear_outreach_policy("acc-1")
 
     async def test_a_write_that_did_not_persist_is_an_error(self, store, monkeypatch):
-        """A no-op upsert must not be reported as a saved policy."""
+        """A no-op write must not be reported as a saved policy."""
 
-        async def _lost(account_id: str, key_name: str, value: str) -> None:
+        async def _lost(account_id: str, values: dict[str, str]) -> None:
             return None
 
-        monkeypatch.setattr("backend.db.accounts.upsert_credential", _lost)
+        monkeypatch.setattr("backend.db.accounts.upsert_credentials", _lost)
 
         with pytest.raises(OutreachPolicyStoreUnavailableError, match="did not persist"):
             await set_outreach_policy("acc-1", mode=OUTREACH_CONFIRMED)

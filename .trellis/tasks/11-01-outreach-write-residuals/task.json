@@ -1,0 +1,31 @@
+{
+  "id": "outreach-write-residuals",
+  "name": "outreach-write-residuals",
+  "title": "触达策略写路径残余：原子写入 + 未知账号 404（票 5ay）",
+  "description": "收口 5ax 登记残余：set_outreach_policy 的两条 upsert 合成单事务（accounts.upsert_credentials），写前校验账号存在、未知账号返回 404；补测试与文档。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/services,backend/db,backend/api,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/db/accounts.py",
+    "backend/services/xhs_outreach_policy.py",
+    "backend/api/routes/system.py",
+    "docs/tool-gateway-engagement-migration.md"
+  ],
+  "notes": "DONE 2026-11-01. Closes the two residuals registered in 票 5ax's PRD. (1) Atomicity: new backend/db/accounts.upsert_credentials(account_id, values) writes every named key on one pool connection context (= one transaction), so a crash cannot leave a half-applied outreach override; the old upsert_credential is kept as the single-key delegating form (login path untouched). (2) Existence: set_outreach_policy now checks db.accounts.get_account first and raises OutreachPolicyAccountNotFoundError for an unknown account; the API maps it to AccountNotFoundError / ERROR_ACCOUNT_NOT_FOUND (404), because a policy row for a nonexistent account is invisible to every reader and 'saved' would claim a suspension that can never take effect. clear_outreach_policy deliberately stays idempotent (no 404): clearing a nonexistent override does not need an error. Tests: service test asserts both keys arrive in exactly one multi-key call; unknown-account write refused before any row; API test asserts the 404 envelope and empty store; fixtures updated to the new seams (upsert_credentials / get_account). Verification: targeted service+api+db+tools-runtime suites green (2116 passed before the unrelated cwd flake caught by the same run, fixed in 票 5az), scripts/doc gates 97 passed, ruff/format green. Docs: tool-gateway §9.5-③ now states the single-transaction write and the 404; the account_credentials_inserts claim is unchanged (still one INSERT text, recomputed by test_residue_claims).",
+  "meta": {}
+}

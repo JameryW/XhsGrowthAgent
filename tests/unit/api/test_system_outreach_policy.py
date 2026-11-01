@@ -2,9 +2,9 @@
 
 Mirrors the cool-down policy routes: same auth dependency, same ``success``
 envelope, same account-in-path shape.  The DB is mocked at the account-store
-seams (``is_pool_ready`` / ``list_credentials`` / ``upsert_credential`` /
-``delete_credential``) so these exercise the real service + route, never a
-Postgres.
+seams (``is_pool_ready`` / ``list_credentials`` / ``get_account`` /
+``upsert_credentials`` / ``delete_credential``) so these exercise the real
+service + route, never a Postgres.
 """
 
 from __future__ import annotations
@@ -48,15 +48,20 @@ def store(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
             if account == account_id
         ]
 
-    async def _upsert(account_id: str, key_name: str, value: str) -> None:
-        rows[(account_id, key_name)] = value
+    async def _upsert(account_id: str, values: dict[str, str]) -> None:
+        for key_name, value in values.items():
+            rows[(account_id, key_name)] = value
 
     async def _delete(account_id: str, key_name: str) -> bool:
         return rows.pop((account_id, key_name), None) is not None
 
+    async def _get_account(account_id: str) -> Any:
+        return SimpleNamespace(id=account_id) if account_id == "acc-1" else None
+
     monkeypatch.setattr("backend.db.accounts.list_credentials", _list)
-    monkeypatch.setattr("backend.db.accounts.upsert_credential", _upsert)
+    monkeypatch.setattr("backend.db.accounts.upsert_credentials", _upsert)
     monkeypatch.setattr("backend.db.accounts.delete_credential", _delete)
+    monkeypatch.setattr("backend.db.accounts.get_account", _get_account)
     return rows
 
 
@@ -173,6 +178,19 @@ class TestPut:
         body = response.json()
         assert body["success"] is False
         assert body["error"]["code"] == "ERROR_SERVICE_UNAVAILABLE"
+
+    def test_an_unknown_account_is_a_404(self, client, store):
+        """A policy row nobody can read is not a saved suspension (票 5ay)."""
+        response = client.put(
+            "/api/system/outreach-policy/ghost",
+            json={"mode": OUTREACH_CONFIRMED},
+        )
+
+        assert response.status_code == 404
+        body = response.json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "ERROR_ACCOUNT_NOT_FOUND"
+        assert store == {}
 
 
 class TestDelete:

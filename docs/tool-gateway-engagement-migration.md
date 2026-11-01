@@ -609,9 +609,12 @@ Phase B（在 A 之上追加）：
      → 只写显式给定的键，写后读回返回 `effective`；非法 mode/cap 走
      `ValidationError`（400 信封），账号库不可用走 `ERROR_SERVICE_UNAVAILABLE`
      （503）——管理写**不会**静默 best-effort（读侧仍失败安全）；
+     **票 5ay 收尾**：两条键经 `upsert_credentials` 在**一个事务**里落地（不存在
+     "写一半"的覆盖），且写前校验账号存在 —— 未知账号 404
+     （`ERROR_ACCOUNT_NOT_FOUND`），否则写下的行对任何读者都不可见；
    - `DELETE /api/system/outreach-policy/{account_id}` → 删除该账号两把键
      （`backend/db/accounts.py::delete_credential`），回落到部署默认，返回
-     `removed` + 删除后的 `effective`。
+     `removed` + 删除后的 `effective`（清空保持幂等，不对未知账号报 404）。
    API 形状以 `tests/unit/api/test_system_outreach_policy.py` 与
    `tests/unit/services/test_xhs_outreach_policy_write.py` 钉住；读侧优先级
    （账号行 → 部署 env → 安全默认）不变。
