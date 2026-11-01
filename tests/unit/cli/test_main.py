@@ -119,16 +119,23 @@ class TestCliLogin:
         assert result.exit_code == 1
         assert "未绑定 chrome_profile_path" in result.stdout
 
-    def test_login_opens_persistent_context(self):
+    def test_login_opens_persistent_context(self, tmp_path):
         """Happy path: launch_persistent_context called with the account's profile."""
         from backend.db.accounts import AccountRow
 
+        # A profile path must be writable in the test process: a hard-coded
+        # ``/tmp/...`` resolves to the current drive root on Windows and the
+        # sandbox can refuse the mkdir, which made this test depend on whether
+        # some earlier run had already created the directory.  tmp_path is the
+        # same portability rule tests/unit/test_no_hardcoded_tmp_paths.py
+        # enforces for backend code.
+        profile_path = tmp_path / "xhs-login-test"
         account = AccountRow(
             id="acc-1",
             name="acc",
             is_active=True,
             cdp_port=9223,
-            chrome_profile_path="/tmp/xhs-login-test",
+            chrome_profile_path=str(profile_path),
         )
 
         fake_pw = MagicMock()
@@ -155,7 +162,7 @@ class TestCliLogin:
         # The key assertion: persistent context opened with the account's profile, headed.
         fake_chromium.chromium.launch_persistent_context.assert_awaited_once()
         call_kwargs = fake_chromium.chromium.launch_persistent_context.await_args.kwargs
-        assert call_kwargs["user_data_dir"] == "/tmp/xhs-login-test"
+        assert call_kwargs["user_data_dir"] == str(profile_path)
         assert call_kwargs["headless"] is False
         fake_context.close.assert_awaited_once()
         fake_page.goto.assert_awaited_once()

@@ -1,0 +1,28 @@
+{
+  "id": "cli-login-tmp-path",
+  "name": "cli-login-tmp-path",
+  "title": "test: login 用例改用 tmp_path，去掉硬编码 /tmp（票 5bp）",
+  "description": "tests/unit/cli/test_main.py 的 login happy-path 用硬编码 /tmp/xhs-login-test 作为 chrome_profile_path：沙箱/清理后该目录不存在时 mkdir 被拒，runner.invoke 捕获后 mock 未调用，出现与代码无关的红。改用 pytest tmp_path（conftest 已做可写 temp root 处理），与 tests/unit/test_no_hardcoded_tmp_paths.py 的移植性理由一致。纯测试修复。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "tests/unit/cli",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "tests/unit/cli/test_main.py"
+  ],
+  "notes": "DONE 2026-11-01 (test-only). The login happy-path test hard-coded the account profile as /tmp/xhs-login-test; on Windows that resolves to the current drive root, and the DSH workspace sandbox refuses the CLI's Path(...).mkdir() there. Click's CliRunner swallows the resulting exception, so the test then fails on its real assertion ('launch_persistent_context awaited 0 times') with nothing pointing at the actual cause. It had been passing only because an earlier run had already created that directory, making exist_ok=True a no-op. The test now takes pytest's tmp_path and sets chrome_profile_path=str(tmp_path / 'xhs-login-test') (the conftest temp-root shim keeps it writable), and the user_data_dir assertion compares against that value. Same portability rule the repo already enforces for backend code in tests/unit/test_no_hardcoded_tmp_paths.py. No CLI behaviour, no sleeps, no skips. Verification: tests/unit/cli/test_main.py 14 passed; ruff check/format green; full suite in the journal.",
+  "meta": {}
+}

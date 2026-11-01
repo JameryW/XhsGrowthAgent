@@ -1,0 +1,2 @@
+{"file": "tests/unit/test_no_hardcoded_tmp_paths.py", "reason": "the portability rule this fix follows"}
+{"file": "tests/conftest.py", "reason": "the writable pytest temp-root shim tmp_path depends on"}

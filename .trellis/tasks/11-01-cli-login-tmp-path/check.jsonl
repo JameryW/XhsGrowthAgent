@@ -1,0 +1,2 @@
+{"file": "tests/unit/test_no_hardcoded_tmp_paths.py", "reason": "verify the fix matches the repo's temp-path portability rule"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a test-only change"}
