@@ -1017,3 +1017,39 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: 目标轮：收口策略写路径残余 + 修复测试 cwd flaky（票 5ay / 5az）
+
+**Date**: 2026-11-01
+**Task**: 目标轮：收口策略写路径残余 + 修复测试 cwd flaky（票 5ay / 5az）
+**Branch**: `main`
+
+### Summary
+
+目标轮继续推进。5ay：收口 5ax 的两条登记残余 —— accounts.upsert_credentials 让两把策略键单事务落地（upsert_credential 保留单键委托），set_outreach_policy 写前校验账号存在、未知账号 404（不可见策略行不能报告已保存），clear 保持幂等；新增多键一次调用/未知账号不落行/API 404 测试，文档 §9.5-③ 同步。5az：定位并修复顺序 flaky —— cwd 测试把仓库根算成 parents[3]（实为 tests/）且 finally 恢复到错误根，泄漏 cwd 使 prompt 测试的 cwd 相对路径 FileNotFoundError；改 parents[4]+monkeypatch.chdir，prompt 测试改用 __file__ 定位。验证：全量 4725 passed / 14 skipped / 0 failed / 0 errors；组合目录 2117 passed；scripts 97 passed；ruff/format 绿。目标未完成：主链迁移 P1–P4 仍是后续票，P2/P3 等证据，保持 goal active。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6fe2aa08` | (see git log) |
+| `8861cd18` | (see git log) |
+| `d348abf8` | (see git log) |
+| `4dbac635` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
