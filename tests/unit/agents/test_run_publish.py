@@ -1638,6 +1638,83 @@ async def test_a_deployment_publish_is_classified_as_the_deployment(
 
 
 @pytest.mark.asyncio
+async def test_an_approved_real_publish_records_a_mainline_intent(
+    _browser_settings, mock_store, monkeypatch
+):
+    """P1b-2 (票 5bc): the publisher consumes the approval's durable identity.
+
+    The intent is audit/hand-off only — the publish below still executes through
+    run_publish — but it must carry the mainline's own decision id and never a
+    borrowed creator identity.
+    """
+    from types import SimpleNamespace
+
+    from backend.creator_agent import ActionOrigin
+    from backend.db import creator_agent as creator_agent_db
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_g"})
+        state["publish_decision"] = {
+            "decision_id": "mainline:unit-1",
+            "source": "mainline_review",
+            "thread_id": "test_session",
+            "account_id": "acc_g",
+            "content_hash": content_hash(publish_content_body(state)),
+            "approved_by": "u-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+
+        await run_publish(
+            state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools())
+        )
+
+        rows = list(creator_agent_db._mem_actions.values())
+        assert len(rows) == 1, rows
+        intent = rows[0]
+        assert intent.origin is ActionOrigin.MAINLINE
+        assert intent.creator_id == ""
+        assert intent.audience_id == ""
+        assert intent.decision_id == "mainline:unit-1"
+        assert intent.account_id == "acc_g"
+        assert intent.thread_id == "test_session"
+        assert intent.artifact_ref.startswith("artifact://publish_content/")
+        assert intent.resolved_at == "2026-11-01T00:00:00+00:00"
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
+async def test_a_publish_without_an_approval_decision_records_no_intent(
+    _browser_settings, mock_store, monkeypatch
+):
+    """No durable decision → no mainline intent.  The producer never invents one."""
+    from types import SimpleNamespace
+
+    from backend.db import creator_agent as creator_agent_db
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_g"})
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+
+        await run_publish(
+            state, store=mock_store, agent=SimpleNamespace(tools=_RecordingTools())
+        )
+
+        assert creator_agent_db._mem_actions == {}
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
 async def test_the_refusal_leaves_no_durable_trace(_browser_settings, monkeypatch):
     """An unauthorized publish must not write the PREPARED record.
 

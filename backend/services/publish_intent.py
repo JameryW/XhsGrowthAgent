@@ -26,6 +26,8 @@ Nothing in this module submits, authorizes, or decides.  It is data derivation.
 
 from __future__ import annotations
 
+import logging
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -41,9 +43,12 @@ __all__ = [
     "PublishPrincipal",
     "publish_content_body",
     "publish_intent_material",
+    "record_mainline_publish_intent",
     "resolve_publish_principal",
     "write_publish_content_artifact",
 ]
+
+logger = logging.getLogger("xhs_growth.services.publish_intent")
 
 #: Artifact kind for the submitted content: ``artifact://publish_content/<publish_id>``.
 PUBLISH_CONTENT_KIND = "publish_content"
@@ -159,3 +164,87 @@ async def publish_intent_material(
         artifact_ref=str(ref.get("ref") or ""),
         content_hash=str(ref.get("content_hash") or ""),
     )
+
+
+async def record_mainline_publish_intent(
+    state: Mapping[str, Any],
+    *,
+    publish_id: str,
+    material: PublishIntentMaterial,
+    principal: PublishPrincipal,
+    decision: Mapping[str, Any] | None,
+) -> Any | None:
+    """Persist the ``origin=mainline`` ActionIntent for an approved publish (P1b-2).
+
+    The identity is *consumed*, never invented: ``decision`` is the durable record
+    the review-approval endpoint wrote (票 5bc), and this function refuses to
+    produce an intent unless it binds to *this* publish — same account, same
+    content hash, non-empty thread.  A deployment principal is refused as well:
+    ``ActionIntent`` is account-scoped, and a blank account is a real principal,
+    not an account.
+
+    Returns the stored intent, or ``None`` for every refusal and for a storage
+    failure (best-effort: an audit intent must never break publishing).
+    """
+    if principal.kind != "account" or not principal.account_id:
+        return None
+    if not material.artifact_ref or not material.content_hash:
+        return None
+    if not decision:
+        return None
+    decision_id = str(decision.get("decision_id") or "").strip()
+    if not decision_id:
+        return None
+    if str(decision.get("account_id") or "").strip() != principal.account_id:
+        return None
+    if str(decision.get("content_hash") or "") != material.content_hash:
+        return None
+    thread_id = str(decision.get("thread_id") or "").strip() or str(
+        state.get("session_id") or state.get("thread_id") or ""
+    )
+    if not thread_id:
+        return None
+    approved_at = str(decision.get("approved_at") or "")
+
+    from datetime import UTC, datetime
+
+    from backend.creator_agent.models import (
+        ActionCapability,
+        ActionIntent,
+        ActionOrigin,
+        ActionStatus,
+    )
+
+    now = datetime.now(UTC).isoformat()
+    intent = ActionIntent(
+        action_id=uuid.uuid4().hex,
+        account_id=principal.account_id,
+        origin=ActionOrigin.MAINLINE,
+        creator_id="",
+        audience_id="",
+        decision_id=decision_id,
+        action_kind=ActionCapability.PUBLISH,
+        candidate_ids=[],
+        idempotency_key=publish_id,
+        status=ActionStatus.CONFIRMED,
+        resolved_at=approved_at or now,
+        created_at=now,
+        updated_at=now,
+        artifact_ref=material.artifact_ref,
+        content_hash=material.content_hash,
+        thread_id=thread_id,
+    )
+    try:
+        from backend.db.creator_agent import DurableCreatorAgentRepository
+
+        stored = await DurableCreatorAgentRepository().create_action(intent)
+    except Exception:  # best-effort: an audit intent must never break publishing
+        logger.warning("mainline publish intent not recorded (non-blocking)", exc_info=True)
+        return None
+    logger.info(
+        "mainline publish intent recorded: action_id=%s decision_id=%s publish_id=%s",
+        intent.action_id,
+        decision_id,
+        publish_id,
+    )
+    return stored

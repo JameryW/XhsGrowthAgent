@@ -695,6 +695,67 @@ class TestReviewRoutes:
         assert data["data"]["decision"] == "approved"
         assert data["error"] is None
 
+    def test_a_real_publish_approval_records_a_mainline_decision(
+        self, client, mock_graph, mock_state_values
+    ):
+        """P1b-2 (票 5bc): a real-publish approval is a durable decision identity."""
+        mock_state = MagicMock()
+        mock_state.values = {
+            **mock_state_values,
+            "copy_content": {"selected_title": "t", "body_text": "b", "hashtags": ["x"]},
+            "visual_plan": {"image_paths": ["/tmp/a.png"]},
+        }
+        mock_state.next = ["review_gate"]
+        mock_graph.aget_state.return_value = mock_state
+        mock_graph.ainvoke.return_value = {"phase": "publishing"}
+
+        response = client.post(
+            "/api/review/submit/xhs_test_abc123",
+            json={
+                "decision": "approved",
+                "publish_options": {"dry_run": False, "account_id": "test_account"},
+            },
+        )
+
+        assert response.status_code == 200
+        updates = [
+            call.args[1] for call in mock_graph.aupdate_state.await_args_list if len(call.args) > 1
+        ]
+        decisions = [
+            update["publish_decision"] for update in updates if "publish_decision" in update
+        ]
+        assert len(decisions) == 1, updates
+        decision = decisions[0]
+        assert decision["decision_id"].startswith("mainline:")
+        assert decision["source"] == "mainline_review"
+        assert decision["thread_id"] == "xhs_test_abc123"
+        assert decision["account_id"] == "test_account"
+        assert decision["approved_by"] == TEST_USER_ID
+        assert decision["approved_at"]
+        assert len(decision["content_hash"]) == 64
+
+    def test_a_dry_run_approval_records_no_decision(self, client, mock_graph, mock_state_values):
+        """A dry-run never executes, so it must not mint a decision identity."""
+        mock_state = MagicMock()
+        mock_state.values = mock_state_values
+        mock_state.next = ["review_gate"]
+        mock_graph.aget_state.return_value = mock_state
+        mock_graph.ainvoke.return_value = {"phase": "publishing"}
+
+        response = client.post(
+            "/api/review/submit/xhs_test_abc123",
+            json={
+                "decision": "approved",
+                "publish_options": {"dry_run": True, "account_id": "test_account"},
+            },
+        )
+
+        assert response.status_code == 200
+        updates = [
+            call.args[1] for call in mock_graph.aupdate_state.await_args_list if len(call.args) > 1
+        ]
+        assert all("publish_decision" not in update for update in updates), updates
+
     def test_submit_review_with_revisions(self, client, mock_graph, mock_state_values):
         """Submit review with needs_revision decision."""
         mock_state = MagicMock()

@@ -1,0 +1,32 @@
+{
+  "id": "mainline-decision-intent",
+  "name": "mainline-decision-intent",
+  "title": "P1b-2：主链 decision 身份 + origin=mainline intent 生产者（票 5bc）",
+  "description": "review 批准真实发布时写 state['publish_decision']（decision_id/thread/account/content_hash/approved_by/at），run_publish 在账本 claim 成功后消费它构造 origin=mainline 的 ActionIntent 并落库（执行仍走 run_publish）；部署主体/哈希或账号不匹配/无决策都不产出；claim producers 0→1、construction sites 1→2。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/api,backend/services,backend/agents,backend/state,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/api/routes/review.py",
+    "backend/services/publish_intent.py",
+    "backend/agents/publisher.py",
+    "backend/state/schema.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (P1b-2, the last piece of the 5au P1). Identity comes from the approval, not from content: the review-approval endpoint now writes state['publish_decision'] = {decision_id: 'mainline:<uuid>', source: 'mainline_review', thread_id, account_id, content_hash (the approved content's canonical hash, deliberately not the window-dependent publish_id), approved_by (authenticated user id), approved_at} for APPROVED, non-dry-run publishes only; dry-run approvals mint nothing. run_publish consumes it after the Effect-ledger claim succeeds via services/publish_intent.record_mainline_publish_intent: it refuses to produce an intent for a deployment principal (ActionIntent is account-scoped), missing decision/decision_id, account mismatch, content-hash mismatch, empty content material or empty thread — every refusal returns None and a storage failure is logged, so publishing behaviour is untouched; it constructs ActionIntent(origin=MAINLINE, creator_id='', audience_id='', status=CONFIRMED, resolved_at=approved_at, idempotency_key=publish_id, artifact_ref/content_hash from the P1a material) and persists it through DurableCreatorAgentRepository (payload_json store, no migration; retries return the same row by idempotency key). Execution still goes through run_publish — this is the audit/hand-off half only. Claims synced: action_intent_construction_sites 1->2 (advisor + producer), mainline_action_intent_producers 0->1, mainline_run_publish_direct_call_sites stays 3; the residual and the plan's P1b-2 paragraph now say the same. Tests: service producer (bound success + field assertions + idempotent retry, hash/account/thread mismatches, no decision, no material, deployment principal, storage failure), run_publish (approved publish persists a mainline intent; no decision persists none), review API (real approval writes the decision; dry-run does not). Verification: affected suites 125 passed (run_publish + publish_intent + api_routes); doc/claim recompute + citations + anchors green; ruff/format green; full suite 4766 passed / 14 skipped / 0 failed / 0 errors.",
+  "meta": {}
+}

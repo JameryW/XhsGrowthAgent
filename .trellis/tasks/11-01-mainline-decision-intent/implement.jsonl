@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the migration plan and claim table this producer updates"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "best-effort side-write and durable identity conventions"}

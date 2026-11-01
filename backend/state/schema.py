@@ -206,6 +206,11 @@ class XHSGrowthState(TypedDict, total=False):
 
     # Publish options (set by review decision)
     publish_options: dict[str, Any]
+    # The mainline's durable decision identity for one approved real publish
+    # (P1b-2, 票 5bc): written by the review-approval endpoint, consumed by the
+    # publisher to produce an ``origin=mainline`` ActionIntent.  Separate from
+    # publish_options because it is an *identity*, not an option a client sets.
+    publish_decision: dict[str, Any]
     dry_run: bool
     auto_publish: bool
 

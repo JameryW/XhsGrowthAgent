@@ -160,9 +160,12 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 ## 已知残留
 
-- **主链仍不经控制面**：`publisher` 直接调 `run_publish`（S4a/S4b 的刻意决定），所以
-  intent → policy → confirm → execute 这条链今天只在 **API 路径**上。这也意味着
-  **待决问题 1 仍无落点**（见下）。**迁移方案（四阶段）见文末
+- **主链的执行仍不经控制面**：`publisher` 直接调 `run_publish`（S4a/S4b 的刻意决定），所以
+  intent → policy → confirm → execute 里的 **policy / confirm / execute 三段仍只在
+  API 路径**上。票 5bc 起，主链会为 review 批准的**真实**发布产出一条
+  `origin=mainline` 的 `ActionIntent`（decision 身份由审批端点写入、按内容哈希绑定），
+  但它目前只是**审计/交接**——执行仍走 `run_publish`。**待决问题 1 已按裁决落地**（账号必须
+  显式解析为发布主体；部署本体不构造 account-scoped intent）。**迁移方案（四阶段）见文末
   「主链迁移控制面：阶段方案（票 5au）」**。
   - ⚠️ **名字**：计划行把这一环写成 `PublishIntent`，**落地对象叫 `ActionIntent`**
     （`backend/creator_agent/models.py`）—— `grep -rn PublishIntent backend/` 是**零命中**。
@@ -202,8 +205,8 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 | 主张 | 发布的值 | 复核方式 |
 | --- | --- | --- |
 | `mainline_run_publish_direct_call_sites` | `3` | AST：`backend/**/*.py` 里 `run_publish(...)` 的调用点，**排除函数定义本身** |
-| `action_intent_construction_sites` | `1` | AST：全仓 `ActionIntent(...)` 的构造点；唯一那个在控制面内 |
-| `mainline_action_intent_producers` | `0` | 上一个集合里落在 `backend/creator_agent/` **之外**的个数（上一条是它的阳性对照） |
+| `action_intent_construction_sites` | `2` | AST：全仓 `ActionIntent(...)` 的构造点；advisor 一处 + 主链 producer 一处（票 5bc） |
+| `mainline_action_intent_producers` | `1` | 上一个集合里落在 `backend/creator_agent/` **之外**的个数（上一条是它的阳性对照） |
 | `event_kinds_readers_outside_its_defining_module` | `1` | AST：除 `backend/db/workflow_events.py` 外，import 或引用 `EVENT_KINDS` 的文件数（**注释不算**）；今天那 1 个是 `backend/services/signal_inventory.py` 的漂移检测 |
 | `account_credentials_inserts` | `1` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（DDL / `SELECT` / `DELETE` 都不算）。票 5n 起唯一那处是扫码登录的 `upsert_credential` |
 
@@ -231,8 +234,8 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 | 事实 | 今天 | 复核 |
 | --- | --- | --- |
 | 主链直调 `run_publish` | `mainline_run_publish_direct_call_sites = 3` | claim 表（AST） |
-| 主链产出 `ActionIntent` | `mainline_action_intent_producers = 0` | claim 表（AST） |
-| 控制面 intent 构造点 | `action_intent_construction_sites = 1`（仅在 `backend/creator_agent/`） | claim 表（AST） |
+| 主链产出 `ActionIntent` | `mainline_action_intent_producers = 1`（票 5bc 起） | claim 表（AST） |
+| 控制面 intent 构造点 | `action_intent_construction_sites = 2`（advisor + 主链 producer） | claim 表（AST） |
 
 三处直调位置：`backend/agents/publisher.py`（主链发布）、`backend/api/routes/_wf_actions.py`
 （publish-retry 通道）、`backend/api/routes/free.py`（free 模式）。它们共享同一个
@@ -259,7 +262,7 @@ P1 在落地时被切成两半，因为一个前提不成立：控制面的意�
 `artifact://publish_content/<publish_id>` + sha256；PREPARED 记录携带
 `principal_kind` / `principal_account_id` / `artifact_ref` / `content_hash`。
 空账号仍表示部署本体（凭证解析器本来就按部署声明解析它，不是发明账号），
-执行器、幂等键与 publish_result 全部不变。claim 不变：直调仍 `3`、生产者仍 `0`。
+执行器、幂等键与 publish_result 全部不变。claim：直调仍 `3`；生产者随后由 P1b-2 从 0 变 1。
 
 **P1b — 身份模型（未拍板，先别构造 `ActionIntent`）**：`ActionIntentRequest` 需要
 `decision_id`，`ActionIntent` 还要 `creator_id` / `audience_id`；主链三者都没有，
@@ -276,21 +279,27 @@ ranked candidates）。所以在主链构造控制面对象 = 发明身份，正
 （`ActionOrigin.CREATOR` / `MAINLINE`）；creator origin 强制 `creator_id`/`audience_id`
 非空，mainline origin 禁止携带二者（不能借创作者的身份证）；`/creator_agent` 既有
 构造路径与 API 契约不变，旧行缺 `origin` 时读作 creator。存储是整行 `payload_json`，
-因此**无需列迁移**。构造点仍只有 `creator_agent/advisor.py` 一处 ——
-`action_intent_construction_sites` 仍为 `1`。
+因此**无需列迁移**。在 P1b-2 之前，构造点只有 `creator_agent/advisor.py` 一处 ——
+`action_intent_construction_sites` 当时为 `1`。
 
-**P1b-2（剩余半步）**：主链 review 审批产生一个持久的 mainline decision 身份
-（decision_id + thread_id + account_id + publish_id + approved_by/at + content_hash/
-artifact_ref），`run_publish` 用它构造 `origin=mainline` 的 `ActionIntent` 并落库
-（仍由 `run_publish` 执行）——那一步才会让 `mainline_action_intent_producers`
-从 0 变 ≥1。
+**P1b-2 已落地（票 5bc，2026-11-01）**：review 审批端点在批准**真实**发布时写入
+`state["publish_decision"]` —— `decision_id`（`mainline:<uuid>`，审批事件自己的身份，
+不由内容派生）、`thread_id`、`account_id`、`content_hash`（审批时内容哈希，绑定
+"批准了哪份内容"而不绑定时间窗漂移的 publish_id）、`approved_by`/`approved_at`。
+`run_publish` 在 Effect 账本 claim 成功后消费它：只有 **account-scoped**（部署本体不构造：
+模型是 account-scoped 的）、内容哈希一致、账号一致、thread 非空时，才构造
+`origin=mainline` 的 `ActionIntent`（`creator_id`/`audience_id` 为空、
+`status=CONFIRMED`、`resolved_at=approved_at`、`idempotency_key=publish_id`）并经
+creator-agent 仓库落库。**执行仍走 `run_publish`**；构造失败/不匹配一律 best-effort
+跳过并记日志，绝不影响发布。因此 `action_intent_construction_sites` = `2`
+（advisor + `services/publish_intent.py`），`mainline_action_intent_producers` = `1`；
+直调仍 `3`（P3 才变 0）。
 
-拍板前 `mainline_action_intent_producers` 保持 `0` —— 它是"真的构造了控制面对象"的
-度量；为让数字好看而构造一个无效对象，是把判据本身变成装饰。
-
-- claim（P1b 完成后才变）：`mainline_action_intent_producers` 0 → ≥1；直调仍 `3`。
-- 验收（P1a）：两类主体都有测试；PREPARED 带材料；发布结果逐字段不变——已满足。
-- 回滚：P1a 是纯派生（删调用即回到裸取 account_id），执行器未变。
+- claim：`mainline_action_intent_producers` 0 → **1**；直调仍 `3`（P3 目标 0）。
+- 验收（P1a/P1b）：两类主体（account/deployment）行为与测试齐；批准路径有 decision 身份、
+  内容哈希不匹配/账号不匹配/部署主体都不产出 intent；发布结果逐字段不变。
+- 回滚：P1a/P1b 都是旁路写入（artifact、账本 extra、intent 行）；删调用即回到裸取
+  account_id 且执行器未变。
 
 **P2 — 策略门禁（复用同一份规则）**
 在 intent 构造后调用 `policy.py` 的发布策略评估；拒绝返回 typed 结果且**不写回执**，

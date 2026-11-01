@@ -23,8 +23,11 @@ import pytest
 
 from backend.services.publish_intent import (
     PUBLISH_CONTENT_KIND,
+    PublishIntentMaterial,
+    PublishPrincipal,
     publish_content_body,
     publish_intent_material,
+    record_mainline_publish_intent,
     resolve_publish_principal,
     write_publish_content_artifact,
 )
@@ -148,3 +151,162 @@ class TestTheArtifactHoldsWhatTheHashDescribes:
 
         assert material.principal == principal
         assert material.artifact_ref.startswith(f"artifact://{PUBLISH_CONTENT_KIND}/")
+
+
+class TestTheMainlineIntentIsBuiltFromTheDecisionNotInvented:
+    """P1b-2 (票 5bc): the producer consumes the approval's identity.
+
+    These pin the refusals as hard as the success: a decision that does not bind
+    to this publish (content/account/thread), an empty content material, or a
+    deployment principal must all produce *no* intent — never a guessed one.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_store(self):
+        from backend.db import creator_agent as creator_agent_db
+
+        creator_agent_db._reset_memory_store()
+        yield
+        creator_agent_db._reset_memory_store()
+
+    def _material(self, **overrides) -> PublishIntentMaterial:
+        base: dict[str, Any] = {
+            "principal": PublishPrincipal(kind="account", account_id="acc-1"),
+            "artifact_ref": "artifact://publish_content/publish-1",
+            "content_hash": "a" * 64,
+        }
+        base.update(overrides)
+        return PublishIntentMaterial(**base)
+
+    def _decision(self, **overrides) -> dict[str, Any]:
+        base: dict[str, Any] = {
+            "decision_id": "mainline:abc123",
+            "source": "mainline_review",
+            "thread_id": "thread-1",
+            "account_id": "acc-1",
+            "content_hash": "a" * 64,
+            "approved_by": "user-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        base.update(overrides)
+        return base
+
+    async def test_a_bound_decision_produces_a_mainline_intent(self):
+        from backend.creator_agent import ActionOrigin
+        from backend.db import creator_agent as creator_agent_db
+
+        stored = await record_mainline_publish_intent(
+            _STATE,
+            publish_id="publish-1",
+            material=self._material(),
+            principal=PublishPrincipal(kind="account", account_id="acc-1"),
+            decision=self._decision(),
+        )
+
+        assert stored is not None
+        assert stored.origin is ActionOrigin.MAINLINE
+        assert stored.creator_id == ""
+        assert stored.audience_id == ""
+        assert stored.decision_id == "mainline:abc123"
+        assert stored.account_id == "acc-1"
+        assert stored.artifact_ref == "artifact://publish_content/publish-1"
+        assert stored.content_hash == "a" * 64
+        assert stored.thread_id == "thread-1"
+        assert stored.idempotency_key == "publish-1"
+        assert stored.resolved_at == "2026-11-01T00:00:00+00:00"
+        repo = creator_agent_db.DurableCreatorAgentRepository()
+        assert await repo.get_action("acc-1", stored.action_id) is not None
+
+    async def test_a_retry_keeps_the_same_intent_row(self):
+        first = await record_mainline_publish_intent(
+            _STATE,
+            publish_id="publish-1",
+            material=self._material(),
+            principal=PublishPrincipal(kind="account", account_id="acc-1"),
+            decision=self._decision(),
+        )
+        again = await record_mainline_publish_intent(
+            _STATE,
+            publish_id="publish-1",
+            material=self._material(),
+            principal=PublishPrincipal(kind="account", account_id="acc-1"),
+            decision=self._decision(),
+        )
+
+        assert first is not None and again is not None
+        assert again.action_id == first.action_id
+        assert again.idempotency_key == first.idempotency_key
+
+    @pytest.mark.parametrize(
+        "overrides,reason",
+        [
+            ({"content_hash": "b" * 64}, "content changed after approval"),
+            ({"account_id": "acc-2"}, "another account's approval"),
+            ({"thread_id": ""}, "no decision thread and no state thread"),
+        ],
+    )
+    async def test_a_decision_that_does_not_bind_produces_no_intent(self, overrides, reason):
+        state = dict(_STATE)
+        state.pop("session_id", None)
+        stored = await record_mainline_publish_intent(
+            state,
+            publish_id="publish-1",
+            material=self._material(),
+            principal=PublishPrincipal(kind="account", account_id="acc-1"),
+            decision=self._decision(**overrides),
+        )
+
+        assert stored is None, reason
+
+    async def test_no_decision_or_no_material_produces_no_intent(self):
+        account = PublishPrincipal(kind="account", account_id="acc-1")
+        assert (
+            await record_mainline_publish_intent(
+                _STATE,
+                publish_id="publish-1",
+                material=self._material(),
+                principal=account,
+                decision=None,
+            )
+            is None
+        )
+        no_ref = self._material(artifact_ref="", content_hash="")
+        assert (
+            await record_mainline_publish_intent(
+                _STATE,
+                publish_id="publish-1",
+                material=no_ref,
+                principal=account,
+                decision=self._decision(),
+            )
+            is None
+        )
+
+    async def test_a_deployment_principal_gets_no_intent(self):
+        stored = await record_mainline_publish_intent(
+            _STATE,
+            publish_id="publish-1",
+            material=self._material(principal=PublishPrincipal(kind="deployment", account_id="")),
+            principal=PublishPrincipal(kind="deployment", account_id=""),
+            decision=self._decision(account_id=""),
+        )
+
+        assert stored is None
+
+    async def test_a_storage_failure_is_no_intent_not_an_exception(self, monkeypatch):
+        from unittest.mock import AsyncMock as _AsyncMock
+
+        monkeypatch.setattr(
+            "backend.db.creator_agent.DurableCreatorAgentRepository.create_action",
+            _AsyncMock(side_effect=RuntimeError("store down")),
+        )
+
+        stored = await record_mainline_publish_intent(
+            _STATE,
+            publish_id="publish-1",
+            material=self._material(),
+            principal=PublishPrincipal(kind="account", account_id="acc-1"),
+            decision=self._decision(),
+        )
+
+        assert stored is None

@@ -824,6 +824,7 @@ async def run_publish(
     # deployment principal (never an invented account).
     from backend.services.publish_intent import (
         publish_intent_material,
+        record_mainline_publish_intent,
         resolve_publish_principal,
     )
 
@@ -983,6 +984,18 @@ async def run_publish(
             ),
             "phase": WorkflowPhase.PUBLISHING,
         }
+
+    # P1b-2: now that the effect is claimed, persist the durable decision's
+    # intent (origin=mainline). Audit only — the publish still executes below
+    # through run_publish; a refusal or storage failure here changes nothing.
+    publish_decision = state.get("publish_decision")
+    await record_mainline_publish_intent(
+        state,
+        publish_id=publish_id,
+        material=material,
+        principal=principal,
+        decision=publish_decision if isinstance(publish_decision, Mapping) else None,
+    )
 
     # P1-B: record *why* this publish is gated. Telemetry only — the gate
     # itself stays the existing human publish_gate; this line exists so an

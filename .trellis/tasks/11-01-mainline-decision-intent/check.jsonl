@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "verify the landed producer matches the plan and the published claims"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a side-write that must never affect publishing"}

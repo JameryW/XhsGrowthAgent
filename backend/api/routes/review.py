@@ -105,6 +105,34 @@ def _build_version_entry(
     }
 
 
+def _mainline_publish_decision(
+    values: dict[str, Any],
+    publish_options: PublishOptions,
+    thread_id: str,
+    user: dict[str, Any],
+) -> dict[str, Any]:
+    """The durable mainline decision identity for one approved real publish (P1b-2).
+
+    This is an **identity**, not an option: a client cannot set it, a dry-run never
+    gets one, and it is bound to the content it approved by ``content_hash`` (not
+    by a time-windowed publish id, so a publish that crosses a window boundary is
+    still the approved content).  ``run_publish`` consumes it to construct an
+    ``origin=mainline`` ActionIntent; it does not change what the publish does.
+    """
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+
+    return {
+        "decision_id": f"mainline:{uuid.uuid4().hex}",
+        "source": "mainline_review",
+        "thread_id": thread_id,
+        "account_id": str(publish_options.account_id or "").strip(),
+        "content_hash": content_hash(publish_content_body(values)),
+        "approved_by": str(user.get("id") or ""),
+        "approved_at": datetime.now(UTC).isoformat(),
+    }
+
+
 @router.get("/pending/{thread_id}")
 async def get_pending_review(
     thread_id: str,
@@ -187,6 +215,12 @@ async def submit_review(
     if decision.decision == "approved":
         pub_opts = decision.publish_options or PublishOptions(dry_run=True)
         updates["publish_options"] = pub_opts.model_dump()
+        # P1b-2: a real publish approval is also a durable decision identity.
+        # Dry-run approvals never produce one (no intent is ever executed).
+        if not pub_opts.dry_run:
+            updates["publish_decision"] = _mainline_publish_decision(
+                values, pub_opts, thread_id, user
+            )
 
     # ponytail: record how long the user waited at review_gate (PRD 节点级指标).
     # entered_at = last node completion before the gate. P1a-S2: written to the
