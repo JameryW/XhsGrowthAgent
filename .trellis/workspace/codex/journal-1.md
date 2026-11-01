@@ -1223,3 +1223,37 @@ P3 切换前的去重切片：主链不再自建 xhs.publish 载荷字段表。P
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: 目标轮 7：P3b-1 控制面执行器支持 mainline-origin intent 与回执（票 5bf）
+
+**Date**: 2026-11-01
+**Task**: 目标轮 7：P3b-1 控制面执行器支持 mainline-origin intent 与回执（票 5bf）
+**Branch**: `main`
+
+### Summary
+
+P3b 切换前的前置能力：让 CreatorAdvisor.execute_action 执行 origin=mainline intent。ActionExecution 新增 origin（默认 creator）并把 creator_id/audience_id 改为默认空、model_revision 改为 int|None：creator 必须携三者，mainline 必须为空/None（不借创作者身份，None 而非 0）。execute_action 对 mainline intent 不加载 DecisionRecord（审批身份即 decision_id）、只允许 PUBLISH（其他 capability 拒绝且无回执）、回执经单一 _record_execution 写入；仓库 create_action_execution 对 mainline 跳过 DecisionRecord provenance 查询（memory+postgres），保留 CONFIRMED/来源一致/幂等回执语义；creator 行为逐字段不变。新增 7 个 mainline 执行用例；creator_agent 既有 204 全绿；定向 1079 passed；全量 4784 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。三条直调未动，claim 仍 3。目标保持 active：剩余 P3b-2（三条路径接执行器、六态/幂等对齐、claim 3→0）与 P4 收口，及路线图/外部验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `11456ba5` | (see git log) |
+| `02acba7c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
