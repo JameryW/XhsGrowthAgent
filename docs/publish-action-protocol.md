@@ -441,7 +441,9 @@ PREPARED / 自己的账本 claim，以及 dispatch 之后的 unknown 判定、�
 （把发布交给执行器的唯一调用点）；两者都有**区分性阳性对照**（docstring/注释提到不算，
 真实的调用才算）。架构文档的"接入边界（诚实披露）"已同步 B3 切换。
 
-剩余：无（分支 B 的 B1–B4 全部落地；接下来只待 review/推送）。
+剩余：无（分支 B 的 B1–B4 全部落地）。**2026-11-01 已推送 `origin/main` 并在 CI 验证**：
+commit `cccb0041` / journal `2d614709`；GitHub Actions run `41306901460` 与 `41307361407`
+的 10 个作业全部 success（含 mypy、Test py3.11/3.12 的 Postgres parity、frontend、OMP）。
 注意：Postgres 迁移路径本地无 PG 实例，只由 CI 的 parity 套件覆盖。
 
 ### 不变量（每阶段都必须保持）

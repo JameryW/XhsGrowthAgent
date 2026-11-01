@@ -1,0 +1,2 @@
+{"file": ".github/workflows/ci.yml", "reason": "the jobs whose results are being recorded"}
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "the architecture record that receives the CI evidence"}

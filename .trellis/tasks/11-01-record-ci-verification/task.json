@@ -1,0 +1,29 @@
+{
+  "id": "record-ci-verification",
+  "name": "record-ci-verification",
+  "title": "docs: 记录推送与 CI 全绿证据（票 5bz）",
+  "description": "把真实环境验证写进架构记录：publish-action-protocol 的分支 B 收口段与 agent-os-upgrade §9 增加『已推送 origin/main 并通过 CI』的 commit/run 证据（commit cccb0041、journal 2d614709；run 41306901460 与 41307361407 的 10 个作业全 success），避免后续会话重复验证或误以为只在本地验证过。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/publish-action-protocol.md",
+    "docs/agent-os-upgrade-2026q4.md"
+  ],
+  "notes": "DONE 2026-11-01 (docs only). The repo recorded branch B and the local CI runner as locally verified; the real-environment verification happened after the authorized push: origin/main now has commit cccb0041 plus journal 2d614709, and both GitHub Actions runs finished with all ten jobs successful. Run 41306901460 (commit cccb0041) and run 41307361407 (commit 2d614709) both cover the three things the sandbox could not: strict mypy without numpy, Test py3.11/py3.12 with the Postgres service (so the attempt-scoped receipt migration SQL really ran), and Frontend vitest/type-check/i18n plus OMP tsc. Recorded that evidence in publish-action-protocol's branch-B closure paragraph and in agent-os-upgrade §9.2 (branch B row + conclusion). Verification: tests/unit/scripts 108 passed; ruff check green; scripts/ci_local.py --only format PASS. Full pytest was not re-run for this documentation-only change; the pushed commit's CI covers the suite.",
+  "meta": {}
+}
