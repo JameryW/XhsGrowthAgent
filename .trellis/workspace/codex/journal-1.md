@@ -1700,3 +1700,36 @@ ci_local.py 的 tests 作业现在镜像 CI 的 parity 复查：全量通过后�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 51: 继续：钉住单账本 claim 不变量（票 5by）
+
+**Date**: 2026-11-01
+**Task**: 继续：钉住单账本 claim 不变量（票 5by）
+**Branch**: `main`
+
+### Summary
+
+新增用例钉住分支 B 的单账本决定：approved publish 经执行器后主链 publish_id 账本 CONFIRMED 且 intent_effects 命名空间为空；docs 不变量 2 改为收口终态（有 intent 唯一入口 execute_action、无 intent 回退是显式例外、一次发布一个账本 claim），迁移期『不做』条目标注历史。验证：新用例通过、全量 4827 passed / 14 skipped / 0 failed / 0 errors、ruff 与 doc gates 绿。票 5by 已归档，工作树干净。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74aae551` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
