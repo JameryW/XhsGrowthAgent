@@ -1291,3 +1291,37 @@ P3 收口切片：workflow 节点/publish-retry/free 三条主链发布路径统
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: 目标轮 9：P4 主链迁移收口（票 5bh）——四阶段完成
+
+**Date**: 2026-11-01
+**Task**: 目标轮 9：P4 主链迁移收口（票 5bh）——四阶段完成
+**Branch**: `main`
+
+### Summary
+
+P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅由 execute_mainline_publish 调用（新增 AST 单调用点不变量测试）；删除 residue claim 行 mainline_run_publish_direct_call_sites 及扫描器/映射/阳性对照，为仍存 zero claim（ripple 直调）补判别性阳性对照；文档收口（已知残留不再声明主链执行残留、claim 表行删除、起点表/P1b-2/P2/P3/P3a/P4 段落同步、P4 记录分支 A 采用与分支 B 未采用原因；execution-plane/agent-os/代码 docstring 同步；锚点更新）。5au 四阶段 P1–P4 至此全部落地：P1 intent+material（5ba/5bb/5bc）、P2 共享 policy 门禁（5bd）、P3a 共享 PublishRequest（5be）、P3b-1 mainline 执行器（5bf）、P3b-2 单一入口+身份（5bg）、P4 收口（5bh）。验证：定向 210 passed；doc gates 98 passed；全量 4791 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。工作树干净（仅历史未跟踪 .workbuddy/），无活动 Trellis 任务，58 个本地提交未 push（按约定）。剩余为文档已明示的延后项（架构路线图 P2『先不建』、P3 需评测集先行；私信 DOM 真机验证）与 P4 分支 B（执行器回执接管，需先吸收六态账本，另行开票）。目标达成，标记 complete。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `080416e9` | (see git log) |
+| `70744f1a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
