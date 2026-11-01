@@ -344,6 +344,24 @@ artifact_ref / content_hash / content + 主链侧 `private` / `scheduled_time` /
   逐条对齐），再按 P3 验收把 claim 3→0。
 - 回滚：恢复 `run_publish` 内联载荷构造；共享 request 的字段可保留（控制面不用默认值）。
 
+**P3b-1 已落地（票 5bf，2026-11-01）：控制面执行器支持 mainline-origin intent。**
+主链接下来的执行入口是同一个 `CreatorAdvisor.execute_action`，所以先让它能执行
+`origin=mainline` 的已确认 intent：
+- `ActionExecution` 新增 `origin`（默认 creator）；creator origin 必须携带
+  `creator_id`/`audience_id`/`model_revision`，mainline origin 必须**为空/None**
+  （不借创作者身份；`model_revision=None` 而非 0 —— 0 会和真实 revision 撞车）；
+- `execute_action`：mainline intent **不加载** `DecisionRecord`（审批身份就是
+  `decision_id`，票 5bc），只允许 PUBLISH（其他 capability 按未接线拒绝，不产生回执）；
+- 回执由单一 `_record_execution` 写入，两种 origin 共用同一条持久化路径；
+- 仓库 `create_action_execution` 对 mainline-origin 跳过 DecisionRecord provenance 查询，
+  其余（intent 必须 CONFIRMED、来源字段一致、同 action 幂等返回同一回执）不变。
+- 已验证：主链 intent 执行一次并产出 mainline 回执（creator 半区为空）；二次执行返回
+  同一回执且只 dispatch 一次；失败发布 → FAILED 回执；非 CONFIRMED / 非 publish 的
+  mainline intent 被拒且无回执。creator_agent 既有 204 用例全绿。
+- 仍未改三条直调：claim 仍 `3`。剩余 **P3b-2**：把主链/retry/free 三条路径接到
+  `execute_action`（需要先让 free/retry 也有可执行 mainline intent），并把 `EffectLedger`
+  六态语义、幂等键与 human review gate 的先后逐条对齐后再把 claim 3→0。
+
 **P4 — 收口**
 删除直调分支与「主链不经控制面」残留条目，清理为兼容保留的开关，claim 归零并删除对应行。
 - 验收：`mainline_run_publish_direct_call_sites = 0` 且不再有 `run_publish` 直调；文档不再声明残留；

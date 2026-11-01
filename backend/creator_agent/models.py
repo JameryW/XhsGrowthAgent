@@ -766,21 +766,52 @@ class ActionExecutionStatus(StrEnum):
 
 
 class ActionExecution(BaseModel):
-    """Immutable, deterministic receipt for one confirmed Action Intent."""
+    """Immutable, deterministic receipt for one confirmed Action Intent.
+
+    ``origin`` decides which identity half the receipt must carry (P3b, 票 5bf):
+
+    * **creator** executions are built from a revision-pinned ``DecisionRecord``
+      and therefore carry its ``creator_id`` / ``audience_id`` /
+      ``model_revision`` — the record those fields describe still exists.
+    * **mainline** executions have no ``DecisionRecord``: the approval identity
+      *is* ``decision_id`` (P1b-2), so the creator half must stay empty rather
+      than borrow an identity the mainline never had.  ``model_revision`` is
+      ``None`` for the same reason (0 would collide with a real revision).
+
+    The validator refuses a mismatched pair at the boundary; the durable row is
+    written once and must answer "under whose identity was this executed?".
+    """
 
     execution_id: str = Field(min_length=1, max_length=128)
     account_id: str = Field(min_length=1, max_length=128)
     action_id: str = Field(min_length=1, max_length=128)
     decision_id: str = Field(min_length=1, max_length=128)
-    creator_id: str = Field(min_length=1, max_length=128)
-    audience_id: str = Field(min_length=1, max_length=128)
+    origin: ActionOrigin = ActionOrigin.CREATOR
+    creator_id: str = Field(default="", max_length=128)
+    audience_id: str = Field(default="", max_length=128)
     action_kind: ActionCapability
-    model_revision: int = Field(ge=1)
+    model_revision: int | None = Field(default=None, ge=1)
     executor_version: str = Field(min_length=1, max_length=128)
     status: ActionExecutionStatus = ActionExecutionStatus.SUCCEEDED
     result: dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
+
+    @model_validator(mode="after")
+    def validate_origin_identity(self) -> ActionExecution:
+        """The origin and the identity half must agree (same rule as ``ActionIntent``)."""
+        creator = (self.creator_id or "").strip()
+        audience = (self.audience_id or "").strip()
+        if self.origin is ActionOrigin.CREATOR:
+            if not creator or not audience or self.model_revision is None:
+                raise ValueError(
+                    "creator-origin executions require creator_id, audience_id and model_revision"
+                )
+        elif creator or audience or self.model_revision is not None:
+            raise ValueError(
+                "mainline-origin executions must not carry creator/audience ids or model_revision"
+            )
+        return self
 
 
 # The domain calls this an execution receipt in prose.  Keep the shorter

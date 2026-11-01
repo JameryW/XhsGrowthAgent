@@ -11,6 +11,7 @@ from backend.creator_agent.dataset import build_decision_dataset_page
 from backend.creator_agent.models import (
     ActionExecution,
     ActionIntent,
+    ActionOrigin,
     ActionResolution,
     ActionStatus,
     CreatorModel,
@@ -1082,9 +1083,14 @@ class DurableCreatorAgentRepository:
                 if action.status is not ActionStatus.CONFIRMED:
                     raise ActionExecutionNotAllowedError(execution.action_id, action.status)
                 _validate_action_execution_source(action, execution)
-                decision = _mem_decisions.get((execution.account_id, execution.decision_id))
-                if decision is None:
-                    raise DecisionRecordMissingError(execution.decision_id)
+                if action.origin is not ActionOrigin.MAINLINE:
+                    decision = _mem_decisions.get(
+                        (execution.account_id, execution.decision_id)
+                    )
+                    if decision is None:
+                        raise DecisionRecordMissingError(execution.decision_id)
+                    if decision.model_revision != execution.model_revision:
+                        raise ValueError("action execution decision snapshot does not match")
                 stored = execution.model_copy(deep=True)
                 _mem_action_executions[key] = stored
                 return stored.model_copy(deep=True)
@@ -1110,20 +1116,24 @@ class DurableCreatorAgentRepository:
             # the locked action and receipt insert.  The Decision Record is an
             # immutable snapshot, so its payload is only used for provenance
             # validation here; the Advisor already built the deterministic
-            # result from this exact decision ID and model revision.
-            await cur.execute(
-                """
-                SELECT payload_json FROM creator_agent_decisions
-                WHERE account_id = %s AND decision_id = %s FOR SHARE
-                """,
-                (execution.account_id, execution.decision_id),
-            )
-            decision_row = await cur.fetchone()
-            if decision_row is None:
-                raise DecisionRecordMissingError(execution.decision_id)
-            decision = _decision_from_row(decision_row)
-            if decision.model_revision != execution.model_revision:
-                raise ValueError("action execution decision snapshot does not match")
+            # result from this exact decision ID and model revision.  Mainline
+            # receipts (票 5bf) have no Decision Record by design: their approval
+            # identity is the decision_id itself, so only the source-intent
+            # check applies.
+            if action.origin is not ActionOrigin.MAINLINE:
+                await cur.execute(
+                    """
+                    SELECT payload_json FROM creator_agent_decisions
+                    WHERE account_id = %s AND decision_id = %s FOR SHARE
+                    """,
+                    (execution.account_id, execution.decision_id),
+                )
+                decision_row = await cur.fetchone()
+                if decision_row is None:
+                    raise DecisionRecordMissingError(execution.decision_id)
+                decision = _decision_from_row(decision_row)
+                if decision.model_revision != execution.model_revision:
+                    raise ValueError("action execution decision snapshot does not match")
 
             await cur.execute(
                 """

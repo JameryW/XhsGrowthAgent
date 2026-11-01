@@ -24,6 +24,7 @@ from backend.creator_agent.models import (
     ActionExecutionStatus,
     ActionIntent,
     ActionIntentRequest,
+    ActionOrigin,
     ActionResolution,
     ActionStatus,
     DecisionCandidate,
@@ -534,6 +535,11 @@ class CreatorAdvisor:
         repository repeats the confirmation and source-existence checks while
         holding its adapter lock/transaction, so a concurrent cancellation
         cannot slip through between these reads.
+
+        Mainline-origin intents (票 5bf) take the same executor with one
+        difference: there is no Decision Record to load, because the approval
+        identity *is* ``decision_id``.  The receipt records the mainline origin
+        and leaves the creator half empty instead of borrowing one.
         """
         normalized_account_id = account_id.strip()
         normalized_action_id = action_id.strip()
@@ -551,16 +557,40 @@ class CreatorAdvisor:
         if action.status is not ActionStatus.CONFIRMED:
             raise ActionExecutionNotAllowedError(normalized_action_id, action.status)
 
-        decision = await self._repository.get_decision(normalized_account_id, action.decision_id)
-        if decision is None:
-            raise DecisionRecordMissingError(action.decision_id)
+        mainline = action.origin is ActionOrigin.MAINLINE
+        decision: DecisionRecord | None = None
+        if mainline:
+            # Mainline intents have no DecisionRecord *by design*: their approval
+            # identity is ``decision_id`` itself (票 5bc).  Requiring a creator
+            # decision here would refuse every mainline publish forever, and
+            # inventing one would be the identity borrow P1b forbids.
+            pass
+        else:
+            decision = await self._repository.get_decision(
+                normalized_account_id, action.decision_id
+            )
+            if decision is None:
+                raise DecisionRecordMissingError(action.decision_id)
 
-        # The publish is attempted only once the Decision Record is known to
-        # exist: a side effect must never sit on a path that is about to fail.
+        # The publish is attempted only once the identity is known to exist: a
+        # side effect must never sit on a path that is about to fail.
         publish_outcome: PublishOutcome | None = None
         if action.action_kind is ActionCapability.PUBLISH:
             publish_outcome = await self._execute_publish(action)
 
+        if mainline:
+            # Publish is the only capability a mainline intent can carry (P1b-2);
+            # anything else is a wiring error and must not produce a receipt.
+            if action.action_kind is not ActionCapability.PUBLISH or publish_outcome is None:
+                raise ActionCapabilityNotWiredError(action.action_id, action.action_kind)
+            return await self._record_execution(
+                action,
+                result=_publish_receipt_result(publish_outcome),
+                decision=None,
+                publish_outcome=publish_outcome,
+            )
+
+        assert decision is not None
         recommendations = {item.candidate_id: item for item in decision.recommendations}
         if action.action_kind is ActionCapability.COMPARE_OPTIONS:
             result: dict[str, object] = {
@@ -601,14 +631,32 @@ class CreatorAdvisor:
             # executor instead of by the absence of one).
             raise ActionCapabilityNotWiredError(action.action_id, action.action_kind)
 
+        return await self._record_execution(
+            action,
+            result=result,
+            decision=decision,
+            publish_outcome=publish_outcome,
+        )
+
+    async def _record_execution(
+        self,
+        action: ActionIntent,
+        *,
+        result: dict[str, Any],
+        decision: DecisionRecord | None,
+        publish_outcome: PublishOutcome | None = None,
+    ) -> ActionExecution:
+        """Persist one receipt, choosing the identity half from the intent's origin.
+
+        Creator execution has a DecisionRecord to name creator/audience/model
+        revision from; mainline execution has none and must record emptiness
+        rather than a substitute (票 5bf).  One persistence site, so the two
+        paths cannot drift on status or executor version.
+        """
         now = utc_now_iso()
         # Only a *published* outcome is a success.  An ``unknown`` publish
-        # deliberately shares ``FAILED`` rather than getting a third status:
-        # the receipt's ``result["status"]`` keeps the distinction machine
-        # readable, and no consumer of ``ActionExecutionStatus`` tells the two
-        # apart today -- inventing a value would change a durable contract for
-        # nobody.  A publish that *failed to be attempted* never reaches here at
-        # all; it raises before the Gateway (see ``_execute_publish``).
+        # deliberately shares ``FAILED``: the receipt's ``result["status"]``
+        # keeps the distinction machine-readable.
         receipt_status = (
             ActionExecutionStatus.SUCCEEDED
             if publish_outcome is None or publish_outcome.succeeded
@@ -616,13 +664,14 @@ class CreatorAdvisor:
         )
         execution = ActionExecution(
             execution_id=str(uuid.uuid4()),
-            account_id=normalized_account_id,
+            account_id=action.account_id.strip(),
             action_id=action.action_id,
-            decision_id=decision.decision_id,
-            creator_id=decision.creator_id,
-            audience_id=decision.audience_id,
+            decision_id=action.decision_id,
+            origin=action.origin,
+            creator_id=decision.creator_id if decision is not None else "",
+            audience_id=decision.audience_id if decision is not None else "",
             action_kind=action.action_kind,
-            model_revision=decision.model_revision,
+            model_revision=decision.model_revision if decision is not None else None,
             executor_version=self.EXECUTOR_VERSION,
             status=receipt_status,
             result=result,

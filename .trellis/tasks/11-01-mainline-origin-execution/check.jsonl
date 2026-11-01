@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "verify P3b-1 matches the documented split and leaves the claim untouched"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for an execution path that must not invent identities"}

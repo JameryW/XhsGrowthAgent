@@ -1,0 +1,31 @@
+{
+  "id": "mainline-origin-execution",
+  "name": "mainline-origin-execution",
+  "title": "P3b-1：控制面执行器支持 mainline-origin intent 与回执（票 5bf）",
+  "description": "ActionExecution 加 origin（creator/mainline）与身份配对校验；execute_action 对 mainline intent 不加载 DecisionRecord、只允许 PUBLISH、经单一 _record_execution 写回执；仓库对 mainline 跳过 decision provenance、保持 CONFIRMED/来源一致/幂等回执语义；creator 行为不变。为 P3b-2 三条直调切换铺路，claim 仍 3。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/creator_agent,backend/db,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/models.py",
+    "backend/creator_agent/advisor.py",
+    "backend/db/creator_agent.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (P3b-1). The control-plane executor can now run a mainline-origin intent, which is the prerequisite for routing the three direct run_publish call sites through it in P3b-2. ActionExecution gained origin (default creator), creator_id/audience_id now default to '' and model_revision is int | None = None, with the same boundary rule as ActionIntent: creator origin requires creator_id+audience_id+model_revision (>=1); mainline origin forbids all three (None rather than 0, because 0 collides with a real revision). execute_action branches on origin: mainline intents do NOT load a DecisionRecord (the approval identity is decision_id itself, 票 5bc), only PUBLISH is allowed (any other capability raises ActionCapabilityNotWiredError and no receipt is written), and the receipt is written through a single new _record_execution helper shared by both origins (identity half chosen from the origin; status/executor_version one place). The repository's create_action_execution skips the DecisionRecord provenance SELECT/model-revision compare for mainline-origin receipts in both the memory and Postgres adapters, while keeping the intent-must-be-CONFIRMED check, _validate_action_execution_source, and idempotent return of an existing receipt unchanged. Creator-origin behaviour is byte-identical (existing 204 creator_agent tests green). The three direct call sites are untouched by design: mainline_run_publish_direct_call_sites stays 3. Tests: new tests/unit/creator_agent/test_mainline_execution.py (7: mainline intent executes once -> receipt with mainline origin, empty creator half, None model revision, decision_id preserved, dispatcher got the right PublishRequest; second execute returns the same receipt and dispatches once; failed publish -> FAILED receipt; non-publish and non-CONFIRMED mainline intents refused with no receipt; receipt model refuses mixed identities in both directions). Verification: creator_agent+db+api+contract 1079 passed; full suite 4784 passed / 14 skipped / 0 failed / 0 errors; ruff green.",
+  "meta": {}
+}
