@@ -29,7 +29,6 @@ from fastapi import Depends, Request
 from backend.agents.publisher import (
     evaluate_unknown_publish_retry,
     reconcile_unknown_publish,
-    run_publish,
 )
 from backend.api.account_scope import assert_thread_owned
 from backend.api.deps import get_current_user
@@ -38,6 +37,7 @@ from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 from backend.api.routes._runner import _db_upsert, _execution_lease, _get_as_node
 from backend.api.routes._wf_runtime import _on_task_done
+from backend.creator_agent.mainline_publish import execute_mainline_publish
 from backend.db.execution_leases import AcquireOutcome
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
@@ -486,7 +486,9 @@ async def retry_publish(
                 resolved = await resolve_state(
                     getattr(graph, "store", None), thread_id, snap.values
                 )
-                result = await run_publish(resolved, graph.store)
+                result = await execute_mainline_publish(
+                    resolved, graph.store, operator_id=str(user.get("id") or "")
+                )
                 publish_result = result["publish_result"]
                 snap = await graph.aget_state(config)
                 await graph.aupdate_state(

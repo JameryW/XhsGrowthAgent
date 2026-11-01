@@ -393,3 +393,22 @@ def test_the_credential_scanner_counts_an_insert_and_not_a_read(tmp_path: Path):
     assert len(inserts) == 1, f"expected only the INSERT: {inserts}"
     assert inserts[0].endswith("store.py:3"), f"expected line 3 -- the INSERT: {inserts}"
     assert writer.exists()
+
+
+def test_the_run_publish_scan_finds_a_call_and_not_a_back_compat_alias(tmp_path: Path):
+    """Positive control for ``mainline_run_publish_direct_call_sites`` (now 0).
+
+    The fixture **discriminates**: one real call site and one alias assignment.
+    A scanner matching the *name* answers 2; the AST scan asks for a ``Call`` and
+    answers 1, so the published zero means "no caller left", not "gutted scanner".
+    """
+    caller = _write(
+        tmp_path,
+        "routes/retry.py",
+        "async def go(state, store):\n    await run_publish(state, store)\n",
+    )
+    _write(tmp_path, "agents/publisher.py", "run_publish = _run_publish_attempt\n")
+
+    calls = _run_publish_calls(tmp_path)
+
+    assert calls == [caller], calls

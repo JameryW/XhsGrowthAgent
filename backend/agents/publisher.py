@@ -756,7 +756,11 @@ class PublisherAgent(BaseAgent):
                 "phase": WorkflowPhase.PUBLISHING,
             }
 
-        return await run_publish(state, store, agent=self)
+        # 票 5bg: the workflow node reaches the single control-plane execution
+        # entry; the attempt implementation below is private to this module.
+        from backend.creator_agent.mainline_publish import execute_mainline_publish
+
+        return await execute_mainline_publish(state, store, agent=self)
 
 
 async def _record_publish_blocked(
@@ -802,9 +806,7 @@ async def _record_publish_blocked(
     )
 
 
-def _evaluate_mainline_publish_policy(
-    state: Mapping[str, Any], account_id: str
-) -> PolicyVerdict:
+def _evaluate_mainline_publish_policy(state: Mapping[str, Any], account_id: str) -> PolicyVerdict:
     """Run the shared publish policy on a mainline publish's state (P2, 票 5bd).
 
     Same module, same rule table and the same checkpoint projection the control
@@ -839,9 +841,7 @@ def _publish_policy_denied(
     """
     retry_after = verdict.retry_after_seconds
     reason = verdict.reason or "publish policy denied"
-    logger.warning(
-        "发布策略拒绝: policy_id=%s reason=%s", verdict.policy_id, reason
-    )
+    logger.warning("发布策略拒绝: policy_id=%s reason=%s", verdict.policy_id, reason)
     recovery: dict[str, Any]
     if retry_after:
         recovery = {
@@ -875,18 +875,21 @@ def _publish_policy_denied(
     }
 
 
-async def run_publish(
+async def _run_publish_attempt(
     state: XHSGrowthState | dict[str, Any],
     store: BaseStore,
     *,
     agent: BaseAgent | None = None,
 ) -> dict[str, Any]:
-    """Execute the real (non-dry-run) publish against Xiaohongshu.
+    """The real-publish attempt implementation (private; 票 5bg).
 
-    Extracted from PublisherAgent.execute so failed-publish retries (the
-    /api/workflow/publish-retry endpoint) can re-run just the publish step
-    with the workflow's existing content, without re-running the creation
-    chain or honoring dry_run. Returns the same shape as execute.
+    In-repo callers reach this through the control-plane execution entry
+    ``creator_agent.mainline_publish.execute_mainline_publish`` — that entry owns
+    the decision identity (review approval, or the operator identity of a free
+    publish) and is the only sanctioned path.  This function itself is the
+    extracted real-publish core: failed-publish retries can re-run just the
+    publish step with the workflow's existing content, without re-running the
+    creation chain or honoring dry_run. Returns the same shape as execute.
 
     Outcome contract (P0-W4): publish_result.status is "published" (verdict:
     posted), a definite failure status (verdict: not posted), or "unknown" —
@@ -1366,3 +1369,13 @@ async def run_publish(
         # the caller writes it back to state so the bypass never sticks.
         **({"publish_options": cleared_publish_options} if cleared_publish_options else {}),
     }
+
+
+# ── Back-compat alias（票 5bg）──
+# The real-publish attempt is a private implementation now: every in-repo entry
+# point goes through ``creator_agent.mainline_publish.execute_mainline_publish``
+# (the control-plane-owned execution entry).  This alias remains only because
+# existing tests/external imports name ``run_publish``; nothing under
+# ``backend/`` calls it, and P4 removes it together with the claim row once the
+# implementation itself moves behind the entry.
+run_publish = _run_publish_attempt

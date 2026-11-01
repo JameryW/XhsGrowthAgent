@@ -1,0 +1,33 @@
+{
+  "id": "mainline-execution-entry",
+  "name": "mainline-execution-entry",
+  "title": "P3b-2：主链单一控制面执行入口（票 5bg）",
+  "description": "三条主链发布路径（workflow 节点/publish-retry/free）统一经 creator_agent.mainline_publish.execute_mainline_publish；入口决定身份（review 审批原样传递、free 产生 free_publish_operator 操作员身份、无账号不产生），实现体私有化为 publisher._run_publish_attempt，遗留 run_publish 别名仅兼容；claim 3→0 + zero-claim 阳性对照；文档/锚点同步。剩余 P4：实现体移入入口背后并删别名/claim 行。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend/creator_agent,backend/agents,backend/api,backend/state,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/mainline_publish.py",
+    "backend/agents/publisher.py",
+    "backend/api/routes/_wf_actions.py",
+    "backend/api/routes/free.py",
+    "docs/publish-action-protocol.md",
+    "docs/execution-plane.md"
+  ],
+  "notes": "DONE 2026-11-01 (P3b-2). All three mainline real-publish paths now go through one control-plane-owned entry, backend/creator_agent/mainline_publish.py:execute_mainline_publish(state, store, *, agent=None, operator_id=''): the workflow node (PublisherAgent.execute), the publish-retry background task (_wf_actions, operator_id=user id) and the free-publish route (free, operator_id=user id). The entry resolves the decision identity and never rewrites one: an existing state['publish_decision'] (review approval, 票 5bc) is forwarded untouched; an unreviewed free publish with an authenticated operator gets a synthesized operator decision (decision_id='mainline:operator:<uuid>', source='free_publish_operator', thread/account/content_hash/approved_by/approved_at) on a shallow copy of the caller's mapping, so the caller is not mutated and no review is pretended; no account means no identity (the identity is account-scoped by construction); a legacy retry or deployment publish without an identity proceeds exactly as before and produces no intent. The attempt body was renamed to private _run_publish_attempt in agents/publisher.py; a run_publish alias remains only for existing imports/tests and nothing under backend/ calls it (AST claim mainline_run_publish_direct_call_sites flipped 3->0 and the residue-claims suite gained a discriminating positive control: a synthetic tree with one real call and one alias assignment must scan as 1). Docs synced: residual bullet, start-point table, claim row, P3b-2/P4 sections, and the execution-plane anchor rows shifted by the code edits (_wf_actions 534/540/539/522 -> 536/542/541/524, free 917 -> 921). Tests: new tests/unit/creator_agent/test_mainline_publish_entry.py (5: approval forwarded untouched and caller-not-mutated, free operator identity fields incl. 64-hex content hash, no operator -> no identity, operator needs an account, operator never replaces an existing approval); retry/free route patch targets updated to the entry; retry+free+run_publish suites 181 passed; doc/claims suite 98 passed; full suite 4790 passed / 14 skipped / 0 failed / 0 errors; ruff check/format green on touched files. Not done by design (P4): moving the attempt implementation behind the entry, removing the alias and the claim row, and switching the entry onto control-plane execute_action receipt semantics; EffectLedger six-state/idempotency semantics untouched.",
+  "meta": {}
+}

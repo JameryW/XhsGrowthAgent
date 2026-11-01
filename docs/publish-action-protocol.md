@@ -160,13 +160,15 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 ## 已知残留
 
-- **主链的执行仍不经控制面**：`publisher` 直接调 `run_publish`（S4a/S4b 的刻意决定），所以
-  intent → policy → confirm → execute 里的 **policy / confirm / execute 三段仍只在
-  API 路径**上。票 5bc 起，主链会为 review 批准的**真实**发布产出一条
-  `origin=mainline` 的 `ActionIntent`（decision 身份由审批端点写入、按内容哈希绑定），
-  但它目前只是**审计/交接**——执行仍走 `run_publish`。**待决问题 1 已按裁决落地**（账号必须
-  显式解析为发布主体；部署本体不构造 account-scoped intent）。**迁移方案（四阶段）见文末
-  「主链迁移控制面：阶段方案（票 5au）」**。
+- **主链执行已收口到单一入口，但尚未换成控制面回执路径**：票 5bg 起 workflow 节点 /
+  publish-retry / free 三条路径都经
+  `backend/creator_agent/mainline_publish.py:execute_mainline_publish`
+  （claim `mainline_run_publish_direct_call_sites = 0`）。该入口负责**决定身份**：review
+  审批原样传递（票 5bc）、free 发布产生操作员身份（`free_publish_operator`，账号 + 内容
+  哈希 + approved_by/at，不伪装 review）、无账号则不产生身份；实现体已是私有的
+  `agents/publisher.py:_run_publish_attempt`（遗留 `run_publish` 别名只为既有 import 保留）。
+  仍缺的最后一块（P4）：让入口落到控制面 `execute_action` 回执语义、把实现体也移入入口
+  背后，并删除遗留符号/别名与 claim 行。policy（P2）已在发布前生效；intent 目前是审计/交接对象。
   - ⚠️ **名字**：计划行把这一环写成 `PublishIntent`，**落地对象叫 `ActionIntent`**
     （`backend/creator_agent/models.py`）—— `grep -rn PublishIntent backend/` 是**零命中**。
     下面表里的主张一律用落地名：一条点名了「树里不存在的对象」的主张，会让读者连
@@ -204,7 +206,7 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 | 主张 | 发布的值 | 复核方式 |
 | --- | --- | --- |
-| `mainline_run_publish_direct_call_sites` | `3` | AST：`backend/**/*.py` 里 `run_publish(...)` 的调用点，**排除函数定义本身** |
+| `mainline_run_publish_direct_call_sites` | `0` | AST：`backend/**/*.py` 里对遗留符号 `run_publish(...)` 的**调用点**（函数定义、别名赋值都不算）。票 5bg 起三条主链路径统一经 `creator_agent.mainline_publish.execute_mainline_publish`；实现私有化为 `agents/publisher.py:_run_publish_attempt`，P4 删除遗留符号后本行随之删除 |
 | `action_intent_construction_sites` | `2` | AST：全仓 `ActionIntent(...)` 的构造点；advisor 一处 + 主链 producer 一处（票 5bc） |
 | `mainline_action_intent_producers` | `1` | 上一个集合里落在 `backend/creator_agent/` **之外**的个数（上一条是它的阳性对照） |
 | `event_kinds_readers_outside_its_defining_module` | `1` | AST：除 `backend/db/workflow_events.py` 外，import 或引用 `EVENT_KINDS` 的文件数（**注释不算**）；今天那 1 个是 `backend/services/signal_inventory.py` 的漂移检测 |
@@ -233,13 +235,18 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 
 | 事实 | 今天 | 复核 |
 | --- | --- | --- |
-| 主链直调 `run_publish` | `mainline_run_publish_direct_call_sites = 3` | claim 表（AST） |
+| 主链直调 `run_publish` | `mainline_run_publish_direct_call_sites = 0`（票 5bg 起改走单一执行入口） | claim 表（AST） |
 | 主链产出 `ActionIntent` | `mainline_action_intent_producers = 1`（票 5bc 起） | claim 表（AST） |
 | 控制面 intent 构造点 | `action_intent_construction_sites = 2`（advisor + 主链 producer） | claim 表（AST） |
 
-三处直调位置：`backend/agents/publisher.py`（主链发布）、`backend/api/routes/_wf_actions.py`
-（publish-retry 通道）、`backend/api/routes/free.py`（free 模式）。它们共享同一个
-`backend/tools/xhs/publisher.py:run_publish` 工具实现，这正是迁移最后必须替换的那层。
+三条主链发布路径：`backend/agents/publisher.py`（主链发布节点）、
+`backend/api/routes/_wf_actions.py`（publish-retry 通道）、`backend/api/routes/free.py`
+（free 模式）。票 5bg 起它们都经**单一执行入口**
+`backend/creator_agent/mainline_publish.py:execute_mainline_publish` —— 该入口负责
+**决定身份**（review 审批原样传递；free 发布由操作员显式产生
+`free_publish_operator` 身份；无账号则不产生身份），实现体
+`agents/publisher.py:_run_publish_attempt` 变为私有。P4 会把实现体也移入入口背后并
+删除遗留符号（`run_publish` 别名）。
 
 ### 可复用的控制面零件（不重写）
 
@@ -358,19 +365,28 @@ artifact_ref / content_hash / content + 主链侧 `private` / `scheduled_time` /
 - 已验证：主链 intent 执行一次并产出 mainline 回执（creator 半区为空）；二次执行返回
   同一回执且只 dispatch 一次；失败发布 → FAILED 回执；非 CONFIRMED / 非 publish 的
   mainline intent 被拒且无回执。creator_agent 既有 204 用例全绿。
-- 仍未改三条直调：claim 仍 `3`。剩余 **P3b-2**：把主链/retry/free 三条路径接到
-  `execute_action`（需要先让 free/retry 也有可执行 mainline intent），并把 `EffectLedger`
-  六态语义、幂等键与 human review gate 的先后逐条对齐后再把 claim 3→0。
+**P3b-2 已落地（票 5bg）：单一执行入口 + 决定身份。** 三条路径改为调用
+`creator_agent.mainline_publish.execute_mainline_publish`；实现体私有化为
+`agents/publisher.py:_run_publish_attempt`（遗留 `run_publish` 别名仅为既有 import/测试
+保留，P4 删除）。入口负责决定身份：review 审批原样传递；free 发布由操作员显式产生
+`free_publish_operator` 身份（账号 + 内容哈希 + approved_by/at；不伪装 review，无账号则
+不产生）；legacy retry 无身份时不产 intent（行为不变）。claim
+`mainline_run_publish_direct_call_sites` 3 → 0，并由 `test_residue_claims` 的
+“zero-claim must be pointed at a positive fixture” 规则守住扫描器本身。
+- 剩余（P4）：把实现体移入入口背后并删除遗留符号/别名；让入口落到控制面
+  `execute_action` 回执语义；删除 claim 行与残留声明。
 
 **P4 — 收口**
-删除直调分支与「主链不经控制面」残留条目，清理为兼容保留的开关，claim 归零并删除对应行。
-- 验收：`mainline_run_publish_direct_call_sites = 0` 且不再有 `run_publish` 直调；文档不再声明残留；
-  `tests/unit/scripts/test_residue_claims.py` 重算绿。
+删除遗留符号/别名与「主链执行尚未换成控制面回执」残留条目，清理为兼容保留的开关，
+claim 归零并删除对应行。
+- 验收：实现体在入口背后（或入口直接落到控制面 `execute_action` 回执路径）、
+  `run_publish` 别名与 `mainline_run_publish_direct_call_sites` 行一并删除；文档不再声明
+  残留；`tests/unit/scripts/test_residue_claims.py` 重算绿。
 
 ### 不变量（每阶段都必须保持）
 
 1. **永不发明账号**：`account_id` 必须显式解析，空则拒。
-2. **不双执行**：迁移期间 intent 与 `run_publish` 只能有一个执行入口；两阶段切换点由测试钉住，
+2. **不双执行**：迁移期间 intent 与发布 attempt 只能有一个执行入口；两阶段切换点由测试钉住，
    禁止「先两边都写、后面再删」。
 3. **回执/账本不撒谎**：拒绝不写回执；`UNKNOWN ≠ FAILED` 语义沿用控制面裁决。
 4. **人类审批边界不变**：主链的 review gate 仍是审批点，控制面 confirmation 不得绕过它。

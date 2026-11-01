@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "verify the landed entry matches P3b-2 and the claim/anchor updates"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a single-entry migration that must not invent identities"}

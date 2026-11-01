@@ -400,7 +400,7 @@ class TestPublishDraft:
             "status": "published",
         }
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ) as rp:
             r = client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -418,7 +418,7 @@ class TestPublishDraft:
 
         pub_result = {"post_id": "x123", "status": "published"}
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -436,7 +436,7 @@ class TestPublishDraft:
             "status": "published",
         }
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -451,7 +451,7 @@ class TestPublishDraft:
 
         pub_result = {"status": "failed", "error": "auth_expired"}
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -466,7 +466,7 @@ class TestPublishDraft:
 
         pub_result = {"status": "failed", "error": "auth_expired"}
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -485,7 +485,7 @@ class TestPublishDraft:
             "error_type": "account_inactive",
         }
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -504,7 +504,7 @@ class TestPublishDraft:
 
         pub_result = {"post_id": "x123", "post_url": "u", "status": "published"}
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -1133,7 +1133,7 @@ class TestGetAnalytics:
             "status": "published",
         }
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -1285,7 +1285,7 @@ class TestAnalyticsFeedbackLoop:
             "status": "published",
         }
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -1530,7 +1530,7 @@ class TestEvaluatorSampleChain:
         draft_id = create.json()["data"]["draft_id"]
         pub_result = {"post_id": post_id, "status": "published"}
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": pub_result}),
         ):
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -1684,7 +1684,7 @@ class TestStyleAnchors:
         create = client.post("/api/free/draft", json=body)
         draft_id = create.json()["data"]["draft_id"]
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": {"post_id": "n1", "status": "published"}}),
         ) as mock_pub:
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -1702,7 +1702,7 @@ class TestStyleAnchors:
         metrics.update(metric_overrides)
         with (
             patch(
-                "backend.api.routes.free.run_publish",
+                "backend.api.routes.free.execute_mainline_publish",
                 AsyncMock(
                     return_value={
                         "publish_result": {"post_id": "real_note_1", "status": "published"}
@@ -1732,7 +1732,7 @@ class TestStyleAnchors:
 
     def _publish(self, client, draft_id):
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(
                 return_value={"publish_result": {"post_id": "real_note_1", "status": "published"}}
             ),
@@ -1779,7 +1779,7 @@ class TestSnapshotTrend:
         create = client.post("/api/free/draft", json=DRAFT_BODY)
         draft_id = create.json()["data"]["draft_id"]
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(
                 return_value={"publish_result": {"post_id": "note_t1", "status": "published"}}
             ),
@@ -1879,7 +1879,7 @@ class TestMaterialAnchors:
         create = client.post("/api/free/draft", json=body)
         draft_id = create.json()["data"]["draft_id"]
         with patch(
-            "backend.api.routes.free.run_publish",
+            "backend.api.routes.free.execute_mainline_publish",
             AsyncMock(return_value={"publish_result": {"post_id": "n1", "status": "published"}}),
         ) as mock_pub:
             client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
@@ -1897,7 +1897,7 @@ class TestMaterialAnchors:
         draft_id = create.json()["data"]["draft_id"]
         with (
             patch(
-                "backend.api.routes.free.run_publish",
+                "backend.api.routes.free.execute_mainline_publish",
                 AsyncMock(
                     return_value={
                         "publish_result": {"post_id": "real_note_2", "status": "published"}

@@ -56,7 +56,7 @@ from backend.state.events import ACTION_LEASE_REFUSED
 _OWNED = AccountRow(id="acc1", name="acc1", is_active=True, owner_user_id="user-test")
 _OTHER_OWNER = "other-host:4242:deadbeef"
 _GATEWAY = "backend.tools.runtime.bridge.shared_gateway"
-_RUN_PUBLISH = "backend.api.routes._wf_actions.run_publish"
+_RUN_PUBLISH = "backend.api.routes._wf_actions.execute_mainline_publish"
 _DB_UPSERT = "backend.api.routes._wf_actions._db_upsert"
 _EVENT_BUS = "backend.api.routes._wf_actions.EventBusService"
 _ARTIFACTS = "backend.state.artifacts"

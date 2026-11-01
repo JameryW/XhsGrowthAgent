@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from backend.api.routes.workflow import router
 
-_RUN_PUBLISH = "backend.api.routes._wf_actions.run_publish"
+_RUN_PUBLISH = "backend.api.routes._wf_actions.execute_mainline_publish"
 _DB_UPSERT = "backend.api.routes._wf_actions._db_upsert"
 _EVENT_BUS = "backend.api.routes._wf_actions.EventBusService"
 

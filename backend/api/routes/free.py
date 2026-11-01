@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from backend.state.schema import XHSGrowthState
 
 from backend.agents.evaluator import EvaluatorAgent
-from backend.agents.publisher import run_publish
 from backend.api.account_scope import (  # noqa: F401
     require_owned_account,  # tests patch this name here
     resolve_required_account_id,
@@ -43,6 +42,7 @@ from backend.api.account_scope import (  # noqa: F401
 from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError
 from backend.api.responses import ApiResponse, success
+from backend.creator_agent.mainline_publish import execute_mainline_publish
 
 logger = logging.getLogger("xhs_growth.api.free")
 
@@ -418,7 +418,9 @@ async def publish_draft(
     if store is None:
         raise ValidationError("store", "Memory store unavailable; cannot publish")
     pub_state = _build_publish_state(draft)
-    result = await run_publish(pub_state, store)
+    # 票 5bg: free publish has no review; the authenticated operator's call is
+    # the decision, and the control-plane entry records that identity explicitly.
+    result = await execute_mainline_publish(pub_state, store, operator_id=str(user["id"]))
     publish_result = result.get("publish_result") or {}
     pub_status = publish_result.get("status", "unknown")
 
