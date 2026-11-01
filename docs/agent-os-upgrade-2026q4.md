@@ -159,7 +159,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 乐观锁 | `mark(..., expect_version=N)` 拒绝覆盖并发写入；**诚实边界：BaseStore 无 CAS，多写者部署需数据库唯一约束**（代码注释已写明）。**现状**：`backend/agents/publisher.py` 的 `EffectLedger.mark(...)` 写入点**今天不传** `expect_version` —— 发布路径的并发正确性靠租约 + 幂等键，不靠 CAS；不要把"能力存在"读成"已启用" |
 | 旧词兼容 | 读侧归一化 `published → CONFIRMED`、未知状态 → `UNKNOWN`（绝不落 FAILED）；历史行零迁移 |
 | publish 接入 | 提交前写 `PREPARED`（意图落盘）→ `begin()` 领取 → 成功 `CONFIRMED` / 确定失败 `FAILED` / 提交后无判定 `UNKNOWN`（显式写入，不再靠"保持不写"隐含） |
-| 接入边界（诚实披露） | 主链 `PublisherAgent` 与 free 路径已接账本（PREPARED + `EffectLedger.begin()`：`backend/agents/publisher.py:927-945`；free 路径经 `backend/api/routes/free.py` 的单一执行入口 `execute_mainline_publish`）；**creator_agent 控制面 `execute` 路径也已接入 `EffectLedger`**（票 5bi：`_publish_with_effect_ledger` 在 dispatch 前 claim、按 outcome 结算），receipt 仍记录执行结果，账本负责崩溃窗口的重复提交防护 |
+| 接入边界（诚实披露） | 主链 `PublisherAgent` 与 free 路径已接账本（PREPARED + `EffectLedger.begin()`：`backend/agents/publisher.py:927-945`；free 路径经 `backend/api/routes/free.py` 的单一执行入口 `execute_mainline_publish`）；**creator_agent 控制面 `execute` 路径也已接入 `EffectLedger`**（票 5bi：`_publish_with_effect_ledger` 在 dispatch 前 claim、按 outcome 结算），receipt 仍记录执行结果，账本负责崩溃窗口的重复提交防护。**分支 B 已落地（票 5bs）**：有 durable mainline intent 的发布现在经 `CreatorAdvisor.execute_action` 执行（receipt-backed、attempt 级 receipt），主链仍持有唯一的 `publish_id` 账本 claim；无 intent 的路径保持原直调。 |
 | 本地对账写账本（票 5ai） | `reconcile_unknown_publish` 本地证据确认 published 后 best-effort `UNKNOWN→RECONCILING→CONFIRMED`（evidence 入 `extra.reconcile_evidence`）；uncertain **不动**账本；写失败仅 warn，不阻断 gate 返回值 |
 | 平台列表对账（票 5ak） | 本地幂等行 / ContentHistory 均 miss 且 title 非空 → cookie httpx 拉创作者中心笔记列表标题 **精确** strip 匹配；命中则 `source=platform_note_list` + note id，走同一 `_confirm_ledger_after_reconcile`；无 cookie / fetch 失败 / 未命中 → `uncertain`（warn，不 raise、不伪确认）；可注入 `platform_note_fetcher`；**CDP / 详情页深查 out of scope** |
 | 平台列表多页（票 5al） | 默认 `_default_fetch_platform_notes` 循环 page 1..`_PLATFORM_NOTE_LIST_MAX_PAGES`（锁定 **3**），`page_size=50`；某页 `extract_note_items` 为空或 `len(items) < page_size` 提前停；任一页抛错 → 整次平台刀 `uncertain`（与 5ak 一致）；匹配/确认语义不变；**CDP / 详情页深查仍 out of scope**；`max_pages` 不配 env |
@@ -398,11 +398,11 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 
 | 项 | 类型 | 状态 / 触发条件 |
 |---|---|---|
-| P4 分支 B：入口直落 `execute_action` 回执路径 | 工程·可选 | 方案已写入 `docs/publish-action-protocol.md`；前提（控制面六态账本）已由 5bi 解除；需产品/架构拍板后立项（会改变主链执行语义） |
+| P4 分支 B：入口直落 `execute_action` 回执路径 | 已完成 | 2026-11-01 拍板并落地 B1–B4（票 5bn/5bo/5br/5bq/5bs）：receipt attempt 级、intent 先于持久效果、executor 接受 caller-supplied request、有 intent 的发布经 `execute_action` 执行且只保留主链一个账本 claim；claim 表新增两条并带阳性对照 |
 | 路线图 8：多 Agent 并行 / workspace 冲突（F5） | 裁定 | 本文档裁定「先不建」，F5 保持 SKIP |
 | 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 依赖 | 需评测集/A-B 前提先行；未启动 |
 | 私信 DOM 真机读法、笔记详情页深查/CDP | external-only | 需真实账号与平台环境，沙箱内不可验证 |
 | frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地沙箱/凭据限制，非仓库缺陷 |
 
-**结论**：仓库内可本地执行、可验证的剩余任务已清零；其余为需要拍板的工程项
-（分支 B）、已裁定的延后项（路线图 8/10）与外部/环境依赖项。
+**结论**：仓库内可本地执行、可验证的剩余任务已清零（分支 B 已于 2026-11-01 完成，
+票 5bn/5bo/5br/5bq/5bs）；其余为已裁定的延后项（路线图 8/10）与外部/环境依赖项。

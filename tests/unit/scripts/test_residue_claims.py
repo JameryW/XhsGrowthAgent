@@ -51,6 +51,7 @@ BACKEND = REPO / "backend"
 API_ROUTES = BACKEND / "api" / "routes"
 CONTROL_PLANE = BACKEND / "creator_agent"
 EVENT_KINDS_MODULE = BACKEND / "db" / "workflow_events.py"
+PUBLISH_CAPABILITY = "xhs.publish"
 
 DOCS: tuple[Path, ...] = (
     REPO / "docs" / "publish-action-protocol.md",
@@ -210,8 +211,48 @@ def _ripple_direct_call_sites(root: Path = API_ROUTES) -> list[str]:
     return sorted(found)
 
 
-# ── the recalculators, one per published claim ───────────────────────────────
+def _direct_publish_invocations(root: Path = BACKEND) -> list[str]:
+    """``path:line`` for direct ``<gateway>.invoke("xhs.publish", ...)`` calls.
 
+    Branch B (票 5bs) routes every publish that has a durable mainline intent
+    through the control-plane executor; the one direct invocation left is the
+    no-intent fallback.  This is an AST scan, not a text search: a docstring that
+    names the capability is not an invocation, and counting it would turn a true
+    claim into a false one.
+    """
+    found: list[str] = []
+    for path, tree in _trees(root):
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr != "invoke":
+                continue
+            first = node.args[0] if node.args else None
+            if isinstance(first, ast.Constant) and first.value == PUBLISH_CAPABILITY:
+                found.append(f"{_show(path)}:{node.lineno}")
+    return sorted(found)
+
+
+def _executor_dispatch_sites(root: Path = BACKEND) -> list[str]:
+    """``path:line`` for calls to ``_execute_publish_via_executor``.
+
+    One call site is the cutover contract: the mainline may hand a publish to the
+    executor from exactly one place, and a second one would be a second execution
+    entry wearing the same name.
+    """
+    found: list[str] = []
+    for path, tree in _trees(root):
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "_execute_publish_via_executor"
+            ):
+                found.append(f"{_show(path)}:{node.lineno}")
+    return sorted(found)
+
+
+# ── the recalculators, one per published claim ───────────────────────────────
 _CLAIMS: dict[str, Callable[[], Any]] = {
     "action_intent_construction_sites": lambda: len(_action_intent_constructions()),
     "mainline_action_intent_producers": lambda: len(
@@ -225,6 +266,9 @@ _CLAIMS: dict[str, Callable[[], Any]] = {
     "api_route_modules_importing_ripple_service": lambda: len(_ripple_service_importers()),
     "ripple_service_direct_call_sites_in_api_routes": lambda: len(_ripple_direct_call_sites()),
     "tool_gate_allowed_prefix": lambda: _ALLOWED_PREFIX,
+    # docs/publish-action-protocol.md -- branch B B4 (票 5bs/5bt)
+    "mainline_direct_publish_invocations": lambda: len(_direct_publish_invocations()),
+    "mainline_executor_dispatch_sites": lambda: len(_executor_dispatch_sites()),
 }
 
 
@@ -392,3 +436,41 @@ def test_the_ripple_direct_call_scan_finds_a_call_and_not_a_plain_mention(tmp_pa
     calls = _ripple_direct_call_sites(tmp_path)
 
     assert len(calls) == 1, calls
+    assert calls[0].endswith("_wf_actions.py:2"), calls
+
+
+def test_the_direct_publish_scan_finds_a_call_and_not_a_docstring(tmp_path: Path):
+    """Positive control for ``mainline_direct_publish_invocations`` (1).
+
+    The fixture **discriminates**: one real ``gateway.invoke("xhs.publish", ...)``
+    call and one docstring that names the same call.  A text scan answers 2; the
+    AST scan answers 1.
+    """
+    _write(
+        tmp_path,
+        "agents/publisher.py",
+        '"""The old path called runtime.tools.invoke("xhs.publish", payload)."""\n'
+        "async def go(gateway, payload):\n"
+        '    return await gateway.invoke("xhs.publish", payload)\n',
+    )
+    calls = _direct_publish_invocations(tmp_path)
+    assert len(calls) == 1, calls
+    assert calls[0].endswith("publisher.py:3"), calls
+
+
+def test_the_executor_dispatch_scan_counts_a_call_not_a_mention(tmp_path: Path):
+    """Positive control for ``mainline_executor_dispatch_sites`` (1).
+
+    The fixture holds a call and a comment that spells the helper's name; only
+    the call counts, because a mention cannot dispatch anything.
+    """
+    _write(
+        tmp_path,
+        "agents/publisher.py",
+        "# _execute_publish_via_executor is mentioned here, not called\n"
+        "async def go(intent, request, **kw):\n"
+        "    return await _execute_publish_via_executor(intent, request, **kw)\n",
+    )
+    sites = _executor_dispatch_sites(tmp_path)
+    assert len(sites) == 1, sites
+    assert sites[0].endswith("publisher.py:3"), sites

@@ -203,6 +203,8 @@ immutable 的收据可以声称做过一件从未发生的工作** —— 而 re
 | `mainline_action_intent_producers` | `1` | 上一个集合里落在 `backend/creator_agent/` **之外**的个数（上一条是它的阳性对照） |
 | `event_kinds_readers_outside_its_defining_module` | `1` | AST：除 `backend/db/workflow_events.py` 外，import 或引用 `EVENT_KINDS` 的文件数（**注释不算**）；今天那 1 个是 `backend/services/signal_inventory.py` 的漂移检测 |
 | `account_credentials_inserts` | `1` | 正则：`backend/**/*.py` 里 `INSERT INTO account_credentials` 的次数（DDL / `SELECT` / `DELETE` 都不算）。票 5n 起唯一那处是扫码登录的 `upsert_credential` |
+| `mainline_direct_publish_invocations` | `1` | AST：backend 里 `<gateway>.invoke("xhs.publish", ...)` 的直接调用点。分支 B（票 5bs）之后只剩"没有 durable intent"的回退分支；docstring 里提到不算 |
+| `mainline_executor_dispatch_sites` | `1` | AST：`_execute_publish_via_executor(...)` 的调用点数；唯一调用点是 `_run_publish_attempt`（入口只能有一处把发布交给执行器） |
 
 <!-- claim-table:end -->
 
@@ -397,7 +399,7 @@ publish 现在也在 dispatch 前 claim、按 outcome 结算。若未来要做�
 - **剩余**：B3（入口用 `execute_action` 替换执行段，
   含 artifact/内容哈希语义对齐与 `test_run_publish` 适配）、B4（claim 更新与回归收口）。
 
-**B3 未开始：先遇到一个必须先裁决的语义冲突（2026-11-01 核查）。**
+**B3 前置冲突与裁决（2026-11-01 核查；已解决）。**
 控制面的执行 receipt 是**每个 intent 一条、且失败也终态**：`execute_action` 先查
 `get_action_execution(account, action_id)`，存在即原样返回；`create_action_execution`
 的存储主键就是 `(account_id, action_id)`（Postgres 表 `PRIMARY KEY (account_id, action_id)`
@@ -424,7 +426,22 @@ intent 一致，不符抛 `ActionPublishRequestNotBoundError`（无副作用、�
 publish judgers 改在 request.content 投影上运行。测试用"请求携带生成的封面路径、artifact
 正文不含它"证明实际派发的是 caller 的内容，并钉住未绑定的拒绝。
 
-剩余：B3 接线（入口用 `execute_action` 替换执行段）、B4（claim 更新与回归收口）。
+**B3 已落地（票 5bs）**：`_run_publish_attempt` 在有 durable mainline intent 时不再自己
+调 Gateway，而是 `_execute_publish_via_executor` → `CreatorAdvisor.execute_action(..., request=...)`：
+执行器负责 receipt、完整 publish judgers 与共享 dispatcher；主链保留 identity / 内容解析 /
+PREPARED / 自己的账本 claim，以及 dispatch 之后的 unknown 判定、错误分类、ContentHistory
+与 force 清理。executor 以 `artifact_store=None` 构造——**一次发布只有一个账本 claim**
+（主链 `publish_id` 账本），避免两个 namespace 的 claim 在崩溃后互相看不见。
+无 intent 的路径（无审批决策、部署 principal 等）保持原直调 `runtime.tools.invoke`，
+行为不变。测试钉住：approved publish 产生 1 条 attempt=1 的 SUCCEEDED receipt、Gateway
+只调一次、publish_result 从 receipt 读回；被账本拦截的重复发布不产生新 receipt。
+
+**B4 已收口（同票 5bs）**：claim 表新增两条主张——`mainline_direct_publish_invocations = 1`
+（分支 B 之后只剩"没有 durable intent"的回退直调）与 `mainline_executor_dispatch_sites = 1`
+（把发布交给执行器的唯一调用点）；两者都有**区分性阳性对照**（docstring/注释提到不算，
+真实的调用才算）。架构文档的"接入边界（诚实披露）"已同步 B3 切换。
+
+剩余：无（分支 B 的 B1–B4 全部落地；接下来只待 review/推送）。
 注意：Postgres 迁移路径本地无 PG 实例，只由 CI 的 parity 套件覆盖。
 
 ### 不变量（每阶段都必须保持）

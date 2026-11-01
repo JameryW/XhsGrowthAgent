@@ -1,0 +1,31 @@
+{
+  "id": "mainline-executor-wiring",
+  "name": "mainline-executor-wiring",
+  "title": "P4 分支 B slice3：mainline 执行段切到 execute_action（票 5bs）",
+  "description": "有 durable mainline intent 时，_run_publish_attempt 用 CreatorAdvisor.execute_action 执行 dispatch（receipt/判定/scope 由执行器负责），主链保留 identity/内容/PREPARED/自己的 ledger claim；executor 以 artifact_store=None 构造，保证一次发布只有一个账本 claim；receipt 结果映射回 publish_result，后续 unknown 判定/分类/历史记录不变。无 intent 时保持原直调路径。新增两个用例：approved publish 走执行器并写 receipt、被账本拦截的重复发布不产生 receipt。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/agents/publisher.py",
+    "tests/unit/agents/test_run_publish.py",
+    "docs/publish-action-protocol.md",
+    "docs/agent-os-upgrade-2026q4.md"
+  ],
+  "notes": "DONE 2026-11-01 (branch B B3 — the mainline execution段 is now the control-plane executor when a durable intent exists). _run_publish_attempt captures the ActionIntent returned by record_mainline_publish_intent (B2) and, when present, dispatches through _execute_publish_via_executor: CreatorAdvisor(DurableCreatorAgentRepository(), artifact_store=None, publish=gateway_publish_dispatcher(gateway=runtime.tools, granted_scopes=granted)) + execute_action(intent.account_id, intent.action_id, force=force_publish, request=publish_request), then maps the receipt back into the existing publish_result keys via _result_from_receipt. Deliberate choices: (1) artifact_store=None so exactly ONE effect ledger claim guards a publish — the mainline publish_id ledger, claimed before the executor is called; a second ledger in a different namespace/key could disagree after a crash; (2) no intent still uses the old direct runtime.tools.invoke path byte-for-byte, which covers deployment-principal and no-approval publishes that legitimately cannot mint identity; (3) everything after dispatch (unknown detection, error classification, ContentHistory, ledger settlement, one-shot force clearing) stays in the mainline; (4) executor exceptions keep the existing except semantics (timeout→unknown, otherwise failed). Tests: an approved publish produces exactly one receipt (attempt=1, SUCCEEDED, note_id=p_grant), the Gateway is invoked once with the resolved grant, and publish_result is read back from the receipt; a duplicate blocked by the mainline ledger writes no additional receipt. Docs: publish-action-protocol records B3 landed with B4 (claim/docs closure) remaining, and the architecture doc's execution-boundary row now discloses the cutover. Verification: 63 run_publish tests green; full suite 4813 passed / 14 skipped / 0 failed / 0 errors; ruff green. B4 folded into this ticket: the claim table gained mainline_direct_publish_invocations=1 (only the no-intent fallback calls the Gateway directly now) and mainline_executor_dispatch_sites=1 (the single place the entry hands a publish to the executor), both with discriminating positive controls in tests/unit/scripts/test_residue_claims.py (a docstring/comment mention must not count).",
+  "meta": {}
+}

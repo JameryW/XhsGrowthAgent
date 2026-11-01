@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the branch-B plan this wiring completes"}
+{"file": "backend/state/effects.py", "reason": "the single-ledger decision (BLOCKING_STATUSES / claim semantics)"}

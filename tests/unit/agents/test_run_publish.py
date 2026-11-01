@@ -1746,6 +1746,104 @@ async def test_the_mainline_intent_is_persisted_before_the_effect_claim(
 
 
 @pytest.mark.asyncio
+async def test_an_approved_publish_dispatches_through_the_control_plane_executor(
+    _browser_settings, mock_store, monkeypatch
+):
+    """Branch B B3 (票 5bs): the durable intent routes the dispatch through execute.
+
+    The mainline still owns identity/content/PREPARED/ledger; the executor adds
+    receipt-backed provenance.  Pinned here: a receipt exists for the intent,
+    the Gateway was called exactly once, and the workflow's publish_result is
+    read back out of the receipt rather than out of a raw ToolResult.
+    """
+    from types import SimpleNamespace
+
+    from backend.creator_agent import ActionExecutionStatus
+    from backend.db import creator_agent as creator_agent_db
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_b3"})
+        state["publish_decision"] = {
+            "decision_id": "mainline:unit-b3",
+            "source": "mainline_review",
+            "thread_id": "test_session",
+            "account_id": "acc_b3",
+            "content_hash": content_hash(publish_content_body(state)),
+            "approved_by": "u-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+        tools = _RecordingTools()
+
+        result = await run_publish(state, store=mock_store, agent=SimpleNamespace(tools=tools))
+
+        executions = list(creator_agent_db._mem_action_executions.values())
+        assert len(executions) == 1, executions
+        receipt = executions[0]
+        assert receipt.status is ActionExecutionStatus.SUCCEEDED
+        assert receipt.attempt == 1
+        assert receipt.result["note_id"] == "p_grant"
+        assert any(
+            stored.action_id == receipt.action_id
+            for stored in creator_agent_db._mem_actions.values()
+        )
+        # One Gateway call, through the shared dispatcher.
+        assert tools.seen == [("xhs.publish", ("xhs:write", "xhs:outreach"))]
+        # publish_result came back out of the receipt.
+        assert result["publish_result"]["status"] == "published"
+        assert result["publish_result"]["post_id"] == "p_grant"
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
+async def test_a_blocked_duplicate_never_reaches_the_executor(_browser_settings, monkeypatch):
+    """The ledger claim still precedes the executor: a blocked duplicate writes no receipt."""
+    from types import SimpleNamespace
+
+    from backend.db import creator_agent as creator_agent_db
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_b3d"})
+        state["publish_decision"] = {
+            "decision_id": "mainline:unit-b3d",
+            "source": "mainline_review",
+            "thread_id": "test_session",
+            "account_id": "acc_b3d",
+            "content_hash": content_hash(publish_content_body(state)),
+            "approved_by": "u-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+        store = _real_store()
+
+        first = await run_publish(
+            state, store=store, agent=SimpleNamespace(tools=_RecordingTools())
+        )
+        assert first["publish_result"]["status"] == "published"
+
+        second = await run_publish(
+            state, store=store, agent=SimpleNamespace(tools=_RecordingTools())
+        )
+
+        assert second["publish_result"]["error_type"] == "duplicate_publish_blocked"
+        # First attempt produced one receipt; the blocked second attempt produced none.
+        assert len(creator_agent_db._mem_action_executions) == 1
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
 async def test_a_publish_without_an_approval_decision_records_no_intent(
     _browser_settings, mock_store, monkeypatch
 ):

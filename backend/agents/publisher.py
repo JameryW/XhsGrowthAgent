@@ -183,6 +183,67 @@ def _result_from_gateway(result: Any) -> dict[str, Any]:
     }
 
 
+async def _execute_publish_via_executor(
+    intent: Any,
+    request: Any,
+    *,
+    force: bool,
+    gateway: Any,
+    granted_scopes: tuple[str, ...],
+) -> Any:
+    """Dispatch one mainline publish through the control-plane executor (票 5bs).
+
+    The mainline has already resolved identity, content, policy, the PREPARED
+    record and its own ``EffectLedger`` claim before this call.  What the
+    executor adds is the shared execution path: receipt-backed provenance, the
+    full publish judgers, and the one ``PublishRequest`` → payload builder.
+
+    ``artifact_store=None`` is deliberate: the mainline ledger already guards
+    this publish, and a second ledger with a different namespace/key would be two
+    claims for one effect that could disagree after a crash.
+    """
+    from backend.creator_agent import CreatorAdvisor
+    from backend.creator_agent.execution import gateway_publish_dispatcher
+    from backend.db.creator_agent import DurableCreatorAgentRepository
+
+    advisor = CreatorAdvisor(
+        DurableCreatorAgentRepository(),
+        artifact_store=None,
+        publish=gateway_publish_dispatcher(gateway=gateway, granted_scopes=granted_scopes),
+    )
+    return await advisor.execute_action(
+        intent.account_id, intent.action_id, force=force, request=request
+    )
+
+
+def _result_from_receipt(receipt: Any) -> dict[str, Any]:
+    """Read an executor receipt back into this module's publish_result shape.
+
+    Same contract as :func:`_result_from_gateway`: the downstream steps (unknown
+    detection, error classification, idempotency record, ContentHistory) must not
+    learn a second vocabulary, so the receipt's platform fields are mapped back
+    to the keys they already understand.
+    """
+    raw: Mapping[str, Any] = (
+        receipt.result if isinstance(getattr(receipt, "result", None), Mapping) else {}
+    )
+    result: dict[str, Any] = {
+        "post_id": str(raw.get("note_id") or ""),
+        "post_url": str(raw.get("note_url") or ""),
+        "published_at": str(raw.get("published_at") or ""),
+        "status": str(raw.get("status") or "unknown"),
+    }
+    if raw.get("error"):
+        result["error"] = str(raw["error"])
+    if raw.get("error_type"):
+        result["error_type"] = str(raw["error_type"])
+    if isinstance(raw.get("recovery"), Mapping):
+        result["recovery"] = dict(raw["recovery"])
+    if isinstance(raw.get("result_known"), bool):
+        result["result_known"] = raw["result_known"]
+    return result
+
+
 def compute_publish_id(state: Mapping[str, Any]) -> str:
     """Deterministic idempotency key: hash(account + content + images + window).
 
@@ -1046,7 +1107,7 @@ async def _run_publish_attempt(
     # (account, publish_id), so a retry/force retry returns the same row; a
     # refusal or storage failure still changes nothing about the publish.
     publish_decision = state.get("publish_decision")
-    await record_mainline_publish_intent(
+    intent = await record_mainline_publish_intent(
         state,
         publish_id=publish_id,
         material=material,
@@ -1192,21 +1253,36 @@ async def _run_publish_attempt(
             # 回到全局 endpoint（工具的默认值）。
             cdp_endpoint=cdp_endpoint,
         )
-        payload = dict(build_publish_payload(publish_request))
-
         # 执行发布（真实提交动作 —— 之后的一切超时都是结果不明，而非确定失败）
-        tool_result = await runtime.tools.invoke(
-            "xhs.publish",
-            payload,
-            thread_id=publish_request.thread_id,
-            # The scope requirement used to be decorative on this path: the
-            # Gateway reads ``None`` as *unchecked*, so ``xhs.publish``'s
-            # declared ``auth_scope`` cost nothing here. The tuple resolved
-            # above is the same answer the precondition was judged on, so a
-            # refusal cannot say one thing and the runtime do another.
-            granted_scopes=granted,
-        )
-        result = _result_from_gateway(tool_result)
+        if intent is not None:
+            # Branch B B3 (票 5bs): a durable mainline intent exists, so the
+            # control-plane executor performs the dispatch (receipt + policy +
+            # scope checks) instead of the mainline calling the Gateway itself.
+            # The mainline still owns its own effect ledger claim above — the
+            # executor is built without an artifact store on purpose, so exactly
+            # one ledger claim guards this publish, not two that could disagree.
+            receipt = await _execute_publish_via_executor(
+                intent,
+                publish_request,
+                force=force_publish,
+                gateway=runtime.tools,
+                granted_scopes=granted,
+            )
+            result = _result_from_receipt(receipt)
+        else:
+            payload = dict(build_publish_payload(publish_request))
+            tool_result = await runtime.tools.invoke(
+                "xhs.publish",
+                payload,
+                thread_id=publish_request.thread_id,
+                # The scope requirement used to be decorative on this path: the
+                # Gateway reads ``None`` as *unchecked*, so ``xhs.publish``'s
+                # declared ``auth_scope`` cost nothing here. The tuple resolved
+                # above is the same answer the precondition was judged on, so a
+                # refusal cannot say one thing and the runtime do another.
+                granted_scopes=granted,
+            )
+            result = _result_from_gateway(tool_result)
 
         raw_status = str(result.get("status") or "unknown")
         # P0-W4 (F2): the browser layer swallows its own exceptions into a result
