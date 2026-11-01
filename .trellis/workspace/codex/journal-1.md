@@ -1667,3 +1667,36 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 50: 继续：本地 runner 镜像 CI 的 PG parity 复查（票 5bx）
+
+**Date**: 2026-11-01
+**Task**: 继续：本地 runner 镜像 CI 的 PG parity 复查（票 5bx）
+**Branch**: `main`
+
+### Summary
+
+ci_local.py 的 tests 作业现在镜像 CI 的 parity 复查：全量通过后若 XHS_PG_PARITY_URI 存在则单独重跑 test_creator_agent_backend_parity.py 并要求输出包含 passed（整模块被 skip 时退出码同为 0，只看退出码不够）；没有 URI 时 PASS 但在摘要明确写 parity skipped，不暗示覆盖。新增 3 个单测，共 8 passed；全量 4826 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。票 5bx 已归档，工作树干净。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bddf6228` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

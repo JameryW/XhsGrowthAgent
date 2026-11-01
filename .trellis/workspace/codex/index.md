@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 49
+- **Total Sessions**: 50
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1669 | Active |
+| `journal-1.md` | ~1702 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 50 | 2026-11-01 | 继续：本地 runner 镜像 CI 的 PG parity 复查（票 5bx） | `bddf6228` | `main` |
 | 49 | 2026-11-01 | 继续：本地 CI 等价检查脚本（票 5bw） | `cc62000d` | `main` |
 | 48 | 2026-11-01 | 继续：修复分支 B 的 CI mypy 阻断 + 本地 OMP typecheck（票 5bv） | `6205c510` | `main` |
 | 47 | 2026-11-01 | 继续：B3 切换语义加固（票 5bu） | `89cc8b49`, `5bcd2b19` | `main` |
