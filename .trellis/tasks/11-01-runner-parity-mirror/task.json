@@ -1,0 +1,29 @@
+{
+  "id": "runner-parity-mirror",
+  "name": "runner-parity-mirror",
+  "title": "chore(ci): 本地 runner 镜像 CI 的 PG parity 复查（票 5bx）",
+  "description": "scripts/ci_local.py 的 tests 作业现在镜像 CI：全量通过后，若设置了 XHS_PG_PARITY_URI 则单独重跑 tests/integration/test_creator_agent_backend_parity.py 并要求输出包含 passed（与 CI 的 Verify backend parity actually ran 一致）；未设置 URI 时 PASS 但摘要明确写 Postgres parity skipped（不暗示已覆盖）。新增 3 个单测（无 URI 提示、有 URI 重跑、退出 0 但被 skip 判 FAIL）。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/ci_local.py",
+    "tests/unit/scripts/test_ci_local.py"
+  ],
+  "notes": "DONE 2026-11-01. The runner's tests job now mirrors the CI step that exists specifically to catch a silently-skipped Postgres parity suite: after the full pytest run passes, if XHS_PG_PARITY_URI is set it re-runs tests/integration/test_creator_agent_backend_parity.py on its own and fails unless the output contains ' passed' (exit code alone is not enough — a skipped module exits 0). Without the env var the job stays PASS but its summary says 'Postgres parity skipped: XHS_PG_PARITY_URI unset; CI sets it', so the local runner never implies parity coverage it does not have. Three unit tests pin the three branches (no URI note; URI rerun; exit 0 + '1 skipped' => FAIL). Verification: tests/unit/scripts/test_ci_local.py 8 passed; full suite in the journal; ruff check/format green.",
+  "meta": {}
+}

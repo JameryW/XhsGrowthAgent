@@ -212,10 +212,31 @@ def job_omp() -> tuple[str, str]:
     return _expect_ok(argv, cwd=extension, detail="tsc --noEmit")
 
 
+_PARITY_MODULE = "tests/integration/test_creator_agent_backend_parity.py"
+_PARITY_ENV = "XHS_PG_PARITY_URI"
+
+
 def job_tests(*, skip: bool) -> tuple[str, str]:
+    """Full suite, then mirror CI's "the parity module must really run" check.
+
+    CI re-runs ``test_creator_agent_backend_parity.py`` on its own and fails when
+    the output does not say "passed", because a skipped parity module is
+    indistinguishable from a passing one.  Locally that only makes sense when a
+    disposable Postgres URI is available, so without ``XHS_PG_PARITY_URI`` the
+    job says it skipped parity (instead of implying coverage it does not have).
+    """
     if skip:
         return SKIP, "--skip-tests"
-    return _expect_ok([PY, "-m", "pytest", "-q", "-p", "no:cacheprovider"], detail="pytest -q")
+    code, output = _run([PY, "-m", "pytest", "-q", "-p", "no:cacheprovider"])
+    if code != 0:
+        return FAIL, _tail(output)
+    detail = "pytest -q passed"
+    if not os.environ.get(_PARITY_ENV, "").strip():
+        return PASS, f"{detail} (Postgres parity skipped: {_PARITY_ENV} unset; CI sets it)"
+    code, output = _run([PY, "-m", "pytest", _PARITY_MODULE, "-q", "-p", "no:cacheprovider"])
+    if code != 0 or " passed" not in output:
+        return FAIL, "Postgres backend parity did not execute:\n" + _tail(output)
+    return PASS, f"{detail}; Postgres backend parity executed"
 
 
 @dataclass(frozen=True)

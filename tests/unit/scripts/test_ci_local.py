@@ -65,3 +65,48 @@ def test_tracked_python_files_lists_repo_modules():
     # Newly added files are untracked until committed, so the assertion is about
     # a tracked module and the scale of the list, not about this script itself.
     assert len(files) > 500
+
+
+def test_the_tests_job_says_when_postgres_parity_will_skip(monkeypatch):
+    """No URI -> PASS, but the summary must not imply parity coverage."""
+    module = _module()
+    monkeypatch.delenv("XHS_PG_PARITY_URI", raising=False)
+    module._run = lambda argv, *, cwd=None: (0, "4823 passed")
+    status, detail = module.job_tests(skip=False)
+    assert status == "PASS"
+    assert "Postgres parity skipped" in detail
+
+
+def test_the_tests_job_reruns_the_parity_module_when_a_uri_is_set(monkeypatch):
+    """Mirror CI: the parity module is re-run and must report 'passed'."""
+    module = _module()
+    monkeypatch.setenv("XHS_PG_PARITY_URI", "postgresql://example/db")
+    calls: list[list[str]] = []
+
+    def fake_run(argv, *, cwd=None):
+        calls.append(list(argv))
+        if any("test_creator_agent_backend_parity" in str(part) for part in argv):
+            return 0, "3 passed"
+        return 0, "4823 passed"
+
+    module._run = fake_run
+    status, detail = module.job_tests(skip=False)
+    assert status == "PASS"
+    assert "parity executed" in detail
+    assert len(calls) == 2, calls
+
+
+def test_the_tests_job_fails_when_parity_is_silently_skipped(monkeypatch):
+    """Exit 0 with no 'passed' is the failure mode CI exists to catch."""
+    module = _module()
+    monkeypatch.setenv("XHS_PG_PARITY_URI", "postgresql://example/db")
+
+    def fake_run(argv, *, cwd=None):
+        if any("test_creator_agent_backend_parity" in str(part) for part in argv):
+            return 0, "1 skipped in 0.1s"
+        return 0, "4823 passed"
+
+    module._run = fake_run
+    status, detail = module.job_tests(skip=False)
+    assert status == "FAIL"
+    assert "did not execute" in detail
