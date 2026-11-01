@@ -1899,7 +1899,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     )
                 elif pstatus != "published" and pub.get("error"):
                     # Failed publish (status==failed/auth_expired/...) — surface the
-                    # cause + recovery path that run_publish returns so the agent
+                    # cause + recovery path that the publish attempt returns so the agent
                     # can tell the user why and what to do.
                     lines.append(f"  Error: {pub['error']}")
                     if pub.get("error_type"):

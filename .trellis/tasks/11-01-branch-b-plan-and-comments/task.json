@@ -1,0 +1,30 @@
+{
+  "id": "branch-b-plan-and-comments",
+  "name": "branch-b-plan-and-comments",
+  "title": "docs: P4 分支 B 可选迁移方案 + 清理旧符号注释（票 5bl）",
+  "description": "把 P4 分支 B（入口直落控制面 execute_action 回执路径）从「未采用的一句话」升级为可执行的最小迁移方案（前提已由 5bi 解除：控制面已接六态账本），写清步骤/幂等键对齐/测试/回滚/未做原因；同时清理 backend 注释里对已删除符号 run_publish 的残留引用（_wf_actions 3 处、omp_bridge 1 处）。纯文档/注释，无行为变化。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "docs,backend/api,backend/services",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/publish-action-protocol.md",
+    "backend/api/routes/_wf_actions.py",
+    "backend/services/omp_bridge.py"
+  ],
+  "notes": "DONE 2026-11-01 (docs/comments only, no behaviour change). docs/publish-action-protocol.md now carries an actionable P4 branch-B plan instead of a one-line 'not taken': the stated blocker (control-plane receipt path not carrying the EffectLedger six states) was removed by ticket 5bi, so the section records that prerequisite as satisfied and lists a 5-step minimal migration (write the CONFIRMED mainline ActionIntent before execution; replace the attempt's execution段 with CreatorAdvisor.execute_action while keeping PREPARED/force/ContentHistory/result mapping outside; align the two idempotency keys — workflow publish_id vs intent idempotency_key — so the two guards cannot be blind to each other; write the crash-window/force/UNKNOWN≠FAILED/receipt-vs-event tests before switching; keep a dispatch switch as rollback), plus the reason it still needs a product/architecture decision (it changes mainline execution semantics and ~500 lines of test_run_publish assumptions). Also corrected the P4 paragraph's slight inaccuracy ('zero calls outside the defining and entry modules') to match the AST invariant actually enforced (the only caller is the entry module). Cleaned stale comments naming the deleted run_publish symbol: three in backend/api/routes/_wf_actions.py (force, read seam, F3 one-shot note) and one in backend/services/omp_bridge.py. Verification: tests/unit/scripts (claims/anchors/citations) 98 passed; ruff check green; full suite 4800 passed / 14 skipped / 0 failed / 0 errors. Not done: implementing branch B itself (needs the decision) and no runtime code changed.",
+  "meta": {}
+}

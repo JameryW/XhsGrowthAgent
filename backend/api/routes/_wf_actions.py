@@ -480,7 +480,7 @@ async def retry_publish(
                     )
                     return
                 snap = await graph.aget_state(config)
-                # Read seam: run_publish hashes copy_content/visual_plan subfields
+                # Read seam: the publish entry hashes copy_content/visual_plan subfields
                 # for the publish_id — a ref'd thread must feed it the resolved
                 # bodies, not the checkpoint's ref-only view.
                 resolved = await resolve_state(
@@ -496,7 +496,7 @@ async def retry_publish(
                     {
                         "publish_result": publish_result,
                         "phase": WorkflowPhase.PUBLISHING,
-                        # P0-W4 (F3): run_publish consumes an explicit force one
+                        # P0-W4 (F3): the publish attempt consumes an explicit force one
                         # shot and returns the cleared options — write them back so
                         # the next publish on this thread is guarded again.
                         **(

@@ -365,11 +365,24 @@ review，无账号则不产生）；legacy retry 无身份时不产 intent（行
 `mainline_run_publish_direct_call_sites` 3 → 0。
 
 **P4 已落地（票 5bh）：收口。** 选择验收分支 **A（实现体在入口背后）**：`_run_publish_attempt`
-保持私有、无公开别名，只被 `execute_mainline_publish` 调用（新增 AST 不变量测试钉住
-"除定义模块与入口模块外零调用"）；claim 行与残留声明删除。分支 B（入口直接落到控制面
-`execute_action` 回执路径）**未采用**：主链仍需 `EffectLedger` 六态/幂等键语义，而控制面
-receipt 路径不承载六态；若未来采用，需先让执行器吸收六态账本，届时单独开票。
+保持私有、无公开别名，唯一调用点是 `execute_mainline_publish`（AST 不变量测试钉住
+"backend 中除入口模块外零调用"）；claim 行与残留声明删除。
 - 迁移四阶段 P1/P2/P3/P4 至此收口；`run_publish` 符号已从 backend 删除，不存在兼容别名。
+
+**P4 分支 B（未采用，可选后续）：入口直接落到控制面 `execute_action` 回执路径。**
+当时不做的理由（控制面 receipt 路径不承载 `EffectLedger` 六态）已由票 5bi 解除——控制面
+publish 现在也在 dispatch 前 claim、按 outcome 结算。若未来要做，最小迁移方案：
+1. 执行前先落 CONFIRMED `ActionIntent`（P1b-2 的 producer 已有，需从"账本 claim 之后"
+   提前到"执行之前"）；
+2. 入口用 `CreatorAdvisor.execute_action` 替换 `_run_publish_attempt` 的执行段，
+   PREPARED/force/ContentHistory 与 `publish_result` 映射保留在外层；
+3. 对齐两条幂等键：主链 `publish_id`（内容+账号+时间窗）与 intent
+   `idempotency_key` 必须同源，否则两条护栏各自记账、互相看不见；
+4. 先写测试再切换：crash-window 只 dispatch 一次、force 语义、`UNKNOWN ≠ FAILED`、
+   receipt 与工作流事件不冲突；
+5. 回滚：入口内保留 dispatch 开关，回退到 attempt 即可。
+- 未做原因：这会改变主链执行语义，并牵动 `test_run_publish` 约 500 行既有假设，
+  需要产品/架构拍板后单独立项。
 
 ### 不变量（每阶段都必须保持）
 
