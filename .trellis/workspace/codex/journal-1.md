@@ -1053,3 +1053,37 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: 目标轮 2：主链迁移 P1a 落地（principal + 发布内容材料，票 5ba）
+
+**Date**: 2026-11-01
+**Task**: 目标轮 2：主链迁移 P1a 落地（principal + 发布内容材料，票 5ba）
+**Branch**: `main`
+
+### Summary
+
+继续目标。落地 5au 的 P1 第一切片，并纠正其前提：ActionIntentRequest 需要 decision_id、ActionIntent 还要 creator_id/audience_id，主链没有这些身份（DecisionRecord 是 creator_agent 概念），所以 P1 拆为 P1a/P1b。P1a：新增 services/publish_intent.py（principal 显式分类为具名账号/部署本体，绝不发明账号；发布内容写 artifact://publish_content/<publish_id> 并算 sha256；材料打包），publisher PREPARED 记录新增 principal_kind/principal_account_id/artifact_ref/content_hash；执行器/幂等键/publish_result 不变，artifact 写失败留空不影响发布。P1b 在 plan 里记录身份模型 A/B 选项，claim mainline_action_intent_producers 保持 0。测试：新增 15 个 intent-material 用例 + run_publish 两类主体断言；全量 4741 passed / 14 skipped / 0 failed / 0 errors；doc/claim 门禁 13 passed；ruff 绿。目标未完成，保持 active（下一步 P1b 需要控制面身份模型裁定/迁移）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e9b9cc9a` | (see git log) |
+| `485bc5ca` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
+- **Total Sessions**: 32
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1055 | Active |
+| `journal-1.md` | ~1089 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-11-01 | 目标轮 2：主链迁移 P1a 落地（principal + 发布内容材料，票 5ba） | `e9b9cc9a`, `485bc5ca` | `main` |
 | 31 | 2026-11-01 | 目标轮：收口策略写路径残余 + 修复测试 cwd flaky（票 5ay / 5az） | `6fe2aa08`, `8861cd18`, `d348abf8`, `4dbac635` | `main` |
 | 30 | 2026-11-01 | B 类裁定落地：主链迁移方案 + outreach scope + 不可达路由 + 策略写路径（票 5au–5ax） | `1eebc352`, `3530cf04`, `14b37bb1`, `5b416698`, `2f682538`, `1ab37987`, `3a87bffd`, `5152de16` | `main` |
 | 29 | 2026-10-31 | CI 本地复演 + 跨平台临时目录修复（票 5as） | `c0c05107`, `784c99fa` | `main` |
