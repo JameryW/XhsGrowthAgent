@@ -1189,3 +1189,37 @@ README 中英事实同步：内核口径、Kernel layers 新节、真实模型�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: 目标轮 6：P3a 主链发布载荷接入共享 PublishRequest（票 5be）
+
+**Date**: 2026-11-01
+**Task**: 目标轮 6：P3a 主链发布载荷接入共享 PublishRequest（票 5be）
+**Branch**: `main`
+
+### Summary
+
+P3 切换前的去重切片：主链不再自建 xhs.publish 载荷字段表。PublishRequest 增加带默认值的主链侧事实 private/scheduled_time/cdp_endpoint；build_publish_payload 条件输出且 request endpoint 优先，控制面载荷键集合逐字段不变；gateway_publish_dispatcher 优先用已解析 endpoint、不重复调用 resolver；publisher.run_publish 构造共享 PublishRequest 并调用共享 builder（内容/封面/endpoint 解析仍在主链），Gateway 调用方式与三条直调点不变。claim 仍 3（P3b 才换执行入口）。测试：执行器 33 passed、run_publish 62 passed、全量 4777 passed / 14 skipped / 0 failed / 0 errors、ruff 绿。目标保持 active：剩余 P3b（三条直调接控制面执行器、六态/幂等对齐、claim 3→0）与 P4 收口，及路线图/外部验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6193118c` | (see git log) |
+| `9a8d99a9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

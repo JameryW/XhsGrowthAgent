@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1191 | Active |
+| `journal-1.md` | ~1225 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-11-01 | 目标轮 6：P3a 主链发布载荷接入共享 PublishRequest（票 5be） | `6193118c`, `9a8d99a9` | `main` |
 | 35 | 2026-11-01 | 目标轮 5：P2 主链发布策略门禁（票 5bd） | `ba8c14b4`, `3cd63ab8` | `main` |
 | 34 | 2026-11-01 | 目标轮 4：P1b-2 主链 decision 身份与 origin=mainline intent 生产者（票 5bc） | `809f5951`, `2fb7c859` | `main` |
 | 33 | 2026-11-01 | 目标轮 3：P1b-1 意图身份模型泛化（票 5bb） | `f42aa1a5`, `67e57372` | `main` |
