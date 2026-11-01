@@ -1325,3 +1325,37 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: 继续：控制面 execute 接入 EffectLedger 六态账本（票 5bi）
+
+**Date**: 2026-11-01
+**Task**: 继续：控制面 execute 接入 EffectLedger 六态账本（票 5bi）
+**Branch**: `main`
+
+### Summary
+
+收掉架构升级 row 5 最后残留：creator_agent execute 的 publish 路径此前只靠平台调用后才写的 receipt 做幂等，崩溃窗口内重试可能重复发帖。现改为 _publish_with_effect_ledger：dispatch 前 EffectLedger.begin（IN_FLIGHT，namespace ('publish','intent_effects')，effect_id=account::idempotency_key，与主链账本分离），dispatch 后按 outcome 结算 CONFIRMED/UNKNOWN/FAILED；dispatcher 抛异常结算 UNKNOWN 后原样抛出（绝不用 FAILED）。blocking 状态（IN_FLIGHT/CONFIRMED/UNKNOWN/RECONCILING）→ 新 ActionPublishAlreadyAttemptedError，dispatch 0 次；API 409 ERROR_CREATOR_ACTION_PUBLISH_ALREADY_ATTEMPTED（details 带 prior_status）+ publish_blocked 事件。无 store 时 artifact 读取先拒，不会到账本。文档 agent-os row 5 与披露表更新。测试：新增 ledger 8 用例、API 409 映射 1 用例。验证：全量 4800 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。工作树干净（仅历史未跟踪 .workbuddy/），无活动 Trellis 任务，60 个本地提交未 push。已无已知的关键残留：剩余为文档明示的延后项（路线图 P2 先不建、P3 需评测集、私信 DOM 真机验证）与外部环境限制。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `31839dbb` | (see git log) |
+| `90af2a93` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
