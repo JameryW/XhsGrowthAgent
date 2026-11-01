@@ -1,0 +1,28 @@
+{
+  "id": "adaptive-harness-eval-plan",
+  "name": "adaptive-harness-eval-plan",
+  "title": "docs: Adaptive Harness 评测集方案（提案，待拍板）（票 5ca）",
+  "description": "为路线图 10（P3 Adaptive Harness + A/B 门禁）写一份可审的评测集提案：复用 harness_benchmarks/context baseline/llm_route_benchmark 的现有资产，定义可变决策点与不可变红线、L1 决策回放/L2 工具回放/L3 端到端 A/B 三层、指标与门禁阈值、E1-E4 分阶段落地，并列出 6 个需拍板的问题。纯文档，不写实现。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/adaptive-harness-eval-plan.md"
+  ],
+  "notes": "DONE 2026-11-01 (proposal document only; no implementation). Roadmap item 10 (P3 Adaptive Harness + A/B gate) is blocked on 'evaluation set first', so this ticket delivers a reviewable plan instead of code: docs/adaptive-harness-eval-plan.md defines (1) what a harness variant may change (model routing, context strategy, retry/concurrency/timeout, upgrade/downgrade triggers) and the red lines it may never touch (publish protocol/payload, human approval gate, EffectLedger six states, tool declarations/auth_scope); (2) a three-layer evaluation set — L1 decision replay (offline deterministic fixtures), L2 tool/gateway replay (recorded ToolResult sequences reusing the harness_benchmarks fault-injection idea), L3 end-to-end A/B (budgeted, real or sandbox accounts) — grounded in the existing harness_benchmarks.py, context_compiler_baseline.py and llm_route_benchmark.py; (3) metrics and gates (100% correctness on must-rules, cost drift <=5% following the context-baseline convention, p50/p95 degradation <=10%, quality rubric/judge >=0.8, structural tests for the red lines); (4) staged delivery E1 dataset framework, E2 injectable variant interface (default = current behaviour, no behaviour change), E3 gate script wired into scripts/ci_local.py/CI, E4 budgeted L3; and (5) six questions that need a decision before E1/E2 start (evaluation scope, data source/redaction, budget, LLM-judge allowance, whether variants may change defaults, gate hardness). Verification: tests/unit/scripts 108 passed after the new document (the two initial failures were a separate test-infrastructure leak fixed in ticket 5cb); ruff green; no code or route defaults changed.",
+  "meta": {}
+}

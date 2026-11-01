@@ -1,0 +1,4 @@
+{"file": "docs/agent-os-upgrade-2026q4.md", "reason": "roadmap item 10 / P3 dependency this proposal addresses"}
+{"file": "scripts/benchmarks/harness_benchmarks.py", "reason": "existing deterministic benchmark suite reused by L2"}
+{"file": "scripts/benchmarks/context_compiler_baseline.py", "reason": "existing drift-gate convention reused for cost thresholds"}
+{"file": "scripts/benchmarks/llm_route_benchmark.py", "reason": "existing routing-comparison harness reused by L1/L3"}
