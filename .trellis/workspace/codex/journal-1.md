@@ -1393,3 +1393,37 @@ P4 收口：删除 run_publish 公开别名，尝试体 _run_publish_attempt 仅
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: 继续：修复 CI mypy 预存类型错误（票 5bk）
+
+**Date**: 2026-11-01
+**Task**: 继续：修复 CI mypy 预存类型错误（票 5bk）
+**Branch**: `main`
+
+### Summary
+
+为让 CI 的 mypy 作业可通过，复核 backend 严格类型面：mypy 2.3 下 backend/memory/creative.py:360 把 NicheBenchmark(TypedDict) 传给 BaseStore.aput(value: dict) 报 arg-type（既有 union-attr ignore 覆盖不到），属预存问题。改为 value=dict(benchmark)（运行时等价、仅类型收窄），保留 union-attr ignore。本地用 mypy --python-version 3.12 backend 绕过 numpy 2.5.1 stub 的 PEP695 语法限制：Success 262 source files；曾试 numpy.* follow_imports=skip override 无效已还原（pyproject 无 diff）。验证：memory 339 passed；全量 4800 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。另交代：CI 是 3.11 target 且仓库未声明 numpy，预期干净环境 mypy 通过；若 CI 因传递依赖装了 numpy 仍可能触发 stub 语法问题，需再观察。工作树干净（仅历史未跟踪 .workbuddy/），无活动 Trellis 任务，66 个本地提交未 push。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b23dea2f` | (see git log) |
+| `7d6b942a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
