@@ -72,3 +72,4 @@ oom
 # Throwaway probe/verify scripts from debugging sessions
 probe_*.py
 verify_*.py
+.ci-local-*/

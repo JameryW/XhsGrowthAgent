@@ -42,6 +42,10 @@ xhs-growth version
 # Run tests
 pytest
 
+# Run CI parity locally (ruff / format / mypy / gates / tests / frontend / omp,
+# with the sandbox workarounds and honest SKIPs; --list shows the jobs)
+python scripts/ci_local.py
+
 # Run single test
 pytest tests/test_graph.py -v
 

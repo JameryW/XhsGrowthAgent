@@ -1,0 +1,2 @@
+{"file": ".github/workflows/ci.yml", "reason": "verify each mirrored job still matches its CI command"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a developer tool addition"}

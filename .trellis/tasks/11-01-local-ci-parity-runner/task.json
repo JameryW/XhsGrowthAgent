@@ -1,0 +1,31 @@
+{
+  "id": "local-ci-parity-runner",
+  "name": "local-ci-parity-runner",
+  "title": "chore(ci): 本地 CI 等价检查脚本 scripts/ci_local.py（票 5bw）",
+  "description": "新增本地 CI 等价运行器：lint、format（LF 归一化后检查 681 个 tracked py，避免 Windows CRLF 假阳性）、mypy（遇本地 numpy stub 语法错误自动用 --python-version 3.12 重试并注明）、四个 gate 脚本、pytest（可 --skip-tests）、frontend type-check/i18n（缺 node_modules 时 SKIP）、OMP tsc（缺 node_modules 时 SKIP）；输出 PASS/FAIL/SKIP 摘要。附 5 个单测与 CLAUDE.md 命令说明，防止再出现『mypy 错误到推送前才发现』。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/ci_local.py",
+    "tests/unit/scripts/test_ci_local.py",
+    "CLAUDE.md",
+    ".gitignore"
+  ],
+  "notes": "DONE 2026-11-01. Added scripts/ci_local.py, a local CI parity runner with seven jobs (lint, format, mypy, gates, tests, frontend, omp), --list/--only/--skip-tests, a PASS/FAIL/SKIP summary, exit 1 on any FAIL and exit 2 on an unknown --only value. Design decisions worth reading: (1) child processes redirect output to a file instead of a pipe, because this sandbox refuses piped stdio between processes; (2) the format job copies all tracked .py files into a workspace temp tree with LF line endings plus pyproject.toml and runs ruff format --check there, because a mixed-CRLF Windows checkout otherwise produces false positives (the temp dir is created with mkdir(0o777) because mkdtemp's 0700 dir is not writable in this sandbox, leftovers are gitignored via .ci-local-*/); (3) the mypy job first uses the CI-shaped command and only retries with --python-version 3.12 when it sees the local numpy-stub parse error, and the summary says so; (4) frontend/omp report SKIP with the concrete reason when node_modules or npm is unavailable rather than counting as passes. Tests: five unit tests (job list, unknown --only usage error, --skip-tests semantics, _tail truncation, tracked-file scan). Docs: CLAUDE.md's Development Commands gained the runner; .gitignore gained .ci-local-*/. Also reformatted two files that the new format job flagged (backend/db/creator_agent.py, tests/unit/agents/test_run_publish.py; formatting only). Local smoke: `--only lint,format,mypy,gates,omp` reported PASS for all five (format covered 681 tracked files) with frontend SKIP because npm install fails in the sandbox with EPERM -4048. Verification: full suite in the journal; ruff green.",
+  "meta": {}
+}

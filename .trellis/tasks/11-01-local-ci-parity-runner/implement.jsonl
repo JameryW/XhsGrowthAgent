@@ -1,0 +1,2 @@
+{"file": ".github/workflows/ci.yml", "reason": "the nine CI jobs this runner mirrors"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "local verification expectations"}

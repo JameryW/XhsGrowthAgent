@@ -1972,9 +1972,7 @@ async def test_an_unknown_executor_outcome_keeps_the_mainline_semantics(
         from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
         from backend.state.effects import EffectStatus
 
-        record = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(
-            compute_publish_id(state)
-        )
+        record = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(compute_publish_id(state))
         assert record is not None and record.status is EffectStatus.UNKNOWN
     finally:
         creator_agent_db._reset_memory_store()
@@ -2034,9 +2032,7 @@ async def test_a_timeout_from_the_executor_is_unknown_and_writes_no_receipt(
         assert tools.seen == ["xhs.publish"]
         # No verdict → no receipt; the ledger keeps the guard armed.
         assert creator_agent_db._mem_action_executions == {}
-        record = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(
-            compute_publish_id(state)
-        )
+        record = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(compute_publish_id(state))
         assert record is not None and record.status is EffectStatus.UNKNOWN
     finally:
         creator_agent_db._reset_memory_store()

@@ -157,8 +157,7 @@ _DROP_EXECUTION_PK_SQL = (
     "DROP CONSTRAINT IF EXISTS creator_agent_action_executions_pkey"
 )
 _ADD_EXECUTION_PK_SQL = (
-    "ALTER TABLE creator_agent_action_executions "
-    "ADD PRIMARY KEY (account_id, action_id, attempt)"
+    "ALTER TABLE creator_agent_action_executions ADD PRIMARY KEY (account_id, action_id, attempt)"
 )
 
 _CREATE_MODEL_REVISIONS_SQL = """
