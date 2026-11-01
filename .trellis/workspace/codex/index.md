@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 53
+- **Total Sessions**: 54
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1801 | Active |
+| `journal-1.md` | ~1834 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 54 | 2026-11-01 | 继续：pytest 临时根目录修复 + Adaptive Harness 评测集提案（票 5cb/5ca） | `e84b8b1f` | `main` |
 | 53 | 2026-11-01 | 继续：记录推送与 CI 全绿证据（票 5bz） | `ff8c08e2` | `main` |
 | 52 | 2026-11-01 | 推送与 CI 全绿：分支 B 收口的真实环境验证 | `cccb0041` | `main` |
 | 51 | 2026-11-01 | 继续：钉住单账本 claim 不变量（票 5by） | `74aae551` | `main` |

@@ -1799,3 +1799,36 @@ ci_local.py 的 tests 作业现在镜像 CI 的 parity 复查：全量通过后�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 54: 继续：pytest 临时根目录修复 + Adaptive Harness 评测集提案（票 5cb/5ca）
+
+**Date**: 2026-11-01
+**Task**: 继续：pytest 临时根目录修复 + Adaptive Harness 评测集提案（票 5cb/5ca）
+**Branch**: `main`
+
+### Summary
+
+两票：5cb 修复测试基础设施——沙箱系统 temp 不可写导致 mkdtemp 回落到仓库根、泄漏非点号 dsh-pytest-temproot-* 目录，docs_citation_rule 把它当仓库文件使 host:port/postgres:15 解析成引用（citations 与 execution-plane claim 假红）；改为仓库内 .dsh-pytest-temproot/（点号前缀 + gitignore），删除 4 个泄漏目录，两个门禁恢复 159/33 passed，tests/unit/scripts 108 passed，全量 4827 passed / 14 skipped / 0 failed。5ca 交付 P3 评测集提案 docs/adaptive-harness-eval-plan.md（可变决策点与红线、L1/L2/L3 三层、指标门禁、E1-E4 阶段、6 个待拍板问题），纯文档不改实现。两票均已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e84b8b1f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
