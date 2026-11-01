@@ -2039,6 +2039,53 @@ async def test_a_timeout_from_the_executor_is_unknown_and_writes_no_receipt(
 
 
 @pytest.mark.asyncio
+async def test_an_approved_publish_touches_only_the_mainline_ledger(_browser_settings, monkeypatch):
+    """One publish, one ledger claim (票 5by).
+
+    The executor is built with ``artifact_store=None`` so it cannot open a second
+    ledger in the ``intent_effects`` namespace.  Two claims for one effect could
+    disagree after a crash — say, mainline CONFIRMED while the executor still
+    sees IN_FLIGHT — and a retry would read a different answer depending on which
+    one it consulted.  Pinned here: the mainline ledger is CONFIRMED and the
+    executor namespace holds nothing.
+    """
+    from types import SimpleNamespace
+
+    from backend.agents.publisher import PUBLISH_IDEMPOTENCY_NS, compute_publish_id
+    from backend.creator_agent.execution import PUBLISH_EFFECT_NAMESPACE
+    from backend.db import creator_agent as creator_agent_db
+    from backend.services.publish_intent import publish_content_body
+    from backend.state.artifacts import content_hash
+    from backend.state.effects import EffectLedger, EffectStatus
+
+    creator_agent_db._reset_memory_store()
+    try:
+        state = _state(publish_options={"dry_run": False, "account_id": "acc_ledger"})
+        state["publish_decision"] = {
+            "decision_id": "mainline:unit-ledger",
+            "source": "mainline_review",
+            "thread_id": "test_session",
+            "account_id": "acc_ledger",
+            "content_hash": content_hash(publish_content_body(state)),
+            "approved_by": "u-1",
+            "approved_at": "2026-11-01T00:00:00+00:00",
+        }
+        _mock_account_active(monkeypatch)
+        _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+        _mock_history(monkeypatch)
+        store = _real_store()
+
+        await run_publish(state, store=store, agent=SimpleNamespace(tools=_RecordingTools()))
+
+        record = await EffectLedger(store, PUBLISH_IDEMPOTENCY_NS).get(compute_publish_id(state))
+        assert record is not None and record.status is EffectStatus.CONFIRMED
+        executor_records = await store.asearch(PUBLISH_EFFECT_NAMESPACE)
+        assert executor_records == [], executor_records
+    finally:
+        creator_agent_db._reset_memory_store()
+
+
+@pytest.mark.asyncio
 async def test_a_publish_without_an_approval_decision_records_no_intent(
     _browser_settings, mock_store, monkeypatch
 ):

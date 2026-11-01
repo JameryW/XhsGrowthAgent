@@ -447,13 +447,18 @@ PREPARED / 自己的账本 claim，以及 dispatch 之后的 unknown 判定、�
 ### 不变量（每阶段都必须保持）
 
 1. **永不发明账号**：`account_id` 必须显式解析，空则拒。
-2. **不双执行**：迁移期间 intent 与发布 attempt 只能有一个执行入口；两阶段切换点由测试钉住，
-   禁止「先两边都写、后面再删」。
+2. **不双执行**（分支 B 收口后的终态）：有 durable intent 时执行入口唯一是
+   `CreatorAdvisor.execute_action`；无 intent 的回退直调是**显式例外**，由 claim
+   `mainline_direct_publish_invocations = 1` 钉住。同时**一次发布只有一个账本 claim**
+   （主链 `publish_id` 账本）——executor 以 `artifact_store=None` 构造，不再写
+   `intent_effects` 命名空间；测试同时钉住主链账本 CONFIRMED 与该命名空间为空。
 3. **回执/账本不撒谎**：拒绝不写回执；`UNKNOWN ≠ FAILED` 语义沿用控制面裁决。
 4. **人类审批边界不变**：主链的 review gate 仍是审批点，控制面 confirmation 不得绕过它。
 5. **claim 表与散文同步**：每阶段结束更新 claim 数并重算；否则判据红。
 
 ### 不做 / 触发条件
+
+> 以下条目描述的是**迁移期**约束（P1/P2 阶段）；分支 B 收口后已全部失效，保留作历史。
 
 - 不在 P1/P2 阶段改发布 attempt 内部实现（先让意图与策略就位）。
 - 不在没有跨进程幂等证据前进入 P3（否则重试可能变成第二次真实发布）。

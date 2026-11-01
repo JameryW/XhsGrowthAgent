@@ -1,0 +1,29 @@
+{
+  "id": "single-ledger-invariant",
+  "name": "single-ledger-invariant",
+  "title": "test: 钉住『一次发布只有一个账本 claim』+ 不变量文档收口（票 5by）",
+  "description": "新增用例：approved publish 经执行器后，主链 publish_id 账本为 CONFIRMED 且 executor 的 intent_effects 命名空间为空（executor 以 artifact_store=None 构造，不重复 claim）；同时更新 docs/publish-action-protocol.md 的不变量 2 为分支 B 收口后的终态（有 intent 唯一入口、无 intent 回退直调是显式例外、一次发布一个账本 claim），并把迁移期『不做』条目标注为历史。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "tests/unit/agents/test_run_publish.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (test + docs only). The branch-B cutover keeps exactly one effect-ledger claim per publish by constructing the executor with artifact_store=None; that decision lived only in a code comment, and re-adding the executor ledger would create two claims in different namespaces that can disagree after a crash (mainline CONFIRMED vs executor IN_FLIGHT), making a retry's answer depend on which one it reads. Added test_an_approved_publish_touches_only_the_mainline_ledger: it runs an approved publish through the executor with a real InMemoryStore, asserts the mainline publish_id record is CONFIRMED and that store.asearch(('publish','intent_effects')) is empty. Updated docs/publish-action-protocol.md invariants: item 2 now states the end state (execute_action is the only execution entry when an intent exists; the no-intent direct call is an explicit exception pinned by mainline_direct_publish_invocations=1; one ledger claim per publish, pinned by this test), and the migration-era 'not doing' bullets are marked historical. Verification: the new test passes standalone (12.06s); docs/claims gates run inside the full suite; full suite in the journal; ruff green.",
+  "meta": {}
+}

@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the invariants this ticket updates"}
+{"file": "backend/state/effects.py", "reason": "the ledger namespaces/claim semantics the test pins"}
