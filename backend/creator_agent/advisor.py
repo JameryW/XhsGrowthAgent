@@ -564,17 +564,27 @@ class CreatorAdvisor:
 
         ``force`` (票 5bn, default off) lets an operator who has *reconciled* a
         prior blocking effect state claim it again.  It only bypasses the
-        effect-ledger block; an existing receipt is still returned as-is, and no
-        HTTP endpoint exposes this flag — it exists for the mainline executor
-        wiring, where a human force-retry already carries that decision.
+        effect-ledger block; no HTTP endpoint exposes this flag — it exists for
+        the mainline executor wiring, where a human force-retry already carries
+        that decision.
+
+        Receipts are attempt-scoped (票 5bq).  A **failed** receipt does not end
+        the intent's life: a KNOWN FAILED publish is retryable on the mainline,
+        and the ledger agrees (FAILED is not a blocking state), so a new attempt
+        is allowed without ``force``.  A successful or unknown receipt stays
+        terminal unless ``force`` is passed, in which case the operator is
+        explicitly asking for another dispatch; each execution persists its own
+        receipt with ``attempt = previous + 1``.
         """
         normalized_account_id = account_id.strip()
         normalized_action_id = action_id.strip()
         existing = await self._repository.get_action_execution(
             normalized_account_id, normalized_action_id
         )
-        if existing is not None:
+        retryable = existing is not None and existing.status is ActionExecutionStatus.FAILED
+        if existing is not None and not retryable and not force:
             return existing
+        attempt = 1 if existing is None else existing.attempt + 1
 
         action = await self._repository.get_action(normalized_account_id, normalized_action_id)
         if action is None:
@@ -615,6 +625,7 @@ class CreatorAdvisor:
                 result=_publish_receipt_result(publish_outcome),
                 decision=None,
                 publish_outcome=publish_outcome,
+                attempt=attempt,
             )
 
         assert decision is not None
@@ -663,6 +674,7 @@ class CreatorAdvisor:
             result=result,
             decision=decision,
             publish_outcome=publish_outcome,
+            attempt=attempt,
         )
 
     async def _record_execution(
@@ -672,6 +684,7 @@ class CreatorAdvisor:
         result: dict[str, Any],
         decision: DecisionRecord | None,
         publish_outcome: PublishOutcome | None = None,
+        attempt: int = 1,
     ) -> ActionExecution:
         """Persist one receipt, choosing the identity half from the intent's origin.
 
@@ -693,6 +706,7 @@ class CreatorAdvisor:
             execution_id=str(uuid.uuid4()),
             account_id=action.account_id.strip(),
             action_id=action.action_id,
+            attempt=attempt,
             decision_id=action.decision_id,
             origin=action.origin,
             creator_id=decision.creator_id if decision is not None else "",
@@ -851,9 +865,13 @@ class CreatorAdvisor:
             )
         return outcome
 
-    async def get_action_execution(self, account_id: str, action_id: str) -> ActionExecution | None:
-        """Read one immutable receipt within the account scope."""
-        return await self._repository.get_action_execution(account_id.strip(), action_id.strip())
+    async def get_action_execution(
+        self, account_id: str, action_id: str, attempt: int | None = None
+    ) -> ActionExecution | None:
+        """Read one immutable receipt within the account scope (latest by default)."""
+        return await self._repository.get_action_execution(
+            account_id.strip(), action_id.strip(), attempt
+        )
 
     async def record_feedback(
         self, account_id: str, decision_id: str, feedback: FeedbackInput

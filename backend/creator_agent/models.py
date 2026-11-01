@@ -785,6 +785,12 @@ class ActionExecution(BaseModel):
     execution_id: str = Field(min_length=1, max_length=128)
     account_id: str = Field(min_length=1, max_length=128)
     action_id: str = Field(min_length=1, max_length=128)
+    # Receipts are attempt-scoped (票 5bq): one intent can be executed more than
+    # once (a KNOWN FAILED publish is retryable; an operator force re-executes on
+    # purpose), so the durable identity is (account, action, attempt) rather than
+    # (account, action).  Existing single-attempt callers keep working: the field
+    # defaults to 1 and reads without an attempt return the latest one.
+    attempt: int = Field(default=1, ge=1)
     decision_id: str = Field(min_length=1, max_length=128)
     origin: ActionOrigin = ActionOrigin.CREATOR
     creator_id: str = Field(default="", max_length=128)

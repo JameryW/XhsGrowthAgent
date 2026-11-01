@@ -1,0 +1,32 @@
+{
+  "id": "attempt-scoped-receipts",
+  "name": "attempt-scoped-receipts",
+  "title": "P4 分支 B 前置：receipt 改为 attempt 级（票 5bq）",
+  "description": "ActionExecution 增加 attempt 字段；receipt 主键改为 (account_id, action_id, attempt)，内存与 Postgres 适配器同步（含幂等 ALTER/主键替换迁移）；get_action_execution 支持 attempt 精确读取，默认返回最新；execute_action 允许 KNOWN FAILED 后无 force 重试、force 时强制新 attempt；新增失败可重试/成功终态/force 重执行三个用例。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/creator_agent/models.py",
+    "backend/creator_agent/repository.py",
+    "backend/creator_agent/advisor.py",
+    "backend/db/creator_agent.py",
+    "docs/publish-action-protocol.md"
+  ],
+  "notes": "DONE 2026-11-01 (branch-B prerequisite B3a; mainline dispatch untouched). Root finding: execute_action returned any existing receipt as-is and the durable receipt key was (account, action), while the mainline treats a KNOWN FAILED publish as retryable (FAILED is not a blocking ledger state, asserted by harness F2). Wiring the mainline execution段 onto the executor would therefore silently stop dispatching after one failure. Decision (user): attempt-scoped receipts. Implemented: ActionExecution.attempt (default 1, ge=1); memory adapter keyed (account, action, attempt); Postgres table gained attempt with PRIMARY KEY (account_id, action_id, attempt) and an idempotent migration (add column, inspect the live PK definition, drop/replace only when it does not mention attempt); ON CONFLICT now targets the three columns and the read-back uses them; get_action_execution(account, action, attempt=None) returns the latest attempt by default (old callers/API unchanged) and an exact receipt when attempt is given; execute_action lets a FAILED latest receipt be retried without force (new attempt, real re-dispatch), keeps SUCCEEDED/UNKNOWN terminal unless force, and force always re-executes with attempt = previous + 1; every execution writes its own receipt. Tests added: failure→retry (attempt 1 then 2, ledger CONFIRMED, exact/exact-by-attempt reads), success→terminal, force→re-execution after success (attempt 2, ledger attempt 2). Docs record the ruling and that B3 wiring/B4 closure remain. Risk recorded: no local Postgres, so the migration SQL is only exercised by the CI parity suite. Verification: targeted creator_agent + db + creator_agent API + contract 469 passed; ruff green; full suite in the journal.",
+  "meta": {}
+}

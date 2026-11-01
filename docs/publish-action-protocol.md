@@ -397,6 +397,29 @@ publish 现在也在 dispatch 前 claim、按 outcome 结算。若未来要做�
 - **剩余**：B3（入口用 `execute_action` 替换执行段，
   含 artifact/内容哈希语义对齐与 `test_run_publish` 适配）、B4（claim 更新与回归收口）。
 
+**B3 未开始：先遇到一个必须先裁决的语义冲突（2026-11-01 核查）。**
+控制面的执行 receipt 是**每个 intent 一条、且失败也终态**：`execute_action` 先查
+`get_action_execution(account, action_id)`，存在即原样返回；`create_action_execution`
+的存储主键就是 `(account_id, action_id)`（Postgres 表 `PRIMARY KEY (account_id, action_id)`
++ `ON CONFLICT DO NOTHING`，内存适配器同键）。而主链当前语义是 **KNOWN FAILED 可重试**
+（账本 FAILED 不是 blocking 状态，重试会重新 dispatch，F2 benchmark 也按此断言）。
+若直接把主链执行段换成 `execute_action`，一次失败之后同一 `publish_id` 的重试会命中已有
+receipt 并直接返回，**不再真正发布**——这是行为回归，不是接线问题。候选路径：
+1. **receipt 改为 attempt 级**（主键加入 attempt，与账本 attempt 对齐，查询/接口随之调整）——
+   语义最完整，但需要 schema/适配器/API 迁移与独立票；
+2. **失败后允许 mint 新 intent**（新 action_id、幂等键区分 attempt）——保留"一 intent 一
+   receipt"，但同一内容会有多条 intent，需要补决策绑定规则；
+3. **主链保留 legacy dispatch 处理失败重试**——最省事，但出现双执行路径，违背单一入口目标。
+
+**裁决与落地（2026-11-01）：采用路径 1。** 票 5bq 已把 receipt 改为 attempt 级：
+`ActionExecution.attempt`（默认 1，`ge=1`）；存储主键 `(account_id, action_id, attempt)`
+（Postgres 用幂等的加列 + 主键替换迁移，内存适配器同键）；`get_action_execution` 默认
+返回**最新** attempt、传 attempt 则精确读取；`execute_action` 对 **KNOWN FAILED** 的
+receipt 允许无 force 重试（与账本非 blocking 语义一致），对 **SUCCEEDED/UNKNOWN** 仍
+终态，只有 operator 显式 `force` 才重执行，每次执行写各自 attempt 的 receipt。
+剩余：B3 接线（入口用 `execute_action` 替换执行段）、B4（claim 更新与回归收口）。
+注意：Postgres 迁移路径本地无 PG 实例，只由 CI 的 parity 套件覆盖。
+
 ### 不变量（每阶段都必须保持）
 
 1. **永不发明账号**：`account_id` 必须显式解析，空则拒。

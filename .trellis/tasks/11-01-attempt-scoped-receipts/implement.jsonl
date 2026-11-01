@@ -1,0 +1,2 @@
+{"file": "docs/publish-action-protocol.md", "reason": "the branch-B plan and the retry-semantics ruling this ticket implements"}
+{"file": "backend/state/effects.py", "reason": "BLOCKING_STATUSES (FAILED retryable) that the receipt rule mirrors"}

@@ -392,3 +392,78 @@ class TestTheOutcomeAuditFieldsAndForce:
         record = await _record(store)
         assert record is not None and record.status is EffectStatus.CONFIRMED
         assert record.attempt == 2
+
+
+class TestReceiptsAreAttemptScoped:
+    """票 5bq: one intent may execute more than once, so receipts are attempts.
+
+    The mainline retries a KNOWN FAILED publish (the ledger's FAILED state is not
+    blocking), and an operator force re-executes on purpose.  A single
+    (account, action) receipt would turn both into "return the old receipt and
+    never dispatch again" — a silent behaviour regression once the mainline entry
+    switches onto this executor.
+    """
+
+    async def test_a_definite_failure_is_retryable_without_force(self):
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        advisor, decision_id = await _advisor(
+            store, _Recorder(PublishOutcome(status=PublishStatus.FAILED, error="boom"))
+        )
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        first = await advisor.execute_action(ACCOUNT, intent.action_id)
+        assert first.status is ActionExecutionStatus.FAILED
+        assert first.attempt == 1
+
+        retry = _Recorder(PublishOutcome(status=PublishStatus.PUBLISHED, note_id="note-2"))
+        advisor._publish = retry  # noqa: SLF001 - the seam under test
+        second = await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert len(retry.requests) == 1
+        assert second.status is ActionExecutionStatus.SUCCEEDED
+        assert second.attempt == 2
+        latest = await advisor.get_action_execution(ACCOUNT, intent.action_id)
+        assert latest is not None and latest.attempt == 2
+        exact = await advisor.get_action_execution(ACCOUNT, intent.action_id, 1)
+        assert exact is not None and exact.execution_id == first.execution_id
+        record = await _record(store)
+        assert record is not None and record.status is EffectStatus.CONFIRMED
+
+    async def test_a_successful_receipt_is_terminal_without_force(self):
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        first = await advisor.execute_action(ACCOUNT, intent.action_id)
+        second = await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert len(recorder.requests) == 1
+        assert second.execution_id == first.execution_id
+        assert second.attempt == 1
+
+    async def test_force_re_executes_after_a_successful_receipt(self):
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+
+        await advisor.execute_action(ACCOUNT, intent.action_id)
+        forced = await advisor.execute_action(ACCOUNT, intent.action_id, force=True)
+
+        assert len(recorder.requests) == 2
+        assert forced.attempt == 2
+        assert forced.status is ActionExecutionStatus.SUCCEEDED
+        record = await _record(store)
+        assert record is not None
+        assert record.status is EffectStatus.CONFIRMED
+        assert record.attempt == 2

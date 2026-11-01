@@ -57,7 +57,7 @@ _mem_learning_signals: dict[tuple[str, str], LearningSignal] = {}
 _mem_feedback_signals: dict[tuple[str, str], str] = {}
 _mem_actions: dict[tuple[str, str], ActionIntent] = {}
 _mem_action_idempotency: dict[tuple[str, str], str] = {}
-_mem_action_executions: dict[tuple[str, str], ActionExecution] = {}
+_mem_action_executions: dict[tuple[str, str, int], ActionExecution] = {}
 _mem_lock = asyncio.Lock()
 
 _CREATE_MODELS_SQL = """
@@ -128,15 +128,38 @@ _CREATE_ACTION_EXECUTIONS_SQL = """
 CREATE TABLE IF NOT EXISTS creator_agent_action_executions (
     account_id    TEXT NOT NULL,
     action_id     TEXT NOT NULL,
+    attempt       INTEGER NOT NULL DEFAULT 1,
     execution_id  TEXT NOT NULL UNIQUE,
     decision_id   TEXT NOT NULL,
     status        TEXT NOT NULL,
     payload_json  TEXT NOT NULL,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
-    PRIMARY KEY (account_id, action_id)
+    PRIMARY KEY (account_id, action_id, attempt)
 );
 """
+
+# 票 5bq: databases created before attempt-scoped receipts have PK
+# (account_id, action_id).  Additive column + PK replacement, idempotent: the
+# replacement is skipped once the constraint already mentions attempt.
+_ADD_EXECUTION_ATTEMPT_COL_SQL = (
+    "ALTER TABLE creator_agent_action_executions "
+    "ADD COLUMN IF NOT EXISTS attempt INTEGER NOT NULL DEFAULT 1"
+)
+_SELECT_EXECUTION_PK_SQL = """
+SELECT pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid = 'creator_agent_action_executions'::regclass
+  AND contype = 'p'
+"""
+_DROP_EXECUTION_PK_SQL = (
+    "ALTER TABLE creator_agent_action_executions "
+    "DROP CONSTRAINT IF EXISTS creator_agent_action_executions_pkey"
+)
+_ADD_EXECUTION_PK_SQL = (
+    "ALTER TABLE creator_agent_action_executions "
+    "ADD PRIMARY KEY (account_id, action_id, attempt)"
+)
 
 _CREATE_MODEL_REVISIONS_SQL = """
 CREATE TABLE IF NOT EXISTS creator_agent_model_revisions (
@@ -205,6 +228,16 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_LEARNING_SIGNALS_SQL)
         await conn.execute(_CREATE_ACTIONS_SQL)
         await conn.execute(_CREATE_ACTION_EXECUTIONS_SQL)
+        # 票 5bq: attempt-scoped receipts.  Additive column first, then replace a
+        # legacy (account_id, action_id) primary key; skipped once the PK already
+        # names attempt, so startup stays idempotent.
+        await conn.execute(_ADD_EXECUTION_ATTEMPT_COL_SQL)
+        async with conn.cursor() as pk_cur:
+            await pk_cur.execute(_SELECT_EXECUTION_PK_SQL)
+            pk_row = await pk_cur.fetchone()
+        if pk_row is not None and "attempt" not in str(pk_row[0]):
+            await conn.execute(_DROP_EXECUTION_PK_SQL)
+            await conn.execute(_ADD_EXECUTION_PK_SQL)
         await conn.execute(_CREATE_MODEL_REVISIONS_SQL)
         await conn.execute(_CREATE_INDEX_SQL)
         # One-time, idempotent: accounts whose current model predates revision
@@ -1043,22 +1076,51 @@ class DurableCreatorAgentRepository:
             )
         return action
 
-    async def get_action_execution(self, account_id: str, action_id: str) -> ActionExecution | None:
-        """Read one immutable receipt inside the caller's account scope."""
+    async def get_action_execution(
+        self, account_id: str, action_id: str, attempt: int | None = None
+    ) -> ActionExecution | None:
+        """Read one immutable receipt inside the caller's account scope.
+
+        ``attempt=None`` returns the **latest** attempt, preserving the original
+        single-receipt contract; an explicit attempt reads exactly that receipt
+        (票 5bq — receipts are attempt-scoped because a KNOWN FAILED publish may
+        be retried and an operator force re-executes on purpose).
+        """
         if not is_pool_ready():
             async with _mem_lock:
-                execution = _mem_action_executions.get((account_id, action_id))
-                return execution.model_copy(deep=True) if execution else None
+                if attempt is not None:
+                    execution = _mem_action_executions.get((account_id, action_id, attempt))
+                    return execution.model_copy(deep=True) if execution else None
+                candidates = [
+                    stored
+                    for (stored_account, stored_action, _), stored in _mem_action_executions.items()
+                    if stored_account == account_id and stored_action == action_id
+                ]
+                if not candidates:
+                    return None
+                latest = max(candidates, key=lambda stored: stored.attempt)
+                return latest.model_copy(deep=True)
 
         pool = get_pool()
         async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(
-                """
-                SELECT payload_json FROM creator_agent_action_executions
-                WHERE account_id = %s AND action_id = %s
-                """,
-                (account_id, action_id),
-            )
+            if attempt is None:
+                await cur.execute(
+                    """
+                    SELECT payload_json FROM creator_agent_action_executions
+                    WHERE account_id = %s AND action_id = %s
+                    ORDER BY attempt DESC
+                    LIMIT 1
+                    """,
+                    (account_id, action_id),
+                )
+            else:
+                await cur.execute(
+                    """
+                    SELECT payload_json FROM creator_agent_action_executions
+                    WHERE account_id = %s AND action_id = %s AND attempt = %s
+                    """,
+                    (account_id, action_id, attempt),
+                )
             row = await cur.fetchone()
         return _action_execution_from_row(row) if row else None
 
@@ -1071,13 +1133,14 @@ class DurableCreatorAgentRepository:
         serialized state transition, never produce a receipt for a cancelled
         intent.
         """
-        key = (execution.account_id, execution.action_id)
+        key = (execution.account_id, execution.action_id, execution.attempt)
+        action_key = (execution.account_id, execution.action_id)
         if not is_pool_ready():
             async with _mem_lock:
                 existing = _mem_action_executions.get(key)
                 if existing is not None:
                     return existing.model_copy(deep=True)
-                action = _mem_actions.get(key)
+                action = _mem_actions.get(action_key)
                 if action is None:
                     raise ActionIntentMissingError(execution.action_id)
                 if action.status is not ActionStatus.CONFIRMED:
@@ -1100,7 +1163,7 @@ class DurableCreatorAgentRepository:
                 SELECT payload_json FROM creator_agent_actions
                 WHERE account_id = %s AND action_id = %s FOR UPDATE
                 """,
-                key,
+                action_key,
             )
             action_row = await cur.fetchone()
             if action_row is None:
@@ -1136,14 +1199,15 @@ class DurableCreatorAgentRepository:
             await cur.execute(
                 """
                 INSERT INTO creator_agent_action_executions (
-                    account_id, action_id, execution_id, decision_id, status,
+                    account_id, action_id, attempt, execution_id, decision_id, status,
                     payload_json, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (account_id, action_id) DO NOTHING
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (account_id, action_id, attempt) DO NOTHING
                 """,
                 (
                     execution.account_id,
                     execution.action_id,
+                    execution.attempt,
                     execution.execution_id,
                     execution.decision_id,
                     execution.status.value,
@@ -1155,7 +1219,7 @@ class DurableCreatorAgentRepository:
             await cur.execute(
                 """
                 SELECT payload_json FROM creator_agent_action_executions
-                WHERE account_id = %s AND action_id = %s
+                WHERE account_id = %s AND action_id = %s AND attempt = %s
                 """,
                 key,
             )

@@ -13,3 +13,10 @@ contact merchants, search providers, messaging tools, or platform automation.
 Execution remains a separate explicit call. Pending and cancelled intents are
 rejected with a typed conflict, and receipt creation is protected by the same
 memory lock or Postgres action-row lock used to enforce the confirmation gate.
+
+> **Update (票 5bq, 2026-11-01):** "exactly one receipt" is now **one receipt per
+> execution attempt**. A KNOWN FAILED publish is retryable on the mainline (the
+> effect ledger does not treat FAILED as blocking) and an operator may force a
+> re-execution, so receipts are keyed `(account_id, action_id, attempt)` and the
+> latest attempt is what a plain read returns. The append-only/immutable rule per
+> attempt is unchanged.
