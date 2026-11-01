@@ -1865,3 +1865,36 @@ ci_local.py 的 tests 作业现在镜像 CI 的 parity 复查：全量通过后�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 56: P3/E1：真实 checkpoint 脱敏语料抽取器（票 5cd）
+
+**Date**: 2026-11-01
+**Task**: P3/E1：真实 checkpoint 脱敏语料抽取器（票 5cd）
+**Branch**: `main`
+
+### Summary
+
+按用户拍板（口径都需要/数据真实/预算可配置）落地 P3 评测集 E1：scripts/eval/fixtures.py 提供 schema 与唯一脱敏 pass（稳定假名、密钥/位置清空、图片路径规范化、messages 默认丢弃、内容保留、非 JSON 拒绝）；scripts/eval/extract_fixtures.py 只读 AsyncSqlite/PostgresSaver alist 取每线程最新状态，支持 --limit/--all/--phases/--include-messages/--dry-run/--sqlite-path/--postgres-uri，输出 fixture+manifest（sha256）到 gitignore 的 .eval-fixtures/。10 个新用例（含真实 sqlite 往返、无明文断言、dry-run 不落盘）全过；docs 记录拍板与本地空库现实；全量 4837 passed / 14 skipped / 0 failed / 0 errors；ruff 与 docs gates 绿。票 5cd 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e087ebc8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

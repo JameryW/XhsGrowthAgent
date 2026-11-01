@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 55
+- **Total Sessions**: 56
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1867 | Active |
+| `journal-1.md` | ~1900 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 56 | 2026-11-01 | P3/E1：真实 checkpoint 脱敏语料抽取器（票 5cd） | `e087ebc8` | `main` |
 | 55 | 2026-11-01 | 继续：测试临时目录彻底收进仓库内 .dsh-tmp（票 5cc） | `e5d04d67` | `main` |
 | 54 | 2026-11-01 | 继续：pytest 临时根目录修复 + Adaptive Harness 评测集提案（票 5cb/5ca） | `e84b8b1f` | `main` |
 | 53 | 2026-11-01 | 继续：记录推送与 CI 全绿证据（票 5bz） | `ff8c08e2` | `main` |
