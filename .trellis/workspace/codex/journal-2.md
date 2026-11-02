@@ -104,3 +104,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 63: 语料指纹与加盐假名（票 5ck）
+
+**Date**: 2026-11-02
+**Task**: 语料指纹与加盐假名（票 5ck）
+**Branch**: `main`
+
+### Summary
+
+收口独立审查两条低危：抽取器写 manifest.sha256，gate 校验并支持 --expect-manifest-sha256 做 out-of-band 核对（文档如实说明成对重写需外部值）；pseudonym 支持 HMAC 密钥（XHS_EVAL_REDACTION_KEY，不写入语料），manifest 记录 pseudonym_mode，无密钥时警告短 id 可被字典攻击。新增 5 个用例（加盐稳定/不同密钥、加盐与无盐抽取模式、指纹不匹配、out-of-band 期望值）。验证 fixtures 17、gate 25、unit scripts 177、全量 4904 passed / 14 skipped / 0 failed / 0 errors；ruff 与 ci_local 静态作业绿。票 5ck 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b5498859` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

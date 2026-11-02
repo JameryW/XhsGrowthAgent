@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 62
+- **Total Sessions**: 63
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~106 | Active |
+| `journal-2.md` | ~139 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 63 | 2026-11-02 | 语料指纹与加盐假名（票 5ck） | `b5498859` | `main` |
 | 62 | 2026-11-02 | 独立审查修复：E1 脱敏与 E3/E4 门禁加固（票 5cj） | `dba338dc` | `main` |
 | 61 | 2026-11-02 | L3 live 授权门闸与部署 runbook + 脱敏加固（票 5ci） | `60c31cef` | `main` |
 | 60 | 2026-11-02 | E4 质量裁判与 199 调用预算护栏（票 5ch） | `2f6f79bf` | `main` |
