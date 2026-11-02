@@ -71,3 +71,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 62: 独立审查修复：E1 脱敏与 E3/E4 门禁加固（票 5cj）
+
+**Date**: 2026-11-02
+**Task**: 独立审查修复：E1 脱敏与 E3/E4 门禁加固（票 5cj）
+**Branch**: `main`
+
+### Summary
+
+按独立审查修复全部高危/中危：E1 脱敏覆盖真实 schema 身份字段（workflow_thread_id/reviewer/nickname/author/post_id…）、URL 清空、绝对路径护栏、messages 永远丢弃并移除坏开关；JudgeBudget 拒绝 >199 且 budget 必填；门禁空语料/旧脱敏版本/未列出文件/非 PASS benchmark/未知状态/决策相同 variant 全部转红，policy 类型校验，mode 由 --fail-on-red 决定；sqlite 只读打开且跳过 subgraph ns、phase 过滤收紧；plan_l3 按总量校验预算（calls_per_sample 必填）；文档与 runbook 同步真实范围。验证 fixtures 14/gate 23/judge 12/plan 13、unit scripts 172、全量 4899 passed / 14 skipped / 0 failed / 0 errors。票 5cj 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dba338dc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
