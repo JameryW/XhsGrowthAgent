@@ -325,7 +325,7 @@ def check_policy(policy: Any, *, label: str = "policy") -> tuple[CheckResult, di
 def diff_snapshots(baseline: dict[str, Any], variant: dict[str, Any]) -> dict[str, Any]:
     """Name what moved, per decision point (empty dict = variant changed nothing)."""
     diff: dict[str, Any] = {}
-    for key in ("models", "context_budget", "escalation", "tool_limits"):
+    for key in ("models", "context_budget", "context_budgets", "escalation", "tool_limits"):
         if baseline.get(key) != variant.get(key):
             diff[key] = {"baseline": baseline.get(key), "variant": variant.get(key)}
     return diff
