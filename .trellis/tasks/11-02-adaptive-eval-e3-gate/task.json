@@ -1,0 +1,33 @@
+{
+  "id": "adaptive-eval-e3-gate",
+  "name": "adaptive-eval-e3-gate",
+  "title": "feat(eval): P3/E3 离线 A/B 门禁——默认只报告，--fail-on-red 可选（票 5cf）",
+  "description": "落地 E3：scripts/eval/run_gate.py 跑离线检查——corpus（manifest/sha256/state_sha256 重算；缺语料是 SKIP 不是通过）、policy（默认策略快照覆盖四决策且每 TaskType 有路由）、variant（仅显式 --variant 注入，输出决策 diff；差异不算红、坏变体才红）、benchmarks（真实跑 harness_benchmarks，F1/F2/F4 必须在且无 FAIL，F5/F7/F8 保留缺口可见）。门禁强度可配置：默认 report 红也返回 0，--fail-on-red 才阻断；变体永不改生产默认（A/B-only 姿态），对应提案问题 5/6 未拍板。接入 ci_local 新 job eval-gate（无 .eval-fixtures 时显式 SKIP）。13 个新用例 + ci_local 2 个用例。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/eval/run_gate.py",
+    "tests/unit/scripts/test_eval_gate.py",
+    "scripts/ci_local.py",
+    "tests/unit/scripts/test_ci_local.py",
+    "docs/adaptive-harness-eval-plan.md",
+    "CLAUDE.md"
+  ],
+  "notes": "DONE 2026-11-02 (P3/E3 offline A/B gate). E3 asks for the L1/L2 checks plus a threshold judgement, but questions 5 (may a variant replace a production default) and 6 (does red block a merge) are still open, so the gate ships in the safe posture: report-only by default, variants only via an explicit --variant module:factory, and the script never touches a production default. Checks: corpus (manifest schema match, per-file sha256, and the fixture's own state_sha256 recomputes; a missing .eval-fixtures is a SKIP with the reason, not a pass and not a red); policy (describe() covers exactly the four decisions, every TaskType has a non-empty model, snapshot is JSON-serialisable); variant (only when supplied — reports which decisions moved; a difference is the purpose of an A/B run, so it is not a red, but a broken variant such as one returning an empty route is); benchmarks (really runs scripts/benchmarks/harness_benchmarks.py through file redirection, because piped stdio is blocked in this sandbox; F1/F2/F4 must exist and nothing may FAIL; F5/F7/F8 SKIPs stay listed as documented gaps and becoming PASS later is not a failure). Gate hardness is a switch: default report mode returns 0 on red, --fail-on-red returns 1; CLI tests pin both postures. Wired into scripts/ci_local.py as a new eval-gate job that explicitly SKIPs when .eval-fixtures/ is absent (CI cannot supply local fixtures, so it is not added to the GitHub workflow). Verification: test_eval_gate.py 13 passed (including tampered fixture red, manifest schema red, benchmark FAIL red, gap-turned-PASS pass, failing-runner red, variant diff informational, both CLI exit postures); test_ci_local.py gained 2 cases; running python scripts/eval/run_gate.py yields corpus SKIP / policy PASS / benchmarks PASS, mode=report, exit 0; docs/claim gates and full suite in the journal; ruff green.",
+  "meta": {}
+}

@@ -172,6 +172,17 @@ def job_gates() -> tuple[str, str]:
     return PASS, detail
 
 
+def job_eval_gate() -> tuple[str, str]:
+    """P3/E3 gate; it needs a real corpus, and fixtures are local-only by design."""
+    corpus = REPO / ".eval-fixtures"
+    if not corpus.is_dir():
+        return SKIP, ".eval-fixtures absent: E3 gate needs a local corpus (gitignored)"
+    return _expect_ok(
+        [PY, str(REPO / "scripts" / "eval" / "run_gate.py"), "--corpus", str(corpus)],
+        detail="E3 offline A/B gate",
+    )
+
+
 def _npm_argv(args: Sequence[str]) -> list[str] | None:
     executable = shutil.which("npm")
     if executable is None:
@@ -253,6 +264,11 @@ def _jobs(skip_tests: bool) -> tuple[_Job, ...]:
         _Job("mypy", "mypy backend (retries with target 3.12 on local numpy stubs)", job_mypy),
         _Job(
             "gates", "context compiler / harness benchmarks / tool runtime / compliance", job_gates
+        ),
+        _Job(
+            "eval-gate",
+            "P3/E3 offline A/B gate (SKIP without a local .eval-fixtures corpus)",
+            job_eval_gate,
         ),
         _Job(
             "tests",

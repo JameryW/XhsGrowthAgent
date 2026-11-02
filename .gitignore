@@ -76,3 +76,4 @@ verify_*.py
 .dsh-pytest-temproot/
 .dsh-tmp/
 .eval-fixtures/
+.eval-tmp/

@@ -46,6 +46,10 @@ pytest
 # with the sandbox workarounds and honest SKIPs; --list shows the jobs)
 python scripts/ci_local.py
 
+# P3 evaluation corpus + offline A/B gate (report-only unless --fail-on-red)
+python scripts/eval/extract_fixtures.py --dry-run
+python scripts/eval/run_gate.py
+
 # Run single test
 pytest tests/test_graph.py -v
 

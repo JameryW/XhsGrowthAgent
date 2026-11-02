@@ -127,6 +127,27 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
 - 测试：`tests/unit/harness/test_policy.py` 8 passed，逐项对比 router/目录的当前答案，
   并钉住"未知名能力必须拒绝而不是编造"以及 snapshot 的 diff 行为。
 
+## 6.7 E3 已交付：离线 A/B 门禁（票 5cf，默认只报告）
+
+`scripts/eval/run_gate.py`：
+
+| 检查 | 判定 |
+|---|---|
+| `corpus` | `.eval-fixtures/` 缺失 → **SKIP**（缺语料是缺口，不是通过，也不是红）；manifest schema 不符、文件 sha256 不匹配、fixture 的 `state_sha256` 重算不符 → 红 |
+| `policy` | 默认策略的 `describe()` 必须覆盖四个决策点、每个 TaskType 都有非空模型、快照可 JSON 序列化 |
+| `variant` | 仅在显式 `--variant module:factory` 时运行；输出**决策 diff**（差异是 A/B 的目的，本身不算红）；变体坏了（空路由/describe 抛错）才红 |
+| `benchmarks` | 真实跑 `harness_benchmarks.py`：F1/F2/F4 必须存在且通过，任何 FAIL 都红；F5/F7/F8 若仍 SKIP 则作为缺口列出（缺口后来实现成 PASS 也不算失败） |
+
+- **门禁强度可配置**：默认 `mode=report`，红也返回 0；`--fail-on-red` 才返回 1。这对应
+  提案第 6 节问题 6 未拍板时的安全姿态——先出报告，不阻断合并。
+- **变体边界**：只能通过显式 `--variant` 注入，脚本从不改生产默认值（对应问题 5 的
+  A/B-only 姿态，最终拍板后如需改默认再单独接线）。
+- 接入本地 runner：`python scripts/ci_local.py --only eval-gate`；无 `.eval-fixtures/` 时
+  该 job 显式 SKIP（CI 无法提供本地语料，故不进 GitHub workflow）。
+- 测试：`tests/unit/scripts/test_eval_gate.py` 13 passed（含"红但不阻断"与 `--fail-on-red`
+  两个 CLI 姿态、篡改 fixture 必红、benchmark FAIL 必红、缺口实现成 PASS 不算失败）；
+  `tests/unit/scripts/test_ci_local.py` 补 2 个用例（无语料 SKIP / 有语料运行）。
+
 ## 7. 明确不做
 
 - 不训练/微调模型；不改线上默认路由与发布协议；不影响审批与账本语义。

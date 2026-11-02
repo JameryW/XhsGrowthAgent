@@ -1,0 +1,3 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the E3 definition and the two open decisions the safe posture defers"}
+{"file": "scripts/benchmarks/harness_benchmarks.py", "reason": "the deterministic suite the gate runs as its benchmark check"}
+{"file": "backend/harness/policy.py", "reason": "the snapshot/describe surface the policy and variant checks compare"}

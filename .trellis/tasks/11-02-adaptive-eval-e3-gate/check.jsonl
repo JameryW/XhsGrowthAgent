@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "verify E3 is recorded with its report-only default and remaining E4"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a new offline gate script"}

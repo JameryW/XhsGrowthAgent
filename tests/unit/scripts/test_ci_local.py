@@ -33,7 +33,7 @@ def _module() -> ModuleType:
 def test_list_prints_every_job_name(capsys):
     assert _module().main(["--list"]) == 0
     output = capsys.readouterr().out
-    for name in ("lint", "format", "mypy", "gates", "tests", "frontend", "omp"):
+    for name in ("lint", "format", "mypy", "gates", "eval-gate", "tests", "frontend", "omp"):
         assert name in output, f"{name} missing from --list output"
 
 
@@ -110,3 +110,28 @@ def test_the_tests_job_fails_when_parity_is_silently_skipped(monkeypatch):
     status, detail = module.job_tests(skip=False)
     assert status == "FAIL"
     assert "did not execute" in detail
+
+
+def test_the_eval_gate_skips_when_no_local_corpus_exists(monkeypatch, tmp_path):
+    module = _module()
+    monkeypatch.setattr(module, "REPO", tmp_path)
+    status, detail = module.job_eval_gate()
+    assert status == "SKIP"
+    assert ".eval-fixtures" in detail
+
+
+def test_the_eval_gate_runs_when_a_local_corpus_exists(monkeypatch, tmp_path):
+    module = _module()
+    monkeypatch.setattr(module, "REPO", tmp_path)
+    (tmp_path / ".eval-fixtures").mkdir()
+    calls = []
+
+    def fake_expect_ok(argv, *, cwd=None, detail=""):
+        calls.append([str(part) for part in argv])
+        return "PASS", detail
+
+    monkeypatch.setattr(module, "_expect_ok", fake_expect_ok)
+    status, detail = module.job_eval_gate()
+    assert status == "PASS"
+    assert "run_gate.py" in " ".join(calls[0])
+    assert "E3 offline A/B gate" in detail
