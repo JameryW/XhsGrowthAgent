@@ -170,3 +170,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 65: 复核高危修复：artifact 内容解析与第二批脱敏（票 5cm）
+
+**Date**: 2026-11-02
+**Task**: 复核高危修复：artifact 内容解析与第二批脱敏（票 5cm）
+**Branch**: `main`
+
+### Summary
+
+按第二轮独立复核修复两处高危：1) 抽取器新增 --store-uri，用 resolve_state 解析 artifact ref 化内容；无 store/解析失败跳过并计 unresolved_artifacts，绝不写无内容 fixture；2) 第二批真实 schema 身份字段（platform_post_id/run_id/target_id/ids/confirmer/confirmed_by/user_viral_links/复数 URL/UNC/file://）补齐脱敏并回归。残留中危：指纹必需、extractor_version 校验、逐 phase 预算快照与校验、JudgeBudget used 边界与 max_calls 只读、任何 live 运行需 XHS_EVAL_LIVE、估算非上限、phase 过滤不丢线程、驱动错误干净退出。验证 fixtures 21/gate 29/judge 14/plan 15/policy 9、unit scripts+harness 197、ruff+mypy 绿、全量 4916 passed / 14 skipped / 0 failed / 0 errors。票 5cm 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `22ccb163` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
