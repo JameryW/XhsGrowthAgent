@@ -68,6 +68,8 @@ def test_a_missing_corpus_is_a_skip_with_a_reason(tmp_path: Path):
 def test_a_valid_corpus_passes(tmp_path: Path):
     result = gate.check_corpus(_corpus(tmp_path))
     assert result.status == "pass", result.detail
+    # unsalted corpora stay usable but the weakness is always stated
+    assert "pseudonyms unsalted" in result.detail
 
 
 def test_an_empty_corpus_is_red_not_a_pass(tmp_path: Path):
@@ -118,9 +120,10 @@ def test_a_corpus_built_by_an_older_redaction_is_red(tmp_path: Path):
     assert "redaction" in result.detail
 
 
-def test_an_unlisted_fixture_file_is_red(tmp_path: Path):
+def test_an_unlisted_json_file_is_red(tmp_path: Path):
     corpus = _corpus(tmp_path)
-    (corpus / "fixture-rogue.json").write_text("{}", encoding="utf-8")
+    # Underscore variant: a fixture-* glob would miss it.
+    (corpus / "fixture_rogue.json").write_text("{}", encoding="utf-8")
     result = gate.check_corpus(corpus)
     assert result.status == "red"
     assert "unlisted" in result.detail

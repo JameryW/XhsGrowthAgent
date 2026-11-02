@@ -17,12 +17,19 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
-# The user approved "fewer than 200 model calls"; 199 is the literal reading and
-# the same default JudgeBudget uses.
-APPROVED_MAX_CALLS = 199
+_EVAL_DIR = Path(__file__).resolve().parent
+if str(_EVAL_DIR) not in sys.path:
+    sys.path.insert(0, str(_EVAL_DIR))
+
+# Single source with the judge: a second literal here could drift from the
+# budget the judge actually enforces.
+from judge import APPROVED_MAX_CALLS  # noqa: E402  (sibling module, sys.path set above)
+
 MAX_SAMPLES = 50
 JudgeKind = Literal["llm", "human", "none"]
 

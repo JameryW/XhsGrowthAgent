@@ -193,11 +193,12 @@ def check_corpus(corpus_dir: Path, *, expect_manifest_sha256: str | None = None)
     if manifest.total != len(manifest.fixtures):
         problems.append(f"manifest.total {manifest.total} != {len(manifest.fixtures)} entries")
     listed = {entry.file for entry in manifest.fixtures}
-    unlisted = sorted(
-        path.name for path in corpus_dir.glob("fixture-*.json") if path.name not in listed
-    )
+    # Anything JSON-shaped that the manifest does not list is unaccounted evidence,
+    # including near-misses like fixture_rogue.json that a fixture-* glob misses.
+    allowed = listed | {"manifest.json"}
+    unlisted = sorted(path.name for path in corpus_dir.glob("*.json") if path.name not in allowed)
     if unlisted:
-        problems.append(f"unlisted fixture files: {', '.join(unlisted[:5])}")
+        problems.append(f"unlisted json files: {', '.join(unlisted[:5])}")
     for entry in manifest.fixtures:
         path = corpus_dir / entry.file
         if not path.is_file():
@@ -219,6 +220,10 @@ def check_corpus(corpus_dir: Path, *, expect_manifest_sha256: str | None = None)
     detail = f"{manifest.total} fixtures, hashes intact"
     if digest_path.is_file():
         detail += f", manifest digest {actual_digest[:12]}…"
+    if manifest.pseudonym_mode == "sha256":
+        # Visible, not fatal: an unsalted corpus is acceptable for a local run but
+        # its short ids are dictionary-attackable, so the gate says so every time.
+        detail += ", pseudonyms unsalted (sha256)"
     return CheckResult("corpus", "pass", detail)
 
 

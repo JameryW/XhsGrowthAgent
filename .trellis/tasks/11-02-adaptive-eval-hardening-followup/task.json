@@ -1,0 +1,31 @@
+{
+  "id": "adaptive-eval-hardening-followup",
+  "name": "adaptive-eval-hardening-followup",
+  "title": "fix(eval): 单一预算常量 + 未列出 JSON 严格化 + 无盐提示 + 路线图同步（票 5cl）",
+  "description": "验证轮的小硬化：1) plan_l3 不再自带 199 字面量，改为 from judge import APPROVED_MAX_CALLS（单一来源，防漂移）；2) gate 的未列出文件检查从 fixture-*.json 扩到目录内所有 *.json（fixture_rogue.json 这类下划线变体也会红）；3) 无盐语料的 gate 详情始终标注 pseudonyms unsalted (sha256)（可见但不阻断）；4) agent-os 路线图 10 与结论段补齐 5cd–5ck 与 E4 状态（裁判/门闸已交付、live external-only）。测试更新并全量回归。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/eval/plan_l3.py",
+    "scripts/eval/run_gate.py",
+    "tests/unit/scripts/test_eval_gate.py",
+    "docs/agent-os-upgrade-2026q4.md"
+  ],
+  "notes": "DONE 2026-11-02 (small hardening found while verifying the previous fixes). 1) Single source for the approved budget: plan_l3.py used to carry its own APPROVED_MAX_CALLS = 199 next to judge.py's; it now imports the constant from judge, so the authorisation gate and the enforcement point cannot drift apart. 2) Unlisted-file check widened: run_gate compared only fixture-*.json against the manifest, so a near-miss like fixture_rogue.json (underscore) was ignored; it now flags any *.json in the corpus other than manifest.json that the manifest does not list. 3) Unsalted corpora are visible, not fatal: when manifest.pseudonym_mode is sha256, the corpus check detail always ends with 'pseudonyms unsalted (sha256)', so a local run cannot quietly look as safe as a keyed one (blocking would be wrong for a local corpus, silence would hide a real weakness). 4) docs/agent-os-upgrade-2026q4.md roadmap row 10 and the conclusion now list 5cd–5ck and state that E1–E3 plus the E4 judge/budget/planner are delivered while live remains external-only. Verification: test_eval_gate 25 passed (including the underscore-variant red and the unsalted note), test_eval_plan_l3 13 passed, tests/unit/scripts 177 passed, docs/claim gates green, full suite in the journal.",
+  "meta": {}
+}

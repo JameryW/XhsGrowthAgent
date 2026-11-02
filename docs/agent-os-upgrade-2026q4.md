@@ -400,11 +400,12 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 |---|---|---|
 | P4 分支 B：入口直落 `execute_action` 回执路径 | 已完成 | 2026-11-01 拍板并落地 B1–B4（票 5bn/5bo/5br/5bq/5bs）及加固（5bu/5by）：receipt attempt 级、intent 先于持久效果、executor 接受 caller-supplied request、有 intent 的发布经 `execute_action` 执行且只保留主链一个账本 claim；claim 表新增两条并带阳性对照。**已推送 origin/main 并经 CI 验证**：run 41306901460 / 41307361407 的 10 个作业全部 success（含 mypy、py3.11/3.12 的 Postgres parity、frontend、OMP） |
 | 路线图 8：多 Agent 并行 / workspace 冲突（F5） | 裁定 | 本文档裁定「先不建」，F5 保持 SKIP |
-| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 进行中 | 评测集先行：E1 真实 checkpoint 抽取+脱敏（5cd）、E2 HarnessPolicy（5ce）、E3 离线 A/B 门禁 report-only/`--fail-on-red`（5cf）、变体示例（5cg）、E4 质量裁判 + 199 调用预算护栏（5ch，judge/预算/测试账号已拍板）；live 端到端仍 external-only |
+| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 进行中 | 评测集先行：E1 真实 checkpoint 抽取+脱敏+指纹/加盐（5cd/5cj/5ck）、E2 HarnessPolicy（5ce）、E3 离线 A/B 门禁 report/block（5cf/5cj）、变体示例（5cg）、E4 质量裁判 + 199 预算护栏 + live 计划门闸 + runbook（5ch/5ci/5cj）；独立审查发现的高危/中危/低危已全部修复；live 端到端仍 external-only |
 | 私信 DOM 真机读法、笔记详情页深查/CDP | external-only | 需真实账号与平台环境，沙箱内不可验证 |
 | frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地沙箱/凭据限制，非仓库缺陷 |
 
 **结论**：仓库内可本地执行、可验证的剩余任务已清零（分支 B 已于 2026-11-01 完成并推送，
-票 5bn–5by；CI 10 作业全绿）。路线图 10 已从「未启动」推进到「进行中」：E1–E3 与变体示例
-落地（票 5cd/5ce/5cf/5cg），E4 端到端小样本仍待账号/预算/judge 拍板；其余为已裁定延后项
-（路线图 8）与外部/环境依赖项。
+票 5bn–5by；CI 10 作业全绿）。路线图 10 已从「未启动」推进到「进行中」：E1–E3、变体示例
+与 E4 的裁判/预算护栏/计划门闸全部落地（票 5cd–5ck），独立审查发现的高危/中危/低危均已
+修复；E4 的 live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真实费用）。其余为
+已裁定延后项（路线图 8：多 Agent 并行，裁定先不建）与外部/环境依赖项。
