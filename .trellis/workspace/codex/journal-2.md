@@ -203,3 +203,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 66: #756 后变体示例改为逐 phase 预算（票 5cn）
+
+**Date**: 2026-11-02
+**Task**: #756 后变体示例改为逐 phase 预算（票 5cn）
+**Branch**: `main`
+
+### Summary
+
+远端 #756（LLM 统一走 magpie、禁用直连 DeepSeek）使原 route_lighter 变体失去意义；改为 phase_budget 变体（publishing 预算 4000），gate diff 仅 context_budgets，测试与 §6.8 同步；删除旧变体。分支已 rebase 到 #756，全量 4916 passed / 14 skipped / 0 failed / 0 errors。票 5cn 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4e565dfe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
