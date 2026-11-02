@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "verify §6.8 no longer references the removed variant"}
+{"file": "tests/unit/scripts/test_eval_gate.py", "reason": "verify the variant assertions match the shipped example"}

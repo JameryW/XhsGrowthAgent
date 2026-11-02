@@ -276,20 +276,19 @@ def test_the_cli_is_report_only_by_default_and_can_be_told_to_block(tmp_path: Pa
     assert gate.main(["--corpus", str(corpus), "--skip-benchmarks", "--fail-on-red"]) == 1
 
 
-def test_a_real_variant_moves_only_model_routing():
+def test_a_real_variant_moves_only_the_phase_budget():
     """The shipped example changes one decision; the diff must say exactly that."""
-    from backend.config.models import TaskType
     from backend.harness.policy import DefaultHarnessPolicy
 
-    policy = gate.load_variant("scripts.eval.variants.route_lighter:make_policy")
+    policy = gate.load_variant("scripts.eval.variants.phase_budget:make_policy")
     baseline = gate.check_policy(DefaultHarnessPolicy())[1]
     variant = gate.check_policy(policy)[1]
 
     diff = gate.diff_snapshots(baseline, variant)
-    assert set(diff) == {"models"}
-    key = TaskType.CONTENT_ANALYSIS.value
-    assert diff["models"]["variant"][key] == "deepseek-v4-flash"
-    assert diff["models"]["baseline"][key] != "deepseek-v4-flash"
+    assert set(diff) == {"context_budgets"}
+    assert diff["context_budgets"]["variant"]["publishing"] == 4000
+    assert diff["context_budgets"]["baseline"]["publishing"] is None
+    assert variant["models"] == baseline["models"]
 
 
 def test_the_cli_injects_a_variant_module_by_name(tmp_path: Path, capsys):
@@ -300,12 +299,12 @@ def test_the_cli_injects_a_variant_module_by_name(tmp_path: Path, capsys):
             str(corpus),
             "--skip-benchmarks",
             "--variant",
-            "scripts.eval.variants.route_lighter:make_policy",
+            "scripts.eval.variants.phase_budget:make_policy",
         ]
     )
     assert code == 0
     output = capsys.readouterr().out
-    assert "decisions changed: models" in output
+    assert "decisions changed: context_budgets" in output
     assert "mode=report red=False" in output
 
 

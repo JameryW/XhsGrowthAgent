@@ -1,0 +1,30 @@
+{
+  "id": "adaptive-eval-variant-after-magpie",
+  "name": "adaptive-eval-variant-after-magpie",
+  "title": "fix(eval): #756 后调整变体示例为逐 phase 预算（票 5cn）",
+  "description": "#756 把所有 LLM 调用统一到 magpie 网关并禁用直连 DeepSeek，原示例变体 route_lighter（content_analysis → deepseek-v4-flash）不再是真实决策。改为 phase_budget 变体：把 publishing 阶段 context budget 设为 4000，diff 恰好只含 context_budgets。同步更新 gate 测试（模块加载断言具体 phase 值、CLI 注入的 decisions changed 文本）与评测方案 §6.8（说明 #756 后为什么不再用换路由演示）。rebase 到远端 main，全量回归。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/eval/variants/phase_budget.py",
+    "tests/unit/scripts/test_eval_gate.py",
+    "docs/adaptive-harness-eval-plan.md"
+  ],
+  "notes": "DONE 2026-11-02. Remote commit f48cc1bb (#756) routes every LLM call through the magpie gateway and disables direct DeepSeek, so the E3 demo variant (route_lighter: content_analysis -> deepseek-v4-flash) no longer described a real decision and would have taught the wrong thing. Replaced it with scripts/eval/variants/phase_budget.py: the default policy plus a 4000-token context budget for the publishing phase — a decision the harness genuinely owns and one that describe() now samples per phase (5cm), so the gate reports exactly one diff category (context_budgets) with publishing 4000 vs None. The variant is still not imported by production code, so defaults are untouched. test_eval_gate.py updated: the real-variant test asserts the diff is only context_budgets with the concrete publishing values and identical models, and the CLI test expects 'decisions changed: context_budgets'. docs §6.8 explains why routing is no longer a usable demo post-#756. The branch was rebased onto f48cc1bb before this ticket; a full suite on the rebased tree only failed the two stale-variant tests, which this ticket fixes. Verification: test_eval_gate 29 passed, unit/scripts+harness green, full suite in the journal.",
+  "meta": {}
+}

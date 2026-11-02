@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the E3 variant demo contract adjusted for #756"}
+{"file": "backend/harness/policy.py", "reason": "the per-phase context_budget sampling the variant relies on"}

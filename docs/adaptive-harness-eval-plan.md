@@ -160,19 +160,26 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
   决策相同的 variant 必红、report/block 两个 CLI 姿态、真实 variant 注入）；
   `tests/unit/scripts/test_ci_local.py` 覆盖无语料 SKIP / 有语料带 `--fail-on-red` 运行。
 
-## 6.8 变体示例（票 5cg）：证明 `--variant` 注入链路可用
+## 6.8 变体示例（票 5cg，5cn 随 #756 调整）：证明 `--variant` 注入链路可用
 
-`scripts/eval/variants/route_lighter.py` 是一个**只改一个决策**的示例变体：
-`content_analysis` 从 MiMo 路由切到较轻的 `deepseek-v4-flash`（与 POLISH/MOCK_GEN 同类）。
-它不被生产代码导入，因此不可能改默认。用法：
+`scripts/eval/variants/phase_budget.py` 是一个**只改一个决策**的示例变体：把
+`publishing` 阶段的 context budget 设为 4000。它不被生产代码导入，因此不可能改默认。
+
+> **为什么不是"换路由"**：#756 之后所有任务都经 magpie 网关落到同一个上游
+> （`magpie-deepseek-v4.1-flash`），直连 DeepSeek 已禁用，"路由到更轻的直连模型"不再是
+> 一个真实决策；而逐 phase 预算仍是 harness 自己的决策，且 E2 会采样
+> `context_budget(phase=...)`，因此这个变体在 diff 里恰好只出现一类。
+
+用法：
 
 ```bash
 python scripts/eval/run_gate.py --skip-benchmarks \
-    --variant scripts.eval.variants.route_lighter:make_policy
+    --variant scripts.eval.variants.phase_budget:make_policy
 ```
 
-输出 `[PASS] variant: ...; decisions changed: models`，diff 只含 `models` 一类——这钉住
-了 E3 的 diff 语义（只报告变化，不把差异当红）。测试新增 2 个用例（模块加载 + CLI 注入）。
+输出 `[PASS] variant: ...; decisions changed: context_budgets`，diff 只含
+`context_budgets` 一类——这钉住 E3 的 diff 语义（只报告变化，不把差异当红）。测试覆盖
+模块加载（含具体 phase 值）与 CLI 注入。
 
 **E4 的三件事已于 2026-11-02 拍板**（judge 允许 / 预算 <200 / 测试账号），裁判与预算
 护栏见 §6.9；live 端到端执行仍需部署侧凭据与账号授权窗口，不在本仓库内跑。
