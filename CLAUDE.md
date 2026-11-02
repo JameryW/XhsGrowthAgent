@@ -234,13 +234,13 @@ Pinia stores with toast notifications:
 ### Model Router (models/router.py)
 
 Routes tasks to LLM providers by `TaskType` via `resolve_model_id`:
-- All general agent task types (ROUTING/SCOUTING/STRATEGY/WRITING/VISUAL/ANALYSIS/PUBLISHING/ENGAGEMENT/CONTENT_ANALYSIS/VERSION_GEN/BRIEF_ANALYSIS/SHOOTING_PLAN/EVALUATION) → `mimo-v2.6-flash`
-- A MiMo call falls back to `deepseek-v4-flash` after retry exhaustion on retryable provider/network errors; authentication and invalid-request errors propagate.
-- POLISH (de_ai_taste 去套话润色，窄转换) → `deepseek-v4-flash` (更轻/便宜；草稿生成仍走 WRITING→MiMo)
-- MOCK_GEN (blogger_scout 虚构 mock_ 博主候选，结构化生成) → `deepseek-v4-flash` (更轻/便宜；trend_scout 仍走 SCOUTING→MiMo 做真实趋势分析)
-- VIRAL_MATCHING (viral_matcher 虚构爆款引用，无真实 XHS 搜索) → `deepseek-v4-flash` (更轻；optimization_error 兜底 LLM 失败)
+- **All task types** (ROUTING/SCOUTING/STRATEGY/WRITING/VISUAL/ANALYSIS/PUBLISHING/ENGAGEMENT/CONTENT_ANALYSIS/VERSION_GEN/BRIEF_ANALYSIS/SHOOTING_PLAN/EVALUATION/POLISH/MOCK_GEN/VIRAL_MATCHING) → `magpie-deepseek-v4.1-flash` (`MAGPIE_MODEL_ID`), i.e. the local magpie gateway with upstream ref `opencode-go/deepseek-v4.1-flash`.
+- `MODEL_FALLBACKS` keeps `mimo-v2.6-flash → magpie-deepseek-v4.1-flash`; upstream failover (model/provider) is handled by magpie itself, so no per-task vendor split.
+- `MAGPIE_API_KEY` + `MAGPIE_BASE_URL` configure the gateway (default `http://10.0.0.10:3425/v1` inside containers, `127.0.0.1:3425` on the host).
+- Scanned-PDF OCR uses `magpie-pdf-ocr` (`opencode-go/claude-haiku-5-5`) through the same gateway.
 
-Provider support: Anthropic, OpenAI, DeepSeek, DashScope (Qwen), XiaomiMiMo, Xunfei.
+Provider support: Anthropic, OpenAI, DashScope (Qwen), XiaomiMiMo, Xunfei, and **MAGPIE** (default for all routing).
+**Direct DeepSeek API is disabled** (`ModelProvider.DEEPSEEK` raises; `DEEPSEEK_API_KEY` is unused) — every LLM call must egress through magpie.
 
 ### Tool Discovery (direct submodule imports)
 
@@ -307,7 +307,7 @@ LangGraph BaseStore integration with namespaces per account, semantic search, an
 System health endpoint checks all external dependencies:
 - `llm_providers`: API key availability for Anthropic, OpenAI, DeepSeek, DashScope
 - `ripple_cas`: Ripple CAS engine connectivity
-- `search_api`: DeepSeek Search/Fetch (`DEEPSEEK_API_KEY`) primary + Tavily (`TAVILY_API_KEY`) fallback; reports `active_provider` and per-key `configured`
+- `search_api`: Tavily (`TAVILY_API_KEY`) only — DeepSeek Search/Fetch is disabled so no request goes directly to `api.deepseek.com`; reports `active_provider` and per-key `configured`
 - `database`: Checkpointer mode detection (postgres/sqlite/memory)
 - `memory_store`: Backend type (postgres/memory/unavailable), semantic index status (enabled/disabled), embed model name, embed dimensions, namespace counts with total items
 
@@ -351,7 +351,9 @@ from backend.api.responses import success, error
 ## Environment Setup
 
 Required environment variables (see `.env.example`):
-- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY` — LLM providers
+- `MAGPIE_API_KEY`, `MAGPIE_BASE_URL` — magpie LLM gateway (default egress for every LLM call)
+- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DASHSCOPE_API_KEY` — optional direct providers (not used by default routing)
+- `RIPPLE_LLM_MODEL`, `RIPPLE_LLM_URL`, `RIPPLE_LLM_API_KEY` — Ripple engine LLM (also via magpie)
 - `RIPPLE_BASE_URL`, `RIPPLE_API_TOKEN` — Ripple CAS engine
 - `POSTGRES_URI`, `REDIS_URI` — Production persistence
 - `XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL` — Memory store semantic search (optional; defaults to `openai:text-embedding-3-small`, 1536 dims). Use `local:BAAI/bge-small-zh-v1.5` with `XHS_EMBED_DIMS=512` for on-device CPU embedding (no API key needed; requires `langchain-huggingface` + `sentence-transformers`)

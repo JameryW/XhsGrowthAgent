@@ -28,7 +28,8 @@ class _FakeResponse:
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
         }
-        self.response_metadata = {}  # no model_name → falls back to routed id
+        # 显式 costed 模型：magpie 是套餐额度，routed id 的估算价是 0。
+        self.response_metadata = {"model_name": "gpt-4o"}
         self.content = '{"result": "ok"}'
 
 

@@ -48,7 +48,7 @@ def _llm_config() -> dict[str, Any] | None:
             if not url:
                 # Resolve base_url per provider
                 provider_urls = {
-                    ModelProvider.DEEPSEEK: "https://api.deepseek.com",
+                    # 2026-11-02: direct DeepSeek API disabled; no base_url -> client returns None
                     ModelProvider.OPENAI: "https://api.openai.com/v1",
                     ModelProvider.DASHSCOPE: "https://dashscope.aliyuncs.com/compatible-mode/v1",
                     ModelProvider.XIAOMIMIMO: os.environ.get(
@@ -56,6 +56,9 @@ def _llm_config() -> dict[str, Any] | None:
                     ),
                     ModelProvider.XUNFEI: os.environ.get(
                         "XUNFEI_BASE_URL", "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"
+                    ),
+                    ModelProvider.MAGPIE: os.environ.get(
+                        "MAGPIE_BASE_URL", "http://10.0.0.10:3425/v1"
                     ),
                 }
                 url = provider_urls.get(cfg.provider, "")

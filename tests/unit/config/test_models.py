@@ -3,6 +3,7 @@
 import pytest
 
 from backend.config.models import (
+    MAGPIE_MODEL_ID,
     MODEL_REGISTRY,
     ModelConfig,
     ModelProvider,
@@ -80,7 +81,8 @@ class TestModelRegistry:
         expected_models = [
             "claude-sonnet-4-20250514",
             "gpt-4o",
-            "deepseek-v4-flash",
+            "magpie-deepseek-v4.1-flash",
+            "magpie-pdf-ocr",
             "qwen-plus",
             "mimo-v2.5-pro",
             "astron-code-latest",
@@ -92,6 +94,10 @@ class TestModelRegistry:
         """All registry configs are valid ModelConfig instances."""
         for model_id, config in MODEL_REGISTRY.items():
             assert isinstance(config, ModelConfig)
+            # magpie 条目的 model_name 是上游 ref（opencode-go/…），由网关选上游，
+            # 与注册表 id 有意不同；其余条目 id 即模型名。
+            if config.provider is ModelProvider.MAGPIE:
+                continue
             assert config.model_name == model_id
 
 
@@ -100,26 +106,26 @@ class TestResolveModelId:
 
     def test_routing_tasks_use_mimo(self):
         """ROUTING and SCOUTING use MiMo V2.6 Flash."""
-        assert resolve_model_id(TaskType.ROUTING) == "mimo-v2.6-flash"
-        assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.6-flash"
+        assert resolve_model_id(TaskType.ROUTING) == MAGPIE_MODEL_ID
+        assert resolve_model_id(TaskType.SCOUTING) == MAGPIE_MODEL_ID
 
     def test_strategy_writing_use_mimo(self):
         """STRATEGY and WRITING use MiMo V2.6 Flash."""
-        assert resolve_model_id(TaskType.STRATEGY) == "mimo-v2.6-flash"
-        assert resolve_model_id(TaskType.WRITING) == "mimo-v2.6-flash"
+        assert resolve_model_id(TaskType.STRATEGY) == MAGPIE_MODEL_ID
+        assert resolve_model_id(TaskType.WRITING) == MAGPIE_MODEL_ID
 
     def test_visual_analysis_use_mimo(self):
         """VISUAL and ANALYSIS use MiMo V2.6 Flash."""
-        assert resolve_model_id(TaskType.VISUAL) == "mimo-v2.6-flash"
-        assert resolve_model_id(TaskType.ANALYSIS) == "mimo-v2.6-flash"
+        assert resolve_model_id(TaskType.VISUAL) == MAGPIE_MODEL_ID
+        assert resolve_model_id(TaskType.ANALYSIS) == MAGPIE_MODEL_ID
 
     def test_publishing_use_mimo(self):
         """PUBLISHING uses MiMo V2.6 Flash."""
-        assert resolve_model_id(TaskType.PUBLISHING) == "mimo-v2.6-flash"
+        assert resolve_model_id(TaskType.PUBLISHING) == MAGPIE_MODEL_ID
 
     def test_legacy_engagement_route_remains_resolvable(self):
         """Persisted engagement routing config remains backward compatible."""
-        assert resolve_model_id(TaskType.ENGAGEMENT) == "mimo-v2.6-flash"
+        assert resolve_model_id(TaskType.ENGAGEMENT) == MAGPIE_MODEL_ID
 
     def test_routing_overrides(self):
         """Routing overrides allow custom model assignments."""

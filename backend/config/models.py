@@ -35,6 +35,9 @@ class ModelProvider(StrEnum):
     DASHSCOPE = "dashscope"
     XIAOMIMIMO = "xiaomimimo"
     XUNFEI = "xunfei"
+    # 本机 magpie 路由网关（OpenAI 兼容，base_url = MAGPIE_BASE_URL）。
+    # 所有 LLM 调用统一从这里出，具体落到哪个上游由 magpie 决定。
+    MAGPIE = "magpie"
 
 
 class ModelConfig(BaseModel):
@@ -73,12 +76,6 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         temperature=0.5,
         max_tokens=4096,
     ),
-    "deepseek-v4-flash": ModelConfig(
-        provider=ModelProvider.DEEPSEEK,
-        model_name="deepseek-v4-flash",
-        temperature=0.6,
-        max_tokens=4096,
-    ),
     "qwen-plus": ModelConfig(
         provider=ModelProvider.DASHSCOPE,
         model_name="qwen-plus",
@@ -104,39 +101,41 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         max_tokens=4096,
         timeout=90,
     ),
+    # magpie 路由 → OpenCode Go / DeepSeek V4.1 Flash。模型名必须带 provider 前缀，
+    # magpie 用 `opencode-go/deepseek-v4.1-flash` 这种 ref 选上游。
+    "magpie-deepseek-v4.1-flash": ModelConfig(
+        provider=ModelProvider.MAGPIE,
+        model_name="opencode-go/deepseek-v4.1-flash",
+        temperature=0.7,
+        max_tokens=4096,
+    ),
+    # 扫描件 PDF 的文字提取兜底：V4.1 Flash 只收图片，不收 application/pdf，
+    # 这里换成能吃 PDF 的 haiku 5.5（仍经 magpie）。只在 pdfplumber 提不出文字时用。
+    "magpie-pdf-ocr": ModelConfig(
+        provider=ModelProvider.MAGPIE,
+        model_name="opencode-go/claude-haiku-5-5",
+        temperature=0.2,
+        max_tokens=8192,
+        timeout=180,
+    ),
 }
+
+# 所有任务的默认模型（全部经 magpie 出网）。
+MAGPIE_MODEL_ID = "magpie-deepseek-v4.1-flash"
 
 # Primary model → backup model, applied only by ModelRouter after primary retries.
 MODEL_FALLBACKS: dict[str, str] = {
-    "mimo-v2.6-flash": "deepseek-v4-flash",
+    "mimo-v2.6-flash": "magpie-deepseek-v4.1-flash",
 }
 
 
 def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | None = None) -> str:
-    """根据任务类型解析模型 ID，支持用户覆盖"""
-    routing = {
-        TaskType.ROUTING: "mimo-v2.6-flash",
-        TaskType.SCOUTING: "mimo-v2.6-flash",
-        TaskType.STRATEGY: "mimo-v2.6-flash",
-        TaskType.WRITING: "mimo-v2.6-flash",
-        TaskType.VISUAL: "mimo-v2.6-flash",
-        TaskType.ANALYSIS: "mimo-v2.6-flash",
-        TaskType.PUBLISHING: "mimo-v2.6-flash",
-        TaskType.ENGAGEMENT: "mimo-v2.6-flash",
-        # 新增
-        # VIRAL_MATCHING fabricates viral-post references (no real XHS search),
-        # so a lighter model suffices; optimization_error fallback covers LLM failures.
-        TaskType.VIRAL_MATCHING: "deepseek-v4-flash",
-        TaskType.CONTENT_ANALYSIS: "mimo-v2.6-flash",
-        TaskType.VERSION_GEN: "mimo-v2.6-flash",
-        TaskType.BRIEF_ANALYSIS: "mimo-v2.6-flash",
-        TaskType.SHOOTING_PLAN: "mimo-v2.6-flash",
-        TaskType.EVALUATION: "mimo-v2.6-flash",
-        # 去套话润色是窄转换，用 deepseek-v4-flash（更轻/便宜），草稿生成仍走 WRITING→MiMo
-        TaskType.POLISH: "deepseek-v4-flash",
-        # blogger_scout 虚构博主候选（结构化生成），降级轻模型
-        TaskType.MOCK_GEN: "deepseek-v4-flash",
-    }
+    """根据任务类型解析模型 ID，支持用户覆盖
+
+    默认全部任务走 magpie 网关的 DeepSeek V4.1 Flash（上游 fallback 由 magpie 自己管），
+    不再按任务分厂商——需要分流时用 routing_overrides 覆盖即可。
+    """
+    routing = {task: MAGPIE_MODEL_ID for task in TaskType}
     if routing_overrides:
         for k, v in routing_overrides.items():
             routing[TaskType(k)] = v
@@ -152,6 +151,10 @@ def get_model_config(model_id: str) -> ModelConfig:
 
 # Approximate cost per 1K tokens (USD) for analytics estimation
 MODEL_COST_PER_1K: dict[str, dict[str, float]] = {
+    # magpie 路由的两个条目：OpenCode Go 是套餐额度，不按 token 计费 → 0（避免分析页
+    # 用默认费率虚报成本）。真实开销看 magpie 的 usage 日志。
+    "magpie-deepseek-v4.1-flash": {"input": 0.0, "output": 0.0},
+    "magpie-pdf-ocr": {"input": 0.0, "output": 0.0},
     "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
     "gpt-4o": {"input": 0.0025, "output": 0.01},
     "deepseek-v4-flash": {"input": 0.00014, "output": 0.00028},

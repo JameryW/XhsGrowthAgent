@@ -505,6 +505,7 @@ class TestBriefPdfCostTracking:
         # aget_state.next == [] (from mock_graph fixture) → no resume task.
         with (
             patch("backend.models.router.get_model", lambda *a, **kw: mock_model),
+            patch("backend.models.router.get_model_by_id", lambda *a, **kw: mock_model),
             patch("pdfplumber.open", return_value=_cm(empty_pdf)),
         ):
             response = client.post(
@@ -524,8 +525,9 @@ class TestBriefPdfCostTracking:
         assert len(entries) == 1
         entry = entries[0]
         assert entry["agent"] == "brief_pdf_extract"
-        assert entry["model"] == "mimo-v2.6-flash"
-        assert entry["cost_usd"] > 0
+        assert entry["model"] == "magpie-pdf-ocr"
+        # magpie 是套餐额度，成本按 0 记（真实开销看 magpie usage 日志）
+        assert entry["cost_usd"] >= 0
         assert entry["input_tokens"] == 100
         assert entry["output_tokens"] == 50
         # brief_content still written alongside the perf entry.
@@ -547,6 +549,7 @@ class TestBriefPdfCostTracking:
 
         with (
             patch("backend.models.router.get_model", lambda *a, **kw: mock_model),
+            patch("backend.models.router.get_model_by_id", lambda *a, **kw: mock_model),
             patch("pdfplumber.open", return_value=_cm(empty_pdf)),
             patch(
                 "backend.agents.nodes._base.llm_perf_entry",

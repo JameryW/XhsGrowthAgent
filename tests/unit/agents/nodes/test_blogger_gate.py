@@ -52,6 +52,8 @@ def _mock_model_with_usage(input_tokens: int = 100, output_tokens: int = 50):
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
     }
+    # 显式 costed 模型：magpie 是套餐额度，routed id 的估算价是 0。
+    mock_response.response_metadata = {"model_name": "gpt-4o"}
     mock_model = MagicMock()
     mock_model.ainvoke = AsyncMock(return_value=mock_response)
     return mock_model

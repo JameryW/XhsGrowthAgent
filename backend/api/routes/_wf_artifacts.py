@@ -20,6 +20,9 @@ from backend.state.hydration import checkpoint_view, ripple_payload
 
 logger = logging.getLogger(__name__)
 
+# 扫描件 PDF 文字提取用的模型（注册表 id，见 backend/config/models.py）
+PDF_OCR_MODEL_ID = "magpie-pdf-ocr"
+
 
 # ── History files for completed workflow results ──
 _HISTORY_DIR = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs")) / "history"
@@ -144,11 +147,12 @@ async def _extract_pdf_with_llm(content_bytes: bytes) -> tuple[str, dict[str, An
     import base64
 
     from backend.agents.nodes._base import llm_perf_entry
-    from backend.config.models import TaskType, get_model_id_for_task
-    from backend.models.router import get_model
+    from backend.models.router import get_model_by_id
 
-    model = get_model(TaskType.BRIEF_ANALYSIS.value)
-    model_id = get_model_id_for_task(TaskType.BRIEF_ANALYSIS)
+    # 这段要发 application/pdf 的多模态请求，主模型（V4.1 Flash）只收图片 → 用注册表里
+    # 能吃 PDF 的那一条（同样经 magpie）。失败仍然是 fail-open。
+    model_id = PDF_OCR_MODEL_ID
+    model = get_model_by_id(model_id)
     b64 = base64.b64encode(content_bytes).decode()
 
     from langchain_core.messages import HumanMessage

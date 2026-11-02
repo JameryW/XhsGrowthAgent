@@ -1,6 +1,7 @@
 """Model routing tests."""
 
 from backend.config.models import (
+    MAGPIE_MODEL_ID,
     MODEL_REGISTRY,
     ModelProvider,
     TaskType,
@@ -11,16 +12,16 @@ from backend.config.models import (
 
 def test_resolve_model_id_default():
     """默认路由：每个任务类型映射到正确的模型"""
-    assert resolve_model_id(TaskType.WRITING) == "mimo-v2.6-flash"
-    assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.6-flash"
-    assert resolve_model_id(TaskType.ANALYSIS) == "mimo-v2.6-flash"
-    assert resolve_model_id(TaskType.PUBLISHING) == "mimo-v2.6-flash"
+    assert resolve_model_id(TaskType.WRITING) == MAGPIE_MODEL_ID
+    assert resolve_model_id(TaskType.SCOUTING) == MAGPIE_MODEL_ID
+    assert resolve_model_id(TaskType.ANALYSIS) == MAGPIE_MODEL_ID
+    assert resolve_model_id(TaskType.PUBLISHING) == MAGPIE_MODEL_ID
 
 
 def test_mock_gen_routes_to_light_model():
     """blogger_scout uses DeepSeek; trend_scout uses the MiMo default."""
-    assert resolve_model_id(TaskType.MOCK_GEN) == "deepseek-v4-flash"
-    assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.6-flash"
+    assert resolve_model_id(TaskType.MOCK_GEN) == MAGPIE_MODEL_ID
+    assert resolve_model_id(TaskType.SCOUTING) == MAGPIE_MODEL_ID
 
 
 def test_resolve_model_id_override():
@@ -31,9 +32,9 @@ def test_resolve_model_id_override():
 
 def test_get_model_config():
     """获取模型配置"""
-    config = get_model_config("deepseek-v4-flash")
-    assert config.provider == ModelProvider.DEEPSEEK
-    assert config.model_name == "deepseek-v4-flash"
+    config = get_model_config("magpie-deepseek-v4.1-flash")
+    assert config.provider == ModelProvider.MAGPIE
+    assert config.model_name == "opencode-go/deepseek-v4.1-flash"
 
     mimo_config = get_model_config("mimo-v2.6-flash")
     assert mimo_config.provider == ModelProvider.XIAOMIMIMO
@@ -58,6 +59,6 @@ def test_all_task_types_have_routing():
 
 def test_viral_matching_routes_to_light_model():
     """VIRAL_MATCHING routes to the lighter deepseek-v4-flash model."""
-    assert resolve_model_id(TaskType.VIRAL_MATCHING) == "deepseek-v4-flash"
+    assert resolve_model_id(TaskType.VIRAL_MATCHING) == MAGPIE_MODEL_ID
     # The model must exist in the registry (no KeyError).
-    get_model_config("deepseek-v4-flash")
+    get_model_config(MAGPIE_MODEL_ID)
