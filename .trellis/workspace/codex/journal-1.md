@@ -1964,3 +1964,36 @@ ci_local.py 的 tests 作业现在镜像 CI 的 parity 复查：全量通过后�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 59: P3 变体示例与文档进度同步（票 5cg）
+
+**Date**: 2026-11-02
+**Task**: P3 变体示例与文档进度同步（票 5cg）
+**Branch**: `main`
+
+### Summary
+
+新增 scripts/eval/variants/route_lighter.py 示例变体（只改 content_analysis 路由），证明 E3 --variant 注入→快照→diff 全链路：diff 仅 models、red=False、exit 0；补 2 用例（模块加载断言具体路由值、CLI 注入真实模块）。文档同步：评测方案头状态改为 E1/E2/E3 已交付并新增 §6.8（变体用法 + E4 待拍板三项）；agent-os §9 路线图 10 改为『进行中』并列出 5cd/5ce/5cf/5cg 与 E4 阻塞。验证 test_eval_gate 15 passed、docs 门禁 135 passed、全量 4862 passed / 14 skipped / 0 failed / 0 errors。票 5cg 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `165bf4e1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
