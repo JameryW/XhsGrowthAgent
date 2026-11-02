@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the E4 plan and the 2026-11-02 judge/budget/account decisions this ticket implements"}
+{"file": "backend/agents/evaluator.py", "reason": "the production evaluation panel whose dimension vocabulary and JSON shape the judge mirrors (but never replaces)"}

@@ -1,0 +1,31 @@
+{
+  "id": "adaptive-eval-e4-judge",
+  "name": "adaptive-eval-e4-judge",
+  "title": "feat(eval): E4 质量裁判（LLM-as-judge）+ 199 调用预算护栏（票 5ch）",
+  "description": "按 2026-11-02 拍板（judge 允许 / 预算 <200 次调用 / 测试账号）落地 E4 裁判：scripts/eval/judge.py 提供 JudgeScores（五维 0-10 + rationale + bias_warning）、确定性 build_judge_prompt、容错 parse_judge_output（围栏/散文/缺维度/超范围）、JudgeBudget（默认 max_calls=199，先扣费后调用，超限 JudgeBudgetExceededError）、judge_content（一次判定一次调用）。11 个假模型单测无网络。文档记录三项拍板与 live 端到端仍 external-only。agent-os 路线图 10 补 5ch。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/eval/judge.py",
+    "tests/unit/scripts/test_eval_judge.py",
+    "docs/adaptive-harness-eval-plan.md",
+    "docs/agent-os-upgrade-2026q4.md"
+  ],
+  "notes": "DONE 2026-11-02 (E4 quality judge; offline-verifiable half of E4). The user decided on 2026-11-02: LLM-as-judge is allowed, a run may spend fewer than 200 model calls, and L3 targets the test account. scripts/eval/judge.py implements JudgeScores (five 0-10 integer dimensions using the evaluator's vocabulary — copywriting/visual/compliance/reach/audience — plus rationale, bias_warning and an overall mean), a deterministic build_judge_prompt (system says JSON only and forbids restating the source; human carries niche/title/body/visual_summary), a tolerant parse_judge_output (accepts ```json fences and surrounding prose, refuses missing dimensions, out-of-range integers and non-JSON with an output preview), JudgeBudget (default max_calls=199, the literal '<200' decision; consume() charges BEFORE the model is invoked so a crash cannot make the accounting optimistic; exceeding raises JudgeBudgetExceededError), and judge_content(model, ...) where one verdict equals exactly one call and a malformed answer still spends its call. The judge is separate from backend/agents/evaluator.py on purpose: that panel is a production gate with fail-closed publish semantics, this one only scores experiment fixtures and can never influence a publish decision. Tests: 11 cases with a fake chat model, no network or keys — prompt determinism, fenced/prose parsing, missing dimension, out-of-range, non-JSON preview, the 199 cap, exhausted budget refusing before any model call (model.calls stays 0), and a malformed model answer still charging one call. Documentation records the three 2026-11-02 decisions in the plan's decision table and §6.9, and marks the live end-to-end run as external-only (platform credentials, test-account login state, acceptance window). Verification: judge tests 11 passed; docs/claim gates and full suite in the journal; ruff green.",
+  "meta": {}
+}

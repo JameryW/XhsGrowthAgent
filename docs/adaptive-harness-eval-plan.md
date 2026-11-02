@@ -1,18 +1,21 @@
-# Adaptive Harness 评测集方案（提案 → 已拍板，E1/E2/E3 已交付）
+# Adaptive Harness 评测集方案（提案 → 已拍板，E1/E2/E3 + E4 裁判已交付）
 
-> **状态：决策已拍板（2026-11-01）；E1（语料抽取）、E2（策略接口）、E3（离线 A/B 门禁）
-> 已交付。E2/E3 未接线生产默认；E4（小样本端到端 L3）未开始，阻塞在账号/预算/judge
-> 三个待拍板项。**
+> **状态：E1（语料抽取）、E2（策略接口）、E3（离线 A/B 门禁）、E4 质量裁判
+> （LLM-as-judge + 预算护栏）已交付；E2/E3 未接线生产默认；E4 的 live 端到端执行
+> 仍是 external-only（需真实平台凭据与测试账号授权窗口）。**
 > 关联：`docs/agent-os-upgrade-2026q4.md` 路线图 10（P3 = Adaptive Harness + A/B 门禁）、
 > §8 Harness Benchmarks、§9 剩余工作清单。
 
-## 0. 已拍板（2026-11-01）
+## 0. 已拍板
 
-| 问题 | 决定 | 对方案的影响 |
-|---|---|---|
-| 评测口径 | **都需要**：决策正确性 + 内容质量 | L3（质量维度）是必须项，不能只做 L1/L2 |
-| 数据来源 | **真实**：真实 workflow checkpoint | 需要 E1 抽取器 + 强制脱敏；fixture 本地生成、gitignore |
-| 预算 | **可配置或选择** | `--limit`/`--all`、`--phases`、可选 `--postgres-uri`/`--sqlite-path`；L3 用同一套开关 |
+| 日期 | 问题 | 决定 | 对方案的影响 |
+|---|---|---|---|
+| 2026-11-01 | 评测口径 | **都需要**：决策正确性 + 内容质量 | L3（质量维度）是必须项，不能只做 L1/L2 |
+| 2026-11-01 | 数据来源 | **真实**：真实 workflow checkpoint | 需要 E1 抽取器 + 强制脱敏；fixture 本地生成、gitignore |
+| 2026-11-01 | 预算 | **可配置或选择** | `--limit`/`--all`、`--phases`、可选 `--postgres-uri`/`--sqlite-path`；L3 用同一套开关 |
+| 2026-11-02 | judge | **允许 LLM-as-judge** | E4 质量维度用 LLM 裁判；`JudgeBudget` 把调用计入预算 |
+| 2026-11-02 | 预算上限 | **< 200 次模型调用** | `JudgeBudget` 默认 `max_calls=199`，先扣费后调用 |
+| 2026-11-02 | L3 账号 | **测试账号** | live 执行需显式指定测试账号（external-only，未接线） |
 
 ## 1. 为什么需要评测集
 
@@ -163,10 +166,28 @@ python scripts/eval/run_gate.py --skip-benchmarks \
 输出 `[PASS] variant: ...; decisions changed: models`，diff 只含 `models` 一类——这钉住
 了 E3 的 diff 语义（只报告变化，不把差异当红）。测试新增 2 个用例（模块加载 + CLI 注入）。
 
-**E4 仍缺的三件事**（需要拍板，代码侧未预置）：
-1. 质量评分口径：允许 LLM-as-judge 吗？是否需要双盲人工复核？
-2. 预算：每轮可接受的模型调用次数/金额（E1/E3 的 `--limit` 只能限制样本量）。
-3. 账号：L3 需要真实账号的显式授权与沙箱外的运行窗口。
+**E4 的三件事已于 2026-11-02 拍板**（judge 允许 / 预算 <200 / 测试账号），裁判与预算
+护栏见 §6.9；live 端到端执行仍需部署侧凭据与账号授权窗口，不在本仓库内跑。
+
+## 6.9 E4 质量裁判（LLM-as-judge）+ 预算护栏（票 5ch）
+
+`scripts/eval/judge.py`：
+
+| 组件 | 行为 |
+|---|---|
+| `JudgeScores` | 五维 0-10 整数（copywriting/visual/compliance/reach/audience，沿用 evaluator 维度词汇）+ rationale + bias_warning；`overall` 为均值 |
+| `build_judge_prompt` | 确定性消息：system 规定只输出 JSON、禁止复述原文；human 携带 niche/title/body/visual_summary |
+| `parse_judge_output` | 容忍 ```json 围栏与前后散文；缺维度/超范围/非 JSON 一律 `JudgeOutputError`（带输出预览） |
+| `JudgeBudget` | 默认 `max_calls=199`（"<200" 的直译）；`consume()` **先扣费后调用**——模型崩了也不会让账目乐观；超限抛 `JudgeBudgetExceededError` |
+| `judge_content(model, ...)` | 一次判定 = 一次调用；模型返回非文本/非 JSON 时该次调用仍计入预算 |
+
+测试 `tests/unit/scripts/test_eval_judge.py` **11 passed**（假模型，无网络）：
+提示词确定性、围栏/散文解析、缺维度与超范围拒绝、199 上限与先扣费语义、
+预算耗尽时**不调用模型**、模型给出坏输出仍扣一次。
+
+**仍 external-only 的部分**（如实标注，不在本仓库伪造）：真实 workflow 的 live 调用、
+测试账号的登录态/凭据、平台验收窗口。`judge_content` 接受任意 chat model，接线到部署侧
+只是传一个 `get_model(TaskType.EVALUATION)`。
 
 ## 7. 明确不做
 

@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "verify the judge and budget decisions are recorded and the external-only boundary is honest"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a new eval module"}
