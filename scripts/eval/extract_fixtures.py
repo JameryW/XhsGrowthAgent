@@ -29,6 +29,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 from collections.abc import AsyncIterator, Iterable, Mapping
@@ -122,6 +123,7 @@ def select_corpus(
     source: Literal["sqlite", "postgres"],
     phases: frozenset[str] | None = None,
     limit: int = DEFAULT_LIMIT,
+    redaction_key: bytes | None = None,
 ) -> tuple[list[EvalFixture], dict[str, int]]:
     """Pick at most *limit* latest-per-thread fixtures and count what was skipped.
 
@@ -158,6 +160,7 @@ def select_corpus(
                 thread_id=record.thread_id,
                 checkpoint_id=record.checkpoint_id,
                 state=record.state,
+                redaction_key=redaction_key,
             )
         except ValueError:
             skipped["invalid"] += 1
@@ -179,8 +182,15 @@ def write_corpus(
     source_kind: Literal["sqlite", "postgres"],
     skipped: Mapping[str, int],
     generated_at: str | None = None,
+    pseudonym_mode: Literal["sha256", "hmac"] = "sha256",
 ) -> FixtureManifest:
-    """Write fixtures + manifest; returns the manifest (also written to disk)."""
+    """Write fixtures + manifest + ``manifest.sha256`` (a detached digest).
+
+    The digest file catches an edited manifest; a *paired rewrite* of fixtures,
+    manifest and digest is only detectable with an out-of-band value such as
+    ``run_gate.py --expect-manifest-sha256`` or the digest kept in the experiment
+    record.  The docstring says so instead of implying tamper-proofness.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     entries: list[FixtureEntry] = []
     for fixture in fixtures:
@@ -204,10 +214,14 @@ def write_corpus(
         total=len(entries),
         fixtures=entries,
         skipped=dict(skipped),
+        pseudonym_mode=pseudonym_mode,
     )
-    (out_dir / "manifest.json").write_text(
-        json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    manifest_bytes = json.dumps(
+        manifest.model_dump(mode="json"), ensure_ascii=False, indent=2
+    ).encode("utf-8")
+    (out_dir / "manifest.json").write_bytes(manifest_bytes)
+    (out_dir / "manifest.sha256").write_text(
+        hashlib.sha256(manifest_bytes).hexdigest() + "\n", encoding="utf-8"
     )
     return manifest
 
@@ -220,6 +234,7 @@ async def run_extraction(
     limit: int,
     phases: frozenset[str] | None,
     dry_run: bool,
+    redaction_key: bytes | None = None,
 ) -> tuple[list[EvalFixture], dict[str, int], FixtureManifest | None]:
     """The whole pipeline, shared by the CLI and the tests (no printing)."""
     if (sqlite_path is None) == (postgres_uri is None):
@@ -237,6 +252,7 @@ async def run_extraction(
         source=source,
         phases=phases,
         limit=limit,
+        redaction_key=redaction_key,
     )
     manifest = None
     if not dry_run:
@@ -245,6 +261,7 @@ async def run_extraction(
             out_dir=out_dir,
             source_kind=source,
             skipped=skipped,
+            pseudonym_mode="hmac" if redaction_key is not None else "sha256",
         )
     return fixtures, skipped, manifest
 
@@ -263,6 +280,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--all", action="store_true", help="shorthand for --limit 0")
     parser.add_argument("--phases", default="", help="comma-separated workflow phases to keep")
+    parser.add_argument(
+        "--redaction-key-env",
+        default="XHS_EVAL_REDACTION_KEY",
+        help="environment variable holding the HMAC key for pseudonyms "
+        "(unset = weak sha256 pseudonyms, with a warning)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="read and redact, write nothing")
     return parser
 
@@ -274,6 +297,13 @@ def main(argv: list[str] | None = None) -> int:
         sqlite_path = DEFAULT_SQLITE
     phases = frozenset(part.strip() for part in options.phases.split(",") if part.strip())
     limit = 0 if options.all else max(0, options.limit)
+    raw_key = os.environ.get(options.redaction_key_env, "").strip()
+    redaction_key = raw_key.encode("utf-8") if raw_key else None
+    if redaction_key is None:
+        print(
+            f"warning: {options.redaction_key_env} is unset; pseudonyms are plain truncated "
+            "SHA-256 and short ids can be guessed from the corpus (set the key to use HMAC)"
+        )
     try:
         fixtures, skipped, manifest = asyncio.run(
             run_extraction(
@@ -283,6 +313,7 @@ def main(argv: list[str] | None = None) -> int:
                 limit=limit,
                 phases=phases or None,
                 dry_run=options.dry_run,
+                redaction_key=redaction_key,
             )
         )
     except FileNotFoundError:
@@ -295,7 +326,14 @@ def main(argv: list[str] | None = None) -> int:
     if not fixtures:
         print("no fixtures extracted: the source has no matching checkpoints")
     if manifest is not None:
-        print(f"manifest: {options.output / 'manifest.json'} ({manifest.total} fixtures)")
+        print(
+            f"manifest: {options.output / 'manifest.json'} "
+            f"({manifest.total} fixtures, pseudonyms={manifest.pseudonym_mode})"
+        )
+        print(
+            "record this digest out of band: "
+            f"{(options.output / 'manifest.sha256').read_text(encoding='utf-8').strip()}"
+        )
     elif options.dry_run:
         print("dry run: nothing written")
     return 0

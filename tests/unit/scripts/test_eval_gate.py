@@ -310,3 +310,41 @@ def test_load_variant_rejects_a_spec_that_is_not_a_policy():
         gate.load_variant("")
     with pytest.raises(TypeError):
         gate.load_variant("json:loads")
+
+
+def test_an_edited_manifest_is_caught_by_the_detached_digest(tmp_path: Path):
+    corpus = _corpus(tmp_path)
+    manifest_path = corpus / "manifest.json"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace('"total": 1', '"total": 1 '),
+        encoding="utf-8",
+    )
+    result = gate.check_corpus(corpus)
+    assert result.status == "red"
+    assert "manifest.sha256" in result.detail
+
+
+def test_an_out_of_band_digest_catches_a_paired_rewrite(tmp_path: Path):
+    """The honest limit: only a value recorded elsewhere can catch a consistent rewrite."""
+    corpus = _corpus(tmp_path)
+    original = gate.check_corpus(corpus)
+    assert original.status == "pass"
+    recorded = (corpus / "manifest.sha256").read_text(encoding="utf-8").strip()
+    assert gate.check_corpus(corpus, expect_manifest_sha256=recorded).status == "pass"
+
+    manifest_path = corpus / "manifest.json"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace('"total": 1', '"total": 2'),
+        encoding="utf-8",
+    )
+    # an attacker who also rewrites the digest keeps the in-corpus check happy
+    import hashlib
+
+    (corpus / "manifest.sha256").write_text(
+        hashlib.sha256(manifest_path.read_bytes()).hexdigest() + "\n", encoding="utf-8"
+    )
+    # the corpus itself is now inconsistent too (total says 2, one entry exists)
+    assert gate.check_corpus(corpus).status == "red"
+    result = gate.check_corpus(corpus, expect_manifest_sha256=recorded)
+    assert result.status == "red"
+    assert "expected" in result.detail

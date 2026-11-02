@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-runbook.md", "reason": "verify the runbook tells an operator to set the key and record the digest"}
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "verify the claimed tamper-detection limits match the code"}

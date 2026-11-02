@@ -102,9 +102,9 @@
 | 真实来源 | `--sqlite-path`（默认 `.xhs/checkpoints.sqlite`，以 `mode=ro` 只读打开；路径不存在直接报错，不再创建空库）或 `--postgres-uri`；两者都走 `alist`，并跳过非空 `checkpoint_ns` 的 subgraph checkpoint |
 | 预算可配置 | `--limit N`（默认 100）、`--all`、`--phases a,b`、`--dry-run` |
 | 脱敏（唯一实现） | 标识符 → 稳定假名（`acct_/thread_/session_/user_/creator_/post_`…，覆盖 `workflow_thread_id`、`reviewer`、`nickname`、`author`、`post_id/note_id` 等真实 schema 字段）；cookie/token/api_key 等 → 空（含容器值）；`*_url`/`*_link` 链接 → 空；`cdp_endpoint`/`chrome_profile_path` → 空；路径类键 → `image/NN.ext`；任意位置出现的绝对路径 → 空；`messages` **总是丢弃**；**内容字段保留**（质量评测需要） |
-| 语料格式 | `fixture-<id>.json`（`EvalFixture`）+ `manifest.json`（计数、每文件 sha256、跳过明细、schema/extractor/redaction 版本）；schema v2 |
-| 本地安全 | 输出目录默认 `.eval-fixtures/`（gitignore）；测试断言写入物中不含账号/线程/路径/密钥/链接明文 |
-| 验证 | `tests/unit/scripts/test_eval_fixtures.py` 14 passed（含"真实 sqlite 往返"、真实 schema 身份字段回归、绝对路径护栏） |
+| 语料格式 | `fixture-<id>.json`（`EvalFixture`）+ `manifest.json`（计数、每文件 sha256、跳过明细、schema/extractor/redaction 版本、`pseudonym_mode`）+ `manifest.sha256`（manifest 字节指纹）；schema v2 |
+| 本地安全 | 输出目录默认 `.eval-fixtures/`（gitignore）；**可选 HMAC 假名**：`XHS_EVAL_REDACTION_KEY` 由部署侧提供、不写入语料，manifest 记录 `pseudonym_mode=sha256|hmac`，无密钥时打印"短 id 可被字典攻击"警告；`manifest.sha256` 供 `--expect-manifest-sha256` 做 out-of-band 核对；测试断言写入物中不含账号/线程/路径/密钥/链接明文 |
+| 验证 | `tests/unit/scripts/test_eval_fixtures.py` 17 passed（含"真实 sqlite 往返"、真实 schema 身份字段回归、绝对路径护栏、加盐模式与指纹） |
 
 用法：
 
@@ -143,7 +143,7 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
 
 | 检查 | 判定 |
 |---|---|
-| `corpus` | `.eval-fixtures/` 缺失 → **SKIP**（缺语料是缺口，不是通过）；**空语料（0 fixture）→ 红**；manifest schema 或 `redaction_version` 不符 → 红；出现未列入 manifest 的 `fixture-*.json` → 红；文件 sha256 不匹配、fixture 的 `state_sha256` 重算不符 → 红 |
+| `corpus` | `.eval-fixtures/` 缺失 → **SKIP**（缺语料是缺口，不是通过）；**空语料（0 fixture）→ 红**；manifest schema 或 `redaction_version` 不符 → 红；出现未列入 manifest 的 `fixture-*.json` → 红；`manifest.sha256` 与 manifest 不符 → 红；传 `--expect-manifest-sha256` 与该值不符 → 红（out-of-band 才能发现"fixture+manifest+指纹成对重写"）；文件 sha256 不匹配、fixture 的 `state_sha256` 重算不符 → 红 |
 | `policy` | `describe()` 必须覆盖四个决策点；每个 TaskType 的模型 id 必须是**非空字符串**；`context_budget` 为 None 或非负整数；`escalation` 必须是「任务 → 字符串列表」；`tool_limits` 条目形状与类型正确；快照可 JSON 序列化 |
 | `variant` | 仅在显式 `--variant module:factory` 时运行；输出**决策 diff**（差异是 A/B 的目的，不算红）；**决策完全相同 → 红**（多半是工厂返回了默认策略，属于接线错误）；变体坏了（空路由/describe 抛错）也红 |
 | `benchmarks` | 真实跑 `harness_benchmarks.py`：F1/F2/F4 必须**状态为 PASS**（仅仅存在不算），任何 FAIL 或未知状态红；F5/F7/F8 若仍 SKIP 则作为缺口列出（缺口后来实现成 PASS 不算失败） |
@@ -155,9 +155,9 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
   A/B-only 姿态，最终拍板后如需改默认再单独接线）。
 - 接入本地 runner：`python scripts/ci_local.py --only eval-gate`；该 job 在无 `.eval-fixtures/`
   时显式 SKIP，有语料时以 `--fail-on-red` 运行（CI 无法提供本地语料，故不进 GitHub workflow）。
-- 测试：`tests/unit/scripts/test_eval_gate.py` 23 passed（覆盖面：空语料/旧脱敏版本/未列出
-  文件/篡改 hash 必红、policy 类型检查、F1 SKIP 必红、决策相同的 variant 必红、
-  report/block 两个 CLI 姿态、真实 variant 注入）；
+- 测试：`tests/unit/scripts/test_eval_gate.py` 25 passed（覆盖面：空语料/旧脱敏版本/未列出
+  文件/篡改 hash 必红、manifest 指纹与 out-of-band 期望值、policy 类型检查、F1 SKIP 必红、
+  决策相同的 variant 必红、report/block 两个 CLI 姿态、真实 variant 注入）；
   `tests/unit/scripts/test_ci_local.py` 覆盖无语料 SKIP / 有语料带 `--fail-on-red` 运行。
 
 ## 6.8 变体示例（票 5cg）：证明 `--variant` 注入链路可用

@@ -27,6 +27,7 @@ data; the module removes plaintext, not the possibility of guessing it.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal
@@ -129,16 +130,25 @@ class FixtureManifest(BaseModel):
     total: int = 0
     fixtures: list[FixtureEntry] = Field(default_factory=list)
     skipped: dict[str, int] = Field(default_factory=dict)
+    # "hmac" means pseudonyms were keyed with a deployment secret; "sha256" means
+    # they are a plain truncated hash and short ids are dictionary-attackable.
+    pseudonym_mode: Literal["sha256", "hmac"] = "sha256"
 
 
-def pseudonym(kind: str, value: str) -> str:
-    """A stable one-way handle for *value*: ``<kind>_<sha256[:12]>``.
+def pseudonym(kind: str, value: str, key: bytes | None = None) -> str:
+    """A stable one-way handle for *value*: ``<kind>_<digest[:12]>``.
 
-    Stable so fixtures stay comparable across runs; one-way only in the sense that
-    the plaintext is not stored.  Short ids can still be guessed — see the module
-    docstring on treating the corpus as private.
+    With ``key`` the digest is an HMAC-SHA256, so an attacker holding only the
+    corpus cannot guess short account ids by hashing candidates.  Without a key it
+    falls back to a plain truncated SHA-256 (kept for compatibility); the manifest
+    records which mode produced a corpus, and the extractor warns on the weak one.
+    Stable in both modes so fixtures stay comparable across runs of the same key.
     """
-    digest = hashlib.sha256(f"{kind}:{value}".encode()).hexdigest()[:12]
+    message = f"{kind}:{value}".encode()
+    if key is None:
+        digest = hashlib.sha256(message).hexdigest()[:12]
+    else:
+        digest = hmac.new(key, message, hashlib.sha256).hexdigest()[:12]
     return f"{kind}_{digest}"
 
 
@@ -182,6 +192,7 @@ def _is_url_key(key: str) -> bool:
 def redact_state(
     value: Any,
     *,
+    redaction_key: bytes | None = None,
     _depth: int = 0,
 ) -> tuple[Any, RedactionReport]:
     """Return a redacted deep copy of *value* plus what was changed.
@@ -214,14 +225,16 @@ def redact_state(
                     kind = _IDENTIFIER_KEYS[key]
                     if isinstance(raw_value, str) and raw_value.strip():
                         report.identifiers += 1
-                        out[key] = pseudonym(kind, raw_value.strip())
+                        out[key] = pseudonym(kind, raw_value.strip(), redaction_key)
                     elif (
                         isinstance(raw_value, (list, tuple))
                         and raw_value
                         and all(isinstance(item, str) and item.strip() for item in raw_value)
                     ):
                         report.identifiers += 1
-                        out[key] = [pseudonym(kind, item.strip()) for item in raw_value]
+                        out[key] = [
+                            pseudonym(kind, item.strip(), redaction_key) for item in raw_value
+                        ]
                     else:
                         if raw_value not in (None, "", [], ()):
                             report.identifiers += 1
@@ -273,11 +286,12 @@ def build_fixture(
     thread_id: str,
     checkpoint_id: str,
     state: Mapping[str, Any],
+    redaction_key: bytes | None = None,
 ) -> EvalFixture:
     """Redact one checkpoint state into a fixture (pure; no I/O)."""
-    redacted, report = redact_state(state)
+    redacted, report = redact_state(state, redaction_key=redaction_key)
     assert isinstance(redacted, dict)
-    thread_pseudonym = pseudonym("thread", thread_id)
+    thread_pseudonym = pseudonym("thread", thread_id, redaction_key)
     fixture_id = f"{thread_pseudonym}-{checkpoint_id[:8] or 'latest'}"
     phase = str(redacted.get("phase") or "")
     return EvalFixture(

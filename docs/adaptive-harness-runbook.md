@@ -18,16 +18,21 @@
 ## 1. 抽取真实语料（在部署环境，输出不入库）
 
 ```bash
+# 建议设置：用部署侧密钥做 HMAC 假名（不写入语料；不设则假名可被字典攻击）
+export XHS_EVAL_REDACTION_KEY="<deployment-secret>"
 python scripts/eval/extract_fixtures.py \
     --postgres-uri "$XHS_POSTGRES_URI" --limit 20 --phases reviewing,publishing
-# 产物：.eval-fixtures/fixture-*.json + manifest.json（已 gitignore，别提交）
+# 记下输出里的 manifest 指纹（相当于语料的 out-of-band 摘要）
+# 产物：.eval-fixtures/fixture-*.json + manifest.json + manifest.sha256（已 gitignore，别提交）
 ```
 
 ## 2. 跑离线门禁（先确认基线没坏）
 
 ```bash
+RECORDED_DIGEST="<第 1 步记下的 manifest 指纹>"
 python scripts/eval/run_gate.py            # report-only
-python scripts/eval/run_gate.py --fail-on-red   # 想让它阻断时
+python scripts/eval/run_gate.py --fail-on-red \
+    --expect-manifest-sha256 "$RECORDED_DIGEST"   # 想让它阻断 + 核对 out-of-band 指纹
 ```
 
 期望：`corpus` pass（哈希完整、非空、`redaction_version` 与当前一致——旧语料会被判红，重跑第 1 步即可）、

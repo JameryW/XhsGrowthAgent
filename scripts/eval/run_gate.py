@@ -133,7 +133,7 @@ def run_harness_benchmarks() -> list[dict[str, Any]]:
     return json.loads(json_path.read_text(encoding="utf-8"))
 
 
-def check_corpus(corpus_dir: Path) -> CheckResult:
+def check_corpus(corpus_dir: Path, *, expect_manifest_sha256: str | None = None) -> CheckResult:
     """Manifest + per-file hash + per-fixture state hash, or a documented skip.
 
     An **empty** corpus is red, not a pass: a green gate over zero evidence is the
@@ -141,6 +141,11 @@ def check_corpus(corpus_dir: Path) -> CheckResult:
     valid-looking zero-fixture manifest).  A *missing* corpus stays a skip with a
     reason, because "you have not extracted anything yet" is genuinely different
     from "your extractor produced an empty dataset".
+
+    ``manifest.sha256`` (written by the extractor) catches an edited manifest;
+    ``expect_manifest_sha256`` is the out-of-band value that catches a *paired*
+    rewrite of fixtures, manifest and digest together.  Neither claims to make the
+    corpus tamper-proof — only self-consistent and auditable.
     """
     if not corpus_dir.is_dir():
         return CheckResult(
@@ -154,8 +159,20 @@ def check_corpus(corpus_dir: Path) -> CheckResult:
     manifest_path = corpus_dir / "manifest.json"
     if not manifest_path.is_file():
         return CheckResult("corpus", "red", f"{manifest_path} is missing")
+    manifest_bytes = manifest_path.read_bytes()
+    actual_digest = hashlib.sha256(manifest_bytes).hexdigest()
+    problems: list[str] = []
+    digest_path = corpus_dir / "manifest.sha256"
+    if digest_path.is_file():
+        recorded = digest_path.read_text(encoding="utf-8").strip()
+        if recorded != actual_digest:
+            problems.append("manifest.sha256 does not match manifest.json")
+    if expect_manifest_sha256 is not None and expect_manifest_sha256.strip() != actual_digest:
+        problems.append(
+            f"manifest digest {actual_digest[:12]}… != expected {expect_manifest_sha256[:12]}…"
+        )
     try:
-        manifest = FixtureManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+        manifest = FixtureManifest.model_validate_json(manifest_bytes)
     except ValueError as exc:
         return CheckResult("corpus", "red", f"manifest does not parse: {exc}")
     if manifest.schema_version != SCHEMA_VERSION:
@@ -171,7 +188,6 @@ def check_corpus(corpus_dir: Path) -> CheckResult:
             f"corpus was built by redaction {manifest.redaction_version!r}, "
             f"current is {REDACTION_VERSION!r}: re-extract it",
         )
-    problems: list[str] = []
     if manifest.total == 0:
         problems.append("corpus is empty (0 fixtures): nothing to gate on")
     if manifest.total != len(manifest.fixtures):
@@ -200,7 +216,10 @@ def check_corpus(corpus_dir: Path) -> CheckResult:
             problems.append(f"{entry.file}: state hash no longer recomputes")
     if problems:
         return CheckResult("corpus", "red", "; ".join(problems[:5]))
-    return CheckResult("corpus", "pass", f"{manifest.total} fixtures, hashes intact")
+    detail = f"{manifest.total} fixtures, hashes intact"
+    if digest_path.is_file():
+        detail += f", manifest digest {actual_digest[:12]}…"
+    return CheckResult("corpus", "pass", detail)
 
 
 def check_policy(policy: Any, *, label: str = "policy") -> tuple[CheckResult, dict[str, Any]]:
@@ -327,6 +346,7 @@ def run_gate(
     benchmark_runner: BenchmarkRunner | None = None,
     skip_benchmarks: bool = False,
     fail_on_red: bool = False,
+    expect_manifest_sha256: str | None = None,
 ) -> GateReport:
     """Run every offline check; ``fail_on_red`` decides whether red is a gate."""
     from backend.harness.policy import default_policy
@@ -334,7 +354,7 @@ def run_gate(
     report = GateReport(
         mode="block" if fail_on_red else "report", generated_at=datetime.now(UTC).isoformat()
     )
-    report.checks.append(check_corpus(corpus_dir))
+    report.checks.append(check_corpus(corpus_dir, expect_manifest_sha256=expect_manifest_sha256))
 
     policy_result, snapshot = check_policy(default_policy(), label="policy")
     report.policy_snapshot = snapshot
@@ -389,6 +409,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="exit 1 when a check is red (default: report only; see plan §6)",
     )
     parser.add_argument("--json", type=Path, default=None, help="write the report as JSON")
+    parser.add_argument(
+        "--expect-manifest-sha256",
+        default=None,
+        help="out-of-band manifest digest recorded when the corpus was extracted "
+        "(catches a paired rewrite of fixtures + manifest + digest)",
+    )
     return parser
 
 
@@ -400,6 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         variant=variant,
         skip_benchmarks=options.skip_benchmarks,
         fail_on_red=options.fail_on_red,
+        expect_manifest_sha256=options.expect_manifest_sha256,
     )
     payload = report.to_dict()
     if options.json is not None:

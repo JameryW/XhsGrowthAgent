@@ -314,3 +314,61 @@ def test_extraction_requires_exactly_one_source():
                 dry_run=True,
             )
         )
+
+
+def test_pseudonyms_can_be_keyed_and_stay_stable_per_key():
+    value = "acc-1"
+    keyed = fx.pseudonym("acct", value, b"deployment-secret")
+    assert keyed == fx.pseudonym("acct", value, b"deployment-secret")
+    assert keyed != fx.pseudonym("acct", value)
+    assert keyed != fx.pseudonym("acct", value, b"other-secret")
+    fixture = fx.build_fixture(
+        source="sqlite",
+        thread_id="thread-plain",
+        checkpoint_id="cp-1",
+        state=STATE,
+        redaction_key=b"deployment-secret",
+    )
+    plain = fx.build_fixture(
+        source="sqlite", thread_id="thread-plain", checkpoint_id="cp-1", state=STATE
+    )
+    assert fixture.thread_pseudonym != plain.thread_pseudonym
+
+
+def test_a_salted_extraction_records_its_mode_and_writes_a_manifest_digest(tmp_path: Path):
+    db = tmp_path / "checkpoints.sqlite"
+    _sqlite_seed(db, [("thread-a", "cp-a", {"account_id": "acc-a"})])
+    out = tmp_path / "corpus"
+    _, _, manifest = asyncio.run(
+        ex.run_extraction(
+            sqlite_path=db,
+            postgres_uri=None,
+            out_dir=out,
+            limit=5,
+            phases=None,
+            dry_run=False,
+            redaction_key=b"deployment-secret",
+        )
+    )
+    assert manifest is not None
+    assert manifest.pseudonym_mode == "hmac"
+    digest = (out / "manifest.sha256").read_text(encoding="utf-8").strip()
+    import hashlib
+
+    assert digest == hashlib.sha256((out / "manifest.json").read_bytes()).hexdigest()
+
+
+def test_an_unsalted_extraction_is_marked_as_such(tmp_path: Path):
+    db = tmp_path / "checkpoints.sqlite"
+    _sqlite_seed(db, [("thread-a", "cp-a", {"account_id": "acc-a"})])
+    _, _, manifest = asyncio.run(
+        ex.run_extraction(
+            sqlite_path=db,
+            postgres_uri=None,
+            out_dir=tmp_path / "corpus",
+            limit=5,
+            phases=None,
+            dry_run=False,
+        )
+    )
+    assert manifest is not None and manifest.pseudonym_mode == "sha256"
