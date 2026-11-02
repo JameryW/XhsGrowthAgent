@@ -272,6 +272,8 @@ LLMEOF
         -e XIAOMIMIMO_BASE_URL="${XIAOMIMIMO_BASE_URL:-}" \
         -e XUNFEI_API_KEY="${XUNFEI_API_KEY:-}" \
         -e XUNFEI_BASE_URL="${XUNFEI_BASE_URL:-}" \
+        -e MAGPIE_API_KEY="${MAGPIE_API_KEY:-magpie}" \
+        -e MAGPIE_BASE_URL="${MAGPIE_BASE_URL:-http://10.0.0.10:3425/v1}" \
         -e XHS_EMBED_MODEL="${XHS_EMBED_MODEL:-}" \
         -e XHS_EMBED_DIMS="${XHS_EMBED_DIMS:-}" \
         -e XHS_EMBED_BASE_URL="${XHS_EMBED_BASE_URL:-}" \

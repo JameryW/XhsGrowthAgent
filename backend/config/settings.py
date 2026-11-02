@@ -126,7 +126,7 @@ class RippleSettings(BaseSettings):
     late_recheck_timeout: int = 300
     health_check_interval: float = 30.0
     # LLM config passed to Ripple engine for simulation roles
-    llm_model: str = "deepseek-v4-flash"
+    llm_model: str = "opencode-go/deepseek-v4.1-flash"
     llm_url: str = ""
     llm_api_key: str = ""
 

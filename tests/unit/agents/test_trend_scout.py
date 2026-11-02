@@ -739,8 +739,8 @@ class TestWebSearchWiring:
 
     @pytest.mark.asyncio
     async def test_web_search_used_when_xhs_empty(self, agent, mock_store, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-        monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+        monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
         captured: dict = {}
         self._mock_model(agent, captured)
         web_payload = {
@@ -752,7 +752,7 @@ class TestWebSearchWiring:
                     "summary": "较长摘要",
                 }
             ],
-            "provider": "deepseek",
+            "provider": "tavily",
             "fallback_used": False,
             "error": "",
         }
@@ -774,7 +774,7 @@ class TestWebSearchWiring:
 
     @pytest.mark.asyncio
     async def test_web_search_failure_degrades_without_abort(self, agent, mock_store, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
         captured: dict = {}
         self._mock_model(agent, captured)
         empty = {"results": [], "provider": "", "fallback_used": True, "error": "all_failed"}
@@ -793,14 +793,14 @@ class TestWebSearchWiring:
 
     @pytest.mark.asyncio
     async def test_fetch_when_snippet_thin(self, agent, mock_store, monkeypatch):
-        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
         captured: dict = {}
         self._mock_model(agent, captured)
         thin = {
             "results": [
                 {"title": "薄摘要", "url": "https://example.com/p", "snippet": "", "summary": ""}
             ],
-            "provider": "deepseek",
+            "provider": "tavily",
             "fallback_used": False,
             "error": "",
         }
@@ -808,7 +808,7 @@ class TestWebSearchWiring:
             "title": "正文页",
             "content": "# 正文页\n\n补充的 Markdown 正文内容",
             "url": "https://example.com/p",
-            "provider": "deepseek",
+            "provider": "tavily",
             "fallback_used": False,
             "error": "",
         }

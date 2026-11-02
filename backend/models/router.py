@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from dotenv import load_dotenv
 from pydantic import SecretStr
@@ -46,7 +46,11 @@ _PROVIDER_ENV_VARS: dict[ModelProvider, str] = {
     ModelProvider.DASHSCOPE: "DASHSCOPE_API_KEY",
     ModelProvider.XIAOMIMIMO: "XIAOMIMIMO_API_KEY",
     ModelProvider.XUNFEI: "XUNFEI_API_KEY",
+    ModelProvider.MAGPIE: "MAGPIE_API_KEY",
 }
+
+# magpie 网关地址默认值（容器内 → 宿主机 eth0；宿主机原生跑则覆盖成 127.0.0.1）。
+_MAGPIE_DEFAULT_BASE_URL = "http://10.0.0.10:3425/v1"
 
 
 def _create_model(config: ModelConfig, timeout: int | None = None) -> BaseChatModel:
@@ -83,13 +87,10 @@ def _create_model(config: ModelConfig, timeout: int | None = None) -> BaseChatMo
                 api_key=SecretStr(api_key),
             )
         case ModelProvider.DEEPSEEK:
-            return ChatOpenAI(  # type: ignore[call-arg]
-                model=config.model_name,
-                temperature=config.temperature,
-                max_tokens=config.max_tokens,
-                timeout=effective_timeout,
-                api_key=SecretStr(api_key),
-                base_url="https://api.deepseek.com",
+            # 2026-11-02: 禁止直连 DeepSeek API，所有 LLM 统一经 magpie。
+            raise ValueError(
+                "Direct DeepSeek API is disabled; use ModelProvider.MAGPIE "
+                "(opencode-go/deepseek-v4.1-flash) instead."
             )
         case ModelProvider.DASHSCOPE:
             return ChatOpenAI(  # type: ignore[call-arg]
@@ -121,6 +122,15 @@ def _create_model(config: ModelConfig, timeout: int | None = None) -> BaseChatMo
                 base_url=os.environ.get(
                     "XUNFEI_BASE_URL", "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"
                 ),
+            )
+        case ModelProvider.MAGPIE:
+            return ChatOpenAI(  # type: ignore[call-arg]
+                model=config.model_name,
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                timeout=effective_timeout,
+                api_key=SecretStr(api_key),
+                base_url=os.environ.get("MAGPIE_BASE_URL", _MAGPIE_DEFAULT_BASE_URL),
             )
 
 
@@ -187,3 +197,14 @@ def get_router() -> ModelRouter:
 def get_model(task: str) -> BaseChatModel:
     """快捷方式：按任务名获取模型"""
     return get_router().get_model_for_task(task)
+
+
+def get_model_by_id(model_id: str) -> BaseChatModel:
+    """按注册表 id 直接取模型实例（不经任务路由）。
+
+    给「同一个任务里需要换上游」的窄场景用（例：扫描件 PDF 的文字提取需要能吃
+    ``application/pdf`` 的模型，而默认主模型只收图片）。
+    """
+    from backend.config.models import get_model_config
+
+    return cast(BaseChatModel, with_retry(_create_model(get_model_config(model_id))))

@@ -156,10 +156,10 @@ class TestBloggerScoutAgent:
         assert len(result["blogger_candidates"]) == 2
         assert result["blogger_candidates"][0]["user_id"] == "mock_001"
         assert result["blogger_candidates"][0]["total_engagement"] > 0
-        # 生产的档位真的被走到了。只断言"拿到了候选"是不够的：一个让 bind 失效
-        # 的替身会让链条静默降到 PROMPTED 而结果看起来一模一样。response_format
-        # 只有 JSON_OBJECT 一档会绑，所以它在这里证明"跑的是生产那一档"。
-        assert agent._model.bound == [{"response_format": {"type": "json_object"}}]
+        # MOCK_GEN 现走 magpie（PROMPTED 档）：不绑 response_format，但档位确实
+        # 调用过模型（bind 留空、ainvoke 有记录），即"跑的是生产那一档"。
+        assert agent._model.bound == []
+        assert agent._model.calls
 
     @pytest.mark.asyncio
     async def test_execute_respects_candidate_limit(self, agent, brief_state, mock_store):

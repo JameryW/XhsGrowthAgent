@@ -75,13 +75,15 @@ class TestProviderConfigStatus:
         assert status["providers"]["deepseek"]["configured"] is False
         assert status["providers"]["tavily"]["configured"] is False
 
-    def test_deepseek_primary(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_deepseek_key_is_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Direct DeepSeek API is disabled (magpie-only): the key no longer arms it."""
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-ds")
         monkeypatch.delenv("TAVILY_API_KEY", raising=False)
         status = provider_config_status()
-        assert status["configured"] is True
-        assert status["active_provider"] == "deepseek"
-        assert status["status"] == "ok"
+        assert status["configured"] is False
+        assert status["active_provider"] is None
+        assert status["status"] == "warning"
+        assert status["providers"]["deepseek"]["configured"] is False
 
     def test_tavily_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -90,12 +92,14 @@ class TestProviderConfigStatus:
         assert status["active_provider"] == "tavily"
         assert status["providers"]["tavily"]["configured"] is True
 
-    def test_both_keys_prefer_deepseek(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_both_keys_use_tavily(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Even with both keys present, only Tavily is used (DeepSeek disabled)."""
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-ds")
         monkeypatch.setenv("TAVILY_API_KEY", "tvly")
         status = provider_config_status()
-        assert status["active_provider"] == "deepseek"
-        assert "备用" in status["message"]
+        assert status["active_provider"] == "tavily"
+        assert status["providers"]["deepseek"]["configured"] is False
+        assert status["providers"]["tavily"]["configured"] is True
 
 
 class TestWebSearchRouter:
@@ -193,5 +197,6 @@ class TestSystemHealthWiring:
         from backend.api.routes.system import _check_search
 
         status: dict[str, Any] = _check_search()
-        assert status["active_provider"] == "deepseek"
+        assert status["active_provider"] == "tavily"
+        assert status["providers"]["deepseek"]["configured"] is False
         assert status["providers"]["tavily"]["configured"] is True

@@ -67,6 +67,10 @@ _PROVIDER_MODES: Mapping[ModelProvider, StructuredMode] = {
     # the least and let the degradation chain carry the call.
     ModelProvider.XIAOMIMIMO: StructuredMode.PROMPTED,
     ModelProvider.XUNFEI: StructuredMode.PROMPTED,
+    # magpie 网关的上游是 OpenCode Go 的 DeepSeek，但网关是否透传
+    # response_format 未验证；先按最保守的 PROMPTED 处理，可
+    # 用 XHS_STRUCTURED_MODE_MAGPIE=json_object 覆盖，不必改代码。
+    ModelProvider.MAGPIE: StructuredMode.PROMPTED,
 }
 """Documented capability per provider — a claim, not a probe result.
 

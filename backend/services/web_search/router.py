@@ -27,7 +27,8 @@ def provider_config_status() -> dict[str, Any]:
 
     Used by ``/api/system/health`` ``search_api`` — no network probe.
     """
-    deepseek = _env_configured("DEEPSEEK_API_KEY")
+    # 2026-11-02: 禁止直连 DeepSeek API（全部 LLM 统一走 magpie）
+    deepseek = False  # was: _env_configured("DEEPSEEK_API_KEY")
     tavily = _env_configured("TAVILY_API_KEY")
     if deepseek:
         active = "deepseek"
