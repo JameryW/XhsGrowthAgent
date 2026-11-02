@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 63
+- **Total Sessions**: 64
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~139 | Active |
+| `journal-2.md` | ~172 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 64 | 2026-11-02 | 验证轮小硬化：预算单一来源、未列出 JSON、无盐提示（票 5cl） | `52046e04` | `main` |
 | 63 | 2026-11-02 | 语料指纹与加盐假名（票 5ck） | `b5498859` | `main` |
 | 62 | 2026-11-02 | 独立审查修复：E1 脱敏与 E3/E4 门禁加固（票 5cj） | `dba338dc` | `main` |
 | 61 | 2026-11-02 | L3 live 授权门闸与部署 runbook + 脱敏加固（票 5ci） | `60c31cef` | `main` |

@@ -137,3 +137,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 64: 验证轮小硬化：预算单一来源、未列出 JSON、无盐提示（票 5cl）
+
+**Date**: 2026-11-02
+**Task**: 验证轮小硬化：预算单一来源、未列出 JSON、无盐提示（票 5cl）
+**Branch**: `main`
+
+### Summary
+
+三处小硬化 + 文档同步：plan_l3 改为从 judge 导入 APPROVED_MAX_CALLS（预算上限单一来源）；gate 未列出文件检查扩到所有 *.json（下划线变体也红）；无盐语料 detail 始终标注 pseudonyms unsalted (sha256)（可见不阻断）；agent-os 路线图 10 与结论补齐 5cd–5ck 与 E4 状态。验证 gate 25、plan_l3 13、unit scripts 177、全量 4904 passed / 14 skipped / 0 failed / 0 errors。票 5cl 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `52046e04` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
