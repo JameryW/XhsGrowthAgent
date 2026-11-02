@@ -1,0 +1,111 @@
+# Adaptive Harness L3 部署侧 runbook（授权、预算与记录）
+
+> 本文件只覆盖 **live L3**（真实账号跑端到端 + LLM 裁判）在**部署环境**里怎么跑。
+> 仓库内能做的部分（语料抽取、离线门禁、裁判与预算护栏、计划校验）都已交付；
+> 这里没有凭据，也不应该出现凭据。
+>
+> 已拍板（2026-11-02）：允许 LLM-as-judge；**每轮 <200 次模型调用**；只在**测试账号**跑。
+
+## 0. 前置条件（缺一不可）
+
+| 条件 | 说明 |
+|---|---|
+| 部署环境的测试账号 | 账号 id 已知；登录态/cookie 只存在于部署环境（`XHS_*` 凭据） |
+| 运行窗口 | 平台可接受的时段；避免与真实用户的发布/私信冲突 |
+| 预算批准 | 本轮 judge 调用数 = 样本数，必须 ≤199；工作流自身的模型调用另计，样本数即上限 |
+| 语料来源 | 有数据的 Postgres checkpoint（或已填充的 sqlite） |
+
+## 1. 抽取真实语料（在部署环境，输出不入库）
+
+```bash
+python scripts/eval/extract_fixtures.py \
+    --postgres-uri "$XHS_POSTGRES_URI" --limit 20 --phases reviewing,publishing
+# 产物：.eval-fixtures/fixture-*.json + manifest.json（已 gitignore，别提交）
+```
+
+## 2. 跑离线门禁（先确认基线没坏）
+
+```bash
+python scripts/eval/run_gate.py            # report-only
+python scripts/eval/run_gate.py --fail-on-red   # 想让它阻断时
+```
+
+期望：`corpus` pass（哈希完整）、`policy` pass、`benchmarks` F1/F2/F4 pass。
+
+## 3. 校验 live 计划（授权门闸，不花钱）
+
+```bash
+XHS_EVAL_LIVE=1 python scripts/eval/plan_l3.py \
+    --samples 3 --account "<测试账号 id>" --phases reviewing --armed
+```
+
+- `ready: yes` 才能继续；`ready: no` 会列出原因（缺账号 / 未 set `XHS_EVAL_LIVE=1` /
+  judge=none / 超过 199）。
+- `judge_calls = samples`：每份样本一次裁判调用。
+- 想留档：`--json > plan.json`（不含凭据，可提交到实验记录）。
+
+## 4. 在测试账号上跑 N 次工作流（外部执行）
+
+用现有入口（CLI 或 API），每次记录 `thread_id`：
+
+```bash
+xhs-growth run --account-id "<测试账号 id>" --phase reviewing
+# 或 POST /api/workflow/start（异步），记下返回的 thread_id
+```
+
+- 样本数 N 就是计划里的 `samples`；不要超过它在 `plan_l3` 里通过的值。
+- 每次结束后确认没有进入真实发布：L3 只评估内容质量与决策，不触发对外发布动作
+  （发布链路由审批门控制，runbook 不要求、也不授权绕过）。
+
+## 5. 用裁判打分（每样本一次调用，受预算护栏约束）
+
+在仓库根目录执行（需要部署环境的模型凭据）：
+
+```python
+import asyncio, json, sys
+sys.path.insert(0, "scripts/eval")
+
+from backend.config.models import TaskType
+from backend.models import get_model
+from judge import JudgeBudget, judge_content
+
+budget = JudgeBudget()          # max_calls=199，先扣费后调用
+SAMPLES = [
+    {"thread": "t-1", "title": "标题1", "body": "正文1", "niche": "家居"},
+    # ... 与 plan 的 samples 数量一致
+]
+
+async def main():
+    model = get_model(TaskType.EVALUATION)
+    results = []
+    for sample in SAMPLES:
+        scores = await judge_content(
+            model,
+            title=sample["title"],
+            body=sample["body"],
+            niche=sample["niche"],
+            budget=budget,
+        )
+        results.append({"thread": sample["thread"], **scores.model_dump(), "overall": scores.overall})
+    print(json.dumps({"used": budget.used, "results": results}, ensure_ascii=False, indent=2))
+
+asyncio.run(main())
+```
+
+- 输出只保留分数与 thread id；**不要把正文/账号写进仓库**。
+- `used` 必须 ≤199；解析失败的那次也算一次调用，不要为同一份样本无限重试。
+
+## 6. 记录与停止条件
+
+| 情况 | 动作 |
+|---|---|
+| `budget.used` 接近 199 | 停止新增样本，记录已完成部分 |
+| 裁判输出连续解析失败 | 停止并报告（每次失败仍扣费） |
+| 测试账号异常/平台告警 | 立即停止，不重试 |
+| 结果与基线差异 | 用 E3 的 `describe()`/diff 报告解释，不要直接改默认路由（问题 5 未拍板） |
+
+## 7. 明确不做
+
+- 不在 CI 里跑 live L3（无凭据、会产生费用）。
+- 不把 cookie/token/真实正文写进仓库或日志（`.eval-fixtures/`、`plan.json` 均不提交正文）。
+- 不因为 L3 结果直接改生产默认路由：默认变更需要单独拍板。

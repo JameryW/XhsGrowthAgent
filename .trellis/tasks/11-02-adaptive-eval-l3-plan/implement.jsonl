@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the decisions the authorisation gate enforces and the external-only boundary"}
+{"file": "docs/adaptive-harness-runbook.md", "reason": "the deployment-side procedure the gate guards"}

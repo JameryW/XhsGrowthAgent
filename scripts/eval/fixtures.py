@@ -178,12 +178,29 @@ def redact_state(
                     else:
                         out[key] = []
                     continue
-                if key in _IDENTIFIER_KEYS and isinstance(raw_value, str) and raw_value.strip():
-                    report.identifiers += 1
-                    out[key] = pseudonym(_IDENTIFIER_KEYS[key], raw_value.strip())
+                if key in _IDENTIFIER_KEYS:
+                    kind = _IDENTIFIER_KEYS[key]
+                    if isinstance(raw_value, str) and raw_value.strip():
+                        report.identifiers += 1
+                        out[key] = pseudonym(kind, raw_value.strip())
+                    elif (
+                        isinstance(raw_value, (list, tuple))
+                        and raw_value
+                        and all(isinstance(item, str) and item.strip() for item in raw_value)
+                    ):
+                        report.identifiers += 1
+                        out[key] = [pseudonym(kind, item.strip()) for item in raw_value]
+                    else:
+                        if raw_value not in (None, "", [], ()):
+                            report.identifiers += 1
+                        out[key] = ""
                     continue
                 is_secret_key = any(fragment in key.lower() for fragment in _SECRET_KEY_FRAGMENTS)
-                if is_secret_key and not isinstance(raw_value, (Mapping, list, tuple)):
+                if is_secret_key:
+                    # Scalar or container: a secret-shaped key never carries its
+                    # value through.  Walking a container instead would keep
+                    # ``{"api_key": {"value": "sk-..."}}`` — the inner key is
+                    # innocent, so the redaction has to stop at the outer one.
                     report.secrets += 1
                     out[key] = ""
                     continue

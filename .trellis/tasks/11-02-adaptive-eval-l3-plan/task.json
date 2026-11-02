@@ -1,0 +1,33 @@
+{
+  "id": "adaptive-eval-l3-plan",
+  "name": "adaptive-eval-l3-plan",
+  "title": "feat(eval): L3 live 计划门闸 + 部署 runbook（票 5ci）",
+  "description": "新增 scripts/eval/plan_l3.py：live 运行的授权门闸（只校验不执行）——samples 1..50、judge_calls=samples <= max_calls <=199、测试账号必填、judge!=none、XHS_EVAL_LIVE=1 才 armed；--armed 不满足 exit 1，--json 输出可留档计划。新增 docs/adaptive-harness-runbook.md：部署侧 live L3 步骤（抽真实语料 → E3 门禁 → plan 校验 → 测试账号跑 N 次 → judge 打分（199 预算）→ 记录与停止条件），明确不存凭据、不提交正文、不因结果直接改默认路由。11 个新用例。评测方案新增 §6.10。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/eval/plan_l3.py",
+    "tests/unit/scripts/test_eval_plan_l3.py",
+    "scripts/eval/fixtures.py",
+    "tests/unit/scripts/test_eval_fixtures.py",
+    "docs/adaptive-harness-runbook.md",
+    "docs/adaptive-harness-eval-plan.md"
+  ],
+  "notes": "DONE 2026-11-02. Live L3 cannot run from this checkout (deployment test account, login state, platform window, real model spend), so this ticket ships the two things that make the external step safe instead of ad-hoc: an authorisation gate and a runbook. scripts/eval/plan_l3.py validates a plan against the 2026-11-02 decisions and never executes anything — 1..50 samples, judge_calls=samples <= max_calls <= 199 (the literal '<200'), the test account is mandatory, judge != none (quality dimension is required), and XHS_EVAL_LIVE=1 must arm the run; --armed exits 1 when any precondition fails so a script can gate on it, --json prints a credential-free plan for the experiment record. docs/adaptive-harness-runbook.md writes the deployment steps as an auditable checklist (extract real corpus -> E3 gate -> plan check -> run the workflow N times on the test account -> judge with JudgeBudget -> record and stop conditions) and states explicitly that credentials and content never enter the repository and that L3 results do not change a production default. While auditing E1 for this ticket two real redaction holes were also closed in scripts/eval/fixtures.py: a secret-shaped key whose value was a container used to be walked (so {'api_key': {'value': 'sk-...'}} kept the secret because the inner key looked innocent) — such keys are now blanked whole; and non-string identifiers used to be walked too — strings now become pseudonyms, string lists become pseudonym lists, anything else is blanked, all counted. Two tests pin both. Verification: plan_l3 tests 11 passed, fixture tests 12 passed (2 new), tests/unit/scripts 159 passed, scripts/ci_local.py --only lint,format,mypy all PASS with mypy clean over 264 backend files, full suite in the journal.",
+  "meta": {}
+}

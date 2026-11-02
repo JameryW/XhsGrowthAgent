@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-runbook.md", "reason": "verify the runbook matches the shipped gate and judge budget"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "review checklist for a new eval script"}

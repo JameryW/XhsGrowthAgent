@@ -113,6 +113,29 @@ def test_include_messages_keeps_them_instead_of_dropping():
     assert report.dropped_keys == 0
 
 
+def test_a_secret_shaped_key_never_leaks_through_a_container_value():
+    """The inner key of {"api_key": {"value": ...}} is innocent; the outer wins."""
+    redacted, report = fx.redact_state(
+        {
+            "api_key": {"value": "sk-secret"},
+            "credentials": [{"token": "abc"}],
+            "max_tokens": {"budget": 4096},
+        }
+    )
+    assert redacted == {"api_key": "", "credentials": "", "max_tokens": ""}
+    assert report.secrets == 3
+
+
+def test_identifiers_keep_their_shape_without_keeping_the_value():
+    redacted, report = fx.redact_state(
+        {"account_id": "acc-1", "creator_id": ["c-1", "c-2"], "session_id": {"nested": "s-1"}}
+    )
+    assert redacted["account_id"].startswith("acct_")
+    assert [value.startswith("creator_") for value in redacted["creator_id"]] == [True, True]
+    assert redacted["session_id"] == ""
+    assert report.identifiers == 3
+
+
 def test_build_fixture_hashes_the_redacted_state_only():
     fixture = fx.build_fixture(
         source="sqlite",

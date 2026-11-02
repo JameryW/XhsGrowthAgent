@@ -189,6 +189,24 @@ python scripts/eval/run_gate.py --skip-benchmarks \
 测试账号的登录态/凭据、平台验收窗口。`judge_content` 接受任意 chat model，接线到部署侧
 只是传一个 `get_model(TaskType.EVALUATION)`。
 
+## 6.10 L3 live 计划门闸与部署 runbook（票 5ci）
+
+`scripts/eval/plan_l3.py` 是 live 运行的**授权门闸（只校验，不执行）**：
+
+| 规则 | 来源 |
+|---|---|
+| `1 <= samples <= 50` | 单轮样本上限，避免失控实验 |
+| `judge_calls = samples <= max_calls` | 每样本一次裁判 |
+| `max_calls <= 199` | 用户拍板「<200 次模型调用」的直译 |
+| `account` 必填 | 拍板「测试账号」 |
+| `judge != none` | 拍板「决策正确性 + 内容质量都要」 |
+| `XHS_EVAL_LIVE=1` | 花钱的运行必须显式武装 |
+
+- `--armed` 不满足时 exit 1，可当脚本门禁；`--json` 输出计划（不含凭据）供留档；
+- 门闸**不会**启动工作流——live 步骤属于部署环境，步骤与停止条件写在
+  `docs/adaptive-harness-runbook.md`（抽语料 → E3 门禁 → plan 校验 → 测试账号跑 N 次 →
+  裁判打分 → 记录/停止条件）。
+
 ## 7. 明确不做
 
 - 不训练/微调模型；不改线上默认路由与发布协议；不影响审批与账本语义。
