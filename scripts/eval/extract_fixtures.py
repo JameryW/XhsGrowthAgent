@@ -29,6 +29,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import sqlite3
 import sys
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass
@@ -56,11 +57,12 @@ DEFAULT_LIMIT = 100
 
 @dataclass(frozen=True)
 class CheckpointRecord:
-    """One checkpoint as the extractor needs it: thread, id and state values."""
+    """One checkpoint as the extractor needs it: namespace, thread, id and state."""
 
     thread_id: str
     checkpoint_id: str
     state: Mapping[str, Any]
+    checkpoint_ns: str = ""
 
 
 async def _records_from_saver(saver: Any) -> AsyncIterator[CheckpointRecord]:
@@ -70,6 +72,7 @@ async def _records_from_saver(saver: Any) -> AsyncIterator[CheckpointRecord]:
         configurable = config.get("configurable") if isinstance(config, Mapping) else None
         configurable = configurable if isinstance(configurable, Mapping) else {}
         thread_id = str(configurable.get("thread_id") or "")
+        checkpoint_ns = str(configurable.get("checkpoint_ns") or "")
         checkpoint = getattr(item, "checkpoint", None)
         channel_values = (
             checkpoint.get("channel_values") if isinstance(checkpoint, Mapping) else None
@@ -81,15 +84,24 @@ async def _records_from_saver(saver: Any) -> AsyncIterator[CheckpointRecord]:
             thread_id=thread_id,
             checkpoint_id=checkpoint_id,
             state=channel_values,
+            checkpoint_ns=checkpoint_ns,
         )
 
 
 async def iter_sqlite(path: Path) -> AsyncIterator[CheckpointRecord]:
-    """Read every checkpoint from a local ``AsyncSqliteSaver`` database."""
+    """Read a local ``AsyncSqliteSaver`` database, strictly read-only.
+
+    Opening the file is the only write-shaped thing this used to do: a missing
+    path made ``aiosqlite.connect`` create an empty database and a matching
+    ``setup()`` schema, so a typo produced a valid-looking empty corpus.  The
+    pre-check plus ``mode=ro`` means a wrong path is an error, not a fixture.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"checkpoint database not found: {path}")
     import aiosqlite
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-    async with aiosqlite.connect(str(path)) as conn:
+    async with aiosqlite.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as conn:
         saver = AsyncSqliteSaver(conn=conn)
         async for record in _records_from_saver(saver):
             yield record
@@ -110,7 +122,6 @@ def select_corpus(
     source: Literal["sqlite", "postgres"],
     phases: frozenset[str] | None = None,
     limit: int = DEFAULT_LIMIT,
-    include_messages: bool = False,
 ) -> tuple[list[EvalFixture], dict[str, int]]:
     """Pick at most *limit* latest-per-thread fixtures and count what was skipped.
 
@@ -118,11 +129,25 @@ def select_corpus(
     wins" is the latest state of that thread without a second query.  The limit is
     the configurable budget: ``0`` means "no limit", anything else stops once that
     many fixtures have been collected (records are still counted as skipped).
+
+    Subgraph checkpoints (non-empty ``checkpoint_ns``) are skipped: they carry a
+    child namespace's state, and because alist is ordered globally, a subgraph row
+    can be newer than the thread's main-state row.  Counting them separately keeps
+    that visible instead of silently becoming the thread's "latest" fixture.
     """
     fixtures: list[EvalFixture] = []
-    skipped = {"duplicate_thread": 0, "phase_filtered": 0, "limit_reached": 0, "invalid": 0}
+    skipped = {
+        "duplicate_thread": 0,
+        "subgraph_checkpoint": 0,
+        "phase_filtered": 0,
+        "limit_reached": 0,
+        "invalid": 0,
+    }
     seen: set[str] = set()
     for record in records:
+        if record.checkpoint_ns:
+            skipped["subgraph_checkpoint"] += 1
+            continue
         if record.thread_id in seen:
             skipped["duplicate_thread"] += 1
             continue
@@ -133,12 +158,11 @@ def select_corpus(
                 thread_id=record.thread_id,
                 checkpoint_id=record.checkpoint_id,
                 state=record.state,
-                include_messages=include_messages,
             )
         except ValueError:
             skipped["invalid"] += 1
             continue
-        if phases and fixture.phase and fixture.phase not in phases:
+        if phases and fixture.phase not in phases:
             skipped["phase_filtered"] += 1
             continue
         if limit and len(fixtures) >= limit:
@@ -153,7 +177,6 @@ def write_corpus(
     *,
     out_dir: Path,
     source_kind: Literal["sqlite", "postgres"],
-    include_messages: bool,
     skipped: Mapping[str, int],
     generated_at: str | None = None,
 ) -> FixtureManifest:
@@ -178,7 +201,6 @@ def write_corpus(
         extractor_version=EXTRACTOR_VERSION,
         source_kind=source_kind,
         generated_at=generated_at or datetime.now(UTC).isoformat(),
-        include_messages=include_messages,
         total=len(entries),
         fixtures=entries,
         skipped=dict(skipped),
@@ -197,7 +219,6 @@ async def run_extraction(
     out_dir: Path,
     limit: int,
     phases: frozenset[str] | None,
-    include_messages: bool,
     dry_run: bool,
 ) -> tuple[list[EvalFixture], dict[str, int], FixtureManifest | None]:
     """The whole pipeline, shared by the CLI and the tests (no printing)."""
@@ -216,7 +237,6 @@ async def run_extraction(
         source=source,
         phases=phases,
         limit=limit,
-        include_messages=include_messages,
     )
     manifest = None
     if not dry_run:
@@ -224,7 +244,6 @@ async def run_extraction(
             fixtures,
             out_dir=out_dir,
             source_kind=source,
-            include_messages=include_messages,
             skipped=skipped,
         )
     return fixtures, skipped, manifest
@@ -244,7 +263,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--all", action="store_true", help="shorthand for --limit 0")
     parser.add_argument("--phases", default="", help="comma-separated workflow phases to keep")
-    parser.add_argument("--include-messages", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="read and redact, write nothing")
     return parser
 
@@ -264,14 +282,13 @@ def main(argv: list[str] | None = None) -> int:
                 out_dir=options.output,
                 limit=limit,
                 phases=phases or None,
-                include_messages=options.include_messages,
                 dry_run=options.dry_run,
             )
         )
     except FileNotFoundError:
         print(f"checkpoint source not found: {sqlite_path}")
         return 1
-    except ConnectionError as exc:
+    except (ConnectionError, sqlite3.OperationalError) as exc:
         print(f"could not read checkpoint source: {exc}")
         return 1
     print(f"fixtures: {len(fixtures)}  skipped: {json.dumps(skipped, ensure_ascii=False)}")

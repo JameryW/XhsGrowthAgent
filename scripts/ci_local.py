@@ -178,7 +178,13 @@ def job_eval_gate() -> tuple[str, str]:
     if not corpus.is_dir():
         return SKIP, ".eval-fixtures absent: E3 gate needs a local corpus (gitignored)"
     return _expect_ok(
-        [PY, str(REPO / "scripts" / "eval" / "run_gate.py"), "--corpus", str(corpus)],
+        [
+            PY,
+            str(REPO / "scripts" / "eval" / "run_gate.py"),
+            "--corpus",
+            str(corpus),
+            "--fail-on-red",
+        ],
         detail="E3 offline A/B gate",
     )
 

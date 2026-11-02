@@ -32,6 +32,9 @@ JUDGE_DIMENSIONS: tuple[str, ...] = (
     "audience",
 )
 DEFAULT_MAX_CALLS = 199  # "<200" from the 2026-11-02 decision, expressed literally
+# No budget may exceed what the user approved.  A caller that wants a different
+# cap must change this constant through review, not pass a bigger number.
+APPROVED_MAX_CALLS = DEFAULT_MAX_CALLS
 
 _SYSTEM = (
     "你是小红书内容质量的独立评审。只输出 JSON，不要 Markdown，不要解释。"
@@ -68,7 +71,14 @@ class JudgeScores(BaseModel):
 
 @dataclass
 class JudgeBudget:
-    """The approved call cap; ``max_calls`` defaults to the 199-call decision."""
+    """The approved call cap; ``max_calls`` may never exceed the 199 decision.
+
+    There is deliberately no opt-out: the guard the plan calls the enforcement
+    point would otherwise be optional, and a caller passing ``max_calls=10**9``
+    would silently spend past the approval.  One ``judge_content`` call consumes
+    one unit; provider-level retries/fallbacks inside a single ``ainvoke`` are not
+    observable here and are documented as outside this count.
+    """
 
     max_calls: int = DEFAULT_MAX_CALLS
     used: int = 0
@@ -76,6 +86,11 @@ class JudgeBudget:
     def __post_init__(self) -> None:
         if self.max_calls < 1:
             raise ValueError("max_calls must be at least 1")
+        if self.max_calls > APPROVED_MAX_CALLS:
+            raise ValueError(
+                f"max_calls {self.max_calls} exceeds the approved cap of {APPROVED_MAX_CALLS} "
+                "(the user approved fewer than 200 model calls)"
+            )
 
     @property
     def remaining(self) -> int:
@@ -146,13 +161,18 @@ async def judge_content(
     *,
     title: str,
     body: str,
+    budget: JudgeBudget,
     niche: str = "",
     visual_summary: str = "",
-    budget: JudgeBudget | None = None,
 ) -> JudgeScores:
-    """Ask *model* to score one piece of content; one call, charged up front."""
-    charge = budget if budget is not None else JudgeBudget()
-    charge.consume()
+    """Ask *model* to score one piece of content; one call, charged up front.
+
+    ``budget`` is required on purpose: an implicit per-call budget would make a
+    loop over N fixtures spend N calls while every individual call "stayed under
+    the cap".  Provider-level retries/fallbacks inside one ``ainvoke`` are not
+    counted; this guard counts verdicts, not HTTP requests.
+    """
+    budget.consume()
     response = await model.ainvoke(
         build_judge_prompt(title=title, body=body, niche=niche, visual_summary=visual_summary)
     )

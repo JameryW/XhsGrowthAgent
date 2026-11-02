@@ -34,11 +34,19 @@ class L3Plan:
     judge: JudgeKind = "llm"
     max_calls: int = APPROVED_MAX_CALLS
     phases: tuple[str, ...] = ("reviewing",)
+    # The workflow's own agent calls per sample.  Without this number the "<200"
+    # approval cannot be checked: judge verdicts are only one call each.
+    calls_per_sample: int = 0
 
     @property
     def judge_calls(self) -> int:
         """One verdict per sample: human review counts as one slot each."""
         return self.samples
+
+    @property
+    def estimated_total_calls(self) -> int:
+        """Worst-case estimate: the workflow plus one judge call per sample."""
+        return self.samples * (1 + self.calls_per_sample)
 
 
 @dataclass
@@ -66,6 +74,21 @@ def validate(plan: L3Plan, *, environ: dict[str, str] | None = None) -> Readines
     if plan.judge_calls > plan.max_calls:
         readiness.problems.append(
             f"{plan.judge_calls} judge verdicts would exceed max_calls {plan.max_calls}"
+        )
+    if plan.calls_per_sample < 1:
+        readiness.problems.append(
+            "workflow calls per sample unknown: pass --calls-per-sample "
+            "(the <200 approval covers total model calls, not judge verdicts only)"
+        )
+    elif plan.calls_per_sample > plan.max_calls:
+        readiness.problems.append(
+            f"calls_per_sample {plan.calls_per_sample} alone exceeds max_calls {plan.max_calls}"
+        )
+    elif plan.estimated_total_calls > plan.max_calls:
+        readiness.problems.append(
+            f"estimated total calls {plan.estimated_total_calls} "
+            f"({plan.samples} samples x (1 judge + {plan.calls_per_sample} workflow)) "
+            f"exceed max_calls {plan.max_calls}"
         )
     if plan.judge == "none":
         readiness.problems.append(
@@ -95,6 +118,8 @@ def plan_report(plan: L3Plan, readiness: Readiness) -> dict[str, Any]:
             "max_calls": plan.max_calls,
             "phases": list(plan.phases),
             "judge_calls": plan.judge_calls,
+            "calls_per_sample": plan.calls_per_sample,
+            "estimated_total_calls": plan.estimated_total_calls,
         },
         "ready": readiness.ready,
         "problems": list(readiness.problems),
@@ -115,6 +140,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--phases", default="reviewing", help="comma-separated workflow phases to sample"
     )
     parser.add_argument(
+        "--calls-per-sample",
+        type=int,
+        default=0,
+        help="worst-case workflow model calls per sample (required: the <200 cap covers totals)",
+    )
+    parser.add_argument(
         "--armed",
         action="store_true",
         help="exit 0 only when every precondition is present (gate mode)",
@@ -131,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         judge=options.judge,
         max_calls=options.max_calls,
         phases=tuple(part.strip() for part in options.phases.split(",") if part.strip()),
+        calls_per_sample=options.calls_per_sample,
     )
     readiness = validate(plan)
     if options.json:

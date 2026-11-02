@@ -107,10 +107,62 @@ def test_redaction_is_deterministic_and_pseudonyms_are_stable():
     assert fx.pseudonym("acct", "acc-1") != fx.pseudonym("acct", "acc-2")
 
 
-def test_include_messages_keeps_them_instead_of_dropping():
-    redacted, report = fx.redact_state(STATE, include_messages=True)
-    assert redacted["messages"] == [{"role": "assistant", "content": "raw model output"}]
-    assert report.dropped_keys == 0
+def test_messages_are_always_dropped_because_raw_output_can_quote_people():
+    redacted, report = fx.redact_state(STATE)
+    assert "messages" not in redacted
+    assert report.dropped_keys == 1
+
+
+def test_real_schema_identity_fields_do_not_reach_the_fixture(tmp_path: Path):
+    """Regression from the independent review: the denylist must cover the schema.
+
+    These are the fields the real state carries (PublishResult.workflow_thread_id,
+    BloggerProfile nickname/avatar_url, CompetitorPost.author, ShootingPlan
+    creator nickname/profile link, HumanFeedback.reviewer, post/note URLs).  A
+    fixture that keeps any of them is a leak even though the key was not in the
+    original eight-name list.
+    """
+    state = {
+        "publish_result": {"workflow_thread_id": "real-thread-id", "post_url": "https://x/1"},
+        "blogger_candidates": [
+            {"nickname": "真实博主", "avatar_url": "https://img/avatar.jpg", "note_id": "n-1"}
+        ],
+        "competitor_posts": [{"author": "达人真名", "post_id": "p-9"}],
+        "shooting_plan": {
+            "creator_nickname": "达人真名",
+            "profile_link": "https://www.xiaohongshu.com/user/profile/5f0real",
+            "shooting_angles": [{"reference_image": "C:/Users/alice/Pictures/ref.png"}],
+        },
+        "human_feedback": {"reviewer": "alice@example.com"},
+    }
+    fixture = fx.build_fixture(
+        source="sqlite", thread_id="thread-plain", checkpoint_id="cp-1", state=state
+    )
+    written = fixture.model_dump_json()
+
+    for leaked in (
+        "real-thread-id",
+        "真实博主",
+        "达人真名",
+        "alice@example.com",
+        "https://",
+        "C:/Users/alice",
+        "n-1",
+        "p-9",
+    ):
+        assert leaked not in written, leaked
+    assert fixture.state["publish_result"]["workflow_thread_id"].startswith("thread_")
+    assert fixture.state["blogger_candidates"][0]["nickname"].startswith("creator_")
+    assert fixture.state["human_feedback"]["reviewer"].startswith("user_")
+    assert fixture.state["shooting_plan"]["shooting_angles"][0]["reference_image"].startswith(
+        "image/"
+    )
+
+
+def test_an_absolute_path_hidden_in_an_unlabelled_key_is_blanked():
+    redacted, report = fx.redact_state({"some_blob": "D:\\secret\\dir\\file.png"})
+    assert redacted == {"some_blob": ""}
+    assert report.locations == 1
 
 
 def test_a_secret_shaped_key_never_leaks_through_a_container_value():
@@ -189,7 +241,6 @@ def test_write_corpus_manifest_hashes_match_and_contain_no_plaintext(tmp_path: P
         [fixture],
         out_dir=tmp_path,
         source_kind="sqlite",
-        include_messages=False,
         skipped={"duplicate_thread": 0},
     )
 
@@ -222,7 +273,6 @@ def test_extraction_reads_a_real_sqlite_checkpoint_store(tmp_path: Path):
             out_dir=out,
             limit=10,
             phases=None,
-            include_messages=False,
             dry_run=False,
         )
     )
@@ -244,7 +294,6 @@ def test_dry_run_reads_but_writes_nothing(tmp_path: Path):
             out_dir=out,
             limit=1,
             phases=None,
-            include_messages=False,
             dry_run=True,
         )
     )
@@ -262,7 +311,6 @@ def test_extraction_requires_exactly_one_source():
                 out_dir=Path("unused"),
                 limit=1,
                 phases=None,
-                include_messages=False,
                 dry_run=True,
             )
         )

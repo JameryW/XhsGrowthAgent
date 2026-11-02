@@ -134,4 +134,5 @@ def test_the_eval_gate_runs_when_a_local_corpus_exists(monkeypatch, tmp_path):
     status, detail = module.job_eval_gate()
     assert status == "PASS"
     assert "run_gate.py" in " ".join(calls[0])
+    assert "--fail-on-red" in calls[0]
     assert "E3 offline A/B gate" in detail

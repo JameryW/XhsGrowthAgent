@@ -71,11 +71,17 @@
 | 质量 | L3 rubric 或 LLM judge 双盲一致性 | ≥ 0.8（若启用 judge） |
 | 安全 | 审批门/账本语义不可变 | 结构测试 + claim 扫描，任一变化即 FAIL |
 
+> **实现状态（诚实标注）**：上表的 L1/L2 回放与阈值判定**尚未实现**——E3 目前做的是
+> corpus 完整性、policy 快照、variant diff 与既有 harness benchmarks（详见 §6.7），
+> 不涉及成本/时延/质量阈值；阈值计算属于 E4 live 实验（外部执行）的产出。
+
 ## 5. 分阶段落地（每阶段独立票）
 
 1. **E1 数据集框架**：checkpoint → fixture 抽取脚本、fixture 目录与 schema 校验（离线）。
 2. **E2 变体接口**：把上面四个决策点抽成可注入策略对象，默认实现 = 现行行为，**无行为变化**。
 3. **E3 A/B 门禁脚本**：跑 L1/L2 + 阈值判定，接入 `scripts/ci_local.py` 与 CI（可单独 job）。
+   *实际交付范围：corpus 完整性 / policy 快照 / variant diff / harness benchmarks 四项门禁；
+   L1/L2 回放与阈值判定尚未实现（见 §4 实现状态说明）。*
 4. **E4 L3 小样本**：需要真实账号/预算，单独审批后再做。
 
 ## 6. 需要拍板的问题（阻塞 E1/E2）
@@ -93,12 +99,12 @@
 
 | 能力 | 实现 |
 |---|---|
-| 真实来源 | `--sqlite-path`（默认 `.xhs/checkpoints.sqlite`）或 `--postgres-uri`；只读 `AsyncSqliteSaver`/`AsyncPostgresSaver` 的 `alist` |
-| 预算可配置 | `--limit N`（默认 100）、`--all`、`--phases a,b`、`--include-messages`、`--dry-run` |
-| 脱敏（唯一实现） | 标识符 → 稳定假名（`acct_/thread_/session_/user_`…）；cookie/token/api_key 等 → 空；`cdp_endpoint`/`chrome_profile_path` → 空；图片路径 → `image/NN.ext`；`messages` 默认丢弃；**内容字段保留**（质量评测需要） |
-| 语料格式 | `fixture-<id>.json`（`EvalFixture`）+ `manifest.json`（计数、每文件 sha256、跳过明细）；schema/版本号显式 |
-| 本地安全 | 输出目录默认 `.eval-fixtures/`（gitignore）；测试断言写入物中不含账号/线程/路径/密钥明文 |
-| 验证 | `tests/unit/scripts/test_eval_fixtures.py` 10 passed（含"真实 sqlite 往返"：用 AsyncSqliteSaver 播种子后跑完整抽取管线） |
+| 真实来源 | `--sqlite-path`（默认 `.xhs/checkpoints.sqlite`，以 `mode=ro` 只读打开；路径不存在直接报错，不再创建空库）或 `--postgres-uri`；两者都走 `alist`，并跳过非空 `checkpoint_ns` 的 subgraph checkpoint |
+| 预算可配置 | `--limit N`（默认 100）、`--all`、`--phases a,b`、`--dry-run` |
+| 脱敏（唯一实现） | 标识符 → 稳定假名（`acct_/thread_/session_/user_/creator_/post_`…，覆盖 `workflow_thread_id`、`reviewer`、`nickname`、`author`、`post_id/note_id` 等真实 schema 字段）；cookie/token/api_key 等 → 空（含容器值）；`*_url`/`*_link` 链接 → 空；`cdp_endpoint`/`chrome_profile_path` → 空；路径类键 → `image/NN.ext`；任意位置出现的绝对路径 → 空；`messages` **总是丢弃**；**内容字段保留**（质量评测需要） |
+| 语料格式 | `fixture-<id>.json`（`EvalFixture`）+ `manifest.json`（计数、每文件 sha256、跳过明细、schema/extractor/redaction 版本）；schema v2 |
+| 本地安全 | 输出目录默认 `.eval-fixtures/`（gitignore）；测试断言写入物中不含账号/线程/路径/密钥/链接明文 |
+| 验证 | `tests/unit/scripts/test_eval_fixtures.py` 14 passed（含"真实 sqlite 往返"、真实 schema 身份字段回归、绝对路径护栏） |
 
 用法：
 
@@ -137,20 +143,22 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
 
 | 检查 | 判定 |
 |---|---|
-| `corpus` | `.eval-fixtures/` 缺失 → **SKIP**（缺语料是缺口，不是通过，也不是红）；manifest schema 不符、文件 sha256 不匹配、fixture 的 `state_sha256` 重算不符 → 红 |
-| `policy` | 默认策略的 `describe()` 必须覆盖四个决策点、每个 TaskType 都有非空模型、快照可 JSON 序列化 |
-| `variant` | 仅在显式 `--variant module:factory` 时运行；输出**决策 diff**（差异是 A/B 的目的，本身不算红）；变体坏了（空路由/describe 抛错）才红 |
-| `benchmarks` | 真实跑 `harness_benchmarks.py`：F1/F2/F4 必须存在且通过，任何 FAIL 都红；F5/F7/F8 若仍 SKIP 则作为缺口列出（缺口后来实现成 PASS 也不算失败） |
+| `corpus` | `.eval-fixtures/` 缺失 → **SKIP**（缺语料是缺口，不是通过）；**空语料（0 fixture）→ 红**；manifest schema 或 `redaction_version` 不符 → 红；出现未列入 manifest 的 `fixture-*.json` → 红；文件 sha256 不匹配、fixture 的 `state_sha256` 重算不符 → 红 |
+| `policy` | `describe()` 必须覆盖四个决策点；每个 TaskType 的模型 id 必须是**非空字符串**；`context_budget` 为 None 或非负整数；`escalation` 必须是「任务 → 字符串列表」；`tool_limits` 条目形状与类型正确；快照可 JSON 序列化 |
+| `variant` | 仅在显式 `--variant module:factory` 时运行；输出**决策 diff**（差异是 A/B 的目的，不算红）；**决策完全相同 → 红**（多半是工厂返回了默认策略，属于接线错误）；变体坏了（空路由/describe 抛错）也红 |
+| `benchmarks` | 真实跑 `harness_benchmarks.py`：F1/F2/F4 必须**状态为 PASS**（仅仅存在不算），任何 FAIL 或未知状态红；F5/F7/F8 若仍 SKIP 则作为缺口列出（缺口后来实现成 PASS 不算失败） |
 
-- **门禁强度可配置**：默认 `mode=report`，红也返回 0；`--fail-on-red` 才返回 1。这对应
-  提案第 6 节问题 6 未拍板时的安全姿态——先出报告，不阻断合并。
+- **门禁强度可配置**：`mode` 反映是否阻断（默认 `report`，红也返回 0；`--fail-on-red` 时
+  `mode=block` 并返回 1），与是否传 `--variant` 无关。这对应提案第 6 节问题 6 未拍板时的
+  安全姿态——先出报告，不阻断合并。
 - **变体边界**：只能通过显式 `--variant` 注入，脚本从不改生产默认值（对应问题 5 的
   A/B-only 姿态，最终拍板后如需改默认再单独接线）。
-- 接入本地 runner：`python scripts/ci_local.py --only eval-gate`；无 `.eval-fixtures/` 时
-  该 job 显式 SKIP（CI 无法提供本地语料，故不进 GitHub workflow）。
-- 测试：`tests/unit/scripts/test_eval_gate.py` 13 passed（含"红但不阻断"与 `--fail-on-red`
-  两个 CLI 姿态、篡改 fixture 必红、benchmark FAIL 必红、缺口实现成 PASS 不算失败）；
-  `tests/unit/scripts/test_ci_local.py` 补 2 个用例（无语料 SKIP / 有语料运行）。
+- 接入本地 runner：`python scripts/ci_local.py --only eval-gate`；该 job 在无 `.eval-fixtures/`
+  时显式 SKIP，有语料时以 `--fail-on-red` 运行（CI 无法提供本地语料，故不进 GitHub workflow）。
+- 测试：`tests/unit/scripts/test_eval_gate.py` 23 passed（覆盖面：空语料/旧脱敏版本/未列出
+  文件/篡改 hash 必红、policy 类型检查、F1 SKIP 必红、决策相同的 variant 必红、
+  report/block 两个 CLI 姿态、真实 variant 注入）；
+  `tests/unit/scripts/test_ci_local.py` 覆盖无语料 SKIP / 有语料带 `--fail-on-red` 运行。
 
 ## 6.8 变体示例（票 5cg）：证明 `--variant` 注入链路可用
 
@@ -178,12 +186,12 @@ python scripts/eval/run_gate.py --skip-benchmarks \
 | `JudgeScores` | 五维 0-10 整数（copywriting/visual/compliance/reach/audience，沿用 evaluator 维度词汇）+ rationale + bias_warning；`overall` 为均值 |
 | `build_judge_prompt` | 确定性消息：system 规定只输出 JSON、禁止复述原文；human 携带 niche/title/body/visual_summary |
 | `parse_judge_output` | 容忍 ```json 围栏与前后散文；缺维度/超范围/非 JSON 一律 `JudgeOutputError`（带输出预览） |
-| `JudgeBudget` | 默认 `max_calls=199`（"<200" 的直译）；`consume()` **先扣费后调用**——模型崩了也不会让账目乐观；超限抛 `JudgeBudgetExceededError` |
-| `judge_content(model, ...)` | 一次判定 = 一次调用；模型返回非文本/非 JSON 时该次调用仍计入预算 |
+| `JudgeBudget` | 默认 `max_calls=199`（"<200" 的直译）；**上限不可绕过**——传入 >199 直接 `ValueError`；`consume()` **先扣费后调用**——模型崩了也不会让账目乐观；超限抛 `JudgeBudgetExceededError` |
+| `judge_content(model, ..., budget=...)` | `budget` **必填**（隐式预算会让循环 N 次各"独立合规"）；一次判定 = 一次调用；模型返回非文本/非 JSON 时该次调用仍计入预算；provider 内部重试/兜底不可见，不计入此护栏（已在 docstring 写明） |
 
-测试 `tests/unit/scripts/test_eval_judge.py` **11 passed**（假模型，无网络）：
+测试 `tests/unit/scripts/test_eval_judge.py` **12 passed**（假模型，无网络）：
 提示词确定性、围栏/散文解析、缺维度与超范围拒绝、199 上限与先扣费语义、
-预算耗尽时**不调用模型**、模型给出坏输出仍扣一次。
+预算耗尽时**不调用模型**、模型给出坏输出仍扣一次、**>199 的预算被拒绝**。
 
 **仍 external-only 的部分**（如实标注，不在本仓库伪造）：真实 workflow 的 live 调用、
 测试账号的登录态/凭据、平台验收窗口。`judge_content` 接受任意 chat model，接线到部署侧
@@ -196,7 +204,8 @@ python scripts/eval/run_gate.py --skip-benchmarks \
 | 规则 | 来源 |
 |---|---|
 | `1 <= samples <= 50` | 单轮样本上限，避免失控实验 |
-| `judge_calls = samples <= max_calls` | 每样本一次裁判 |
+| `calls_per_sample >= 1` 必填 | 工作流自身的模型调用必须计入预算，不能只数裁判 |
+| `estimated_total_calls = samples x (1 judge + calls_per_sample) <= max_calls` | 「<200 次模型调用」的**总量**口径 |
 | `max_calls <= 199` | 用户拍板「<200 次模型调用」的直译 |
 | `account` 必填 | 拍板「测试账号」 |
 | `judge != none` | 拍板「决策正确性 + 内容质量都要」 |
@@ -205,7 +214,9 @@ python scripts/eval/run_gate.py --skip-benchmarks \
 - `--armed` 不满足时 exit 1，可当脚本门禁；`--json` 输出计划（不含凭据）供留档；
 - 门闸**不会**启动工作流——live 步骤属于部署环境，步骤与停止条件写在
   `docs/adaptive-harness-runbook.md`（抽语料 → E3 门禁 → plan 校验 → 测试账号跑 N 次 →
-  裁判打分 → 记录/停止条件）。
+  裁判打分 → 记录/停止条件）；
+- 测试：`tests/unit/scripts/test_eval_plan_l3.py` 13 passed（含总量预算、缺失调用估算、
+  armed/json 两个 CLI 姿态）。
 
 ## 7. 明确不做
 

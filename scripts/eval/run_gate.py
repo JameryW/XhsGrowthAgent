@@ -44,6 +44,7 @@ if str(_EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(_EVAL_DIR))
 
 from fixtures import (  # noqa: E402  (sibling module, loaded after sys.path setup)
+    REDACTION_VERSION,
     SCHEMA_VERSION,
     EvalFixture,
     FixtureManifest,
@@ -133,7 +134,14 @@ def run_harness_benchmarks() -> list[dict[str, Any]]:
 
 
 def check_corpus(corpus_dir: Path) -> CheckResult:
-    """Manifest + per-file hash + per-fixture state hash, or a documented skip."""
+    """Manifest + per-file hash + per-fixture state hash, or a documented skip.
+
+    An **empty** corpus is red, not a pass: a green gate over zero evidence is the
+    failure mode this check exists to prevent (an empty local database produces a
+    valid-looking zero-fixture manifest).  A *missing* corpus stays a skip with a
+    reason, because "you have not extracted anything yet" is genuinely different
+    from "your extractor produced an empty dataset".
+    """
     if not corpus_dir.is_dir():
         return CheckResult(
             name="corpus",
@@ -156,9 +164,24 @@ def check_corpus(corpus_dir: Path) -> CheckResult:
             "red",
             f"manifest schema {manifest.schema_version!r} != extractor schema {SCHEMA_VERSION!r}",
         )
+    if manifest.redaction_version != REDACTION_VERSION:
+        return CheckResult(
+            "corpus",
+            "red",
+            f"corpus was built by redaction {manifest.redaction_version!r}, "
+            f"current is {REDACTION_VERSION!r}: re-extract it",
+        )
     problems: list[str] = []
+    if manifest.total == 0:
+        problems.append("corpus is empty (0 fixtures): nothing to gate on")
     if manifest.total != len(manifest.fixtures):
         problems.append(f"manifest.total {manifest.total} != {len(manifest.fixtures)} entries")
+    listed = {entry.file for entry in manifest.fixtures}
+    unlisted = sorted(
+        path.name for path in corpus_dir.glob("fixture-*.json") if path.name not in listed
+    )
+    if unlisted:
+        problems.append(f"unlisted fixture files: {', '.join(unlisted[:5])}")
     for entry in manifest.fixtures:
         path = corpus_dir / entry.file
         if not path.is_file():
@@ -181,7 +204,7 @@ def check_corpus(corpus_dir: Path) -> CheckResult:
 
 
 def check_policy(policy: Any, *, label: str = "policy") -> tuple[CheckResult, dict[str, Any]]:
-    """A snapshot must cover all four decisions and answer every task."""
+    """A snapshot must cover all four decisions and answer every task, with types."""
     from backend.config.models import TaskType
     from backend.harness.policy import describe
 
@@ -195,9 +218,43 @@ def check_policy(policy: Any, *, label: str = "policy") -> tuple[CheckResult, di
             CheckResult(label, "red", f"snapshot keys {sorted(snapshot)} != {sorted(expected)}"),
             snapshot,
         )
-    empty = [task.value for task in TaskType if not snapshot["models"].get(task.value)]
-    if empty:
-        return CheckResult(label, "red", f"no model routed for: {', '.join(empty)}"), snapshot
+    problems: list[str] = []
+    models = snapshot.get("models")
+    if not isinstance(models, dict):
+        problems.append("models is not a mapping")
+    else:
+        for task in TaskType:
+            value = models.get(task.value)
+            if not isinstance(value, str) or not value.strip():
+                problems.append(f"no usable model id for {task.value}")
+    budget = snapshot.get("context_budget")
+    if budget is not None and (
+        not isinstance(budget, int) or isinstance(budget, bool) or budget < 0
+    ):
+        problems.append("context_budget must be None or a non-negative int")
+    escalation = snapshot.get("escalation")
+    if not isinstance(escalation, dict) or any(
+        not isinstance(targets, list) or any(not isinstance(item, str) for item in targets)
+        for targets in escalation.values()
+    ):
+        problems.append("escalation must map tasks to lists of model ids")
+    limits = snapshot.get("tool_limits")
+    if not isinstance(limits, dict) or any(
+        not isinstance(entry, dict)
+        or not isinstance(entry.get("capability"), str)
+        or (
+            entry.get("max_concurrency") is not None
+            and not isinstance(entry.get("max_concurrency"), int)
+        )
+        or (
+            entry.get("timeout_s") is not None
+            and (not isinstance(entry.get("timeout_s"), (int, float)) or entry["timeout_s"] <= 0)
+        )
+        for entry in limits.values()
+    ):
+        problems.append("tool_limits entries have the wrong shape")
+    if problems:
+        return CheckResult(label, "red", "; ".join(problems[:5])), snapshot
     try:
         json.dumps(snapshot)
     except TypeError as exc:
@@ -215,20 +272,27 @@ def diff_snapshots(baseline: dict[str, Any], variant: dict[str, Any]) -> dict[st
 
 
 def check_benchmarks(results: list[dict[str, Any]]) -> CheckResult:
-    """F1/F2/F4 must pass and nothing may fail; gaps stay visible as SKIPs.
+    """F1/F2/F4 must be reported as PASS; nothing may fail; unknown status is red.
 
-    A gap becoming a real check is not a failure — F5/F7/F8 may be implemented
-    later, and their status is then whatever that implementation reports.  What
-    this check refuses is a *fail* (including inside a previously skipped gap)
-    and a suite that silently stopped reporting a required check.
+    Presence alone is not enough: a required check reported as SKIP/ERROR would
+    otherwise read as "pass" (the old code only rejected FAIL).  Gaps (F5/F7/F8)
+    may stay SKIP or become PASS later; a FAIL anywhere is red.
     """
     by_id = {str(item.get("id")): str(item.get("status", "")) for item in results}
     missing = [check for check in _REQUIRED_BENCHMARKS if check not in by_id]
+    not_passing = sorted(check for check in _REQUIRED_BENCHMARKS if by_id.get(check) != "PASS")
+    unknown = sorted(
+        check for check, status in by_id.items() if status not in {"PASS", "FAIL", "SKIP"}
+    )
     failed = sorted(check for check, status in by_id.items() if status == "FAIL")
     gaps = [check for check in _SKIPPED_GAPS if by_id.get(check) == "SKIP"]
     problems: list[str] = []
     if missing:
         problems.append(f"missing checks: {', '.join(missing)}")
+    if not_passing:
+        problems.append(f"required checks not PASS: {', '.join(not_passing)}")
+    if unknown:
+        problems.append(f"unknown statuses: {', '.join(unknown)}")
     if failed:
         problems.append(f"failing checks: {', '.join(failed)}")
     if problems:
@@ -262,12 +326,14 @@ def run_gate(
     variant: Any | None = None,
     benchmark_runner: BenchmarkRunner | None = None,
     skip_benchmarks: bool = False,
+    fail_on_red: bool = False,
 ) -> GateReport:
-    """Run every offline check; the caller decides whether red blocks (§6 open)."""
+    """Run every offline check; ``fail_on_red`` decides whether red is a gate."""
     from backend.harness.policy import default_policy
 
-    mode = "gate" if variant is not None else "report"
-    report = GateReport(mode=mode, generated_at=datetime.now(UTC).isoformat())
+    report = GateReport(
+        mode="block" if fail_on_red else "report", generated_at=datetime.now(UTC).isoformat()
+    )
     report.checks.append(check_corpus(corpus_dir))
 
     policy_result, snapshot = check_policy(default_policy(), label="policy")
@@ -278,14 +344,26 @@ def run_gate(
         variant_result, variant_snapshot = check_policy(variant, label="variant")
         report.variant_snapshot = variant_snapshot
         report.diff = diff_snapshots(snapshot, variant_snapshot)
-        detail = (
-            f"decisions changed: {', '.join(sorted(report.diff))}"
-            if report.diff
-            else "variant is decision-identical to the baseline"
-        )
-        report.checks.append(
-            CheckResult("variant", variant_result.status, f"{variant_result.detail}; {detail}")
-        )
+        if variant_result.status == "pass" and not report.diff:
+            # A variant that changes nothing is indistinguishable from a mistyped
+            # module path whose factory quietly returned the default policy.
+            report.checks.append(
+                CheckResult(
+                    "variant",
+                    "red",
+                    "variant is decision-identical to the baseline; "
+                    "check that --variant actually produced a different policy",
+                )
+            )
+        else:
+            detail = (
+                f"decisions changed: {', '.join(sorted(report.diff))}"
+                if report.diff
+                else "variant could not be described"
+            )
+            report.checks.append(
+                CheckResult("variant", variant_result.status, f"{variant_result.detail}; {detail}")
+            )
 
     if skip_benchmarks:
         report.checks.append(
@@ -321,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         corpus_dir=options.corpus,
         variant=variant,
         skip_benchmarks=options.skip_benchmarks,
+        fail_on_red=options.fail_on_red,
     )
     payload = report.to_dict()
     if options.json is not None:

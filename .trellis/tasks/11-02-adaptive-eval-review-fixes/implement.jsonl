@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the E1/E3/E4 contracts the review checked against the code"}
+{"file": "backend/state/substates.py", "reason": "the real state schema whose identity fields had to join the redaction table"}

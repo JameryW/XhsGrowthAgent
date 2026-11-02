@@ -1,14 +1,17 @@
 """P3/E3: the offline A/B gate — corpus integrity, policy snapshot, benchmarks.
 
-The gate is report-only by default because two questions are still open in the
-plan (§6): whether a variant may replace a production default, and whether a red
-should block a merge.  These tests pin both postures: ``main`` returns 0 on a red
-unless ``--fail-on-red`` is passed, variants are only ever supplied explicitly,
-and a missing corpus is a SKIP with a reason rather than a pass.
+Two postures are pinned here because the plan left them as decisions: the gate is
+report-only by default (``--fail-on-red`` opts into blocking), and a variant is
+only ever supplied explicitly.  Everything else is the integrity contract the
+independent review asked for: an empty corpus is red, a corpus built by an older
+redaction is red, unlisted fixture files are red, required benchmark checks must
+actually say PASS, and a "variant" that changes nothing is treated as a mis-wired
+injection rather than a pass.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -39,7 +42,6 @@ def _corpus(tmp_path: Path) -> Path:
         [fixture],
         out_dir=out,
         source_kind="sqlite",
-        include_messages=False,
         skipped={},
         generated_at="2026-01-01T00:00:00+00:00",
     )
@@ -68,6 +70,21 @@ def test_a_valid_corpus_passes(tmp_path: Path):
     assert result.status == "pass", result.detail
 
 
+def test_an_empty_corpus_is_red_not_a_pass(tmp_path: Path):
+    """A green gate over zero evidence is the failure this check exists for."""
+    out = tmp_path / "corpus"
+    ex.write_corpus(
+        [],
+        out_dir=out,
+        source_kind="sqlite",
+        skipped={},
+        generated_at="2026-01-01T00:00:00+00:00",
+    )
+    result = gate.check_corpus(out)
+    assert result.status == "red"
+    assert "empty" in result.detail
+
+
 def test_a_tampered_fixture_is_red(tmp_path: Path):
     corpus = _corpus(tmp_path)
     fixture_file = next(corpus.glob("fixture-*.json"))
@@ -81,12 +98,32 @@ def test_a_manifest_from_another_schema_is_red(tmp_path: Path):
     corpus = _corpus(tmp_path)
     manifest_path = corpus / "manifest.json"
     manifest = manifest_path.read_text(encoding="utf-8").replace(
-        '"schema_version": "1"', '"schema_version": "0"'
+        '"schema_version": "2"', '"schema_version": "1"'
     )
     manifest_path.write_text(manifest, encoding="utf-8")
     result = gate.check_corpus(corpus)
     assert result.status == "red"
     assert "schema" in result.detail
+
+
+def test_a_corpus_built_by_an_older_redaction_is_red(tmp_path: Path):
+    corpus = _corpus(tmp_path)
+    manifest_path = corpus / "manifest.json"
+    manifest = manifest_path.read_text(encoding="utf-8").replace(
+        '"redaction_version": "2"', '"redaction_version": "1"'
+    )
+    manifest_path.write_text(manifest, encoding="utf-8")
+    result = gate.check_corpus(corpus)
+    assert result.status == "red"
+    assert "redaction" in result.detail
+
+
+def test_an_unlisted_fixture_file_is_red(tmp_path: Path):
+    corpus = _corpus(tmp_path)
+    (corpus / "fixture-rogue.json").write_text("{}", encoding="utf-8")
+    result = gate.check_corpus(corpus)
+    assert result.status == "red"
+    assert "unlisted" in result.detail
 
 
 def test_the_default_policy_snapshot_covers_all_four_decisions():
@@ -106,7 +143,30 @@ def test_a_variant_that_answers_nothing_is_red_not_informative():
 
     result, _ = gate.check_policy(_Broken(), label="variant")
     assert result.status == "red"
-    assert "no model routed" in result.detail
+    assert "no usable model id" in result.detail
+
+
+def test_a_whitespace_model_id_is_not_an_answer():
+    from backend.harness.policy import DefaultHarnessPolicy
+
+    class _Blank(DefaultHarnessPolicy):
+        def route_model(self, task_type):  # noqa: ANN001
+            return " "
+
+    result, _ = gate.check_policy(_Blank(), label="variant")
+    assert result.status == "red"
+
+
+def test_a_negative_context_budget_is_not_an_answer():
+    from backend.harness.policy import DefaultHarnessPolicy
+
+    class _Negative(DefaultHarnessPolicy):
+        def context_budget(self, *, phase: str = "") -> int | None:
+            return -1
+
+    result, _ = gate.check_policy(_Negative(), label="variant")
+    assert result.status == "red"
+    assert "context_budget" in result.detail
 
 
 def test_diff_names_only_the_decisions_that_moved():
@@ -123,15 +183,22 @@ def test_diff_names_only_the_decisions_that_moved():
     assert gate.diff_snapshots(baseline, baseline) == {}
 
 
-def test_benchmarks_require_f1_f2_f4_and_reject_any_fail():
+def test_benchmarks_require_pass_status_not_merely_presence():
     assert gate.check_benchmarks(_passing_benchmarks()).status == "pass"
 
     failing = _passing_benchmarks()
     failing[0]["status"] = "FAIL"
     assert gate.check_benchmarks(failing).status == "red"
 
+    skipped_required = _passing_benchmarks()
+    skipped_required[0]["status"] = "SKIP"
+    assert gate.check_benchmarks(skipped_required).status == "red"
+
     missing = [item for item in _passing_benchmarks() if item["id"] != "F2"]
     assert gate.check_benchmarks(missing).status == "red"
+
+    unknown = _passing_benchmarks() + [{"id": "F9", "status": "ERROR"}]
+    assert gate.check_benchmarks(unknown).status == "red"
 
 
 def test_a_gap_that_got_implemented_is_not_a_failure():
@@ -165,7 +232,29 @@ def test_variant_diff_is_informational_not_a_red(tmp_path: Path):
     )
     assert report.red is False
     assert "models" in report.diff
-    assert report.mode == "gate"
+    assert report.mode == "report"
+
+
+def test_a_decision_identical_variant_is_red(tmp_path: Path):
+    from backend.harness.policy import DefaultHarnessPolicy
+
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        variant=DefaultHarnessPolicy(),
+        benchmark_runner=_passing_benchmarks,
+    )
+    variant = next(check for check in report.checks if check.name == "variant")
+    assert variant.status == "red"
+    assert "decision-identical" in variant.detail
+
+
+def test_mode_follows_the_blocking_decision_not_the_variant(tmp_path: Path):
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        benchmark_runner=_passing_benchmarks,
+        fail_on_red=True,
+    )
+    assert report.mode == "block"
 
 
 def test_the_cli_is_report_only_by_default_and_can_be_told_to_block(tmp_path: Path):
@@ -176,13 +265,6 @@ def test_the_cli_is_report_only_by_default_and_can_be_told_to_block(tmp_path: Pa
     fixture_file.write_text(fixture_file.read_text(encoding="utf-8") + " ", encoding="utf-8")
     assert gate.main(["--corpus", str(corpus), "--skip-benchmarks"]) == 0
     assert gate.main(["--corpus", str(corpus), "--skip-benchmarks", "--fail-on-red"]) == 1
-
-
-def test_load_variant_rejects_a_spec_that_is_not_a_policy():
-    with pytest.raises(ValueError):
-        gate.load_variant("")
-    with pytest.raises(TypeError):
-        gate.load_variant("json:loads")
 
 
 def test_a_real_variant_moves_only_model_routing():
@@ -215,4 +297,16 @@ def test_the_cli_injects_a_variant_module_by_name(tmp_path: Path, capsys):
     assert code == 0
     output = capsys.readouterr().out
     assert "decisions changed: models" in output
-    assert "mode=gate red=False" in output
+    assert "mode=report red=False" in output
+
+
+def test_the_report_is_json_able(tmp_path: Path):
+    report = gate.run_gate(corpus_dir=_corpus(tmp_path), benchmark_runner=_passing_benchmarks)
+    json.dumps(report.to_dict())
+
+
+def test_load_variant_rejects_a_spec_that_is_not_a_policy():
+    with pytest.raises(ValueError):
+        gate.load_variant("")
+    with pytest.raises(TypeError):
+        gate.load_variant("json:loads")

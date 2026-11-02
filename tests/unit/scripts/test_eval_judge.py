@@ -130,3 +130,12 @@ def test_a_model_that_breaks_the_shape_still_spends_its_call():
         asyncio.run(judge.judge_content(model, title="t", body="b", budget=budget))
     assert model.calls == 1
     assert budget.used == 1
+
+
+def test_a_budget_cap_above_the_approval_is_refused():
+    """No caller may quietly raise the 199-call approval by passing a big number."""
+    with pytest.raises(ValueError):
+        judge.JudgeBudget(max_calls=200)
+    with pytest.raises(ValueError):
+        judge.JudgeBudget(max_calls=10**9)
+    assert judge.JudgeBudget(max_calls=199).max_calls == 199
