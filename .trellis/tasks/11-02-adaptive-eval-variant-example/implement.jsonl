@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the E3 --variant contract and the open E4 items this ticket documents"}
+{"file": "backend/harness/policy.py", "reason": "the policy surface the sample variant subclasses"}

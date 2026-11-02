@@ -1,7 +1,8 @@
-# Adaptive Harness 评测集方案（提案 → 已拍板，E1/E2 已交付）
+# Adaptive Harness 评测集方案（提案 → 已拍板，E1/E2/E3 已交付）
 
-> **状态：决策已拍板（2026-11-01）；E1（语料抽取）与 E2（策略接口）已交付，
-> E2 只提供可注入接口、未接线、默认行为不变；E3/E4 未开始。**
+> **状态：决策已拍板（2026-11-01）；E1（语料抽取）、E2（策略接口）、E3（离线 A/B 门禁）
+> 已交付。E2/E3 未接线生产默认；E4（小样本端到端 L3）未开始，阻塞在账号/预算/judge
+> 三个待拍板项。**
 > 关联：`docs/agent-os-upgrade-2026q4.md` 路线图 10（P3 = Adaptive Harness + A/B 门禁）、
 > §8 Harness Benchmarks、§9 剩余工作清单。
 
@@ -147,6 +148,25 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
 - 测试：`tests/unit/scripts/test_eval_gate.py` 13 passed（含"红但不阻断"与 `--fail-on-red`
   两个 CLI 姿态、篡改 fixture 必红、benchmark FAIL 必红、缺口实现成 PASS 不算失败）；
   `tests/unit/scripts/test_ci_local.py` 补 2 个用例（无语料 SKIP / 有语料运行）。
+
+## 6.8 变体示例（票 5cg）：证明 `--variant` 注入链路可用
+
+`scripts/eval/variants/route_lighter.py` 是一个**只改一个决策**的示例变体：
+`content_analysis` 从 MiMo 路由切到较轻的 `deepseek-v4-flash`（与 POLISH/MOCK_GEN 同类）。
+它不被生产代码导入，因此不可能改默认。用法：
+
+```bash
+python scripts/eval/run_gate.py --skip-benchmarks \
+    --variant scripts.eval.variants.route_lighter:make_policy
+```
+
+输出 `[PASS] variant: ...; decisions changed: models`，diff 只含 `models` 一类——这钉住
+了 E3 的 diff 语义（只报告变化，不把差异当红）。测试新增 2 个用例（模块加载 + CLI 注入）。
+
+**E4 仍缺的三件事**（需要拍板，代码侧未预置）：
+1. 质量评分口径：允许 LLM-as-judge 吗？是否需要双盲人工复核？
+2. 预算：每轮可接受的模型调用次数/金额（E1/E3 的 `--limit` 只能限制样本量）。
+3. 账号：L3 需要真实账号的显式授权与沙箱外的运行窗口。
 
 ## 7. 明确不做
 

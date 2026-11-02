@@ -400,9 +400,11 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 |---|---|---|
 | P4 分支 B：入口直落 `execute_action` 回执路径 | 已完成 | 2026-11-01 拍板并落地 B1–B4（票 5bn/5bo/5br/5bq/5bs）及加固（5bu/5by）：receipt attempt 级、intent 先于持久效果、executor 接受 caller-supplied request、有 intent 的发布经 `execute_action` 执行且只保留主链一个账本 claim；claim 表新增两条并带阳性对照。**已推送 origin/main 并经 CI 验证**：run 41306901460 / 41307361407 的 10 个作业全部 success（含 mypy、py3.11/3.12 的 Postgres parity、frontend、OMP） |
 | 路线图 8：多 Agent 并行 / workspace 冲突（F5） | 裁定 | 本文档裁定「先不建」，F5 保持 SKIP |
-| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 依赖 | 需评测集/A-B 前提先行；未启动 |
+| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 进行中 | 评测集先行：E1 真实 checkpoint 抽取+脱敏（票 5cd）、E2 HarnessPolicy 接口（5ce）、E3 离线 A/B 门禁 report-only + `--fail-on-red`（5cf）、变体示例（5cg）已交付；E4 小样本端到端需账号/预算/judge 拍板 |
 | 私信 DOM 真机读法、笔记详情页深查/CDP | external-only | 需真实账号与平台环境，沙箱内不可验证 |
 | frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地沙箱/凭据限制，非仓库缺陷 |
 
 **结论**：仓库内可本地执行、可验证的剩余任务已清零（分支 B 已于 2026-11-01 完成并推送，
-票 5bn–5by；CI 10 作业全绿）；其余为已裁定的延后项（路线图 8/10）与外部/环境依赖项。
+票 5bn–5by；CI 10 作业全绿）。路线图 10 已从「未启动」推进到「进行中」：E1–E3 与变体示例
+落地（票 5cd/5ce/5cf/5cg），E4 端到端小样本仍待账号/预算/judge 拍板；其余为已裁定延后项
+（路线图 8）与外部/环境依赖项。

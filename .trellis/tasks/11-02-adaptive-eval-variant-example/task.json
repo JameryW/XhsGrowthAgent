@@ -1,0 +1,31 @@
+{
+  "id": "adaptive-eval-variant-example",
+  "name": "adaptive-eval-variant-example",
+  "title": "feat(eval): 变体示例证明 --variant 注入链路 + P3 文档进度同步（票 5cg）",
+  "description": "新增 scripts/eval/variants/route_lighter.py：只改一个决策（content_analysis → deepseek-v4-flash）的示例变体，不被生产导入；用于证明 E3 的 --variant module:factory 注入与决策 diff 端到端可用。补 2 个用例（模块加载后 diff 只含 models、CLI 注入真实模块）。文档同步：adaptive-harness-eval-plan 头状态改为 E1/E2/E3 已交付 + 新增 §6.8（变体示例与 E4 三个待拍板项）；agent-os §9 路线图 10 从『依赖/未启动』改为『进行中』并列出 5cd/5ce/5cf/5cg 与 E4 阻塞项；结论段同步。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/eval/variants/route_lighter.py",
+    "tests/unit/scripts/test_eval_gate.py",
+    "docs/adaptive-harness-eval-plan.md",
+    "docs/agent-os-upgrade-2026q4.md"
+  ],
+  "notes": "DONE 2026-11-02. E3 shipped the --variant module:factory path, but no real variant existed to load, so the only proof was an inline class inside a unit test. This ticket adds scripts/eval/variants/route_lighter.py: a sample variant that changes exactly one decision (content_analysis routes to the lighter deepseek-v4-flash instead of MiMo, the same way POLISH/MOCK_GEN already do) and is never imported by production code, so it cannot change a default. Running `python scripts/eval/run_gate.py --skip-benchmarks --variant scripts.eval.variants.route_lighter:make_policy` now proves the whole chain end to end: injection by name, policy/variant snapshots, and a diff whose only category is models while the gate stays red=False. Two tests pin it: the loaded variant differs from the baseline only in models (with content_analysis asserted specifically), and the CLI injects the real module and prints 'decisions changed: models' / 'mode=gate red=False'. Documentation truth was also stale: the plan header still said only E1/E2 delivered and the architecture doc still called roadmap item 10 'dependency / not started', although E1 (5cd), E2 (5ce) and E3 (5cf) were shipped; the header now lists E1/E2/E3, a new §6.8 documents the variant example and the three still-open E4 items (LLM-judge allowance, budget, account authorisation), and §9's roadmap row plus the conclusion now say 'in progress' with the ticket ids. Verification: test_eval_gate.py 15 passed; docs/claim gates and full suite in the journal; ruff green.",
+  "meta": {}
+}

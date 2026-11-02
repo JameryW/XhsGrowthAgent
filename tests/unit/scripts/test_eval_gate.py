@@ -183,3 +183,36 @@ def test_load_variant_rejects_a_spec_that_is_not_a_policy():
         gate.load_variant("")
     with pytest.raises(TypeError):
         gate.load_variant("json:loads")
+
+
+def test_a_real_variant_moves_only_model_routing():
+    """The shipped example changes one decision; the diff must say exactly that."""
+    from backend.config.models import TaskType
+    from backend.harness.policy import DefaultHarnessPolicy
+
+    policy = gate.load_variant("scripts.eval.variants.route_lighter:make_policy")
+    baseline = gate.check_policy(DefaultHarnessPolicy())[1]
+    variant = gate.check_policy(policy)[1]
+
+    diff = gate.diff_snapshots(baseline, variant)
+    assert set(diff) == {"models"}
+    key = TaskType.CONTENT_ANALYSIS.value
+    assert diff["models"]["variant"][key] == "deepseek-v4-flash"
+    assert diff["models"]["baseline"][key] != "deepseek-v4-flash"
+
+
+def test_the_cli_injects_a_variant_module_by_name(tmp_path: Path, capsys):
+    corpus = _corpus(tmp_path)
+    code = gate.main(
+        [
+            "--corpus",
+            str(corpus),
+            "--skip-benchmarks",
+            "--variant",
+            "scripts.eval.variants.route_lighter:make_policy",
+        ]
+    )
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "decisions changed: models" in output
+    assert "mode=gate red=False" in output
