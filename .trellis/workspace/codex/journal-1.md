@@ -1931,3 +1931,36 @@ ci_local.py 的 tests 作业现在镜像 CI 的 parity 复查：全量通过后�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 58: P3/E3：离线 A/B 门禁（默认只报告）（票 5cf）
+
+**Date**: 2026-11-02
+**Task**: P3/E3：离线 A/B 门禁（默认只报告）（票 5cf）
+**Branch**: `main`
+
+### Summary
+
+落地 scripts/eval/run_gate.py：corpus 完整性（manifest/sha256/state_sha256；缺语料 SKIP）、policy 快照四决策、variant 显式注入并输出决策 diff（差异不算红、坏变体才红）、benchmarks 真跑 harness_benchmarks（F1/F2/F4 必须在且无 FAIL，F5/F7/F8 缺口可见）。门禁强度可配置：默认 report 红也返回 0，--fail-on-red 才阻断；变体不改生产默认（对应提案问题 5/6 未拍板）。接入 ci_local 新 job eval-gate（无语料 SKIP），CLAUDE.md/.gitignore/docs §6.7 同步。13+2 新用例；docs 门禁 133 passed；全量 4860 passed / 14 skipped / 0 failed / 0 errors；ruff 绿。票 5cf 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6b24f802` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
