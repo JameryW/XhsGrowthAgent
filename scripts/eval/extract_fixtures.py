@@ -33,7 +33,8 @@ import os
 import sqlite3
 import sys
 from collections.abc import AsyncIterator, Iterable, Mapping
-from dataclasses import dataclass
+from contextlib import asynccontextmanager, nullcontext
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -41,6 +42,9 @@ from typing import Any, Literal
 _EVAL_DIR = Path(__file__).resolve().parent
 if str(_EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(_EVAL_DIR))
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from fixtures import (  # noqa: E402  (sibling module, loaded after sys.path setup)
     EXTRACTOR_VERSION,
@@ -117,6 +121,52 @@ async def iter_postgres(uri: str) -> AsyncIterator[CheckpointRecord]:
             yield record
 
 
+@asynccontextmanager
+async def _open_store(uri: str) -> AsyncIterator[Any]:
+    """Open the Artifact Store (the same ``BaseStore`` the graph nodes write into)."""
+    from langgraph.store.postgres.aio import AsyncPostgresStore
+
+    async with AsyncPostgresStore.from_conn_string(uri) as store:
+        yield store
+
+
+async def resolve_records(
+    records: Iterable[CheckpointRecord], store: Any | None
+) -> tuple[list[CheckpointRecord], int]:
+    """Replace ref'd fields with their stored bodies; count what could not resolve.
+
+    Every graph node is wrapped by ``artifact_seam``, so real checkpoints store
+    ``copy_content`` / ``visual_plan`` / ``draft_content`` as refs in the Artifact
+    Store instead of inline values.  An extractor that only reads
+    ``channel_values`` would therefore write fixtures with **no content** — which
+    is why a record that still has refs after resolution is skipped and counted
+    (``unresolved_artifacts``) rather than silently producing an empty corpus.
+    """
+    from backend.state.artifacts import refs_of, resolve_state
+
+    resolved: list[CheckpointRecord] = []
+    unresolved = 0
+    for record in records:
+        refs = refs_of(record.state)
+        if not refs:
+            resolved.append(record)
+            continue
+        if store is None:
+            unresolved += 1
+            continue
+        values = await resolve_state(store, record.thread_id, record.state)
+        # ``resolve_state`` keeps the ``artifacts`` mapping; what matters is
+        # whether every ref'd *field* got a body.  A ref whose body is missing
+        # from the store leaves the field absent, and such a record is skipped
+        # rather than written as a content-less fixture.
+        missing = [key for key in refs if key not in values]
+        if missing:
+            unresolved += 1
+            continue
+        resolved.append(replace(record, state=values))
+    return resolved, unresolved
+
+
 def select_corpus(
     records: Iterable[CheckpointRecord],
     *,
@@ -153,7 +203,6 @@ def select_corpus(
         if record.thread_id in seen:
             skipped["duplicate_thread"] += 1
             continue
-        seen.add(record.thread_id)
         try:
             fixture = build_fixture(
                 source=source,
@@ -166,8 +215,12 @@ def select_corpus(
             skipped["invalid"] += 1
             continue
         if phases and fixture.phase not in phases:
+            # Do not mark the thread seen here: an older checkpoint of the same
+            # thread may still be the newest one *in the requested phase*, and
+            # marking it first silently dropped those threads entirely.
             skipped["phase_filtered"] += 1
             continue
+        seen.add(record.thread_id)
         if limit and len(fixtures) >= limit:
             skipped["limit_reached"] += 1
             continue
@@ -235,6 +288,7 @@ async def run_extraction(
     phases: frozenset[str] | None,
     dry_run: bool,
     redaction_key: bytes | None = None,
+    store: Any | None = None,
 ) -> tuple[list[EvalFixture], dict[str, int], FixtureManifest | None]:
     """The whole pipeline, shared by the CLI and the tests (no printing)."""
     if (sqlite_path is None) == (postgres_uri is None):
@@ -247,6 +301,7 @@ async def run_extraction(
         assert postgres_uri is not None
         source = "postgres"
         records = [record async for record in iter_postgres(postgres_uri)]
+    records, unresolved = await resolve_records(records, store)
     fixtures, skipped = select_corpus(
         records,
         source=source,
@@ -254,6 +309,8 @@ async def run_extraction(
         limit=limit,
         redaction_key=redaction_key,
     )
+    if unresolved:
+        skipped["unresolved_artifacts"] = unresolved
     manifest = None
     if not dry_run:
         manifest = write_corpus(
@@ -281,6 +338,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--all", action="store_true", help="shorthand for --limit 0")
     parser.add_argument("--phases", default="", help="comma-separated workflow phases to keep")
     parser.add_argument(
+        "--store-uri",
+        default=None,
+        help="Artifact Store URI (same Postgres as the graph). Required when checkpoints are "
+        "artifact-ref'd, otherwise those records are skipped as unresolved_artifacts",
+    )
+    parser.add_argument(
         "--redaction-key-env",
         default="XHS_EVAL_REDACTION_KEY",
         help="environment variable holding the HMAC key for pseudonyms "
@@ -288,6 +351,45 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dry-run", action="store_true", help="read and redact, write nothing")
     return parser
+
+
+def _is_source_error(exc: BaseException) -> bool:
+    """Is this a driver-level failure we can report, or a bug we should re-raise?
+
+    psycopg's ``InterfaceError``/``OperationalError`` do not inherit
+    ``ConnectionError``, so the old narrow tuple let a bad Postgres URI traceback
+    instead of exiting with a message.
+    """
+    if isinstance(exc, (ConnectionError, OSError, sqlite3.OperationalError)):
+        return True
+    module = type(exc).__module__.split(".", 1)[0]
+    return module in {"psycopg", "psycopg2", "asyncpg", "aiosqlite"}
+
+
+async def _extract_with_store(
+    *,
+    sqlite_path: Path | None,
+    postgres_uri: str | None,
+    store_uri: str | None,
+    out_dir: Path,
+    limit: int,
+    phases: frozenset[str] | None,
+    dry_run: bool,
+    redaction_key: bytes | None,
+) -> tuple[list[EvalFixture], dict[str, int], FixtureManifest | None]:
+    """Open the Artifact Store when a URI is given, then run the pipeline."""
+    store_context = _open_store(store_uri) if store_uri else nullcontext(None)
+    async with store_context as store:
+        return await run_extraction(
+            sqlite_path=sqlite_path,
+            postgres_uri=postgres_uri,
+            out_dir=out_dir,
+            limit=limit,
+            phases=phases,
+            dry_run=dry_run,
+            redaction_key=redaction_key,
+            store=store,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -306,9 +408,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     try:
         fixtures, skipped, manifest = asyncio.run(
-            run_extraction(
+            _extract_with_store(
                 sqlite_path=sqlite_path,
                 postgres_uri=options.postgres_uri,
+                store_uri=options.store_uri,
                 out_dir=options.output,
                 limit=limit,
                 phases=phases or None,
@@ -319,9 +422,17 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError:
         print(f"checkpoint source not found: {sqlite_path}")
         return 1
-    except (ConnectionError, sqlite3.OperationalError) as exc:
-        print(f"could not read checkpoint source: {exc}")
-        return 1
+    except Exception as exc:  # noqa: BLE001  (source drivers raise their own types)
+        if _is_source_error(exc):
+            print(f"could not read checkpoint source: {exc}")
+            return 1
+        raise
+    if skipped.get("unresolved_artifacts"):
+        print(
+            f"warning: {skipped['unresolved_artifacts']} checkpoint(s) carry artifact refs that "
+            "could not be resolved; pass --store-uri so their content is included, otherwise "
+            "those records are skipped instead of being written content-less"
+        )
     print(f"fixtures: {len(fixtures)}  skipped: {json.dumps(skipped, ensure_ascii=False)}")
     if not fixtures:
         print("no fixtures extracted: the source has no matching checkpoints")

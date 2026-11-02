@@ -44,6 +44,7 @@ if str(_EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(_EVAL_DIR))
 
 from fixtures import (  # noqa: E402  (sibling module, loaded after sys.path setup)
+    EXTRACTOR_VERSION,
     REDACTION_VERSION,
     SCHEMA_VERSION,
     EvalFixture,
@@ -167,6 +168,12 @@ def check_corpus(corpus_dir: Path, *, expect_manifest_sha256: str | None = None)
         recorded = digest_path.read_text(encoding="utf-8").strip()
         if recorded != actual_digest:
             problems.append("manifest.sha256 does not match manifest.json")
+    elif expect_manifest_sha256 is None:
+        # Deleting one file must not silently disable manifest-edit detection.
+        problems.append(
+            "manifest.sha256 is missing and no --expect-manifest-sha256 was supplied; "
+            "re-extract the corpus (or pass the recorded digest)"
+        )
     if expect_manifest_sha256 is not None and expect_manifest_sha256.strip() != actual_digest:
         problems.append(
             f"manifest digest {actual_digest[:12]}… != expected {expect_manifest_sha256[:12]}…"
@@ -187,6 +194,13 @@ def check_corpus(corpus_dir: Path, *, expect_manifest_sha256: str | None = None)
             "red",
             f"corpus was built by redaction {manifest.redaction_version!r}, "
             f"current is {REDACTION_VERSION!r}: re-extract it",
+        )
+    if manifest.extractor_version != EXTRACTOR_VERSION:
+        return CheckResult(
+            "corpus",
+            "red",
+            f"corpus was built by extractor {manifest.extractor_version!r}, "
+            f"current is {EXTRACTOR_VERSION!r}: re-extract it",
         )
     if manifest.total == 0:
         problems.append("corpus is empty (0 fixtures): nothing to gate on")
@@ -236,7 +250,7 @@ def check_policy(policy: Any, *, label: str = "policy") -> tuple[CheckResult, di
         snapshot = describe(policy)
     except Exception as exc:  # noqa: BLE001  (a variant may be broken; that is a red)
         return CheckResult(label, "red", f"describe() failed: {exc}"), {}
-    expected = {"models", "context_budget", "escalation", "tool_limits"}
+    expected = {"models", "context_budget", "context_budgets", "escalation", "tool_limits"}
     if set(snapshot) != expected:
         return (
             CheckResult(label, "red", f"snapshot keys {sorted(snapshot)} != {sorted(expected)}"),
@@ -256,23 +270,45 @@ def check_policy(policy: Any, *, label: str = "policy") -> tuple[CheckResult, di
         not isinstance(budget, int) or isinstance(budget, bool) or budget < 0
     ):
         problems.append("context_budget must be None or a non-negative int")
+    budgets = snapshot.get("context_budgets")
+    if not isinstance(budgets, dict) or not budgets:
+        problems.append("context_budgets must be a non-empty phase mapping")
+    else:
+        for phase, value in budgets.items():
+            if not isinstance(phase, str):
+                problems.append("context_budgets phases must be strings")
+                break
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+            ):
+                problems.append(f"context_budget[{phase!r}] must be None or a non-negative int")
     escalation = snapshot.get("escalation")
     if not isinstance(escalation, dict) or any(
-        not isinstance(targets, list) or any(not isinstance(item, str) for item in targets)
+        not isinstance(targets, list)
+        or any(not isinstance(item, str) or not item.strip() for item in targets)
         for targets in escalation.values()
     ):
-        problems.append("escalation must map tasks to lists of model ids")
+        problems.append("escalation must map tasks to lists of non-blank model ids")
     limits = snapshot.get("tool_limits")
     if not isinstance(limits, dict) or any(
         not isinstance(entry, dict)
         or not isinstance(entry.get("capability"), str)
+        or not entry.get("capability", "").strip()
         or (
             entry.get("max_concurrency") is not None
-            and not isinstance(entry.get("max_concurrency"), int)
+            and (
+                not isinstance(entry.get("max_concurrency"), int)
+                or isinstance(entry.get("max_concurrency"), bool)
+                or entry["max_concurrency"] < 0
+            )
         )
         or (
             entry.get("timeout_s") is not None
-            and (not isinstance(entry.get("timeout_s"), (int, float)) or entry["timeout_s"] <= 0)
+            and (
+                not isinstance(entry.get("timeout_s"), (int, float))
+                or isinstance(entry.get("timeout_s"), bool)
+                or entry["timeout_s"] <= 0
+            )
         )
         for entry in limits.values()
     ):

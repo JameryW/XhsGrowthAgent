@@ -35,8 +35,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 SCHEMA_VERSION = "2"
-REDACTION_VERSION = "2"
-EXTRACTOR_VERSION = "2"
+REDACTION_VERSION = "3"
+EXTRACTOR_VERSION = "3"
 
 # kind prefix used in the pseudonym, so an operator can tell what a redacted value
 # used to be without being able to recover it.
@@ -56,8 +56,17 @@ _IDENTIFIER_KEYS: dict[str, str] = {
     "user_id": "user",
     "approved_by": "user",
     "reviewer": "user",
+    "confirmer": "user",
+    "confirmed_by": "user",
     "post_id": "post",
     "note_id": "post",
+    # PublishResult.platform_post_id is the real XHS post id — a URL can be
+    # reconstructed from it, so it is an identifier, not content.
+    "platform_post_id": "post",
+    "run_id": "run",
+    "target_id": "target",
+    # blogger_notes_meta.ids is a raw list of platform note ids.
+    "ids": "id",
 }
 _SECRET_KEY_FRAGMENTS = (
     "cookie",
@@ -79,11 +88,25 @@ _LOCATION_KEYS = frozenset(
 )
 # Identity-bearing links (profile pages, post pages, avatars, covers) are not
 # pseudonymised: a URL that still resolves is a leak even with a fake host.
-_URL_KEY_SUFFIXES = ("_url", "url", "_link", "link", "_uri", "uri")
+_URL_KEY_SUFFIXES = (
+    "_url",
+    "url",
+    "_link",
+    "link",
+    "_uri",
+    "uri",
+    "_urls",
+    "urls",
+    "_links",
+    "links",
+)
 _PATH_LIST_KEYS = frozenset({"image_paths", "images", "generated_images", "image_urls"})
 _PATH_KEY_SUFFIXES = ("_path", "_image", "_images", "_paths", "path")
-_DROP_KEYS = frozenset({"messages"})
-_ABSOLUTE_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|/(?:Users|home|tmp|var|opt|root|mnt)/)")
+_DROP_KEYS = frozenset({"messages", "artifacts"})
+_ABSOLUTE_PATH = re.compile(
+    r"^(?:[A-Za-z]:[\\/]|\\\\|/(?:Users|home|tmp|var|opt|root|mnt|data|srv|private)/|file://)",
+    re.IGNORECASE,
+)
 _MAX_DEPTH = 12
 
 

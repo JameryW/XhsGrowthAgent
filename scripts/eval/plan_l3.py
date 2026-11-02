@@ -103,7 +103,9 @@ def validate(plan: L3Plan, *, environ: dict[str, str] | None = None) -> Readines
         )
     if not plan.account.strip():
         readiness.problems.append("account is required: L3 runs on the test account only")
-    if plan.judge == "llm" and env.get("XHS_EVAL_LIVE") != "1":
+    if env.get("XHS_EVAL_LIVE") != "1":
+        # Any live run spends model calls, whether the quality verdict comes from
+        # an LLM or a human; the arming flag is about the run, not the judge kind.
         readiness.problems.append(
             "XHS_EVAL_LIVE=1 is not set: a live model-spending run must be armed explicitly"
         )
@@ -127,6 +129,10 @@ def plan_report(plan: L3Plan, readiness: Readiness) -> dict[str, Any]:
             "judge_calls": plan.judge_calls,
             "calls_per_sample": plan.calls_per_sample,
             "estimated_total_calls": plan.estimated_total_calls,
+            "estimate_basis": (
+                "samples x (1 judge + self-reported calls_per_sample); this is an estimate, "
+                "not a runtime cap — record measured post-run counts"
+            ),
         },
         "ready": readiness.ready,
         "problems": list(readiness.problems),

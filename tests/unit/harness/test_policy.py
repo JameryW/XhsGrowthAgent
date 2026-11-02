@@ -85,3 +85,19 @@ def test_describe_differs_when_a_variant_routes_differently():
     assert variant["models"]["writing"] == "variant-model"
     assert variant["models"] != baseline["models"]
     assert variant["tool_limits"] == baseline["tool_limits"]
+
+
+def test_describe_samples_the_context_budget_per_phase():
+    """A variant that only changes a phase budget must show up in the diff."""
+    from backend.harness.policy import describe
+
+    class _PhaseBudget(DefaultHarnessPolicy):
+        def context_budget(self, *, phase: str = "") -> int | None:
+            return 4000 if phase == "publishing" else None
+
+    baseline = describe(DefaultHarnessPolicy(), capabilities=("xhs.publish",))
+    variant = describe(_PhaseBudget(), capabilities=("xhs.publish",))
+    assert baseline["context_budgets"]["publishing"] is None
+    assert variant["context_budgets"]["publishing"] == 4000
+    assert variant["context_budgets"]["reviewing"] is None
+    assert baseline["context_budget"] == variant["context_budget"] is None

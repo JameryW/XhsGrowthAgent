@@ -108,9 +108,15 @@ def describe(
     decision moved.
     """
     limits = capabilities if capabilities is not None else _registry().capabilities()
+    from backend.state.enums import WorkflowPhase
+
+    phases: tuple[str, ...] = ("",) + tuple(phase.value for phase in WorkflowPhase)
     return {
         "models": {task.value: policy.route_model(task) for task in TaskType},
         "context_budget": policy.context_budget(),
+        # Sampled per phase: a variant whose budget only differs for "publishing"
+        # was invisible in the single no-phase value (review finding).
+        "context_budgets": {phase: policy.context_budget(phase=phase) for phase in phases},
         "escalation": {task.value: list(policy.escalation_targets(task)) for task in TaskType},
         "tool_limits": {name: asdict(policy.tool_limits(name)) for name in limits},
     }

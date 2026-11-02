@@ -91,6 +91,22 @@ class JudgeBudget:
                 f"max_calls {self.max_calls} exceeds the approved cap of {APPROVED_MAX_CALLS} "
                 "(the user approved fewer than 200 model calls)"
             )
+        if not 0 <= self.used <= self.max_calls:
+            raise ValueError(
+                f"used {self.used} must be between 0 and max_calls {self.max_calls}; "
+                "a negative counter would allow more calls than approved"
+            )
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # ``max_calls`` is a dataclass field, so the class object already carries
+        # the default; checking the *instance* dict distinguishes "init" from a
+        # later mutation (a plain getattr would see the class default and refuse
+        # every construction).
+        if name == "max_calls" and "max_calls" in self.__dict__:
+            raise AttributeError(
+                "max_calls is fixed at construction; create a new budget instead of mutating it"
+            )
+        super().__setattr__(name, value)
 
     @property
     def remaining(self) -> int:
@@ -98,6 +114,8 @@ class JudgeBudget:
 
     def consume(self) -> None:
         """Charge one call, or refuse before the model is touched."""
+        if self.used < 0:
+            raise ValueError(f"budget counter is corrupt: used={self.used}")
         if self.used >= self.max_calls:
             raise JudgeBudgetExceededError(
                 f"judge budget exhausted: {self.used}/{self.max_calls} calls used"

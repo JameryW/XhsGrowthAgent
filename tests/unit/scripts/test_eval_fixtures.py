@@ -372,3 +372,131 @@ def test_an_unsalted_extraction_is_marked_as_such(tmp_path: Path):
         )
     )
     assert manifest is not None and manifest.pseudonym_mode == "sha256"
+
+
+def test_the_second_review_real_fields_are_also_redacted():
+    """platform_post_id/run_id/target_id/ids/confirmer and plural URL keys."""
+    state = {
+        "publish_result": {
+            "platform_post_id": "64f0abc123",
+            "run_id": "run-real-1234",
+        },
+        "engagement_actions": [{"target_id": "user-777"}],
+        "blogger_notes_meta": {"ids": ["note-real-1", "note-real-2"]},
+        "publish_confirmation": {"confirmer": "user-42"},
+        "publish_options": {"confirmed_by": "user-42"},
+        "user_viral_links": ["https://www.xiaohongshu.com/explore/abc"],
+        "logo_urls": ["https://img.example/logo.png"],
+        "artifacts": {"copy_content": {"ref": "artifact://copy_content/latest"}},
+        "misc": r"\\fileserver\share\x.png",
+    }
+    fixture = fx.build_fixture(source="sqlite", thread_id="t", checkpoint_id="cp-1", state=state)
+    written = fixture.model_dump_json()
+    for leaked in (
+        "64f0abc123",
+        "run-real-1234",
+        "user-777",
+        "note-real-1",
+        "user-42",
+        "https://",
+        r"\\fileserver",
+    ):
+        assert leaked not in written, leaked
+    assert "artifacts" not in fixture.state
+    assert fixture.state["blogger_notes_meta"]["ids"][0].startswith("id_")
+    assert fixture.state["publish_result"]["run_id"].startswith("run_")
+
+
+def test_artifact_backed_checkpoints_are_skipped_without_a_store(tmp_path: Path):
+    db = tmp_path / "checkpoints.sqlite"
+    _sqlite_seed(
+        db,
+        [
+            (
+                "thread-a",
+                "cp-a",
+                {
+                    "phase": "reviewing",
+                    "artifacts": {"copy_content": {"ref": "artifact://copy_content/latest"}},
+                },
+            )
+        ],
+    )
+    fixtures, skipped, _ = asyncio.run(
+        ex.run_extraction(
+            sqlite_path=db,
+            postgres_uri=None,
+            out_dir=tmp_path / "corpus",
+            limit=5,
+            phases=None,
+            dry_run=True,
+        )
+    )
+    assert fixtures == []
+    assert skipped["unresolved_artifacts"] == 1
+
+
+def test_artifact_backed_checkpoints_are_resolved_with_a_store(tmp_path: Path):
+    import aiosqlite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+    from langgraph.store.memory import InMemoryStore
+
+    from backend.state.artifacts import put_artifact
+
+    async def _run():
+        store = InMemoryStore()
+        ref = await put_artifact(store, "thread-a", "copy_content", {"selected_title": "真实标题"})
+        assert ref is not None
+        state = {
+            "phase": "reviewing",
+            "account_id": "acc-a",
+            "artifacts": {"copy_content": ref},
+        }
+        db = tmp_path / "checkpoints.sqlite"
+        async with aiosqlite.connect(str(db)) as conn:
+            saver = AsyncSqliteSaver(conn=conn)
+            await saver.setup()
+            checkpoint = {
+                "v": 1,
+                "id": "cp-a",
+                "ts": "2026-01-01T00:00:00+00:00",
+                "channel_values": state,
+                "channel_versions": {key: 1 for key in state},
+                "versions_seen": {},
+                "pending_sends": [],
+            }
+            config = {
+                "configurable": {
+                    "thread_id": "thread-a",
+                    "checkpoint_ns": "",
+                    "checkpoint_id": "cp-a",
+                }
+            }
+            await saver.aput(
+                config, checkpoint, {"source": "loop", "step": 1}, {key: 1 for key in state}
+            )
+        fixtures, skipped, _ = await ex.run_extraction(
+            sqlite_path=db,
+            postgres_uri=None,
+            out_dir=tmp_path / "corpus",
+            limit=5,
+            phases=None,
+            dry_run=True,
+            store=store,
+        )
+        return fixtures, skipped
+
+    fixtures, skipped = asyncio.run(_run())
+    assert skipped.get("unresolved_artifacts", 0) == 0
+    assert fixtures[0].state["copy_content"] == {"selected_title": "真实标题"}
+    assert "artifacts" not in fixtures[0].state
+
+
+def test_phase_filter_looks_past_a_newer_checkpoint_in_another_phase():
+    records = [
+        ex.CheckpointRecord("t1", "cp-new", {"phase": "publishing"}),
+        ex.CheckpointRecord("t1", "cp-old", {"phase": "reviewing"}),
+    ]
+    fixtures, skipped = ex.select_corpus(records, source="sqlite", phases=frozenset({"reviewing"}))
+    assert [fixture.checkpoint_id for fixture in fixtures] == ["cp-old"]
+    assert skipped["phase_filtered"] == 1

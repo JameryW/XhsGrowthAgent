@@ -132,3 +132,16 @@ def test_the_cli_json_mode_prints_the_plan(monkeypatch, capsys):
     assert report["plan"]["samples"] == 2
     assert report["plan"]["estimated_total_calls"] == 12
     assert report["ready"] is True
+
+
+def test_any_live_run_needs_arming_even_with_a_human_judge():
+    """The workflow spends model calls regardless of who judges."""
+    readiness = plan_l3.validate(_plan(judge="human"), environ={})
+    assert readiness.ready is False
+    assert any("XHS_EVAL_LIVE" in problem for problem in readiness.problems)
+
+
+def test_the_report_states_the_estimate_is_not_a_cap():
+    report = plan_l3.plan_report(_plan(), plan_l3.validate(_plan(), environ=ARMED))
+    assert "estimate" in report["plan"]["estimate_basis"]
+    assert "not a runtime cap" in report["plan"]["estimate_basis"]

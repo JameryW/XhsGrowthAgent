@@ -112,7 +112,7 @@ def test_a_corpus_built_by_an_older_redaction_is_red(tmp_path: Path):
     corpus = _corpus(tmp_path)
     manifest_path = corpus / "manifest.json"
     manifest = manifest_path.read_text(encoding="utf-8").replace(
-        '"redaction_version": "2"', '"redaction_version": "1"'
+        f'"redaction_version": "{fx.REDACTION_VERSION}"', '"redaction_version": "1"'
     )
     manifest_path.write_text(manifest, encoding="utf-8")
     result = gate.check_corpus(corpus)
@@ -134,7 +134,13 @@ def test_the_default_policy_snapshot_covers_all_four_decisions():
 
     result, snapshot = gate.check_policy(default_policy())
     assert result.status == "pass", result.detail
-    assert set(snapshot) == {"models", "context_budget", "escalation", "tool_limits"}
+    assert set(snapshot) == {
+        "models",
+        "context_budget",
+        "context_budgets",
+        "escalation",
+        "tool_limits",
+    }
 
 
 def test_a_variant_that_answers_nothing_is_red_not_informative():
@@ -351,3 +357,63 @@ def test_an_out_of_band_digest_catches_a_paired_rewrite(tmp_path: Path):
     result = gate.check_corpus(corpus, expect_manifest_sha256=recorded)
     assert result.status == "red"
     assert "expected" in result.detail
+
+
+def test_a_corpus_built_by_an_older_extractor_is_red(tmp_path: Path):
+    corpus = _corpus(tmp_path)
+    manifest_path = corpus / "manifest.json"
+    manifest = manifest_path.read_text(encoding="utf-8").replace(
+        f'"extractor_version": "{fx.EXTRACTOR_VERSION}"', '"extractor_version": "0"'
+    )
+    manifest_path.write_text(manifest, encoding="utf-8")
+    result = gate.check_corpus(corpus, expect_manifest_sha256="ignored-on-version-path")
+    # digest mismatch and version mismatch are both red; assert the version reason
+    assert result.status == "red"
+    import hashlib
+
+    actual = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    result = gate.check_corpus(corpus, expect_manifest_sha256=actual)
+    assert result.status == "red"
+    assert "extractor" in result.detail
+
+
+def test_a_missing_manifest_digest_is_red_unless_an_out_of_band_value_is_given(tmp_path: Path):
+    corpus = _corpus(tmp_path)
+    (corpus / "manifest.sha256").unlink()
+    result = gate.check_corpus(corpus)
+    assert result.status == "red"
+    assert "manifest.sha256 is missing" in result.detail
+
+    import hashlib
+
+    actual = hashlib.sha256((corpus / "manifest.json").read_bytes()).hexdigest()
+    assert gate.check_corpus(corpus, expect_manifest_sha256=actual).status == "pass"
+
+
+def test_a_phase_specific_negative_budget_is_red():
+    from backend.harness.policy import DefaultHarnessPolicy
+
+    class _BadPhaseBudget(DefaultHarnessPolicy):
+        def context_budget(self, *, phase: str = "") -> int | None:
+            return -1 if phase == "publishing" else None
+
+    result, snapshot = gate.check_policy(_BadPhaseBudget(), label="variant")
+    assert result.status == "red"
+    assert "context_budget" in result.detail
+    assert snapshot["context_budgets"]["publishing"] == -1
+
+
+def test_blank_escalation_targets_and_bad_tool_limits_are_red():
+    from backend.harness.policy import DefaultHarnessPolicy, ToolLimits
+
+    class _BlankEscalation(DefaultHarnessPolicy):
+        def escalation_targets(self, task_type):  # noqa: ANN001
+            return ("",)
+
+    assert gate.check_policy(_BlankEscalation(), label="variant")[0].status == "red"
+
+    class _BadLimits(DefaultHarnessPolicy):
+        def tool_limits(self, capability: str) -> ToolLimits:
+            return ToolLimits(capability="", max_concurrency=-1, timeout_s=None)
+
+    assert gate.check_policy(_BadLimits(), label="variant")[0].status == "red"

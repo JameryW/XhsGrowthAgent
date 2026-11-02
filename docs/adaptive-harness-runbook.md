@@ -12,8 +12,8 @@
 |---|---|
 | 部署环境的测试账号 | 账号 id 已知；登录态/cookie 只存在于部署环境（`XHS_*` 凭据） |
 | 运行窗口 | 平台可接受的时段；避免与真实用户的发布/私信冲突 |
-| 预算批准 | 本轮 judge 调用数 = 样本数，必须 ≤199；工作流自身的模型调用另计，样本数即上限 |
-| 语料来源 | 有数据的 Postgres checkpoint（或已填充的 sqlite） |
+| 预算批准 | 每轮**总**模型调用 **<200**（工作流 + 裁判）；`plan_l3` 用 `--calls-per-sample` 做估算校验，实测数必须记录——它不是运行时上限（F7 尚无 run 级预算字段） |
+| 语料来源 | 有数据的 Postgres checkpoint（或已填充的 sqlite）**+ 同一个 Postgres Artifact Store**：真实节点会把内容字段 ref 化，抽取时必须用 `--store-uri` 解析，否则这些记录会被跳过并计入 `unresolved_artifacts` |
 
 ## 1. 抽取真实语料（在部署环境，输出不入库）
 
@@ -21,7 +21,9 @@
 # 建议设置：用部署侧密钥做 HMAC 假名（不写入语料；不设则假名可被字典攻击）
 export XHS_EVAL_REDACTION_KEY="<deployment-secret>"
 python scripts/eval/extract_fixtures.py \
-    --postgres-uri "$XHS_POSTGRES_URI" --limit 20 --phases reviewing,publishing
+    --postgres-uri "$XHS_POSTGRES_URI" --store-uri "$XHS_POSTGRES_URI" \
+    --limit 20 --phases reviewing,publishing
+# 若输出出现 unresolved_artifacts 警告：store URI 不对或该线程内容缺失，先修再继续
 # 记下输出里的 manifest 指纹（相当于语料的 out-of-band 摘要）
 # 产物：.eval-fixtures/fixture-*.json + manifest.json + manifest.sha256（已 gitignore，别提交）
 ```
@@ -35,8 +37,9 @@ python scripts/eval/run_gate.py --fail-on-red \
     --expect-manifest-sha256 "$RECORDED_DIGEST"   # 想让它阻断 + 核对 out-of-band 指纹
 ```
 
-期望：`corpus` pass（哈希完整、非空、`redaction_version` 与当前一致——旧语料会被判红，重跑第 1 步即可）、
-`policy` pass、`benchmarks` F1/F2/F4 状态为 PASS。
+期望：`corpus` pass（哈希完整、非空、`redaction_version`/`extractor_version` 与当前一致且
+`manifest.sha256` 存在——旧语料会被判红，重跑第 1 步即可）、`policy` pass、
+`benchmarks` F1/F2/F4 状态为 PASS。
 
 ## 3. 校验 live 计划（授权门闸，不花钱）
 
@@ -47,8 +50,9 @@ XHS_EVAL_LIVE=1 python scripts/eval/plan_l3.py \
 ```
 
 - `ready: yes` 才能继续；`ready: no` 会列出原因（缺账号 / 未 set `XHS_EVAL_LIVE=1` /
-  judge=none / 超过 199 / 缺 `--calls-per-sample` 调用估算）。
-- **预算按总量算**：`estimated_total_calls = samples x (1 judge + calls_per_sample)`，
+  judge=none / 超过 199 / 缺 `--calls-per-sample` 调用估算）。**人审裁判也要武装**：
+  只要跑 live，工作流就会花模型调用。
+- **预算按总量估算**：`estimated_total_calls = samples x (1 judge + calls_per_sample)`，
   必须 ≤199。只数裁判会低估真实花费。
 - 想留档：`--json > plan.json`（不含凭据，可提交到实验记录，含估算值）。
 

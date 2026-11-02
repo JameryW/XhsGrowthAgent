@@ -1,0 +1,2 @@
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "verify the corrected claims match the shipped code"}
+{"file": "docs/adaptive-harness-runbook.md", "reason": "verify the external-run steps include --store-uri and the total-call estimate"}

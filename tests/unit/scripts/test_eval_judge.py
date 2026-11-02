@@ -139,3 +139,14 @@ def test_a_budget_cap_above_the_approval_is_refused():
     with pytest.raises(ValueError):
         judge.JudgeBudget(max_calls=10**9)
     assert judge.JudgeBudget(max_calls=199).max_calls == 199
+
+
+def test_the_budget_counter_cannot_start_or_go_negative():
+    with pytest.raises(ValueError):
+        judge.JudgeBudget(used=-1)
+    with pytest.raises(ValueError):
+        judge.JudgeBudget(max_calls=5, used=6)
+    budget = judge.JudgeBudget()
+    with pytest.raises(AttributeError):
+        budget.max_calls = 10**6
+    assert budget.max_calls == 199
