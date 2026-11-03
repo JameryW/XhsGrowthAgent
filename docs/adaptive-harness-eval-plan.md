@@ -99,12 +99,12 @@
 
 | 能力 | 实现 |
 |---|---|
-| 真实来源 | `--sqlite-path`（默认 `.xhs/checkpoints.sqlite`，以 `mode=ro` 只读打开；路径不存在直接报错，不再创建空库）或 `--postgres-uri`；两者都走 `alist`，并跳过非空 `checkpoint_ns` 的 subgraph checkpoint。**真实节点经 `artifact_seam` 把内容字段 ref 化**：必须用 `--store-uri` 打开 Artifact Store 解析；无 store 或解析不出的记录不会写成"无内容 fixture"，而是跳过并计入 `unresolved_artifacts` |
-| 预算可配置 | `--limit N`（默认 100）、`--all`、`--phases a,b`、`--dry-run`；`--phases` 选的是"该线程在目标 phase 内最新的 checkpoint" |
+| 真实来源 | `--sqlite-path`（默认 `.xhs/checkpoints.sqlite`，以 `mode=ro` 只读打开；路径不存在直接报错，不再创建空库）或 `--postgres-uri`；两者都走 `alist`，并跳过非空 `checkpoint_ns` 的 subgraph checkpoint。**真实节点经 `artifact_seam` 把内容字段 ref 化**：必须用 `--store-uri` 打开 Artifact Store 解析；无 store 或解析不出的记录不会写成"无内容 fixture"，而是跳过并计入 `unresolved_artifacts`。`alist` 默认读取**全部** checkpoint，繁忙库请用 `--scan-limit` 限制扫描量（会记录 `scan_capped` 警告，表示语料可能不完整） |
+| 预算可配置 | `--limit N`（默认 100）、`--all`、`--phases a,b`、`--scan-limit N`（限制**读取**的 checkpoint 数）、`--dry-run`；`--phases` 选的是"该线程在目标 phase 内最新的 checkpoint" |
 | 脱敏（唯一实现） | 标识符 → 稳定假名（`acct_/thread_/session_/user_/creator_/post_/run_/target_/id_`，覆盖 `workflow_thread_id`、`platform_post_id`、`run_id`、`target_id`、`ids`、`reviewer`、`confirmer`、`confirmed_by`、`nickname`、`author`、`post_id/note_id` 等真实 schema 字段）；cookie/token/api_key 等 → 空（含容器值）；`*_url(s)`/`*_link(s)`/`*_uri(s)` 链接 → 空；`cdp_endpoint`/`chrome_profile_path` → 空；路径类键 → `image/NN.ext`；任意字符串命中绝对路径（盘符、UNC `\\\\`、`file://`、`/Users`/`/home`/`/tmp`/`/var`/`/opt`/`/root`/`/mnt`/`/data`/`/srv`/`/private`）→ 空；`messages` **总是丢弃**；`artifacts` 引用映射 → 丢弃；**内容字段保留** |
 | 语料格式 | `fixture-<id>.json`（`EvalFixture`）+ `manifest.json`（计数、每文件 sha256、跳过明细、schema/extractor/redaction 版本、`pseudonym_mode`）+ `manifest.sha256`（manifest 字节指纹）；schema v2 / redaction v3 / extractor v3 |
 | 本地安全 | 输出目录默认 `.eval-fixtures/`（gitignore）；**可选 HMAC 假名**：`XHS_EVAL_REDACTION_KEY` 由部署侧提供、不写入语料，manifest 记录 `pseudonym_mode=sha256|hmac`，无密钥时打印"短 id 可被字典攻击"警告；`hmac` 是**声明**，仓库内无法验证（密钥不能进语料）；`manifest.sha256` 必需（缺失即红），`--expect-manifest-sha256` 做 out-of-band 核对 |
-| 验证 | `tests/unit/scripts/test_eval_fixtures.py` 21 passed（真实 sqlite 往返、两轮真实 schema 身份字段回归、绝对路径护栏、artifact 解析/跳过、加盐模式与指纹） |
+| 验证 | `tests/unit/scripts/test_eval_fixtures.py` 24 passed（真实 sqlite 往返、两轮真实 schema 身份字段回归、绝对路径护栏、artifact 解析/跳过、**artifact 写缝（refify_updates）回归**、Postgres 入口契约、扫描上限、加盐模式与指纹） |
 
 用法：
 

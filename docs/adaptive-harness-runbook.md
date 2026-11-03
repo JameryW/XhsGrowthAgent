@@ -23,6 +23,7 @@ export XHS_EVAL_REDACTION_KEY="<deployment-secret>"
 python scripts/eval/extract_fixtures.py \
     --postgres-uri "$XHS_POSTGRES_URI" --store-uri "$XHS_POSTGRES_URI" \
     --limit 20 --phases reviewing,publishing
+# 繁忙库可加 --scan-limit 5000 限制扫描量；若输出 scan_capped 警告，说明语料可能不完整
 # 若输出出现 unresolved_artifacts 警告：store URI 不对或该线程内容缺失，先修再继续
 # 记下输出里的 manifest 指纹（相当于语料的 out-of-band 摘要）
 # 产物：.eval-fixtures/fixture-*.json + manifest.json + manifest.sha256（已 gitignore，别提交）

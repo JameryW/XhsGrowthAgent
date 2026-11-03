@@ -1,0 +1,2 @@
+{"file": "backend/state/artifacts.py", "reason": "the refify/resolve write seam the new regression test uses"}
+{"file": "docs/adaptive-harness-eval-plan.md", "reason": "the extraction contract and scan-bound wording"}

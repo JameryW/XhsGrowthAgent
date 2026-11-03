@@ -70,9 +70,17 @@ class CheckpointRecord:
     checkpoint_ns: str = ""
 
 
-async def _records_from_saver(saver: Any) -> AsyncIterator[CheckpointRecord]:
-    """Yield checkpoint records from a LangGraph saver, newest first."""
-    async for item in saver.alist(None):
+async def _records_from_saver(
+    saver: Any, *, scan_limit: int | None = None
+) -> AsyncIterator[CheckpointRecord]:
+    """Yield checkpoint records from a LangGraph saver, newest first.
+
+    ``scan_limit`` bounds how many *checkpoints* are read from the store (not how
+    many fixtures are written): on a busy deployment ``alist`` otherwise loads
+    every checkpoint of every thread into memory.  Hitting the cap means the corpus
+    may be missing threads, which the CLI reports instead of pretending otherwise.
+    """
+    async for item in saver.alist(None, limit=scan_limit):
         config = getattr(item, "config", None) or {}
         configurable = config.get("configurable") if isinstance(config, Mapping) else None
         configurable = configurable if isinstance(configurable, Mapping) else {}
@@ -93,7 +101,9 @@ async def _records_from_saver(saver: Any) -> AsyncIterator[CheckpointRecord]:
         )
 
 
-async def iter_sqlite(path: Path) -> AsyncIterator[CheckpointRecord]:
+async def iter_sqlite(
+    path: Path, *, scan_limit: int | None = None
+) -> AsyncIterator[CheckpointRecord]:
     """Read a local ``AsyncSqliteSaver`` database, strictly read-only.
 
     Opening the file is the only write-shaped thing this used to do: a missing
@@ -108,16 +118,18 @@ async def iter_sqlite(path: Path) -> AsyncIterator[CheckpointRecord]:
 
     async with aiosqlite.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as conn:
         saver = AsyncSqliteSaver(conn=conn)
-        async for record in _records_from_saver(saver):
+        async for record in _records_from_saver(saver, scan_limit=scan_limit):
             yield record
 
 
-async def iter_postgres(uri: str) -> AsyncIterator[CheckpointRecord]:
+async def iter_postgres(
+    uri: str, *, scan_limit: int | None = None
+) -> AsyncIterator[CheckpointRecord]:
     """Read every checkpoint from a Postgres ``AsyncPostgresSaver`` database."""
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
     async with AsyncPostgresSaver.from_conn_string(uri) as saver:
-        async for record in _records_from_saver(saver):
+        async for record in _records_from_saver(saver, scan_limit=scan_limit):
             yield record
 
 
@@ -289,18 +301,20 @@ async def run_extraction(
     dry_run: bool,
     redaction_key: bytes | None = None,
     store: Any | None = None,
+    scan_limit: int = 0,
 ) -> tuple[list[EvalFixture], dict[str, int], FixtureManifest | None]:
     """The whole pipeline, shared by the CLI and the tests (no printing)."""
     if (sqlite_path is None) == (postgres_uri is None):
         raise ValueError("pass exactly one of sqlite_path / postgres_uri")
+    scan = scan_limit or None
     source: Literal["sqlite", "postgres"]
     if sqlite_path is not None:
         source = "sqlite"
-        records = [record async for record in iter_sqlite(sqlite_path)]
+        records = [record async for record in iter_sqlite(sqlite_path, scan_limit=scan)]
     else:
         assert postgres_uri is not None
         source = "postgres"
-        records = [record async for record in iter_postgres(postgres_uri)]
+        records = [record async for record in iter_postgres(postgres_uri, scan_limit=scan)]
     records, unresolved = await resolve_records(records, store)
     fixtures, skipped = select_corpus(
         records,
@@ -311,6 +325,9 @@ async def run_extraction(
     )
     if unresolved:
         skipped["unresolved_artifacts"] = unresolved
+    if scan_limit and len(records) >= scan_limit:
+        # The cap is on checkpoints read, so a full corpus is not guaranteed.
+        skipped["scan_capped"] = 1
     manifest = None
     if not dry_run:
         manifest = write_corpus(
@@ -342,6 +359,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Artifact Store URI (same Postgres as the graph). Required when checkpoints are "
         "artifact-ref'd, otherwise those records are skipped as unresolved_artifacts",
+    )
+    parser.add_argument(
+        "--scan-limit",
+        type=int,
+        default=0,
+        help="max checkpoints to read from the store (0 = no cap). A cap means the corpus "
+        "may be incomplete; the run records skipped.scan_capped and warns",
     )
     parser.add_argument(
         "--redaction-key-env",
@@ -376,6 +400,7 @@ async def _extract_with_store(
     phases: frozenset[str] | None,
     dry_run: bool,
     redaction_key: bytes | None,
+    scan_limit: int = 0,
 ) -> tuple[list[EvalFixture], dict[str, int], FixtureManifest | None]:
     """Open the Artifact Store when a URI is given, then run the pipeline."""
     store_context = _open_store(store_uri) if store_uri else nullcontext(None)
@@ -389,6 +414,7 @@ async def _extract_with_store(
             dry_run=dry_run,
             redaction_key=redaction_key,
             store=store,
+            scan_limit=scan_limit,
         )
 
 
@@ -417,6 +443,7 @@ def main(argv: list[str] | None = None) -> int:
                 phases=phases or None,
                 dry_run=options.dry_run,
                 redaction_key=redaction_key,
+                scan_limit=max(0, options.scan_limit),
             )
         )
     except FileNotFoundError:
@@ -432,6 +459,11 @@ def main(argv: list[str] | None = None) -> int:
             f"warning: {skipped['unresolved_artifacts']} checkpoint(s) carry artifact refs that "
             "could not be resolved; pass --store-uri so their content is included, otherwise "
             "those records are skipped instead of being written content-less"
+        )
+    if skipped.get("scan_capped"):
+        print(
+            "warning: --scan-limit was reached; the corpus may be missing threads. "
+            "Raise the cap or omit it for a complete extraction"
         )
     print(f"fixtures: {len(fixtures)}  skipped: {json.dumps(skipped, ensure_ascii=False)}")
     if not fixtures:

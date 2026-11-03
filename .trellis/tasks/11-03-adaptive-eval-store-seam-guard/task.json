@@ -1,0 +1,31 @@
+{
+  "id": "adaptive-eval-store-seam-guard",
+  "name": "adaptive-eval-store-seam-guard",
+  "title": "feat(eval): artifact 写缝回归 + --store-uri 入口契约 + 扫描上限（票 5cp）",
+  "description": "补三处真实运行相关的护栏：1) 用 refify_updates 写入 Artifact Store（与 graph 同一条写缝）后再抽取，验证 resolve_state 能取回内容、fixture 不含 artifacts——此前只用 put_artifact 直写，没证实与 graph 写缝一致；2) 断言 AsyncPostgresSaver/AsyncPostgresStore 的 from_conn_string 入口存在（--postgres-uri/--store-uri 依赖它们，依赖升级静默破坏时测试会红）；3) 新增 --scan-limit：alist 默认读全部 checkpoint，繁忙库可用它限制扫描量，命中时记 skipped.scan_capped 并打印'语料可能不完整'警告（不静默）。文档 §6.5/runbook 同步。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "scripts/eval/extract_fixtures.py",
+    "tests/unit/scripts/test_eval_fixtures.py",
+    "docs/adaptive-harness-eval-plan.md",
+    "docs/adaptive-harness-runbook.md"
+  ],
+  "notes": "DONE 2026-11-03. Three guards for the parts of E1 that can only be wrong against a real deployment. 1) Write-seam parity: the previous artifact test used put_artifact directly; the graph actually writes through refify_updates (artifact_seam), so the new test funnels content through refify_updates and then runs the full extraction against an InMemoryStore, asserting the fixture has the resolved title/body and no artifacts key. If the writer and reader namespaces ever diverge, that test fails instead of producing content-less fixtures. 2) CLI entry-point contract: --postgres-uri and --store-uri depend on AsyncPostgresSaver.from_conn_string and AsyncPostgresStore.from_conn_string; the new test asserts both callables exist so a dependency upgrade that removes/renames them is caught locally rather than during a deployment extraction. 3) Scan bound: alist with limit=None loads every checkpoint of every thread, while --limit only bounds written fixtures. Added --scan-limit (0 = unbounded) passed to alist(limit=...); when the cap is hit the run records skipped.scan_capped and prints that the corpus may be incomplete, so a bounded scan cannot masquerade as a complete corpus. Docs updated (plan §6.5 real-source/budget rows and 24 fixtures tests; runbook suggests --scan-limit on busy stores and how to read the scan_capped warning). Verification: test_eval_fixtures 24 passed (3 new), unit/scripts+harness green, ci_local lint/format/mypy PASS, full suite in the journal.",
+  "meta": {}
+}

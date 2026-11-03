@@ -500,3 +500,91 @@ def test_phase_filter_looks_past_a_newer_checkpoint_in_another_phase():
     fixtures, skipped = ex.select_corpus(records, source="sqlite", phases=frozenset({"reviewing"}))
     assert [fixture.checkpoint_id for fixture in fixtures] == ["cp-old"]
     assert skipped["phase_filtered"] == 1
+
+
+def test_extraction_resolves_content_written_through_the_artifact_write_seam(tmp_path: Path):
+    """The graph writes through refify_updates; extraction must read that same seam."""
+    import aiosqlite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+    from langgraph.store.memory import InMemoryStore
+
+    from backend.state.artifacts import refify_updates
+
+    async def _run():
+        store = InMemoryStore()
+        updates = await refify_updates(
+            store, "thread-a", {"phase": "reviewing", "copy_content": {"selected_title": "真标题"}}
+        )
+        assert "copy_content" not in updates  # the write seam moved it into the store
+        state = {"phase": "reviewing", "account_id": "acc-a", **updates}
+        db = tmp_path / "checkpoints.sqlite"
+        async with aiosqlite.connect(str(db)) as conn:
+            saver = AsyncSqliteSaver(conn=conn)
+            await saver.setup()
+            checkpoint = {
+                "v": 1,
+                "id": "cp-a",
+                "ts": "2026-01-01T00:00:00+00:00",
+                "channel_values": state,
+                "channel_versions": {key: 1 for key in state},
+                "versions_seen": {},
+                "pending_sends": [],
+            }
+            config = {
+                "configurable": {
+                    "thread_id": "thread-a",
+                    "checkpoint_ns": "",
+                    "checkpoint_id": "cp-a",
+                }
+            }
+            await saver.aput(
+                config, checkpoint, {"source": "loop", "step": 1}, {key: 1 for key in state}
+            )
+        return await ex.run_extraction(
+            sqlite_path=db,
+            postgres_uri=None,
+            out_dir=tmp_path / "corpus",
+            limit=5,
+            phases=None,
+            dry_run=True,
+            store=store,
+        )
+
+    fixtures, skipped, _ = asyncio.run(_run())
+    assert skipped.get("unresolved_artifacts", 0) == 0
+    assert fixtures[0].state["copy_content"] == {"selected_title": "真标题"}
+    assert "artifacts" not in fixtures[0].state
+
+
+def test_the_postgres_entry_points_the_cli_relies_on_exist():
+    """--store-uri/--postgres-uri depend on these langgraph entry points."""
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from langgraph.store.postgres.aio import AsyncPostgresStore
+
+    assert callable(AsyncPostgresSaver.from_conn_string)
+    assert callable(AsyncPostgresStore.from_conn_string)
+
+
+def test_scan_limit_bounds_store_reads_and_says_the_corpus_may_be_incomplete(tmp_path: Path):
+    db = tmp_path / "checkpoints.sqlite"
+    _sqlite_seed(
+        db,
+        [
+            ("thread-a", "cp-a", {"phase": "reviewing", "account_id": "acc-a"}),
+            ("thread-b", "cp-b", {"phase": "reviewing", "account_id": "acc-b"}),
+            ("thread-c", "cp-c", {"phase": "reviewing", "account_id": "acc-c"}),
+        ],
+    )
+    fixtures, skipped, _ = asyncio.run(
+        ex.run_extraction(
+            sqlite_path=db,
+            postgres_uri=None,
+            out_dir=tmp_path / "corpus",
+            limit=10,
+            phases=None,
+            dry_run=True,
+            scan_limit=2,
+        )
+    )
+    assert len(fixtures) <= 2
+    assert skipped["scan_capped"] == 1
