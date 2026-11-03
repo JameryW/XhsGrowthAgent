@@ -21,7 +21,8 @@ xhs-growth run --verbose
 # Run with dry-run (no real API calls)
 xhs-growth run --dry-run
 
-# Start API server
+# Start API server (production-safe: no auto-reload; Windows+Postgres gets a
+# SelectorEventLoop automatically; add --reload for local development only)
 xhs-growth serve --port 8000
 
 # Check workflow status (enhanced with table output)
@@ -314,7 +315,7 @@ System health endpoint checks all external dependencies:
 - `database`: Checkpointer mode (postgres/sqlite/memory) **and** `app_db` (`ready`/`unavailable`) for the application Postgres pool used by login/accounts. Without `POSTGRES_URI` the server still boots in graph-only mode: `database.status=warning`, overall `degraded`, and DB-backed routes answer **503 `ERROR_DB_UNAVAILABLE`** instead of 500
 - `memory_store`: Backend type (postgres/memory/unavailable), semantic index status (enabled/disabled), embed model name, embed dimensions, namespace counts with total items
 
-Overall status: `ok` only when an LLM provider is configured **and** `database.app_db=ready`; `degraded` otherwise (e.g. graph-only dev server, memory store without a semantic index).
+Overall status: `ok` only when an LLM provider is configured **and** `database.app_db=ready`; `degraded` otherwise. A memory store without a semantic index does not degrade overall. The creator-stats scheduler being enabled with a **queued first run** (or a policy skip before the first completed run) reports `ok` + `first_run_pending=true`; only a scheduler that has neither a completed run nor a next run reports `warning`.
 
 ## Module Structure
 

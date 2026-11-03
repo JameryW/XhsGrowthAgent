@@ -240,3 +240,14 @@ class TestUnknownThread:
         result = runner.invoke(app, ["resume", "functional-smoke-unknown-thread"])
         assert result.exit_code == 1
         assert "线程不存在" in result.stdout
+
+
+class TestServeOptions:
+    """serve must be production-safe by default and offer reload explicitly."""
+
+    def test_serve_help_exposes_opt_in_reload(self):
+        result = runner.invoke(app, ["serve", "--help"])
+        assert result.exit_code == 0
+        assert "--reload" in result.stdout
+        # default is off: help prints the flag without a default marker
+        assert "生产保持关闭" in result.stdout

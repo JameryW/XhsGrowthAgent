@@ -1,0 +1,2 @@
+{"file": "docs/deployment.md", "reason": "verify Windows serve guidance and the embedded-PG verification recipe"}
+{"file": "scripts/functional_smoke.py", "reason": "verify account provisioning, retry semantics and status=0 handling"}

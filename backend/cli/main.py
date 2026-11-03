@@ -66,6 +66,22 @@ def _require_existing_thread(thread_id: str, values: Any) -> None:
     raise typer.Exit(1)
 
 
+def _use_psycopg_compatible_loop_on_windows() -> None:
+    """psycopg async refuses to run on the Windows ProactorEventLoop.
+
+    ``uvicorn.run``/``asyncio.run`` use the platform default loop; on Windows that
+    is Proactor, and every Postgres connection then fails with "Psycopg cannot use
+    the 'ProactorEventLoop' to run in async mode", leaving the app in a retry loop
+    and silently falling back to SQLite.  Commands that may open a Postgres pool
+    (``serve``, ``sync-stats``) switch to the selector loop first.
+    """
+    if sys.platform != "win32":
+        return
+    policy_cls = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if policy_cls is not None:
+        asyncio.set_event_loop_policy(policy_cls())
+
+
 # Phase display configuration
 PHASE_STYLES = {
     "idle": "dim",
@@ -268,6 +284,9 @@ def run(
 def serve(
     host: str = typer.Option("0.0.0.0", help="监听地址"),
     port: int = typer.Option(8000, help="监听端口"),
+    reload: bool = typer.Option(
+        False, "--reload", help="开发模式自动重载（生产保持关闭；Windows 沙箱里重启可能退出）"
+    ),
 ) -> None:
     """启动 API 服务"""
     import uvicorn
@@ -275,9 +294,37 @@ def serve(
 
     # 加载 .env 文件
     load_dotenv(override=True)
+    _use_psycopg_compatible_loop_on_windows()
 
     console.print(Panel(f"🌐 启动 API 服务: {host}:{port}", style="bold blue"))
-    uvicorn.run("backend.api.app:app", host=host, port=port, reload=True)
+
+    if reload:
+        uvicorn.run("backend.api.app:app", host=host, port=port, reload=True)
+        return
+    _serve_uvicorn("backend.api.app:app", host=host, port=port)
+
+
+def _serve_uvicorn(app_path: str, host: str, port: int) -> None:
+    """Run uvicorn production-style, with a psycopg-compatible loop on Windows.
+
+    uvicorn hardcodes ``ProactorEventLoop`` on Windows unless it spawns a reload
+    subprocess, and psycopg async cannot run on Proactor ("Psycopg cannot use the
+    'ProactorEventLoop'").  A Postgres-backed deployment on Windows therefore needs
+    the server driven by an explicit ``SelectorEventLoop``.
+    """
+    import uvicorn
+
+    if sys.platform != "win32":
+        uvicorn.run(app_path, host=host, port=port)
+        return
+    config = uvicorn.Config(app_path, host=host, port=port)
+    server = uvicorn.Server(config)
+    loop = asyncio.SelectorEventLoop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(server.serve())
+    finally:
+        loop.close()
 
 
 @app.command()
@@ -494,6 +541,7 @@ def sync_stats(
     from dotenv import load_dotenv
 
     load_dotenv(override=True)
+    _use_psycopg_compatible_loop_on_windows()
     console.print(Panel("📊 同步创作者中心统计", style="bold cyan"))
 
     async def _sync() -> None:

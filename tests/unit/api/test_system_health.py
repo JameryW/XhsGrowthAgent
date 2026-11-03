@@ -65,8 +65,11 @@ def test_creator_stats_scheduler_health_does_not_call_unstarted_sync_normal():
         }
     )
 
-    assert result["status"] == "warning"
+    # A skip before the first completed run is normal operation (anti-risk
+    # windows), not a health failure; the message still says it was skipped.
+    assert result["status"] == "ok"
     assert "跳过" in result["message"]
+    assert result["first_run_pending"] is True
     assert result["last_skip_reason"] == "armed"
 
 
@@ -249,3 +252,44 @@ async def test_health_is_ok_only_with_llm_and_an_app_db(monkeypatch):
     db = response.data["checks"]["database"]
     assert db["app_db"] == "ready"
     assert response.data["status"] == "ok"
+
+
+def test_creator_stats_scheduler_health_marks_pending_first_run_ok():
+    """A fresh deployment must not report degraded while the first run is queued."""
+    from backend.api.routes.system import _creator_stats_scheduler_health
+
+    result = _creator_stats_scheduler_health(
+        {
+            "enabled": True,
+            "interval_hours": 24,
+            "status": "scheduled",
+            "run_count": 0,
+            "last_finished_at": None,
+            "last_succeeded": 0,
+            "last_failed": 0,
+            "next_run_at": "2026-11-04T11:36:34+08:00",
+        }
+    )
+
+    assert result["status"] == "ok"
+    assert result["first_run_pending"] is True
+    assert "已排期" in result["message"]
+
+
+def test_creator_stats_scheduler_health_warns_when_unscheduled():
+    from backend.api.routes.system import _creator_stats_scheduler_health
+
+    result = _creator_stats_scheduler_health(
+        {
+            "enabled": True,
+            "interval_hours": 24,
+            "status": "idle",
+            "run_count": 0,
+            "last_finished_at": None,
+            "last_failed": 0,
+            "next_run_at": None,
+        }
+    )
+
+    assert result["status"] == "warning"
+    assert "未排期" in result["message"]

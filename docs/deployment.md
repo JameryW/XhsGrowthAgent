@@ -497,6 +497,30 @@ redis-cli -a password ping
   `unavailable` 表示这是 graph-only 开发模式：健康整体为 `degraded`，`POST /api/auth/login`
   等接口返回 **503 `ERROR_DB_UNAVAILABLE`**（而不是 500）。
 - `search_api`：只剩 Tavily 一项；`DEEPSEEK_API_KEY` 不再参与搜索路由。
+- `creator_stats_scheduler`：启用后**首轮尚未运行**（已排期或按策略跳过）返回
+  `ok` + `first_run_pending=true`——新部署不需要等首轮跑完才"健康"；只有"无完成记录
+  且未排期"才是 `warning`。
+
+### Windows 上跑 Postgres 路径
+
+uvicorn 在 Windows 无 reload 时会硬编码 `ProactorEventLoop`，而 psycopg 异步拒绝在
+Proactor 上运行（`Psycopg cannot use the 'ProactorEventLoop'`），连接池会一直重试并
+静默回退 SQLite。`xhs-growth serve` 已处理：默认（`--reload` 关闭）在 Windows 上用显式
+`SelectorEventLoop` 驱动 uvicorn；`--reload` 仅供本地开发。
+
+本地没有 Postgres 时，可用 `uvicorn`/容器之外的方式起一个真实的 PostgreSQL 16 做功能
+验证（例如 `pip install pgserver`，其 wheel 自带 pgvector 0.6.2），然后：
+
+```bash
+POSTGRES_URI='postgresql://postgres:@127.0.0.1:<port>/postgres' \
+  xhs-growth serve --host 127.0.0.1 --port 8099
+python scripts/functional_smoke.py --base-url http://127.0.0.1:8099 \
+  --username admin --password admin123 --start-workflow
+```
+
+实测该路径 28 项检查全部通过（含登录、鉴权读、工作流 start/status/pause/resume/cancel/
+delete、账号清理）。注意：start 后 runner 写 checkpoint 期间 `/status` 可能有秒级延迟
+（嵌入式 PG 上实测约 12.5s），冒烟脚本对此用 60s 超时 + 一次重试，不作为失败。
 
 ## 部署后功能冒烟（本地/生产通用）
 

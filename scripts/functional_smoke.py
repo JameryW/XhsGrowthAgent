@@ -108,6 +108,30 @@ def _error_code(response: HttpResponse) -> str | None:
     return None
 
 
+def _call_with_retry(
+    base_url: str,
+    method: str,
+    path: str,
+    *,
+    attempts: int = 2,
+    timeout: float = 60.0,
+    **kwargs: Any,
+) -> HttpResponse:
+    """Lifecycle calls can stall while the runner writes checkpoints.
+
+    On a real Postgres deployment the status endpoint was measured at ~12.5 s
+    right after a start (checkpoint read while the runner commits).  That is a
+    performance question, not an endpoint failure, so a single transient network
+    error is retried instead of failing the smoke run.
+    """
+    response = _call(base_url, method, path, timeout=timeout, **kwargs)
+    for _ in range(attempts - 1):
+        if response.status != 0:
+            return response
+        response = _call(base_url, method, path, timeout=timeout, **kwargs)
+    return response
+
+
 def check_health(base_url: str) -> list[Result]:
     results: list[Result] = []
     for path in ("/health", "/api/system/health"):
@@ -260,6 +284,46 @@ def check_deployment_surface(base_url: str) -> list[Result]:
     return results
 
 
+def _ensure_account(base_url: str, token: str) -> tuple[str | None, Result]:
+    """Return an owned account id, creating one only when the console has none.
+
+    ``POST /api/workflow/start`` is account-scoped and answers 404
+    ERROR_ACCOUNT_NOT_FOUND for an unknown id; a fresh console has no accounts at
+    all (``GET /api/workflow/list`` even answers 400 "create an account first"),
+    so the lifecycle section must provision one before testing.
+    """
+    listed = _call(base_url, "GET", "/api/accounts", token=token)
+    data = listed.payload.get("data") if isinstance(listed.payload, dict) else None
+    items = data if isinstance(data, list) else None
+    if items is None and isinstance(data, dict):
+        items = data.get("accounts") if isinstance(data.get("accounts"), list) else None
+    if items:
+        first = items[0]
+        account_id = first.get("id") if isinstance(first, dict) else None
+        if account_id:
+            return str(account_id), Result("account", "PASS", "reused existing account")
+
+    created = _call(
+        base_url, "POST", "/api/accounts", payload={"name": "functional-smoke"}, token=token
+    )
+    account = created.payload.get("data") if isinstance(created.payload, dict) else None
+    account_id = account.get("id") if isinstance(account, dict) else None
+    if created.status < 400 and account_id:
+        return str(account_id), Result("account", "PASS", f"created {account_id}")
+    return None, Result(
+        "account",
+        "FAIL",
+        f"HTTP {created.status} {_error_code(created) or ''}",
+    )
+
+
+def _delete_account(base_url: str, token: str, account_id: str) -> Result:
+    deleted = _call(base_url, "DELETE", f"/api/accounts/{account_id}", token=token)
+    if 0 < deleted.status < 400:
+        return Result("account cleanup", "PASS", f"HTTP {deleted.status}")
+    return Result("account cleanup", "FAIL", f"HTTP {deleted.status}")
+
+
 def _authenticated_reads(base_url: str, token: str) -> list[Result]:
     results: list[Result] = []
     for path in (
@@ -289,6 +353,9 @@ def _workflow_lifecycle(base_url: str, token: str, account_id: str) -> list[Resu
             "async_mode": True,
             "dry_run": True,
             "topic": "functional smoke",
+            # Fresh consoles have no niche history; pass it so the start does not
+            # fail D2's niche resolution for a test-only account.
+            "niche": "家居",
         },
         token=token,
     )
@@ -304,21 +371,26 @@ def _workflow_lifecycle(base_url: str, token: str, account_id: str) -> list[Resu
         )
         return results
 
-    status = _call(base_url, "GET", f"/api/workflow/status/{thread_id}", token=token)
+    status = _call_with_retry(base_url, "GET", f"/api/workflow/status/{thread_id}", token=token)
     if status.status == 200:
         results.append(Result("workflow status", "PASS", ""))
     else:
         results.append(Result("workflow status", "FAIL", f"HTTP {status.status}"))
 
     for action in ("pause", "resume", "cancel"):
-        response = _call(base_url, "POST", f"/api/workflow/{action}/{thread_id}", token=token)
-        if response.status < 500:
+        response = _call_with_retry(
+            base_url, "POST", f"/api/workflow/{action}/{thread_id}", token=token
+        )
+        # 404/409 means the dry-run finished before the action landed — the
+        # endpoint answered, which is what this section tests.  A 0 means the
+        # connection failed (e.g. the server restarted mid-run) and must fail.
+        if 0 < response.status < 500:
             results.append(Result(f"workflow {action}", "PASS", f"HTTP {response.status}"))
         else:
             results.append(Result(f"workflow {action}", "FAIL", f"HTTP {response.status}"))
 
-    deleted = _call(base_url, "DELETE", f"/api/workflow/{thread_id}", token=token)
-    if deleted.status < 500:
+    deleted = _call_with_retry(base_url, "DELETE", f"/api/workflow/{thread_id}", token=token)
+    if 0 < deleted.status < 500:
         results.append(Result("workflow delete", "PASS", f"HTTP {deleted.status}"))
     else:
         results.append(Result("workflow delete", "FAIL", f"HTTP {deleted.status}"))
@@ -337,9 +409,16 @@ def check_login(
         if not token:
             return [Result("login", "FAIL", "200 without a token")]
         results = [Result("login", "PASS", "")]
+        account_id, account_result = _ensure_account(base_url, token)
+        results.append(account_result)
         results.extend(_authenticated_reads(base_url, token))
-        if start_workflow:
+        if start_workflow and account_id:
             results.extend(_workflow_lifecycle(base_url, token, account_id))
+            results.append(_delete_account(base_url, token, account_id))
+        elif start_workflow:
+            results.append(
+                Result("workflow lifecycle", "SKIP", "no owned account to start a workflow with")
+            )
         return results
 
     if response.status == 503 and _error_code(response) == DB_UNAVAILABLE_CODE:

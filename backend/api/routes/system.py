@@ -82,10 +82,27 @@ def _creator_stats_scheduler_health(state: dict[str, Any]) -> dict[str, Any]:
     last_finished_at = state.get("last_finished_at")
     skip_reason = str(state.get("last_skip_reason") or "").strip()
     if not last_finished_at:
-        message = "定时同步尚无完成记录"
-        if skip_reason:
-            message = f"定时同步本周期已跳过（{skip_reason}），尚无完成记录"
-        return {"status": "warning", "message": message, **common}
+        # A freshly deployed instance schedules its first run hours out (startup
+        # delay + active-window).  Calling that "warning" soft-degraded overall
+        # health for that whole window, so operators saw a red deployment that was
+        # actually fine.  Pending-first-run is ok; only an unscheduled scheduler
+        # (no next_run_at and no skip reason) is a real warning.
+        next_run_at = state.get("next_run_at")
+        if next_run_at or skip_reason:
+            message = "定时同步尚未完成首轮（已排期，等待首次运行）"
+            if skip_reason:
+                message = f"定时同步本周期已跳过（{skip_reason}），等待下次排期"
+            return {
+                "status": "ok",
+                "message": message,
+                "first_run_pending": True,
+                **common,
+            }
+        return {
+            "status": "warning",
+            "message": "定时同步尚无完成记录且未排期",
+            **common,
+        }
 
     if scheduler_status == "skipped":
         return {

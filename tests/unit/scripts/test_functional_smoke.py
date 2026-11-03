@@ -190,3 +190,81 @@ def test_surface_fails_when_unknown_api_route_is_not_an_envelope(monkeypatch):
     results = smoke.check_deployment_surface("http://test")
     by_name = {r.name: r for r in results}
     assert by_name["unknown api route"].status == "FAIL"
+
+
+def test_ensure_account_reuses_an_existing_owned_account(monkeypatch):
+    def fake(base_url, method, path, **kwargs):
+        if path == "/api/accounts" and method == "GET":
+            return _response(200, {"data": [{"id": "acct-existing", "name": "x"}]})
+        return _response(500, {"error": {"code": "X"}})
+
+    monkeypatch.setattr(smoke, "_call", fake)
+    account_id, result = smoke._ensure_account("http://test", "token")
+    assert account_id == "acct-existing"
+    assert result.status == "PASS"
+    assert "reused" in result.detail
+
+
+def test_ensure_account_creates_one_when_the_console_is_empty(monkeypatch):
+    def fake(base_url, method, path, **kwargs):
+        if path == "/api/accounts" and method == "GET":
+            return _response(200, {"data": []})
+        if path == "/api/accounts" and method == "POST":
+            assert kwargs["payload"] == {"name": "functional-smoke"}
+            return _response(200, {"data": {"id": "acct-new"}})
+        return _response(500, {"error": {"code": "X"}})
+
+    monkeypatch.setattr(smoke, "_call", fake)
+    account_id, result = smoke._ensure_account("http://test", "token")
+    assert account_id == "acct-new"
+    assert result.status == "PASS"
+    assert "created" in result.detail
+
+
+def test_ensure_account_fails_when_creation_is_rejected(monkeypatch):
+    def fake(base_url, method, path, **kwargs):
+        if path == "/api/accounts" and method == "GET":
+            return _response(200, {"data": []})
+        return _response(400, {"error": {"code": "ERROR_VALIDATION"}})
+
+    monkeypatch.setattr(smoke, "_call", fake)
+    account_id, result = smoke._ensure_account("http://test", "token")
+    assert account_id is None
+    assert result.status == "FAIL"
+
+
+def test_login_runs_the_lifecycle_with_the_provisioned_account(monkeypatch):
+    seen: dict[str, str] = {}
+
+    def fake(base_url, method, path, **kwargs):
+        if path == "/api/auth/login":
+            return _response(200, {"data": {"token": "tok"}})
+        if path == "/api/accounts" and method == "GET":
+            return _response(200, {"data": []})
+        if path == "/api/accounts" and method == "POST":
+            return _response(200, {"data": {"id": "acct-1"}})
+        if path == "/api/workflow/start":
+            seen["account"] = kwargs["payload"]["account_id"]
+            return _response(200, {"data": {"thread_id": "thread-1"}})
+        if path == "/api/workflow/status/thread-1":
+            return _response(200, {"success": True})
+        if path.startswith("/api/workflow/"):
+            return _response(200, {"success": True})
+        if path == "/api/accounts/acct-1" and method == "DELETE":
+            return _response(200, {"success": True})
+        return _response(200, {"success": True})
+
+    monkeypatch.setattr(smoke, "_call", fake)
+    results = smoke.check_login(
+        "http://test",
+        username="admin",
+        password="pw",
+        start_workflow=True,
+        account_id="ignored",
+    )
+    names = [r.name for r in results]
+    assert "account" in names
+    assert "workflow start" in names
+    assert "account cleanup" in names
+    assert seen["account"] == "acct-1"
+    assert all(r.status == "PASS" for r in results)
