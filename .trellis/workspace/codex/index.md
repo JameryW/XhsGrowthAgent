@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 66
-- **Last Active**: 2026-11-02
+- **Total Sessions**: 67
+- **Last Active**: 2026-11-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~238 | Active |
+| `journal-2.md` | ~271 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 67 | 2026-11-03 | 文档计数更正与本地 CI 全量验证（票 5co） | `e798c3e2` | `main` |
 | 66 | 2026-11-02 | #756 后变体示例改为逐 phase 预算（票 5cn） | `4e565dfe` | `main` |
 | 65 | 2026-11-02 | 复核高危修复：artifact 内容解析与第二批脱敏（票 5cm） | `22ccb163` | `main` |
 | 64 | 2026-11-02 | 验证轮小硬化：预算单一来源、未列出 JSON、无盐提示（票 5cl） | `52046e04` | `main` |

@@ -236,3 +236,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 67: 文档计数更正与本地 CI 全量验证（票 5co）
+
+**Date**: 2026-11-03
+**Task**: 文档计数更正与本地 CI 全量验证（票 5co）
+**Branch**: `main`
+
+### Summary
+
+核对评测方案全部 X passed 声明：judge 12→13 并补 used/max_calls 边界覆盖；其余计数一致（fixtures 21/gate 29/plan 15/policy 9/unit scripts 188）。同轮跑完整 ci_local：lint/format/mypy/gates/tests/omp PASS，eval-gate 与 frontend 如实 SKIP，local CI parity: OK。票 5co 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e798c3e2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
