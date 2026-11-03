@@ -368,3 +368,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 71: 检查点枚举 allowlist + astream v2 + 冒烟删除重试（票 5ct）
+
+**Date**: 2026-11-04
+**Task**: 检查点枚举 allowlist + astream v2 + 冒烟删除重试（票 5ct）
+**Branch**: `main`
+
+### Summary
+
+修复真实运行遗留：WorkflowPhase/WorkflowMode 在 langgraph msgpack 中未注册（未来 strict 版本会拒绝加载旧线程）——新增 checkpoint_serde 显式 allowlist 并注入 dev/memory/prod 三种 checkpointer；CLI astream_events v1→v2 消除弃用告警；冒烟 cancel 后 delete 400 时重试，避免孤儿历史。真实 CLI run 与 Postgres API 冒烟均验证无 unregistered/弃用告警。含 PG 对等全量 4958 passed / 11 skipped / 0 failed。票 5ct 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bbac6f4e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
