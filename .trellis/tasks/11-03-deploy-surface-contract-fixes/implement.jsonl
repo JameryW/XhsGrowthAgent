@@ -1,0 +1,2 @@
+{"file": "docs/deployment.md", "reason": "the deployment-surface contracts the smoke script pins"}
+{"file": "backend/api/responses.py", "reason": "the ApiResponse envelope shape the 404 handler reuses"}

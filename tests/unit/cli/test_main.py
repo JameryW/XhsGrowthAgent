@@ -221,3 +221,22 @@ class TestNicheRequirement:
         result = runner.invoke(app, ["run", "--account-id", "smoke"])
         assert result.exit_code == 2
         assert "--niche" in result.stdout
+
+
+class TestUnknownThread:
+    """status/logs/resume must not claim success for a thread that never existed."""
+
+    def test_status_unknown_thread_exits_1(self):
+        result = runner.invoke(app, ["status", "functional-smoke-unknown-thread"])
+        assert result.exit_code == 1
+        assert "线程不存在" in result.stdout
+
+    def test_logs_unknown_thread_exits_1(self):
+        result = runner.invoke(app, ["logs", "functional-smoke-unknown-thread"])
+        assert result.exit_code == 1
+        assert "线程不存在" in result.stdout
+
+    def test_resume_unknown_thread_exits_1(self):
+        result = runner.invoke(app, ["resume", "functional-smoke-unknown-thread"])
+        assert result.exit_code == 1
+        assert "线程不存在" in result.stdout

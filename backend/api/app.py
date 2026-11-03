@@ -15,13 +15,16 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import FileResponse, Response
 
+from backend.api.errors import ErrorCode
 from backend.api.middleware import error_handler_middleware
-from backend.api.responses import ApiResponse, success
+from backend.api.responses import ApiResponse, error, success
 
 # compile_graph_dev + RippleService are imported lazily inside lifespan (see
 # startup) — pulling backend.graph.builder / ripple_service at module load
@@ -1523,6 +1526,32 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.middleware("http")(error_handler_middleware)
 
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Keep /api/* router errors in the ApiResponse envelope.
+
+    FastAPI's default 404 for an unmatched API route is an empty body with no
+    Content-Type; the frontend then classifies it as a network error, which hides
+    proxy/base-path mistakes.  Non-API paths keep the default ``{"detail": ...}``
+    shape, and method-not-allowed (405) stays a distinct status.
+    """
+    if exc.status_code == 404 and request.url.path.startswith("/api/"):
+        return JSONResponse(
+            status_code=404,
+            content=error(
+                code=ErrorCode.ROUTE_NOT_FOUND.value,
+                message=f"No API route matches {request.method} {request.url.path}",
+            ).model_dump(mode="json"),
+            headers=getattr(exc, "headers", None),
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
 from backend.api.routes import (  # noqa: E402
     accounts,
     analytics,
@@ -1666,14 +1695,16 @@ if frontend_dist.exists():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> Response:
         """Serve SPA frontend — return index.html for all non-API routes."""
-        # API、WebSocket 和事件恢复路径不处理
+        # API/WebSocket/事件恢复路径不处理；抛 HTTPException 才能走统一的
+        # /api/* 错误信封（直接 return Response(404) 会跳过异常处理器）。
         if (
             full_path.startswith("api/")
             or full_path.startswith("ws")
             or full_path.startswith("events/")
         ):
-            return Response(status_code=404)
-        # assets 目录提供静态文件（带缓存头）
+            raise StarletteHTTPException(status_code=404, detail="Not Found")
+        # assets 目录提供静态文件（带缓存头）。缺失的资产必须是 404：
+        # 返回 index.html 会让浏览器把 HTML 当 JS 执行，错误无从定位。
         if full_path.startswith("assets/"):
             file_path = assets_dir / full_path.removeprefix("assets/")
             if file_path.is_file():
@@ -1681,6 +1712,7 @@ if frontend_dist.exists():
                     str(file_path),
                     headers={"Cache-Control": "public, max-age=31536000, immutable"},
                 )
+            raise StarletteHTTPException(status_code=404, detail="Not Found")
         # 其他路由返回 index.html
         return Response(
             content=(frontend_dist / "index.html").read_bytes(),

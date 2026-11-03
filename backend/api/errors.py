@@ -10,6 +10,9 @@ class ErrorCode(StrEnum):
     """Standard error codes."""
 
     WORKFLOW_NOT_FOUND = "ERROR_WORKFLOW_NOT_FOUND"
+    # No API route matches the requested path (router-level 404, as opposed to
+    # a known resource missing — those keep their typed codes).
+    ROUTE_NOT_FOUND = "ERROR_ROUTE_NOT_FOUND"
     WORKFLOW_ALREADY_RUNNING = "ERROR_WORKFLOW_ALREADY_RUNNING"
     WORKFLOW_PHASE_INVALID = "ERROR_WORKFLOW_PHASE_INVALID"
     WORKFLOW_STATE_CORRUPT = "ERROR_WORKFLOW_STATE_CORRUPT"

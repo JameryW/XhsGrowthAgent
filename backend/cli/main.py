@@ -45,6 +45,27 @@ app = typer.Typer(name="xhs-growth", help="小红书增长引擎 Agent")
 console = Console()
 
 
+def _require_existing_thread(thread_id: str, values: Any) -> None:
+    """Fail honestly on an unknown thread instead of reporting "completed".
+
+    ``aget_state`` returns an empty snapshot for a thread that was never written,
+    and the old CLIs rendered that as 状态=completed / 阶段=unknown with exit 0 —
+    a typo or a wrong checkpointer looked like a finished workflow.
+    """
+    if values:
+        return
+    console.print(
+        Panel(
+            f"未找到工作流线程: {thread_id}\n\n"
+            "请确认 thread_id 正确，并在写它的同一环境查询"
+            "（本地开发模式的检查点只写入本机 .xhs/）。",
+            title="❌ 线程不存在",
+            style="red",
+        )
+    )
+    raise typer.Exit(1)
+
+
 # Phase display configuration
 PHASE_STYLES = {
     "idle": "dim",
@@ -270,6 +291,7 @@ def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")) -> N
         async with dev_graph() as graph:
             config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
             snapshot = await graph.aget_state(config)
+            _require_existing_thread(thread_id, snapshot.values)
 
             # Use derive_status for accurate status (handles stale, gates, etc.)
             derived = derive_status(snapshot, has_active_task=False)
@@ -340,87 +362,90 @@ def resume(
     async def _resume() -> None:
         from langgraph.types import Command
 
-        from backend.graph.builder import compile_graph_dev
+        from backend.graph.builder import dev_graph
         from backend.state.machine import derive_status
 
-        graph = await compile_graph_dev()
-        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        async with dev_graph() as graph:
+            config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
-        state = await graph.aget_state(config)
-        current_phase = state.values.get("phase", "unknown")
-        derived = derive_status(state, has_active_task=False)
+            state = await graph.aget_state(config)
+            _require_existing_thread(thread_id, state.values)
+            current_phase = state.values.get("phase", "unknown")
+            derived = derive_status(state, has_active_task=False)
 
-        console.print(f"[cyan]恢复工作流: {thread_id}[/cyan]")
-        console.print(f"[dim]当前阶段: {format_phase(current_phase)}[/dim]")
-        console.print(f"[dim]状态: {format_phase(derived.value)}[/dim]")
+            console.print(f"[cyan]恢复工作流: {thread_id}[/cyan]")
+            console.print(f"[dim]当前阶段: {format_phase(current_phase)}[/dim]")
+            console.print(f"[dim]状态: {format_phase(derived.value)}[/dim]")
 
-        if state.next:
-            console.print(f"[dim]下一步: {', '.join(state.next)}[/dim]")
+            if state.next:
+                console.print(f"[dim]下一步: {', '.join(state.next)}[/dim]")
 
-            # Determine resume input based on gate type
-            next_nodes = state.next
-            resume_value: Command[Any] | None = None  # Default: ainvoke(None) for non-gate nodes
-
-            if "review_gate" in next_nodes:
-                console.print("[yellow]⚠️ 工作流停在 review_gate（人工审核）[/yellow]")
-                console.print("[dim]CLI 无法提交审核决定。请通过 API 或前端界面操作：[/dim]")
-                console.print("[dim]  POST /api/review/submit/{thread_id}[/dim]")
-                return  # Don't auto-resume review gate — it needs human decision
-
-            if "draft_gate" in next_nodes:
-                console.print("[yellow]⚠️ 工作流停在 draft_gate（草稿确认）[/yellow]")
-                console.print("[dim]CLI 无法提交草稿。请通过 API 或前端界面操作：[/dim]")
-                console.print("[dim]  POST /api/workflow/submit-draft/{thread_id}[/dim]")
-                return  # Don't auto-resume draft gate — it needs user input
-
-            if "choice_gate" in next_nodes:
-                console.print("[yellow]⚠️ 工作流停在 choice_gate（版本选择）[/yellow]")
-                console.print("[dim]CLI 无法选择版本。请通过 API 或前端界面操作：[/dim]")
-                return  # Don't auto-resume choice gate
-
-            # For dynamic interrupts (ripple_gate, blogger_gate), the node already ran
-            # its logic and called interrupt() with a payload — resume with a default
-            if state.interrupts:
-                interrupt_val = state.interrupts[0].value
-                if isinstance(interrupt_val, dict):
-                    gate_type = interrupt_val.get("gate")
-                    if gate_type == "ripple":
-                        console.print("[dim]Ripple gate 中断 — 自动 accept[/dim]")
-                        resume_value = Command(resume={"action": "accept"})
-                    elif gate_type == "blogger":
-                        console.print("[dim]Blogger gate 中断 — 自动 skip[/dim]")
-                        resume_value = Command(resume={"skip": True})
-                    elif gate_type == "draft":
-                        console.print("[yellow]⚠️ Draft gate 中断 — 需要用户输入[/yellow]")
-                        console.print("[dim]请通过 API 提交草稿[/dim]")
-                        return
-                    elif gate_type == "choice":
-                        console.print("[yellow]⚠️ Choice gate 中断 — 需要用户选择[/yellow]")
-                        return
-
-            try:
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    console=console,
-                ) as progress:
-                    task = progress.add_task("恢复执行...", total=None)
-                    await graph.ainvoke(resume_value, config)
-                    progress.update(task, description="[green]恢复完成[/green]")
-
-                final_state = await graph.aget_state(config)
-                final_phase = final_state.values.get("phase", "unknown")
-                console.print(
-                    Panel(
-                        f"最终阶段: {format_phase(final_phase)}",
-                        title="✅ 恢复结果",
-                        style="green",
-                    )
+                # Determine resume input based on gate type
+                next_nodes = state.next
+                resume_value: Command[Any] | None = (
+                    None  # Default: ainvoke(None) for non-gate nodes
                 )
-            except Exception as e:
-                console.print(Panel(f"恢复失败: {e}", title="❌ 错误", style="red"))
-        else:
-            console.print("[yellow]工作流已完成，无需恢复[/yellow]")
+
+                if "review_gate" in next_nodes:
+                    console.print("[yellow]⚠️ 工作流停在 review_gate（人工审核）[/yellow]")
+                    console.print("[dim]CLI 无法提交审核决定。请通过 API 或前端界面操作：[/dim]")
+                    console.print("[dim]  POST /api/review/submit/{thread_id}[/dim]")
+                    return  # Don't auto-resume review gate — it needs human decision
+
+                if "draft_gate" in next_nodes:
+                    console.print("[yellow]⚠️ 工作流停在 draft_gate（草稿确认）[/yellow]")
+                    console.print("[dim]CLI 无法提交草稿。请通过 API 或前端界面操作：[/dim]")
+                    console.print("[dim]  POST /api/workflow/submit-draft/{thread_id}[/dim]")
+                    return  # Don't auto-resume draft gate — it needs user input
+
+                if "choice_gate" in next_nodes:
+                    console.print("[yellow]⚠️ 工作流停在 choice_gate（版本选择）[/yellow]")
+                    console.print("[dim]CLI 无法选择版本。请通过 API 或前端界面操作：[/dim]")
+                    return  # Don't auto-resume choice gate
+
+                # For dynamic interrupts (ripple_gate, blogger_gate), the node already ran
+                # its logic and called interrupt() with a payload — resume with a default
+                if state.interrupts:
+                    interrupt_val = state.interrupts[0].value
+                    if isinstance(interrupt_val, dict):
+                        gate_type = interrupt_val.get("gate")
+                        if gate_type == "ripple":
+                            console.print("[dim]Ripple gate 中断 — 自动 accept[/dim]")
+                            resume_value = Command(resume={"action": "accept"})
+                        elif gate_type == "blogger":
+                            console.print("[dim]Blogger gate 中断 — 自动 skip[/dim]")
+                            resume_value = Command(resume={"skip": True})
+                        elif gate_type == "draft":
+                            console.print("[yellow]⚠️ Draft gate 中断 — 需要用户输入[/yellow]")
+                            console.print("[dim]请通过 API 提交草稿[/dim]")
+                            return
+                        elif gate_type == "choice":
+                            console.print("[yellow]⚠️ Choice gate 中断 — 需要用户选择[/yellow]")
+                            return
+
+                try:
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        console=console,
+                    ) as progress:
+                        task = progress.add_task("恢复执行...", total=None)
+                        await graph.ainvoke(resume_value, config)
+                        progress.update(task, description="[green]恢复完成[/green]")
+
+                    final_state = await graph.aget_state(config)
+                    final_phase = final_state.values.get("phase", "unknown")
+                    console.print(
+                        Panel(
+                            f"最终阶段: {format_phase(final_phase)}",
+                            title="✅ 恢复结果",
+                            style="green",
+                        )
+                    )
+                except Exception as e:
+                    console.print(Panel(f"恢复失败: {e}", title="❌ 错误", style="red"))
+            else:
+                console.print("[yellow]工作流已完成，无需恢复[/yellow]")
 
     asyncio.run(_resume())
 
@@ -433,24 +458,25 @@ def logs(
     """查看工作流日志"""
 
     async def _logs() -> None:
-        from backend.graph.builder import compile_graph_dev
+        from backend.graph.builder import dev_graph
 
-        graph = await compile_graph_dev()
-        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        async with dev_graph() as graph:
+            config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
-        state = await graph.aget_state(config)
+            state = await graph.aget_state(config)
+            _require_existing_thread(thread_id, state.values)
 
-        console.print(Panel(f"📝 工作流日志: {thread_id}", style="bold blue"))
+            console.print(Panel(f"📝 工作流日志: {thread_id}", style="bold blue"))
 
-        # Show performance log (P1a-S2: Event store first, legacy checkpoint
-        # list as fallback).
-        from backend.state.events import load_perf_log
+            # Show performance log (P1a-S2: Event store first, legacy checkpoint
+            # list as fallback).
+            from backend.state.events import load_perf_log
 
-        perf_log = await load_perf_log(thread_id, state.values)
-        if perf_log:
-            console.print("\n[cyan]性能记录:[/cyan]")
-            for entry in perf_log:
-                console.print(f"  [dim]• {entry}[/dim]")
+            perf_log = await load_perf_log(thread_id, state.values)
+            if perf_log:
+                console.print("\n[cyan]性能记录:[/cyan]")
+                for entry in perf_log:
+                    console.print(f"  [dim]• {entry}[/dim]")
 
     asyncio.run(_logs())
 

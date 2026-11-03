@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -55,6 +56,7 @@ class HttpResponse:
     status: int
     content_type: str
     payload: Any
+    headers: dict[str, str] | None = None
 
 
 def _call(
@@ -65,29 +67,36 @@ def _call(
     payload: dict[str, Any] | None = None,
     token: str | None = None,
     timeout: float = 15.0,
+    headers: dict[str, str] | None = None,
 ) -> HttpResponse:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(base_url.rstrip("/") + path, data=data, method=method)
     request.add_header("Content-Type", "application/json")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             raw = response.read().decode("utf-8", "replace")
+            headers = {key.lower(): value for key, value in response.headers.items()}
             content_type = response.headers.get("Content-Type", "")
             try:
-                return HttpResponse(response.status, content_type, json.loads(raw))
+                return HttpResponse(response.status, content_type, json.loads(raw), headers)
             except json.JSONDecodeError:
-                return HttpResponse(response.status, content_type, raw[:400])
+                # Keep HTML/JS bodies intact: the index shell can be large and
+                # its asset references live past the first few hundred chars.
+                return HttpResponse(response.status, content_type, raw, headers)
     except urllib.error.HTTPError as exc:
         raw = exc.read().decode("utf-8", "replace")
+        headers = {key.lower(): value for key, value in exc.headers.items()} if exc.headers else {}
         content_type = exc.headers.get("Content-Type", "") if exc.headers else ""
         try:
-            return HttpResponse(exc.code, content_type, json.loads(raw))
+            return HttpResponse(exc.code, content_type, json.loads(raw), headers)
         except json.JSONDecodeError:
-            return HttpResponse(exc.code, content_type, raw[:400])
+            return HttpResponse(exc.code, content_type, raw[:400], headers)
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return HttpResponse(0, "", f"unreachable: {exc}")
+        return HttpResponse(0, "", f"unreachable: {exc}", {})
 
 
 def _error_code(response: HttpResponse) -> str | None:
@@ -181,6 +190,73 @@ def check_public(base_url: str) -> list[Result]:
         results.append(Result("auth boundary", "PASS", "401 without token"))
     else:
         results.append(Result("auth boundary", "FAIL", f"HTTP {unauth.status}, expected 401"))
+    return results
+
+
+def check_deployment_surface(base_url: str) -> list[Result]:
+    """Static assets, OpenAPI, and the router-level error contract."""
+    results: list[Result] = []
+
+    spec = _call(base_url, "GET", "/openapi.json")
+    if spec.status == 200 and isinstance(spec.payload, dict) and spec.payload.get("paths"):
+        results.append(Result("openapi", "PASS", f"{len(spec.payload['paths'])} paths"))
+    else:
+        results.append(Result("openapi", "FAIL", f"HTTP {spec.status}"))
+
+    docs = _call(base_url, "GET", "/docs")
+    if docs.status == 200 and "text/html" in (docs.content_type or "").lower():
+        results.append(Result("api docs", "PASS", ""))
+    else:
+        results.append(Result("api docs", "FAIL", f"HTTP {docs.status}"))
+
+    index = _call(base_url, "GET", "/")
+    html = index.payload if isinstance(index.payload, str) else ""
+    assets = sorted(set(re.findall(r'(?:src|href)="(/assets/[^"]+)"', html)))
+    missing = [asset for asset in assets if _call(base_url, "GET", asset).status != 200]
+    if not assets:
+        results.append(Result("static assets", "FAIL", "index references no /assets/ files"))
+    elif missing:
+        results.append(Result("static assets", "FAIL", f"missing: {missing[:3]}"))
+    else:
+        results.append(Result("static assets", "PASS", f"{len(assets)} assets"))
+
+    unknown = _call(base_url, "GET", "/api/functional-smoke-does-not-exist")
+    code = _error_code(unknown)
+    if unknown.status == 404 and isinstance(unknown.payload, dict) and code:
+        results.append(Result("unknown api route", "PASS", f"404 {code}"))
+    else:
+        results.append(
+            Result(
+                "unknown api route",
+                "FAIL",
+                f"HTTP {unknown.status}, body is not an error envelope",
+            )
+        )
+
+    wrong_method = _call(base_url, "POST", "/api/system/health")
+    if wrong_method.status == 405:
+        results.append(Result("method not allowed", "PASS", "405"))
+    else:
+        results.append(Result("method not allowed", "FAIL", f"HTTP {wrong_method.status}"))
+
+    compressed = _call(base_url, "GET", "/api/system/health", headers={"Accept-Encoding": "gzip"})
+    encoding = (compressed.headers or {}).get("content-encoding", "")
+    if compressed.status == 200 and encoding == "gzip":
+        results.append(Result("gzip", "PASS", ""))
+    else:
+        results.append(Result("gzip", "FAIL", f"content-encoding={encoding or 'none'}"))
+
+    preflight = _call(
+        base_url,
+        "OPTIONS",
+        "/api/workflow/list",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
+    )
+    allow_origin = (preflight.headers or {}).get("access-control-allow-origin")
+    if preflight.status == 200 and allow_origin:
+        results.append(Result("cors preflight", "PASS", allow_origin))
+    else:
+        results.append(Result("cors preflight", "FAIL", f"HTTP {preflight.status}"))
     return results
 
 
@@ -281,6 +357,7 @@ def check_login(
 def run_checks(args: argparse.Namespace) -> list[Result]:
     results = check_health(args.base_url)
     results.extend(check_public(args.base_url))
+    results.extend(check_deployment_surface(args.base_url))
     if args.username and args.password:
         results.extend(
             check_login(

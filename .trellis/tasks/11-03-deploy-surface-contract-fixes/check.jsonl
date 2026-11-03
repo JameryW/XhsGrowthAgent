@@ -1,0 +1,2 @@
+{"file": "docs/deployment.md", "reason": "verify the 404 envelope / asset 404 / 405 / gzip / CORS wording matches behaviour"}
+{"file": "scripts/functional_smoke.py", "reason": "verify the surface checks fail when a contract regresses"}

@@ -523,6 +523,14 @@ python scripts/functional_smoke.py --base-url http://127.0.0.1:8000 \
 `PASS`。本地无 Postgres 时只能得到 graph-only 结果：静态壳/公开接口/鉴权边界通过，鉴权段
 `BLOCKED`——要测完整控制台，先按上文启动 PostgreSQL。
 
+该脚本同时钉住几条部署面契约（2026-11 修复）：
+
+- 未匹配的 `/api/*` 路由返回 `404` + ApiResponse 信封（`ERROR_ROUTE_NOT_FOUND`），不再是
+  空 body——否则前端会把路由/代理配错当成网络错误；
+- `index.html` 引用的 `/assets/*` 必须全部 200；**缺失的资产返回 404**，绝不回退成
+  `index.html`（浏览器会把 HTML 当 JS 执行，报错无从定位）；
+- 错误方法保持 `405`；`gzip` 与 CORS preflight 生效。
+
 ## 备份策略
 
 ### PostgreSQL 备份

@@ -134,3 +134,59 @@ def test_workflow_lifecycle_skips_when_start_fails(monkeypatch):
     results = smoke._workflow_lifecycle("http://test", "token", "acct")
     assert [r.status for r in results] == ["FAIL"]
     assert "ERROR_VALIDATION" in results[0].detail
+
+
+def _surface_responses(monkeypatch, *, asset_status: int = 200, unknown_route_json: bool = True):
+    def fake(base_url, method, path, **kwargs):
+        if path == "/openapi.json":
+            return _response(200, {"paths": {"/health": {}}})
+        if path == "/docs":
+            return _response(200, "<html></html>", "text/html")
+        if path == "/":
+            return _response(
+                200,
+                '<html><script src="/assets/index.js"></script></html>',
+                "text/html",
+            )
+        if path.startswith("/assets/"):
+            return _response(asset_status, "asset", "text/javascript")
+        if path == "/api/functional-smoke-does-not-exist":
+            if unknown_route_json:
+                return _response(
+                    404, {"success": False, "error": {"code": "ERROR_ROUTE_NOT_FOUND"}}
+                )
+            return _response(404, "", "")
+        if path == "/api/system/health" and method == "POST":
+            return _response(405, {"detail": "Method Not Allowed"})
+        if path == "/api/system/health":
+            return smoke.HttpResponse(
+                200, "application/json", {"success": True}, {"content-encoding": "gzip"}
+            )
+        if path == "/api/workflow/list" and method == "OPTIONS":
+            return smoke.HttpResponse(200, "", {}, {"access-control-allow-origin": "*"})
+        return _response(500, {"error": {"code": "X"}})
+
+    monkeypatch.setattr(smoke, "_call", fake)
+
+
+def test_surface_passes_on_a_healthy_instance(monkeypatch):
+    _surface_responses(monkeypatch)
+    results = smoke.check_deployment_surface("http://test")
+    by_name = {r.name: r for r in results}
+    assert all(r.status == "PASS" for r in results), by_name
+    assert by_name["static assets"].detail == "1 assets"
+
+
+def test_surface_fails_when_a_static_asset_is_missing(monkeypatch):
+    _surface_responses(monkeypatch, asset_status=404)
+    results = smoke.check_deployment_surface("http://test")
+    by_name = {r.name: r for r in results}
+    assert by_name["static assets"].status == "FAIL"
+    assert "missing" in by_name["static assets"].detail
+
+
+def test_surface_fails_when_unknown_api_route_is_not_an_envelope(monkeypatch):
+    _surface_responses(monkeypatch, unknown_route_json=False)
+    results = smoke.check_deployment_surface("http://test")
+    by_name = {r.name: r for r in results}
+    assert by_name["unknown api route"].status == "FAIL"
