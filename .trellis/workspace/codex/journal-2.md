@@ -302,3 +302,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 69: 本地部署功能测试：6 发现 5 修复 + 冒烟脚本（票 5cq）
+
+**Date**: 2026-11-03
+**Task**: 本地部署功能测试：6 发现 5 修复 + 冒烟脚本（票 5cq）
+**Branch**: `main`
+
+### Summary
+
+本地无 podman/Postgres，原生起 API（8099/sqlite/magpie 可用）做功能测试。发现并修复：Windows GBK 控制台 CLI 崩溃（UTF-8 reconfigure）；无 PG 时登录 500（DatabaseUnavailableError→503 ERROR_DB_UNAVAILABLE）；health 漏报 magpie；health 把 SQLite checkpoint 报成 app DB ok（新增 app_db 字段与 overall 降级）；CLI config/search 文案仍在 DeepSeek 直连时代；CLI run 缺 --niche 导致 D2' 无法起跑。新增 scripts/functional_smoke.py（health/公开接口/静态壳/鉴权边界/登录+可选工作流生命周期，无 DB 记 BLOCKED，仅 FAIL 退出 1）与 8 个测试；docs/deployment.md、CLAUDE.md、execution-plane.md 锚点同步。实测冒烟 8 pass/0 fail（带凭据 +1 blocked）；CLI run --niche 家居 真实跑通 exit 0。全量 4936 passed / 14 skipped / 0 failed / 0 errors。票 5cq 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c5dff332` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
