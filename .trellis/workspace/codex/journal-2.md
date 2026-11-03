@@ -335,3 +335,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 70: 部署面契约修复：404 信封/资产 404/CLI 线程与连接泄漏（票 5cr）
+
+**Date**: 2026-11-03
+**Task**: 部署面契约修复：404 信封/资产 404/CLI 线程与连接泄漏（票 5cr）
+**Branch**: `main`
+
+### Summary
+
+本地部署功能测试部署面发现 4 个问题并修复：未匹配 /api/* 返回空 404（改 ApiResponse 信封 ERROR_ROUTE_NOT_FOUND）；缺失 /assets/* 回退 index.html（改 404）；CLI status/logs/resume 未知线程报 completed 且 exit 0（加 _require_existing_thread，exit 1）；logs/resume 不关闭 dev graph 导致 aiosqlite 线程使进程挂死（改 async with dev_graph）。functional_smoke 增加部署面检查（openapi/docs/静态资产/404 信封/405/gzip/CORS，修 HTML 截断误报），实测 16 checks 15 pass/0 fail/1 skip。新增测试 9；docs execution-plane 锚点与 deployment 契约同步。全量 4945 passed / 14 skipped / 0 failed / 0 errors。票 5cr 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `41337768` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

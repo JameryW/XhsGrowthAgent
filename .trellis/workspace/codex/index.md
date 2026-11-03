@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 69
+- **Total Sessions**: 70
 - **Last Active**: 2026-11-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~337 | Active |
+| `journal-2.md` | ~370 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 70 | 2026-11-03 | 部署面契约修复：404 信封/资产 404/CLI 线程与连接泄漏（票 5cr） | `41337768` | `main` |
 | 69 | 2026-11-03 | 本地部署功能测试：6 发现 5 修复 + 冒烟脚本（票 5cq） | `c5dff332` | `main` |
 | 68 | 2026-11-03 | artifact 写缝回归与扫描上限（票 5cp） | `2d082dcd` | `main` |
 | 67 | 2026-11-03 | 文档计数更正与本地 CI 全量验证（票 5co） | `e798c3e2` | `main` |
