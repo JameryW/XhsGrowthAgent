@@ -269,3 +269,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 68: artifact 写缝回归与扫描上限（票 5cp）
+
+**Date**: 2026-11-03
+**Task**: artifact 写缝回归与扫描上限（票 5cp）
+**Branch**: `main`
+
+### Summary
+
+三处部署相关护栏：用 refify_updates 真实写缝回归解析内容（此前只用 put_artifact 直写）；断言 Postgres saver/store 的 from_conn_string 入口存在（--postgres-uri/--store-uri 依赖）；新增 --scan-limit 限制 alist 读取量，命中记 scan_capped 并警告语料可能不完整。文档 §6.5 与 runbook 同步（fixtures 24 用例）。验证 unit scripts+harness 200、ci_local 静态作业 PASS、全量 4919 passed / 14 skipped / 0 failed / 0 errors。票 5cp 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2d082dcd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
