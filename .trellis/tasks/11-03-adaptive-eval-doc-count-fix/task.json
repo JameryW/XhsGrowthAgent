@@ -1,0 +1,28 @@
+{
+  "id": "adaptive-eval-doc-count-fix",
+  "name": "adaptive-eval-doc-count-fix",
+  "title": "docs(eval): 更正 judge 用例数为 13 并补计数器边界说明（票 5co）",
+  "description": "机械核对评测方案声明与实际用例数时发现 §6.9 写 12（实际 13，少了 used/max_calls 边界用例的说明）。改为 13 并在覆盖列表补上 used 负值/越界拒绝与 max_calls 不可变。纯文档；同轮跑完整 ci_local 全量等价（lint/format/mypy/gates/tests/omp 全 PASS，eval-gate 与 frontend 如实 SKIP）。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P3",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/adaptive-harness-eval-plan.md"
+  ],
+  "notes": "DONE 2026-11-03 (docs-only). Audited every 'X passed' claim in the evaluation plan against the actual test functions: §6.9 said 12 judge tests while there are 13 (the used/max_calls boundary test added in 5cm was neither counted nor described). Corrected to 13 and extended the coverage sentence with 'used negative/out-of-range rejected and max_calls immutable after construction'. The other counts were verified and are accurate: fixtures 21, gate 29, judge 13, plan_l3 15, policy 9; tests/unit/scripts total 188 passed. Same round also ran the full local CI parity runner end to end: python scripts/ci_local.py -> 'local CI parity: OK' with PASS on lint, format (696 tracked .py files), mypy (264 files), gates, and the full pytest job; eval-gate and frontend SKIP for documented environmental reasons (no local .eval-fixtures corpus; frontend node_modules absent under the sandbox). Verification: docs/claim gates 188 passed; ruff/format unchanged by a docs edit; CI re-runs on push.",
+  "meta": {}
+}

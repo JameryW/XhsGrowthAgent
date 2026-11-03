@@ -196,9 +196,10 @@ python scripts/eval/run_gate.py --skip-benchmarks \
 | `JudgeBudget` | 默认 `max_calls=199`；**上限不可绕过**：>199 直接 `ValueError`，`max_calls` 构造后只读（赋值抛 `AttributeError`），`used` 必须满足 `0 <= used <= max_calls`（负计数同样被拒）；`consume()` **先扣费后调用**；超限抛 `JudgeBudgetExceededError` |
 | `judge_content(model, ..., budget=...)` | `budget` **必填**（隐式预算会让循环 N 次各"独立合规"）；一次判定 = 一次调用；模型返回非文本/非 JSON 时该次调用仍计入预算；provider 内部重试/兜底不可见，不计入此护栏（已在 docstring 写明） |
 
-测试 `tests/unit/scripts/test_eval_judge.py` **12 passed**（假模型，无网络）：
+测试 `tests/unit/scripts/test_eval_judge.py` **13 passed**（假模型，无网络）：
 提示词确定性、围栏/散文解析、缺维度与超范围拒绝、199 上限与先扣费语义、
-预算耗尽时**不调用模型**、模型给出坏输出仍扣一次、**>199 的预算被拒绝**。
+预算耗尽时**不调用模型**、模型给出坏输出仍扣一次、**>199 的预算被拒绝**、
+**`used` 负值/越界被拒绝且 `max_calls` 构造后不可改**。
 
 **仍 external-only 的部分**（如实标注，不在本仓库伪造）：真实 workflow 的 live 调用、
 测试账号的登录态/凭据、平台验收窗口。`judge_content` 接受任意 chat model，接线到部署侧
