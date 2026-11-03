@@ -119,8 +119,9 @@ class TestCompileGraphProd:
                 calls["pool_closed"] = True
 
         class FakeSaver:
-            def __init__(self, conn):
+            def __init__(self, conn, serde=None):
                 calls["saver_conn"] = conn
+                calls["saver_serde"] = serde
 
             async def setup(self):
                 calls["saver_setup"] = True
@@ -180,6 +181,15 @@ class TestCompileGraphProd:
         assert store_context.entered is True
         assert store_context.exited is False
         assert calls["saver_conn"] is checkpoint_pool
+        # The prod saver must use the allowlisted serde, otherwise resuming a
+        # thread through Postgres re-raises the unregistered-type warning and a
+        # future strict msgpack build would refuse to load it.
+        serde = calls["saver_serde"]
+        assert serde is not None
+        from backend.state.enums import WorkflowPhase
+
+        type_name, payload = serde.dumps_typed(WorkflowPhase.SCOUTING)
+        assert serde.loads_typed((type_name, payload)) == WorkflowPhase.SCOUTING
         assert calls["saver_setup"] is True
         assert calls["store_setup"] is True
         assert calls["store_pool_config"] == {"min_size": 2, "max_size": 10}

@@ -232,7 +232,7 @@ def run(
                 ) as progress:
                     task = progress.add_task("执行工作流...", total=None)
 
-                    async for event in graph.astream_events(initial_state, config, version="v1"):
+                    async for event in graph.astream_events(initial_state, config, version="v2"):
                         if event["event"] == "on_chain_start":
                             agent = event.get("name", "unknown")
                             progress.update(task, description=f"[cyan]执行: {agent}[/cyan]")

@@ -1,0 +1,2 @@
+{"file": "docs/execution-plane.md", "reason": "checkpoint/lease behaviour behind resume and cancellation"}
+{"file": "docs/deployment.md", "reason": "deployment-time checkpoint serialization contract"}

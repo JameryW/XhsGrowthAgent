@@ -497,6 +497,7 @@ redis-cli -a password ping
   `unavailable` 表示这是 graph-only 开发模式：健康整体为 `degraded`，`POST /api/auth/login`
   等接口返回 **503 `ERROR_DB_UNAVAILABLE`**（而不是 500）。
 - `search_api`：只剩 Tavily 一项；`DEEPSEEK_API_KEY` 不再参与搜索路由。
+- 检查点序列化：`backend/state/checkpoint_serde.py` 显式 allowlist `WorkflowPhase`/`WorkflowMode`，三种 checkpointer（dev SQLite、MemorySaver、prod Postgres）共用——否则 langgraph 会对每个线程告警 unregistered type，未来 strict 版本将拒绝加载旧线程。
 - `creator_stats_scheduler`：启用后**首轮尚未运行**（已排期或按策略跳过）返回
   `ok` + `first_run_pending=true`——新部署不需要等首轮跑完才"健康"；只有"无完成记录
   且未排期"才是 `warning`。

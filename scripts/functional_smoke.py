@@ -34,6 +34,7 @@ import argparse
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -390,6 +391,12 @@ def _workflow_lifecycle(base_url: str, token: str, account_id: str) -> list[Resu
             results.append(Result(f"workflow {action}", "FAIL", f"HTTP {response.status}"))
 
     deleted = _call_with_retry(base_url, "DELETE", f"/api/workflow/{thread_id}", token=token)
+    if deleted.status == 400:
+        # cancel() returns before the runner finishes unwinding; a just-cancelled
+        # workflow refuses deletion ("Cancel it first"). One short retry avoids
+        # leaving an orphan in the history.
+        time.sleep(2)
+        deleted = _call_with_retry(base_url, "DELETE", f"/api/workflow/{thread_id}", token=token)
     if 0 < deleted.status < 500:
         results.append(Result("workflow delete", "PASS", f"HTTP {deleted.status}"))
     else:

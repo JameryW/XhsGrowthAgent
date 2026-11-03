@@ -50,6 +50,7 @@ from backend.agents.nodes.optimization import (
 from backend.graph.error_handling import get_retry_policy
 from backend.graph.wiring import CONDITIONAL_EDGES
 from backend.state.artifacts import artifact_seam as _artifact_seam
+from backend.state.checkpoint_serde import checkpoint_serde
 from backend.state.schema import XHSGrowthState
 
 
@@ -248,7 +249,7 @@ async def compile_graph_dev() -> CompiledStateGraph[Any]:
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
         conn = await aiosqlite.connect(str(db_path))
-        checkpointer: Any = AsyncSqliteSaver(conn=conn)
+        checkpointer: Any = AsyncSqliteSaver(conn=conn, serde=checkpoint_serde())
         await checkpointer.setup()
         sqlite_conn = conn
     except ImportError:
@@ -257,7 +258,7 @@ async def compile_graph_dev() -> CompiledStateGraph[Any]:
         logging.getLogger("xhs_growth").warning(
             "langgraph-checkpoint-sqlite not installed, using MemorySaver"
         )
-        checkpointer = MemorySaver()
+        checkpointer = MemorySaver(serde=checkpoint_serde())
 
     graph = builder.compile(
         checkpointer=checkpointer,
@@ -342,7 +343,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph[Any], Any]
                 db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
             )
             await _pool.open()
-            _cp = AsyncPostgresSaver(conn=cast("Any", _pool))
+            _cp = AsyncPostgresSaver(conn=cast("Any", _pool), serde=checkpoint_serde())
             await _cp.setup()
             return _pool, _cp
 

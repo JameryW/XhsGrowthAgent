@@ -1,0 +1,33 @@
+{
+  "id": "checkpoint-serde-allowlist",
+  "name": "checkpoint-serde-allowlist",
+  "title": "fix(checkpoint): WorkflowPhase/Mode msgpack allowlist + astream_events v2 + 冒烟删除重试（票 5ct）",
+  "description": "真实工作流运行暴露的遗留问题：1) 每次 resume 都出现 langgraph 警告 Deserializing unregistered type backend.state.enums.WorkflowPhase/WorkflowMode，未来 strict msgpack 版本会直接拒绝加载旧线程——新增 backend/state/checkpoint_serde.py 显式 allowlist 两个枚举，并接到 dev/sqlite、memory、prod/postgres 三种 checkpointer；2) CLI run 用已弃用的 astream_events(version='v1')——切到 v2 并真实跑一次验证；3) 冒烟在 cancel 后立即 delete 会因 runner 尚未收尾收到 400，增加 2s 后一次重试，避免留下孤儿历史。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/state/checkpoint_serde.py",
+    "backend/graph/builder.py",
+    "backend/cli/main.py",
+    "scripts/functional_smoke.py",
+    "tests/unit/state/test_checkpoint_serde.py",
+    "docs/deployment.md"
+  ],
+  "notes": "DONE 2026-11-04. Three leftovers surfaced by running real workflows on both the SQLite and Postgres paths. (1) Every checkpoint resume logged 'Deserializing unregistered type backend.state.enums.WorkflowPhase/WorkflowMode … This will be blocked in a future version'; LangGraph's permissive msgpack only warns today, but a strict build would refuse to load every existing thread, so backend/state/checkpoint_serde.py now builds a JsonPlusSerializer with an explicit allowlist of exactly those two enums, and the dev SQLite saver, the MemorySaver fallback and the prod AsyncPostgresSaver all receive it so writers and readers agree. (2) xhs-growth run still called graph.astream_events(..., version='v1'), which emitted LangChainDeprecationWarning; it now uses v2 and a real CLI run (magpie, --niche 家居) completed in planning with exit 0. (3) The smoke script's cancel-then-delete could hit 400 'Cannot delete a running workflow' because cancel returns before the runner unwinds; it now retries the delete once after 2s so no orphan stays in history. Tests: new tests/unit/state/test_checkpoint_serde.py asserts an enum round-trip produces no unregistered-type warning, that the allowlist contains only the two enums, and that MemorySaver accepts the serde. Live evidence: CLI run log no longer contains the unregistered-type warning or the deprecation warning; Postgres-backed API smoke still 28/28 PASS with no unregistered-type warnings in the server log. Docs: deployment.md notes the checkpoint allowlist. Verified with the full suite under XHS_PG_PARITY_URI. Known observations recorded, not fixed: ~12.5s status/cancel latency under embedded Postgres while the runner writes checkpoints, and local-Windows pytest processes occasionally lingering after the summary (non-daemon threads; CI runs Linux).",
+  "meta": {}
+}
