@@ -487,6 +487,42 @@ psql -h localhost -U xhs_user -d xhs_growth -c "SELECT 1"
 redis-cli -a password ping
 ```
 
+### 健康检查字段怎么读（2026-11 起）
+
+- `llm_providers.providers.magpie`：**唯一出网通道**（#756：所有 LLM 调用经 magpie
+  网关，直连 DeepSeek 已禁用）。它 `configured=false` 时工作流无法产出内容；旧版本只列
+  Anthropic/OpenAI 等直连 key，会误导成"未配置任何 Provider"。
+- `database.mode`：checkpointer 类型（postgres/sqlite/memory）。
+- `database.app_db`：**应用数据库层**（登录/账号/工作流表用的 Postgres 池）是否就绪。
+  `unavailable` 表示这是 graph-only 开发模式：健康整体为 `degraded`，`POST /api/auth/login`
+  等接口返回 **503 `ERROR_DB_UNAVAILABLE`**（而不是 500）。
+- `search_api`：只剩 Tavily 一项；`DEEPSEEK_API_KEY` 不再参与搜索路由。
+
+## 部署后功能冒烟（本地/生产通用）
+
+`scripts/functional_smoke.py` 对**正在运行的实例**做 HTTP 级检查（单测都 mock 掉了 app，
+抓不到部署级问题：health 报错 provider、服务起来了但 DB 层没初始化、静态壳缺失等）：
+
+```bash
+# 基础段：health/公开接口/静态壳/鉴权边界（无需凭据）
+python scripts/functional_smoke.py --base-url http://127.0.0.1:8000
+
+# 带控制台凭据：登录 + 鉴权后读接口；--start-workflow 再探测工作流生命周期
+python scripts/functional_smoke.py --base-url http://127.0.0.1:8000 \
+    --username admin --password "$CONSOLE_PASSWORD" --start-workflow
+```
+
+判定语义：
+
+- `PASS` / `FAIL`（有 FAIL 时脚本退出码为 1）；
+- `BLOCKED`：部署没有 `POSTGRES_URI`，登录返回 503 `ERROR_DB_UNAVAILABLE`——这是合法的
+  graph-only 开发模式，鉴权段跳过而不是误报失败；
+- `SKIP`：没给凭据，未测鉴权段。
+
+生产部署（有 Postgres）应看到 `health database: app DB ready`，且登录 + 工作流生命周期全部
+`PASS`。本地无 Postgres 时只能得到 graph-only 结果：静态壳/公开接口/鉴权边界通过，鉴权段
+`BLOCKED`——要测完整控制台，先按上文启动 PostgreSQL。
+
 ## 备份策略
 
 ### PostgreSQL 备份

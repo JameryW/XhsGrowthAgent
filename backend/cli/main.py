@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import sys
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -14,6 +15,31 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+
+
+def _ensure_utf8_console_streams() -> None:
+    """Make stdout/stderr UTF-8 so Rich can print emoji on Chinese Windows.
+
+    A default Windows console is GBK (cp936); Rich's status/panel output contains
+    emoji (🚀, 💤 …), and ``print`` then dies with ``UnicodeEncodeError: 'gbk'
+    codec can't encode '\\U0001f680'``.  The CLI never got far enough to run the
+    workflow.  ``errors="replace"`` keeps an unmappable glyph from killing a run
+    even on a stream that cannot be reconfigured.
+    """
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if encoding == "utf8":
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            continue
+
+
+_ensure_utf8_console_streams()
 
 app = typer.Typer(name="xhs-growth", help="小红书增长引擎 Agent")
 console = Console()
@@ -60,6 +86,10 @@ def format_phase(phase: str) -> str:
 def run(
     account_id: str = typer.Option("default", help="账号 ID"),
     phase: str = typer.Option("scouting", help="起始阶段"),
+    niche: str = typer.Option(
+        "",
+        help="垂类赛道（如 家居/美妆）；为空则尝试从账号库解析，本地无 DB 时必须显式指定",
+    ),
     dry_run: bool = typer.Option(False, help="模拟运行（不调用真实 API）"),
     auto_publish: bool = typer.Option(False, help="审核通过后自动发布"),
     dev: bool = typer.Option(True, help="开发模式（内存检查点）"),
@@ -121,6 +151,40 @@ def run(
             if dry_run:
                 console.print("[yellow]⚠️ DRY RUN — 不调用真实 API[/yellow]")
                 return
+
+            # D2': agents refuse to compile an invented default niche.  The API
+            # resolves it from the account/history (or the request); the CLI has
+            # no app DB in local mode, so accept --niche and otherwise try the
+            # same resolver before failing with an actionable message instead of
+            # a traceback from inside trend_scout.
+            resolved_niche = niche.strip()
+            if not resolved_niche:
+                try:
+                    from backend.services.niche_resolver import resolve_account_niche
+
+                    niche_result = await resolve_account_niche(
+                        account_id,
+                        manual_niche="",
+                        cold_start_default="",
+                        persist=False,
+                    )
+                    resolved_niche = niche_result.niche
+                except Exception:  # noqa: BLE001 — no DB is a valid local mode
+                    resolved_niche = ""
+            if not resolved_niche:
+                console.print(
+                    Panel(
+                        "无法解析垂类赛道（niche）。\n\n"
+                        "本地无账号库/历史笔记时，请显式指定，例如：\n"
+                        f"  xhs-growth run --account-id {account_id} --niche 家居\n\n"
+                        "D2': 工作流起点必须提供垂类，不会使用默认值。",
+                        title="❌ 缺少垂类",
+                        style="red",
+                    )
+                )
+                raise typer.Exit(2)
+            initial_state["niche"] = resolved_niche
+            console.print(f"[dim]垂类: {resolved_niche}[/dim]")
 
             try:
                 with Progress(
@@ -544,11 +608,12 @@ def config() -> None:
     console.print(Panel("🔧 配置检查", style="bold blue"))
 
     required_vars = [
-        ("ANTHROPIC_API_KEY", "Anthropic Claude API"),
-        ("OPENAI_API_KEY", "OpenAI GPT API"),
-        ("DEEPSEEK_API_KEY", "DeepSeek API"),
-        ("DASHSCOPE_API_KEY", "阿里云 Qwen API"),
-        ("XIAOMIMIMO_API_KEY", "MiMo API"),
+        ("MAGPIE_API_KEY", "magpie 网关（所有 LLM 调用默认出网）"),
+        ("MAGPIE_BASE_URL", "magpie 网关地址（默认 10.0.0.10:3425/v1）"),
+        ("ANTHROPIC_API_KEY", "Anthropic Claude API（直连已非默认）"),
+        ("OPENAI_API_KEY", "OpenAI GPT API（直连已非默认）"),
+        ("DASHSCOPE_API_KEY", "阿里云 Qwen API（直连已非默认）"),
+        ("XIAOMIMIMO_API_KEY", "MiMo API（直连已非默认）"),
         ("RIPPLE_BASE_URL", "Ripple CAS 服务"),
     ]
 
@@ -575,6 +640,11 @@ def config() -> None:
         value = os.environ.get(var, "")
         status = "✅" if value else "⚪"
         console.print(f"  [dim]{status} {var} ({purpose})[/dim]")
+
+    console.print(
+        "[dim]DeepSeek 直连已禁用（#756）：所有 LLM 调用经 magpie 出网，"
+        "DEEPSEEK_API_KEY 不再参与路由[/dim]"
+    )
 
 
 @app.command()

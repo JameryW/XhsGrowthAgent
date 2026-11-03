@@ -42,9 +42,11 @@ def provider_config_status() -> dict[str, Any]:
     elif deepseek:
         message = "DeepSeek Search/Fetch 已配置（无 Tavily 备用）"
     elif tavily:
-        message = "Tavily Search/Extract 已配置（DeepSeek 未配置）"
+        message = "Tavily Search/Extract 已配置（DeepSeek 直连已禁用）"
     else:
-        message = "缺少 DEEPSEEK_API_KEY / TAVILY_API_KEY（趋势发现将使用 LLM 生成数据）"
+        # DeepSeek direct is disabled (#756: every LLM call egresses through
+        # magpie), so a missing DEEPSEEK_API_KEY is not a gap to report.
+        message = "缺少 TAVILY_API_KEY（DeepSeek 直连已禁用；趋势发现将使用 LLM 生成数据）"
     return {
         "status": "ok" if configured else "warning",
         "configured": configured,

@@ -1,0 +1,2 @@
+{"file": "docs/deployment.md", "reason": "deployment + health semantics the smoke script exercises"}
+{"file": "CLAUDE.md", "reason": "the documented health contract and CLI commands"}

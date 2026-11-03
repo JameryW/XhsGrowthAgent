@@ -168,3 +168,56 @@ class TestCliLogin:
         fake_page.goto.assert_awaited_once()
         # Navigated to the XHS creator login page.
         assert "creator.xiaohongshu.com/login" in fake_page.goto.await_args.args[0]
+
+
+class TestConsoleEncoding:
+    """The CLI must survive a GBK console (Chinese Windows default)."""
+
+    class _FakeStream:
+        def __init__(self, encoding: str) -> None:
+            self.encoding = encoding
+            self.calls: list[dict[str, str]] = []
+
+        def reconfigure(self, **kwargs: str) -> None:
+            self.calls.append(dict(kwargs))
+            self.encoding = kwargs.get("encoding", self.encoding)
+
+    def test_gbk_stream_is_reconfigured_to_utf8(self, monkeypatch):
+        import backend.cli.main as cli_main
+
+        stdout = self._FakeStream("gbk")
+        stderr = self._FakeStream("cp936")
+        monkeypatch.setattr(cli_main.sys, "stdout", stdout)
+        monkeypatch.setattr(cli_main.sys, "stderr", stderr)
+
+        cli_main._ensure_utf8_console_streams()
+
+        assert stdout.calls == [{"encoding": "utf-8", "errors": "replace"}]
+        assert stderr.calls == [{"encoding": "utf-8", "errors": "replace"}]
+
+    def test_utf8_streams_are_left_alone(self, monkeypatch):
+        import backend.cli.main as cli_main
+
+        stdout = self._FakeStream("utf-8")
+        stderr = self._FakeStream("UTF8")
+        monkeypatch.setattr(cli_main.sys, "stdout", stdout)
+        monkeypatch.setattr(cli_main.sys, "stderr", stderr)
+
+        cli_main._ensure_utf8_console_streams()
+
+        assert stdout.calls == []
+        assert stderr.calls == []
+
+
+class TestNicheRequirement:
+    """D2': the CLI must not start a workflow without a niche."""
+
+    def test_dry_run_does_not_require_a_niche(self):
+        result = runner.invoke(app, ["run", "--account-id", "smoke", "--dry-run"])
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.stdout
+
+    def test_missing_niche_fails_with_an_actionable_hint(self):
+        result = runner.invoke(app, ["run", "--account-id", "smoke"])
+        assert result.exit_code == 2
+        assert "--niche" in result.stdout

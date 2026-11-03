@@ -146,3 +146,23 @@ async def test_json_response_format():
     assert "code" in data["error"]
     assert "message" in data["error"]
     assert "details" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_database_unavailable_answers_503_instead_of_500():
+    """Graph-only dev mode has no app DB pool; callers must see 503 + a code."""
+    from backend.db.pool import DatabaseUnavailableError
+
+    async def raise_db_error(req):
+        raise DatabaseUnavailableError("DB connection pool not initialized")
+
+    response = await error_handler_middleware(MockRequest(), raise_db_error)
+    assert response.status_code == 503
+
+    import json
+
+    data = json.loads(response.body.decode())
+    assert data["success"] is False
+    assert data["error"]["code"] == ErrorCode.DB_UNAVAILABLE.value
+    assert "POSTGRES_URI" in data["error"]["message"]
+    assert data["request_id"]

@@ -173,3 +173,79 @@ async def test_check_memory_store_uses_env_only_semantic_status(monkeypatch):
     assert result["embed_model"] == "local:BAAI/bge-small-zh-v1.5"
     assert result["embed_dims"] == 512
     assert "namespace_counts" not in result
+
+
+def _patch_health_dependencies(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
+    from backend.api.routes import system
+
+    monkeypatch.setattr(
+        system,
+        "_check_ripple",
+        AsyncMock(return_value={"status": "disabled", "configured": False, "message": "off"}),
+    )
+    monkeypatch.setattr(
+        system,
+        "_check_memory_store",
+        AsyncMock(
+            return_value={
+                "status": "ok",
+                "backend": "memory",
+                "semantic_index": False,
+                "message": "ok",
+            }
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_health_reports_magpie_as_the_egress_provider(monkeypatch):
+    """After #756 magpie is the only egress; health must not say "no providers"."""
+    from backend.api.routes import system
+
+    _patch_health_dependencies(monkeypatch)
+    monkeypatch.setenv("MAGPIE_API_KEY", "mp-test")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = await system.system_health()
+
+    llm = response.data["checks"]["llm_providers"]
+    assert llm["status"] == "ok"
+    assert llm["providers"]["magpie"]["configured"] is True
+    assert "magpie" in llm["message"]
+
+
+@pytest.mark.asyncio
+async def test_health_flags_the_missing_application_db_layer(monkeypatch):
+    """SQLite checkpoints are not an app DB: login/accounts are unavailable."""
+    from backend.api.routes import system
+
+    _patch_health_dependencies(monkeypatch)
+    monkeypatch.setenv("MAGPIE_API_KEY", "mp-test")
+    monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: False)
+
+    response = await system.system_health()
+
+    db = response.data["checks"]["database"]
+    assert db["app_db"] == "unavailable"
+    assert db["status"] == "warning"
+    assert "503" in db["message"]
+    assert "POSTGRES_URI" in db["message"]
+    assert response.data["status"] == "degraded"
+
+
+@pytest.mark.asyncio
+async def test_health_is_ok_only_with_llm_and_an_app_db(monkeypatch):
+    from backend.api.routes import system
+
+    _patch_health_dependencies(monkeypatch)
+    monkeypatch.setenv("MAGPIE_API_KEY", "mp-test")
+    monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
+
+    response = await system.system_health()
+
+    db = response.data["checks"]["database"]
+    assert db["app_db"] == "ready"
+    assert response.data["status"] == "ok"

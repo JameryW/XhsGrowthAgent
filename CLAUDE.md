@@ -50,6 +50,9 @@ python scripts/ci_local.py
 python scripts/eval/extract_fixtures.py --dry-run
 python scripts/eval/run_gate.py
 
+# Functional smoke against a *running* instance (deployment-level checks)
+python scripts/functional_smoke.py --base-url http://127.0.0.1:8000
+
 # Run single test
 pytest tests/test_graph.py -v
 
@@ -305,13 +308,13 @@ LangGraph BaseStore integration with namespaces per account, semantic search, an
 ### Health Check (`/api/system/health`)
 
 System health endpoint checks all external dependencies:
-- `llm_providers`: API key availability for Anthropic, OpenAI, DeepSeek, DashScope
+- `llm_providers`: API key availability for **magpie** (the only egress after #756) plus the legacy direct providers (Anthropic, OpenAI, DeepSeek, DashScope, XiaomiMiMo) — direct DeepSeek is disabled and unused
 - `ripple_cas`: Ripple CAS engine connectivity
 - `search_api`: Tavily (`TAVILY_API_KEY`) only — DeepSeek Search/Fetch is disabled so no request goes directly to `api.deepseek.com`; reports `active_provider` and per-key `configured`
-- `database`: Checkpointer mode detection (postgres/sqlite/memory)
+- `database`: Checkpointer mode (postgres/sqlite/memory) **and** `app_db` (`ready`/`unavailable`) for the application Postgres pool used by login/accounts. Without `POSTGRES_URI` the server still boots in graph-only mode: `database.status=warning`, overall `degraded`, and DB-backed routes answer **503 `ERROR_DB_UNAVAILABLE`** instead of 500
 - `memory_store`: Backend type (postgres/memory/unavailable), semantic index status (enabled/disabled), embed model name, embed dimensions, namespace counts with total items
 
-Overall status: `ok` if LLM providers are configured; `degraded` if memory store lacks semantic index; `warning` if memory store is unavailable.
+Overall status: `ok` only when an LLM provider is configured **and** `database.app_db=ready`; `degraded` otherwise (e.g. graph-only dev server, memory store without a semantic index).
 
 ## Module Structure
 

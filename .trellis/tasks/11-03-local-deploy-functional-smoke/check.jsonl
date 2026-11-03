@@ -1,0 +1,2 @@
+{"file": "docs/deployment.md", "reason": "verify the smoke usage and PASS/FAIL/BLOCKED semantics match the script"}
+{"file": "scripts/functional_smoke.py", "reason": "verify exit-code semantics and the no-DB BLOCKED path"}

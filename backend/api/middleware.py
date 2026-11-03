@@ -9,6 +9,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 
 from backend.api.errors import APIError, ErrorCode
 from backend.api.responses import error
+from backend.db.pool import DatabaseUnavailableError
 
 logger = logging.getLogger("xhs_growth.api")
 
@@ -26,6 +27,24 @@ async def error_handler_middleware(
         return JSONResponse(
             status_code=e.status_code,
             content=e.to_response(request_id).model_dump(mode="json"),
+        )
+    except DatabaseUnavailableError as e:
+        # Graph-only dev mode (no POSTGRES_URI) has no app DB layer; every
+        # auth/account endpoint would otherwise 500 with a traceback. 503 +
+        # explicit code tells the operator the deployment is missing Postgres.
+        logger.warning(f"DB unavailable [{request_id}]: {e}")
+        return JSONResponse(
+            status_code=503,
+            content=error(
+                code=ErrorCode.DB_UNAVAILABLE.value,
+                message=(
+                    "The application database layer is not initialized in this "
+                    "deployment (POSTGRES_URI is not configured); login and "
+                    "account endpoints require Postgres"
+                ),
+                details=None,
+                request_id=request_id,
+            ).model_dump(mode="json"),
         )
     except Exception as e:
         logger.exception(f"Unexpected error [{request_id}]: {e}")

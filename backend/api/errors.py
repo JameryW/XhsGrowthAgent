@@ -44,6 +44,9 @@ class ErrorCode(StrEnum):
     AGENT_EXECUTION_FAILED = "ERROR_AGENT_EXECUTION_FAILED"
     AGENT_TIMEOUT = "ERROR_AGENT_TIMEOUT"
     SERVICE_UNAVAILABLE = "ERROR_SERVICE_UNAVAILABLE"
+    # The app DB layer (Postgres pool) is not initialized in this deployment —
+    # login/account endpoints cannot work; 503 tells the caller why.
+    DB_UNAVAILABLE = "ERROR_DB_UNAVAILABLE"
     XHS_API_ERROR = "ERROR_XHS_API_ERROR"
     INTERNAL_ERROR = "ERROR_INTERNAL"
     VALIDATION_ERROR = "ERROR_VALIDATION"

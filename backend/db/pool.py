@@ -17,6 +17,15 @@ logger = logging.getLogger("xhs_growth.db.pool")
 _pool: AsyncConnectionPool | None = None
 
 
+class DatabaseUnavailableError(RuntimeError):
+    """The application database layer was never initialized.
+
+    Raised when ``POSTGRES_URI`` is absent (graph-only dev mode) or startup fell
+    back to the SQLite checkpointer.  Distinct type so the API layer can answer
+    503 with a clear code instead of a generic 500 traceback.
+    """
+
+
 def _conn_string() -> str:
     return os.environ.get("POSTGRES_URI", "")
 
@@ -48,7 +57,7 @@ async def close_pool() -> None:
 def get_pool() -> AsyncConnectionPool:
     """Return the active pool or raise if not initialized."""
     if _pool is None:
-        raise RuntimeError("DB connection pool not initialized")
+        raise DatabaseUnavailableError("DB connection pool not initialized")
     return _pool
 
 

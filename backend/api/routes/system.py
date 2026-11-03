@@ -111,8 +111,16 @@ def _check_env_var(name: str) -> dict[str, Any]:
 
 
 def _check_llm_providers() -> dict[str, Any]:
-    """Check LLM provider API key availability."""
+    """Check LLM provider API key availability.
+
+    Since #756 every LLM call egresses through the local **magpie** gateway, so
+    magpie is the provider that actually matters.  Direct providers are still
+    reported (they can be configured but are not used by default routing); the
+    old payload listed only them, which made a working magpie-only deployment
+    report "未配置任何 LLM Provider".
+    """
     providers = {
+        "magpie": _check_env_var("MAGPIE_API_KEY"),
         "anthropic": _check_env_var("ANTHROPIC_API_KEY"),
         "openai": _check_env_var("OPENAI_API_KEY"),
         "deepseek": _check_env_var("DEEPSEEK_API_KEY"),
@@ -120,9 +128,15 @@ def _check_llm_providers() -> dict[str, Any]:
         "xiaomimimo": _check_env_var("XIAOMIMIMO_API_KEY"),
     }
     any_configured = any(p["configured"] for p in providers.values())
+    if providers["magpie"]["configured"]:
+        message = "magpie 网关已配置（所有 LLM 调用统一经此出网）"
+    elif any_configured:
+        message = "至少一个 LLM Provider 已配置"
+    else:
+        message = "未配置任何 LLM Provider"
     return {
         "status": "ok" if any_configured else "warning",
-        "message": "至少一个 LLM Provider 已配置" if any_configured else "未配置任何 LLM Provider",
+        "message": message,
         "providers": providers,
     }
 
@@ -363,6 +377,24 @@ async def _build_health_payload() -> dict[str, Any]:
             "message": "无法检测检查点模式",
         }
 
+    # The *checkpointer* can be SQLite/memory while the *application DB layer*
+    # (the Postgres pool used by auth/accounts/workflows tables) is absent —
+    # the old payload reported that as "ok".  A graph-only dev server is not a
+    # production-ready deployment, so say so explicitly.
+    try:
+        from backend.db.pool import is_pool_ready
+
+        app_db_ready = is_pool_ready()
+    except Exception:
+        app_db_ready = False
+    database_check["app_db"] = "ready" if app_db_ready else "unavailable"
+    if not app_db_ready:
+        database_check["status"] = "warning"
+        database_check["message"] = (
+            f"{database_check['message']}；API 数据库层未初始化（未配置 POSTGRES_URI）："
+            "登录/账号等接口返回 503"
+        )
+
     # Active account info (from DB-managed accounts, if available)
     active_account = None
     try:
@@ -395,8 +427,11 @@ async def _build_health_payload() -> dict[str, Any]:
     ripple = await ripple_task
     memory = await memory_task
 
-    # Overall status: ok if LLM is configured.
-    overall = "ok" if llm["status"] == "ok" else "degraded"
+    # Overall status: ok only when LLM works *and* the app DB layer exists.
+    # A graph-only dev server (no Postgres) is degraded, not healthy.
+    overall = (
+        "ok" if llm["status"] == "ok" and database_check.get("app_db") == "ready" else "degraded"
+    )
 
     checks = {
         "llm_providers": llm,

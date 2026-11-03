@@ -200,3 +200,28 @@ class TestSystemHealthWiring:
         assert status["active_provider"] == "tavily"
         assert status["providers"]["deepseek"]["configured"] is False
         assert status["providers"]["tavily"]["configured"] is True
+
+
+def test_missing_key_message_no_longer_asks_for_a_disabled_deepseek_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services.web_search.router import provider_config_status
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    status = provider_config_status()
+    assert "TAVILY_API_KEY" in status["message"]
+    assert "DEEPSEEK_API_KEY" not in status["message"]
+    assert "已禁用" in status["message"]
+
+
+def test_tavily_message_marks_deepseek_direct_as_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services.web_search.router import provider_config_status
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly")
+    status = provider_config_status()
+    assert "已配置" in status["message"]
+    assert "DeepSeek 直连已禁用" in status["message"]
