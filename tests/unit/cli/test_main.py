@@ -246,8 +246,14 @@ class TestServeOptions:
     """serve must be production-safe by default and offer reload explicitly."""
 
     def test_serve_help_exposes_opt_in_reload(self):
-        result = runner.invoke(app, ["serve", "--help"])
-        assert result.exit_code == 0
-        assert "--reload" in result.stdout
-        # default is off: help prints the flag without a default marker
-        assert "生产保持关闭" in result.stdout
+        # Assert on the Click command model, not the rendered help text: Rich
+        # wraps/truncates option lines differently per terminal width, which made
+        # the text assertion pass locally and fail on CI.
+        from click import Command
+        from typer.main import get_command
+
+        command: Command = get_command(app)
+        serve = command.commands["serve"]  # type: ignore[attr-defined]
+        reload_param = next(param for param in serve.params if param.name == "reload")
+        assert "--reload" in reload_param.opts
+        assert reload_param.default is False
