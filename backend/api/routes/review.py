@@ -230,22 +230,28 @@ async def submit_review(
 
     await emit_events(thread_id, [await record_human_wait(values, "review_gate")])
 
-    # Write side updates (versions / publish_options) to state — through the
-    # write seam, so a ref'd thread's content_versions lands in the Artifact
-    # Store instead of an inline write that resolve would shadow away.
+    # Side updates (versions / publish_options) must ride the SAME Command as the
+    # resume.  Writing them with aupdate_state(as_node=<pending gate>) first marks
+    # the interrupted gate node as executed: it is popped from state.tasks, the
+    # dynamic interrupt is consumed, and the node never runs — review_outcome then
+    # sees no human_feedback and ends the graph (observed as publish_result={}).
+    # Command(resume=..., update=...) applies the update and still resumes the
+    # interrupted node.  Refify through the write seam so a ref'd thread's
+    # content_versions lands in the Artifact Store instead of a shadowed inline write.
+    refified_updates: dict[str, Any] | None = None
     if updates:
-        refified = await refify_updates(store, thread_id, updates, prev_values=values)
-        await graph.aupdate_state(config, refified, as_node=_runner._get_as_node(state))
+        refified_updates = await refify_updates(store, thread_id, updates, prev_values=values)
 
     # Resume the dynamic interrupt() inside review_gate_node with the decision.
     # The node reads this value, writes human_feedback, and sets phase.
     from langgraph.types import Command
 
+    command: Any = Command(resume=decision.model_dump(), update=refified_updates)
     result = await _runner._run_graph_and_persist(
         thread_id,
         graph,
         config,
-        Command(resume=decision.model_dump()),
+        command,
         source="review",
     )
 
@@ -386,15 +392,17 @@ async def submit_ripple_decision(
         logger.warning(f"Reselect limit reached for {thread_id}, forcing accept")
         action = "accept"
 
-    # Update state before resuming for reangle/retopic (clear stale data)
-    # NOTE: reselect_count increment is owned by ripple_gate_node only —
-    # do NOT increment here to avoid double-counting.
+    # Updates for reangle/retopic ride the same Command as the resume: writing
+    # them with aupdate_state(as_node=<pending ripple_gate>) would mark the
+    # interrupted node as executed, consume the dynamic interrupt, and skip
+    # ripple_gate's own reselect bookkeeping.
+    ripple_updates: dict[str, Any] | None = None
     if action in ("reangle", "retopic"):
-        updates: dict[str, Any] = {
+        ripple_updates = {
             "ripple_progress": {},
         }
         if action == "retopic":
-            updates.update(
+            ripple_updates.update(
                 {
                     "content_plan": {},
                 }
@@ -409,7 +417,7 @@ async def submit_ripple_decision(
 
             store = getattr(graph, "store", None)
             values = await resolve_state(store, thread_id, state.values or {})
-            updates.update(
+            ripple_updates.update(
                 await refify_updates(
                     store,
                     thread_id,
@@ -417,7 +425,6 @@ async def submit_ripple_decision(
                     prev_values=values,
                 )
             )
-        await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
     # Resume the graph with the user's decision
     from langgraph.types import Command
@@ -426,7 +433,7 @@ async def submit_ripple_decision(
         thread_id,
         graph,
         config,
-        Command(resume={"action": action}),
+        Command(resume={"action": action}, update=ripple_updates),
         source="ripple_gate",
     )
 

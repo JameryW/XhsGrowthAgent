@@ -60,7 +60,7 @@ class TestFullWorkflowLifecycle:
 
         # 6. Publisher ends the normal workflow; analysis is manual.
         snap = make_snapshot({"phase": WorkflowPhase.PUBLISHING})
-        assert derive_status(snap) == WorkflowStatus.COMPLETED
+        assert derive_status(snap, has_active_task=False) == WorkflowStatus.COMPLETED
 
     def test_continuous_mode_loops_back(self):
         """Continuous mode: after analyzing, routes back to orchestrator."""
@@ -147,16 +147,16 @@ class TestStatusEdgeCases:
     """Edge cases in status derivation."""
 
     def test_empty_values_defaults_to_completed(self):
-        """No phase, no next, no interrupt → completed."""
+        """No phase, no next, no interrupt, no active runner → completed."""
         snap = make_snapshot({}, next=[])
-        assert derive_status(snap) == WorkflowStatus.COMPLETED
+        assert derive_status(snap, has_active_task=False) == WorkflowStatus.COMPLETED
 
     def test_none_values_defaults_to_completed(self):
-        """None values → completed."""
+        """None values, no active runner → completed."""
         snap = make_snapshot(None, next=[])
         # derive_status uses `values or {}`, so None becomes {}
         snap.values = None
-        assert derive_status(snap) == WorkflowStatus.COMPLETED
+        assert derive_status(snap, has_active_task=False) == WorkflowStatus.COMPLETED
 
     def test_interrupt_without_matching_gate(self):
         """Interrupt at unknown gate → falls through to error/running/completed."""
@@ -189,6 +189,6 @@ class TestStatusEdgeCases:
         assert derive_status(snap) == WorkflowStatus.RUNNING
 
     def test_idle_without_next_completed(self):
-        """Idle phase without next nodes → completed."""
+        """Idle phase without next nodes and no active runner → completed."""
         snap = make_snapshot({"phase": WorkflowPhase.IDLE}, next=[])
-        assert derive_status(snap) == WorkflowStatus.COMPLETED
+        assert derive_status(snap, has_active_task=False) == WorkflowStatus.COMPLETED

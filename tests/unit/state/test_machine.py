@@ -77,7 +77,7 @@ class TestDeriveStatus:
             next=[],
             tasks=[],
         )
-        assert derive_status(snapshot) == WorkflowStatus.COMPLETED
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.COMPLETED
 
     def test_error_with_next_nodes_returns_running(self):
         """Error in non-terminal state (has next nodes) → RUNNING (may retry)."""
@@ -307,6 +307,20 @@ class TestDeriveStatusStale:
     def test_no_next_nodes_no_active_task_returns_completed(self):
         """No next nodes + no active task → completed (not stale)."""
         snapshot = make_snapshot({"phase": WorkflowPhase.COMPLETED})
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.COMPLETED
+
+    def test_no_next_nodes_but_active_task_is_running_not_completed(self):
+        """Right after /start the snapshot has no next nodes yet while the runner runs.
+
+        Reporting COMPLETED there made clients stop polling and skip the gates
+        (observed as completed/100% for ~1s after start, then running/scouting).
+        """
+        snapshot = make_snapshot({"phase": WorkflowPhase.SCOUTING})
+        assert derive_status(snapshot, has_active_task=True) == WorkflowStatus.RUNNING
+
+    def test_no_next_nodes_scouting_without_active_task_is_completed(self):
+        """Same snapshot with no runner left is a finished workflow."""
+        snapshot = make_snapshot({"phase": WorkflowPhase.SCOUTING})
         assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.COMPLETED
 
     def test_stale_does_not_override_interrupt_gates(self):

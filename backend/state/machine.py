@@ -45,7 +45,9 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
     8. Phase is completed → completed
     9. Has next nodes but no active task → stale
     10. Has next nodes with active task → running
-    11. No next nodes + no interrupt → completed
+    11. No next nodes + no interrupt + no active task → completed
+    12. No next nodes + active task → running (the first superstep has not
+        written its next-node checkpoint yet; right after /start)
 
     Args:
         snapshot: LangGraph StateSnapshot from graph.aget_state()
@@ -134,5 +136,11 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
     if next_nodes:
         return WorkflowStatus.RUNNING
 
-    # Priority 11: No next nodes, no interrupt → completed
+    # Priority 11: No next nodes, no interrupt → completed, unless the runner is
+    # still active.  Right after /start the initial checkpoint legitimately has no
+    # next nodes until the first superstep writes one; treating that as COMPLETED
+    # made clients stop polling and skip gates (observed as completed/100% for
+    # ~1s after start, then running/scouting).
+    if has_active_task:
+        return WorkflowStatus.RUNNING
     return WorkflowStatus.COMPLETED

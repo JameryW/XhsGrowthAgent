@@ -268,8 +268,10 @@ def test_submit_review_needs_revision_saves_version_through_seam():
 
     assert resp.status_code == 200, resp.text
 
-    # Version save went through the write seam
-    written = graph.aupdate_state.await_args_list[0].args[1]
+    # Version save went through the write seam — and rides the resume Command:
+    # a separate aupdate_state(as_node=pending review_gate) would consume the
+    # dynamic interrupt and skip the gate (票 5dd).
+    written = graph.ainvoke.await_args.args[0].update
     assert "content_versions" not in written
     assert written["artifacts"]["content_versions"]["ref"] == "artifact://content_versions/latest"
     # Meta summary kept in RuntimeState for routing predicates
@@ -331,13 +333,16 @@ def test_ripple_retopic_clears_trend_and_ripple_bodies_through_seam():
         "backend.api.routes._runner._run_graph_and_persist",
         new_callable=AsyncMock,
         return_value={"phase": "scouting"},
-    ):
+    ) as run_mock:
         resp = client.post("/api/review/ripple-decision/t1", json={"action": "retopic"})
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["action"] == "retopic"
 
-    written = graph.aupdate_state.await_args_list[0].args[1]
+    # Clears ride the resume Command (票 5dd): a separate aupdate_state as the
+    # pending ripple_gate would consume the interrupt and skip the node.
+    command = run_mock.await_args.args[3]
+    written = command.update
     # Deliberate clears stay inline; the stale refs are tombstoned and the
     # routing meta is reset (should_plan reads has_topics=False → no reuse).
     assert written["trend_data"] == {}

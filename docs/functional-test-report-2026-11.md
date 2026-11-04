@@ -22,6 +22,7 @@
 | API（graph-only，无 PG） | health、公开接口、静态壳与资产、OpenAPI、404 信封、405、gzip、CORS、鉴权 401、登录 503 BLOCKED | 冒烟 15 pass / 0 fail / 1 blocked |
 | API（生产 Postgres） | health `database=postgres/app_db=ready`、`memory_store=postgres`、admin 登录、账号 CRUD、工作流 start/status/pause/resume/cancel/delete、清理 | 冒烟 **28/28 PASS** |
 | 真实工作流 | magpie 真实 LLM、检查点写入与 resume（`status`/`logs` 读回）、无 `Blocked`/`unregistered` 告警 | 通过 |
+| 人工在环 gate 链路（生产 PG + 真实 LLM） | start → ripple → draft → blogger → draft → choice → review → evaluator → dry-run publish；逐 gate 由 API 驱动，记录状态迁移 | **通过**：timeline `evaluator`/`publisher` 均执行，`publish_result.status=mock_published`，`/api/evaluation/result` 返回 `overall_score=77.1`、`decision=approved`、6 维评分 |
 | 部署面 | 静态资产 4 个、117 条 OpenAPI path、404 信封 `ERROR_ROUTE_NOT_FOUND`、405、gzip、CORS | 通过 |
 | 生产优雅退出 | `serve` 关闭时 checkpoint pool 关闭、无残留 aiosqlite 线程、exit 0 | 通过 |
 | 评测链 | 抽取 → 门禁 → variant → 篡改拒绝（前序 P3 票） | 通过 |
@@ -44,6 +45,8 @@
 | 5cy | serde strict 模式静默屏蔽 `ContentStatus` 等枚举；启动失败泄漏线程；两个 off-loop 测试恒真；accounts 负缓存永久 | 全枚举 allowlist；启动失败 try/except 清理；测试在返回时采样；host TTL |
 | 5cz | allowlist 测试硬编码，新增枚举不会失败 | 动态发现 `backend.state.enums` 全部枚举 |
 | 5db | provider 预加载阻塞启动（lifespan 42s） | 守护线程后台预加载 + 按路由选择，lifespan 1.38s |
+| 5dc | start 后约 1s 内 `/status` 误报 `completed/100%`（`derive_status` Priority 11 忽略活跃 runner），客户端会停止轮询并跳过全部 gate | Priority 11 增加 `has_active_task`：活跃 → `running`；补 2 个单测，5 处旧断言显式 `False` |
+| 5dd | review/ripple 提交先 `aupdate_state(as_node=pending gate)` 会消费动态 `interrupt()`：gate 节点不执行，review 后 `publish_result={}`、无 evaluator/publisher | side updates 随 `Command(resume=..., update=...)` 提交；回归测试断言 `Command.update` 携带 `publish_decision` |
 
 ## 4. 关键指标（修复前 → 修复后）
 

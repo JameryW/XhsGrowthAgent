@@ -721,14 +721,13 @@ class TestReviewRoutes:
         )
 
         assert response.status_code == 200
-        updates = [
-            call.args[1] for call in mock_graph.aupdate_state.await_args_list if len(call.args) > 1
-        ]
-        decisions = [
-            update["publish_decision"] for update in updates if "publish_decision" in update
-        ]
-        assert len(decisions) == 1, updates
-        decision = decisions[0]
+        # The approval's side updates ride the same Command as the resume: writing
+        # them with aupdate_state(as_node=pending gate) would consume the dynamic
+        # interrupt and skip review_gate (the node that writes human_feedback).
+        command = mock_graph.ainvoke.await_args.args[0]
+        updates = getattr(command, "update", None) or {}
+        assert "publish_decision" in updates, updates
+        decision = updates["publish_decision"]
         assert decision["decision_id"].startswith("mainline:")
         assert decision["source"] == "mainline_review"
         assert decision["thread_id"] == "xhs_test_abc123"

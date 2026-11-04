@@ -233,8 +233,9 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 
 - 修复期间它被算作「有人在跑」⇒ `/recover` 在修复期间拒绝（`backend/api/routes/_wf_application.py:1149`
   只放行 error/stale）。ripple-retry 最长 **1800s**。
-- `derive_status` 里 `has_active_task` 只在**优先级 9/10**起作用（`backend/state/machine.py:46-47`）
-  ⇒ 这次改动的可见面**只有** `stale → running` 一格，其余分支全部短路。
+- `derive_status` 里 `has_active_task` 在**优先级 9/10/11**起作用（`backend/state/machine.py`）
+  ⇒ 这次改动的可见面是 `stale → running` 与「无 next 节点 + 活跃 runner → running（票 5dc）」
+  两格，其余分支全部短路。
 - ★ **租约泄漏不会导致自动重发。** 修复协程若被 `kill -9`，行变 silent、90s 后被 `expire_scan`
   翻成 `expired`，扫描会考虑它 —— 但**节点安全闸门先拒绝**：publish-retry 的待跑节点含
   `publisher`（`irreversible`）、ripple-retry 停在 `ripple_gate`（`needs_human`）⇒
@@ -408,12 +409,12 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `repair_paths_taking_the_lease` | `2` | `_wf_actions.py` 内 `_execution_lease` 的调用点数 —— 两条修复路径各一处 |
 | `lease_helper_definitions_in_the_runner` | `1` | `_runner.py` 内 `_execution_lease` 的定义数 —— 「取租约只有一处实现」的那个「一处」 |
 | `end_lease_call_sites_under_backend` | `1` | 全仓 `end_lease(` 的调用点数（在同一个 helper 里） |
-| `aupdate_state_call_sites_outside_the_unified_entry` | `22` | 宿主函数不是 `_run_graph_and_persist` 的 `aupdate_state` 调用点数 —— §7 的判据必须圈得住的两端 |
+| `aupdate_state_call_sites_outside_the_unified_entry` | `20` | 宿主函数不是 `_run_graph_and_persist` 的 `aupdate_state` 调用点数 —— §7 的判据必须圈得住的两端 |
 | `checkpoint_writer_files_outside_the_unified_entry` | `7` | 上一行涉及的**文件**数 |
 | `repair_paths_that_own_their_own_task` | `2` | 「处理器 `create_task` 起的嵌套协程**自己**写 checkpoint」的处数 —— §7 用来圈集合的那条判据 |
 | `expire_scan_call_sites_under_backend` | `1` | 全仓 `expire_scan(` 的调用点数（在 `takeover_scan` 里，由启动扫描与周期调度到达） |
 | `takeover_scheduler_start_sites` | `1` | `app.py` 里把 `takeover_scheduler` 交给 `create_task` 的处数 —— 「租约真的会被翻成 expired」的那半句 |
-| `derive_status_mentions_of_has_active_task` | `1` | `derive_status` 里 `if` 测试含 `has_active_task` 的分支数 —— 优先级 9/10 两格只由**一处**提及决定（10 是靠 9 落空到达的） |
+| `derive_status_mentions_of_has_active_task` | `2` | `derive_status` 里 `if` 测试含 `has_active_task` 的分支数 —— 优先级 9/10 由第一处提及决定；优先级 11（无 next 节点）由第二处决定：活跃 runner 时是 `running` 而不是 `completed`（票 5dc） |
 | `acquire_outcome_members` | `3` | `AcquireOutcome` 的成员数 —— 拒绝不再是一个 `False` 的三种拼法 |
 | `acquire_outcome_definitions_in_the_lease_module` | `1` | 该模块内 `acquire_outcome` 的定义数 —— 决定只做一次，`acquire` 是它的投影 |
 | `execution_lease_call_sites_under_backend` | `3` | 全仓 `_execution_lease(` 的调用点数 —— 一个实现、三个执行者 |
@@ -485,7 +486,7 @@ token —— 一个裸基名（`_wf_actions.py` 那一类，报错时给出它�
 
 | 主张 | 值 | 怎么重算 |
 | --- | --- | --- |
-| `line_number_references_in_this_document` | `159` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
+| `line_number_references_in_this_document` | `158` | 全文带路径的 `路径:行号` 与裸 `:行号` 的处数之和 |
 | `line_numbers_pinned_by_marked_tables` | `79` | 标记表里第一格本身就是 `路径:行号` 的行数 |
 | `bare_line_number_references_in_this_document` | `21` | 其中不带路径的处数 —— 只能被「节内归属」推断，是这一档已知的欠账 |
 
