@@ -773,7 +773,9 @@ def _probe_container_cdp_endpoint() -> str:
     if _cdp_probe_cache is not None and now - _cdp_probe_cache[0] < _CDP_PROBE_TTL_SECONDS:
         return _cdp_probe_cache[1]
     value = _probe_container_cdp_endpoint_uncached()
-    _cdp_probe_cache = (now, value)
+    # Measure the TTL from probe *completion*: a slow DNS timeout (up to ~12s on
+    # Windows) must not eat into the window this answer is trusted for.
+    _cdp_probe_cache = (time.monotonic(), value)
     return value
 
 

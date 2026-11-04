@@ -1,0 +1,29 @@
+{
+  "id": "cdp-ttl-completion",
+  "name": "cdp-ttl-completion",
+  "title": "fix(publisher): CDP 探测 TTL 从探测完成时刻计时（票 5cx）",
+  "description": "自审 5cw 发现：缓存时间戳在 _probe_container_cdp_endpoint_uncached() 之前采样，Windows DNS 慢探测（最长约 12s）会让实际 TTL 缩短 12s（60s 窗口只剩 48s）。改为探测完成后取 _cdp_probe_cache 时间戳，TTL 语义准确。属 2 行修正，聚焦测试 3 例仍通过，全量回归后提交。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P3",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/agents/publisher.py",
+    "tests/unit/agents/test_cdp_probe_cache.py"
+  ],
+  "notes": "DONE 2026-11-04. Follow-up to 5cw found while self-reviewing the TTL cache: the cached timestamp was sampled before the blocking probe ran, so a slow probe (Windows DNS can take the full ~12s timeout) shortened the effective trust window from 60s to ~48s. The cache now stores time.monotonic() taken after the probe completes; the TTL now measures from when the answer became known. Two-line change, no behavior change in the happy path; the three TTL tests still pass and the full suite was re-run.",
+  "meta": {}
+}
