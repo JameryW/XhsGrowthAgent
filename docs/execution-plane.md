@@ -96,7 +96,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 - `durable`：租约在 PG 里，跨进程可见，接管有意义。
 - `none`：租约只在进程内。重启即消失 ⇒ 没有过期行 ⇒ 扫描扫不到东西，也不需要扫。
 
-这两种状态不能靠「有没有租约」区分，所以 `/health` 把 `durability` 作为 `execution_takeover` 的一个字段发出来（`backend/api/app.py:1678`）。**它是运维唯一能区分「降级的租约」和「看起来持久的租约」的地方。**
+这两种状态不能靠「有没有租约」区分，所以 `/health` 把 `durability` 作为 `execution_takeover` 的一个字段发出来（`backend/api/app.py:1681`）。**它是运维唯一能区分「降级的租约」和「看起来持久的租约」的地方。**
 
 ## 5. 接管的安全边界
 
@@ -149,8 +149,8 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/services/omp_bridge.py:2163` | `self._reader_task = asyncio.create_task(self._read_stdout())` | IN_PROCESS_LOOP | 子进程 stdout 读取 |
 | `backend/services/omp_bridge.py:2867` | `self._idle_timers[session_id] = asyncio.create_task(_idle_timeout())` | IN_PROCESS_LOOP | 空闲超时器 |
 | `backend/services/ripple_service.py:281` | `self._bg_task = asyncio.create_task(self._health_check_loop` | IN_PROCESS_LOOP | 服务级健康循环 |
-| `backend/api/app.py:1379` | `takeover_task = asyncio.create_task(` | IN_PROCESS_LOOP | 接管扫描；开关在 `:1363`，关停在 `:1487` |
-| `backend/api/app.py:1460` | `creator_stats_scheduler = asyncio.create_task(` | IN_PROCESS_LOOP | 采集调度器 |
+| `backend/api/app.py:1382` | `takeover_task = asyncio.create_task(` | IN_PROCESS_LOOP | 接管扫描；开关在 `:1366`，关停在 `:1490` |
+| `backend/api/app.py:1463` | `creator_stats_scheduler = asyncio.create_task(` | IN_PROCESS_LOOP | 采集调度器 |
 | `backend/api/routes/agent.py:89` | `_prewarm_tasks[session_mode] = asyncio.create_task(_warm())` | CACHE_WARMUP | 按会话模式预热 |
 | `backend/api/routes/public_showcase.py:756` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
 | `backend/api/routes/public_showcase.py:842` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
@@ -183,7 +183,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_runner.py:667` | `if lease.lost.is_set():` | PLANE | 被栅栏的 run 不写状态 |
 | `backend/db/execution_leases.py:249` | `def durability()` | LEASE | 无 PG ⇒ `none` |
 | `backend/db/execution_leases.py:256` | `is_pool_ready()` | LEASE | 唯一判据 |
-| `backend/api/app.py:1678` | `execution_takeover = {key: takeover_state.get(key)` | HEALTH | 白名单出口 |
+| `backend/api/app.py:1681` | `execution_takeover = {key: takeover_state.get(key)` | HEALTH | 白名单出口 |
 | `backend/graph/takeover_safety.py:56` | `TAKEOVER_HAZARDS: dict[str, TakeoverHazard] = {` | SAFETY | 穷举注册表 |
 | `backend/api/routes/_takeover.py:136` | `# The gate.` | SAFETY | 两种拒绝都继续当终局 —— 它们现在分得开，这里刻意不分流（§5 第 2 条） |
 
