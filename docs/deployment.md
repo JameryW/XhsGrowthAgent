@@ -526,7 +526,7 @@ delete、账号清理）。冒烟脚本对生命周期调用保留 60s 超时 + 
 > Windows 上 `socket.gethostbyname("host.containers.internal")` 走满 DNS 超时（~12s），以及
 > 首次 provider SDK 导入（~数秒）发生在 async 节点里；不是 Postgres/checkpoint 慢（直连 SQL
 > 仅 0–16ms、checkpoint 仅 KB）。修复后实测 `/status` 约 **1.1s**、事件循环卡顿 **0 次**：
-> provider SDK 在启动时用 `asyncio.to_thread` 预加载，CDP 探测移出事件循环并进程内缓存。
+> provider SDK 在启动时用 `asyncio.to_thread` 预加载，CDP 探测移出事件循环，并用 60s TTL 缓存（Chrome 后启动无需重启进程即可恢复）。
 
 ## 部署后功能冒烟（本地/生产通用）
 

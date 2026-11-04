@@ -8,9 +8,9 @@ import logging
 import os
 import socket
 import tempfile
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -740,14 +740,16 @@ def _normalize_scheduled_time(value: Any) -> str:
     return parsed.strftime("%Y-%m-%d %H:%M")
 
 
-@lru_cache(maxsize=1)
-def _probe_container_cdp_endpoint() -> str:
-    """Blocking probe for a Chrome published on the container host.
+# Chrome on the container host can appear *after* the backend starts, so a failed
+# probe must not disable publishing until the process restarts.  The answer is
+# cached with a short TTL: repeated attempts are cheap, while a Chrome started
+# later is picked up without a restart.
+_CDP_PROBE_TTL_SECONDS = 60.0
+_cdp_probe_cache: tuple[float, str] | None = None
 
-    ``socket.gethostbyname`` spends the full DNS timeout when
-    ``host.containers.internal`` does not exist (typical local dev), so the probe
-    runs in a worker thread and the answer is cached for the process lifetime.
-    """
+
+def _probe_container_cdp_endpoint_uncached() -> str:
+    """Blocking DNS + TCP probe (never call this on the event loop)."""
     host = "host.containers.internal"
     port = 9223
     try:
@@ -756,6 +758,29 @@ def _probe_container_cdp_endpoint() -> str:
             return f"http://{address}:{port}"
     except OSError:
         return ""
+
+
+def _probe_container_cdp_endpoint() -> str:
+    """Blocking probe for a Chrome published on the container host.
+
+    ``socket.gethostbyname`` spends the full DNS timeout when
+    ``host.containers.internal`` does not exist (typical local dev), so the probe
+    runs in a worker thread and the answer is cached for
+    :data:`_CDP_PROBE_TTL_SECONDS`.
+    """
+    global _cdp_probe_cache
+    now = time.monotonic()
+    if _cdp_probe_cache is not None and now - _cdp_probe_cache[0] < _CDP_PROBE_TTL_SECONDS:
+        return _cdp_probe_cache[1]
+    value = _probe_container_cdp_endpoint_uncached()
+    _cdp_probe_cache = (now, value)
+    return value
+
+
+def _clear_cdp_probe_cache() -> None:
+    """Drop the cached probe answer (tests; call after a known Chrome restart)."""
+    global _cdp_probe_cache
+    _cdp_probe_cache = None
 
 
 def _resolve_cdp_endpoint(settings: Settings) -> str:

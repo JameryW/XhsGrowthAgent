@@ -1,0 +1,30 @@
+{
+  "id": "cdp-probe-ttl",
+  "name": "cdp-probe-ttl",
+  "title": "fix(publisher): CDP 探测缓存改为 60s TTL，避免失败结果永久禁用发布（票 5cw）",
+  "description": "5cu 把 publisher 容器 CDP 探测从每次重试改成进程级缓存（避免 Windows 上 12s DNS 超时），但失败结果被永久缓存：本机后启动 Chrome / 容器主机后提供 CDP 时，publish 会一直认为不可用直到重启进程。改为 60s TTL 缓存：60s 内重复尝试不重探（保留性能收益），过期后重探，Chrome 后启动无需重启即可恢复；新增 _clear_cdp_probe_cache() 供测试/显式刷新。新增 3 个单测（负结果 TTL 内只探一次、过期重探；正结果缓存；清缓存后可发现新 Chrome）。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/agents/publisher.py",
+    "tests/unit/agents/test_cdp_probe_cache.py",
+    "docs/deployment.md"
+  ],
+  "notes": "DONE 2026-11-04. 5cu changed the container-CDP probe from per-attempt to process-lifetime lru_cache to avoid the Windows DNS timeout; that fixed the loop stall but made a failed probe permanent, so a Chrome started after the backend (or a container host that becomes reachable later) would keep publishing disabled until a process restart. Replaced the lru_cache with a 60s TTL cache: repeated attempts stay cheap inside the window and the probe re-runs after it expires, so a later Chrome is found without a restart. Added _probe_container_cdp_endpoint_uncached (blocking socket work, never on the loop) and _clear_cdp_probe_cache (tests / explicit refresh). Tests: negative result probed once within the TTL and again after it expires, positive result cached, clearing the cache lets a newly available Chrome be found. deployment.md now says 60s TTL instead of process cache. Run: 73 passed in the publisher-focused suites.",
+  "meta": {}
+}
