@@ -533,3 +533,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 76: CDP TTL 从探测完成计时（票 5cx）
+
+**Date**: 2026-11-04
+**Task**: CDP TTL 从探测完成计时（票 5cx）
+**Branch**: `main`
+
+### Summary
+
+自审 5cw 发现缓存时间戳在阻塞探测前采样，慢 DNS 会把 60s TTL 缩成 ~48s；改为探测完成后计时。2 行修正，TTL 3 测试通过，全量 4967 passed / 14 skipped / 0 failed 且进程正常退出；本地 CI parity（lint/format/mypy/gates/omp，--skip-tests）通过。票 5cx 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3a6a14ba` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
