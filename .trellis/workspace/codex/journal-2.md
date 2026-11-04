@@ -566,3 +566,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 77: 独立审查修复：serde 全枚举 allowlist、启动失败清理、测试判红（票 5cy）
+
+**Date**: 2026-11-04
+**Task**: 独立审查修复：serde 全枚举 allowlist、启动失败清理、测试判红（票 5cy）
+**Branch**: `main`
+
+### Summary
+
+独立 adversarial review 发现 serde allowlist 严格模式会静默屏蔽 ContentStatus 等 4 个真实检查点枚举（决策字段降级为 str + Blocked 告警），已补齐 6 个枚举并加逐成员/嵌套 round-trip 测试；lifespan 启动失败路径原会泄漏 aiosqlite 线程导致进程挂起，现 try/except 关闭 store/pool/dev graph 再抛；两个 off-loop 测试改为 endpoint 返回时采样（去掉 vacuous 断言）；accounts CDP host 负结果从永久 lru_cache 改 60s TTL；close 失败改 logging.warning。聚焦 82 passed；全量 4971 passed / 14 skipped / 0 failed 且正常退出；lint/format/gates/mypy 通过。票 5cy 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3b426d57` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

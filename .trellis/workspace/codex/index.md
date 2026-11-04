@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 76
+- **Total Sessions**: 77
 - **Last Active**: 2026-11-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~568 | Active |
+| `journal-2.md` | ~601 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 77 | 2026-11-04 | 独立审查修复：serde 全枚举 allowlist、启动失败清理、测试判红（票 5cy） | `3b426d57` | `main` |
 | 76 | 2026-11-04 | CDP TTL 从探测完成计时（票 5cx） | `3a6a14ba` | `main` |
 | 75 | 2026-11-04 | 生产路径（Postgres）在 5cu/5cv/5cw 后回归：28/28 冒烟、status ~1s、优雅退出池关闭 | `ffb105ca` | `main` |
 | 74 | 2026-11-04 | CDP 探测缓存改 60s TTL（票 5cw） | `a6da3bf8` | `main` |
