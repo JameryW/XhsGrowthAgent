@@ -731,3 +731,55 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 82: gate 全链路与实时/并发/调度补测（票 5dc-5df）
+
+**Date**: 2026-11-05
+**Task**: gate 全链路与实时/并发/调度补测（票 5dc-5df）
+**Branch**: `main`
+
+### Summary
+
+gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
+
+### Main Changes
+
+## 2026-11-04 深夜：人工在环 gate 全链路 + 实时/并发/调度补测
+
+### 修复（main）
+- 7a5049fa fix(gates)：`derive_status` Priority 11 增加 `has_active_task`（start 后 ~1s 误报 completed 会让客户端停止轮询跳过 gate）；review/ripple 的 side updates 改随 `Command(resume=..., update=...)` 提交（原 `aupdate_state(as_node=pending gate)` 会消费动态 interrupt，review 后 `publish_result={}`、无 evaluator/publisher）。CI 41859697819 success。
+- e2df95bc perf(auth)+fix(cli)：Redis 不可达时 `_ensure_backend` 每次鉴权重试连接，所有认证接口恒定 ~1s（50 并发 /status 全超时）；改为进程内只探测一次（`_backend_resolved`）。Windows `xhs-growth login` 打开 app DB 前未切 SelectorEventLoop，配置 POSTGRES_URI 时 30s PoolTimeout。CI 41863073532。
+
+### 证据
+- 全量 pytest（PG parity）：**4979 passed / 11 skipped / 0 failed**。
+- 人工在环 gate 链路（生产 PG + 真实 LLM）：start → ripple → draft → blogger → draft → choice → review → evaluator → dry-run publish；timeline 含 evaluator/publisher，`publish_result.status=mock_published`，`/api/evaluation/result` overall_score=77.1/approved。
+- 实时面：WS subscribe/ping/get_missed、暂停/取消实时事件、`GET /events/missed`（27 事件 seq 有序，since 末尾=0）、SSE `/api/workflow/stream` 首帧。
+- 调度器：`CREATOR_STATS_SYNC_INTERVAL_HOURS=0.0006` 实跑 `run=1 status=completed`，health 回填 last_finished_at。
+- 并发：50 并发 /status 50/50 200，0.73s（修复前 50/50 >45s 超时）；/accounts 1.0s→15–31ms，/status 1.03s→47–125ms。
+- 只读 API：workflow/list、workflow/history（19 checkpoints）、analytics/costs（$0.11）、evaluation/list、creator-stats、evaluation/run（76.4）。
+- CLI：version、sync-stats --dry-run（6 suggestions）、login 负路径（PG 下立即「账号不存在」exit 1）。
+- LLM 配额：magpie 默认上游当日 Go 配额耗尽（429），gate 链路用 `remote-magpie/auto/gpt-6.1-terra` 临时覆盖（测试启动器，未改仓库路由）。
+
+### 未验证（外部阻塞）
+真实小红书发布/互动、omp TUI 运行时（本机无 omp/pnpm）、前端浏览器 E2E（CI frontend 已过）、语义检索（无 embedding key）、真实 Ripple/Tavily（无凭据）、真实发布（仅 dry-run）。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7a5049fa` | (see git log) |
+| `e2df95bc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
