@@ -9,6 +9,7 @@ logged as "Blocked deserialization" — this test pins the complete set.
 
 from __future__ import annotations
 
+import enum as enum_module
 import logging
 
 from backend.state import enums
@@ -16,14 +17,24 @@ from backend.state.checkpoint_serde import ALLOWED_MSGPACK_MODULES, checkpoint_s
 
 
 def _enum_types() -> list[type]:
-    return [
-        enums.WorkflowPhase,
-        enums.WorkflowMode,
-        enums.ContentStatus,
-        enums.ContentType,
-        enums.Urgency,
-        enums.ExecutionMode,
+    """Every enum defined in :mod:`backend.state.enums`, discovered dynamically.
+
+    A hardcoded list would let a new state enum land without an allowlist entry;
+    strict msgpack would then silently downgrade it — the exact 5cy bug.  Because
+    this discovers the module, adding an enum makes the allowlist test fail until
+    the allowlist is updated.
+    """
+    found = [
+        value
+        for name, value in vars(enums).items()
+        if isinstance(value, type)
+        and issubclass(value, enum_module.StrEnum)
+        and value is not enum_module.StrEnum
+        and value.__module__ == enums.__name__
+        and not name.startswith("_")
     ]
+    assert found, "no StrEnum subclasses found in backend.state.enums"
+    return found
 
 
 def test_allowlist_names_every_enum_in_state_enums():

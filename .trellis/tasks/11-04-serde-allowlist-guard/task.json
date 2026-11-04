@@ -1,0 +1,28 @@
+{
+  "id": "serde-allowlist-guard",
+  "name": "serde-allowlist-guard",
+  "title": "test(state): serde allowlist 测试改为动态发现全部 state 枚举（票 5cz）",
+  "description": "5cy 的 serde 测试用硬编码 6 个枚举列表：未来往 backend.state.enums 新增枚举时，allowlist 测试仍会通过，而 strict msgpack 会静默把新枚举降级为字符串（正是 5cy 修的 bug 类型）。改为动态发现 backend.state.enums 中所有 StrEnum 子类（按 __module__ 过滤），allowlist 必须与之完全一致；新增枚举会让测试直接失败并要求同步。保留逐成员 round-trip 与嵌套 payload 身份测试。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "tests/unit/state/test_checkpoint_serde.py"
+  ],
+  "notes": "DONE 2026-11-04. The 5cy serde test pinned the allowlist against a hardcoded list of six enums, so a future enum added to backend.state.enums would pass the test while strict msgpack silently downgraded it to a string (the exact defect 5cy fixed). _enum_types() now discovers every StrEnum defined in backend.state.enums (filtered by __module__ so imported names such as StrEnum itself are excluded), the allowlist equality test runs against that dynamic set, and the round-trip/nested-identity tests iterate it. Adding an enum now makes the test fail until ALLOWED_MSGPACK_MODULES is updated. Focused test: 4 passed.",
+  "meta": {}
+}

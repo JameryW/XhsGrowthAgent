@@ -1,0 +1,1 @@
+{"file": "backend/state/checkpoint_serde.py", "reason": "strict-msgpack allowlist contract the test guards"}

@@ -1,0 +1,1 @@
+{"file": "tests/unit/state/test_checkpoint_serde.py", "reason": "dynamic discovery of all state enums pins the allowlist"}
