@@ -12,7 +12,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from langgraph.graph.state import CompiledStateGraph
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -1505,11 +1508,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if checkpoint_pool is not None:
         with contextlib.suppress(Exception):
             await checkpoint_pool.close()
+    # Dev/SQLite fallback: ``compile_graph_dev`` owns an aiosqlite connection
+    # whose worker thread is non-daemon — leaking it keeps the interpreter alive
+    # after shutdown (test runners and ``serve`` restarts hang forever).
+    await _close_dev_sqlite_checkpointer(getattr(app.state, "graph", None))
     # Close app-level DB pool
     with contextlib.suppress(Exception):
         from backend.db.pool import close_pool
 
         await close_pool()
+
+
+async def _close_dev_sqlite_checkpointer(graph: CompiledStateGraph[Any] | None) -> None:
+    """Close the SQLite checkpointer connection owned by a dev-compiled graph.
+
+    ``compile_graph_dev`` falls back to ``AsyncSqliteSaver`` in local/dev mode and
+    stores its aiosqlite connection on the graph.  That connection's worker thread
+    is non-daemon, so leaving it open makes interpreter shutdown wait forever.
+    Best-effort: a broken close must not fail application shutdown.
+    """
+    if graph is None:
+        return
+    with contextlib.suppress(Exception):
+        from backend.graph.builder import close_dev_graph
+
+        await close_dev_graph(graph)
 
 
 app = FastAPI(

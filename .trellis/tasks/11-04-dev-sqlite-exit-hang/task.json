@@ -1,0 +1,31 @@
+{
+  "id": "dev-sqlite-exit-hang",
+  "name": "dev-sqlite-exit-hang",
+  "title": "fix(runtime): dev SQLite checkpointer 未关闭导致进程退出挂起 + serve 单测真实起服务器（票 5cv）",
+  "description": "本地 pytest 打印 summary 后永不退出。可判红回路：pytest_exit_loop 子集 0/3 clean exit；进程内 wrapper 显示唯一残留线程是 aiosqlite 非守护 _connection_worker_thread；二分到 TestCliServe——serve 实现改走 _serve_uvicorn 后单测仍只 patch uvicorn.run，于是真启动服务器，应用 lifespan 在 SQLite 回退模式 compile_graph_dev() 且 shutdown 从不关闭 dev graph 连接。修复：app.py 新增 _close_dev_sqlite_checkpointer 并在 lifespan 清理阶段调用真实 helper close_dev_graph（首次修复误用不存在的名字，被 suppress 静默吞掉）；serve 单测改 patch _serve_uvicorn 并新增 --reload 路径测试；新增 3 个 cleanup 单测（关闭连接、None no-op、close 抛错吞掉）；CLAUDE.md 记录。验证：CLI 子集 0/3→3/3 clean exit，全量 4963 passed / 11 skipped 且进程正常退出。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/api/app.py",
+    "tests/unit/cli/test_main.py",
+    "tests/unit/api/test_app_dev_sqlite_cleanup.py",
+    "CLAUDE.md"
+  ],
+  "notes": "DONE 2026-11-04. Last local-environment observation: pytest printed its summary and then never exited on Windows, forcing kills (2/2 observed runs earlier). Built a red-capable loop first (.eval-tmp/pytest_exit_loop.py: run a target, wait for the summary line, require process exit within 15s, else HANG). It reproduced deterministically on tests/unit/cli/test_main.py: 0/3 clean exits. py-spy could not attach to the uv-managed interpreter, so an in-process wrapper ran pytest.main, then enumerated threads: exactly one non-daemon thread remained, aiosqlite.core._connection_worker_thread blocked on tx.get(). Bisection by class isolated TestCliServe. Why: serve now goes through _serve_uvicorn on Windows (SelectorEventLoop path), but the unit tests still patched only uvicorn.run, so each test actually booted the app; the app lifespan compiles a dev graph via compile_graph_dev in SQLite fallback mode and shutdown closed only the prod store/checkpoint pools, never the dev graph's aiosqlite connection. aiosqlite's worker is non-daemon, so interpreter shutdown waited forever. Fix: backend/api/app.py now calls a new _close_dev_sqlite_checkpointer(getattr(app.state, 'graph', None)) during cleanup, which wraps backend.graph.builder.close_dev_graph; note the first attempt imported a non-existent close_sqlite_checkpointer name and contextlib.suppress swallowed the ImportError, so the unit test asserting close is awaited and _sqlite_conn becomes None was what caught it. Serve unit tests now patch backend.cli.main._serve_uvicorn and a new test covers the --reload uvicorn.run path. Added tests/unit/api/test_app_dev_sqlite_cleanup.py (3 tests). Results: CLI subset 0/3 -> 3/3 clean exits; full suite 4963 passed / 11 skipped / 0 failed and the process exited normally (previously required kill); serve tests dropped from ~10s each (real server boot) to fast unit time. CLAUDE.md Testing section documents the non-daemon aiosqlite rule and the _serve_uvicorn patch requirement.",
+  "meta": {}
+}

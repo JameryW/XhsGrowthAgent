@@ -1,0 +1,2 @@
+{"file": "tests/unit/api/test_app_dev_sqlite_cleanup.py", "reason": "the shutdown helper must close the dev aiosqlite connection"}
+{"file": "tests/unit/cli/test_main.py", "reason": "serve tests must not boot a real server"}

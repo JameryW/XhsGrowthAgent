@@ -1,0 +1,2 @@
+{"file": "docs/execution-plane.md", "reason": "lifespan cleanup / IN_PROCESS_LOOP resource ownership"}
+{"file": "docs/deployment.md", "reason": "serve shutdown and local SQLite fallback behaviour"}

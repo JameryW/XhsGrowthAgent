@@ -409,6 +409,7 @@ user_template: |
 - Contract tests verify OpenAPI spec sync (`tests/contract/test_type_sync.py`)
 - Ripple service tests cover singleton, health check, retry, fallback (`tests/unit/services/test_ripple_service.py`)
 - Memory tests: index config (`tests/unit/memory/test_index.py`), store (`tests/unit/memory/test_store.py`), creative memory (`tests/unit/memory/test_creative_memory.py`)
+- The dev/SQLite graph owns an aiosqlite connection whose worker thread is **non-daemon**: short-lived callers must use `async with dev_graph()` (CLI) or the API shutdown helper `_close_dev_sqlite_checkpointer` (app lifespan), otherwise the interpreter waits forever at exit. Symptom: pytest prints its summary and never exits; test servers must patch `backend.cli.main._serve_uvicorn` instead of booting a real server.
 
 ## Visual Design Tools (tools/visual/)
 
