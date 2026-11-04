@@ -1,0 +1,2 @@
+{"file": "docs/deployment.md", "reason": "the production-path latency contract this ticket corrects"}
+{"file": "docs/execution-plane.md", "reason": "runner/checkpointer behaviour behind the /status read path"}

@@ -199,6 +199,20 @@ def get_model(task: str) -> BaseChatModel:
     return get_router().get_model_for_task(task)
 
 
+def preload_model_providers() -> None:
+    """Import the provider SDKs once, before any node needs a model.
+
+    ``_create_model`` imports ``langchain_anthropic``/``langchain_openai`` lazily.
+    The first import can spend seconds in import machinery; when that first call
+    happens inside an async graph node it blocks the whole event loop, so API
+    requests (including ``/status``) and checkpoint writes stall behind it.  Call
+    this at startup **off** the event loop (``asyncio.to_thread``) so later model
+    construction only does object work.  Idempotent (``sys.modules`` caches).
+    """
+    import langchain_anthropic  # noqa: F401
+    import langchain_openai  # noqa: F401
+
+
 def get_model_by_id(model_id: str) -> BaseChatModel:
     """按注册表 id 直接取模型实例（不经任务路由）。
 

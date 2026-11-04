@@ -728,12 +728,13 @@ async def _resolve_free_cdp_endpoint(account_id: str) -> str:
     _resolve_cdp_endpoint(settings), then override with the per-account
     endpoint if one is bound. Returns "" when no endpoint is available.
     """
-    from backend.agents.publisher import _resolve_cdp_endpoint
+    from backend.agents.publisher import _resolve_cdp_endpoint_async
     from backend.config.settings import Settings
     from backend.db.accounts import get_account_cdp_endpoint
 
     settings = Settings()
-    cdp_endpoint = _resolve_cdp_endpoint(settings)
+    # Blocking DNS/connect probe — must stay off the event loop.
+    cdp_endpoint = await _resolve_cdp_endpoint_async(settings)
     per_account = await get_account_cdp_endpoint(account_id)
     if per_account:
         cdp_endpoint = per_account

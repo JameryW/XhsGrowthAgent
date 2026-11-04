@@ -2405,3 +2405,31 @@ async def test_the_gateway_payload_comes_from_the_shared_request_builder(
     assert payload["cdp_endpoint"] == "http://127.0.0.1:9223"
     # scheduled_time="" is omitted: the tool's own default is the same empty value.
     assert "scheduled_time" not in payload
+
+
+@pytest.mark.asyncio
+async def test_async_cdp_resolver_runs_off_the_event_loop(monkeypatch):
+    """The publisher's probe does blocking DNS/connect; it must not block the loop."""
+    import asyncio
+    import time
+
+    from backend.agents import publisher
+
+    def blocking_resolve(_settings):
+        time.sleep(0.25)
+        return "http://10.0.0.9:9223"
+
+    monkeypatch.setattr(publisher, "_resolve_cdp_endpoint", blocking_resolve)
+
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        for _ in range(10):
+            await asyncio.sleep(0.02)
+            ticks += 1
+
+    endpoint, _ = await asyncio.gather(publisher._resolve_cdp_endpoint_async(object()), ticker())
+
+    assert endpoint == "http://10.0.0.9:9223"
+    assert ticks >= 5

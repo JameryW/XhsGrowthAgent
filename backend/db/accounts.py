@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from backend.db.crypto import decrypt_value, encrypt_value, mask_value
@@ -531,6 +533,7 @@ async def delete_credential(account_id: str, key_name: str) -> bool:
     return int(getattr(cur, "rowcount", 0) or 0) == 1
 
 
+@lru_cache(maxsize=1)
 def _resolve_cdp_host() -> str:
     """Resolve the host that the per-account Chrome's CDP port is reachable on.
 
@@ -578,7 +581,11 @@ async def get_account_cdp_endpoint(account_id: str) -> str:
         return ""
     if account is None or account.cdp_port <= 0:
         return ""
-    return f"http://{_resolve_cdp_host()}:{account.cdp_port}"
+    # ``socket.gethostbyname`` is blocking (on Windows it spends the full DNS
+    # timeout when host.containers.internal does not exist), so keep it off the
+    # event loop; the answer is cached for the process lifetime.
+    host = await asyncio.to_thread(_resolve_cdp_host)
+    return f"http://{host}:{account.cdp_port}"
 
 
 # ── Helpers ──

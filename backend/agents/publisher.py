@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ import socket
 import tempfile
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -738,14 +740,14 @@ def _normalize_scheduled_time(value: Any) -> str:
     return parsed.strftime("%Y-%m-%d %H:%M")
 
 
-def _resolve_cdp_endpoint(settings: Settings) -> str:
-    """Resolve the real-Chrome CDP endpoint across old/new runtime settings."""
+@lru_cache(maxsize=1)
+def _probe_container_cdp_endpoint() -> str:
+    """Blocking probe for a Chrome published on the container host.
 
-    platform = settings.platform
-    endpoint = getattr(platform, "cdp_endpoint", "") or os.getenv("XHS_CDP_ENDPOINT", "")
-    if endpoint:
-        return endpoint
-
+    ``socket.gethostbyname`` spends the full DNS timeout when
+    ``host.containers.internal`` does not exist (typical local dev), so the probe
+    runs in a worker thread and the answer is cached for the process lifetime.
+    """
     host = "host.containers.internal"
     port = 9223
     try:
@@ -754,6 +756,22 @@ def _resolve_cdp_endpoint(settings: Settings) -> str:
             return f"http://{address}:{port}"
     except OSError:
         return ""
+
+
+def _resolve_cdp_endpoint(settings: Settings) -> str:
+    """Resolve the real-Chrome CDP endpoint across old/new runtime settings."""
+
+    platform = settings.platform
+    endpoint = getattr(platform, "cdp_endpoint", "") or os.getenv("XHS_CDP_ENDPOINT", "")
+    if endpoint:
+        return endpoint
+
+    return _probe_container_cdp_endpoint()
+
+
+async def _resolve_cdp_endpoint_async(settings: Settings) -> str:
+    """Event-loop-safe wrapper: the sync probe does blocking DNS + connect."""
+    return await asyncio.to_thread(_resolve_cdp_endpoint, settings)
 
 
 class PublisherAgent(BaseAgent):
@@ -982,7 +1000,7 @@ async def _run_publish_attempt(
     # _resolve_cdp_endpoint. Accounts without a port binding (cdp_port=0 or
     # account missing) fall back to the global endpoint — backward compat with
     # the single-account .chrome-profile/ flow.
-    cdp_endpoint = _resolve_cdp_endpoint(settings)
+    cdp_endpoint = await _resolve_cdp_endpoint_async(settings)
     if publish_account_id:
         # 停用账号早 fail：is_active=false 直接拒绝，避免浪费一次真实 Chrome 发布
         # 等 XHS 平台返回 auth_expired。

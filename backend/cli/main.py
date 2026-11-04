@@ -151,7 +151,12 @@ def run(
 
     async def _run() -> None:
         from backend.graph.builder import dev_graph
+        from backend.models.router import preload_model_providers
         from backend.state.schema import WorkflowPhase
+
+        # Off-loop preload: the first lazy provider import inside a node blocks
+        # the event loop for seconds (and, under the API, stalls every request).
+        await asyncio.to_thread(preload_model_providers)
 
         async with dev_graph() as graph:
             thread_id = f"xhs_{account_id}_{uuid.uuid4().hex[:8]}"

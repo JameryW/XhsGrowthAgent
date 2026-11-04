@@ -1206,6 +1206,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from backend.graph.builder import compile_graph_dev
     from backend.services.ripple_service import RippleService
 
+    # Import the LLM provider SDKs now, off the event loop.  Done lazily inside
+    # the first graph node they spend seconds in import machinery and block the
+    # loop, stalling every API request (and checkpoint write) behind them.
+    with contextlib.suppress(Exception):
+        from backend.models.router import preload_model_providers
+
+        await asyncio.to_thread(preload_model_providers)
+
     # ── DB + checkpointer initialization ──
     db_uri = os.environ.get("POSTGRES_URI")
     checkpointer = None

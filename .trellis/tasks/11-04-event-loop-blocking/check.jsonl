@@ -1,0 +1,2 @@
+{"file": "tests/unit/db/test_accounts_cdp_offloop.py", "reason": "verify the blocking DNS move off the loop and the cache"}
+{"file": "tests/unit/models/test_preload_providers.py", "reason": "verify the startup preload imports both provider SDKs"}
