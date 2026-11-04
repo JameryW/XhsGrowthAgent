@@ -500,3 +500,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 75: 生产路径（Postgres）在 5cu/5cv/5cw 后回归：28/28 冒烟、status ~1s、优雅退出池关闭
+
+**Date**: 2026-11-04
+**Task**: 生产路径（Postgres）在 5cu/5cv/5cw 后回归：28/28 冒烟、status ~1s、优雅退出池关闭
+**Branch**: `main`
+
+### Summary
+
+重建嵌入 PG 16.2 后回归生产路径：health overall=ok / database=ok(app_db=ready) / memory_store=postgres；scripts/functional_smoke.py --start-workflow 28/28 PASS；start 后连续 3 次 status 延迟 2.31s/1.03s/1.03s（修复前 12-58s）；用 SelectorEventLoop 驱动真实 uvicorn Server 优雅退出：CHECKPOINTER_POOL_CLOSED=True、AIOSQLITE_THREADS=0、8.4s 内 exit 0（SQLite 模式同样 0 残留线程）。注意 Windows 下 in-process 驱动必须显式 SelectorEventLoop，否则 psycopg 在 Proactor 上 PoolTimeout 回退 SQLite（脚本层面，不是产品问题）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ffb105ca` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

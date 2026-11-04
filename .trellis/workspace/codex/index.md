@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 74
+- **Total Sessions**: 75
 - **Last Active**: 2026-11-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~502 | Active |
+| `journal-2.md` | ~535 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 75 | 2026-11-04 | 生产路径（Postgres）在 5cu/5cv/5cw 后回归：28/28 冒烟、status ~1s、优雅退出池关闭 | `ffb105ca` | `main` |
 | 74 | 2026-11-04 | CDP 探测缓存改 60s TTL（票 5cw） | `a6da3bf8` | `main` |
 | 73 | 2026-11-04 | dev SQLite checkpointer 未关闭导致退出挂起（票 5cv） | `e01a3ea5` | `main` |
 | 72 | 2026-11-04 | 事件循环阻塞修复：provider 预加载与 CDP DNS 移出循环（票 5cu） | `991c8099` | `main` |
