@@ -37,6 +37,7 @@ class TokenData(BaseModel):
 _active_tokens: dict[str, TokenData] = {}
 _backend: TokenBackend = "memory"
 _redis_client: Any | None = None
+_backend_resolved = False
 _redis_lock = threading.Lock()
 _TOKEN_KEY_PREFIX = "xhs:auth:token:"
 _USER_INDEX_PREFIX = "xhs:auth:user:"
@@ -128,12 +129,18 @@ def _try_connect_redis() -> Any | None:
 
 
 def _ensure_backend() -> TokenBackend:
-    """Lazy-init Redis; degrade to memory. Thread-safe."""
-    global _backend, _redis_client
-    if _backend == "redis" and _redis_client is not None:
+    """Lazy-init Redis; degrade to memory. Thread-safe.
+
+    The probe runs ONCE per process (``_backend_resolved``).  Retrying Redis on
+    every call is what made every authenticated request cost ~1s whenever a
+    default-but-unreachable ``redis://localhost`` URI was configured: the
+    fallback memory backend still paid a connect timeout on each validation.
+    """
+    global _backend, _redis_client, _backend_resolved
+    if _backend_resolved:
         return _backend
     with _redis_lock:
-        if _backend == "redis" and _redis_client is not None:
+        if _backend_resolved:
             return _backend
         client = _try_connect_redis()
         if client is not None:
@@ -145,6 +152,7 @@ def _ensure_backend() -> TokenBackend:
             _redis_client = None
             _backend = "memory"
             logger.info("auth token store backend=memory")
+        _backend_resolved = True
     return _backend
 
 
@@ -155,7 +163,7 @@ def get_token_backend() -> TokenBackend:
 
 def reset_token_store_for_tests() -> None:
     """Test helper — clear memory tokens and force re-detect backend."""
-    global _backend, _redis_client
+    global _backend, _redis_client, _backend_resolved
     _active_tokens.clear()
     with _redis_lock:
         if _redis_client is not None:
@@ -163,6 +171,7 @@ def reset_token_store_for_tests() -> None:
                 _redis_client.close()
         _redis_client = None
         _backend = "memory"
+        _backend_resolved = False
 
 
 def generate_token(user_id: str, username: str) -> TokenData:

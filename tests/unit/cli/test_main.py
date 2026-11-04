@@ -111,12 +111,16 @@ class TestCliLogin:
     def test_login_account_not_found(self):
         """Non-existent account_id → error panel, exit 1."""
         with (
+            patch("backend.cli.main._use_psycopg_compatible_loop_on_windows") as loop_fix,
             patch("backend.db.pool.is_pool_ready", return_value=True),
             patch("backend.db.accounts.get_account", new=AsyncMock(return_value=None)),
         ):
             result = runner.invoke(app, ["login", "no-such-acc"])
         assert result.exit_code == 1
         assert "不存在" in result.stdout
+        # login opens the app DB before Chrome; on Windows that needs the
+        # psycopg-compatible selector loop (otherwise 30s PoolTimeout).
+        loop_fix.assert_called_once()
 
     def test_login_account_without_profile_binding(self):
         """Account exists but no chrome_profile_path → error panel, exit 1."""

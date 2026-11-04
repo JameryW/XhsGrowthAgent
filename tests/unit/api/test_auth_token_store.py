@@ -81,3 +81,27 @@ def test_redis_backend_when_client_available(monkeypatch):
     assert auth_mod.validate_token(tok.token) is not None
     n = auth_mod.revoke_user_tokens("u-9")
     assert n >= 1
+
+
+def test_unreachable_redis_is_probed_once_not_per_request(monkeypatch):
+    """A dead Redis must not add a connect timeout to every authenticated call.
+
+    Before the fix, ``_ensure_backend`` retried ``_try_connect_redis`` on every
+    validate_token() whenever the backend had degraded to memory — a configured
+    but unreachable default ``redis://localhost`` cost ~1s per request.
+    """
+    monkeypatch.delenv("REDIS_URI", raising=False)
+    probes = {"count": 0}
+
+    def _unavailable():
+        probes["count"] += 1
+        return None
+
+    monkeypatch.setattr(auth_mod, "_try_connect_redis", _unavailable)
+    auth_mod.reset_token_store_for_tests()
+
+    tok = auth_mod.generate_token("u-1", "alice")
+    for _ in range(5):
+        assert auth_mod.validate_token(tok.token) is not None
+
+    assert probes["count"] == 1

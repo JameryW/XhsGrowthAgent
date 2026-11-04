@@ -749,6 +749,10 @@ def login(
     from dotenv import load_dotenv
 
     load_dotenv(override=True)
+    # login opens the app DB (accounts) before touching Chrome. On Windows the
+    # default ProactorEventLoop makes every psycopg connection fail, which used
+    # to surface as a 30s PoolTimeout instead of "账号不存在".
+    _use_psycopg_compatible_loop_on_windows()
 
     async def _login() -> None:
         from backend.db.accounts import get_account
