@@ -434,3 +434,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 73: dev SQLite checkpointer 未关闭导致退出挂起（票 5cv）
+
+**Date**: 2026-11-04
+**Task**: dev SQLite checkpointer 未关闭导致退出挂起（票 5cv）
+**Branch**: `main`
+
+### Summary
+
+定位本地 pytest summary 后不退出：进程内 wrapper 显示残留 aiosqlite 非守护 worker 线程，二分到 serve 单测实际启动服务器、应用 lifespan 的 SQLite 回退 dev graph 关闭时未关闭连接。修复：app 清理阶段调用 close_dev_graph（新增 _close_dev_sqlite_checkpointer）；serve 单测改 patch _serve_uvicorn 并覆盖 --reload 路径；新增 3 个 cleanup 单测；CLAUDE.md 记录。CLI 子集 0/3→3/3 clean exit；全量 4964 passed / 14 skipped / 0 failed 且正常退出；lint/format/gates/mypy 通过。票 5cv 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e01a3ea5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
