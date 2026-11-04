@@ -632,3 +632,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 79: serde allowlist 动态枚举防线（票 5cz）
+
+**Date**: 2026-11-04
+**Task**: serde allowlist 动态枚举防线（票 5cz）
+**Branch**: `main`
+
+### Summary
+
+把 5cy 的硬编码 6 枚举断言改为动态发现 backend.state.enums 全部 StrEnum：allowlist 必须完全一致，新增枚举会让测试失败强制同步（否则 strict msgpack 会静默降级）。聚焦 4 passed；全量 4971 passed / 14 skipped / 0 failed 且正常退出。另：用真实 Postgres 验证重构后的 lifespan——health ok/ok/ready、优雅退出 CHECKPOINTER_POOL_CLOSED=True、0 残留线程、exit 0；第二次独立外审进程异常退出（无产出），已由自查+动态防线替代。票 5cz 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a064973` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
