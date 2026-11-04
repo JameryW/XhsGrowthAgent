@@ -599,3 +599,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 78: 收尾：5cs 归档（遗留观察项已被后续票修复）+ 真实工作流 resume 验证
+
+**Date**: 2026-11-04
+**Task**: 收尾：5cs 归档（遗留观察项已被后续票修复）+ 真实工作流 resume 验证
+**Branch**: `main`
+
+### Summary
+
+归档唯一遗留的进行中票 5cs（Postgres 功能对等）：其 notes 里列的 12.5s status 延迟、unregistered msgpack 告警、astream v1 均已由 5ct/5cu 修复，meta.followups 记录映射。另用真实 CLI 工作流验证 serde 修复：run --niche 家居 走 magpie 到 planning（exit 0），随后 status/logs 加载同一检查点，无任何 Blocked/unregistered 告警。产物 .xhs/checkpoints.sqlite 中新增线程 xhs_default_b127e8a3。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7fa6ab89` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
