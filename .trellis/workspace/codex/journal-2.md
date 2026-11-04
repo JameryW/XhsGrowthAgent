@@ -467,3 +467,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 74: CDP 探测缓存改 60s TTL（票 5cw）
+
+**Date**: 2026-11-04
+**Task**: CDP 探测缓存改 60s TTL（票 5cw）
+**Branch**: `main`
+
+### Summary
+
+修复 5cu 引入的回归：容器 CDP 探测此前用进程级 lru_cache，失败结果永久缓存，Chrome 后启动需重启进程才能恢复。改为 60s TTL 缓存并抽出 uncached 探测 + clear helper；新增 3 个单测覆盖 TTL 内复用、过期重探、正结果缓存、清缓存恢复。全量 4967 passed / 14 skipped / 0 failed 且正常退出；lint/format/gates/mypy 通过。另用最小脚本验证 serve 正常 shutdown 后 aiosqlite 线程为 0、进程自行退出。票 5cw 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a6da3bf8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
