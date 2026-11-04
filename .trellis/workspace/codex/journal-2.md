@@ -665,3 +665,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 80: 启动回归修复：provider 预加载后台化，42s→1.4s（票 5db）
+
+**Date**: 2026-11-04
+**Task**: 启动回归修复：provider 预加载后台化，42s→1.4s（票 5db）
+**Branch**: `main`
+
+### Summary
+
+定位 5cu 启动回归：await 的 provider 预加载在 Windows 冷启动拉起 transformers/torch（import hook 证实），lifespan 42.4s、就绪 >20s。改为按路由选择 provider + 守护线程后台预加载，API/CLI 非阻塞；实测 lifespan 1.38s、serve 就绪 5.2s、真实 CLI 工作流正常（exit 0）。新增 daemon/失败吞掉/按路由导入测试；全量 4973 passed / 14 skipped / 0 failed 且正常退出；lint/format/gates/mypy 通过。票 5db 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `51a54153` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

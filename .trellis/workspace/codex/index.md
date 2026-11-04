@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 79
+- **Total Sessions**: 80
 - **Last Active**: 2026-11-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~667 | Active |
+| `journal-2.md` | ~700 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 80 | 2026-11-04 | 启动回归修复：provider 预加载后台化，42s→1.4s（票 5db） | `51a54153` | `main` |
 | 79 | 2026-11-04 | serde allowlist 动态枚举防线（票 5cz） | `8a064973` | `main` |
 | 78 | 2026-11-04 | 收尾：5cs 归档（遗留观察项已被后续票修复）+ 真实工作流 resume 验证 | `7fa6ab89` | `main` |
 | 77 | 2026-11-04 | 独立审查修复：serde 全枚举 allowlist、启动失败清理、测试判红（票 5cy） | `3b426d57` | `main` |
