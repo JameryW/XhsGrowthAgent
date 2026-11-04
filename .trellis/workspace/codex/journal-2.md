@@ -401,3 +401,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 72: 事件循环阻塞修复：provider 预加载与 CDP DNS 移出循环（票 5cu）
+
+**Date**: 2026-11-04
+**Task**: 事件循环阻塞修复：provider 预加载与 CDP DNS 移出循环（票 5cu）
+**Branch**: `main`
+
+### Summary
+
+定位 /status 12-58s 真因：async 节点同步阻塞（Windows DNS 解析 host.containers.internal 走满超时 ~12s；首次 provider SDK import 在循环内）。修复：启动时 to_thread 预加载 provider SDK；CDP host 解析 lru_cache + to_thread；publisher/free 使用 async 包装。实测 /status ~1.1s、看门狗卡顿 0 次、aput ≤1.06s；生产冒烟 28/28；全量含 PG 对等 4963 passed / 11 skipped / 0 failed。新增 off-loop 回归测试 3 组；文档与 execution-plane 锚点同步。票 5cu 已归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `991c8099` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
