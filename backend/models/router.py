@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -199,18 +201,82 @@ def get_model(task: str) -> BaseChatModel:
     return get_router().get_model_for_task(task)
 
 
+_PROVIDER_MODULES: dict[ModelProvider, str] = {
+    ModelProvider.ANTHROPIC: "langchain_anthropic",
+    ModelProvider.OPENAI: "langchain_openai",
+    ModelProvider.DASHSCOPE: "langchain_openai",
+    ModelProvider.XIAOMIMIMO: "langchain_openai",
+    ModelProvider.XUNFEI: "langchain_openai",
+    ModelProvider.MAGPIE: "langchain_openai",
+}
+
+
+def _providers_in_use() -> set[ModelProvider]:
+    """Providers referenced by the current routing table (primary + fallbacks)."""
+    from backend.config.models import get_model_config
+
+    providers: set[ModelProvider] = set()
+    for task in TaskType:
+        try:
+            providers.add(get_model_config(resolve_model_id(task, None)).provider)
+        except Exception:
+            continue
+    for fallback_id in MODEL_FALLBACKS.values():
+        try:
+            providers.add(get_model_config(fallback_id).provider)
+        except Exception:
+            continue
+    return providers
+
+
 def preload_model_providers() -> None:
-    """Import the provider SDKs once, before any node needs a model.
+    """Import the provider SDKs needed by the current routing table.
 
     ``_create_model`` imports ``langchain_anthropic``/``langchain_openai`` lazily.
-    The first import can spend seconds in import machinery; when that first call
-    happens inside an async graph node it blocks the whole event loop, so API
-    requests (including ``/status``) and checkpoint writes stall behind it.  Call
-    this at startup **off** the event loop (``asyncio.to_thread``) so later model
-    construction only does object work.  Idempotent (``sys.modules`` caches).
+    The first import can spend seconds in import machinery (on Windows the openai
+    chain pulls transformers/torch: ~20s cold); when it happens inside an async
+    graph node it blocks the whole event loop, so API requests and checkpoint
+    writes stall behind it.  Importing at startup fixes that, but *awaiting* it
+    would make every boot pay the full cost, so callers use
+    :func:`start_model_provider_preload` (daemon thread) instead.
+
+    Only provider modules referenced by the routing table are imported (default
+    routing is all-magpie → ``langchain_openai`` only).  Idempotent
+    (``sys.modules`` caches).
     """
-    import langchain_anthropic  # noqa: F401
-    import langchain_openai  # noqa: F401
+    modules = {
+        _PROVIDER_MODULES[provider]
+        for provider in _providers_in_use()
+        if provider in _PROVIDER_MODULES
+    }
+    for module in sorted(modules):
+        __import__(module)
+
+
+def _preload_model_providers_safely() -> None:
+    try:
+        preload_model_providers()
+    except Exception as exc:  # pragma: no cover - defensive: preload must never break boot
+        logging.getLogger("xhs_growth.models").warning(
+            "model provider preload failed: %s: %s", type(exc).__name__, exc
+        )
+
+
+def start_model_provider_preload() -> threading.Thread:
+    """Warm the provider SDK imports in a daemon thread (non-blocking startup).
+
+    A daemon thread (not ``asyncio.to_thread``) so interpreter shutdown never
+    waits for a slow import.  If a workflow starts before the import finishes,
+    the first ``_create_model`` waits on the import lock for the remainder — one
+    bounded stall instead of every boot paying ~20s of startup.
+    """
+    thread = threading.Thread(
+        target=_preload_model_providers_safely,
+        name="model-provider-preload",
+        daemon=True,
+    )
+    thread.start()
+    return thread
 
 
 def get_model_by_id(model_id: str) -> BaseChatModel:

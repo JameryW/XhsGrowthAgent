@@ -1209,13 +1209,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from backend.graph.builder import compile_graph_dev
     from backend.services.ripple_service import RippleService
 
-    # Import the LLM provider SDKs now, off the event loop.  Done lazily inside
-    # the first graph node they spend seconds in import machinery and block the
-    # loop, stalling every API request (and checkpoint write) behind them.
+    # Warm the LLM provider imports in a background daemon thread.  Awaited, the
+    # import costs ~20s of boot on Windows (openai → transformers → torch); left
+    # lazy, it stalls the event loop on the first model call.  Backgrounding
+    # keeps boot fast and keeps the cost off the loop.
     with contextlib.suppress(Exception):
-        from backend.models.router import preload_model_providers
+        from backend.models.router import start_model_provider_preload
 
-        await asyncio.to_thread(preload_model_providers)
+        start_model_provider_preload()
 
     # ── DB + checkpointer initialization ──
     db_uri = os.environ.get("POSTGRES_URI")

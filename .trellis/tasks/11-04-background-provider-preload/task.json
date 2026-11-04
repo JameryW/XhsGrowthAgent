@@ -1,0 +1,33 @@
+{
+  "id": "background-provider-preload",
+  "name": "background-provider-preload",
+  "title": "fix(startup): provider SDK 预加载改后台守护线程 + 按路由选择，启动 42s→1.4s（票 5db）",
+  "description": "复核 graph-only 部署时发现 5cu 引入的启动回归：preload_model_providers 原本在 lifespan 里 await asyncio.to_thread 阻塞执行，而 Windows 冷启动 import langchain_openai/anthropic 会级联拉入 transformers/torch，实测 lifespan 启动 42.4s、服务就绪 >20s（我的冒烟因此在启动完成前开跑）。修复：router 改为按当前路由表实际用到的 provider 选择模块（默认全 magpie→langchain_openai），新增 start_model_provider_preload() 用守护线程后台预热（不用 to_thread，避免解释器退出等待线程），API lifespan 与 CLI run 均改为非阻塞启动，预加载失败仅 warning、不影响启动。实测 lifespan 启动 42.4s→1.38s，serve 就绪 >20s→5.2s，真实 CLI 工作流仍正常到 planning（43.7s，exit 0）。新增/更新单测：后台线程 daemon、错误被吞、按路由导入、幂等。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/models/router.py",
+    "backend/api/app.py",
+    "backend/cli/main.py",
+    "tests/unit/models/test_preload_providers.py",
+    "docs/deployment.md",
+    "docs/execution-plane.md"
+  ],
+  "notes": "DONE 2026-11-04. Re-verifying the graph-only deployment surfaced a startup regression introduced by 5cu: preload_model_providers() was awaited through asyncio.to_thread in the API lifespan, and on Windows importing langchain_openai/langchain_anthropic cold pulls transformers/torch (~20s), so lifespan startup measured 42.4s and the server needed >20s to answer health (the smoke run initially raced it). Root cause confirmed with a meta_path import hook: the torch chain is imported from router.preload_model_providers. Fix: (a) preload only the provider modules the current routing table actually uses (default all-magpie routing -> langchain_openai only), computed from TaskType x resolve_model_id plus MODEL_FALLBACKS; (b) start_model_provider_preload() runs it in a daemon thread (not asyncio.to_thread, so interpreter shutdown never joins a slow import) and swallows/logs failures; (c) API lifespan and CLI run call it without awaiting. Measurements after the fix: lifespan startup 42.4s -> 1.38s, serve start-to-ready >20s -> 5.2s (health answered in 5.2s, graph-only mode), real CLI workflow still completes to planning in 43.7s with exit 0. Tests updated: configured-provider import, idempotency, daemon-thread preload, swallowed failures. execution-plane anchors re-synced after the lifespan block shifted one line; deployment.md documents the background-preload trade-off (a workflow started in the first seconds may still wait on the import lock once).",
+  "meta": {}
+}

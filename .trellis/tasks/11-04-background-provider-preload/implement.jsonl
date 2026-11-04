@@ -1,0 +1,2 @@
+{"file": "docs/deployment.md", "reason": "startup/readiness and preload trade-off documented for operators"}
+{"file": "docs/execution-plane.md", "reason": "lifespan startup wiring anchors"}
