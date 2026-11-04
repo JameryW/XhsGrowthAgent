@@ -2429,7 +2429,13 @@ async def test_async_cdp_resolver_runs_off_the_event_loop(monkeypatch):
             await asyncio.sleep(0.02)
             ticks += 1
 
-    endpoint, _ = await asyncio.gather(publisher._resolve_cdp_endpoint_async(object()), ticker())
+    async def resolver_call():
+        endpoint = await publisher._resolve_cdp_endpoint_async(object())
+        # Sample the counter when the resolver returns: asserting after gather is
+        # vacuous because gather waits for the ticker to finish all 10 iterations.
+        return endpoint, ticks
+
+    (endpoint, ticks_at_return), _ = await asyncio.gather(resolver_call(), ticker())
 
     assert endpoint == "http://10.0.0.9:9223"
-    assert ticks >= 5
+    assert ticks_at_return >= 5

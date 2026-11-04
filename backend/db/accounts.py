@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 from backend.db.crypto import decrypt_value, encrypt_value, mask_value
@@ -533,7 +533,25 @@ async def delete_credential(account_id: str, key_name: str) -> bool:
     return int(getattr(cur, "rowcount", 0) or 0) == 1
 
 
-@lru_cache(maxsize=1)
+# The host answer is cached with a short TTL, not for the process lifetime: a
+# failed lookup must not pin ``127.0.0.1`` forever (a container that resolves the
+# host a few seconds after the backend starts, or one transient resolver failure,
+# would otherwise send every per-account endpoint to the backend itself until a
+# restart).  Same reasoning as ``publisher._cdp_probe_cache``.
+_CDP_HOST_TTL_SECONDS = 60.0
+_cdp_host_cache: tuple[float, str] | None = None
+
+
+def _resolve_cdp_host_uncached() -> str:
+    """Blocking DNS lookup — never call this on the event loop."""
+    import socket
+
+    try:
+        return socket.gethostbyname("host.containers.internal")
+    except OSError:
+        return "127.0.0.1"
+
+
 def _resolve_cdp_host() -> str:
     """Resolve the host that the per-account Chrome's CDP port is reachable on.
 
@@ -546,14 +564,28 @@ def _resolve_cdp_host() -> str:
     endpoint must be ``http://<ip>:<port>`` not ``http://host.containers.internal``.
     Kept here (not imported from publisher) to avoid a circular import —
     publisher imports accounts at runtime.
-    """
-    import socket
 
-    host = "host.containers.internal"
+    ``socket.gethostbyname`` is blocking (on Windows it spends the full DNS
+    timeout when the container hostname does not exist), so callers run it via
+    ``asyncio.to_thread``.  The answer is cached for
+    :data:`_CDP_HOST_TTL_SECONDS` so a slow-negative host can recover.
+    """
+    global _cdp_host_cache
+    now = time.monotonic()
+    if _cdp_host_cache is not None and now - _cdp_host_cache[0] < _CDP_HOST_TTL_SECONDS:
+        return _cdp_host_cache[1]
     try:
-        return socket.gethostbyname(host)
+        value = _resolve_cdp_host_uncached()
     except OSError:
-        return "127.0.0.1"
+        value = "127.0.0.1"
+    _cdp_host_cache = (time.monotonic(), value)
+    return value
+
+
+def _clear_cdp_host_cache() -> None:
+    """Drop the cached host answer (tests)."""
+    global _cdp_host_cache
+    _cdp_host_cache = None
 
 
 async def get_account_cdp_endpoint(account_id: str) -> str:

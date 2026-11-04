@@ -1317,167 +1317,182 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Expose checkpointer for health check (SQLite in dev mode)
         app.state.checkpointer = graph.checkpointer
 
-    # Restore anti-risk cool-downs so deploys do not reset publish/browser gaps.
-    # Uses Postgres when pool is ready; otherwise in-memory KV (dev).
-    with contextlib.suppress(Exception):
-        from backend.services.xhs_risk_gate import hydrate_risk_gates
-
-        await hydrate_risk_gates()
-
-    # P1-3: best-effort personal-data retention purge (relationships / scrape / DM peers).
-    with contextlib.suppress(Exception):
-        from backend.services.privacy_retention import run_privacy_cleanup
-
-        await run_privacy_cleanup()
-
-    # Start Ripple background health check
-    from backend.config.settings import Settings
-
-    settings = Settings()
-    ripple = RippleService.get_instance()
-    interval = settings.ripple.health_check_interval
-    ripple.start_background_health_check(interval_seconds=interval)
-
-    # Start omp RPC bridge manager (best-effort — not fatal if omp unavailable)
     try:
-        from backend.services.omp_bridge import get_bridge_manager
+        # Restore anti-risk cool-downs so deploys do not reset publish/browser gaps.
+        # Uses Postgres when pool is ready; otherwise in-memory KV (dev).
+        with contextlib.suppress(Exception):
+            from backend.services.xhs_risk_gate import hydrate_risk_gates
 
-        bridge_manager = get_bridge_manager()
-        await bridge_manager.start()
-        app.state.omp_bridge_manager = bridge_manager
-    except Exception as e:
-        logging.getLogger("xhs_growth").warning(f"omp bridge manager not started: {e}")
-        app.state.omp_bridge_manager = None
+            await hydrate_risk_gates()
 
-    # P2b-S3: automatic takeover of threads whose owner died mid-flight. The
-    # scan is gated on the lease (`acquire`), so a live owner is never taken
-    # over; what it recovers is work whose lease went silent -- i.e. a process
-    # that was killed. `durability` is reported alongside because without
-    # Postgres the lease is in-memory and a restart leaves nothing behind, so
-    # "no takeover happened" and "there was nothing durable to take over" must
-    # stay distinguishable (P2b ruling 2).
-    from backend.api.routes._takeover import (
-        initial_status,
-        startup_takeover_scan,
-        takeover_scheduler,
-    )
-    from backend.db.execution_leases import durability as lease_durability
+        # P1-3: best-effort personal-data retention purge (relationships / scrape / DM peers).
+        with contextlib.suppress(Exception):
+            from backend.services.privacy_retention import run_privacy_cleanup
 
-    takeover_enabled = bool(getattr(settings.workflow, "takeover_enabled", True))
-    takeover_interval = max(
-        5.0,
-        _finite_float(getattr(settings.workflow, "takeover_interval_seconds", 60.0), 60.0),
-    )
-    app.state.takeover_status = initial_status(
-        enabled=takeover_enabled,
-        durability=lease_durability().value,
-        interval_seconds=takeover_interval,
-    )
-    takeover_task: asyncio.Task[None] | None = None
-    if takeover_enabled:
-        # The first pass catches whatever expired while the service was down.
-        # A thread lost in the restart itself is only picked up on a later
-        # sweep, because its lease is still within TTL.
-        await startup_takeover_scan(app)
-        takeover_task = asyncio.create_task(
-            takeover_scheduler(app, interval_seconds=takeover_interval),
-            name="execution-takeover-scan",
-        )
-    app.state.takeover_scheduler = takeover_task
+            await run_privacy_cleanup()
 
-    # Import only enabled accounts in the background.  The scheduler is
-    # deliberately started after DB/bootstrap and bridge initialization so it
-    # cannot race account table creation or Chrome startup.  A non-positive
-    # interval disables it while leaving the manual API available.
-    pool_ready = False
-    try:
-        from backend.db.pool import is_pool_ready
+        # Start Ripple background health check
+        from backend.config.settings import Settings
 
-        pool_ready = is_pool_ready()
-        interval_hours = _finite_float(settings.creator_stats.sync_interval_hours, 0.0)
-    except (AttributeError, TypeError, ValueError):
-        interval_hours = 0.0
-    # 反风控调度参数（启动随机延迟 + 中国时间活跃窗口 + 随机跳过 + 唤醒静默
-    # + 周期随机）；读取失败时退化为旧行为（启动即跑、不限窗口、不跳过）。
-    startup_delay: tuple[float, float] | None = None
-    active_window: tuple[int, int] | None = None
-    skip_day_chance = 0.0
-    pre_run_delay: tuple[float, float] | None = None
-    period_7d_chance = 0.35
-    post_success_long_break_chance = 0.18
-    risk_skip_next_chance = 0.85
-    max_successful_crawls_per_week = 3
-    try:
-        cs_settings = settings.creator_stats
-        startup_delay = (
-            _finite_float(cs_settings.startup_delay_min_seconds, 600.0),
-            _finite_float(cs_settings.startup_delay_max_seconds, 2400.0),
+        settings = Settings()
+        ripple = RippleService.get_instance()
+        interval = settings.ripple.health_check_interval
+        ripple.start_background_health_check(interval_seconds=interval)
+
+        # Start omp RPC bridge manager (best-effort — not fatal if omp unavailable)
+        try:
+            from backend.services.omp_bridge import get_bridge_manager
+
+            bridge_manager = get_bridge_manager()
+            await bridge_manager.start()
+            app.state.omp_bridge_manager = bridge_manager
+        except Exception as e:
+            logging.getLogger("xhs_growth").warning(f"omp bridge manager not started: {e}")
+            app.state.omp_bridge_manager = None
+
+        # P2b-S3: automatic takeover of threads whose owner died mid-flight. The
+        # scan is gated on the lease (`acquire`), so a live owner is never taken
+        # over; what it recovers is work whose lease went silent -- i.e. a process
+        # that was killed. `durability` is reported alongside because without
+        # Postgres the lease is in-memory and a restart leaves nothing behind, so
+        # "no takeover happened" and "there was nothing durable to take over" must
+        # stay distinguishable (P2b ruling 2).
+        from backend.api.routes._takeover import (
+            initial_status,
+            startup_takeover_scan,
+            takeover_scheduler,
         )
-        active_window = (
-            int(cs_settings.active_window_start_hour),
-            int(cs_settings.active_window_end_hour),
+        from backend.db.execution_leases import durability as lease_durability
+
+        takeover_enabled = bool(getattr(settings.workflow, "takeover_enabled", True))
+        takeover_interval = max(
+            5.0,
+            _finite_float(getattr(settings.workflow, "takeover_interval_seconds", 60.0), 60.0),
         )
-        skip_day_chance = max(0.0, min(1.0, _finite_float(cs_settings.skip_day_chance, 0.25)))
-        pre_run_delay = (
-            _finite_float(cs_settings.pre_run_delay_min_seconds, 45.0),
-            _finite_float(cs_settings.pre_run_delay_max_seconds, 240.0),
+        app.state.takeover_status = initial_status(
+            enabled=takeover_enabled,
+            durability=lease_durability().value,
+            interval_seconds=takeover_interval,
         )
-        period_7d_chance = max(0.0, min(1.0, _finite_float(cs_settings.period_7d_chance, 0.35)))
-        post_success_long_break_chance = max(
-            0.0,
-            min(1.0, _finite_float(cs_settings.post_success_long_break_chance, 0.18)),
-        )
-        risk_skip_next_chance = max(
-            0.0, min(1.0, _finite_float(cs_settings.risk_skip_next_chance, 0.85))
-        )
-        max_successful_crawls_per_week = max(0, int(cs_settings.max_successful_crawls_per_week))
-    except (AttributeError, TypeError, ValueError):
-        startup_delay = None
-        active_window = None
+        takeover_task: asyncio.Task[None] | None = None
+        if takeover_enabled:
+            # The first pass catches whatever expired while the service was down.
+            # A thread lost in the restart itself is only picked up on a later
+            # sweep, because its lease is still within TTL.
+            await startup_takeover_scan(app)
+            takeover_task = asyncio.create_task(
+                takeover_scheduler(app, interval_seconds=takeover_interval),
+                name="execution-takeover-scan",
+            )
+        app.state.takeover_scheduler = takeover_task
+
+        # Import only enabled accounts in the background.  The scheduler is
+        # deliberately started after DB/bootstrap and bridge initialization so it
+        # cannot race account table creation or Chrome startup.  A non-positive
+        # interval disables it while leaving the manual API available.
+        pool_ready = False
+        try:
+            from backend.db.pool import is_pool_ready
+
+            pool_ready = is_pool_ready()
+            interval_hours = _finite_float(settings.creator_stats.sync_interval_hours, 0.0)
+        except (AttributeError, TypeError, ValueError):
+            interval_hours = 0.0
+        # 反风控调度参数（启动随机延迟 + 中国时间活跃窗口 + 随机跳过 + 唤醒静默
+        # + 周期随机）；读取失败时退化为旧行为（启动即跑、不限窗口、不跳过）。
+        startup_delay: tuple[float, float] | None = None
+        active_window: tuple[int, int] | None = None
         skip_day_chance = 0.0
-        pre_run_delay = None
+        pre_run_delay: tuple[float, float] | None = None
         period_7d_chance = 0.35
         post_success_long_break_chance = 0.18
         risk_skip_next_chance = 0.85
         max_successful_crawls_per_week = 3
-    app.state.creator_stats_scheduler_status = {
-        "enabled": bool(db_uri and interval_hours > 0 and pool_ready),
-        "interval_hours": interval_hours,
-        "status": "disabled",
-        "run_count": 0,
-        "last_started_at": None,
-        "last_finished_at": None,
-        "last_status": None,
-        "last_active_accounts": 0,
-        "last_succeeded": 0,
-        "last_failed": 0,
-        "last_error": None,
-        "next_run_at": None,
-        "last_period": None,
-        "success_timestamps": [],
-        "successes_last_7d": 0,
-        "last_success_local_hour": None,
-    }
-    if db_uri and interval_hours > 0 and pool_ready:
-        app.state.creator_stats_scheduler_status["status"] = "scheduled"
-        creator_stats_scheduler = asyncio.create_task(
-            _creator_stats_scheduler(
-                app,
-                interval_hours,
-                startup_delay=startup_delay,
-                active_window=active_window,
-                skip_day_chance=skip_day_chance,
-                pre_run_delay=pre_run_delay,
-                period_7d_chance=period_7d_chance,
-                post_success_long_break_chance=post_success_long_break_chance,
-                risk_skip_next_chance=risk_skip_next_chance,
-                max_successful_crawls_per_week=max_successful_crawls_per_week,
-            ),
-            name="creator-stats-active-account-scheduler",
-        )
-        app.state.creator_stats_scheduler = creator_stats_scheduler
-    else:
-        app.state.creator_stats_scheduler = None
+        try:
+            cs_settings = settings.creator_stats
+            startup_delay = (
+                _finite_float(cs_settings.startup_delay_min_seconds, 600.0),
+                _finite_float(cs_settings.startup_delay_max_seconds, 2400.0),
+            )
+            active_window = (
+                int(cs_settings.active_window_start_hour),
+                int(cs_settings.active_window_end_hour),
+            )
+            skip_day_chance = max(0.0, min(1.0, _finite_float(cs_settings.skip_day_chance, 0.25)))
+            pre_run_delay = (
+                _finite_float(cs_settings.pre_run_delay_min_seconds, 45.0),
+                _finite_float(cs_settings.pre_run_delay_max_seconds, 240.0),
+            )
+            period_7d_chance = max(0.0, min(1.0, _finite_float(cs_settings.period_7d_chance, 0.35)))
+            post_success_long_break_chance = max(
+                0.0,
+                min(1.0, _finite_float(cs_settings.post_success_long_break_chance, 0.18)),
+            )
+            risk_skip_next_chance = max(
+                0.0, min(1.0, _finite_float(cs_settings.risk_skip_next_chance, 0.85))
+            )
+            max_successful_crawls_per_week = max(0, int(cs_settings.max_successful_crawls_per_week))
+        except (AttributeError, TypeError, ValueError):
+            startup_delay = None
+            active_window = None
+            skip_day_chance = 0.0
+            pre_run_delay = None
+            period_7d_chance = 0.35
+            post_success_long_break_chance = 0.18
+            risk_skip_next_chance = 0.85
+            max_successful_crawls_per_week = 3
+        app.state.creator_stats_scheduler_status = {
+            "enabled": bool(db_uri and interval_hours > 0 and pool_ready),
+            "interval_hours": interval_hours,
+            "status": "disabled",
+            "run_count": 0,
+            "last_started_at": None,
+            "last_finished_at": None,
+            "last_status": None,
+            "last_active_accounts": 0,
+            "last_succeeded": 0,
+            "last_failed": 0,
+            "last_error": None,
+            "next_run_at": None,
+            "last_period": None,
+            "success_timestamps": [],
+            "successes_last_7d": 0,
+            "last_success_local_hour": None,
+        }
+        if db_uri and interval_hours > 0 and pool_ready:
+            app.state.creator_stats_scheduler_status["status"] = "scheduled"
+            creator_stats_scheduler = asyncio.create_task(
+                _creator_stats_scheduler(
+                    app,
+                    interval_hours,
+                    startup_delay=startup_delay,
+                    active_window=active_window,
+                    skip_day_chance=skip_day_chance,
+                    pre_run_delay=pre_run_delay,
+                    period_7d_chance=period_7d_chance,
+                    post_success_long_break_chance=post_success_long_break_chance,
+                    risk_skip_next_chance=risk_skip_next_chance,
+                    max_successful_crawls_per_week=max_successful_crawls_per_week,
+                ),
+                name="creator-stats-active-account-scheduler",
+            )
+            app.state.creator_stats_scheduler = creator_stats_scheduler
+        else:
+            app.state.creator_stats_scheduler = None
+
+    except BaseException:
+        # Startup failed after the graph opened its persistence resources.
+        # Close them before re-raising or the interpreter will wait forever on
+        # the non-daemon aiosqlite thread (uvicorn logs 'startup failed' and
+        # the process still hangs instead of exiting).
+        with contextlib.suppress(Exception):
+            if store_context is not None:
+                await store_context.__aexit__(None, None, None)
+        with contextlib.suppress(Exception):
+            if checkpoint_pool is not None:
+                await checkpoint_pool.close()
+        await _close_dev_sqlite_checkpointer(getattr(app.state, "graph", None))
+        raise
 
     yield
     # ── Cleanup ──
@@ -1525,14 +1540,21 @@ async def _close_dev_sqlite_checkpointer(graph: CompiledStateGraph[Any] | None) 
     ``compile_graph_dev`` falls back to ``AsyncSqliteSaver`` in local/dev mode and
     stores its aiosqlite connection on the graph.  That connection's worker thread
     is non-daemon, so leaving it open makes interpreter shutdown wait forever.
-    Best-effort: a broken close must not fail application shutdown.
+    Best-effort, but logged: silently swallowing this is how the first version of
+    the fix called a nonexistent helper and the hang came back unnoticed.
     """
     if graph is None:
         return
-    with contextlib.suppress(Exception):
+    try:
         from backend.graph.builder import close_dev_graph
 
         await close_dev_graph(graph)
+    except Exception as exc:
+        logging.getLogger("xhs_growth.api").warning(
+            "closing the dev SQLite checkpointer failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
 
 
 app = FastAPI(

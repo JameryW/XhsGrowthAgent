@@ -1,0 +1,2 @@
+{"file": "docs/deployment.md", "reason": "strict msgpack allowlist contract and per-account CDP host TTL"}
+{"file": "docs/execution-plane.md", "reason": "lifespan startup-failure cleanup path"}

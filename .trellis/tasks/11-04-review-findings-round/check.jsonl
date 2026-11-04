@@ -1,0 +1,3 @@
+{"file": "tests/unit/state/test_checkpoint_serde.py", "reason": "pins all six enums and nested payload identity"}
+{"file": "tests/unit/api/test_app_startup_failure_cleanup.py", "reason": "startup failure must close the dev SQLite graph"}
+{"file": "tests/unit/db/test_accounts_cdp_offloop.py", "reason": "TTL cache + non-vacuous off-loop assertion"}

@@ -8,9 +8,10 @@ set became a declaration rather than eighteen hand-written calls.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -285,8 +286,16 @@ async def close_dev_graph(graph: CompiledStateGraph[Any]) -> None:
     """
     conn = getattr(graph, "_sqlite_conn", None)
     if conn is not None:
-        with suppress(Exception):
+        try:
             await conn.close()
+        except Exception as exc:
+            # Logged, not silent: a swallowed close failure looks exactly like the
+            # old leak (the interpreter hangs waiting for the worker thread).
+            logging.getLogger("xhs_growth").warning(
+                "close_dev_graph: closing SQLite checkpointer failed: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
         graph._sqlite_conn = None  # type: ignore[attr-defined]
 
 

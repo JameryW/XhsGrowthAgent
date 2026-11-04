@@ -497,7 +497,7 @@ redis-cli -a password ping
   `unavailable` 表示这是 graph-only 开发模式：健康整体为 `degraded`，`POST /api/auth/login`
   等接口返回 **503 `ERROR_DB_UNAVAILABLE`**（而不是 500）。
 - `search_api`：只剩 Tavily 一项；`DEEPSEEK_API_KEY` 不再参与搜索路由。
-- 检查点序列化：`backend/state/checkpoint_serde.py` 显式 allowlist `WorkflowPhase`/`WorkflowMode`，三种 checkpointer（dev SQLite、MemorySaver、prod Postgres）共用——否则 langgraph 会对每个线程告警 unregistered type，未来 strict 版本将拒绝加载旧线程。
+- 检查点序列化：`backend/state/checkpoint_serde.py` 显式 allowlist **`backend.state.enums` 全部枚举**（`WorkflowPhase`/`WorkflowMode`/`ContentStatus`/`ContentType`/`Urgency`/`ExecutionMode`），三种 checkpointer（dev SQLite、MemorySaver、prod Postgres）共用。注意 `allowed_msgpack_modules` 会切到 strict 模式：漏登记的枚举会被静默降级为普通字符串并打印 "Blocked deserialization"——所以新增枚举时必须同步这里，单测会钉住全集。
 - `creator_stats_scheduler`：启用后**首轮尚未运行**（已排期或按策略跳过）返回
   `ok` + `first_run_pending=true`——新部署不需要等首轮跑完才"健康"；只有"无完成记录
   且未排期"才是 `warning`。
@@ -526,7 +526,7 @@ delete、账号清理）。冒烟脚本对生命周期调用保留 60s 超时 + 
 > Windows 上 `socket.gethostbyname("host.containers.internal")` 走满 DNS 超时（~12s），以及
 > 首次 provider SDK 导入（~数秒）发生在 async 节点里；不是 Postgres/checkpoint 慢（直连 SQL
 > 仅 0–16ms、checkpoint 仅 KB）。修复后实测 `/status` 约 **1.1s**、事件循环卡顿 **0 次**：
-> provider SDK 在启动时用 `asyncio.to_thread` 预加载，CDP 探测移出事件循环，并用 60s TTL 缓存（Chrome 后启动无需重启进程即可恢复）。
+> provider SDK 在启动时用 `asyncio.to_thread` 预加载，CDP 探测移出事件循环，并用 60s TTL 缓存（Chrome 后启动无需重启进程即可恢复）；per-account 的 CDP host 解析同样用 60s TTL，避免容器主机晚解析时把地址永久钉在 `127.0.0.1`。
 
 ## 部署后功能冒烟（本地/生产通用）
 

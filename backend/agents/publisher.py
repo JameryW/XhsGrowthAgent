@@ -780,7 +780,7 @@ def _probe_container_cdp_endpoint() -> str:
 
 
 def _clear_cdp_probe_cache() -> None:
-    """Drop the cached probe answer (tests; call after a known Chrome restart)."""
+    """Drop the cached probe answer (test seam; the TTL expires it in production)."""
     global _cdp_probe_cache
     _cdp_probe_cache = None
 
