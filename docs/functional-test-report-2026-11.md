@@ -51,6 +51,7 @@
 | 5dd | review/ripple 提交先 `aupdate_state(as_node=pending gate)` 会消费动态 `interrupt()`：gate 节点不执行，review 后 `publish_result={}`、无 evaluator/publisher | side updates 随 `Command(resume=..., update=...)` 提交；回归测试断言 `Command.update` 携带 `publish_decision` |
 | 5de | Redis 不可达时 `_ensure_backend` 每次鉴权都重试连接：所有认证接口恒定 ~1.03s（`/api/accounts` 1.0s、`/status` 1.03s、50 并发 status 全部 >45s 超时） | 后端探测改为进程内一次（`_backend_resolved`）；实测 `/accounts` 15–31ms、`/status` 47–125ms、50 并发 0.73s |
 | 5df | Windows 下 `xhs-growth login` 打开 app DB 时未切 SelectorEventLoop：配置了 `POSTGRES_URI` 反而 30s `PoolTimeout` | login 入口调用 `_use_psycopg_compatible_loop_on_windows()`；负路径恢复为"账号不存在"exit 1 |
+| 5dg | `POST /api/auth/logout` 返回 200 但不吊销 token：同一 Authorization 头仍可访问 `/api/auth/me`（200） | logout 从 Authorization 头取 token 并 `revoke_token`；新增真实 token 撤销与 service token 两条测试 |
 
 ## 4. 关键指标（修复前 → 修复后）
 

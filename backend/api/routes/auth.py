@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
 
-from backend.api.auth import generate_token, verify_credentials_async
+from backend.api.auth import generate_token, revoke_token, verify_credentials_async
 from backend.api.deps import get_current_user, get_optional_user
 from backend.api.errors import LoginFailedError
 from backend.api.responses import ApiResponse, success
@@ -66,21 +66,20 @@ async def login(request: LoginRequest) -> ApiResponse[Any]:
 
 
 @router.post("/logout")
-async def logout(user: dict[str, Any] = Depends(get_current_user)) -> ApiResponse[Any]:
-    """Logout and invalidate token.
+async def logout(
+    user: dict[str, Any] = Depends(get_current_user),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> ApiResponse[Any]:
+    """Logout and invalidate the presented token.
 
-    Args:
-        user: Current user (from dependency)
-
-    Returns:
-        Success message
+    The token store is keyed by the token itself, so revoking the header value
+    is what makes logout real: returning 200 without revoking left the same
+    bearer token valid for /me and every other authenticated route.
     """
-    # Token is passed via Authorization header
-    # We need to extract and revoke it
-    # For simplicity, we'll revoke by user_id (all tokens for this user)
-    # In production, track specific token per session
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    revoked = bool(token) and revoke_token(token)
 
-    return success(data={"message": "Logged out successfully", "user": user})
+    return success(data={"message": "Logged out successfully", "user": user, "revoked": revoked})
 
 
 @router.get("/validate")
