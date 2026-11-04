@@ -698,3 +698,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 81: 启动指标补齐：Postgres 模式 serve 就绪 9.3s（5db 后）
+
+**Date**: 2026-11-04
+**Task**: 启动指标补齐：Postgres 模式 serve 就绪 9.3s（5db 后）
+**Branch**: `main`
+
+### Summary
+
+5db 之后补测生产模式启动：POSTGRES_URI + xhs-growth serve 从进程启动到 /api/system/health 200 = 9.3s（修复前 >20-25s），health ok / database ok(app_db=ready) / memory_store=postgres；graph-only 模式此前实测 5.2s。deployment.md 补充两个就绪数字。嵌入 PG 已停止。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `65e042db` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
