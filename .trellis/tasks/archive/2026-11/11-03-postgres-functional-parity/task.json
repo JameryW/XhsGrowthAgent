@@ -3,7 +3,7 @@
   "name": "postgres-functional-parity",
   "title": "fix(deploy): Windows psycopg 事件循环 + serve reload 默认 + 调度器健康语义 + 冒烟账号预置（票 5cs）",
   "description": "用嵌入式 Postgres 16.2（自带 pgvector 0.6.2）补齐生产路径功能测试时发现 3 个真问题：1) Windows 默认 ProactorEventLoop 与 psycopg 异步不兼容，Postgres 部署直接连不上并静默回退 SQLite——serve 增加 Windows 显式 SelectorEventLoop（非 reload 路径），并保留 --reload 仅供开发；2) serve 默认 reload=True（生产不安全，且沙箱里重启即退出）——改为 --reload 默认关闭；3) 新部署 scheduler 尚无完成记录被报 warning，导致整体 health 在首轮运行前数小时一直 degraded——改为 first_run_pending=ok，只有未排期才 warning。冒烟脚本补齐：创建/复用所属账号后跑工作流生命周期（之前因无账号 404），生命周期调用加 60s 超时+一次重试（实测 status 在 runner 写 checkpoint 期间有 ~12.5s 延迟），网络错误(0)计 FAIL。实测生产路径 28 checks 全 PASS；同时开启 XHS_PG_PARITY_URI 跑全量测试。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "codex",
   "assignee": "codex",
   "createdAt": "2026-11-03",
-  "completedAt": null,
+  "completedAt": "2026-11-04",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -31,5 +31,7 @@
     "CLAUDE.md"
   ],
   "notes": "DONE 2026-11-03. Closed the last functional-testing gap — the Postgres production path — by running an embedded PostgreSQL 16.2 (pgserver wheel, which ships pgvector 0.6.2; CREATE EXTENSION vector succeeded) and starting the API through the documented `xhs-growth serve` command. Three real defects surfaced. (1) On Windows, uvicorn hardcodes ProactorEventLoop unless it spawns a reload subprocess (uvicorn/loops/asyncio.py), and psycopg async refuses Proactor ('Psycopg cannot use the ProactorEventLoop'), so a Postgres deployment retried forever and silently fell back to SQLite; serve now drives uvicorn.Server on an explicit SelectorEventLoop on win32 when reload is off (Linux/macOS unchanged), and sync-stats applies the selector policy too because its psycopg path has the same constraint. (2) serve defaulted to reload=True — unsafe for production and, in this environment, the reloader exited 1 on the first file change; it is now an opt-in --reload flag. (3) A freshly deployed instance reported overall=degraded for hours because the creator-stats scheduler with a queued first run was mapped to warning and scheduler warnings soft-degrade overall; scheduler first-run pending (scheduled or policy-skipped) now reports ok with first_run_pending=true, and only an unscheduled scheduler without a completed run is a warning. The smoke script also needed product-accurate provisioning: a fresh console has no account, so GET /api/workflow/list legitimately answers 400 and POST /workflow/start 404 ERROR_ACCOUNT_NOT_FOUND; it now reuses or creates an owned account (POST /api/accounts only accepts a name and returns a UUID) and deletes it afterwards, and lifecycle calls use a 60s timeout with one retry because /status measured ~12.5s while the runner writes checkpoints (pause/resume ~1s). Status=0 (network failure) is now a FAIL instead of passing the old <500 check. Measured end-to-end on the production path: health database=postgres/app_db=ready, memory_store=postgres, overall=ok, default admin bootstrap login 200, and the smoke run 28 checks / 28 pass / 0 fail / 0 blocked (health, public API, static shell+assets, OpenAPI, 404 envelope, 405, gzip, CORS, login, account, authenticated reads, workflow start/status/pause/resume/cancel/delete, cleanup). Full suite was also run with XHS_PG_PARITY_URI pointing at the embedded instance to exercise the opt-in Postgres parity tests. Docs updated (deployment.md: Windows loop constraint, embedded-PG verification recipe, scheduler semantics, status latency observation; CLAUDE.md: serve and overall-health semantics). Known observations left un-fixed and recorded: ~12.5s status/cancel latency under embedded PG, langgraph unregistered-msgpack-type warnings, deprecated astream_events v1, and a psycopg 'another command already in progress' warning when deleting an account right as the runner finishes.",
-  "meta": {}
+  "meta": {
+    "followups": "The observations left open here were all resolved afterwards: the ~12.5s /status latency was event-loop blocking from sync provider imports and a blocking CDP DNS lookup (ticket 5cu, measured ~1.1s after), the langgraph unregistered-msgpack-type warnings got an explicit allowlist and astream_events was moved to v2 (ticket 5ct, later widened to every state enum in 5cy), the dev-SQLite shutdown leak that made local pytest hang was fixed in 5cv, and the CDP probe cache was made a 60s TTL in 5cw/5cx. Production-path smoke re-run after those tickets: 28/28 PASS, /status ~1.0-2.3s, graceful shutdown closes the checkpoint pool."
+  }
 }
