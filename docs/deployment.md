@@ -527,7 +527,7 @@ delete、账号清理）。冒烟脚本对生命周期调用保留 60s 超时 + 
 > 首次 provider SDK 导入（Windows 冷启动 ~20s，openai 链会拉入 transformers/torch）发生在
 > async 节点里；不是 Postgres/checkpoint 慢（直连 SQL 仅 0–16ms、checkpoint 仅 KB）。修复后实测
 > `/status` 约 **1.1s**、事件循环卡顿 **0 次**：provider SDK 改为**守护线程后台预加载**（只加载
-> 当前路由实际用到的 provider；等待它会把每次启动拖到 40s+，而放后台后服务就绪 ~5s），CDP 探测
+> 当前路由实际用到的 provider；等待它会把每次启动拖到 40s+，而放后台后服务就绪 graph-only ~5s、Postgres（含建表）~9s），CDP 探测
 > 移出事件循环并用 60s TTL 缓存（Chrome 后启动无需重启进程即可恢复）；per-account 的 CDP host
 > 解析同样用 60s TTL，避免容器主机晚解析时把地址永久钉在 `127.0.0.1`。
 
