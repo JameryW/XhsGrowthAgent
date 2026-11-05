@@ -110,3 +110,5 @@ $env:XHS_PG_PARITY_URI='postgresql://postgres:@127.0.0.1:<port>/postgres'
 | 扩展 → API 桥接 | `XHS_AGENT_API_BASE=http://127.0.0.1:8889` + `XHS_SERVICE_TOKEN`：`xhs_system_health` 返回 `status=ok`/7 项检查；`xhs_workflow_list` 返回 “No workflows found.”（0 条）；API 日志对应 `GET /api/system/health`、`GET /api/workflow/list` 200 |
 | 前端本地门禁 | `npm run type-check` 0；`npm run test:run` **75 文件 / 788 tests passed, exit 0**；`npm run i18n:check` **2372 keys consistent** |
 | 环境说明 | omp Python eval kernel 因本机沙箱 ACL 无法写 `%TEMP%\omp-python-runner`（EPERM），自动改用 JS/Bun kernel 后工具调用成功；`omp models` 同时发现本机 ollama 模型（19 个），未参与验证 |
+| 发布确认 gate 安全语义（`dry_run=false`） | review 批准（非 dry-run）→ evaluator 未放行 → `paused/evaluator_fail_closed`；`POST /workflow/resume {"human_decision":"approve"}` → `awaiting_publish`；**空 body `/resume` 返回 `awaiting_publish` + 指导文案、不执行发布**；`{"resume_value":{"decision":"confirmed"}}` → publisher → `completed`（`XHS_USE_BROWSER=false` 下按设计 `mock_published`） |
+| shooting_planner 结构化输出失败处理 | 模型连续两次返回空结构（`body_copy`/`title_candidates` 为空）时工作流进入 `error`，错误信息明确、无挂起；重跑后通过（模型侧偶发，非代码缺陷） |
