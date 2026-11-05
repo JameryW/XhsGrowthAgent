@@ -27,6 +27,7 @@
 | 前端本地门禁（按 CI 命令） | `npm run type-check`、`npm run test:run`（75 文件）、`npm run i18n:check` | **通过**：type-check 0；**788/788 tests exit 0**；i18n 2372 keys consistent（修复 Node≥22 真实 WebSocket 后，见票 5dh） |
 | omp 运行时 + xhsagent 扩展桥接 | 本地 bun 1.4.4 跑 vendored `omp` 18.14.2；`models.yml` 自定义 magpie provider；`-e xhsagent-ext/src/index.ts` 加载扩展；扩展工具经 API 真实调用 | **通过**：omp 非交互 JSON 真实 LLM 回复 "ok"；扩展暴露 **34 个 xhs 工具**；`xhs_system_health` 返回 `status=ok`（7 项检查明细）、`xhs_workflow_list` 返回 0 条，与 API 一致 |
 | 实时面 | WS `subscribe`/`ping`/`get_missed`、暂停/取消的实时事件、`GET /events/missed` 补传（seq 有序、since 末尾返回 0）、SSE `/api/workflow/stream/{id}` 事件流 | 通过 |
+| 语义记忆（本地 embedding，无需 API key） | `XHS_EMBED_MODEL=local:BAAI/bge-small-zh-v1.5`（512 维，HF_HOME 指向工作区）；health `memory_store.semantic_index=true`；Postgres store 写入 3 条内容后语义召回 top-1 为相关条目（相似度 0.79 vs 无关 0.27） | **通过**；关键词过滤仅匹配字符串字段（hashtag 列表不参与） |
 | 并发与调度 | 50 并发 `/status`、20 并发 `/health`、creator-stats 调度器短周期实跑 | 通过（见指标）；调度器 `last_status=completed`、`interval_hours` 生效 |
 | 部署面 | 静态资产 4 个、117 条 OpenAPI path、404 信封 `ERROR_ROUTE_NOT_FOUND`、405、gzip、CORS | 通过 |
 | 生产优雅退出 | `serve` 关闭时 checkpoint pool 关闭、无残留 aiosqlite 线程、exit 0 | 通过 |
@@ -90,6 +91,8 @@ $env:XHS_PG_PARITY_URI='postgresql://postgres:@127.0.0.1:<port>/postgres'
 - **真实小红书平台交互**：发布/互动需要测试账号凭据与平台窗口；本次以 `XHS_USE_BROWSER=false` 验证到工作流编排层。
 - **omp 运行时**：本机用 vendored `node_modules/.bin/omp` + 本地 bun 1.4.4 验证了非交互 JSON 运行时、自定义 provider 与 xhsagent 扩展的 34 个工具桥接（见 §8）；**交互式 TUI 界面**未验证。omp 的 Python eval kernel 在本机沙箱写 `%TEMP%\omp-python-runner` 时 EPERM（JS/Bun kernel 正常，工具调用成功）——属 Windows 沙箱 ACL 环境限制，非仓库缺陷。
 - **真实 LLM 限额**：gate 链路首次复跑期间 magpie 默认上游（`opencode-go/deepseek-v4.1-flash`）当日 Go 配额耗尽（429），当时用 `remote-magpie/auto/gpt-6.1-terra` 临时覆盖完成验证（仅测试启动器，不改仓库路由）；配额恢复后已用**默认路由**重跑冒烟与全 gate 链路（见 §7）。
+- **Embedding**：默认 `openai:text-embedding-3-small` 无 API key；本次用本地 `BAAI/bge-small-zh-v1.5`（512 维，首次需联网下载 ~96MB）验证语义索引与召回，OpenAI embedding 路径未验证。
+- **omp 交互式 TUI**：仅验证非交互 JSON 运行时与扩展桥接；TUI 界面（`rpc-ui`）未验证。
 - **本地 Windows 环境噪声**：嵌入式 PG 的磁盘性能与 CI Linux 不同；CI 为准。
 - `psycopg` 偶发 "another command is already in progress" 仅出现在测试竞态（删除账号与 runner 收尾并发），响应仍正确。
 
@@ -112,3 +115,4 @@ $env:XHS_PG_PARITY_URI='postgresql://postgres:@127.0.0.1:<port>/postgres'
 | 环境说明 | omp Python eval kernel 因本机沙箱 ACL 无法写 `%TEMP%\omp-python-runner`（EPERM），自动改用 JS/Bun kernel 后工具调用成功；`omp models` 同时发现本机 ollama 模型（19 个），未参与验证 |
 | 发布确认 gate 安全语义（`dry_run=false`） | review 批准（非 dry-run）→ evaluator 未放行 → `paused/evaluator_fail_closed`；`POST /workflow/resume {"human_decision":"approve"}` → `awaiting_publish`；**空 body `/resume` 返回 `awaiting_publish` + 指导文案、不执行发布**；`{"resume_value":{"decision":"confirmed"}}` → publisher → `completed`（`XHS_USE_BROWSER=false` 下按设计 `mock_published`） |
 | shooting_planner 结构化输出失败处理 | 模型连续两次返回空结构（`body_copy`/`title_candidates` 为空）时工作流进入 `error`，错误信息明确、无挂起；重跑后通过（模型侧偶发，非代码缺陷） |
+| 语义记忆（本地 embedding） | `XHS_EMBED_MODEL=local:BAAI/bge-small-zh-v1.5`（512 维，HF_HOME=工作区 `.eval-tmp/hf-cache`，模型 95.8MB）：直接相似度 0.7878/0.4904/0.2658（相关 vs 无关）；Postgres store 写入 3 条后 `recall_similar_content` 语义 top-1 命中相关条目；`GET /api/system/health` → overall `ok`、`memory_store.semantic_index=true`、`embed_dims=512`；关键词过滤命中正文词（"暖光"），hashtag 列表不参与关键词过滤 |
