@@ -23,12 +23,13 @@
 | API（生产 Postgres） | health `database=postgres/app_db=ready`、`memory_store=postgres`、admin 登录、账号 CRUD、工作流 start/status/pause/resume/cancel/delete、清理 | 冒烟 **28/28 PASS** |
 | 真实工作流 | magpie 真实 LLM、检查点写入与 resume（`status`/`logs` 读回）、无 `Blocked`/`unregistered` 告警 | 通过 |
 | 人工在环 gate 链路（生产 PG + 真实 LLM） | start → ripple → draft → blogger → draft → choice → review → evaluator → dry-run publish；逐 gate 由 API 驱动，记录状态迁移 | **通过**：timeline `evaluator`/`publisher` 均执行，`publish_result.status=mock_published`，`/api/evaluation/result` 返回 `overall_score=77.1`、`decision=approved`、6 维评分 |
+| 默认模型终态复验（提交 `01280d1b`） | 默认路由 `opencode-go/deepseek-v4.1-flash`（无 alt 覆盖）重跑生产冒烟 + 全 gate 链路；额外覆盖 `paused/evaluator_fail_closed → POST /resume approve → completed` | **通过**：冒烟 **28/28 PASS**；`GATE_CHAIN_OK=True`（timeline 含 evaluator/publisher，`mock_published`，225.5s，9 次状态迁移） |
 | 实时面 | WS `subscribe`/`ping`/`get_missed`、暂停/取消的实时事件、`GET /events/missed` 补传（seq 有序、since 末尾返回 0）、SSE `/api/workflow/stream/{id}` 事件流 | 通过 |
 | 并发与调度 | 50 并发 `/status`、20 并发 `/health`、creator-stats 调度器短周期实跑 | 通过（见指标）；调度器 `last_status=completed`、`interval_hours` 生效 |
 | 部署面 | 静态资产 4 个、117 条 OpenAPI path、404 信封 `ERROR_ROUTE_NOT_FOUND`、405、gzip、CORS | 通过 |
 | 生产优雅退出 | `serve` 关闭时 checkpoint pool 关闭、无残留 aiosqlite 线程、exit 0 | 通过 |
 | 评测链 | 抽取 → 门禁 → variant → 篡改拒绝（前序 P3 票） | 通过 |
-| 测试套件 | 全量 pytest（含 `XHS_PG_PARITY_URI` Postgres 对等用例） | **4973 passed / 14 skipped / 0 failed** |
+| 测试套件 | 全量 pytest（含 `XHS_PG_PARITY_URI` Postgres 对等用例） | **4981 passed / 11 skipped / 0 failed** |
 
 ## 3. 发现并修复的缺陷
 
@@ -85,6 +86,15 @@ $env:XHS_PG_PARITY_URI='postgresql://postgres:@127.0.0.1:<port>/postgres'
 
 - **真实小红书平台交互**：发布/互动需要测试账号凭据与平台窗口；本次以 `XHS_USE_BROWSER=false` 验证到工作流编排层。
 - **omp 运行时**：本机无 `omp` CLI / pnpm，仅由 CI 的 OMP Typecheck 覆盖类型面；TUI 运行时未验证。
-- **真实 LLM 限额**：本次 gate 链路复跑期间 magpie 默认上游（`opencode-go/deepseek-v4.1-flash`）当日 Go 配额耗尽（429），改用 `remote-magpie/auto/gpt-6.1-terra` 临时覆盖完成验证（仅测试启动器，不改仓库路由）。
+- **真实 LLM 限额**：gate 链路首次复跑期间 magpie 默认上游（`opencode-go/deepseek-v4.1-flash`）当日 Go 配额耗尽（429），当时用 `remote-magpie/auto/gpt-6.1-terra` 临时覆盖完成验证（仅测试启动器，不改仓库路由）；配额恢复后已用**默认路由**重跑冒烟与全 gate 链路（见 §7）。
 - **本地 Windows 环境噪声**：嵌入式 PG 的磁盘性能与 CI Linux 不同；CI 为准。
 - `psycopg` 偶发 "another command is already in progress" 仅出现在测试竞态（删除账号与 runner 收尾并发），响应仍正确。
+
+## 7. 终态复验（最终提交 `01280d1b`）
+
+| 项 | 结果 |
+|---|---|
+| CI（GitHub Actions） | run [41865404568](https://github.com/JameryW/XhsGrowthAgent/actions/runs/41865404568) **success**（10/10 job）；此前 `7a5049fa` run 41859697819、`e2df95bc` run 41863073532 均 success |
+| 生产路径冒烟（默认模型 + 干净 PG） | **28 checks: 28 pass / 0 fail / 0 blocked / 0 skip** |
+| 全 gate 链路（默认模型） | `GATE_CHAIN_OK=True`：9 次状态迁移，timeline 含 `evaluator`/`publisher`，`publish_result.status=mock_published`，225.5s |
+| 额外覆盖 | `paused / evaluator_fail_closed` → `POST /api/workflow/resume {"human_decision":"approve"}` → `completed`（人工恢复路径） |
