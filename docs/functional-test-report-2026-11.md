@@ -24,6 +24,8 @@
 | 真实工作流 | magpie 真实 LLM、检查点写入与 resume（`status`/`logs` 读回）、无 `Blocked`/`unregistered` 告警 | 通过 |
 | 人工在环 gate 链路（生产 PG + 真实 LLM） | start → ripple → draft → blogger → draft → choice → review → evaluator → dry-run publish；逐 gate 由 API 驱动，记录状态迁移 | **通过**：timeline `evaluator`/`publisher` 均执行，`publish_result.status=mock_published`，`/api/evaluation/result` 返回 `overall_score=77.1`、`decision=approved`、6 维评分 |
 | 默认模型终态复验（提交 `01280d1b`） | 默认路由 `opencode-go/deepseek-v4.1-flash`（无 alt 覆盖）重跑生产冒烟 + 全 gate 链路；额外覆盖 `paused/evaluator_fail_closed → POST /resume approve → completed` | **通过**：冒烟 **28/28 PASS**；`GATE_CHAIN_OK=True`（timeline 含 evaluator/publisher，`mock_published`，225.5s，9 次状态迁移） |
+| 前端本地门禁（按 CI 命令） | `npm run type-check`、`npm run test:run`（75 文件）、`npm run i18n:check` | **通过**：type-check 0；**788/788 tests exit 0**；i18n 2372 keys consistent（修复 Node≥22 真实 WebSocket 后，见票 5dh） |
+| omp 运行时 + xhsagent 扩展桥接 | 本地 bun 1.4.4 跑 vendored `omp` 18.14.2；`models.yml` 自定义 magpie provider；`-e xhsagent-ext/src/index.ts` 加载扩展；扩展工具经 API 真实调用 | **通过**：omp 非交互 JSON 真实 LLM 回复 "ok"；扩展暴露 **34 个 xhs 工具**；`xhs_system_health` 返回 `status=ok`（7 项检查明细）、`xhs_workflow_list` 返回 0 条，与 API 一致 |
 | 实时面 | WS `subscribe`/`ping`/`get_missed`、暂停/取消的实时事件、`GET /events/missed` 补传（seq 有序、since 末尾返回 0）、SSE `/api/workflow/stream/{id}` 事件流 | 通过 |
 | 并发与调度 | 50 并发 `/status`、20 并发 `/health`、creator-stats 调度器短周期实跑 | 通过（见指标）；调度器 `last_status=completed`、`interval_hours` 生效 |
 | 部署面 | 静态资产 4 个、117 条 OpenAPI path、404 信封 `ERROR_ROUTE_NOT_FOUND`、405、gzip、CORS | 通过 |
@@ -53,6 +55,7 @@
 | 5de | Redis 不可达时 `_ensure_backend` 每次鉴权都重试连接：所有认证接口恒定 ~1.03s（`/api/accounts` 1.0s、`/status` 1.03s、50 并发 status 全部 >45s 超时） | 后端探测改为进程内一次（`_backend_resolved`）；实测 `/accounts` 15–31ms、`/status` 47–125ms、50 并发 0.73s |
 | 5df | Windows 下 `xhs-growth login` 打开 app DB 时未切 SelectorEventLoop：配置了 `POSTGRES_URI` 反而 30s `PoolTimeout` | login 入口调用 `_use_psycopg_compatible_loop_on_windows()`；负路径恢复为"账号不存在"exit 1 |
 | 5dg | `POST /api/auth/logout` 返回 200 但不吊销 token：同一 Authorization 头仍可访问 `/api/auth/me`（200） | logout 从 Authorization 头取 token 并 `revoke_token`；新增真实 token 撤销与 service token 两条测试 |
+| 5dh | Node ≥22 自带真实 `WebSocket`：前端组件测试挂载时真连 `ws://localhost:3000`，teardown 后留下未处理 `ECONNREFUSED`，`npm run test:run` 788 用例全过但 exit 1（CI Node 20 未暴露） | `frontend/tests/setup.ts` 默认 stub inert WebSocket；需要 WS 行为的 spec 仍用 `vi.stubGlobal` 覆盖；复跑 exit 0 |
 
 ## 4. 关键指标（修复前 → 修复后）
 
@@ -85,7 +88,7 @@ $env:XHS_PG_PARITY_URI='postgresql://postgres:@127.0.0.1:<port>/postgres'
 ## 6. 已知边界（未在本次验证）
 
 - **真实小红书平台交互**：发布/互动需要测试账号凭据与平台窗口；本次以 `XHS_USE_BROWSER=false` 验证到工作流编排层。
-- **omp 运行时**：本机无 `omp` CLI / pnpm，仅由 CI 的 OMP Typecheck 覆盖类型面；TUI 运行时未验证。
+- **omp 运行时**：本机用 vendored `node_modules/.bin/omp` + 本地 bun 1.4.4 验证了非交互 JSON 运行时、自定义 provider 与 xhsagent 扩展的 34 个工具桥接（见 §8）；**交互式 TUI 界面**未验证。omp 的 Python eval kernel 在本机沙箱写 `%TEMP%\omp-python-runner` 时 EPERM（JS/Bun kernel 正常，工具调用成功）——属 Windows 沙箱 ACL 环境限制，非仓库缺陷。
 - **真实 LLM 限额**：gate 链路首次复跑期间 magpie 默认上游（`opencode-go/deepseek-v4.1-flash`）当日 Go 配额耗尽（429），当时用 `remote-magpie/auto/gpt-6.1-terra` 临时覆盖完成验证（仅测试启动器，不改仓库路由）；配额恢复后已用**默认路由**重跑冒烟与全 gate 链路（见 §7）。
 - **本地 Windows 环境噪声**：嵌入式 PG 的磁盘性能与 CI Linux 不同；CI 为准。
 - `psycopg` 偶发 "another command is already in progress" 仅出现在测试竞态（删除账号与 runner 收尾并发），响应仍正确。
@@ -98,3 +101,12 @@ $env:XHS_PG_PARITY_URI='postgresql://postgres:@127.0.0.1:<port>/postgres'
 | 生产路径冒烟（默认模型 + 干净 PG） | **28 checks: 28 pass / 0 fail / 0 blocked / 0 skip** |
 | 全 gate 链路（默认模型） | `GATE_CHAIN_OK=True`：9 次状态迁移，timeline 含 `evaluator`/`publisher`，`publish_result.status=mock_published`，225.5s |
 | 额外覆盖 | `paused / evaluator_fail_closed` → `POST /api/workflow/resume {"human_decision":"approve"}` → `completed`（人工恢复路径） |
+## 8. 补充验证（2026-11-05 晚）
+
+| 项 | 结果 |
+|---|---|
+| omp CLI 运行时 | 本地 bun **1.4.4** 驱动 `omp/18.14.2`；`models.yml` 自定义 magpie provider（`openai-completions`，两个模型）；`-p --mode json --no-session` 真实 LLM 回复 "ok"（usage 8400 tokens） |
+| xhsagent 扩展加载 | `-e backend/omp/extensions/xhsagent-ext/src/index.ts` 成功加载，工具面 **34 个** `xhs_*` 工具 |
+| 扩展 → API 桥接 | `XHS_AGENT_API_BASE=http://127.0.0.1:8889` + `XHS_SERVICE_TOKEN`：`xhs_system_health` 返回 `status=ok`/7 项检查；`xhs_workflow_list` 返回 “No workflows found.”（0 条）；API 日志对应 `GET /api/system/health`、`GET /api/workflow/list` 200 |
+| 前端本地门禁 | `npm run type-check` 0；`npm run test:run` **75 文件 / 788 tests passed, exit 0**；`npm run i18n:check` **2372 keys consistent** |
+| 环境说明 | omp Python eval kernel 因本机沙箱 ACL 无法写 `%TEMP%\omp-python-runner`（EPERM），自动改用 JS/Bun kernel 后工具调用成功；`omp models` 同时发现本机 ollama 模型（19 个），未参与验证 |
