@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.routes.workflow import router
+from backend.state.enums import WorkflowPhase
 
 _RUN_PUBLISH = "backend.api.routes._wf_actions.execute_mainline_publish"
 _DB_UPSERT = "backend.api.routes._wf_actions._db_upsert"
@@ -158,6 +159,94 @@ def test_publish_success_without_post_id_marks_completed(app_and_client):
     call = mock_db.await_args
     assert call.kwargs["status"] == "completed"
     assert call.kwargs["error"] is None
+    updates = graph.aupdate_state.call_args.args[1]
+    assert updates["phase"] == WorkflowPhase.COMPLETED
+    assert updates["error"] is None
+
+
+def test_failed_retry_writes_terminal_error_state(app_and_client):
+    """A failed retry must leave phase=error + error message.
+
+    Without a terminal phase the graph keeps the next node scheduled by
+    ``aupdate_state(as_node=...)`` while the retry task has already exited, so
+    /status derived stale/orphan even though the DB row said error (observed on
+    a real failed retry: publish_result failed, status=stale).
+    """
+    app, client, graph = app_and_client
+    pr = {
+        "post_id": "",
+        "status": "failed",
+        "error": "账号已停用",
+        "error_type": "account_inactive",
+    }
+    captured = {}
+
+    def fake_create_task(coro, **kw):
+        captured["coro"] = coro
+        task = MagicMock()
+        task.add_done_callback = MagicMock()
+        task.get_name = lambda: kw.get("name", "")
+        return task
+
+    with (
+        patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
+        patch(_DB_UPSERT, new_callable=AsyncMock) as mock_db,
+        patch(_EVENT_BUS) as mock_bus_cls,
+        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
+    ):
+        mock_bus_cls.get_instance.return_value = MagicMock()
+        client.post("/api/workflow/publish-retry/thr1")
+        coro = captured["coro"]
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    updates = graph.aupdate_state.call_args.args[1]
+    assert updates["phase"] == WorkflowPhase.ERROR
+    assert updates["error"] == "账号已停用"
+    call = mock_db.await_args
+    assert call.kwargs["status"] == "error"
+    assert call.kwargs["phase"] == WorkflowPhase.ERROR.value
+    assert call.kwargs["error"] == "账号已停用"
+
+
+def test_retry_accepts_empty_body_with_json_content_type(app_and_client):
+    """POST with Content-Type: application/json and no body must not 500.
+
+    Regression: request.json() raised JSONDecodeError for the empty body, so
+    the endpoint answered 500 instead of scheduling the retry.
+    """
+    app, client, graph = app_and_client
+    pr = {"post_id": "p1", "post_url": "u", "status": "failed", "error": "x"}
+    captured = {}
+
+    def fake_create_task(coro, **kw):
+        captured["coro"] = coro
+        task = MagicMock()
+        task.add_done_callback = MagicMock()
+        task.get_name = lambda: kw.get("name", "")
+        return task
+
+    with (
+        patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
+        patch(_DB_UPSERT, new_callable=AsyncMock),
+        patch(_EVENT_BUS) as mock_bus_cls,
+        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
+    ):
+        mock_bus_cls.get_instance.return_value = MagicMock()
+        resp = client.post(
+            "/api/workflow/publish-retry/thr1",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["status"] == "retrying"
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(captured["coro"])
+        finally:
+            loop.close()
 
 
 def test_rejects_already_published(app_and_client):

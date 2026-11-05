@@ -28,6 +28,7 @@ from backend.api.account_scope import (
     require_owned_account,
     resolve_required_account_id,
 )
+from backend.api.body import json_object_body
 from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.latency import LatencyTimer
@@ -831,11 +832,7 @@ async def resume_workflow(
 
     if derived == WorkflowStatus.AWAITING_BRIEF:
         # Resume from brief_gate interrupt — pass resume value for skip/answer
-        body = (
-            await request.json()
-            if request.headers.get("content-type", "").startswith("application/json")
-            else {}
-        )
+        body = await json_object_body(request)
         resume_value = body.get("resume_value", {"action": "skip"})
 
         result = await _runner._run_graph_and_persist(
@@ -858,11 +855,7 @@ async def resume_workflow(
 
     if derived == WorkflowStatus.AWAITING_RIPPLE_DECISION:
         # Resume from ripple_gate interrupt — accept/reangle/retopic
-        body = (
-            await request.json()
-            if request.headers.get("content-type", "").startswith("application/json")
-            else {}
-        )
+        body = await json_object_body(request)
         resume_value = body.get("resume_value", {"action": "accept"})
 
         result = await _runner._run_graph_and_persist(
@@ -886,11 +879,7 @@ async def resume_workflow(
     if derived == WorkflowStatus.AWAITING_BLOGGER_SELECTION:
         # Resume from blogger_gate interrupt. The blogger gate accepts either a
         # concrete selection ({user_id, nickname}) or an explicit skip.
-        body = (
-            await request.json()
-            if request.headers.get("content-type", "").startswith("application/json")
-            else {}
-        )
+        body = await json_object_body(request)
         resume_value = body.get("resume_value", {"skip": True})
 
         result = await _runner._run_graph_and_persist(
@@ -917,11 +906,7 @@ async def resume_workflow(
         # accept），因为那里的默认是"继续一件已经被授权的事"；这里没有默认值，
         # 因为这里的默认会**执行那个不可逆的动作**。所以缺 decision 时不动作、
         # 只说明该发什么 —— 空 body 的 /resume 绝不能读成一次发布确认。
-        body = (
-            await request.json()
-            if request.headers.get("content-type", "").startswith("application/json")
-            else {}
-        )
+        body = await json_object_body(request)
         resume_value = body.get("resume_value")
         if not isinstance(resume_value, dict) or "decision" not in resume_value:
             return success(

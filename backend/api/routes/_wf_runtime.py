@@ -19,6 +19,7 @@ from typing import Any, cast
 
 from fastapi import Request
 
+from backend.api.body import json_object_body
 from backend.api.errors import ValidationError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
@@ -235,11 +236,7 @@ async def _resume_past_evaluator_pause(
     either re-run the whole pipeline (legacy path) or auto-publish past a
     compliance block, which is exactly what P0-W5 forbids.
     """
-    body: dict[str, Any] = (
-        await request.json()
-        if request.headers.get("content-type", "").startswith("application/json")
-        else {}
-    )
+    body: dict[str, Any] = await json_object_body(request)
     decision = str(body.get("human_decision") or "").strip().lower()
     if decision not in HUMAN_DECISIONS:
         raise ValidationError(

@@ -31,6 +31,7 @@ from backend.agents.publisher import (
     reconcile_unknown_publish,
 )
 from backend.api.account_scope import assert_thread_owned
+from backend.api.body import json_object_body
 from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
@@ -397,11 +398,7 @@ async def retry_publish(
 
     # P0-W4: status="unknown"（提交后超时等结果不明）的重试必须先对账；对账
     # 不确定时要求请求体显式 force=true 才继续——盲目重发可能产生重复笔记。
-    body: dict[str, Any] = (
-        await request.json()
-        if request.headers.get("content-type", "").startswith("application/json")
-        else {}
-    )
+    body: dict[str, Any] = await json_object_body(request)
     force_retry = bool(body.get("force"))
     if pr_status == "unknown":
         reconciled = await reconcile_unknown_publish(values, request.app.state.graph.store)
@@ -490,30 +487,35 @@ async def retry_publish(
                     resolved, graph.store, operator_id=str(user.get("id") or "")
                 )
                 publish_result = result["publish_result"]
+                # ponytail: 真实 XHS 发布成功只 redirect 到 success 页，post_id 从 URL
+                # regex 提取，常为空。用 status=="published" 判成功，非 post_id。
+                pub_ok = publish_result.get("status") == "published"
                 snap = await graph.aget_state(config)
+                # A retry republishes and STOPS — the graph must end in a terminal
+                # phase here. Leaving phase=publishing (plus the next node the
+                # aupdate_state(as_node=...) write schedules) made /status derive
+                # stale/orphan after the retry task exited, even though the DB row
+                # said completed/error (observed: failed retry shown as stale).
+                terminal_phase = WorkflowPhase.COMPLETED if pub_ok else WorkflowPhase.ERROR
+                terminal_updates: dict[str, Any] = {
+                    "publish_result": publish_result,
+                    "phase": terminal_phase,
+                    "error": None if pub_ok else publish_result.get("error"),
+                }
+                # P0-W4 (F3): the publish attempt consumes an explicit force one
+                # shot and returns the cleared options — write them back so the
+                # next publish on this thread is guarded again.
+                if result.get("publish_options") is not None:
+                    terminal_updates["publish_options"] = result["publish_options"]
                 await graph.aupdate_state(
                     config,
-                    {
-                        "publish_result": publish_result,
-                        "phase": WorkflowPhase.PUBLISHING,
-                        # P0-W4 (F3): the publish attempt consumes an explicit force one
-                        # shot and returns the cleared options — write them back so
-                        # the next publish on this thread is guarded again.
-                        **(
-                            {"publish_options": result["publish_options"]}
-                            if result.get("publish_options") is not None
-                            else {}
-                        ),
-                    },
+                    terminal_updates,
                     as_node=_get_as_node(snap),
                 )
-                # ponytail: 真实 XHS 发布成功只 redirect 到 success 页，post_id 从 URL
-                # regex 提取，常为空（line 620）。用 status=="published" 判成功，非 post_id。
-                pub_ok = publish_result.get("status") == "published"
                 await _db_upsert(
                     thread_id,
                     status="completed" if pub_ok else "error",
-                    phase=WorkflowPhase.PUBLISHING.value,
+                    phase=terminal_phase.value,
                     error=None if pub_ok else publish_result.get("error"),
                 )
                 _emit_retry_event(thread_id, publish_result)

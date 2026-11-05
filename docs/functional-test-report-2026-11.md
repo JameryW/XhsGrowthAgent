@@ -57,6 +57,7 @@
 | 5df | Windows 下 `xhs-growth login` 打开 app DB 时未切 SelectorEventLoop：配置了 `POSTGRES_URI` 反而 30s `PoolTimeout` | login 入口调用 `_use_psycopg_compatible_loop_on_windows()`；负路径恢复为"账号不存在"exit 1 |
 | 5dg | `POST /api/auth/logout` 返回 200 但不吊销 token：同一 Authorization 头仍可访问 `/api/auth/me`（200） | logout 从 Authorization 头取 token 并 `revoke_token`；新增真实 token 撤销与 service token 两条测试 |
 | 5dh | Node ≥22 自带真实 `WebSocket`：前端组件测试挂载时真连 `ws://localhost:3000`，teardown 后留下未处理 `ECONNREFUSED`，`npm run test:run` 788 用例全过但 exit 1（CI Node 20 未暴露） | `frontend/tests/setup.ts` 默认 stub inert WebSocket；需要 WS 行为的 spec 仍用 `vi.stubGlobal` 覆盖；复跑 exit 0 |
+| 5di | `publish-retry` 失败后 `/status` 误报 `stale/orphan`（图状态 phase=publishing 且 as_node 写入留下 next 节点）；带 `Content-Type: application/json` 的空 body 使 5 处处理器 `request.json()` 抛 `JSONDecodeError` → 500 | 重试写回 terminal phase（COMPLETED/ERROR）+ error；新增 `backend/api/body.py:json_object_body()` 统一空/非法 body → `{}`；补 5 例 helper 测试与 2 个回归测试 |
 
 ## 4. 关键指标（修复前 → 修复后）
 
@@ -116,3 +117,4 @@ $env:XHS_PG_PARITY_URI='postgresql://postgres:@127.0.0.1:<port>/postgres'
 | 发布确认 gate 安全语义（`dry_run=false`） | review 批准（非 dry-run）→ evaluator 未放行 → `paused/evaluator_fail_closed`；`POST /workflow/resume {"human_decision":"approve"}` → `awaiting_publish`；**空 body `/resume` 返回 `awaiting_publish` + 指导文案、不执行发布**；`{"resume_value":{"decision":"confirmed"}}` → publisher → `completed`（`XHS_USE_BROWSER=false` 下按设计 `mock_published`） |
 | shooting_planner 结构化输出失败处理 | 模型连续两次返回空结构（`body_copy`/`title_candidates` 为空）时工作流进入 `error`，错误信息明确、无挂起；重跑后通过（模型侧偶发，非代码缺陷） |
 | 语义记忆（本地 embedding） | `XHS_EMBED_MODEL=local:BAAI/bge-small-zh-v1.5`（512 维，HF_HOME=工作区 `.eval-tmp/hf-cache`，模型 95.8MB）：直接相似度 0.7878/0.4904/0.2658（相关 vs 无关）；Postgres store 写入 3 条后 `recall_similar_content` 语义 top-1 命中相关条目；`GET /api/system/health` → overall `ok`、`memory_store.semantic_index=true`、`embed_dims=512`；关键词过滤命中正文词（"暖光"），hashtag 列表不参与关键词过滤 |
+| 发布重试端点（publish-retry） | 对 `mock_published` 线程 `POST /api/workflow/publish-retry` → 200 `retrying`，用现有内容重跑真实发布（不重走创作链路）；无凭据下 publisher 返回结构化失败 `account_inactive`（含 recovery 指引） | 修复后（票 5di）：空 JSON body 重试 200（原 500）；失败重试终态 `status=error / phase=error / orphan=false`（原 stale/orphan）；`publish_result.status=failed` 保留错误详情 |
