@@ -90,7 +90,7 @@ cmd_backup() {
 
 cmd_restore() {
     # 从最近的备份恢复 Postgres 数据
-    LATEST=$(ls -t "$BACKUP_DIR"/xhs_growth_*.sql.gz 2>/dev/null | head -1)
+    LATEST=$(ls -t "$BACKUP_DIR"/xhs_growth_*.sql.gz 2>/dev/null | sed -n '1p')
     if [ -z "$LATEST" ]; then
         echo "错误: 没有找到备份文件（$BACKUP_DIR/xhs_growth_*.sql.gz）"
         exit 1
@@ -385,9 +385,9 @@ cmd_deploy() {
     if [ "${FORCE_FRONTEND:-}" = "1" ]; then
         cmd_frontend
     elif [ -d "$PROJECT_DIR/frontend/dist" ]; then
-        NEWEST_DIST=$(find "$PROJECT_DIR/frontend/dist" -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)
-        NEWEST_SRC=$(find "$PROJECT_DIR/frontend/src" "$PROJECT_DIR/frontend/index.html" "$PROJECT_DIR/frontend/package.json" "$PROJECT_DIR/frontend/vite.config.ts" -type f -newermt "@0" -printf '%T@\n' 2>/dev/null | sort -rn | head -1)
-        if [ -n "$NEWEST_SRC" ] && [ -n "$NEWEST_DIST" ] && [ "$(printf '%s\n' "$NEWEST_SRC" "$NEWEST_DIST" | sort -rn | head -1)" = "$NEWEST_DIST" ]; then
+        NEWEST_DIST=$(find "$PROJECT_DIR/frontend/dist" -type f -printf '%T@\n' 2>/dev/null | sort -rn | sed -n '1p')
+        NEWEST_SRC=$(find "$PROJECT_DIR/frontend/src" "$PROJECT_DIR/frontend/index.html" "$PROJECT_DIR/frontend/package.json" "$PROJECT_DIR/frontend/vite.config.ts" -type f -newermt "@0" -printf '%T@\n' 2>/dev/null | sort -rn | sed -n '1p')
+        if [ -n "$NEWEST_SRC" ] && [ -n "$NEWEST_DIST" ] && [ "$(printf '%s\n' "$NEWEST_SRC" "$NEWEST_DIST" | sort -rn | sed -n '1p')" = "$NEWEST_DIST" ]; then
             echo ">>> 前端源码未变更，跳过构建"
         else
             cmd_frontend
@@ -409,7 +409,7 @@ cmd_deploy() {
         IMAGE_TS=$(podman inspect "$BACKEND_IMG" --format '{{.Created}}' 2>/dev/null)
         CHANGED=""
         if [ -n "$IMAGE_TS" ]; then
-            CHANGED=$(find "$PROJECT_DIR/backend" -name "*.py" -newermt "$(echo "$IMAGE_TS" | cut -d. -f1)" -type f 2>/dev/null | head -1)
+            CHANGED=$(find "$PROJECT_DIR/backend" -name "*.py" -newermt "$(echo "$IMAGE_TS" | cut -d. -f1)" -type f -print -quit 2>/dev/null)
         fi
         if [ -n "$CHANGED" ]; then
             echo ">>> 检测到后端代码变更（$(basename "$CHANGED")），重建镜像..."
