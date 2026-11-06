@@ -156,9 +156,12 @@ def _publish_result_keys(root: Path = BACKEND) -> set[str]:
                         key = _subscript_key(target)
                         if key:
                             keys.add(key)
-            elif isinstance(node, ast.AnnAssign):
-                if _is_name(node.target, "publish_result") and isinstance(node.value, ast.Dict):
-                    keys |= _dict_str_keys(node.value)
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and _is_name(node.target, "publish_result")
+                and isinstance(node.value, ast.Dict)
+            ):
+                keys |= _dict_str_keys(node.value)
     return keys
 
 
