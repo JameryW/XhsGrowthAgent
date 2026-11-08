@@ -406,10 +406,20 @@ cmd_deploy() {
         podman build -t "$BACKEND_IMG" "$PROJECT_DIR"
         REBUILT=1
     else
-        IMAGE_TS=$(podman inspect "$BACKEND_IMG" --format '{{.Created}}' 2>/dev/null)
+        # 用 epoch 比较时间：`podman inspect` 的 Created 是 UTC 字符串，
+        # 直接交给 `find -newermt` 会被按本地时区解析（CST=UTC+8），
+        # 导致每次更新代码后都误判「后端有变更」而重建镜像。
+        IMAGE_EPOCH=$(podman inspect "$BACKEND_IMG" --format '{{.Created.Unix}}' 2>/dev/null)
+        if [ -z "$IMAGE_EPOCH" ]; then
+            # 老版本 podman 不支持 .Created.Unix：回退到字符串，并显式标注 UTC
+            IMAGE_TS=$(podman inspect "$BACKEND_IMG" --format '{{.Created}}' 2>/dev/null)
+            if [ -n "$IMAGE_TS" ]; then
+                IMAGE_EPOCH=$(date -u -d "$(echo "$IMAGE_TS" | cut -d. -f1) UTC" +%s 2>/dev/null || true)
+            fi
+        fi
         CHANGED=""
-        if [ -n "$IMAGE_TS" ]; then
-            CHANGED=$(find "$PROJECT_DIR/backend" -name "*.py" -newermt "$(echo "$IMAGE_TS" | cut -d. -f1)" -type f -print -quit 2>/dev/null)
+        if [ -n "$IMAGE_EPOCH" ]; then
+            CHANGED=$(find "$PROJECT_DIR/backend" -name "*.py" -newermt "@$IMAGE_EPOCH" -type f -print -quit 2>/dev/null)
         fi
         if [ -n "$CHANGED" ]; then
             echo ">>> 检测到后端代码变更（$(basename "$CHANGED")），重建镜像..."
