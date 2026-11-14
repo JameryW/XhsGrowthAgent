@@ -77,3 +77,5 @@ verify_*.py
 .dsh-tmp/
 .eval-fixtures/
 .eval-tmp/
+.workbuddy/
+data-gym-cache/

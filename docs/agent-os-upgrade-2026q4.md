@@ -46,7 +46,7 @@
 
 | 实体 | 现状载体 | 判定 |
 |---|---|---|
-| Task | `thread_id`（workflow 实例） | **有**：Task 即 `thread_id`（`/start` 每次生成新 id，`backend/api/routes/_wf_application.py:177`）；run 边界见 Run 行（票 5x） |
+| Task | `thread_id`（workflow 实例） | **有**：Task 即 `thread_id`（`/start` 每次生成新 id，`backend/api/routes/_wf_application.py:178`）；run 边界见 Run 行（票 5x） |
 | Run | `run_id` + `run_seq` + `kind:"run"` 事件（票 5x，`backend/state/runs.py`） | **有**：`/start` 铸造 seq=1；pause/error resume 与 `/recover` 复用；completed/cancelled terminal restart 铸造新 `run_id`（seq+1，cause=`rerun`）。legacy 线程无 stamp 时 status 回显 null |
 | Step | graph node（superstep） | 有，checkpoint 天然记录 |
 | Attempt | 节点内结构化重试：`attempt_id` + `kind:"attempt"` 事件（票 5w，`backend/state/attempts.py`） | **有**：每次（档位 × 重试序号）一条事件，封闭 outcome（succeeded / payload_rejected / semantic_rejected / unreachable）、数据最小化、确定性 id。**节点内重试仍会重调 LLM**（§4.1 未变：本切片只补身份与遥测，不是重放） |
@@ -149,7 +149,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | **P3-前置（已完成）** | Harness Benchmarks 套件 | `scripts/benchmarks/harness_benchmarks.py` + CI job：F1/F2/F4 可跑，F5/F7/F8 记 SKIP（§8） | 评测集是 Adaptive Harness 的前提；先把确定性防线变成可跑的 gate |
 | P3 | Adaptive Harness | 依赖评测集 + A/B 门禁；P1b 基线是起点；路由对照铺垫 `scripts/benchmarks/llm_route_benchmark.py` 已存在 | 无评测数据前做自适应是赌博 |
 
-### 5.1 P0-B 落地记录（统一 Effect 账本）
+### 5.1 P0-B 落地记录（publish 六态 Effect 账本；互动账本按设计独立）
 
 | 项 | 实现 |
 |---|---|
@@ -159,7 +159,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 乐观锁 | `mark(..., expect_version=N)` 拒绝覆盖并发写入；**诚实边界：BaseStore 无 CAS，多写者部署需数据库唯一约束**（代码注释已写明）。**现状**：`backend/agents/publisher.py` 的 `EffectLedger.mark(...)` 写入点**今天不传** `expect_version` —— 发布路径的并发正确性靠租约 + 幂等键，不靠 CAS；不要把"能力存在"读成"已启用" |
 | 旧词兼容 | 读侧归一化 `published → CONFIRMED`、未知状态 → `UNKNOWN`（绝不落 FAILED）；历史行零迁移 |
 | publish 接入 | 提交前写 `PREPARED`（意图落盘）→ `begin()` 领取 → 成功 `CONFIRMED` / 确定失败 `FAILED` / 提交后无判定 `UNKNOWN`（显式写入，不再靠"保持不写"隐含） |
-| 接入边界（诚实披露） | 主链 `PublisherAgent` 与 free 路径已接账本（PREPARED + `EffectLedger.begin()`：`backend/agents/publisher.py:927-945`；free 路径经 `backend/api/routes/free.py` 的单一执行入口 `execute_mainline_publish`）；**creator_agent 控制面 `execute` 路径也已接入 `EffectLedger`**（票 5bi：`_publish_with_effect_ledger` 在 dispatch 前 claim、按 outcome 结算），receipt 仍记录执行结果，账本负责崩溃窗口的重复提交防护。**分支 B 已落地（票 5bs）**：有 durable mainline intent 的发布现在经 `CreatorAdvisor.execute_action` 执行（receipt-backed、attempt 级 receipt），主链仍持有唯一的 `publish_id` 账本 claim；无 intent 的路径保持原直调。 |
+| 接入边界（诚实披露） | 主链 `PublisherAgent` 与 free 路径已接账本（PREPARED + `EffectLedger.begin()`：`backend/agents/publisher.py:1165-1187`；free 路径经 `backend/api/routes/free.py` 的单一执行入口 `execute_mainline_publish`）；**creator_agent 控制面 `execute` 路径也已接入 `EffectLedger`**（票 5bi：`_publish_with_effect_ledger` 在 dispatch 前 claim、按 outcome 结算），receipt 仍记录执行结果，账本负责崩溃窗口的重复提交防护。**分支 B 已落地（票 5bs）**：有 durable mainline intent 的发布现在经 `CreatorAdvisor.execute_action` 执行（receipt-backed、attempt 级 receipt），主链仍持有唯一的 `publish_id` 账本 claim；无 intent 的路径保持原直调。 |
 | 本地对账写账本（票 5ai） | `reconcile_unknown_publish` 本地证据确认 published 后 best-effort `UNKNOWN→RECONCILING→CONFIRMED`（evidence 入 `extra.reconcile_evidence`）；uncertain **不动**账本；写失败仅 warn，不阻断 gate 返回值 |
 | 平台列表对账（票 5ak） | 本地幂等行 / ContentHistory 均 miss 且 title 非空 → cookie httpx 拉创作者中心笔记列表标题 **精确** strip 匹配；命中则 `source=platform_note_list` + note id，走同一 `_confirm_ledger_after_reconcile`；无 cookie / fetch 失败 / 未命中 → `uncertain`（warn，不 raise、不伪确认）；可注入 `platform_note_fetcher`；**CDP / 详情页深查 out of scope** |
 | 平台列表多页（票 5al） | 默认 `_default_fetch_platform_notes` 循环 page 1..`_PLATFORM_NOTE_LIST_MAX_PAGES`（锁定 **3**），`page_size=50`；某页 `extract_note_items` 为空或 `len(items) < page_size` 提前停；任一页抛错 → 整次平台刀 `uncertain`（与 5ak 一致）；匹配/确认语义不变；**CDP / 详情页深查仍 out of scope**；`max_pages` 不配 env |
@@ -186,7 +186,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 | 风险下限 | CRITICAL（真实发布等不可逆外部副作用）→ 强制 `HUMAN`；HIGH → 至少 `DETERMINISTIC`。**下限先于公式判定**——低错误概率不能买通高风险门 |
 | 期望成本 | `p_e·p_d·L > C_v` 才验证；MEDIUM/HIGH 正收益落 `LLM` 档，LOW 落 `DETERMINISTIC` 档 |
 | 预算降级 | 预算不够所选档位时降到 `DETERMINISTIC` 并标 `budget_exhausted`；**绝不静默跳过有下限的检查** |
-| 事件 | 新增 `kind:"verification"`（已注册 `EVENT_KINDS`）；真实发布路径在领取 Effect 后发射判定，纯观测、零行为变更 |
+| 事件 | 新增 `kind:"verification"`（已注册 `EVENT_KINDS`）；真实发布路径在领取 Effect 后发射判定，纯观测、零行为变更。发射范围：主链在 `backend/agents/publisher.py:1216-1229`；控制面 creator-origin 发布在 `backend/creator_agent/advisor.py:905-933`（2026-11-14 补）；mainline-origin 经执行器分发时**不重复发射**（主链已发一条）。两侧均有测试守护：`tests/unit/agents/test_run_publish.py::test_a_real_publish_emits_exactly_one_verification_entry` 与 `tests/unit/creator_agent/test_publish_effect_ledger.py::TestTheVerificationTelemetry` |
 | 诚实边界 | `p_e/p_d` 是输入先验（仓库暂无校准评估集）；`LLM` 档是决策槽位，本仓库尚无独立 verifier 实现（接入是独立变更，需评测门槛） |
 
 ### 5.4 P2-部分落地记录（恢复策略分派）
@@ -195,7 +195,7 @@ Event Log 是事实记录——在我们的架构里，这个角色由 **checkpo
 |---|---|
 | 四档动作 | `RETRY_SAME`（429/5xx/网络）/ `DEGRADE_MODEL`（400/404/409/422/schema/结构化解析失败）/ `ESCALATE_MODEL`（同错误重复 = stalled）/ `STOP_AND_REPORT`（401/403/内容策略/重试预算耗尽） |
 | 优先级 | **拒绝优先**：401/403/策略拒绝即使同时"像瞬时错误"也直接 STOP——重试拒绝就是绕过路径 |
-| 与 retry 层一致 | 一致性测试：`retry._is_retryable(exc)` 为真 ⇔ 分类为 `RETRY_SAME`（两张规则表不允许漂移） |
+| 与 retry 层一致 | 一致性测试：**在重试预算内** `retry._is_retryable(exc)` 为真 ⇔ 分类为 `RETRY_SAME`（两张规则表不允许漂移）。到达重试上限后，瞬时错误分类为 `STOP_AND_REPORT`，此时 `_is_retryable` 仍为真——两张表回答的是不同问题（能否重试 vs 现在适合哪种恢复），见 `tests/unit/models/test_recovery_policy.py::TestTransient::test_transient_past_budget_stops` |
 | 接入 | `retry._RetryChatModel` 的放弃路径记录分类（log-only，行为零变更） |
 | 诚实边界 | `DEGRADE/ESCALATE` 是决策，不是执行——tier 切换需要模型矩阵配置，暂无（`action_available=False` 时 ESCALATE 降级为 RETRY_SAME，不撒谎） |
 
@@ -294,7 +294,7 @@ verification 判定（P1-B）、progress 信号（P0-A ×2）。**但没有任�
 
 | 项 | 实现 |
 |---|---|
-| 词表 | `RunCause`：`start / resume / rerun / recover`（封闭）。铸造事件只允许 `start`/`rerun` |
+| 词表 | `RunCause`：`start / resume / rerun / recover`（封闭）。铸造事件只允许 `start`/`rerun`；`resume` / `recover` 目前是**保留词**——`run_entry` / `mint_run_stamp` 会拒绝它们，因此 checkpoint 里的 `run_cause` 只可能是 `start` 或 `rerun`，读者不得把它们当作可观测原因 |
 | 身份 | `run_id(thread_id, run_seq, started_at)` = `run_` + sha256[:16]；**含 run_seq**，否则同 thread 重开会复用上一条 id |
 | 条目 | `run_entry(...)` → `kind:"run"`；键集合是保留位 |
 | 数据最小化 | 不含 goal / brief / 内容字段 |
@@ -378,21 +378,22 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 ## 9. 剩余工作与本地 CI 核对（2026-11-01）
 
 > 目的：让「所有剩余任务」可审计——哪些能本地跑、哪些是决策/外部/环境依赖。
-> 本轮已在本地逐项核对 CI；后端测试 4800 passed / 14 skipped / 0 failed。
+> 本轮已在本地逐项核对 CI（**下表计数为 2026-11-01 时点**）；
+> 2026-11-14 复核：**4990 passed / 14 skipped / 0 failed**，见 §9.3。
 
 ### 9.1 CI 作业本地核对矩阵
 
 | CI 作业 | 本地核对方式 | 结果 |
 |---|---|---|
-| Lint & Format | `ruff check` + 改动文件 `ruff format --check` | ✅ 绿；6 个未改动文件的本地提示是 CRLF 假阳性（LF 副本通过） |
-| Mypy | `mypy --python-version 3.12 backend`（本地 numpy 2.5.1 stub 与 `python_version=3.11` 冲突） | ✅ 262 source files，0 issues |
-| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
+| Lint & Format | `ruff check` + 改动文件 `ruff format --check` | ✅ 绿（2026-11-14 复核：`ruff check backend tests scripts` 全绿；LF 归一 format 709 个 tracked `.py` 全绿，早期记录的 CRLF 假阳性未复现） |
+| Mypy | `mypy --python-version 3.12 backend`（本地 numpy 2.5.1 stub 与 `python_version=3.11` 冲突） | ✅ 266 source files，0 issues（2026-11-01 时点 262） |
+| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped（2026-11-01 时点）；**2026-11-14 复核 4990 passed / 14 skipped / 0 failed**；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
 | Context Compiler Baseline | `python scripts/benchmarks/context_compiler_baseline.py --compare --drift-pct 5` | ✅ drift within threshold |
 | Harness Benchmarks | `python scripts/benchmarks/harness_benchmarks.py` | ✅ pass=3 fail=0 skip=3（F5/F7/F8 是文档化缺口） |
 | Tool Runtime Gate | `python scripts/gates/tool_runtime_gate.py` | ✅ P1c-S5 OK |
 | Compliance Baseline Gate | `python scripts/gates/stealth_default_off.py` | ✅ OK |
-| Frontend（type-check/test/i18n） | `npm run type-check` / `i18n:check` | ✅ type-check、i18n(2372 keys) 通过；`vitest` 本地被沙箱禁止 spawn（EPERM），属环境限制 |
-| OMP Typecheck | `npm install && npm run typecheck` | ⚠️ 本地 `npm install` 被沙箱拒绝写缓存目录；CI 覆盖该作业 |
+| Frontend（type-check/test/i18n） | `npm run type-check` / `i18n:check` | ✅ type-check、i18n(2372 keys) 通过（2026-11-01）；2026-11-14 复核：i18n 仍绿，`frontend/node_modules` 缺失使 type-check 无法本地复跑（CI 覆盖），`vitest` 本地被沙箱禁止 spawn（EPERM），属环境限制 |
+| OMP Typecheck | `npm install && npm run typecheck` | ✅ 2026-11-14 复核：本地 node_modules 就绪，`npm run typecheck`（`tsc --noEmit`）通过；CI 仍为权威 |
 
 ### 9.2 剩余工作（本地可执行项已清零）
 
@@ -400,12 +401,49 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 |---|---|---|
 | P4 分支 B：入口直落 `execute_action` 回执路径 | 已完成 | 2026-11-01 拍板并落地 B1–B4（票 5bn/5bo/5br/5bq/5bs）及加固（5bu/5by）：receipt attempt 级、intent 先于持久效果、executor 接受 caller-supplied request、有 intent 的发布经 `execute_action` 执行且只保留主链一个账本 claim；claim 表新增两条并带阳性对照。**已推送 origin/main 并经 CI 验证**：run 41306901460 / 41307361407 的 10 个作业全部 success（含 mypy、py3.11/3.12 的 Postgres parity、frontend、OMP） |
 | 路线图 8：多 Agent 并行 / workspace 冲突（F5） | 裁定 | 本文档裁定「先不建」，F5 保持 SKIP |
-| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 进行中 | 评测集先行：E1 真实 checkpoint 抽取+脱敏+指纹/加盐（5cd/5cj/5ck）、E2 HarnessPolicy（5ce）、E3 离线 A/B 门禁 report/block（5cf/5cj）、变体示例（5cg）、E4 质量裁判 + 199 预算护栏 + live 计划门闸 + runbook（5ch/5ci/5cj）；独立审查发现的高危/中危/低危已全部修复；live 端到端仍 external-only |
+| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 进行中 | 评测集先行：E1 真实 checkpoint 抽取+脱敏+指纹/加盐（5cd/5cj/5ck/5cm/5cp）、E2 HarnessPolicy（5ce，未接线）、E3 离线 A/B 门禁 report/block（5cf/5cj/5cn）、变体示例（5cg/5cn）、E4 质量裁判 + 199 预算护栏 + live 计划门闸 + runbook（5ch/5ci/5cj/5co）；多轮独立审查（含 5cm 第二轮两处高危）发现的高/中/低危均已修复；E3 的 L1/L2 回放与成本/时延/质量阈值仍未实现，live 端到端仍 external-only |
 | 私信 DOM 真机读法、笔记详情页深查/CDP | external-only | 需真实账号与平台环境，沙箱内不可验证 |
-| frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地沙箱/凭据限制，非仓库缺陷 |
+| frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地：OMP typecheck 已可跑通，frontend type-check/vitest 因 node_modules/沙箱限制不可复跑，PG parity 需凭据/服务——非仓库缺陷 |
 
 **结论**：仓库内可本地执行、可验证的剩余任务已清零（分支 B 已于 2026-11-01 完成并推送，
 票 5bn–5by；CI 10 作业全绿）。路线图 10 已从「未启动」推进到「进行中」：E1–E3、变体示例
-与 E4 的裁判/预算护栏/计划门闸全部落地（票 5cd–5ck），独立审查发现的高危/中危/低危均已
-修复；E4 的 live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真实费用）。其余为
-已裁定延后项（路线图 8：多 Agent 并行，裁定先不建）与外部/环境依赖项。
+与 E4 的裁判/预算护栏/计划门闸全部落地（票 5cd–5cp，含 5cm 第二轮两处高危修复、5cp 的
+artifact 写缝/`--store-uri`/扫描上限），多轮独立审查发现的高危/中危/低危均已修复；但
+E3 的 L1/L2 回放与阈值判定仍未实现（见 `docs/adaptive-harness-eval-plan.md` §4），E4 的
+live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真实费用）。其余为已裁定延后项
+（路线图 8：多 Agent 并行，裁定先不建）与外部/环境依赖项。
+
+### 9.3 2026-11-14 复核与修复（文档同步）
+
+> 复核方式：本地 CI 等价全量 + 逐条「文档声明 → 生产调用点 → 测试」审计。
+> 结论：§9.1 的「绿」仍然成立，但计数与若干锚点已过期；漂移已在本轮修正，
+> 并补上两处「已接线但无测试守护」的缺口。
+
+| 项 | 2026-11-14 实测 | 说明 |
+|---|---|---|
+| 全量 pytest | **4990 passed / 14 skipped / 0 failed**（5004 collected，222s） | §9.1 的 4800/14 与 journal 的 4979/11 均为历史快照（后者带 PG parity）；3 项 PG parity、11 项 Windows symlink 为环境 skip |
+| Lint / Format | `ruff check backend tests scripts` 全绿；LF 归一 `ruff format --check`（709 个 tracked `.py`）全绿 | 早期记录的 CRLF 假阳性未复现 |
+| Mypy | `mypy --python-version 3.12 backend` → 266 source files，0 issues | 直接 `mypy backend` 仍只被本地 numpy 2.5.1 stub 的 PEP-695 语法卡住（环境） |
+| Gates | context baseline `drift within threshold`；harness `pass=3 fail=0 skip=3`；tool runtime / compliance OK | F5/F7/F8 仍为记录在案缺口，不当通过 |
+| OMP / Frontend | OMP `tsc --noEmit` 本地通过；i18n `2372 keys` 通过；type-check/vitest 本地不可复跑 | 由 CI 覆盖，非仓库缺陷 |
+
+本轮修正的文档漂移：§2 `/start` 锚点（177→178）；§5.1 标题（「统一」仅指 publish 跨路径
+共用六态，互动账本按设计独立）；§5.1 发布接入锚点（927-945→1165-1187）；§5.3 发射范围
+（主链 + 控制面 creator-origin 各一条，mainline-origin 不重复）；§5.4 一致性判据补
+「重试预算内」限定；§5.10 `RunCause` 补「resume/recover 为保留词」；§9.2 路线图 10 票号
+补到 5cp；`docs/adaptive-harness-eval-plan.md` 的本地语料说明（0→27 checkpoints）与
+`test_policy.py` 用例数（8→9）。
+
+本轮补的守护（此前是「已接线但删掉也全绿」）：主链真实发布必须恰好发射一条
+`kind:"verification"`（`tests/unit/agents/test_run_publish.py`）；控制面 creator-origin
+发布发射一条、mainline-origin 不重复发射（`TestTheVerificationTelemetry`）；
+`tests/unit/api/test_publish_retry.py` 关闭未 await 的租约心跳协程（全量 warnings 5→1，
+仅剩环境级 Starlette 弃用提示）；`.gitignore` 忽略 `.workbuddy/` 与 `data-gym-cache/`；
+E1 抽取器的 sqlite/Postgres 两条入口都改用项目 `checkpoint_serde()`（与 graph 同一
+allowlist，消除真实 checkpoint 的 "unregistered type `WorkflowPhase`" 警告并防止未来
+strict 反序列化把决策字段降级成裸字符串；`tests/unit/scripts/test_eval_fixtures.py`
+26 passed）。
+
+仍未完成（裁定/外部项，不变）：路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的
+E2 接线与 E3 的 L1/L2 回放/阈值判定（需产品拍板）；E4 live 端到端 external-only；本地
+`.eval-fixtures/` 仍不存在，E3 的 corpus 检查本地为 SKIP（缺语料是缺口，不是通过）。

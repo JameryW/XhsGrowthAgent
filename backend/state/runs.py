@@ -53,7 +53,15 @@ _ENTRY_KEYS: frozenset[str] = frozenset(
 
 
 class RunCause(StrEnum):
-    """How a run boundary was crossed. Closed on purpose — a reader enumerates it."""
+    """How a run boundary was crossed. Closed on purpose — a reader enumerates it.
+
+    The declared vocabulary is wider than what can be recorded today:
+    ``run_entry`` and ``mint_run_stamp`` refuse ``RESUME`` / ``RECOVER`` (reuse
+    causes neither mint nor emit an event — see the module docstring), so a
+    checkpoint's ``run_cause`` can only ever be ``start`` or ``rerun``.  Readers
+    must treat ``resume`` / ``recover`` as reserved words, not as causes they
+    will observe in stored state.
+    """
 
     START = "start"
     """``POST /start`` minted the first run on a new thread."""

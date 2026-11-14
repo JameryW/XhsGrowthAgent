@@ -104,7 +104,8 @@
 | 脱敏（唯一实现） | 标识符 → 稳定假名（`acct_/thread_/session_/user_/creator_/post_/run_/target_/id_`，覆盖 `workflow_thread_id`、`platform_post_id`、`run_id`、`target_id`、`ids`、`reviewer`、`confirmer`、`confirmed_by`、`nickname`、`author`、`post_id/note_id` 等真实 schema 字段）；cookie/token/api_key 等 → 空（含容器值）；`*_url(s)`/`*_link(s)`/`*_uri(s)` 链接 → 空；`cdp_endpoint`/`chrome_profile_path` → 空；路径类键 → `image/NN.ext`；任意字符串命中绝对路径（盘符、UNC `\\\\`、`file://`、`/Users`/`/home`/`/tmp`/`/var`/`/opt`/`/root`/`/mnt`/`/data`/`/srv`/`/private`）→ 空；`messages` **总是丢弃**；`artifacts` 引用映射 → 丢弃；**内容字段保留** |
 | 语料格式 | `fixture-<id>.json`（`EvalFixture`）+ `manifest.json`（计数、每文件 sha256、跳过明细、schema/extractor/redaction 版本、`pseudonym_mode`）+ `manifest.sha256`（manifest 字节指纹）；schema v2 / redaction v3 / extractor v3 |
 | 本地安全 | 输出目录默认 `.eval-fixtures/`（gitignore）；**可选 HMAC 假名**：`XHS_EVAL_REDACTION_KEY` 由部署侧提供、不写入语料，manifest 记录 `pseudonym_mode=sha256|hmac`，无密钥时打印"短 id 可被字典攻击"警告；`hmac` 是**声明**，仓库内无法验证（密钥不能进语料）；`manifest.sha256` 必需（缺失即红），`--expect-manifest-sha256` 做 out-of-band 核对 |
-| 验证 | `tests/unit/scripts/test_eval_fixtures.py` 24 passed（真实 sqlite 往返、两轮真实 schema 身份字段回归、绝对路径护栏、artifact 解析/跳过、**artifact 写缝（refify_updates）回归**、Postgres 入口契约、扫描上限、加盐模式与指纹） |
+| 验证 | `tests/unit/scripts/test_eval_fixtures.py` **26 passed**（真实 sqlite 往返、两轮真实 schema 身份字段回归、绝对路径护栏、artifact 解析/跳过、**artifact 写缝（refify_updates）回归**、Postgres 入口契约、扫描上限、加盐模式与指纹、**sqlite/Postgres 两条入口都使用项目 checkpoint serde**） |
+| Checkpoint 反序列化 | 两条入口都传 `backend.state.checkpoint_serde.checkpoint_serde()`（与 graph 同一 `allowed_msgpack_modules` 白名单，票 5cz）；否则真实 checkpoint 会持续打印 "unregistered type `backend.state.enums.WorkflowPhase`"，并在 LangGraph 收紧后把决策字段降级成裸字符串——语料正好丢掉的正是它要保存的字段 |
 
 用法：
 
@@ -114,9 +115,13 @@ python scripts/eval/extract_fixtures.py --limit 20 --phases reviewing,publishing
 python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
 ```
 
-**本地现实说明**：本 checkout 的 `.xhs/checkpoints.sqlite` 是空的（0 checkpoints），
-因此 E1 的"真实语料"要在有数据的部署（Postgres）或已填充的 sqlite 上生成；E1 自身的
-正确性由上述种子库测试覆盖，而不是靠本地空库。
+**本地现实说明（2026-11-14 复核）**：本 checkout 的 `.xhs/checkpoints.sqlite` **不再是空库**
+——实测 **27 checkpoints / 5 threads**，`--dry-run` 可抽出 **5 条** fixture，另有 **10 条**
+checkpoint 的内容字段在 Artifact Store（`--store-uri`）里、本地解析不出而被跳过；
+runbook 推荐的 `--phases reviewing,publishing` 在本地当前得到 **0 条**（17 条被 phase 过滤）。
+所以本地没有 `.eval-fixtures/` 的原因是「抽取器没有被运行 + 部分内容需要部署侧 Artifact Store」，
+而不是「无数据可抽」。E3 的 corpus 检查在本地仍是 **SKIP**（缺语料是缺口，不是通过）；
+E1 自身的正确性由 26 个种子库测试覆盖。
 
 ## 6.6 E2 已交付：可注入策略接口（票 5ce，未接线）
 
@@ -134,7 +139,7 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
   与 variant 的 diff。
 - **未接线**：生产代码没有任何调用点使用这个接口，因此默认行为零变化。接线（默认值是否
   允许被变体替换）依赖提案第 6 节问题 5/6 的拍板。
-- 测试：`tests/unit/harness/test_policy.py` 8 passed，逐项对比 router/目录的当前答案，
+- 测试：`tests/unit/harness/test_policy.py` 9 passed，逐项对比 router/目录的当前答案，
   并钉住"未知名能力必须拒绝而不是编造"以及 snapshot 的 diff 行为。
 
 ## 6.7 E3 已交付：离线 A/B 门禁（票 5cf，默认只报告）
@@ -155,6 +160,9 @@ python scripts/eval/extract_fixtures.py --postgres-uri "$XHS_POSTGRES_URI" --all
   A/B-only 姿态，最终拍板后如需改默认再单独接线）。
 - 接入本地 runner：`python scripts/ci_local.py --only eval-gate`；该 job 在无 `.eval-fixtures/`
   时显式 SKIP，有语料时以 `--fail-on-red` 运行（CI 无法提供本地语料，故不进 GitHub workflow）。
+- 副作用（如实记录）：不跳过 benchmarks 时，`run_gate.py` 会把 harness 输出写到仓库内
+  `.eval-tmp/`（gitignored）——沙箱禁止管道 stdio，用文件重定向是刻意设计，不是"只读门禁
+  却在写仓库"的缺陷。
 - 测试：`tests/unit/scripts/test_eval_gate.py` 29 passed（覆盖面：空语料/旧脱敏或抽取器
   版本/未列出 JSON/篡改 hash/缺失指纹必红、policy 类型与逐 phase 预算校验、F1 SKIP 必红、
   决策相同的 variant 必红、report/block 两个 CLI 姿态、真实 variant 注入）；

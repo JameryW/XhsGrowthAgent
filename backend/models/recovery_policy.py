@@ -20,7 +20,13 @@ today — a decision log, not a behavior change.
 Kept deliberately independent of ``retry._is_retryable``'s private helpers but
 aligned with it by a test: any exception that layer considers retryable must
 classify as ``RETRY_SAME`` here. Two rule tables that disagree are worse than
-one.
+one. That biconditional holds **below the attempt budget**: at or after the cap
+a transient error is classified ``STOP_AND_REPORT`` even though
+``_is_retryable`` still returns ``True`` (pinned by
+``tests/unit/models/test_recovery_policy.py::TestTransient::test_transient_past_budget_stops``).
+The two tables answer different questions — "may this be retried at all?" versus
+"what recovery fits this failure now?" — and the budget is the point where the
+second one stops saying "retry".
 """
 
 from __future__ import annotations
