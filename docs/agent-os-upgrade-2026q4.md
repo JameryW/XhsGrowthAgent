@@ -392,7 +392,7 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 | Harness Benchmarks | `python scripts/benchmarks/harness_benchmarks.py` | ✅ pass=3 fail=0 skip=3（F5/F7/F8 是文档化缺口） |
 | Tool Runtime Gate | `python scripts/gates/tool_runtime_gate.py` | ✅ P1c-S5 OK |
 | Compliance Baseline Gate | `python scripts/gates/stealth_default_off.py` | ✅ OK |
-| Frontend（type-check/test/i18n） | `npm run type-check` / `i18n:check` | ✅ type-check、i18n(2372 keys) 通过（2026-11-01）；2026-11-14 复核：i18n 仍绿，`frontend/node_modules` 缺失使 type-check 无法本地复跑（CI 覆盖），`vitest` 本地被沙箱禁止 spawn（EPERM），属环境限制 |
+| Frontend（type-check/test/i18n） | `npm run type-check` / `i18n:check` | ✅ type-check、i18n(2372 keys) 通过（2026-11-01）；2026-11-14 复核：i18n 仍绿；本 checkout 补齐 `frontend/node_modules`（`npm install`，270 packages）后，`vue-tsc --noEmit` 与 `vitest run`（788 passed / 75 files）也均本地通过——node_modules 不入库，CI 仍为权威 |
 | OMP Typecheck | `npm install && npm run typecheck` | ✅ 2026-11-14 复核：本地 node_modules 就绪，`npm run typecheck`（`tsc --noEmit`）通过；CI 仍为权威 |
 
 ### 9.2 剩余工作（本地可执行项已清零）
@@ -403,7 +403,7 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 | 路线图 8：多 Agent 并行 / workspace 冲突（F5） | 裁定 | 本文档裁定「先不建」，F5 保持 SKIP |
 | 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 进行中 | 评测集先行：E1 真实 checkpoint 抽取+脱敏+指纹/加盐（5cd/5cj/5ck/5cm/5cp）、E2 HarnessPolicy（5ce，未接线）、E3 离线 A/B 门禁 report/block（5cf/5cj/5cn）、变体示例（5cg/5cn）、E4 质量裁判 + 199 预算护栏 + live 计划门闸 + runbook（5ch/5ci/5cj/5co）；多轮独立审查（含 5cm 第二轮两处高危）发现的高/中/低危均已修复；E3 的 L1/L2 回放与成本/时延/质量阈值仍未实现，live 端到端仍 external-only |
 | 私信 DOM 真机读法、笔记详情页深查/CDP | external-only | 需真实账号与平台环境，沙箱内不可验证 |
-| frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地：OMP typecheck 已可跑通，frontend type-check/vitest 因 node_modules/沙箱限制不可复跑，PG parity 需凭据/服务——非仓库缺陷 |
+| frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地：2026-11-14 补齐 node_modules 后 frontend type-check + vitest(788) 与 OMP typecheck 均已跑通，PG parity 仍需凭据/服务——非仓库缺陷 |
 
 **结论**：仓库内可本地执行、可验证的剩余任务已清零（分支 B 已于 2026-11-01 完成并推送，
 票 5bn–5by；CI 10 作业全绿）。路线图 10 已从「未启动」推进到「进行中」：E1–E3、变体示例
@@ -425,7 +425,7 @@ live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真�
 | Lint / Format | `ruff check backend tests scripts` 全绿；LF 归一 `ruff format --check`（709 个 tracked `.py`）全绿 | 早期记录的 CRLF 假阳性未复现 |
 | Mypy | `mypy --python-version 3.12 backend` → 266 source files，0 issues | 直接 `mypy backend` 仍只被本地 numpy 2.5.1 stub 的 PEP-695 语法卡住（环境） |
 | Gates | context baseline `drift within threshold`；harness `pass=3 fail=0 skip=3`；tool runtime / compliance OK | F5/F7/F8 仍为记录在案缺口，不当通过 |
-| OMP / Frontend | OMP `tsc --noEmit` 本地通过；i18n `2372 keys` 通过；type-check/vitest 本地不可复跑 | 由 CI 覆盖，非仓库缺陷 |
+| OMP / Frontend | OMP `tsc --noEmit` 本地通过；i18n `2372 keys` 通过；补齐 `frontend/node_modules` 后 type-check 与 vitest（**788 passed / 75 files**）亦本地通过 | node_modules 为本地环境（不入库）；CI 仍为权威 |
 
 本轮修正的文档漂移：§2 `/start` 锚点（177→178）；§5.1 标题（「统一」仅指 publish 跨路径
 共用六态，互动账本按设计独立）；§5.1 发布接入锚点（927-945→1165-1187）；§5.3 发射范围

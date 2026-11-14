@@ -815,6 +815,7 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - `scripts/ci_local.py --skip-tests`：PASS lint / format / mypy / gates / omp → `local CI parity: OK`。
 - 文档门禁 `tests/unit/scripts` 207 passed；E3 临时语料 `[PASS] corpus 5 fixtures` + `benchmarks F1/F2/F4`，`mode=block red=False`。
 - 已 rebase 到 origin/main `96bf61f1` 并推送（`de5ad5cc`/`43a88329`/`ae06d01e`/`c83ac772`/`c49ce79b`）；CI run **43592668170** 的 10 个作业全部 success。
+- 补齐本地 `frontend/node_modules`（npm install，270 packages）后：`vue-tsc --noEmit` 通过、`vitest run` **788 passed / 75 files**、i18n 2372 keys 通过、OMP `tsc --noEmit` 通过——§9.1/§9.2 的环境限制项在本地已可复核（node_modules 不入库，CI 仍权威）。
 
 ### 未做（裁定/外部）
 - 路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的 E2 接线与 E3 L1/L2 回放/阈值需产品拍板；E4 live 端到端 external-only；本地 `.eval-fixtures/` 未生成（eval-gate 仍 SKIP，符合设计）。
