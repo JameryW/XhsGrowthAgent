@@ -877,3 +877,4 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - 本地 `ci_local.py --skip-tests` 全 PASS（lint / format 720 files / mypy 267 / gates / eval-gate / frontend / omp）；`test_eval_gate` + `test_ci_local` 47 passed。
 - docs-only CI run **43601887947**（commit `92a3972a`）10 个作业 success。
 - 追加发现并修复：`scripts/deploy.sh` 用显式 `-e VAR` 列表传环境变量（不读 env-file），`XHS_HARNESS_POLICY` 漏传会导致 `.env` 设置永远进不了容器 → 已补 `-e XHS_HARNESS_POLICY="${XHS_HARNESS_POLICY:-}"`，`bash -n` 通过；CLAUDE.md 部署段同步说明「新 harness 开关须加进该列表」。
+- `.env.example` 补齐 `XHS_EMBED_MODEL/DIMS/BASE_URL`（deploy.sh 一直传，模板缺失）；HYMEMORY_* 故意不进 deploy（镜像只装 `.[browser]`，SDK 未装，需显式 `.[memory-hy]` 才启用），已确认不是漏配。
