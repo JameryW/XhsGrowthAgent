@@ -22,7 +22,9 @@ from pydantic import ValidationError
 from backend.creator_agent import (
     ActionCapability,
     ActionExecutionStatus,
+    ActionIntent,
     ActionIntentRequest,
+    ActionOrigin,
     ActionResolution,
     ActionResolutionDisposition,
     ActionStatus,
@@ -467,3 +469,84 @@ class TestReceiptsAreAttemptScoped:
         assert record is not None
         assert record.status is EffectStatus.CONFIRMED
         assert record.attempt == 2
+
+
+class TestTheVerificationTelemetry:
+    """P1-B: the control plane records *why* its publish is gated — once.
+
+    The mainline publisher already emits one ``kind:"verification"`` entry
+    before its dispatch; a creator-origin publish goes through this executor and
+    used to leave the audit trail silent. A mainline-origin intent dispatched
+    here would double-count the entry the publisher already wrote, so the
+    executor deliberately stays quiet for that origin.
+    """
+
+    async def test_a_creator_publish_emits_one_verification_entry(self, monkeypatch):
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        recorder = _Recorder()
+        advisor, decision_id = await _advisor(store, recorder)
+        intent = await _confirmed_publish(
+            advisor, decision_id, artifact_ref=ref, content_hash=digest
+        )
+        batches: list[tuple[str, list[dict[str, Any]]]] = []
+
+        async def _emit(thread_id: str, entries: list[dict[str, Any]]) -> int:
+            batches.append((thread_id, entries))
+            return len(entries)
+
+        monkeypatch.setattr("backend.state.events.emit_events", _emit)
+
+        await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        assert len(recorder.requests) == 1
+        assert len(batches) == 1
+        thread_id, entries = batches[0]
+        assert thread_id == THREAD
+        assert [entry["kind"] for entry in entries] == ["verification"]
+        entry = entries[0]
+        assert entry["action"] == "publish"
+        assert entry["account_id"] == ACCOUNT
+        assert entry["thread_id"] == THREAD
+        assert entry["required"] is True
+        assert entry["tier"] == "human"
+        assert entry["reason"] == "critical_risk_floor"
+
+    async def test_a_mainline_publish_does_not_emit_here(self, monkeypatch):
+        """The publisher owns the mainline's one entry; the executor adds none."""
+        store = InMemoryStore()
+        ref, digest = await _stored(store, BODY)
+        recorder = _Recorder()
+        advisor, _ = await _advisor(store, recorder)
+        intent = ActionIntent(
+            action_id="mainline-verification-1",
+            account_id=ACCOUNT,
+            origin=ActionOrigin.MAINLINE,
+            creator_id="",
+            audience_id="",
+            decision_id="mainline:verification-1",
+            action_kind=ActionCapability.PUBLISH,
+            candidate_ids=[],
+            idempotency_key="mainline-publish-verification",
+            status=ActionStatus.CONFIRMED,
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            artifact_ref=ref,
+            content_hash=digest,
+            thread_id=THREAD,
+        )
+        await advisor._repository.create_action(intent)  # noqa: SLF001 - durable seam
+        batches: list[tuple[str, list[dict[str, Any]]]] = []
+
+        async def _emit(thread_id: str, entries: list[dict[str, Any]]) -> int:
+            batches.append((thread_id, entries))
+            return len(entries)
+
+        monkeypatch.setattr("backend.state.events.emit_events", _emit)
+
+        receipt = await advisor.execute_action(ACCOUNT, intent.action_id)
+
+        # The publish really dispatched; it just did not emit *here*.
+        assert len(recorder.requests) == 1
+        assert receipt.status is ActionExecutionStatus.SUCCEEDED
+        assert batches == []

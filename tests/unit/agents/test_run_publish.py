@@ -2439,3 +2439,46 @@ async def test_async_cdp_resolver_runs_off_the_event_loop(monkeypatch):
 
     assert endpoint == "http://10.0.0.9:9223"
     assert ticks_at_return >= 5
+
+
+# ── P1-B: the real publish records *why* it is gated ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_real_publish_emits_exactly_one_verification_entry(_browser_settings, monkeypatch):
+    """P1-B: one ``kind:"verification"`` entry, emitted after the effect claim.
+
+    The entry lets an operator read the policy's verdict instead of inferring it
+    from a gate's presence.  Asserting the emitted *batch* (rather than "an entry
+    exists") is what keeps a second emitter -- e.g. the control-plane executor,
+    which dispatches this same publish -- from double-counting this path.
+    """
+    from backend.agents import publisher as publisher_mod
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_ver"})
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _patch_client(monkeypatch, _mock_client("p_ver"))
+    _mock_history(monkeypatch)
+
+    batches: list[tuple[str, list[dict]]] = []
+
+    async def _emit(thread_id, entries):
+        batches.append((thread_id, entries))
+
+    monkeypatch.setattr(publisher_mod, "emit_events", _emit)
+
+    result = await run_publish(state, store=_real_store())
+
+    assert result["publish_result"]["status"] == "published"
+    # One emission call, one entry: the publish is counted once.
+    assert len(batches) == 1
+    thread_id, entries = batches[0]
+    assert thread_id == "test_session"
+    assert [entry["kind"] for entry in entries] == ["verification"]
+    entry = entries[0]
+    assert entry["action"] == "publish"
+    assert entry["account_id"] == "acc_ver"
+    assert entry["required"] is True
+    assert entry["tier"] == "human"
+    assert entry["reason"] == "critical_risk_floor"

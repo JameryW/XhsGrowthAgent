@@ -902,6 +902,35 @@ class CreatorAdvisor:
                 raise ActionPublishAlreadyAttemptedError(
                     action.action_id, action.account_id, exc.record.status.value
                 ) from exc
+        if action.origin is not ActionOrigin.MAINLINE:
+            # P1-B telemetry, symmetric with the mainline publisher: record *why*
+            # this real publish is gated.  A mainline publish already emits one
+            # such entry in ``publisher._run_publish_attempt`` before dispatch,
+            # so emitting here as well would double-count it; a control-plane
+            # (creator-origin) publish has no other emitter and would otherwise
+            # leave the audit trail silent.  Best-effort by contract: telemetry
+            # must never fail a publish.
+            try:
+                from backend.services.verification_policy import (
+                    ActionRisk,
+                    VerificationInput,
+                    decide,
+                )
+                from backend.state.events import emit_events
+
+                decision = decide(VerificationInput(action="publish", risk=ActionRisk.CRITICAL))
+                await emit_events(
+                    action.thread_id or "",
+                    [
+                        decision.to_event(
+                            action="publish",
+                            account_id=action.account_id,
+                            thread_id=action.thread_id or "",
+                        )
+                    ],
+                )
+            except Exception:  # pragma: no cover - telemetry must not break publishing
+                logger.debug("verification decision not recorded", exc_info=True)
         try:
             outcome = await self._publish(request)
         except Exception:
