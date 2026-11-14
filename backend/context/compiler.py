@@ -21,6 +21,7 @@ from backend.context.models import (
     TrustClass,
 )
 from backend.context.segments import parse_system_segments
+from backend.harness.runtime import get_policy
 
 # Budget trimming pulls from the tail of the stability order (L5 first, then
 # L4); L0-L3 are static context and are never trimmed (info.md D4').
@@ -207,6 +208,11 @@ class ContextCompiler:
             sections[PromptLayer.L3_TASK] = "\n\n".join(
                 part for part in (existing, user_template) if part
             )
+        if budget is None:
+            # An explicit budget (a caller that already knows its limit) always
+            # wins; only the unset case asks the policy.  The default policy
+            # returns None, so today's no-trimming output is unchanged.
+            budget = get_policy().context_budget(phase=run_context.phase)
         return self.compile(
             run_context,
             sections,

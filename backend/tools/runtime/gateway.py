@@ -35,6 +35,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
+from backend.harness.runtime import get_policy, is_default_policy
 from backend.tools.runtime.account_gate import (
     AccountSlot,
     AccountSlotTimeoutError,
@@ -67,6 +68,38 @@ def _gate_key(spec: ToolSpec, data: Mapping[str, Any]) -> str:
     if account:
         return f"{spec.capability}|{account}"
     return spec.capability
+
+
+def _effective_limits(spec: ToolSpec) -> tuple[int | None, float | None]:
+    """Concurrency ceiling and timeout actually applied to one call.
+
+    The default policy returns the spec's own declaration *without* asking the
+    production catalogue: registries are not always the catalogue (tests and
+    embeddings register capabilities it does not know), so a default-policy
+    lookup would raise ``UnknownCapabilityError`` where today's code never
+    looked anything up.  A variant policy is authoritative — its
+    :class:`~backend.harness.policy.ToolLimits` is the complete declaration —
+    but a capability the variant does not describe still falls back to the spec
+    (``UnknownCapabilityError`` is a ``KeyError``).
+    """
+    policy = get_policy()
+    if is_default_policy(policy):
+        return spec.max_concurrency, spec.effective_timeout_s
+    try:
+        limits = policy.tool_limits(spec.capability)
+    except KeyError:
+        return spec.max_concurrency, spec.effective_timeout_s
+    if limits.max_concurrency is not None and limits.max_concurrency < 1:
+        raise ValueError(
+            f"policy tool_limits({spec.capability!r}) declared max_concurrency="
+            f"{limits.max_concurrency!r}; it must be >= 1 or None"
+        )
+    if limits.timeout_s is not None and limits.timeout_s <= 0:
+        raise ValueError(
+            f"policy tool_limits({spec.capability!r}) declared timeout_s="
+            f"{limits.timeout_s!r}; it must be > 0 or None"
+        )
+    return limits.max_concurrency, limits.timeout_s
 
 
 TraceSink = Callable[[Mapping[str, Any]], Awaitable[None]]
@@ -179,18 +212,22 @@ class ToolGateway:
         data = dict(payload or {})
         self._check_scopes(spec, granted_scopes)
         scope_state = _scope_state(spec, granted_scopes)
+        max_concurrency, timeout_s = _effective_limits(spec)
 
         started = time.perf_counter()
         attempts = 0
         last_error = ""
         last_kind: ErrorKind | None = None
         slot: AccountSlot | None = None
-        if spec.max_concurrency:
+        if max_concurrency:
             try:
                 slot = await acquire_account_slot(
                     key=_gate_key(spec, data),
-                    limit=spec.max_concurrency,
-                    wait_timeout_s=spec.effective_timeout_s,
+                    limit=max_concurrency,
+                    # The gate needs a finite wait budget; when a variant removes
+                    # the timeout ("wait as long as needed"), the spec's declared
+                    # ceiling still bounds the queue wait.
+                    wait_timeout_s=timeout_s if timeout_s is not None else spec.effective_timeout_s,
                 )
             except AccountSlotTimeoutError as exc:
                 # The call never started — no side effect anywhere — so this
@@ -213,7 +250,7 @@ class ToolGateway:
             for attempt in range(1, spec.retry_policy.max_attempts + 1):
                 attempts = attempt
                 try:
-                    value = await asyncio.wait_for(entry.fn(data), timeout=spec.effective_timeout_s)
+                    value = await asyncio.wait_for(entry.fn(data), timeout=timeout_s)
                 except DomainOutcome as exc:
                     # The tool has an answer, and the answer *is* the payload —
                     # so this returns immediately instead of joining the retry
@@ -234,7 +271,11 @@ class ToolGateway:
                         scope_state,
                     )
                 except TimeoutError:
-                    last_error = f"timeout after {spec.effective_timeout_s:g}s"
+                    last_error = (
+                        f"timeout after {timeout_s:g}s"
+                        if timeout_s is not None
+                        else "timeout (no policy limit)"
+                    )
                     last_kind = ErrorKind.TIMEOUT
                 except Exception as exc:  # tool failure → normalised, not raised
                     last_error = f"{type(exc).__name__}: {exc}"

@@ -24,6 +24,7 @@ from backend.config.models import (
     TaskType,
     resolve_model_id,
 )
+from backend.harness.runtime import get_policy, is_default_policy, policy_generation
 from backend.models.retry import with_fallback, with_retry
 
 # ChatAnthropic / ChatOpenAI are imported lazily inside _create_model (see
@@ -143,41 +144,84 @@ class ModelRouter:
         self._overrides = routing_overrides
         self._cache: dict[str, BaseChatModel] = {}
 
+    def _candidate_model_ids(self, task_type: TaskType) -> list[str]:
+        """The model chain for ``task_type``, highest priority first.
+
+        The routed id comes from the router's explicit overrides first (so
+        ``ModelRouter({"writing": ...})`` keeps winning), then the active policy.
+        ``MODEL_FALLBACKS`` contributes today's single fallback, and a non-default
+        policy may append escalation targets.  Ids are deduplicated, order kept;
+        unknown ids are deliberately not filtered — ``get_model_config`` raises
+        for them, which is the loud behaviour a typo deserves.
+        """
+        policy = get_policy()
+        overrides = self._overrides or {}
+        primary_id = overrides.get(task_type.value) or policy.route_model(task_type)
+        candidates = [primary_id]
+        fallback_id = MODEL_FALLBACKS.get(primary_id)
+        if fallback_id:
+            candidates.append(fallback_id)
+        for target in policy.escalation_targets(task_type):
+            if target not in candidates:
+                candidates.append(target)
+        return candidates
+
     def get_model(self, task_type: TaskType) -> BaseChatModel:
         """获取任务对应的模型实例（惰性初始化 + 缓存）"""
         from backend.config.models import TASK_TIMEOUT_OVERRIDES, get_model_config
 
-        model_id = resolve_model_id(task_type, self._overrides)
+        candidates = self._candidate_model_ids(task_type)
+        model_id = candidates[0]
+        fallback_id = MODEL_FALLBACKS.get(model_id)
+        # Candidate ids are not filtered: a policy typo must fail loudly instead
+        # of being silently skipped.  Looking the config up validates the id
+        # without building a model, so the fallback itself keeps today's exact
+        # lazy construction below.
+        for candidate in candidates[1:]:
+            if candidate != fallback_id:
+                get_model_config(candidate)
 
         # Use task-specific timeout if configured
         task_timeout = TASK_TIMEOUT_OVERRIDES.get(task_type.value)
-        # Cache key includes timeout to avoid reusing wrong timeout
-        cache_key = f"{model_id}:{task_timeout}" if task_timeout else model_id
+        # Cache key includes timeout to avoid reusing wrong timeout, and the
+        # policy generation so configure_policy()/reset_policy() can never serve
+        # a model built from a superseded routing/escalation decision.
+        base_key = f"{model_id}:{task_timeout}" if task_timeout else model_id
+        cache_key = f"{base_key}:{policy_generation()}"
 
         if cache_key not in self._cache:
-            config = get_model_config(model_id)
-            primary = with_retry(_create_model(config, timeout=task_timeout))
-            fallback_model_id = MODEL_FALLBACKS.get(model_id)
-            if fallback_model_id:
-                fallback_model: BaseChatModel | None = None
 
-                def create_fallback() -> BaseChatModel:
-                    nonlocal fallback_model
-                    if fallback_model is None:
-                        fallback_config = get_model_config(fallback_model_id)
-                        fallback_model = with_retry(
-                            _create_model(fallback_config, timeout=task_timeout)
-                        )
-                    return fallback_model
+            def build(index: int) -> BaseChatModel:
+                """Model at ``index``, with the rest of the chain nested as fallbacks.
 
-                self._cache[cache_key] = with_fallback(
-                    primary,
-                    create_fallback,
-                    primary_model_id=model_id,
-                    fallback_model_id=fallback_model_id,
+                Every model is ``with_retry``-wrapped and every fallback is built
+                lazily (only after the preceding model failed retryably), which
+                is exactly today's single-fallback shape for the default policy.
+                """
+                config = get_model_config(candidates[index])
+                model = with_retry(_create_model(config, timeout=task_timeout))
+                if index + 1 >= len(candidates):
+                    return cast("BaseChatModel", model)
+                next_index = index + 1
+                next_model: BaseChatModel | None = None
+
+                def create_next() -> BaseChatModel:
+                    nonlocal next_model
+                    if next_model is None:
+                        next_model = build(next_index)
+                    return next_model
+
+                return cast(
+                    "BaseChatModel",
+                    with_fallback(
+                        model,
+                        create_next,
+                        primary_model_id=candidates[index],
+                        fallback_model_id=candidates[next_index],
+                    ),
                 )
-            else:
-                self._cache[cache_key] = primary
+
+            self._cache[cache_key] = build(0)
         return self._cache[cache_key]
 
     def get_model_for_task(self, task: str) -> BaseChatModel:
@@ -226,6 +270,17 @@ def _providers_in_use() -> set[ModelProvider]:
             providers.add(get_model_config(fallback_id).provider)
         except Exception:
             continue
+    # A policy may escalate to a stronger model, so its SDK must be importable
+    # before a run starts.  Best-effort like the rest of this function: preload
+    # is an optimization and must never break boot.
+    if not is_default_policy(get_policy()):
+        policy = get_policy()
+        for task in TaskType:
+            try:
+                for target in policy.escalation_targets(task):
+                    providers.add(get_model_config(target).provider)
+            except Exception:
+                continue
     return providers
 
 
