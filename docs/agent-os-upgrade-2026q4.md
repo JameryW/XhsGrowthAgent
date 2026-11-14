@@ -447,3 +447,9 @@ strict 反序列化把决策字段降级成裸字符串；`tests/unit/scripts/te
 仍未完成（裁定/外部项，不变）：路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的
 E2 接线与 E3 的 L1/L2 回放/阈值判定（需产品拍板）；E4 live 端到端 external-only；本地
 `.eval-fixtures/` 仍不存在，E3 的 corpus 检查本地为 SKIP（缺语料是缺口，不是通过）。
+
+**推送与 CI 验证（2026-11-14）**：本轮修复已 rebase 到 origin/main 的 `96bf61f1` 之上并推送
+（`de5ad5cc` telemetry / `43a88329` test / `ae06d01e` eval / `c83ac772` docs / `c49ce79b`
+journal）。CI run **43592668170**（commit `c49ce79b`）的 10 个作业全部 **success**：
+Lint & Format、Mypy、Test (py3.11)、Test (py3.12)、Context Compiler Baseline、
+Harness Benchmarks、Tool Runtime Gate、Compliance Baseline Gate、Frontend、OMP Typecheck。

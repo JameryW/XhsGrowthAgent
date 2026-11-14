@@ -814,6 +814,7 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - 全量 pytest 4990 passed / 14 skipped / 0 failed（5004 collected，222s，1 条环境级 Starlette 弃用警告）。
 - `scripts/ci_local.py --skip-tests`：PASS lint / format / mypy / gates / omp → `local CI parity: OK`。
 - 文档门禁 `tests/unit/scripts` 207 passed；E3 临时语料 `[PASS] corpus 5 fixtures` + `benchmarks F1/F2/F4`，`mode=block red=False`。
+- 已 rebase 到 origin/main `96bf61f1` 并推送（`de5ad5cc`/`43a88329`/`ae06d01e`/`c83ac772`/`c49ce79b`）；CI run **43592668170** 的 10 个作业全部 success。
 
 ### 未做（裁定/外部）
 - 路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的 E2 接线与 E3 L1/L2 回放/阈值需产品拍板；E4 live 端到端 external-only；本地 `.eval-fixtures/` 未生成（eval-gate 仍 SKIP，符合设计）。
