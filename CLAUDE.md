@@ -369,6 +369,7 @@ Deploy using `scripts/deploy.sh` (not manual `podman run`):
 - The script reads `.env` and passes all env vars to containers
 - Postgres container must use `pgvector/pgvector:pg15` image (not `postgres:15`) for vector similarity support
 - Embedding env vars (`XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL`) are passed to the backend container for semantic search
+- `XHS_HARNESS_POLICY` is passed through to the backend container (empty by default) — `deploy.sh` lists container env vars explicitly, so new harness knobs must be added there too
 - `HF_ENDPOINT` (default: `https://hf-mirror.com`) is passed to the backend container for HuggingFace model downloads when using the `local` embedding provider
 - The bge-small-zh-v1.5 model is **baked into the image** as a seed at `/opt/hf-cache-seed` (via `COPY .hf-cache` in the Dockerfile — the `.hf-cache/` dir on the host holds a one-time download; build containers can't reliably reach the HF mirror, so baking is offline). At runtime `HF_HOME=/opt/hf-cache` and the host dir `/test/xhs/.hf-cache` is bind-mounted there. `scripts/container-entrypoint.sh` seeds the mount from the image copy on first run (when the mount is empty), giving zero runtime network dependency + a host-visible, rebuild-persistent cache.
 - Model file locations: host `/test/xhs/.hf-cache/hub/models--BAAI--bge-small-zh-v1.5/`, container mount `/opt/hf-cache` (`HF_HOME`), image seed `/opt/hf-cache-seed`. `.hf-cache/` is gitignored.

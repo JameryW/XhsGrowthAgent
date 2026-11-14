@@ -521,3 +521,5 @@ L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全�
   `HarnessPolicyLoadError` 而非静默回退）；`docs/adaptive-harness-runbook.md` §2 从三项
   检查更新为七项门禁，写明 `record_tool_results.py --seed`、`--tools-corpus` /
   `--metrics` 用法、逐项期望与 SKIP 语义（部署侧照着跑即可复现本轮验证）。
+  `scripts/deploy.sh` 的显式 `-e` 列表补传 `XHS_HARNESS_POLICY`——该脚本不读 env-file，
+  漏传时 `.env` 里的设置不会进入后端容器（`bash -n` 通过）。

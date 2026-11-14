@@ -876,3 +876,4 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - `docs/adaptive-harness-runbook.md` §2 由三项改成七项门禁：补 `record_tool_results.py --seed`、`--tools-corpus` / `--metrics` 用法、逐项期望与 SKIP 语义。
 - 本地 `ci_local.py --skip-tests` 全 PASS（lint / format 720 files / mypy 267 / gates / eval-gate / frontend / omp）；`test_eval_gate` + `test_ci_local` 47 passed。
 - docs-only CI run **43601887947**（commit `92a3972a`）10 个作业 success。
+- 追加发现并修复：`scripts/deploy.sh` 用显式 `-e VAR` 列表传环境变量（不读 env-file），`XHS_HARNESS_POLICY` 漏传会导致 `.env` 设置永远进不了容器 → 已补 `-e XHS_HARNESS_POLICY="${XHS_HARNESS_POLICY:-}"`，`bash -n` 通过；CLAUDE.md 部署段同步说明「新 harness 开关须加进该列表」。
