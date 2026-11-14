@@ -878,3 +878,14 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - docs-only CI run **43601887947**（commit `92a3972a`）10 个作业 success。
 - 追加发现并修复：`scripts/deploy.sh` 用显式 `-e VAR` 列表传环境变量（不读 env-file），`XHS_HARNESS_POLICY` 漏传会导致 `.env` 设置永远进不了容器 → 已补 `-e XHS_HARNESS_POLICY="${XHS_HARNESS_POLICY:-}"`，`bash -n` 通过；CLAUDE.md 部署段同步说明「新 harness 开关须加进该列表」。
 - `.env.example` 补齐 `XHS_EMBED_MODEL/DIMS/BASE_URL`（deploy.sh 一直传，模板缺失）；HYMEMORY_* 故意不进 deploy（镜像只装 `.[browser]`，SDK 未装，需显式 `.[memory-hy]` 才启用），已确认不是漏配。
+
+### 2026-11-14 补充（二）：部署 env 三方对账
+
+[OK] **Completed**
+
+- 机制确认：镜像只 `COPY backend/` + entrypoint + `frontend/dist`，`.dockerignore` 排除 `.env`；容器 env 唯一来源是 `deploy.sh` 的 `-e` 白名单（不是 env-file）。据此对 `.env.example` ↔ `deploy.sh` ↔ backend `os.environ` 读取做全量对账。
+- `deploy.sh` 后端容器补传（均有代码默认值兜底）：`XHS_COOKIE`/`XHS_USER_ID`（单账号回退凭据）、`XHS_BROWSER_ACTION_COOLDOWN_SECONDS`、`XHS_PUBLISH_COOLDOWN_SECONDS`、`XHS_ENGAGEMENT_ACCOUNT_COOLDOWN_SECONDS`、`XHS_QR_LOGIN_COOLDOWN_SECONDS`、`XHS_QR_RISK_BLOCK_SECONDS`、`XHS_CDP_{PUBLISH,ENGAGEMENT,LOGIN}_LOCK_TIMEOUT_S`、`XHS_ALLOW_OUTBOUND_DM`、`XHS_DM_DAILY_LIMIT`、`XHS_COMMENT_REPLY_DAILY_LIMIT`、`CREATOR_STATS_REUSE_TAB_CHANCE`/`MAX_OPEN_PAGES`/`HYGIENE_MAX_CLOSE`、`RIPPLE_LLM_MODEL`、`NOTIFICATION_WEBHOOK_URL`。
+- `.env.example`：删除全仓库无读者的 `IMAGE_GEN_API_KEY`；新增 `XHS_ALLOW_OUTBOUND_DM`/`XHS_DM_DAILY_LIMIT`/`XHS_COMMENT_REPLY_DAILY_LIMIT` 模板行；`XHS_COOKIE`/`XHS_USER_ID` 标注为单账号回退；`HYMEMORY_*` 标注 host/dev-only（镜像不含 `.[memory-hy]` SDK，故意不传）。
+- 新增守卫 `tests/unit/scripts/test_deploy_env.py`（3 tests）：模板 active 键必须在 `-e` 白名单；backend 读取的已文档化键也必须在白名单；host-only 豁免项必须仍在模板中（`HYMEMORY_` 前缀、`CREATOR_STATS_MAX_BODY_VISITS`）。CLAUDE.md 部署段把错误描述「passes all env vars」改成「只转发显式 `-e` 列表，新增键三处同步」，防止同类静默失效。
+- 验证：`test_deploy_env.py` 3 passed、`tests/unit/scripts` 297 passed；`deploy.sh` 用 LF 副本 `bash -n` exit=0（Windows 检出自带 CRLF 是既有事实，非本次改动引入）。
+

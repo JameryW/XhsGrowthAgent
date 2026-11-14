@@ -366,7 +366,7 @@ Required environment variables (see `.env.example`):
 ## Deployment
 
 Deploy using `scripts/deploy.sh` (not manual `podman run`):
-- The script reads `.env` and passes all env vars to containers
+- The script reads `.env` and forwards **only the explicitly listed `-e VAR=...` vars**; `.env` itself is not mounted or copied into the container (`.dockerignore` excludes it), so a key absent from that list is silently inert in production. Every env var backend code reads must therefore also be documented in `.env.example` and added to the `-e` list — `tests/unit/scripts/test_deploy_env.py` enforces the template↔deploy↔code alignment
 - Postgres container must use `pgvector/pgvector:pg15` image (not `postgres:15`) for vector similarity support
 - Embedding env vars (`XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL`) are passed to the backend container for semantic search
 - `XHS_HARNESS_POLICY` is passed through to the backend container (empty by default) — `deploy.sh` lists container env vars explicitly, so new harness knobs must be added there too
