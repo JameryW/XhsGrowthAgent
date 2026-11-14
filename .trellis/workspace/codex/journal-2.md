@@ -826,6 +826,8 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - 验证：`tests/unit/scripts/test_eval_l1.py` **16 passed**（基线干净、预算变体降级为 preference diff、无 variant 偏离必红、空路由/重复 escalation/非确定性必红、缺语料/空语料 SKIP、不可读语料红、gate 集成与 --skip-l1、边界预算与 bool 拒绝）；`tests/unit/scripts` 共 **223 passed**。
 - 实跑：真实语料 5 fixtures → `[PASS] l1: decisions identical to the baseline`；demo 语料 + `phase_budget` 变体 → `l1 preference diff: {"fixture-pub": {"context_budget": {"baseline": null, "current": 4000}}}`，`mode=block red=False`。
 - 文档：eval-plan §3/§4/§5/§6.7 与 agent-os §9.2/§9.3 同步 L1 状态。
+- 提交：`3bc05c4c feat(eval): 实现 E3 L1 决策回放` 已推送；CI run 43596029485 的 10 个作业
+  全部 success。
 - 未做：L2 工具/网关回放需录制的 `ToolResult` 序列（尚未采集）；成本/时延/质量阈值判定属 E4 live 产出。
 
 
