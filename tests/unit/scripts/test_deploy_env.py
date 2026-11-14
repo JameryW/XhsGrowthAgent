@@ -12,6 +12,10 @@ These tests keep the three surfaces aligned:
   * code -> deploy: every key read from `os.environ` by `backend/` that is also
     documented in the template is passed through, so uncommenting a template
     knob cannot quietly do nothing.
+  * frontend build -> template: every `import.meta.env`/`process.env` knob read
+    by the Vite build is documented (as a commented default), because
+    `deploy.sh` builds the frontend on the host and these values bake into
+    `dist/` — undocumented ones are invisible to operators.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE = ROOT / ".env.example"
 DEPLOY = ROOT / "scripts" / "deploy.sh"
 BACKEND = ROOT / "backend"
+FRONTEND = ROOT / "frontend"
 
 # Host/dev only: the deploy image installs `.[browser]`, not `.[memory-hy]`, so
 # the SDK is absent inside the container and passing these would only produce a
@@ -84,6 +89,22 @@ def _is_host_only(key: str) -> bool:
     return key in HOST_ONLY_KEYS or key.startswith(HOST_ONLY_PREFIXES)
 
 
+def _frontend_env_names() -> set[str]:
+    """Env names the Vite build reads (import.meta.env.* and process.env.*)."""
+    sources = [FRONTEND / "vite.config.ts", FRONTEND / "index.html"]
+    sources.extend((FRONTEND / "src").rglob("*.ts"))
+    sources.extend((FRONTEND / "src").rglob("*.vue"))
+    names: set[str] = set()
+    for path in sources:
+        if not path.is_file() or "node_modules" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        names.update(re.findall(r"import\.meta\.env\.([A-Z][A-Z0-9_]*)", text))
+        names.update(re.findall(r"process\.env\.([A-Z][A-Z0-9_]*)", text))
+    # Vite injects these itself; they are not operator-facing knobs.
+    return names - {"MODE", "DEV", "PROD", "SSR", "BASE_URL"}
+
+
 def test_active_template_keys_are_passed_to_container() -> None:
     active, _ = _template_keys()
     deploy = _deploy_keys()
@@ -114,4 +135,15 @@ def test_host_only_allowlist_stays_documented() -> None:
     assert not stale, f"host-only allowlist references undocumented keys: {stale}"
     assert any(k.startswith(HOST_ONLY_PREFIXES) for k in documented), (
         "HYMEMORY_* entries disappeared from .env.example; drop the allowlist if intentional"
+    )
+
+
+def test_frontend_build_time_knobs_are_documented() -> None:
+    """Vite bakes these into dist/ on the host; operators must be able to find them."""
+    active, commented = _template_keys()
+    documented = active | commented
+    missing = sorted(_frontend_env_names() - documented)
+    assert not missing, (
+        "frontend reads these build-time env knobs, but `.env.example` does not document "
+        f"them (commented defaults count): {missing}"
     )

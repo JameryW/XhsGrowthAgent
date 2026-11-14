@@ -379,7 +379,7 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 
 > 目的：让「所有剩余任务」可审计——哪些能本地跑、哪些是决策/外部/环境依赖。
 > 本轮已在本地逐项核对 CI（**下表计数为 2026-11-01 时点**）；
-> 2026-11-14 复核：**5116 passed / 14 skipped / 0 failed**，见 §9.3 / §9.4。
+> 2026-11-14 复核：**5117 passed / 14 skipped / 0 failed**，见 §9.3 / §9.4。
 
 ### 9.1 CI 作业本地核对矩阵
 
@@ -387,7 +387,7 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 |---|---|---|
 | Lint & Format | `ruff check` + 改动文件 `ruff format --check` | ✅ 绿（2026-11-14 复核：`ruff check backend tests scripts` 全绿；LF 归一 format 709 个 tracked `.py` 全绿，早期记录的 CRLF 假阳性未复现） |
 | Mypy | `mypy --python-version 3.12 backend`（本地 numpy 2.5.1 stub 与 `python_version=3.11` 冲突） | ✅ 267 source files，0 issues（2026-11-14 复核：E2 接线新增 `backend/harness/runtime.py` 后 266→267） |
-| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped（2026-11-01 时点）；**2026-11-14 复核 5116 passed / 14 skipped / 0 failed**；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
+| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped（2026-11-01 时点）；**2026-11-14 复核 5117 passed / 14 skipped / 0 failed**；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
 | Context Compiler Baseline | `python scripts/benchmarks/context_compiler_baseline.py --compare --drift-pct 5` | ✅ drift within threshold |
 | Harness Benchmarks | `python scripts/benchmarks/harness_benchmarks.py` | ✅ pass=3 fail=0 skip=3（F5/F7/F8 是文档化缺口） |
 | Tool Runtime Gate | `python scripts/gates/tool_runtime_gate.py` | ✅ P1c-S5 OK |
@@ -421,7 +421,7 @@ E4 的 live 端到端仍 external-only（需部署侧凭据、测试账号窗口
 
 | 项 | 2026-11-14 实测 | 说明 |
 |---|---|---|
-| 全量 pytest | **5116 passed / 14 skipped / 0 failed**（5130 collected，308s） | §9.1 的 4800/14 与 journal 的 4979/11 均为历史快照（后者带 PG parity）；3 项 PG parity、11 项 Windows symlink 为环境 skip；较 2026-11-14 早先的 5006 增加 110 条：E2 接线 36 + L2 23 + 阈值 40 + gate 集成 8 + 部署 env 守卫 3 |
+| 全量 pytest | **5117 passed / 14 skipped / 0 failed**（5131 collected，262s） | §9.1 的 4800/14 与 journal 的 4979/11 均为历史快照（后者带 PG parity）；3 项 PG parity、11 项 Windows symlink 为环境 skip；较 2026-11-14 早先的 5006 增加 111 条：E2 接线 36 + L2 23 + 阈值 40 + gate 集成 8 + 部署/前端 env 守卫 4 |
 | Lint / Format | `ruff check backend tests scripts` 全绿；LF 归一 `ruff format --check`（709 个 tracked `.py`）全绿 | 早期记录的 CRLF 假阳性未复现 |
 | Mypy | `mypy --python-version 3.12 backend` → 266 source files，0 issues | 直接 `mypy backend` 仍只被本地 numpy 2.5.1 stub 的 PEP-695 语法卡住（环境） |
 | Gates | context baseline `drift within threshold`；harness `pass=3 fail=0 skip=3`；tool runtime / compliance OK | F5/F7/F8 仍为记录在案缺口，不当通过 |
@@ -538,9 +538,13 @@ L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全�
   删除全仓库无读者的 `IMAGE_GEN_API_KEY`；`HYMEMORY_*` 明确标注为 host/dev-only（镜像只装
   `.[browser]`，不含 `.[memory-hy]` 的 SDK），`.env.example` 顶部说明与 CLAUDE.md
   Deployment 段同步改准（原文「passes all env vars」是错的）。新增
-  `tests/unit/scripts/test_deploy_env.py`（3 tests）作为守卫：模板中的 active 键必须在
+  `tests/unit/scripts/test_deploy_env.py`（4 tests）作为守卫：模板中的 active 键必须在
   `-e` 白名单里（host-only 前缀 `HYMEMORY_` 与已废弃的 `CREATOR_STATS_MAX_BODY_VISITS`
   显式豁免），且 backend `os.environ` 读取的已文档化键也必须被传——防止下一次「文档有、
-  容器没有」的静默失效。deploy.sh 语法用 LF 副本 `bash -n` 验证（Windows 检出为 CRLF，
-  属既有事实、非本次引入）。本地全量回归 **5116 passed / 14 skipped / 0 failed**（5130
-  collected，+3 守卫用例）；推送后 CI run **43606998996**（`42fa2af1`）10 个作业 success。
+  容器没有」的静默失效。同一守卫再补一条前端构建面：Vite 在 host 上读取的
+  `VITE_BACKEND_PROXY_TARGET` / `VITE_QUALITY_CONSISTENCY_V2` / `VITE_TELEMETRY_ENDPOINT`
+  必须在 `.env.example` 文档化（注释默认值即算），因为 `deploy.sh` 在 host 构建 `dist/`、
+  这些值会烘进产物而容器运行时读不到。deploy.sh 语法用 LF 副本 `bash -n` 验证（Windows
+  检出为 CRLF，属既有事实、非本次引入）。本地全量回归 **5117 passed / 14 skipped /
+  0 failed**（5131 collected，+4 守卫用例）；推送后 CI run **43606998996**（`42fa2af1`）
+  10 个作业 success。

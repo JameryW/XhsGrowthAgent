@@ -890,3 +890,16 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - 验证：`test_deploy_env.py` 3 passed、`tests/unit/scripts` 297 passed；`deploy.sh` 用 LF 副本 `bash -n` exit=0（Windows 检出自带 CRLF 是既有事实，非本次改动引入）。
 - 全量回归 **5116 passed / 14 skipped / 0 failed**（5130 collected）；`ci_local.py --skip-tests` 全 PASS。提交 `42fa2af1` 已推送，CI run **43606998996** 10 个作业 success。
 
+### 2026-11-14 补充（三）：前端构建期 env 文档化 + 守卫扩展
+
+[OK] **Completed**
+
+- 继续同一类「文档漏配」排查前端构建面：Vite 只在两处读环境变量——`frontend/vite.config.ts` 的 `process.env.VITE_BACKEND_PROXY_TARGET`（dev server 代理，默认 `http://localhost:8000`）和 `frontend/src` 的 `import.meta.env.VITE_QUALITY_CONSISTENCY_V2`（默认 `1`）、`VITE_TELEMETRY_ENDPOINT`（默认空 = 关闭遥测）；排除 Vite 内置 `MODE/DEV/PROD/SSR/BASE_URL`。三者此前均未在 `.env.example` 文档化。
+- 机制：`deploy.sh` 在 `set -a; source .env` 之后于 host 跑 `npm run build`，因此这些值会烘进 `frontend/dist`（容器运行时读不到）——属于「host-only 构建期开关」，需要文档化而不是加进 `-e` 白名单。
+- `.env.example` 新增「前端构建期（host-side build only）」小节：三条注释默认值 + 各自说明（代理仅 dev、质量一致性开关默认 1、遥测留空即关闭）。
+- `CLAUDE.md` Environment Setup 增一条，说明 `VITE_*` 是 host-only、由同一守卫测试覆盖。
+- 守卫扩展：`tests/unit/scripts/test_deploy_env.py` 增 `_frontend_env_names()`（正则扫 `frontend/src/**/*.ts|vue` + `vite.config.ts` + `index.html`）与 `test_frontend_build_time_knobs_are_documented`（documented = active ∪ commented），共 4 tests。
+- 顺带修正 `docs/adaptive-harness-eval-plan.md` 顶部状态段的历史残留「E2/E3 未接线生产默认」：E2 已接线（默认策略逐字节等价，`XHS_HARNESS_POLICY` 注入），E3 L1/L2/阈值离线门禁已落地，E4 live 仍 external-only。
+- 验证：`test_deploy_env.py` 4 passed；ruff check / format 通过；全量回归 **5117 passed / 14 skipped / 0 failed**（5131 collected，262s）；`ci_local.py --skip-tests` 全 PASS。
+
+

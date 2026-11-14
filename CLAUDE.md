@@ -362,6 +362,7 @@ Required environment variables (see `.env.example`):
 - `POSTGRES_URI`, `REDIS_URI` — Production persistence
 - `XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL` — Memory store semantic search (optional; defaults to `openai:text-embedding-3-small`, 1536 dims). Use `local:BAAI/bge-small-zh-v1.5` with `XHS_EMBED_DIMS=512` for on-device CPU embedding (no API key needed; requires `langchain-huggingface` + `sentence-transformers`)
 - `XHS_HARNESS_POLICY` — optional `module:factory` HarnessPolicy override for model routing / per-phase context budget / tool limits / escalation (E2). Unset = built-in `DefaultHarnessPolicy`, byte-identical to legacy behaviour; an invalid spec raises `HarnessPolicyLoadError` on first use instead of silently falling back
+- `VITE_BACKEND_PROXY_TARGET`, `VITE_QUALITY_CONSISTENCY_V2`, `VITE_TELEMETRY_ENDPOINT` — frontend build-time knobs. `scripts/deploy.sh` runs `npm run build` on the host and bakes them into `frontend/dist`, so they are host-only and never read inside the container; documented as commented defaults in `.env.example` (guarded by the same test file with the env parity checks)
 
 ## Deployment
 

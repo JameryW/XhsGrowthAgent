@@ -1,8 +1,10 @@
 # Adaptive Harness 评测集方案（提案 → 已拍板，E1/E2/E3 + E4 裁判已交付）
 
-> **状态：E1（语料抽取）、E2（策略接口）、E3（离线 A/B 门禁）、E4 质量裁判
-> （LLM-as-judge + 预算护栏）已交付；E2/E3 未接线生产默认；E4 的 live 端到端执行
-> 仍是 external-only（需真实平台凭据与测试账号授权窗口）。**
+> **状态：E1（语料抽取）、E2（策略接口与生产接线）、E3（L1/L2/阈值离线门禁）、
+> E4 质量裁判（LLM-as-judge + 预算护栏）已交付。E2 默认 `DefaultHarnessPolicy`
+> 与旧行为逐字节等价，自定义策略经 `XHS_HARNESS_POLICY` 注入；E3 门禁需本地语料
+> （`.eval-fixtures`/`.eval-tool-corpus`）与可选 metrics 文件。E4 的 live 端到端
+> 执行仍是 external-only（需真实平台凭据与测试账号授权窗口）。**
 > 关联：`docs/agent-os-upgrade-2026q4.md` 路线图 10（P3 = Adaptive Harness + A/B 门禁）、
 > §8 Harness Benchmarks、§9 剩余工作清单。
 
