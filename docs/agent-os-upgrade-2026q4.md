@@ -514,3 +514,10 @@ L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全�
   origin/main；CI run **43601364293**（commit `082b5602`）的 10 个作业全部 **success**：
   Lint & Format、Mypy、Test (py3.11)、Test (py3.12)、Context Compiler Baseline、
   Harness Benchmarks、Tool Runtime Gate、Compliance Baseline Gate、Frontend、OMP Typecheck。
+  记录本轮 CI 的 docs-only 提交 `92a3972a` 亦为 run **43601887947** 10 个作业 success。
+
+- **部署面文档**：`.env.example` 与 `CLAUDE.md` 的 Environment Setup 补齐
+  `XHS_HARNESS_POLICY`（留空 = `DefaultHarnessPolicy`、`module:factory` 注入、坏 spec 抛
+  `HarnessPolicyLoadError` 而非静默回退）；`docs/adaptive-harness-runbook.md` §2 从三项
+  检查更新为七项门禁，写明 `record_tool_results.py --seed`、`--tools-corpus` /
+  `--metrics` 用法、逐项期望与 SKIP 语义（部署侧照着跑即可复现本轮验证）。

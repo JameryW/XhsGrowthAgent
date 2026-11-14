@@ -867,3 +867,12 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 
 - 已无可本地执行的剩余项：E1–E3（含 L1/L2/阈值）、E2 接线、E4 裁判/预算/计划门闸全部落地并验证；仅 E4 live 端到端 external-only，路线图 8 继续裁定不建。
 - 提交：`35a10a78` E2 接线、`7fb3dad8` L2+阈值+gate、`082b5602` 文档；已推送 origin/main。CI run **43601364293**（commit `082b5602`）10 个作业全部 success。
+
+### 2026-11-14 补充：部署文档同步
+
+[OK] **Completed**
+
+- `.env.example` / `CLAUDE.md` Environment Setup 补 `XHS_HARNESS_POLICY`（留空=默认策略；`module:factory` 注入；坏 spec 抛 `HarnessPolicyLoadError`，不静默回退）。
+- `docs/adaptive-harness-runbook.md` §2 由三项改成七项门禁：补 `record_tool_results.py --seed`、`--tools-corpus` / `--metrics` 用法、逐项期望与 SKIP 语义。
+- 本地 `ci_local.py --skip-tests` 全 PASS（lint / format 720 files / mypy 267 / gates / eval-gate / frontend / omp）；`test_eval_gate` + `test_ci_local` 47 passed。
+- docs-only CI run **43601887947**（commit `92a3972a`）10 个作业 success。

@@ -31,16 +31,37 @@ python scripts/eval/extract_fixtures.py \
 
 ## 2. 跑离线门禁（先确认基线没坏）
 
+门禁现在有七项检查（corpus / policy / l1 / l2 / thresholds / variant / benchmarks）。
+l1、l2 各自读本地产物；thresholds 只有你提供 live 指标时才有值，否则显式 SKIP。
+
 ```bash
 RECORDED_DIGEST="<第 1 步记下的 manifest 指纹>"
-python scripts/eval/run_gate.py            # report-only
+
+# 工具回放语料：先用 seed 生成 5 个边界 case（成功/timeout/domain/异常/结果未知）
+python scripts/eval/record_tool_results.py --seed --out .eval-tool-corpus
+
+python scripts/eval/run_gate.py            # report-only（缺语料/缺指标会 SKIP 而不是红）
 python scripts/eval/run_gate.py --fail-on-red \
     --expect-manifest-sha256 "$RECORDED_DIGEST"   # 想让它阻断 + 核对 out-of-band 指纹
+python scripts/eval/run_gate.py --fail-on-red \
+    --tools-corpus .eval-tool-corpus \
+    --metrics .eval-tmp/live-metrics.json         # live 指标到位后连同阈值一起阻断
 ```
 
-期望：`corpus` pass（哈希完整、非空、`redaction_version`/`extractor_version` 与当前一致且
-`manifest.sha256` 存在——旧语料会被判红，重跑第 1 步即可）、`policy` pass、
-`benchmarks` F1/F2/F4 状态为 PASS。
+期望：
+
+- `corpus` pass（哈希完整、非空、`redaction_version`/`extractor_version` 与当前一致且
+  `manifest.sha256` 存在——旧语料会被判红，重跑第 1 步即可）；
+- `policy` pass、`l1` 决策与基线一致；
+- `l2` pass：每个 case 的 ToolResult 分类、唯一 invoke 回执、`EffectLedger` 终态
+  （ok→CONFIRMED、timeout→UNKNOWN、异常/domain→FAILED）与 `blocks_retry` 都与录制一致，
+  且两次回放确定；语料缺失或为空时 SKIP（不会假装通过）；
+- `thresholds`：`--metrics` 给出 live 产物后，token/调用漂移 ≤5%、p50/p95 退化 ≤10%、
+  judge 一致性 ≥0.8 才 PASS；无 `--metrics` 或基线为 0 / 缺 judge 数据时 SKIP；
+- `benchmarks` F1/F2/F4 状态为 PASS。
+
+`--skip-l2` / `--skip-thresholds` 只用于明确知道这两项不适用时显式跳过（输出里会记为 SKIP，
+不是静默略过）。
 
 ## 3. 校验 live 计划（授权门闸，不花钱）
 

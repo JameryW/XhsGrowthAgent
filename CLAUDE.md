@@ -361,6 +361,7 @@ Required environment variables (see `.env.example`):
 - `RIPPLE_BASE_URL`, `RIPPLE_API_TOKEN` — Ripple CAS engine
 - `POSTGRES_URI`, `REDIS_URI` — Production persistence
 - `XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL` — Memory store semantic search (optional; defaults to `openai:text-embedding-3-small`, 1536 dims). Use `local:BAAI/bge-small-zh-v1.5` with `XHS_EMBED_DIMS=512` for on-device CPU embedding (no API key needed; requires `langchain-huggingface` + `sentence-transformers`)
+- `XHS_HARNESS_POLICY` — optional `module:factory` HarnessPolicy override for model routing / per-phase context budget / tool limits / escalation (E2). Unset = built-in `DefaultHarnessPolicy`, byte-identical to legacy behaviour; an invalid spec raises `HarnessPolicyLoadError` on first use instead of silently falling back
 
 ## Deployment
 
