@@ -57,13 +57,28 @@
 > 两次回放必须一致（非确定性策略判红）。与基线的任何差异按 fixture **逐字段**报告为
 > preference diff（不判红，这正是 A/B 要看的证据）；未传 `--variant` 却偏离基线判红
 > （基线回放必须与自身一致）。依赖语料：无 `.eval-fixtures/` 时该检查显式 **SKIP**
-> （与 corpus 检查同一口径，缺语料不是通过）。**仍未实现**：L2 工具/网关回放（需要录制的
-> `ToolResult` 序列）与 §4 的成本/时延/质量阈值判定。
+> （与 corpus 检查同一口径，缺语料不是通过）。**L2 与阈值判定已于同日后续轮次实现**
+> （见 §3 L2 段与 §4 实现状态）。
 
 ### L2 工具/网关回放
 - 输入：录制的 `ToolResult` 序列（成功 / timeout / domain 失败 / 结果未知）。
 - 断言：结果分类、回执、账本状态与基线一致（复用 `harness_benchmarks` 的注入故障思路）。
 - 判据：分类与账本状态 100% 一致——这是安全线，不做"统计上更好"的妥协。
+
+> **实现状态（2026-11-14）**：已实现 —— `scripts/eval/tool_replay.py`（回放器）、
+> `scripts/eval/record_tool_results.py`（录制器）、E3 的 `l2` 检查。语料 = manifest（逐 case
+> sha256）+ `tool-case-*.json`；每个 case 声明 capability/`ToolSpec`/payload/**逐 attempt 脚本**
+> （value / timeout / exception / domain）/expected 分类（ok、error_kind、attempts、degraded、
+> domain_reason、error 子串）/**ledger 期望**（initial、expected + `blocks_retry`）。
+> 回放走**真实** `ToolGateway`（注入式 registry + 脚本化工具），校验 `ToolResult` 分类、
+> 唯一的 `invoke` trace 回执、`EffectLedger` 终态（ok→CONFIRMED、timeout→UNKNOWN、
+> exception/domain→FAILED）与 blocking 语义；每个 case 回放两次，除 `elapsed_ms` 外规范化
+> 回执必须一致（非确定性判红）。语料缺失/空 manifest → **SKIP**（缺口不是通过）；manifest
+> 非法、sha 不符、未列入 JSON、duplicate 条目、缺文件、分类/回执/账本不符 → **红**。
+> 录制器可 `--seed` 生成 5 个边界 case（成功 / 超时耗尽重试 / 重试后降级成功 / domain 单次
+> 不重试 / exception 重试），也可 `--sqlite-path` 从真实 checkpoint 的 messages 抽取
+> （无可分类记录时写空 manifest 并如实报告，不伪造通过）。测试
+> `tests/unit/scripts/test_eval_l2.py` **23 passed**。
 
 ### L3 端到端 A/B（可选，需预算与真实账号）
 - 输入：小样本 workflow（真实或沙箱账号），按变体分流。
@@ -80,19 +95,25 @@
 | 质量 | L3 rubric 或 LLM judge 双盲一致性 | ≥ 0.8（若启用 judge） |
 | 安全 | 审批门/账本语义不可变 | 结构测试 + claim 扫描，任一变化即 FAIL |
 
-> **实现状态（诚实标注，2026-11-14 更新）**：**L1 决策回放已实现**（见 §3 的 L1 段与
-> §6.7 的 `l1` 检查：按 fixture 回放四个决策、强制不变量、确定性与基线 preference diff）。
-> 但上表的**成本/时延/质量阈值判定与 L2 工具/网关回放仍未实现**；E3 仍按 §6.7 执行
-> corpus / policy / variant / benchmarks 四项既有门禁，阈值计算属于 E4 live 实验
-> （外部执行）的产出。
+> **实现状态（诚实标注，2026-11-14 更新）**：**L1 决策回放、L2 工具/网关回放与 §4 的
+> 成本/时延/质量阈值判定均已实现**（L1/L2 见 §3 各段；阈值见
+> `scripts/eval/thresholds.py` + E3 的 `thresholds` 检查）：阈值模块按
+> `ThresholdConfig`（cost_drift_pct=5、p50/p95 不劣化 10%、quality_min_agreement=0.8）
+> 逐维度判定——token/调用漂移、p50/p95 退化、judge 一致性；**baseline 为 0 的维度
+> 显式 SKIP**（无法计算漂移），**无 judge 数据时质量维度显式 SKIP 而不判红**（live 产出
+> 才能填），坏 metrics 文件 → 红。E3 现有 corpus / policy / l1 / l2 / thresholds /
+> variant / benchmarks **七项门禁**；阈值与 L2 需要的真实数据分别来自 E4 live 实验
+> （外部执行）与工具序列录制（`record_tool_results.py`）。**仍未做**：E4 live 端到端
+> （external-only，需部署侧凭据/测试账号窗口/真实费用）。
 
 ## 5. 分阶段落地（每阶段独立票）
 
 1. **E1 数据集框架**：checkpoint → fixture 抽取脚本、fixture 目录与 schema 校验（离线）。
 2. **E2 变体接口**：把上面四个决策点抽成可注入策略对象，默认实现 = 现行行为，**无行为变化**。
 3. **E3 A/B 门禁脚本**：跑 L1/L2 + 阈值判定，接入 `scripts/ci_local.py` 与 CI（可单独 job）。
-   *实际交付范围：corpus 完整性 / **L1 决策回放（2026-11-14 补）** / policy 快照 / variant diff /
-   harness benchmarks 五项门禁；L2 回放与阈值判定尚未实现（见 §4 实现状态说明）。*
+   *实际交付范围：corpus 完整性 / **L1 决策回放（2026-11-14 补）** / **L2 工具回放（同日）** /
+   **阈值判定（同日）** / policy 快照 / variant diff / harness benchmarks 七项门禁；E4 live
+   端到端仍 external-only。*
 4. **E4 L3 小样本**：需要真实账号/预算，单独审批后再做。
 
 ## 6. 需要拍板的问题（阻塞 E1/E2）
@@ -134,7 +155,7 @@ runbook 推荐的 `--phases reviewing,publishing` 在本地当前得到 **0 条*
 而不是「无数据可抽」。E3 的 corpus 检查在本地仍是 **SKIP**（缺语料是缺口，不是通过）；
 E1 自身的正确性由 26 个种子库测试覆盖。
 
-## 6.6 E2 已交付：可注入策略接口（票 5ce，未接线）
+## 6.6 E2 已交付并接线：可注入策略接口（票 5ce）
 
 `backend/harness/policy.py`（+ `backend/harness/__init__.py`）：
 
@@ -148,10 +169,32 @@ E1 自身的正确性由 26 个种子库测试覆盖。
 - `HarnessPolicy` 是 `runtime_checkable` Protocol；`describe(policy)` 输出**可 JSON 序列化
   的决策快照**（models / context_budget / escalation / tool_limits），E3 用它做 baseline
   与 variant 的 diff。
-- **未接线**：生产代码没有任何调用点使用这个接口，因此默认行为零变化。接线（默认值是否
-  允许被变体替换）依赖提案第 6 节问题 5/6 的拍板。
-- 测试：`tests/unit/harness/test_policy.py` 9 passed，逐项对比 router/目录的当前答案，
-  并钉住"未知名能力必须拒绝而不是编造"以及 snapshot 的 diff 行为。
+- **已接线（2026-11-14）**：`backend/harness/runtime.py` 持有「本进程用哪个策略」——
+  `get_policy()` 的解析顺序是 `configure_policy()` 显式注入 → 环境变量
+  `XHS_HARNESS_POLICY=module:factory`（惰性导入并缓存，坏 spec 抛
+  `HarnessPolicyLoadError(ValueError, RuntimeError)` 而不是静默回退）→
+  `DefaultHarnessPolicy`；`policy_generation()` 在每次 configure/reset 时自增，缓存派生
+  决策的调用方把它写进 cache key。四个决策点的生产读取方：
+  - **模型路由**：`ModelRouter._candidate_model_ids` = 显式 overrides → `policy.route_model`
+    → `MODEL_FALLBACKS` → `policy.escalation_targets`（去重）；`get_model` 用
+    `with_fallback` 惰性嵌套成链（默认策略仍是今天「主模型 + 可选单级兜底」的同一形状），
+    cache key 追加 `policy_generation()`；escalation 目标在 `get_model` 时用
+    `get_model_config` 先校验（配置查表而非建模型），`_providers_in_use` 对非默认策略
+    best-effort 预载升级目标的 provider。
+  - **上下文预算**：`ContextCompiler.compile_prompt` 仅在 `budget is None` 时问
+    `policy.context_budget(phase=run_context.phase)`；显式传入的 budget 总是优先，默认策略
+    返回 `None` 所以输出逐字节不变。
+  - **工具并发/超时**：`ToolGateway._effective_limits` 对**默认策略完全不查目录**（直接
+    用 `ToolSpec` 声明，保持自定义 registry/测试注册的既有语义），非默认策略的
+    `tool_limits(capability)` 生效；未知能力（`KeyError`/`UnknownCapabilityError`）回退
+    spec；非法 limits（并发 <1、超时 ≤0）抛 `ValueError` 并点名能力。生效值同时驱动
+    account 并发槽、`asyncio.wait_for` 与 timeout 文案；重试/幂等/trace 语义不变。
+  - **升级/降级**：由路由链的 escalation 目标承载（默认 `()`，即没有升级）。
+- 行为等价性有测试守护：`tests/unit/harness/test_policy.py` 9 passed（逐项对比默认答案）
+  + `tests/unit/harness/test_runtime.py` **36 passed**（默认策略等价快照、env 注入与坏
+  spec、reset/generation、`is_default_policy`、router 候选链/路由/缓存代际、compiler
+  预算优先级、gateway 默认声明不变与变体超时生效），并跑通
+  `tests/unit/models tests/unit/context tests/unit/tools tests/unit/harness` **770 passed**。
 
 ## 6.7 E3 已交付：离线 A/B 门禁（票 5cf，默认只报告）
 
@@ -162,6 +205,8 @@ E1 自身的正确性由 26 个种子库测试覆盖。
 | `corpus` | `.eval-fixtures/` 缺失 → **SKIP**（缺语料是缺口，不是通过）；**空语料（0 fixture）→ 红**；manifest schema / `redaction_version` / `extractor_version` 不符 → 红；`manifest.sha256` 缺失且未给 `--expect-manifest-sha256` → 红；指纹不匹配 → 红；传 `--expect-manifest-sha256` 与该值不符 → 红（out-of-band 才能发现"fixture+manifest+指纹成对重写"）；出现未列入 manifest 的 `*.json` → 红；文件 sha256 不匹配、fixture 的 `state_sha256` 重算不符 → 红 |
 | `policy` | `describe()` 必须覆盖四个决策点（快照含 `context_budgets` 逐 phase 采样，阶段专属预算的变体也可见）；每个 TaskType 的模型 id 必须是**非空字符串**；`context_budget` 与每个 phase 预算为 None 或非负整数；`escalation` 必须是「任务 → 非空字符串列表」；`tool_limits` 条目的 `capability` 非空、`max_concurrency` 为 None 或 ≥0 的 int、`timeout_s` 为 None 或 >0；快照可 JSON 序列化 |
 | `l1` | 逐 fixture 回放四个决策（model 路由 / 该 phase 的 context budget / escalation / tool limits）：**强制不变量**（路由非空、预算 None 或非负 int、escalation 非空且不重复、tool limits 形状、JSON 可序列化）任一违反 → 红；**两次回放不一致**（非确定性策略）→ 红；与基线的差异按 fixture 逐字段进 `l1_diff`（preference，不判红）；未传 `--variant` 却偏离基线 → 红。语料缺失 → **SKIP**（缺语料是缺口，不是通过）；`--skip-l1` 显式 SKIP |
+| `l2` | 逐 case 把录制的 `ToolResult` 脚本喂给**真实** `ToolGateway`：结果分类（ok/error_kind/attempts/degraded/domain_reason）、`invoke` trace 回执、`EffectLedger` 终态与 `blocks_retry` 必须与 case 期望 100% 一致；两次回放（除 `elapsed_ms`）必须一致。语料缺失/空 manifest → **SKIP**；manifest 非法/sha 不符/未列入 JSON/duplicate/缺文件/分类或回执或账本不符/非确定 → 红；`--skip-l2` 显式 SKIP |
+| `thresholds` | 读 `--metrics` 的 baseline/current 指标：token 漂移、调用次数漂移 ≤ `cost_drift_pct=5%`，p50/p95 退化 ≤ 10%，judge 一致性 ≥ 0.8；任一维度超线 → 红。没给 `--metrics` / `--skip-thresholds` → **SKIP**；metrics 文件坏 → 红；baseline 为 0 的漂移维度与无 judge 数据的质量维度**显式 SKIP 不判红**（不可计算 ≠ 通过） |
 | `variant` | 仅在显式 `--variant module:factory` 时运行；输出**决策 diff**（差异是 A/B 的目的，不算红）；**决策完全相同 → 红**（多半是工厂返回了默认策略，属于接线错误）；变体坏了（空路由/describe 抛错）也红 |
 | `benchmarks` | 真实跑 `harness_benchmarks.py`：F1/F2/F4 必须**状态为 PASS**（仅仅存在不算），任何 FAIL 或未知状态红；F5/F7/F8 若仍 SKIP 则作为缺口列出（缺口后来实现成 PASS 不算失败） |
 
@@ -172,16 +217,25 @@ E1 自身的正确性由 26 个种子库测试覆盖。
   A/B-only 姿态，最终拍板后如需改默认再单独接线）。
 - 接入本地 runner：`python scripts/ci_local.py --only eval-gate`；该 job 在无 `.eval-fixtures/`
   时显式 SKIP，有语料时以 `--fail-on-red` 运行（CI 无法提供本地语料，故不进 GitHub workflow）。
+  `l2` 默认读 `.eval-tool-corpus/`（可用 `--tools-corpus` 覆盖；`record_tool_results.py --seed`
+  可生成本地语料），`thresholds` 需要显式 `--metrics`（live 实验产物），两者缺失时显式 SKIP。
 - 副作用（如实记录）：不跳过 benchmarks 时，`run_gate.py` 会把 harness 输出写到仓库内
   `.eval-tmp/`（gitignored）——沙箱禁止管道 stdio，用文件重定向是刻意设计，不是"只读门禁
   却在写仓库"的缺陷。
-- 测试：`tests/unit/scripts/test_eval_gate.py` 29 passed（覆盖面：空语料/旧脱敏或抽取器
+- 测试：`tests/unit/scripts/test_eval_gate.py` **37 passed**（覆盖面：空语料/旧脱敏或抽取器
   版本/未列出 JSON/篡改 hash/缺失指纹必红、policy 类型与逐 phase 预算校验、F1 SKIP 必红、
-  决策相同的 variant 必红、report/block 两个 CLI 姿态、真实 variant 注入）；
+  决策相同的 variant 必红、report/block 两个 CLI 姿态、真实 variant 注入，以及 l2/thresholds
+  集成：seed 语料绿、篡改 tool case 红、缺 tools 语料 SKIP、metrics PASS/FAIL、坏 metrics 红、
+  无 metrics 显式 SKIP、两个 skip 标志）；
   `tests/unit/scripts/test_eval_l1.py` **16 passed**（L1：基线回放干净、预算变体降级为
   preference diff、无 `--variant` 偏离基线必红、空路由/重复 escalation/非确定性必红、
   缺语料 SKIP、空语料 SKIP、不可读语料红、gate 集成与 `--skip-l1` 姿态）；
-  `tests/unit/scripts/test_ci_local.py` 覆盖无语料 SKIP / 有语料带 `--fail-on-red` 运行。
+  `tests/unit/scripts/test_eval_l2.py` **23 passed**（L2：seed 语料回放绿、分类/回执/账本
+  任一不符必红、sha 与 manifest 校验、非确定性判红、空 manifest SKIP、record 抽取无记录时
+  诚实产出空 manifest）；`tests/unit/scripts/test_eval_thresholds.py` **40 passed**（阈值：
+  边界相等通过、成本/时延/质量各维度超线红、baseline 0 与缺 judge 数据 SKIP、坏 metrics
+  红、nearest-rank p50/p95 精度）；`tests/unit/scripts/test_ci_local.py` 覆盖无语料 SKIP /
+  有语料带 `--fail-on-red` 运行。
 
 ## 6.8 变体示例（票 5cg，5cn 随 #756 调整）：证明 `--variant` 注入链路可用
 

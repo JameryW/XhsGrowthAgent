@@ -379,15 +379,15 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 
 > 目的：让「所有剩余任务」可审计——哪些能本地跑、哪些是决策/外部/环境依赖。
 > 本轮已在本地逐项核对 CI（**下表计数为 2026-11-01 时点**）；
-> 2026-11-14 复核：**5006 passed / 14 skipped / 0 failed**，见 §9.3。
+> 2026-11-14 复核：**5113 passed / 14 skipped / 0 failed**，见 §9.3。
 
 ### 9.1 CI 作业本地核对矩阵
 
 | CI 作业 | 本地核对方式 | 结果 |
 |---|---|---|
 | Lint & Format | `ruff check` + 改动文件 `ruff format --check` | ✅ 绿（2026-11-14 复核：`ruff check backend tests scripts` 全绿；LF 归一 format 709 个 tracked `.py` 全绿，早期记录的 CRLF 假阳性未复现） |
-| Mypy | `mypy --python-version 3.12 backend`（本地 numpy 2.5.1 stub 与 `python_version=3.11` 冲突） | ✅ 266 source files，0 issues（2026-11-01 时点 262） |
-| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped（2026-11-01 时点）；**2026-11-14 复核 5006 passed / 14 skipped / 0 failed**；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
+| Mypy | `mypy --python-version 3.12 backend`（本地 numpy 2.5.1 stub 与 `python_version=3.11` 冲突） | ✅ 267 source files，0 issues（2026-11-14 复核：E2 接线新增 `backend/harness/runtime.py` 后 266→267） |
+| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped（2026-11-01 时点）；**2026-11-14 复核 5113 passed / 14 skipped / 0 failed**；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
 | Context Compiler Baseline | `python scripts/benchmarks/context_compiler_baseline.py --compare --drift-pct 5` | ✅ drift within threshold |
 | Harness Benchmarks | `python scripts/benchmarks/harness_benchmarks.py` | ✅ pass=3 fail=0 skip=3（F5/F7/F8 是文档化缺口） |
 | Tool Runtime Gate | `python scripts/gates/tool_runtime_gate.py` | ✅ P1c-S5 OK |
@@ -401,17 +401,17 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 |---|---|---|
 | P4 分支 B：入口直落 `execute_action` 回执路径 | 已完成 | 2026-11-01 拍板并落地 B1–B4（票 5bn/5bo/5br/5bq/5bs）及加固（5bu/5by）：receipt attempt 级、intent 先于持久效果、executor 接受 caller-supplied request、有 intent 的发布经 `execute_action` 执行且只保留主链一个账本 claim；claim 表新增两条并带阳性对照。**已推送 origin/main 并经 CI 验证**：run 41306901460 / 41307361407 的 10 个作业全部 success（含 mypy、py3.11/3.12 的 Postgres parity、frontend、OMP） |
 | 路线图 8：多 Agent 并行 / workspace 冲突（F5） | 裁定 | 本文档裁定「先不建」，F5 保持 SKIP |
-| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 进行中 | 评测集先行：E1 真实 checkpoint 抽取+脱敏+指纹/加盐（5cd/5cj/5ck/5cm/5cp）、E2 HarnessPolicy（5ce，未接线）、E3 离线 A/B 门禁 report/block（5cf/5cj/5cn）、变体示例（5cg/5cn）、E4 质量裁判 + 199 预算护栏 + live 计划门闸 + runbook（5ch/5ci/5cj/5co）；多轮独立审查（含 5cm 第二轮两处高危）发现的高/中/低危均已修复；E3 的 **L1 决策回放已实现（2026-11-14，§9.3）**，L2 工具/网关回放与成本/时延/质量阈值仍未实现，live 端到端仍 external-only |
+| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 已交付（live 除外） | 评测集先行：E1 真实 checkpoint 抽取+脱敏+指纹/加盐（5cd/5cj/5ck/5cm/5cp）、E2 HarnessPolicy（5ce，**2026-11-14 已接线**：`backend/harness/runtime.py` + router/compiler/gateway 四个决策点，默认策略逐字节等价）、E3 离线 A/B 门禁 report/block（5cf/5cj/5cn，现为 **corpus/l1/l2/thresholds/variant/benchmarks 七项检查**）、变体示例（5cg/5cn）、E4 质量裁判 + 199 预算护栏 + live 计划门闸 + runbook（5ch/5ci/5cj/5co）；多轮独立审查（含 5cm 第二轮两处高危）发现的高/中/低危均已修复；**L1 决策回放（同日）、L2 工具/网关回放与成本/时延/质量阈值判定均已实现（2026-11-14 后续轮，§9.3）**，仅 live 端到端仍 external-only |
 | 私信 DOM 真机读法、笔记详情页深查/CDP | external-only | 需真实账号与平台环境，沙箱内不可验证 |
 | frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地：2026-11-14 补齐 node_modules 后 frontend type-check + vitest(788) 与 OMP typecheck 均已跑通，PG parity 仍需凭据/服务——非仓库缺陷 |
 
 **结论**：仓库内可本地执行、可验证的剩余任务已清零（分支 B 已于 2026-11-01 完成并推送，
-票 5bn–5by；CI 10 作业全绿）。路线图 10 已从「未启动」推进到「进行中」：E1–E3、变体示例
-与 E4 的裁判/预算护栏/计划门闸全部落地（票 5cd–5cp，含 5cm 第二轮两处高危修复、5cp 的
-artifact 写缝/`--store-uri`/扫描上限），多轮独立审查发现的高危/中危/低危均已修复；但
-E3 的 L1/L2 回放与阈值判定仍未实现（见 `docs/adaptive-harness-eval-plan.md` §4），E4 的
-live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真实费用）。其余为已裁定延后项
-（路线图 8：多 Agent 并行，裁定先不建）与外部/环境依赖项。
+票 5bn–5by；CI 10 作业全绿）。路线图 10 从「进行中」推进到「**已交付（live 除外）**」：
+E1–E3（含 L1 决策回放、**L2 工具/网关回放、成本/时延/质量阈值判定**）、E2 生产接线、
+变体示例与 E4 的裁判/预算护栏/计划门闸全部落地（票 5cd–5cp，含 5cm 第二轮两处高危修复、
+5cp 的 artifact 写缝/`--store-uri`/扫描上限），多轮独立审查发现的高危/中危/低危均已修复；
+E4 的 live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真实费用）。其余为已裁定
+延后项（路线图 8：多 Agent 并行，裁定先不建）与外部/环境依赖项。
 
 ### 9.3 2026-11-14 复核与修复（文档同步）
 
@@ -421,7 +421,7 @@ live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真�
 
 | 项 | 2026-11-14 实测 | 说明 |
 |---|---|---|
-| 全量 pytest | **5006 passed / 14 skipped / 0 failed**（5020 collected，145s） | §9.1 的 4800/14 与 journal 的 4979/11 均为历史快照（后者带 PG parity）；3 项 PG parity、11 项 Windows symlink 为环境 skip；较 4990 增加的是 L1 决策回放的 16 条测试 |
+| 全量 pytest | **5113 passed / 14 skipped / 0 failed**（5127 collected，166s） | §9.1 的 4800/14 与 journal 的 4979/11 均为历史快照（后者带 PG parity）；3 项 PG parity、11 项 Windows symlink 为环境 skip；较 2026-11-14 早先的 5006 增加 107 条：E2 接线 36 + L2 23 + 阈值 40 + gate 集成 8 |
 | Lint / Format | `ruff check backend tests scripts` 全绿；LF 归一 `ruff format --check`（709 个 tracked `.py`）全绿 | 早期记录的 CRLF 假阳性未复现 |
 | Mypy | `mypy --python-version 3.12 backend` → 266 source files，0 issues | 直接 `mypy backend` 仍只被本地 numpy 2.5.1 stub 的 PEP-695 语法卡住（环境） |
 | Gates | context baseline `drift within threshold`；harness `pass=3 fail=0 skip=3`；tool runtime / compliance OK | F5/F7/F8 仍为记录在案缺口，不当通过 |
@@ -444,10 +444,12 @@ allowlist，消除真实 checkpoint 的 "unregistered type `WorkflowPhase`" 警�
 strict 反序列化把决策字段降级成裸字符串；`tests/unit/scripts/test_eval_fixtures.py`
 26 passed）。
 
-仍未完成（裁定/外部项，不变）：路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的
-E2 接线（需产品拍板）与 E3 的 L2 工具/网关回放、成本/时延/质量阈值（需录制的工具序列与
-E4 live 产出）；E4 live 端到端 external-only；本地 `.eval-fixtures/` 仍不存在，E3 的
-corpus 检查本地为 SKIP（缺语料是缺口，不是通过）。
+仍未完成（裁定/外部项）：路线图 8（多 Agent 并行）保持「先不建」；E4 live 端到端
+external-only（需部署侧凭据、测试账号窗口与真实费用）。本段此前记录的三项缺口已在
+**2026-11-14 后续轮消除**：E2 接线（`XHS_HARNESS_POLICY` + `backend/harness/runtime.py`，
+默认策略行为等价）、L2 工具/网关回放（`tool_replay.py` + `record_tool_results.py`，真实
+`ToolGateway` 分类/回执/`EffectLedger` 状态校验）、成本/时延/质量阈值（`thresholds.py`）；
+本地 `.eval-fixtures/` 也已生成（5 fixtures，digest `17e331e3…`，此前记录「仍不存在」已过期）。
 
 **2026-11-14 追加：E3 L1 决策回放已落地**（`scripts/eval/decision_replay.py` +
 `scripts/eval/run_gate.py` 的 `l1` 检查）。逐 fixture 回放四个决策（model 路由 / 该 phase
@@ -458,8 +460,8 @@ int、escalation 目标非空且不重复、tool limits 形状不变、JSON 可�
 亦显式 SKIP（缺口不当通过）。验证：`tests/unit/scripts/test_eval_l1.py` **16 passed**；
 真实语料（5 fixtures）回放 `[PASS] l1: decisions identical to the baseline`；示例变体
 `phase_budget`（publishing budget=4000）在 publishing fixture 上产生
-`context_budget: null → 4000` 的 preference diff。仍未实现：L2 需要录制的 `ToolResult`
-序列（尚未采集），阈值判定属于 E4 live 产出。
+`context_budget: null → 4000` 的 preference diff。（当时）L2 工具回放与阈值判定尚未实现，
+两者已在同日后续轮补齐，见 §9.4。
 
 **推送与 CI 验证（2026-11-14）**：本轮修复已 rebase 到 origin/main 的 `96bf61f1` 之上并推送
 （`de5ad5cc` telemetry / `43a88329` test / `ae06d01e` eval / `c83ac772` docs / `c49ce79b`
@@ -467,3 +469,44 @@ journal）。CI run **43592668170**（commit `c49ce79b`）的 10 个作业全部
 Lint & Format、Mypy、Test (py3.11)、Test (py3.12)、Context Compiler Baseline、
 Harness Benchmarks、Tool Runtime Gate、Compliance Baseline Gate、Frontend、OMP Typecheck。
 L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全部 **success**。
+
+### 9.4 2026-11-14 后续轮：E2 接线 + E3 L2/阈值 + 本地语料（补齐路线图 10 最后可本地项）
+
+- **E2 接线**：新增 `backend/harness/runtime.py`——`XHS_HARNESS_POLICY=module:factory`
+  惰性解析（坏 spec 抛 `HarnessPolicyLoadError`，不静默回退）、`configure_policy` /
+  `reset_policy` / `policy_generation` / `is_default_policy`。四个决策点的生产读取方：
+  `ModelRouter._candidate_model_ids`（overrides → policy.route_model → MODEL_FALLBACKS →
+  escalation，`with_fallback` 惰性嵌套；cache key 含 policy_generation）、
+  `compile_prompt`（仅 `budget is None` 时问 `policy.context_budget(phase=...)`）、
+  `ToolGateway._effective_limits`（**默认策略完全不查目录**，保持 `ToolSpec` 与自定义
+  registry 语义；非默认策略的 ToolLimits 生效，未知能力回退 spec，非法 limits 抛
+  `ValueError` 点名能力）。默认策略行为逐字节等价。测试：`test_runtime.py` 36 passed、
+  `test_policy.py` 9 passed、models+context+tools+harness 770 passed，mypy 267 files 0 issues。
+- **E3 L2 工具/网关回放**：`scripts/eval/tool_replay.py`（manifest+逐 case sha256、真实
+  `ToolGateway` + 脚本化工具、分类/唯一 invoke 回执/`EffectLedger` 终态与 blocks_retry
+  校验、两次回放确定性）+ `scripts/eval/record_tool_results.py`（`--seed` 生成 5 个边界
+  case；`--sqlite-path` 从真实 checkpoint 抽取，无记录时写空 manifest 并如实报告）。
+  语料缺失/空 manifest 显式 SKIP；manifest 坏、sha 不符、分类/回执/账本不符、非确定判红。
+  `tests/unit/scripts/test_eval_l2.py` 23 passed。
+- **成本/时延/质量阈值**：`scripts/eval/thresholds.py`——token/调用漂移 ≤5%、p50/p95
+  退化 ≤10%、judge 一致性 ≥0.8；baseline 为 0、无 judge 数据的维度显式 SKIP（不可计算
+  ≠ 通过），坏 metrics 文件判红。`tests/unit/scripts/test_eval_thresholds.py` 40 passed。
+- **门禁集成**：`scripts/eval/run_gate.py` 现为 **corpus / policy / l1 / l2 / thresholds /
+  variant / benchmarks 七项检查**，新增 `--tools-corpus` / `--metrics` / `--skip-l2`
+  / `--skip-thresholds`；`test_eval_gate.py` 37 passed（含 l2/thresholds 集成用例），
+  l1/l2/thresholds/gate 合计 116 passed。
+- **本地语料**：`extract_fixtures.py` 已生成本地 `.eval-fixtures/`（5 fixtures，
+  manifest digest `17e331e321f4adce36961d2b35f2785c617ed8df8403c1e4e50a17d0f02ad88c`；
+  未设 `XHS_EVAL_REDACTION_KEY` → 指纹未加盐；10 个 checkpoint 的 artifact refs 因无法
+  解析而跳过，均属已知诚实缺口）；`record_tool_results.py --seed` 生成
+  `.eval-tool-corpus/`（5 cases）。两者均 gitignored（`.gitignore` 新增
+  `.eval-tool-corpus/`），CI 仍拿不到语料、对应检查显式 SKIP。
+- **本地 runner 实测**：`python scripts/ci_local.py --only eval-gate` 在本地语料存在时
+  真实运行 `--fail-on-red`：corpus / policy / l1 / l2 / benchmarks 全 PASS，
+  thresholds 因无 `--metrics` 显式 SKIP（live 产物，external-only）。
+
+
+- **全量回归**：`pytest -q` → **5113 passed / 14 skipped / 0 failed**（5127 collected，166s）；
+  较上一轮 5006 增加 107 条（E2 接线 36 + L2 23 + 阈值 40 + gate 集成 8），无新增环境 skip。
+
+

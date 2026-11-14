@@ -818,7 +818,17 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - 补齐本地 `frontend/node_modules`（npm install，270 packages）后：`vue-tsc --noEmit` 通过、`vitest run` **788 passed / 75 files**、i18n 2372 keys 通过、OMP `tsc --noEmit` 通过——§9.1/§9.2 的环境限制项在本地已可复核（node_modules 不入库，CI 仍权威）。
 
 ### 未做（裁定/外部）
-- 路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的 E2 接线需产品拍板；E3 的 L2 回放/阈值仍缺（L1 已在下一节落地）；E4 live 端到端 external-only；本地 `.eval-fixtures/` 未生成（eval-gate 仍 SKIP，符合设计）。
+- 路线图 8（多 Agent 并行）保持「先不建」；E4 live 端到端 external-only。~~E2 接线需产品拍板；E3 的 L2 回放/阈值仍缺；本地 `.eval-fixtures/` 未生成~~ —— 这三项已在 2026-11-14 后续轮补齐，见下节。
+
+### 2026-11-14 后续轮：E2 接线 + E3 L2/阈值 + 本地语料（完成剩余全部）
+
+- **E2 接线**：新增 `backend/harness/runtime.py`（`XHS_HARNESS_POLICY=module:factory` 惰性解析、`configure_policy`/`reset_policy`/`policy_generation`/`is_default_policy`、坏 spec 抛 `HarnessPolicyLoadError` 不静默回退）；`ModelRouter._candidate_model_ids`（overrides → policy.route_model → MODEL_FALLBACKS → escalation，`with_fallback` 惰性嵌套，cache key 含代际）、`compile_prompt`（仅 budget None 时问 phase 预算）、`ToolGateway._effective_limits`（默认策略不查目录；非默认用 ToolLimits，未知能力回退 spec，非法 limits 抛 ValueError）。默认行为等价；`test_runtime.py` 36 + `test_policy.py` 9 + 770 passed，mypy 267 files 0 issues。
+- **E3 L2**：`scripts/eval/tool_replay.py`（manifest/逐 case sha256、真实 `ToolGateway` + 脚本化工具、ToolResult 分类 + 唯一 invoke 回执 + `EffectLedger` 终态/blocks_retry、两次回放确定性）+ `scripts/eval/record_tool_results.py`（`--seed` 5 边界 case；`--sqlite-path` 抽取，无记录写空 manifest 如实报告）；缺/空语料 SKIP，坏 manifest/sha/分类/回执/账本/非确定判红；`test_eval_l2.py` 23 passed。
+- **阈值**：`scripts/eval/thresholds.py`（cost 漂移 ≤5%、p50/p95 ≤10%、quality ≥0.8；baseline 0 与缺 judge 数据显式 SKIP，坏 metrics 红）；`test_eval_thresholds.py` 40 passed。
+- **门禁**：`run_gate.py` 现为 corpus/policy/l1/l2/thresholds/variant/benchmarks 七项检查，新增 `--tools-corpus`/`--metrics`/`--skip-l2`/`--skip-thresholds`；`test_eval_gate.py` 37 passed（+8 集成）。
+- **本地语料**：`extract_fixtures.py` 生成 `.eval-fixtures/`（5 fixtures，digest `17e331e3…`；未设 `XHS_EVAL_REDACTION_KEY` → 未加盐；10 个 artifact refs 跳过）；`record_tool_results.py --seed` 生成 `.eval-tool-corpus/`（5 cases）；二者 gitignored，`.gitignore` 增 `.eval-tool-corpus/`。
+- **验证**：`pytest -q` → **5113 passed / 14 skipped / 0 failed**（5127 collected，166s）；`ci_local --skip-tests` 全绿（本地有语料时 eval-gate 真实运行 corpus/policy/l1/l2/benchmarks PASS，thresholds 无 metrics 显式 SKIP）。
+- 文档：eval-plan §3/§4/§5/§6.6/§6.7 与 agent-os §9.1/§9.2/§9.3/新增 §9.4 同步。
 
 ### 2026-11-14 追加：E3 L1 决策回放（用户选定方向）
 - `scripts/eval/decision_replay.py`：逐 fixture 回放四个决策（model 路由 / 该 phase 的 context budget / escalation / tool limits）；**强制不变量**（路由非空、预算 None 或非负 int、escalation 目标非空且不重复、tool limits 形状、JSON 可序列化）+ **确定性**（两次回放必须一致）；与基线的差异按 fixture 逐字段写入 preference diff（不判红）；未传 `--variant` 却偏离基线判红；缺语料与 `--skip-l1` 均显式 SKIP（缺口不当通过）。
@@ -839,10 +849,15 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 | `43a88329` | (see git log) |
 | `ae06d01e` | (see git log) |
 | `c83ac772` | (see git log) |
+| `3bc05c4c` | feat(eval): 实现 E3 L1 决策回放 |
+| `4eddb652` | docs: 记录 L1 推送与 CI |
+| `35a10a78` | feat(harness): 接线 HarnessPolicy（E2） |
+| `7fb3dad8` | feat(eval): E3 L2 + 阈值 + gate 七项检查 |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] 全量 `pytest -q`：5113 passed / 14 skipped / 0 failed（5127 collected，166s）
+- [OK] `ci_local --skip-tests`：lint/format(711 files)/mypy(267 files)/gates/eval-gate/frontend/omp 全 PASS
 
 ### Status
 
@@ -850,4 +865,4 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 
 ### Next Steps
 
-- None - task complete
+- 已无可本地执行的剩余项：E1–E3（含 L1/L2/阈值）、E2 接线、E4 裁判/预算/计划门闸全部落地并验证；仅 E4 live 端到端 external-only，路线图 8 继续裁定不建。
