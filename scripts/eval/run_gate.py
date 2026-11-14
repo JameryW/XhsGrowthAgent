@@ -14,6 +14,10 @@ What it checks:
   reason (run the extractor first), not a pass and not a red;
 * **policy** — the E2 snapshot is complete and answers every decision (a variant
   that returns an empty model id is red, not "different");
+* **l1** — decision replay (L1): every fixture is replayed through the policy's
+  four decisions, mandatory invariants are enforced, determinism is checked, and
+  any difference from the baseline is reported as a preference diff
+  (``decision_replay.py``).  A skipped L1 gap stays visible: no corpus means skip;
 * **variant** — when one is supplied, which decisions moved (informational: a
   difference is the point of an A/B run, not a failure);
 * **benchmarks** — the deterministic F1/F2/F4 harness checks must pass and
@@ -43,6 +47,7 @@ _EVAL_DIR = Path(__file__).resolve().parent
 if str(_EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(_EVAL_DIR))
 
+from decision_replay import run_l1_replay  # noqa: E402  (sibling module, same setup)
 from fixtures import (  # noqa: E402  (sibling module, loaded after sys.path setup)
     EXTRACTOR_VERSION,
     REDACTION_VERSION,
@@ -80,6 +85,8 @@ class GateReport:
     policy_snapshot: dict[str, Any] = field(default_factory=dict)
     variant_snapshot: dict[str, Any] | None = None
     diff: dict[str, Any] = field(default_factory=dict)
+    l1: dict[str, Any] | None = None
+    l1_diff: dict[str, Any] = field(default_factory=dict)
 
     @property
     def red(self) -> bool:
@@ -94,6 +101,7 @@ class GateReport:
             "policy_snapshot": self.policy_snapshot,
             "variant_snapshot": self.variant_snapshot,
             "diff": self.diff,
+            "l1": self.l1,
         }
 
 
@@ -386,6 +394,7 @@ def run_gate(
     variant: Any | None = None,
     benchmark_runner: BenchmarkRunner | None = None,
     skip_benchmarks: bool = False,
+    skip_l1: bool = False,
     fail_on_red: bool = False,
     expect_manifest_sha256: str | None = None,
 ) -> GateReport:
@@ -397,9 +406,23 @@ def run_gate(
     )
     report.checks.append(check_corpus(corpus_dir, expect_manifest_sha256=expect_manifest_sha256))
 
-    policy_result, snapshot = check_policy(default_policy(), label="policy")
+    baseline = default_policy()
+    policy_result, snapshot = check_policy(baseline, label="policy")
     report.policy_snapshot = snapshot
     report.checks.append(policy_result)
+
+    if skip_l1:
+        report.checks.append(CheckResult("l1", "skip", "--skip-l1: not run in this invocation"))
+    else:
+        outcome = run_l1_replay(
+            variant if variant is not None else baseline,
+            corpus_dir,
+            baseline_policy=baseline,
+            variant=variant is not None,
+        )
+        report.l1 = outcome.summary()
+        report.l1_diff = outcome.diff
+        report.checks.append(CheckResult("l1", outcome.status, outcome.detail))
 
     if variant is not None:
         variant_result, variant_snapshot = check_policy(variant, label="variant")
@@ -445,6 +468,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--variant", default=None, help="module:factory producing a HarnessPolicy")
     parser.add_argument("--skip-benchmarks", action="store_true")
     parser.add_argument(
+        "--skip-l1",
+        action="store_true",
+        help="skip the L1 decision replay (reported as an explicit skip, not a pass)",
+    )
+    parser.add_argument(
         "--fail-on-red",
         action="store_true",
         help="exit 1 when a check is red (default: report only; see plan §6)",
@@ -466,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
         corpus_dir=options.corpus,
         variant=variant,
         skip_benchmarks=options.skip_benchmarks,
+        skip_l1=options.skip_l1,
         fail_on_red=options.fail_on_red,
         expect_manifest_sha256=options.expect_manifest_sha256,
     )
@@ -476,6 +505,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[{check.status.upper():4}] {check.name}: {check.detail}")
     if report.diff:
         print(f"variant diff: {json.dumps(report.diff, ensure_ascii=False)[:400]}")
+    if report.l1_diff:
+        print(f"l1 preference diff: {json.dumps(report.l1_diff, ensure_ascii=False)[:400]}")
     print(f"mode={report.mode} red={report.red}")
     if options.fail_on_red and report.red:
         return 1

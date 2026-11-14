@@ -818,7 +818,15 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - 补齐本地 `frontend/node_modules`（npm install，270 packages）后：`vue-tsc --noEmit` 通过、`vitest run` **788 passed / 75 files**、i18n 2372 keys 通过、OMP `tsc --noEmit` 通过——§9.1/§9.2 的环境限制项在本地已可复核（node_modules 不入库，CI 仍权威）。
 
 ### 未做（裁定/外部）
-- 路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的 E2 接线与 E3 L1/L2 回放/阈值需产品拍板；E4 live 端到端 external-only；本地 `.eval-fixtures/` 未生成（eval-gate 仍 SKIP，符合设计）。
+- 路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的 E2 接线需产品拍板；E3 的 L2 回放/阈值仍缺（L1 已在下一节落地）；E4 live 端到端 external-only；本地 `.eval-fixtures/` 未生成（eval-gate 仍 SKIP，符合设计）。
+
+### 2026-11-14 追加：E3 L1 决策回放（用户选定方向）
+- `scripts/eval/decision_replay.py`：逐 fixture 回放四个决策（model 路由 / 该 phase 的 context budget / escalation / tool limits）；**强制不变量**（路由非空、预算 None 或非负 int、escalation 目标非空且不重复、tool limits 形状、JSON 可序列化）+ **确定性**（两次回放必须一致）；与基线的差异按 fixture 逐字段写入 preference diff（不判红）；未传 `--variant` 却偏离基线判红；缺语料与 `--skip-l1` 均显式 SKIP（缺口不当通过）。
+- `scripts/eval/run_gate.py`：新增 `l1` 检查与 `--skip-l1`；`GateReport.l1` / `l1_diff`；JSON 报告含 l1 summary；CLI 打印 `l1 preference diff`。
+- 验证：`tests/unit/scripts/test_eval_l1.py` **16 passed**（基线干净、预算变体降级为 preference diff、无 variant 偏离必红、空路由/重复 escalation/非确定性必红、缺语料/空语料 SKIP、不可读语料红、gate 集成与 --skip-l1、边界预算与 bool 拒绝）；`tests/unit/scripts` 共 **223 passed**。
+- 实跑：真实语料 5 fixtures → `[PASS] l1: decisions identical to the baseline`；demo 语料 + `phase_budget` 变体 → `l1 preference diff: {"fixture-pub": {"context_budget": {"baseline": null, "current": 4000}}}`，`mode=block red=False`。
+- 文档：eval-plan §3/§4/§5/§6.7 与 agent-os §9.2/§9.3 同步 L1 状态。
+- 未做：L2 工具/网关回放需录制的 `ToolResult` 序列（尚未采集）；成本/时延/质量阈值判定属 E4 live 产出。
 
 
 ### Git Commits

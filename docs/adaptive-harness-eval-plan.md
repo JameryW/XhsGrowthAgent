@@ -51,6 +51,15 @@
 - 断言：变体在给定输入下产生的**决策**（路由、预算、升级/降级）与预期一致。
 - 判据：标为「必须」的规则 100% 一致；偏好类规则允许差异但必须报告。
 
+> **实现状态（2026-11-14）**：已实现 —— `scripts/eval/decision_replay.py` + E3 的 `l1` 检查。
+> 「预期」= 基线策略（`DefaultHarnessPolicy`，即现行代码路径）+ 强制不变量：四个决策点齐全、
+> model id 非空、预算 None/非负整数、escalation 目标非空且不重复、tool limits 形状不变、
+> 两次回放必须一致（非确定性策略判红）。与基线的任何差异按 fixture **逐字段**报告为
+> preference diff（不判红，这正是 A/B 要看的证据）；未传 `--variant` 却偏离基线判红
+> （基线回放必须与自身一致）。依赖语料：无 `.eval-fixtures/` 时该检查显式 **SKIP**
+> （与 corpus 检查同一口径，缺语料不是通过）。**仍未实现**：L2 工具/网关回放（需要录制的
+> `ToolResult` 序列）与 §4 的成本/时延/质量阈值判定。
+
 ### L2 工具/网关回放
 - 输入：录制的 `ToolResult` 序列（成功 / timeout / domain 失败 / 结果未知）。
 - 断言：结果分类、回执、账本状态与基线一致（复用 `harness_benchmarks` 的注入故障思路）。
@@ -71,17 +80,19 @@
 | 质量 | L3 rubric 或 LLM judge 双盲一致性 | ≥ 0.8（若启用 judge） |
 | 安全 | 审批门/账本语义不可变 | 结构测试 + claim 扫描，任一变化即 FAIL |
 
-> **实现状态（诚实标注）**：上表的 L1/L2 回放与阈值判定**尚未实现**——E3 目前做的是
-> corpus 完整性、policy 快照、variant diff 与既有 harness benchmarks（详见 §6.7），
-> 不涉及成本/时延/质量阈值；阈值计算属于 E4 live 实验（外部执行）的产出。
+> **实现状态（诚实标注，2026-11-14 更新）**：**L1 决策回放已实现**（见 §3 的 L1 段与
+> §6.7 的 `l1` 检查：按 fixture 回放四个决策、强制不变量、确定性与基线 preference diff）。
+> 但上表的**成本/时延/质量阈值判定与 L2 工具/网关回放仍未实现**；E3 仍按 §6.7 执行
+> corpus / policy / variant / benchmarks 四项既有门禁，阈值计算属于 E4 live 实验
+> （外部执行）的产出。
 
 ## 5. 分阶段落地（每阶段独立票）
 
 1. **E1 数据集框架**：checkpoint → fixture 抽取脚本、fixture 目录与 schema 校验（离线）。
 2. **E2 变体接口**：把上面四个决策点抽成可注入策略对象，默认实现 = 现行行为，**无行为变化**。
 3. **E3 A/B 门禁脚本**：跑 L1/L2 + 阈值判定，接入 `scripts/ci_local.py` 与 CI（可单独 job）。
-   *实际交付范围：corpus 完整性 / policy 快照 / variant diff / harness benchmarks 四项门禁；
-   L1/L2 回放与阈值判定尚未实现（见 §4 实现状态说明）。*
+   *实际交付范围：corpus 完整性 / **L1 决策回放（2026-11-14 补）** / policy 快照 / variant diff /
+   harness benchmarks 五项门禁；L2 回放与阈值判定尚未实现（见 §4 实现状态说明）。*
 4. **E4 L3 小样本**：需要真实账号/预算，单独审批后再做。
 
 ## 6. 需要拍板的问题（阻塞 E1/E2）
@@ -150,6 +161,7 @@ E1 自身的正确性由 26 个种子库测试覆盖。
 |---|---|
 | `corpus` | `.eval-fixtures/` 缺失 → **SKIP**（缺语料是缺口，不是通过）；**空语料（0 fixture）→ 红**；manifest schema / `redaction_version` / `extractor_version` 不符 → 红；`manifest.sha256` 缺失且未给 `--expect-manifest-sha256` → 红；指纹不匹配 → 红；传 `--expect-manifest-sha256` 与该值不符 → 红（out-of-band 才能发现"fixture+manifest+指纹成对重写"）；出现未列入 manifest 的 `*.json` → 红；文件 sha256 不匹配、fixture 的 `state_sha256` 重算不符 → 红 |
 | `policy` | `describe()` 必须覆盖四个决策点（快照含 `context_budgets` 逐 phase 采样，阶段专属预算的变体也可见）；每个 TaskType 的模型 id 必须是**非空字符串**；`context_budget` 与每个 phase 预算为 None 或非负整数；`escalation` 必须是「任务 → 非空字符串列表」；`tool_limits` 条目的 `capability` 非空、`max_concurrency` 为 None 或 ≥0 的 int、`timeout_s` 为 None 或 >0；快照可 JSON 序列化 |
+| `l1` | 逐 fixture 回放四个决策（model 路由 / 该 phase 的 context budget / escalation / tool limits）：**强制不变量**（路由非空、预算 None 或非负 int、escalation 非空且不重复、tool limits 形状、JSON 可序列化）任一违反 → 红；**两次回放不一致**（非确定性策略）→ 红；与基线的差异按 fixture 逐字段进 `l1_diff`（preference，不判红）；未传 `--variant` 却偏离基线 → 红。语料缺失 → **SKIP**（缺语料是缺口，不是通过）；`--skip-l1` 显式 SKIP |
 | `variant` | 仅在显式 `--variant module:factory` 时运行；输出**决策 diff**（差异是 A/B 的目的，不算红）；**决策完全相同 → 红**（多半是工厂返回了默认策略，属于接线错误）；变体坏了（空路由/describe 抛错）也红 |
 | `benchmarks` | 真实跑 `harness_benchmarks.py`：F1/F2/F4 必须**状态为 PASS**（仅仅存在不算），任何 FAIL 或未知状态红；F5/F7/F8 若仍 SKIP 则作为缺口列出（缺口后来实现成 PASS 不算失败） |
 
@@ -166,6 +178,9 @@ E1 自身的正确性由 26 个种子库测试覆盖。
 - 测试：`tests/unit/scripts/test_eval_gate.py` 29 passed（覆盖面：空语料/旧脱敏或抽取器
   版本/未列出 JSON/篡改 hash/缺失指纹必红、policy 类型与逐 phase 预算校验、F1 SKIP 必红、
   决策相同的 variant 必红、report/block 两个 CLI 姿态、真实 variant 注入）；
+  `tests/unit/scripts/test_eval_l1.py` **16 passed**（L1：基线回放干净、预算变体降级为
+  preference diff、无 `--variant` 偏离基线必红、空路由/重复 escalation/非确定性必红、
+  缺语料 SKIP、空语料 SKIP、不可读语料红、gate 集成与 `--skip-l1` 姿态）；
   `tests/unit/scripts/test_ci_local.py` 覆盖无语料 SKIP / 有语料带 `--fail-on-red` 运行。
 
 ## 6.8 变体示例（票 5cg，5cn 随 #756 调整）：证明 `--variant` 注入链路可用
