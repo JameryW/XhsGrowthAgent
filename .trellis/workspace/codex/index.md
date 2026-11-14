@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 82
-- **Last Active**: 2026-11-05
+- **Total Sessions**: 83
+- **Last Active**: 2026-11-14
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~785 | Active |
+| `journal-2.md` | ~841 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 83 | 2026-11-14 | 架构升级完成度审计与 4 处缺陷修复（2026-11-14） | `de5ad5cc`, `43a88329`, `ae06d01e`, `c83ac772` | `main` |
 | 82 | 2026-11-05 | gate 全链路与实时/并发/调度补测（票 5dc-5df） | `7a5049fa`, `e2df95bc` | `main` |
 | 81 | 2026-11-04 | 启动指标补齐：Postgres 模式 serve 就绪 9.3s（5db 后） | `65e042db` | `main` |
 | 80 | 2026-11-04 | 启动回归修复：provider 预加载后台化，42s→1.4s（票 5db） | `51a54153` | `main` |

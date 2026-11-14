@@ -783,3 +783,59 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 ### Next Steps
 
 - None - task complete
+
+
+## Session 83: 架构升级完成度审计与 4 处缺陷修复（2026-11-14）
+
+**Date**: 2026-11-14
+**Task**: 架构升级完成度审计与 4 处缺陷修复（2026-11-14）
+**Branch**: `main`
+
+### Summary
+
+审计 9 个执行面切片 + P3 工具链；修复 verification 遥测/协程泄漏/eval serde/文档漂移；全量 4990 passed / 14 skipped / 0 failed
+
+### Main Changes
+
+## 2026-11-14：架构升级完成度审计 + 4 处缺陷修复
+
+### 审计（只读，3 路并行）
+- 对照 `docs/agent-os-upgrade-2026q4.md` / `docs/adaptive-harness-eval-plan.md` 逐条核对：9 个执行面切片（P0-A/P0-B/Attempt/Run/P1-A/P1-B/P2-部分/证据采集器/ADR-0007）全部 PRESENT 且有生产调用点；P3-前置 F 矩阵 F1/F2/F4 PASS、F5/F7/F8 仍 SKIP；E1–E4 工具链在但 E2/E3 未接线、L1/L2 回放未实现、live external-only。
+- 本地全量：4990 passed / 14 skipped / 0 failed；`ci_local.py --skip-tests` lint/format/mypy/gates/omp 全 PASS；E3 corpus PASS 路径用临时语料实跑通过。
+- 发现的缺陷：verification 事件无测试守护且控制面发布不发射；`test_publish_retry` 泄漏未 await 的租约心跳协程；文档 8 处漂移（锚点/计数/词表/路线图票号/本地库说明/用例数）；E1 抽取器未用项目 checkpoint serde（真实 checkpoint 打印 unregistered type 警告）。
+
+### 修复（4 个提交）
+- `de5ad5cc` fix(telemetry)：控制面 creator-origin 发布补 `kind:"verification"`（mainline-origin 不重复）；新增 3 条守护测试。
+- `43a88329` test(publish-retry)：统一 5 处 fake_create_task，关闭未调度协程；warnings 5→1。
+- `ae06d01e` fix(eval)：抽取器 sqlite/Postgres 两条入口改用 `checkpoint_serde()`；新增 2 条入口契约测试（24→26 passed）。
+- `c83ac772` docs：同步 §2/§5/§9 锚点与计数（4990/14）、§5.10 保留词、§9.2 票号到 5cp、新增 §9.3 复核记录；eval-plan 本地库 0→27 checkpoints 等；`.gitignore` 忽略 `.workbuddy/`、`data-gym-cache/`。
+
+### 验证
+- 全量 pytest 4990 passed / 14 skipped / 0 failed（5004 collected，222s，1 条环境级 Starlette 弃用警告）。
+- `scripts/ci_local.py --skip-tests`：PASS lint / format / mypy / gates / omp → `local CI parity: OK`。
+- 文档门禁 `tests/unit/scripts` 207 passed；E3 临时语料 `[PASS] corpus 5 fixtures` + `benchmarks F1/F2/F4`，`mode=block red=False`。
+
+### 未做（裁定/外部）
+- 路线图 8（多 Agent 并行）保持「先不建」；路线图 10 的 E2 接线与 E3 L1/L2 回放/阈值需产品拍板；E4 live 端到端 external-only；本地 `.eval-fixtures/` 未生成（eval-gate 仍 SKIP，符合设计）。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `de5ad5cc` | (see git log) |
+| `43a88329` | (see git log) |
+| `ae06d01e` | (see git log) |
+| `c83ac772` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
