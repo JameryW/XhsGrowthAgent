@@ -510,3 +510,7 @@ L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全�
   较上一轮 5006 增加 107 条（E2 接线 36 + L2 23 + 阈值 40 + gate 集成 8），无新增环境 skip。
 
 
+- **推送与 CI**：`35a10a78`（E2 接线）/ `7fb3dad8`（L2+阈值+gate）/ `082b5602`（文档）已推送
+  origin/main；CI run **43601364293**（commit `082b5602`）的 10 个作业全部 **success**：
+  Lint & Format、Mypy、Test (py3.11)、Test (py3.12)、Context Compiler Baseline、
+  Harness Benchmarks、Tool Runtime Gate、Compliance Baseline Gate、Frontend、OMP Typecheck。

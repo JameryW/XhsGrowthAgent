@@ -866,3 +866,4 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 ### Next Steps
 
 - 已无可本地执行的剩余项：E1–E3（含 L1/L2/阈值）、E2 接线、E4 裁判/预算/计划门闸全部落地并验证；仅 E4 live 端到端 external-only，路线图 8 继续裁定不建。
+- 提交：`35a10a78` E2 接线、`7fb3dad8` L2+阈值+gate、`082b5602` 文档；已推送 origin/main。CI run **43601364293**（commit `082b5602`）10 个作业全部 success。
