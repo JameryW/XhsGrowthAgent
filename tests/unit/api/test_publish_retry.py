@@ -7,6 +7,8 @@ not found) and the background retry write-back (aupdate_state + _db_upsert + eve
 from __future__ import annotations
 
 import asyncio
+import inspect
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -43,6 +45,42 @@ def _values(**overrides) -> dict:
     }
     base.update(overrides)
     return base
+
+
+def _capturing_create_task(captured: list[Any]):
+    """A ``create_task`` stand-in that records every coroutine handed to it.
+
+    The retry body it receives is driven by the test.  The lease heartbeat
+    started *inside* that body is captured too, but this stand-in never
+    schedules it — so it has to be closed afterwards (see
+    :func:`_drive_and_close`) instead of being left for the garbage collector
+    to warn about.
+    """
+
+    def fake_create_task(coro, **kw):
+        captured.append(coro)
+        task = MagicMock()
+        task.add_done_callback = MagicMock()
+        task.get_name = lambda: kw.get("name", "")
+        return task
+
+    return fake_create_task
+
+
+def _drive_and_close(captured: list[Any]) -> None:
+    """Run the captured retry body, then close every coroutine still open."""
+    assert captured, "the endpoint must schedule exactly one retry task"
+    body, *_ = captured
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(body)
+    finally:
+        loop.close()
+        # The heartbeat coroutine was created but never scheduled by the fake,
+        # so closing it is what keeps "never awaited" out of the test output.
+        for coro in captured:
+            if inspect.iscoroutine(coro):
+                coro.close()
 
 
 @pytest.fixture
@@ -88,32 +126,23 @@ def test_returns_retrying_and_schedules_task(app_and_client):
     app, client, graph = app_and_client
     pr = {"post_id": "p1", "post_url": "u", "status": "published", "published_at": "now"}
 
-    captured_coro = {}
-
-    def fake_create_task(coro, **kw):
-        captured_coro["coro"] = coro
-        task = MagicMock()
-        task.add_done_callback = MagicMock()
-        task.get_name = lambda: kw.get("name", "")
-        return task
+    captured_coro: list[Any] = []
 
     with (
         patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
         patch(_DB_UPSERT, new_callable=AsyncMock),
         patch(_EVENT_BUS) as mock_bus_cls,
-        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
+        patch(
+            "backend.api.routes._wf_actions.asyncio.create_task",
+            side_effect=_capturing_create_task(captured_coro),
+        ),
     ):
         mock_bus_cls.get_instance.return_value = MagicMock()
         resp = client.post("/api/workflow/publish-retry/thr1")
         body = resp.json()["data"]
         assert body["status"] == "retrying"
         # Drive the captured coroutine body to completion WITHIN the patch scope
-        coro = captured_coro["coro"]
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(coro)
-        finally:
-            loop.close()
+        _drive_and_close(captured_coro)
 
     graph.aupdate_state.assert_awaited()
     # aupdate_state(config, {updates...}, as_node=...) — updates is positional arg[1]
@@ -131,29 +160,20 @@ def test_publish_success_without_post_id_marks_completed(app_and_client):
         "post_url": "https://creator.xiaohongshu.com/publish/success",
         "status": "published",
     }
-    captured = {}
-
-    def fake_create_task(coro, **kw):
-        captured["coro"] = coro
-        task = MagicMock()
-        task.add_done_callback = MagicMock()
-        task.get_name = lambda: kw.get("name", "")
-        return task
+    captured: list[Any] = []
 
     with (
         patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
         patch(_DB_UPSERT, new_callable=AsyncMock) as mock_db,
         patch(_EVENT_BUS) as mock_bus_cls,
-        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
+        patch(
+            "backend.api.routes._wf_actions.asyncio.create_task",
+            side_effect=_capturing_create_task(captured),
+        ),
     ):
         mock_bus_cls.get_instance.return_value = MagicMock()
         client.post("/api/workflow/publish-retry/thr1")
-        coro = captured["coro"]
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(coro)
-        finally:
-            loop.close()
+        _drive_and_close(captured)
 
     # status="published" → db_upsert called with status="completed", error=None
     call = mock_db.await_args
@@ -179,29 +199,20 @@ def test_failed_retry_writes_terminal_error_state(app_and_client):
         "error": "账号已停用",
         "error_type": "account_inactive",
     }
-    captured = {}
-
-    def fake_create_task(coro, **kw):
-        captured["coro"] = coro
-        task = MagicMock()
-        task.add_done_callback = MagicMock()
-        task.get_name = lambda: kw.get("name", "")
-        return task
+    captured: list[Any] = []
 
     with (
         patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
         patch(_DB_UPSERT, new_callable=AsyncMock) as mock_db,
         patch(_EVENT_BUS) as mock_bus_cls,
-        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
+        patch(
+            "backend.api.routes._wf_actions.asyncio.create_task",
+            side_effect=_capturing_create_task(captured),
+        ),
     ):
         mock_bus_cls.get_instance.return_value = MagicMock()
         client.post("/api/workflow/publish-retry/thr1")
-        coro = captured["coro"]
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(coro)
-        finally:
-            loop.close()
+        _drive_and_close(captured)
 
     updates = graph.aupdate_state.call_args.args[1]
     assert updates["phase"] == WorkflowPhase.ERROR
@@ -220,20 +231,16 @@ def test_retry_accepts_empty_body_with_json_content_type(app_and_client):
     """
     app, client, graph = app_and_client
     pr = {"post_id": "p1", "post_url": "u", "status": "failed", "error": "x"}
-    captured = {}
-
-    def fake_create_task(coro, **kw):
-        captured["coro"] = coro
-        task = MagicMock()
-        task.add_done_callback = MagicMock()
-        task.get_name = lambda: kw.get("name", "")
-        return task
+    captured: list[Any] = []
 
     with (
         patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
         patch(_DB_UPSERT, new_callable=AsyncMock),
         patch(_EVENT_BUS) as mock_bus_cls,
-        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
+        patch(
+            "backend.api.routes._wf_actions.asyncio.create_task",
+            side_effect=_capturing_create_task(captured),
+        ),
     ):
         mock_bus_cls.get_instance.return_value = MagicMock()
         resp = client.post(
@@ -242,11 +249,7 @@ def test_retry_accepts_empty_body_with_json_content_type(app_and_client):
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"]["status"] == "retrying"
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(captured["coro"])
-        finally:
-            loop.close()
+        _drive_and_close(captured)
 
 
 def test_rejects_already_published(app_and_client):
@@ -330,28 +333,20 @@ def test_forced_retry_clears_force_publish_in_checkpoint(app_and_client):
         "publish_result": pr,
         "publish_options": {"dry_run": False, "account_id": "acc1", "force_publish": False},
     }
-    captured = {}
-
-    def fake_create_task(coro, **kw):
-        captured["coro"] = coro
-        task = MagicMock()
-        task.add_done_callback = MagicMock()
-        task.get_name = lambda: kw.get("name", "")
-        return task
+    captured: list[Any] = []
 
     with (
         patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value=run_result),
         patch(_DB_UPSERT, new_callable=AsyncMock),
         patch(_EVENT_BUS) as mock_bus_cls,
-        patch("backend.api.routes._wf_actions.asyncio.create_task", side_effect=fake_create_task),
+        patch(
+            "backend.api.routes._wf_actions.asyncio.create_task",
+            side_effect=_capturing_create_task(captured),
+        ),
     ):
         mock_bus_cls.get_instance.return_value = MagicMock()
         client.post("/api/workflow/publish-retry/thr1", json={"force": True})
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(captured["coro"])
-        finally:
-            loop.close()
+        _drive_and_close(captured)
 
     updates = graph.aupdate_state.await_args.args[1]
     assert updates["publish_options"]["force_publish"] is False
