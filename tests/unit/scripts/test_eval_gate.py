@@ -24,6 +24,7 @@ if str(EVAL_DIR) not in sys.path:
 
 import extract_fixtures as ex  # noqa: E402  (sibling module after sys.path setup)
 import fixtures as fx  # noqa: E402
+import record_tool_results as recorder  # noqa: E402
 import run_gate as gate  # noqa: E402
 
 STATE: dict[str, object] = {
@@ -416,3 +417,132 @@ def test_blank_escalation_targets_and_bad_tool_limits_are_red():
             return ToolLimits(capability="", max_concurrency=-1, timeout_s=None)
 
     assert gate.check_policy(_BadLimits(), label="variant")[0].status == "red"
+
+
+# --- E3 L2 + §4 thresholds wiring (added with the E2/E3 completion round) ----
+
+
+def _tool_corpus(tmp_path: Path) -> Path:
+    corpus = tmp_path / "tools"
+    recorder.seed_cases(corpus)
+    return corpus
+
+
+def _metrics_record(
+    tmp_path: Path,
+    *,
+    tokens_ratio: float = 1.0,
+    latency_scale: float = 1.0,
+    quality: float | None = 0.85,
+) -> Path:
+    payload = {
+        "baseline": {"tokens": 1000, "calls": 100, "latency_ms": [100, 120, 140, 160, 200]},
+        "current": {
+            "tokens": int(round(1000 * tokens_ratio)),
+            "calls": 100,
+            "latency_ms": [value * latency_scale for value in (100, 120, 140, 160, 200)],
+        },
+        "quality": None if quality is None else {"agreement": quality, "samples": 40},
+    }
+    path = tmp_path / "metrics.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_a_seeded_tool_corpus_replays_green(tmp_path: Path):
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        tools_corpus=_tool_corpus(tmp_path),
+        benchmark_runner=_passing_benchmarks,
+    )
+    l2 = next(check for check in report.checks if check.name == "l2")
+    assert l2.status == "pass", l2.detail
+    assert report.l2 is not None and report.l2["cases"] == 5
+    assert report.red is False
+
+
+def test_a_tampered_tool_case_is_red(tmp_path: Path):
+    corpus = _tool_corpus(tmp_path)
+    case_file = next(corpus.glob("tool-case-*.json"))
+    case_file.write_bytes(case_file.read_bytes() + b" ")
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        tools_corpus=corpus,
+        benchmark_runner=_passing_benchmarks,
+    )
+    l2 = next(check for check in report.checks if check.name == "l2")
+    assert l2.status == "red"
+    assert "sha256" in l2.detail
+    assert report.red is True
+
+
+def test_a_missing_tool_corpus_is_a_visible_skip(tmp_path: Path):
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        tools_corpus=tmp_path / "absent-tools",
+        benchmark_runner=_passing_benchmarks,
+    )
+    l2 = next(check for check in report.checks if check.name == "l2")
+    assert l2.status == "skip"
+    assert report.red is False
+
+
+def test_thresholds_pass_with_a_metrics_record(tmp_path: Path):
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        tools_corpus=_tool_corpus(tmp_path),
+        metrics_path=_metrics_record(tmp_path),
+        benchmark_runner=_passing_benchmarks,
+    )
+    thresholds = next(check for check in report.checks if check.name == "thresholds")
+    assert thresholds.status == "pass", thresholds.detail
+    assert report.thresholds is not None and report.thresholds["status"] == "PASS"
+    assert "\n" not in thresholds.detail
+
+
+def test_thresholds_regression_is_a_red_gate(tmp_path: Path):
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        tools_corpus=_tool_corpus(tmp_path),
+        metrics_path=_metrics_record(tmp_path, tokens_ratio=1.10),
+        benchmark_runner=_passing_benchmarks,
+    )
+    thresholds = next(check for check in report.checks if check.name == "thresholds")
+    assert thresholds.status == "red"
+    assert report.red is True
+
+
+def test_a_missing_metrics_file_is_red_when_requested(tmp_path: Path):
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        tools_corpus=_tool_corpus(tmp_path),
+        metrics_path=tmp_path / "no-such-metrics.json",
+        benchmark_runner=_passing_benchmarks,
+    )
+    thresholds = next(check for check in report.checks if check.name == "thresholds")
+    assert thresholds.status == "red"
+
+
+def test_thresholds_without_metrics_is_an_explicit_skip_not_a_pass(tmp_path: Path):
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        tools_corpus=_tool_corpus(tmp_path),
+        benchmark_runner=_passing_benchmarks,
+    )
+    thresholds = next(check for check in report.checks if check.name == "thresholds")
+    assert thresholds.status == "skip"
+    assert "no --metrics" in thresholds.detail
+    assert report.red is False
+
+
+def test_skip_flags_are_explicit_skips(tmp_path: Path):
+    report = gate.run_gate(
+        corpus_dir=_corpus(tmp_path),
+        benchmark_runner=_passing_benchmarks,
+        skip_l2=True,
+        skip_thresholds=True,
+    )
+    by_name = {check.name: check for check in report.checks}
+    assert by_name["l2"].status == "skip"
+    assert by_name["thresholds"].status == "skip"
+    json.dumps(report.to_dict())

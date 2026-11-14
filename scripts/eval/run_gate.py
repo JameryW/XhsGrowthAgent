@@ -18,6 +18,13 @@ What it checks:
   four decisions, mandatory invariants are enforced, determinism is checked, and
   any difference from the baseline is reported as a preference diff
   (``decision_replay.py``).  A skipped L1 gap stays visible: no corpus means skip;
+* **l2** — tool/gateway replay (L2): recorded ToolResult sequences are replayed
+  through the real gateway and must match the baseline classification, receipt
+  and effect-ledger state (``tool_replay.py``).  A missing tool corpus is a skip
+  with the reason; an empty or tampered one is red;
+* **thresholds** — the §4 metric gate (cost drift, latency p50/p95, judge
+  agreement) over a ``--metrics`` record (``thresholds.py``).  No ``--metrics``
+  is an explicit skip: live numbers come from outside the offline gate;
 * **variant** — when one is supplied, which decisions moved (informational: a
   difference is the point of an A/B run, not a failure);
 * **benchmarks** — the deterministic F1/F2/F4 harness checks must pass and
@@ -56,12 +63,16 @@ from fixtures import (  # noqa: E402  (sibling module, loaded after sys.path set
     FixtureManifest,
     state_sha256,
 )
+from thresholds import run_thresholds  # noqa: E402  (sibling module)
+from tool_replay import run_l2_replay  # noqa: E402  (sibling module)
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_CORPUS = Path(".eval-fixtures")
+DEFAULT_TOOLS_CORPUS = Path(".eval-tool-corpus")
 _REQUIRED_BENCHMARKS = ("F1", "F2", "F4")
 _SKIPPED_GAPS = ("F5", "F7", "F8")
 _STATUS = Literal["pass", "red", "skip"]
+_THRESHOLD_STATUS: dict[str, _STATUS] = {"PASS": "pass", "FAIL": "red", "SKIP": "skip"}
 
 
 class BenchmarkRunner(Protocol):
@@ -87,6 +98,8 @@ class GateReport:
     diff: dict[str, Any] = field(default_factory=dict)
     l1: dict[str, Any] | None = None
     l1_diff: dict[str, Any] = field(default_factory=dict)
+    l2: dict[str, Any] | None = None
+    thresholds: dict[str, Any] | None = None
 
     @property
     def red(self) -> bool:
@@ -102,6 +115,8 @@ class GateReport:
             "variant_snapshot": self.variant_snapshot,
             "diff": self.diff,
             "l1": self.l1,
+            "l2": self.l2,
+            "thresholds": self.thresholds,
         }
 
 
@@ -373,6 +388,38 @@ def check_benchmarks(results: list[dict[str, Any]]) -> CheckResult:
     )
 
 
+def check_l2(tools_corpus: Path) -> tuple[CheckResult, dict[str, Any] | None]:
+    """Replay the recorded tool sequences; a gap stays a visible skip."""
+    try:
+        outcome = run_l2_replay(tools_corpus)
+    except Exception as exc:  # noqa: BLE001  (a broken corpus/replay is a red, not a crash)
+        return CheckResult("l2", "red", f"replay failed: {exc}"), None
+    payload = {
+        "status": outcome.status,
+        "detail": outcome.detail,
+        "cases": outcome.cases,
+        "mismatches": list(outcome.mismatches),
+    }
+    return CheckResult("l2", outcome.status, outcome.detail), payload
+
+
+def check_thresholds(metrics_path: Path | None) -> tuple[CheckResult, dict[str, Any] | None]:
+    """Apply the §4 cost/latency/quality thresholds to a metrics record.
+
+    No ``--metrics`` is an explicit skip: the numbers come from a live A/B run,
+    which the offline gate does not perform itself.  A supplied but unreadable or
+    malformed record is red so a typo cannot silently disable the gate.
+    """
+    try:
+        outcome = run_thresholds(metrics_path)
+    except ValueError as exc:
+        return CheckResult("thresholds", "red", str(exc)), None
+    status = _THRESHOLD_STATUS[outcome.status]
+    # Keep one check line per gate check: dimension rows are joined, not stacked.
+    detail = "; ".join(part.strip() for part in outcome.summary().splitlines() if part.strip())
+    return CheckResult("thresholds", status, detail), outcome.to_dict()
+
+
 def load_variant(spec: str) -> Any:
     """Load ``module:factory`` and insist the result is a HarnessPolicy."""
     from backend.harness.policy import HarnessPolicy
@@ -391,10 +438,14 @@ def load_variant(spec: str) -> Any:
 def run_gate(
     *,
     corpus_dir: Path = DEFAULT_CORPUS,
+    tools_corpus: Path = DEFAULT_TOOLS_CORPUS,
     variant: Any | None = None,
     benchmark_runner: BenchmarkRunner | None = None,
+    metrics_path: Path | None = None,
     skip_benchmarks: bool = False,
     skip_l1: bool = False,
+    skip_l2: bool = False,
+    skip_thresholds: bool = False,
     fail_on_red: bool = False,
     expect_manifest_sha256: str | None = None,
 ) -> GateReport:
@@ -423,6 +474,22 @@ def run_gate(
         report.l1 = outcome.summary()
         report.l1_diff = outcome.diff
         report.checks.append(CheckResult("l1", outcome.status, outcome.detail))
+
+    if skip_l2:
+        report.checks.append(CheckResult("l2", "skip", "--skip-l2: not run in this invocation"))
+    else:
+        l2_result, l2_payload = check_l2(tools_corpus)
+        report.l2 = l2_payload
+        report.checks.append(l2_result)
+
+    if skip_thresholds:
+        report.checks.append(
+            CheckResult("thresholds", "skip", "--skip-thresholds: not run in this invocation")
+        )
+    else:
+        threshold_result, threshold_payload = check_thresholds(metrics_path)
+        report.thresholds = threshold_payload
+        report.checks.append(threshold_result)
 
     if variant is not None:
         variant_result, variant_snapshot = check_policy(variant, label="variant")
@@ -465,12 +532,35 @@ def run_gate(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the offline Adaptive Harness A/B gate")
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    parser.add_argument(
+        "--tools-corpus",
+        type=Path,
+        default=DEFAULT_TOOLS_CORPUS,
+        help="recorded tool-result corpus for L2 (build it with "
+        "scripts/eval/record_tool_results.py --seed --out .eval-tool-corpus)",
+    )
+    parser.add_argument(
+        "--metrics",
+        type=Path,
+        default=None,
+        help="A/B metrics record for the §4 thresholds; omit to skip that check",
+    )
     parser.add_argument("--variant", default=None, help="module:factory producing a HarnessPolicy")
     parser.add_argument("--skip-benchmarks", action="store_true")
     parser.add_argument(
         "--skip-l1",
         action="store_true",
         help="skip the L1 decision replay (reported as an explicit skip, not a pass)",
+    )
+    parser.add_argument(
+        "--skip-l2",
+        action="store_true",
+        help="skip the L2 tool replay (reported as an explicit skip, not a pass)",
+    )
+    parser.add_argument(
+        "--skip-thresholds",
+        action="store_true",
+        help="skip the §4 threshold check (reported as an explicit skip, not a pass)",
     )
     parser.add_argument(
         "--fail-on-red",
@@ -492,9 +582,13 @@ def main(argv: list[str] | None = None) -> int:
     variant = load_variant(options.variant) if options.variant else None
     report = run_gate(
         corpus_dir=options.corpus,
+        tools_corpus=options.tools_corpus,
         variant=variant,
+        metrics_path=options.metrics,
         skip_benchmarks=options.skip_benchmarks,
         skip_l1=options.skip_l1,
+        skip_l2=options.skip_l2,
+        skip_thresholds=options.skip_thresholds,
         fail_on_red=options.fail_on_red,
         expect_manifest_sha256=options.expect_manifest_sha256,
     )

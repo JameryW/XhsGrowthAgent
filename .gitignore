@@ -76,6 +76,7 @@ verify_*.py
 .dsh-pytest-temproot/
 .dsh-tmp/
 .eval-fixtures/
+.eval-tool-corpus/
 .eval-tmp/
 .workbuddy/
 data-gym-cache/
