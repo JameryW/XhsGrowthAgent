@@ -542,4 +542,5 @@ L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全�
   `-e` 白名单里（host-only 前缀 `HYMEMORY_` 与已废弃的 `CREATOR_STATS_MAX_BODY_VISITS`
   显式豁免），且 backend `os.environ` 读取的已文档化键也必须被传——防止下一次「文档有、
   容器没有」的静默失效。deploy.sh 语法用 LF 副本 `bash -n` 验证（Windows 检出为 CRLF，
-  属既有事实、非本次引入）。
+  属既有事实、非本次引入）。本地全量回归 **5116 passed / 14 skipped / 0 failed**（5130
+  collected，+3 守卫用例）；推送后 CI run **43606998996**（`42fa2af1`）10 个作业 success。

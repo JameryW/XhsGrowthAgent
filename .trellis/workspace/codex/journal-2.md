@@ -888,4 +888,5 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - `.env.example`：删除全仓库无读者的 `IMAGE_GEN_API_KEY`；新增 `XHS_ALLOW_OUTBOUND_DM`/`XHS_DM_DAILY_LIMIT`/`XHS_COMMENT_REPLY_DAILY_LIMIT` 模板行；`XHS_COOKIE`/`XHS_USER_ID` 标注为单账号回退；`HYMEMORY_*` 标注 host/dev-only（镜像不含 `.[memory-hy]` SDK，故意不传）。
 - 新增守卫 `tests/unit/scripts/test_deploy_env.py`（3 tests）：模板 active 键必须在 `-e` 白名单；backend 读取的已文档化键也必须在白名单；host-only 豁免项必须仍在模板中（`HYMEMORY_` 前缀、`CREATOR_STATS_MAX_BODY_VISITS`）。CLAUDE.md 部署段把错误描述「passes all env vars」改成「只转发显式 `-e` 列表，新增键三处同步」，防止同类静默失效。
 - 验证：`test_deploy_env.py` 3 passed、`tests/unit/scripts` 297 passed；`deploy.sh` 用 LF 副本 `bash -n` exit=0（Windows 检出自带 CRLF 是既有事实，非本次改动引入）。
+- 全量回归 **5116 passed / 14 skipped / 0 failed**（5130 collected）；`ci_local.py --skip-tests` 全 PASS。提交 `42fa2af1` 已推送，CI run **43606998996** 10 个作业 success。
 
