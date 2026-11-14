@@ -546,5 +546,13 @@ L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全�
   必须在 `.env.example` 文档化（注释默认值即算），因为 `deploy.sh` 在 host 构建 `dist/`、
   这些值会烘进产物而容器运行时读不到。deploy.sh 语法用 LF 副本 `bash -n` 验证（Windows
   检出为 CRLF，属既有事实、非本次引入）。本地全量回归 **5117 passed / 14 skipped /
-  0 failed**（5131 collected，+4 守卫用例）；推送后 CI run **43606998996**（`42fa2af1`）
-  10 个作业 success。
+  0 failed**（5131 collected，+4 守卫用例）；提交 `42fa2af1` 的 CI run **43606998996**
+  10 个作业 success，docs-only 提交 `01cefc67` 的 CI run **43607518397** 同样 10/10。
+
+- **前端构建期 env 文档化 + 守卫扩展**：`VITE_BACKEND_PROXY_TARGET` /
+  `VITE_QUALITY_CONSISTENCY_V2` / `VITE_TELEMETRY_ENDPOINT` 是 host 构建期开关
+  （`deploy.sh` 在 host 跑 `npm run build`，值烘进 `frontend/dist`、容器运行时读不到），
+  已在 `.env.example` 文档化并注明默认值；`tests/unit/scripts/test_deploy_env.py` 扩为
+  4 tests 守卫「Vite 读取的构建期变量必须可在模板中发现」。同时修正
+  `docs/adaptive-harness-eval-plan.md` 顶部状态段的历史残留「E2/E3 未接线」。
+  提交 `0b9c6ab2`，推送后 CI run **43609063592** 10 个作业 success。
