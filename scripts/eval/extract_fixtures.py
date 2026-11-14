@@ -116,8 +116,14 @@ async def iter_sqlite(
     import aiosqlite
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+    from backend.state.checkpoint_serde import checkpoint_serde
+
     async with aiosqlite.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as conn:
-        saver = AsyncSqliteSaver(conn=conn)
+        # Same serializer as the graph (票 5cz): without the allowlist LangGraph
+        # logs "unregistered type backend.state.enums.WorkflowPhase" on every
+        # real checkpoint and will one day refuse to deserialize it, turning the
+        # corpus into raw strings for the exact fields the fixtures must carry.
+        saver = AsyncSqliteSaver(conn=conn, serde=checkpoint_serde())
         async for record in _records_from_saver(saver, scan_limit=scan_limit):
             yield record
 
@@ -128,7 +134,9 @@ async def iter_postgres(
     """Read every checkpoint from a Postgres ``AsyncPostgresSaver`` database."""
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-    async with AsyncPostgresSaver.from_conn_string(uri) as saver:
+    from backend.state.checkpoint_serde import checkpoint_serde
+
+    async with AsyncPostgresSaver.from_conn_string(uri, serde=checkpoint_serde()) as saver:
         async for record in _records_from_saver(saver, scan_limit=scan_limit):
             yield record
 

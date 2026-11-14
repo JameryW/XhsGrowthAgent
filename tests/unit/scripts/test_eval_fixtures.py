@@ -588,3 +588,71 @@ def test_scan_limit_bounds_store_reads_and_says_the_corpus_may_be_incomplete(tmp
     )
     assert len(fixtures) <= 2
     assert skipped["scan_capped"] == 1
+
+
+def test_iter_sqlite_reads_with_the_project_checkpoint_serde(tmp_path: Path, monkeypatch):
+    """E1 must decode checkpoints exactly like the graph does (票 5cz).
+
+    A bare saver logs "unregistered type backend.state.enums.WorkflowPhase" for
+    every real checkpoint and will one day refuse to decode it, which would
+    silently downgrade the fixture's decision fields to raw strings -- the very
+    fields the corpus exists to preserve.
+    """
+    from langgraph.checkpoint.sqlite import aio as sqlite_aio
+
+    import backend.state.checkpoint_serde as serde_mod
+
+    seen: dict[str, object] = {}
+
+    class _FakeSaver:
+        def __init__(self, conn, *, serde=None):
+            seen["serde"] = serde
+
+        async def alist(self, config, *, limit=None):
+            return
+            yield  # pragma: no cover - empty checkpoint store
+
+    monkeypatch.setattr(sqlite_aio, "AsyncSqliteSaver", _FakeSaver)
+    monkeypatch.setattr(serde_mod, "checkpoint_serde", lambda: "PROJECT_SERDE")
+    db = tmp_path / "checkpoints.sqlite"
+    db.touch()
+
+    async def _drain():
+        return [record async for record in ex.iter_sqlite(db)]
+
+    assert asyncio.run(_drain()) == []
+    assert seen["serde"] == "PROJECT_SERDE"
+
+
+def test_iter_postgres_reads_with_the_project_checkpoint_serde(monkeypatch):
+    """The Postgres entry must pass the same allowlisted serializer (票 5cz)."""
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+    import backend.state.checkpoint_serde as serde_mod
+
+    seen: dict[str, object] = {}
+
+    class _FakeSaver:
+        async def alist(self, config, *, limit=None):
+            return
+            yield  # pragma: no cover - empty checkpoint store
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _FakeSaver()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    def _from_conn_string(conn_string, *, pipeline=False, serde=None):
+        seen["serde"] = serde
+        return _Ctx()
+
+    monkeypatch.setattr(AsyncPostgresSaver, "from_conn_string", _from_conn_string)
+    monkeypatch.setattr(serde_mod, "checkpoint_serde", lambda: "PROJECT_SERDE")
+
+    async def _drain():
+        return [record async for record in ex.iter_postgres("postgresql://unused")]
+
+    assert asyncio.run(_drain()) == []
+    assert seen["serde"] == "PROJECT_SERDE"
