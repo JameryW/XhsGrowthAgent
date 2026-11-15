@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 83
-- **Last Active**: 2026-11-14
+- **Total Sessions**: 84
+- **Last Active**: 2026-11-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~841 | Active |
+| `journal-2.md` | ~952 | Active |
 | `journal-1.md` | ~1999 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 84 | 2026-11-15 | 架构升级：收藏优先预测、搜索质量门、PLAD、记忆效用、排水契约与仿真 | `16de3009` | `main` |
 | 83 | 2026-11-14 | 架构升级审计与修复 + E3 L1 决策回放 + E2 接线 + L2 工具回放/阈值门禁（2026-11-14） | `de5ad5cc`, `43a88329`, `ae06d01e`, `c83ac772`, `3bc05c4c`, `4eddb652`, `35a10a78`, `7fb3dad8` | `main` |
 | 82 | 2026-11-05 | gate 全链路与实时/并发/调度补测（票 5dc-5df） | `7a5049fa`, `e2df95bc` | `main` |
 | 81 | 2026-11-04 | 启动指标补齐：Postgres 模式 serve 就绪 9.3s（5db 后） | `65e042db` | `main` |

@@ -917,3 +917,45 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 
 
 
+
+
+## Session 84: 架构升级：收藏优先预测、搜索质量门、PLAD、记忆效用、排水契约与仿真
+
+**Date**: 2026-11-15
+**Task**: 架构升级：收藏优先预测、搜索质量门、PLAD、记忆效用、排水契约与仿真
+**Branch**: `main`
+
+### Summary
+
+实现六项架构升级：collect-first 四头预测与 Hawkes 扩散、RQGM Soft-AND 与搜索 GEO、PLAD 31 特征与历史新颖度、Outcome-Verified Gate 与上下文重叠惩罚、租约排水与 UNKNOWN 发布读回、14 天视觉衰减与 Context-Tree dry-run 仿真。全仓 pytest 5189 passed，ci_local lint/format/mypy/gates 全绿。
+
+### Main Changes
+
+- 预测：`backend/tools/analysis/collect_first.py` 四头 `log1p` + 64 维文本表示 + 收藏优先排序 + 14 天 Hawkes 扩散 + 固定种子配对替换；`topic_scorer` 输出 `predicted_collect`/`collect_first_rank`，Ripple 工具层附带 `collect_first`。
+- 质量：`backend/services/quality_gate.py` Layer I Soft-AND 底线门 + 搜索 GEO；evaluator 输出 `quality_gate`/`search_geo`，不改变既有 10 维权重和。
+- 文案：`backend/tools/content/plad.py` 31 项心理语言学特征接入 `de_ai_taste.polish_copy`；`novelty.py` 对最近 30 篇历史标题做 0.82 余弦惩罚并接入 strategist。
+- 记忆：hy `list_memories` 聚合 chat + working 双库；`memory/hy/promotion.py` Outcome-Verified Gate 与 `negative_pitfalls`；context compiler 增加 Token 重叠边际效用惩罚。
+- 调度：租约新增 `DRAINING`/`start_drain`/`release_all_owned_leases`，lifespan 排水后限时等待并释放；启动时 `readback_unknown_publishes` 核实 UNKNOWN 发布。
+- 视觉/仿真：`visual_analysis` 14 天半衰期加权与 `as_of`；`context_tree_sim.py` Context-Tree 边界仿真接入 publisher dry-run，仍返回 `mock_published`。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `16de3009` | feat(architecture): 接入收藏优先预测与搜索质量门等六项升级 |
+| `3762db39` | chore(task): archive 11-15-arch-upgrade-2026-11 |
+
+### Testing
+
+- [OK] `pytest -q`：5189 passed, 14 skipped（157.99s）
+- [OK] `tests/unit`：4875 passed, 11 skipped
+- [OK] `scripts/ci_local.py --only lint,format,mypy,gates`：全部 PASS（ruff 723 tracked、mypy 273 source）
+- [OK] 新增 9 个单测文件，覆盖 collect-first、PLAD、质量门、新颖度、Outcome Gate、Context-Tree、视觉衰减、租约排水、发布读回
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
