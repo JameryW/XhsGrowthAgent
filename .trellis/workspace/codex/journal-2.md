@@ -913,6 +913,7 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - 测试 `tests/unit/scripts/test_eval_live_preflight.py` **21 passed**：未武装/缺账号/judge=none/人审提示、缺脱敏键/缺 magpie、语料缺失/空/损坏、工具语料降级、目录未忽略/仓库外/等于仓库根、git 不可用降级、预算固定 199、armed 退出码、JSON 不含凭据、真实 git 目录模式。
 - 实测：默认环境（未武装、无凭据）输出 4 个 BLOCK 且 `--armed` exit 1；配齐 `XHS_EVAL_LIVE/REDACTION_KEY/MAGPIE_*` 后 ready=yes exit 0。
 - 验证：新模块 ruff/format 通过；全量回归 **5138 passed / 14 skipped / 0 failed**（5152 collected，206s）。
+- 提交 `f20efdec`，CI run **43663998316** 10 个作业 success。
 
 
 

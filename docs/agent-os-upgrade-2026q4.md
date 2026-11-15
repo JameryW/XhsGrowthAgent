@@ -573,4 +573,5 @@ L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全�
   凭据）。配套：`.gitignore` 增 `.eval-live/`；runbook 增 §3.2 预检与 §6.2 回滚预案 /
   §6.3 live 数据留存与脱敏规则（产物不提交、正文与 rationale 默认不落库、原始上下文 ≤30 天）；
   eval-plan §6.10 记录预检。本轮全量回归 **5138 passed / 14 skipped / 0 failed**
-  （5152 collected，206s，+21 = 预检用例）。
+  （5152 collected，206s，+21 = 预检用例）。提交 `f20efdec`，推送后 CI run
+  **43663998316** 10 个作业 success。
