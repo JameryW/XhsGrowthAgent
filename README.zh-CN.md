@@ -362,7 +362,7 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 | 模块 | 位置 | 能力 |
 | --- | --- | --- |
-| Collect-First 预测 | `backend/tools/analysis/collect_first.py` | 四头 `log(1+y)` 预测（阅读/点赞/收藏/评论）+ 64 维文本表示 + 指数核 Hawkes 拟合与 14 天扩散曲线 + 固定种子配对特征替换；按收藏优先排序 |
+| Collect-First 预测 | `backend/tools/analysis/collect_first.py` | 四头 `log(1+y)` 预测（阅读/点赞/收藏/评论）+ 64 维文本表示 + 指数核 Hawkes 拟合与 14 天扩散曲线 + 固定种子配对特征替换；按收藏优先排序；≥8 条已发布笔记的互动记录可拟合账号级 log 空间校准（斜率/截距/R²），只校正先验、不重训特征权重 |
 | 搜索质量门 | `backend/services/quality_gate.py` | SearchLLM 式 Layer I Soft-AND 底线门（合规/文案/商单语气）+ `geo_readiness` 搜索 GEO 就绪度；评估器输出 `quality_gate` 与 `search_geo` |
 | 去 AI 味 | `backend/tools/content/plad.py`、`backend/tools/content/novelty.py` | 31 项 PLAD 心理语言学特征与结构化约束；0.82 余弦阈值的账号历史新颖度惩罚 |
 | 记忆效用门 | `backend/memory/hy/promotion.py` | Outcome-Verified Epistemic Gate：收藏率或阅读量达到近 10 篇中位数 1.2×、或人工批准，才晋升 `verified_pattern`；否则记入 `negative_pitfalls` |

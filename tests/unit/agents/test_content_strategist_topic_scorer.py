@@ -49,6 +49,7 @@ class TestContentStrategistTopicScorer:
                 "growth_trend": "爆发期",
                 "competition_level": "中等",
                 "recommendation": "强烈推荐",
+                "collect_first": {"calibration": {"sample_size": 12}},
             }
         )
 
@@ -64,6 +65,7 @@ class TestContentStrategistTopicScorer:
         scorer.ainvoke.assert_awaited()
         assert any("话题热度评分" in p for p in captured_prompts)
         assert any("82" in p for p in captured_prompts)
+        assert any("账号校准 12 篇" in p for p in captured_prompts)
 
     @pytest.mark.asyncio
     async def test_recent_titles_are_passed_for_novelty(self, agent, mock_store, xhs_read_grant):
@@ -101,6 +103,7 @@ class TestContentStrategistTopicScorer:
 
         payload = scorer.ainvoke.call_args.args[0]
         assert payload["history_titles"] == ["上周写过的探店"]
+        assert payload["history_records"] == [{"title": "上周写过的探店"}]
 
     @pytest.mark.asyncio
     async def test_scorer_failure_does_not_block(self, agent, mock_store):

@@ -3,6 +3,8 @@
 Implements the OranSim-style prediction contract used by the growth workflow:
 
 * four independent ``log1p`` heads — reads / likes / collects / comments;
+* an optional account-level calibration fitted from ``content_history``
+  outcomes, so the prior is corrected toward what this account actually gets;
 * a compact, deterministic 64-dim text representation (no embedding API
   dependency, so the forecast is reproducible in CI);
 * Collect-First ranking with a 14-day cumulative simulated response mass as
@@ -163,6 +165,56 @@ class EngagementForecast:
 
 
 @dataclass(frozen=True)
+class CalibrationHead:
+    """One log-space correction fitted from an account's own outcomes."""
+
+    slope: float
+    intercept: float
+    sample_size: int
+    r2_log: float
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "slope": round(self.slope, 4),
+            "intercept": round(self.intercept, 4),
+            "sample_size": self.sample_size,
+            "r2_log": round(self.r2_log, 4),
+        }
+
+
+@dataclass(frozen=True)
+class EngagementCalibration:
+    """Account-level correction applied to the four prior log scores.
+
+    ``content_history`` stores only a title, hashtags, publish time and the
+    eventual counters — no body, follower count or media type.  Refitting all
+    feature coefficients from that would mostly fit missing inputs, so the
+    calibration stays one-dimensional per head: ``y_log ≈ slope * prior_log +
+    intercept``.  It is deliberately modest and reports its own R²; callers
+    should treat a low/negative R² as "not enough signal", not as a promise.
+    """
+
+    heads: dict[str, CalibrationHead] = field(default_factory=dict)
+    sample_size: int = 0
+
+    def apply(self, log_scores: Mapping[str, float]) -> dict[str, float]:
+        adjusted: dict[str, float] = {}
+        for name, value in log_scores.items():
+            head = self.heads.get(name)
+            if head is None:
+                adjusted[name] = value
+            else:
+                adjusted[name] = head.slope * value + head.intercept
+        return adjusted
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "sample_size": self.sample_size,
+            "heads": {name: head.as_dict() for name, head in sorted(self.heads.items())},
+        }
+
+
+@dataclass(frozen=True)
 class HawkesParams:
     """Exponential-kernel Hawkes parameters."""
 
@@ -223,13 +275,21 @@ def _feature_dict(features: PostFeatures) -> dict[str, float]:
     }
 
 
-def predict_engagement(features: PostFeatures | Mapping[str, Any]) -> EngagementForecast:
+def predict_engagement(
+    features: PostFeatures | Mapping[str, Any],
+    *,
+    calibration: EngagementCalibration | None = None,
+) -> EngagementForecast:
     """Predict the four heads with a deterministic OranSim-shaped model.
 
     The coefficients are an explicit prior (no training happens here).  They
     encode the three regularities the OranSim paper validates: collect intent
     is utility-driven, reads are follower/media driven, and age depresses all
     heads.  ``log1p`` outputs keep the heavy tail well behaved.
+
+    ``calibration`` is optional and only rescales each prior log score; the
+    feature weights themselves stay fixed.  Fit it with :func:`fit_calibration`
+    when the account has enough measured outcomes.
     """
     if not isinstance(features, PostFeatures):
         features = PostFeatures.from_mapping(features)
@@ -259,6 +319,8 @@ def predict_engagement(features: PostFeatures | Mapping[str, Any]) -> Engagement
         + 0.10 * f["body_density"],
         "comment": common * 0.70 + 0.22 * f["emotion_signal"] + 0.08 * f["tag_signal"],
     }
+    if calibration is not None:
+        log_scores = calibration.apply(log_scores)
     raw = {
         name: max(0.0, math.expm1(max(-6.0, min(8.0, value)))) for name, value in log_scores.items()
     }
@@ -271,6 +333,141 @@ def predict_engagement(features: PostFeatures | Mapping[str, Any]) -> Engagement
         representation=tuple(signature),
         features=f,
     )
+
+
+_METRIC_FIELDS: dict[str, tuple[str, ...]] = {
+    "read": ("views", "reads", "read"),
+    "like": ("likes", "like"),
+    "collect": ("collects", "collect", "bookmarks"),
+    "comment": ("comments", "comment"),
+}
+
+
+def _metric_target(record: Mapping[str, Any], head: str) -> float | None:
+    """Return ``log1p(metric)`` for the first present counter, else ``None``."""
+    for field_name in _METRIC_FIELDS[head]:
+        if field_name not in record:
+            continue
+        raw = record.get(field_name)
+        try:
+            value = float(raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value < 0:
+            continue
+        return math.log1p(value)
+    return None
+
+
+def _posted_hour(record: Mapping[str, Any]) -> int:
+    raw_hour = record.get("posted_hour")
+    try:
+        return int(float(raw_hour)) % 24  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        pass
+    stamp = record.get("published_at")
+    if isinstance(stamp, (int, float)) and math.isfinite(float(stamp)):
+        value = float(stamp)
+        seconds = value / 1000.0 if value > 10_000_000_000 else value
+        try:
+            return datetime.fromtimestamp(seconds, tz=UTC).hour
+        except (OverflowError, OSError, ValueError):
+            return 12
+    if isinstance(stamp, str) and stamp.strip():
+        text = stamp.strip().replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(text).hour
+        except ValueError:
+            return 12
+    return 12
+
+
+def _history_features(record: Mapping[str, Any]) -> PostFeatures:
+    """Rebuild the predict-time features that content_history actually stores."""
+    payload: dict[str, Any] = dict(record)
+    content_type = str(record.get("content_type") or "").lower()
+    if "media_type" not in payload:
+        payload["media_type"] = "video" if content_type in {"video", "视频"} else "image"
+    payload["posted_hour"] = _posted_hour(record)
+    # Age at measurement is unknown; the account-level intercept absorbs the
+    # average delay rather than pretending every note was scored at publish time.
+    payload["age_days"] = 0.0
+    return PostFeatures.from_mapping(payload)
+
+
+def _fit_calibration_head(
+    prior_logs: Sequence[float],
+    targets: Sequence[float],
+    *,
+    min_samples: int,
+) -> CalibrationHead | None:
+    count = min(len(prior_logs), len(targets))
+    if count < min_samples:
+        return None
+    xs = list(prior_logs[:count])
+    ys = list(targets[:count])
+    mean_x = sum(xs) / count
+    mean_y = sum(ys) / count
+    var_x = sum((x - mean_x) ** 2 for x in xs)
+    if var_x < 1e-12:
+        slope = 1.0
+    else:
+        covariance = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True))
+        slope = _clamp(covariance / var_x, 0.25, 3.0)
+    intercept = _clamp(mean_y - slope * mean_x, -8.0, 8.0)
+    predictions = [slope * x + intercept for x in xs]
+    ss_res = sum((y - pred) ** 2 for y, pred in zip(ys, predictions, strict=True))
+    ss_tot = sum((y - mean_y) ** 2 for y in ys)
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    return CalibrationHead(
+        slope=slope,
+        intercept=intercept,
+        sample_size=count,
+        r2_log=r2,
+    )
+
+
+def fit_calibration(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    min_samples: int = 8,
+) -> EngagementCalibration | None:
+    """Fit a per-head log-space correction from ``content_history`` records.
+
+    Returns ``None`` when no head has ``min_samples`` complete outcomes.  The
+    four heads are fitted independently: a note may have views but no collect
+    counter, and that should not throw the read calibration away.
+    """
+    usable: list[tuple[PostFeatures, EngagementForecast, Mapping[str, Any]]] = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            continue
+        if not any(_metric_target(record, head) is not None for head in _HEAD_NAMES):
+            continue
+        features = _history_features(record)
+        usable.append((features, predict_engagement(features), record))
+    if not usable:
+        return None
+
+    heads: dict[str, CalibrationHead] = {}
+    for head in _HEAD_NAMES:
+        pairs = [
+            (forecast.log_scores[head], target)
+            for _features, forecast, record in usable
+            if (target := _metric_target(record, head)) is not None
+        ]
+        if len(pairs) < min_samples:
+            continue
+        fitted = _fit_calibration_head(
+            [pair[0] for pair in pairs],
+            [pair[1] for pair in pairs],
+            min_samples=min_samples,
+        )
+        if fitted is not None:
+            heads[head] = fitted
+    if not heads:
+        return None
+    return EngagementCalibration(heads=heads, sample_size=len(usable))
 
 
 def response_mass(forecast: EngagementForecast, horizon_days: int = _DEFAULT_HORIZON_DAYS) -> float:
@@ -506,9 +703,10 @@ def forecast_payload(
     features: PostFeatures | Mapping[str, Any],
     *,
     snapshots: Sequence[Mapping[str, Any]] | None = None,
+    calibration: EngagementCalibration | None = None,
 ) -> dict[str, Any]:
     """Bundle the forecast, Hawkes curve, and Collect-First score for tools."""
-    forecast = predict_engagement(features)
+    forecast = predict_engagement(features, calibration=calibration)
     params = fit_hawkes(snapshots or [])
     curve = diffusion_curve(params, initial_events=0.0)
     return {
@@ -517,4 +715,5 @@ def forecast_payload(
         "response_mass_14d": round(response_mass(forecast), 2),
         "hawkes": params.as_dict(),
         "diffusion_curve": curve,
+        "calibration": calibration.as_dict() if calibration is not None else None,
     }

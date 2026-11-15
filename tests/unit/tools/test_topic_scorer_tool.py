@@ -108,6 +108,30 @@ async def test_a_read_failure_escapes_instead_of_becoming_a_number(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_history_records_fit_account_calibration(monkeypatch):
+    """Outcome history is forwarded to ``fit_calibration`` and reported."""
+    _patch_client(monkeypatch, _Client())
+    records = [
+        {
+            "title": f"历史笔记 {index}",
+            "views": 500 + index * 20,
+            "likes": 40 + index,
+            "collects": 15 + index,
+            "comments": 4 + index,
+        }
+        for index in range(8)
+    ]
+
+    result = await topic_scorer.ainvoke(
+        {"topic": "露营", "niche": "旅行", "history_records": records}
+    )
+
+    calibration = result["collect_first"]["calibration"]
+    assert calibration["sample_size"] == 8
+    assert set(calibration["heads"]) == {"read", "like", "collect", "comment"}
+
+
+@pytest.mark.asyncio
 async def test_a_real_read_still_produces_a_score(monkeypatch):
     """The guard must not turn "works fine" into "never readable"."""
     _patch_client(monkeypatch, _Client())

@@ -25,7 +25,11 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from backend.tools.analysis.collect_first import PostFeatures, forecast_payload
+from backend.tools.analysis.collect_first import (
+    PostFeatures,
+    fit_calibration,
+    forecast_payload,
+)
 from backend.tools.content.novelty import novelty_penalty
 
 logger = logging.getLogger("xhs_growth.tools.topic_scorer")
@@ -39,6 +43,7 @@ async def topic_scorer(
     time_window: str = "7d",
     account_id: str = "",
     history_titles: list[str] | None = None,
+    history_records: list[dict[str, Any]] | None = None,
     snapshots: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """评估小红书话题的热度得分与传播潜力.
@@ -50,6 +55,7 @@ async def topic_scorer(
         time_window: 数据时间窗口
         account_id: 用谁的凭据去读平台。空 = 部署级凭据（单账号部署）
         history_titles: 该账号最近已发布笔记标题（用于 Novelty Penalty）
+        history_records: 同一批笔记的历史表现记录（用于账号级预测校准）
         snapshots: 最近互动快照序列（用于账号级 Hawkes 拟合）
 
     Returns:
@@ -182,9 +188,11 @@ async def topic_scorer(
         # OranSim-style Collect-First forecast (deterministic, no extra API).
         sample_title = str(getattr(top_posts[0], "title", "") if top_posts else topic) or topic
         sample_body = str(getattr(top_posts[0], "content", "") if top_posts else "") or sample_title
+        calibration = fit_calibration(history_records or [])
         collect_forecast = forecast_payload(
             PostFeatures(title=sample_title, body=sample_body, tags=tuple(keywords or ())),
             snapshots=snapshots,
+            calibration=calibration,
         )
 
         # AutoViralAI-style novelty penalty against the account's recent notes.

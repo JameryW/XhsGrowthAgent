@@ -228,12 +228,16 @@ class ContentStrategistAgent(BaseAgent):
         # 的假分数）。这里逐条跳过并记日志，绝不把"没读到"写成"分数是 50"。
         # account_id 传原始值：空 = 用部署级凭据，不要拿本地那个 "default"
         # 兜底值去冒充账号（它只是 CreativeMemory 的键）。
-        history_titles = await self._recent_published_titles(store, account_id)
+        history_records = await self._recent_published_notes(store, account_id)
+        history_titles = [
+            title for record in history_records if (title := self._record_title(record))
+        ]
         topic_scores_ctx = await self._score_trend_topics(
             trend_data,
             niche,
             account_id=str(state.get("account_id") or ""),
             history_titles=history_titles,
+            history_records=history_records,
         )
         if topic_scores_ctx:
             memory_context += f"\n{topic_scores_ctx}"
@@ -665,15 +669,16 @@ class ContentStrategistAgent(BaseAgent):
         return topics
 
     @staticmethod
-    async def _recent_published_titles(
+    async def _recent_published_notes(
         store: BaseStore, account_id: str, limit: int = 30
-    ) -> list[str]:
-        """Return recent published titles for novelty scoring.
+    ) -> list[dict[str, Any]]:
+        """Return recent published records for novelty and calibration.
 
-        The strategist must not repeat the account's recent angles, so the
-        scoring call receives up to ``limit`` titles from ``content_history``.
-        A store failure degrades to no history (the score keeps working without
-        the novelty penalty) instead of blocking topic selection.
+        The strategist must not repeat the account's recent angles, and the
+        collect-first forecast should learn from this account's actual
+        outcomes.  Both signals come from one ``content_history`` read.  A
+        store failure degrades to no history instead of blocking topic
+        selection.
         """
         if store is None:
             return []
@@ -687,15 +692,24 @@ class ContentStrategistAgent(BaseAgent):
         except Exception as e:
             logger.debug("content_history recall for novelty skipped: %s", e)
             return []
-        titles: list[str] = []
+        records: list[dict[str, Any]] = []
         for item in items or []:
             value = getattr(item, "value", None)
-            if not isinstance(value, dict):
-                continue
-            title = value.get("title") or value.get("selected_title")
-            if title:
-                titles.append(str(title))
-        return titles
+            if isinstance(value, dict):
+                records.append(dict(value))
+        return records
+
+    @staticmethod
+    def _record_title(record: dict[str, Any]) -> str:
+        title = record.get("title") or record.get("selected_title")
+        return str(title) if title else ""
+
+    @classmethod
+    async def _recent_published_titles(
+        cls, store: BaseStore, account_id: str, limit: int = 30
+    ) -> list[str]:
+        records = await cls._recent_published_notes(store, account_id, limit=limit)
+        return [title for record in records if (title := cls._record_title(record))]
 
     async def _score_trend_topics(
         self,
@@ -704,6 +718,7 @@ class ContentStrategistAgent(BaseAgent):
         limit: int = 5,
         account_id: str = "",
         history_titles: list[str] | None = None,
+        history_records: list[dict[str, Any]] | None = None,
     ) -> str:
         """对候选话题调用 topic_scorer 打分，返回可注入 prompt 的上下文字符串。
 
@@ -750,6 +765,7 @@ class ContentStrategistAgent(BaseAgent):
                         "niche": niche,
                         "account_id": account_id,
                         "history_titles": history_titles or [],
+                        "history_records": history_records or [],
                     },
                     granted_scopes=granted,
                 )
@@ -764,12 +780,18 @@ class ContentStrategistAgent(BaseAgent):
                 novelty_note = ""
                 if isinstance(novelty, dict) and novelty.get("is_duplicate_risk"):
                     novelty_note = "，历史相似度高（建议换角度）"
+                calibration_note = ""
+                collect_first = result.get("collect_first")
+                if isinstance(collect_first, dict):
+                    calibration = collect_first.get("calibration")
+                    if isinstance(calibration, dict) and calibration.get("sample_size"):
+                        calibration_note = f"，账号校准 {calibration['sample_size']} 篇"
                 lines.append(
                     f"- {topic}: 热度 {result.get('heat_score', 'N/A')}，"
                     f"趋势 {result.get('growth_trend', 'N/A')}，"
                     f"竞争 {result.get('competition_level', 'N/A')}，"
                     f"收藏预测 {predicted_collect if predicted_collect is not None else 'N/A'}，"
-                    f"推荐 {result.get('recommendation', 'N/A')}{novelty_note}"
+                    f"推荐 {result.get('recommendation', 'N/A')}{novelty_note}{calibration_note}"
                 )
             except Exception as e:
                 logger.warning(f"topic_scorer 失败 ({topic}): {e}")
