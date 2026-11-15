@@ -68,6 +68,51 @@ class TestContentStrategistTopicScorer:
         assert any("账号校准 12 篇" in p for p in captured_prompts)
 
     @pytest.mark.asyncio
+    async def test_topics_are_ranked_by_predicted_collect(self, agent, mock_store, xhs_read_grant):
+        """收藏预测最高的候选排在第一位并标记为主推。"""
+        mock_state = {
+            "account_id": "test_account",
+            "niche": "美食",
+            "trend_data": {"hot_topics": [{"topic": "低收藏"}, {"topic": "高收藏"}]},
+        }
+
+        captured_prompts: list[str] = []
+
+        async def fake_ainvoke(messages):
+            captured_prompts.append(messages[0].content)
+            return MagicMock(content='{"selected_topic": "高收藏"}')
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = fake_ainvoke
+        agent._model = mock_model
+
+        async def fake_scorer(payload):
+            high = payload["topic"] == "高收藏"
+            return {
+                "heat_score": 60 if high else 90,
+                "growth_trend": "爆发期",
+                "competition_level": "中等",
+                "recommendation": "强烈推荐" if high else "谨慎",
+                "predicted_collect": 120 if high else 3,
+            }
+
+        scorer = AsyncMock()
+        scorer.ainvoke = fake_scorer
+
+        with (
+            patch("backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock) as mp,
+            patch("backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock) as mpmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+        ):
+            mp.return_value = {"ripple_prediction": None}
+            mpmf.return_value = {"ripple_pmf": None}
+            await agent.execute(mock_state, store=mock_store)
+
+        prompt = next(p for p in captured_prompts if "话题热度评分" in p)
+        assert prompt.index("高收藏") < prompt.index("低收藏")
+        assert "【主推】高收藏" in prompt
+
+    @pytest.mark.asyncio
     async def test_recent_titles_are_passed_for_novelty(self, agent, mock_store, xhs_read_grant):
         """content_history 的最近标题随 topic_scorer 调用下发，供 0.82 新颖度惩罚使用。"""
         mock_state = {

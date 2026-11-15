@@ -82,6 +82,31 @@ class Post:
     body: str
     status: str = "published"
     comments: list[str] = field(default_factory=list)
+    analytics: list[AnalyticsSnapshot] = field(default_factory=list)
+
+
+@dataclass
+class AnalyticsSnapshot:
+    snapshot_id: str
+    post_id: str
+    views: int = 0
+    likes: int = 0
+    collects: int = 0
+    comments: int = 0
+    shares: int = 0
+    fetched_at: datetime | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "snapshot_id": self.snapshot_id,
+            "post_id": self.post_id,
+            "views": self.views,
+            "likes": self.likes,
+            "collects": self.collects,
+            "comments": self.comments,
+            "shares": self.shares,
+            "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
+        }
 
 
 @dataclass
@@ -242,6 +267,47 @@ class ContextTree:
         draft.status = "published"
         return {"status": "published", "post_id": post_id, "errors": []}
 
+    def record_analytics(
+        self,
+        post_id: str,
+        *,
+        views: int = 0,
+        likes: int = 0,
+        collects: int = 0,
+        comments: int = 0,
+        shares: int = 0,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Append one analytics snapshot to a published note."""
+        post = self.posts.get(post_id)
+        if post is None:
+            return {
+                "status": "rejected",
+                "errors": [{"code": "POST_NOT_FOUND", "message": "笔记不存在"}],
+            }
+        fetched_at = now or datetime.now()
+        snapshot = AnalyticsSnapshot(
+            snapshot_id=_stable_id(
+                "analytics",
+                post_id,
+                fetched_at.isoformat(),
+                str(views),
+                str(likes),
+                str(collects),
+                str(comments),
+                str(shares),
+            ),
+            post_id=post_id,
+            views=max(0, int(views)),
+            likes=max(0, int(likes)),
+            collects=max(0, int(collects)),
+            comments=max(0, int(comments)),
+            shares=max(0, int(shares)),
+            fetched_at=fetched_at,
+        )
+        post.analytics.append(snapshot)
+        return {"status": "recorded", "snapshot": snapshot.as_dict()}
+
     def comment(self, post_id: str, account_id: str, content: str) -> dict[str, Any]:
         if post_id not in self.posts:
             return {
@@ -350,6 +416,7 @@ def simulate_publish(
 
 __all__ = [
     "Account",
+    "AnalyticsSnapshot",
     "Comment",
     "ContextTree",
     "DirectMessage",

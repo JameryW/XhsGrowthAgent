@@ -253,6 +253,33 @@ async def test_the_pmf_capability_carries_the_same_intent():
 
 
 @pytest.mark.asyncio
+async def test_predict_spread_carries_fixed_seed_paired_counterfactuals():
+    """Ripple 回答之外，同层给出时间/格式配对反事实（seed=42，收藏优先）。"""
+    service = _service(
+        predict_spread=AsyncMock(return_value={"ripple_prediction": {"viral_probability": 0.3}})
+    )
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        result = await predict_spread(topic="测试话题", description="一条测试笔记", tags=["测试"])
+
+    paired = result["collect_first"]["paired_variants"]
+    assert {item["variant"] for item in paired} == {
+        "morning_08",
+        "noon_12",
+        "evening_20",
+        "video_format",
+    }
+    assert [item["rank"] for item in paired] == [1, 2, 3, 4]
+    assert all(item["predicted_collect"] >= 0 for item in paired)
+    # 同一 seed 下配对结果可重放，不随进程随机漂移。
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        replay = await predict_spread(topic="测试话题", description="一条测试笔记", tags=["测试"])
+    assert replay["collect_first"]["paired_variants"] == paired
+
+
+@pytest.mark.asyncio
 async def test_the_default_path_keeps_the_service_able_to_degrade():
     """没有 ``require_live`` 的调用方（agents）行为不变：允许降级体并由集成层拒绝。"""
     service = _service(

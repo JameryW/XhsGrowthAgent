@@ -362,14 +362,14 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 | 模块 | 位置 | 能力 |
 | --- | --- | --- |
-| Collect-First 预测 | `backend/tools/analysis/collect_first.py` | 四头 `log(1+y)` 预测（阅读/点赞/收藏/评论）+ 64 维文本表示 + 指数核 Hawkes 拟合与 14 天扩散曲线 + 固定种子配对特征替换；按收藏优先排序；≥8 条已发布笔记的互动记录可拟合账号级 log 空间校准（斜率/截距/R²），只校正先验、不重训特征权重 |
+| Collect-First 预测 | `backend/tools/analysis/collect_first.py` | 四头 `log(1+y)` 预测（阅读/点赞/收藏/评论）+ 64 维文本表示 + 指数核 Hawkes 拟合与 14 天扩散曲线 + 固定种子配对时间/格式反事实；strategist 按预测收藏降序选主推；≥8 条已发布笔记可拟合账号级 log 空间校准（斜率/截距/R²），只校正先验、不重训特征权重 |
 | 搜索质量门 | `backend/services/quality_gate.py` | SearchLLM 式 Layer I Soft-AND 底线门（合规/文案/商单语气）+ `geo_readiness` 搜索 GEO 就绪度；评估器输出 `quality_gate` 与 `search_geo` |
 | 去 AI 味 | `backend/tools/content/plad.py`、`backend/tools/content/novelty.py` | 31 项 PLAD 心理语言学特征与结构化约束；0.82 余弦阈值的账号历史新颖度惩罚 |
 | 记忆效用门 | `backend/memory/hy/promotion.py` | Outcome-Verified Epistemic Gate：收藏率或阅读量达到近 10 篇中位数 1.2×、或人工批准，才晋升 `verified_pattern`；否则记入 `negative_pitfalls` |
 | 上下文预算 | `backend/context/compiler.py` | Token 重叠率与边际效用惩罚（`XHS_CONTEXT_OVERLAP_PENALTY`，默认 0.15，设 0 恢复旧的尾部裁剪） |
 | 优雅排水 | `backend/db/execution_leases.py`、`backend/api/app.py` | `SIGTERM` 时停止获取新租约、限时等待在途任务、释放本实例全部租约；启动时对 UNKNOWN 发布做读回核实，避免重复发布 |
 | 视觉时间衰减 | `backend/services/visual_analysis.py` | 14 天半衰期指数衰减权重（`2 ** (-Δt/14)`），近期封面/版面优先 |
-| Dry-run 状态仿真 | `backend/services/context_tree_sim.py` | MCP-Persona 式 `User → Account → Draft/Post → Comment/DM` 有状态仿真，覆盖标题/正文长度、违禁词、会话、签名、频控与私信配额 |
+| Dry-run 状态仿真 | `backend/services/context_tree_sim.py` | MCP-Persona 式 `User → Account → Draft/Post → Comment/DM` 有状态仿真，覆盖标题/正文长度、违禁词、会话、签名、频控与私信配额；已发布笔记可追加 `AnalyticsSnapshot` 互动快照 |
 
 ## 测试与开发
 

@@ -755,8 +755,8 @@ class ContentStrategistAgent(BaseAgent):
             )
             return ""
 
-        lines: list[str] = []
-        for topic in topics:
+        entries: list[tuple[float, float, int, str]] = []
+        for index, topic in enumerate(topics):
             try:
                 scored = await self.tools.invoke(
                     "analysis.topic_scorer",
@@ -786,19 +786,40 @@ class ContentStrategistAgent(BaseAgent):
                     calibration = collect_first.get("calibration")
                     if isinstance(calibration, dict) and calibration.get("sample_size"):
                         calibration_note = f"，账号校准 {calibration['sample_size']} 篇"
-                lines.append(
-                    f"- {topic}: 热度 {result.get('heat_score', 'N/A')}，"
+                entry = (
+                    f"{topic}: 热度 {result.get('heat_score', 'N/A')}，"
                     f"趋势 {result.get('growth_trend', 'N/A')}，"
                     f"竞争 {result.get('competition_level', 'N/A')}，"
                     f"收藏预测 {predicted_collect if predicted_collect is not None else 'N/A'}，"
                     f"推荐 {result.get('recommendation', 'N/A')}{novelty_note}{calibration_note}"
                 )
+                collect_value = (
+                    float(predicted_collect)
+                    if isinstance(predicted_collect, (int, float))
+                    else -1.0
+                )
+                heat_value = result.get("heat_score")
+                entries.append(
+                    (
+                        collect_value,
+                        float(heat_value) if isinstance(heat_value, (int, float)) else -1.0,
+                        index,
+                        entry,
+                    )
+                )
             except Exception as e:
                 logger.warning(f"topic_scorer 失败 ({topic}): {e}")
 
-        if not lines:
+        if not entries:
             return ""
-        return "## 话题热度评分（topic_scorer）\n" + "\n".join(lines)
+        # Collect-First objective: the LLM sees the highest predicted-collect
+        # candidate first, not merely the order trend_scout happened to return.
+        entries.sort(key=lambda item: (-item[0], -item[1], item[2]))
+        lines = []
+        for rank, (_collect, _heat, _index, entry) in enumerate(entries, start=1):
+            marker = "【主推】" if rank == 1 else f"{rank}. "
+            lines.append(f"- {marker}{entry}")
+        return "## 话题热度评分（topic_scorer，收藏优先排序）\n" + "\n".join(lines)
 
     async def _ripple_predict(
         self,
@@ -937,6 +958,18 @@ class ContentStrategistAgent(BaseAgent):
                 lines.append(
                     f"- Hawkes 扩散参数: μ={hawkes.get('mu', 'N/A')} "
                     f"α={hawkes.get('alpha', 'N/A')} β={hawkes.get('beta', 'N/A')}"
+                )
+            paired = collect_first.get("paired_variants")
+            if isinstance(paired, list) and paired:
+                best = paired[0] if isinstance(paired[0], dict) else {}
+                lines.append(
+                    "- 配对反事实（收藏优先）: "
+                    + "；".join(
+                        f"{item.get('variant', '?')} 收藏 {item.get('predicted_collect', 'N/A')}"
+                        for item in paired
+                        if isinstance(item, dict)
+                    )
+                    + (f"；优先 {best.get('variant')}" if best.get("variant") else "")
                 )
 
         if pmf:

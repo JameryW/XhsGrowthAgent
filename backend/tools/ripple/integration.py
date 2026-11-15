@@ -149,20 +149,43 @@ async def predict_spread(
     # directly (see tests/unit/tools/runtime/test_audit.py), and a forecast
     # failure must never lose Ripple's own answer.
     try:
-        from backend.tools.analysis.collect_first import PostFeatures, forecast_payload
+        from backend.tools.analysis.collect_first import (
+            PostFeatures,
+            forecast_payload,
+            paired_feature_substitution,
+        )
 
-        prediction = {
-            **prediction,
-            "collect_first": forecast_payload(
-                PostFeatures.from_mapping(
-                    {
-                        "title": topic,
-                        "body": description,
-                        "tags": tags,
-                    }
-                )
+        features = PostFeatures.from_mapping(
+            {
+                "title": topic,
+                "body": description,
+                "tags": tags,
+            }
+        )
+        prediction = {**prediction, "collect_first": forecast_payload(features)}
+        # Paired counterfactuals are a local, deterministic read on the one
+        # lever this layer actually owns: publish timing and note format.  The
+        # Ripple service has already answered for the real candidate; these
+        # variants only say which sibling is better under the same prior.
+        counterfactuals = paired_feature_substitution(
+            features,
+            (
+                {"variant": "morning_08", "posted_hour": 8},
+                {"variant": "noon_12", "posted_hour": 12},
+                {"variant": "evening_20", "posted_hour": 20},
+                {"variant": "video_format", "media_type": "video"},
             ),
-        }
+            seed=42,
+        )
+        prediction["collect_first"]["paired_variants"] = [
+            {
+                "variant": item.variant,
+                "rank": item.rank,
+                "delta_collect": round(item.delta_collect, 2),
+                "predicted_collect": round(item.forecast.collect, 2),
+            }
+            for item in counterfactuals
+        ]
     except Exception:
         logger.debug("collect-first forecast skipped", exc_info=True)
     return prediction

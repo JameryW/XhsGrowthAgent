@@ -106,3 +106,36 @@ def test_trace_always_present() -> None:
     )
     assert result["trace"]["simulator"] == "context-tree"
     assert result["trace"]["draft_id"].startswith("draft_")
+
+
+def test_record_analytics_appends_snapshots_to_post() -> None:
+    tree = ContextTree()
+    now = datetime(2026, 11, 15, 12, tzinfo=UTC)
+    published = simulate_publish(
+        {"account_id": "acct-1", "title": "标题", "body": "正文", "image_count": 1},
+        tree=tree,
+        now=now,
+    )
+    post_id = published["post_id"]
+
+    first = tree.record_analytics(post_id, views=100, likes=8, collects=5, now=now)
+    second = tree.record_analytics(
+        post_id,
+        views=180,
+        likes=14,
+        collects=11,
+        comments=2,
+        shares=1,
+        now=now + timedelta(hours=6),
+    )
+
+    assert first["status"] == "recorded"
+    assert second["status"] == "recorded"
+    assert second["snapshot"]["collects"] == 11
+    assert [item.collects for item in tree.posts[post_id].analytics] == [5, 11]
+
+
+def test_record_analytics_rejects_unknown_post() -> None:
+    result = ContextTree().record_analytics("post_missing", views=1)
+    assert result["status"] == "rejected"
+    assert result["errors"][0]["code"] == "POST_NOT_FOUND"
