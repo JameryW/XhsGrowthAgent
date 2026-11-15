@@ -137,6 +137,7 @@ async def ab_test_manager(
     base_post_id: str,
     variant_titles: list[str],
     duration_hours: int = 4,
+    observations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """管理 A/B 测试 — 对比不同标题/封面的表现.
 
@@ -152,17 +153,27 @@ async def ab_test_manager(
 
     import time
 
+    from backend.services.experiment_bandit import rank_arms
+
     test_id = f"ab_{int(time.time())}"
 
+    variants = [
+        {"variant_id": f"v{i}", "title": title} for i, title in enumerate(variant_titles[:3])
+    ]
+    decision = rank_arms(observations or []).as_dict()
     return {
         "test_id": test_id,
         "base_post_id": base_post_id,
-        "variants": [
-            {"variant_id": f"v{i}", "title": title} for i, title in enumerate(variant_titles[:3])
-        ],
+        "variants": variants,
         "duration_hours": duration_hours,
         "start_time": time.strftime("%Y-%m-%d %H:%M:%S"),
         "status": "configured",
+        "bandit": decision,
+        "canary": {
+            "enabled": decision.get("status") == "ready_for_canary",
+            "variant": decision.get("canary_variant"),
+            "fraction": decision.get("canary_fraction", 0.0),
+        },
         "note": "需要数据库支持存储测试数据",
     }
 

@@ -184,6 +184,8 @@ async def dm_handler(
     approved_by: str = "",
     approved_at: str = "",
     thread_id: str = "",
+    qualification_state: dict[str, Any] | None = None,
+    known_prices: list[float] | None = None,
 ) -> dict[str, Any]:
     """人工确认后发送一条小红书私信（manual-only）。
 
@@ -215,7 +217,12 @@ async def dm_handler(
     """
     logger.info(f"Handling DM from: {sender_id}")
 
+    from backend.services.dm_qualification import QualificationFSM
+
     approval = _build_approval(approved_by, approved_at, thread_id)
+    qualification = (
+        QualificationFSM.from_dict(qualification_state) if qualification_state is not None else None
+    )
     engagement = _get_engagement(
         cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
         account_id=account_id,
@@ -226,6 +233,8 @@ async def dm_handler(
             target_user_id=sender_id,
             message=reply_content,
             approval=approval,
+            qualification=qualification,
+            known_prices=tuple(known_prices or ()),
         )
     finally:
         await engagement.close()

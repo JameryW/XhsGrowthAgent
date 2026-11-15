@@ -9,6 +9,7 @@ import asyncio
 import logging
 import re
 from collections import Counter
+from datetime import datetime
 
 from langgraph.store.base import BaseStore
 
@@ -19,6 +20,7 @@ from backend.services.creator_stats.types import (
     NoteStats,
     StyleFinding,
 )
+from backend.services.outcome_learning import evaluate_outcome_learning
 
 logger = logging.getLogger("xhs_growth.creator_stats.analyze")
 
@@ -132,12 +134,23 @@ def _normalize_note_rates(notes: list[NoteStats]) -> list[NoteStats]:
     return out
 
 
-def analyze_notes(notes: list[NoteStats], account_id: str) -> AnalysisResult:
+def analyze_notes(
+    notes: list[NoteStats],
+    account_id: str,
+    *,
+    now: datetime | None = None,
+) -> AnalysisResult:
     """Produce data-backed style findings from note stats (pure function)."""
     if not notes:
-        return AnalysisResult(account_id=account_id, cold_start=True, note_count=0)
+        return AnalysisResult(
+            account_id=account_id,
+            cold_start=True,
+            note_count=0,
+            outcome_learning=evaluate_outcome_learning([], now=now).as_dict(),
+        )
 
     notes = _normalize_note_rates(list(notes))
+    outcome = evaluate_outcome_learning(notes, now=now).as_dict()
     sorted_notes = sorted(notes, key=lambda n: n.engagement_rate, reverse=True)
     rates = [n.engagement_rate for n in notes]
     avg_rate = round(sum(rates) / len(rates), 4) if rates else 0.0
@@ -277,6 +290,7 @@ def analyze_notes(notes: list[NoteStats], account_id: str) -> AnalysisResult:
         avg_engagement_rate=avg_rate,
         top_note_ids=top_ids,
         cold_start=False,
+        outcome_learning=outcome,
     )
 
 

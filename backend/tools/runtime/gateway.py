@@ -43,6 +43,7 @@ from backend.tools.runtime.account_gate import (
 )
 from backend.tools.runtime.models import DomainOutcome, ErrorKind, ToolResult, ToolSpec
 from backend.tools.runtime.registry import ToolRegistry, UnknownCapabilityError
+from backend.tools.runtime.untrusted import sanitize_external_payload
 
 logger = logging.getLogger("xhs_growth.tools.gateway")
 
@@ -281,6 +282,8 @@ class ToolGateway:
                     last_error = f"{type(exc).__name__}: {exc}"
                     last_kind = ErrorKind.EXCEPTION
                 else:
+                    if spec.external_content:
+                        value = sanitize_external_payload(value)
                     return await self._finish(
                         spec,
                         ToolResult(
@@ -290,6 +293,7 @@ class ToolGateway:
                             elapsed_ms=(time.perf_counter() - started) * 1000.0,
                             attempts=attempts,
                             degraded=attempts > 1 or _value_degraded(value),
+                            untrusted=spec.external_content,
                         ),
                         thread_id,
                         scope_state,
@@ -424,6 +428,7 @@ class ToolGateway:
                 "error_kind": result.error_kind.value if result.error_kind is not None else "",
                 "domain_reason": str(result.domain.get("reason", "")),
                 "degraded": result.degraded,
+                "untrusted": result.untrusted,
                 "scopes": scope_state,
             }
         )

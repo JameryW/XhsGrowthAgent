@@ -48,6 +48,21 @@ class PromptLayer(StrEnum):
 LAYER_ORDER: tuple[PromptLayer, ...] = tuple(PromptLayer)
 """Canonical L0→L5 rendering order."""
 
+CACHE_PREFIX_LAYERS: tuple[PromptLayer, ...] = (
+    PromptLayer.L0_SYSTEM,
+    PromptLayer.L1_TOOL_SCHEMA,
+    PromptLayer.L2_ACCOUNT,
+)
+"""Byte-stable layers kept ahead of the provider cache breakpoint.
+
+The compiler already refuses to budget-trim L0-L2; this constant makes the
+boundary explicit so a caller can pass the same prefix on every node of one
+thread and keep the provider's KV prefix cache warm.
+"""
+
+CACHE_BREAKPOINT = "<<<XHS_CONTEXT_CACHE_BREAKPOINT>>>"
+"""Marker used only by :meth:`CompiledPrompt.render_with_cache_breakpoint`."""
+
 
 class TrustClass(StrEnum):
     """How far a context item's *content* can be trusted (P1-A provenance).
@@ -213,3 +228,41 @@ class CompiledPrompt(BaseModel):
     def render(self) -> str:
         """Join layers in canonical L0→L5 order (stable prefix first)."""
         return "\n\n".join(self.layers[layer] for layer in LAYER_ORDER if layer in self.layers)
+
+    @property
+    def cache_prefix(self) -> str:
+        """L0-L2 text: byte-identical across nodes of one thread."""
+        return "\n\n".join(
+            self.layers[layer] for layer in CACHE_PREFIX_LAYERS if layer in self.layers
+        )
+
+    @property
+    def cache_tail(self) -> str:
+        """L3-L5 text: per-node material placed after the cache breakpoint."""
+        return "\n\n".join(
+            self.layers[layer]
+            for layer in LAYER_ORDER
+            if layer not in CACHE_PREFIX_LAYERS and layer in self.layers
+        )
+
+    @property
+    def cache_prefix_token_cost(self) -> int:
+        """Estimated tokens in the stable prefix (for cache-hit accounting)."""
+        from backend.context.estimator import estimate_tokens
+
+        return estimate_tokens(self.cache_prefix)
+
+    def render_with_cache_breakpoint(self) -> str:
+        """Render with an explicit prefix boundary for cache-aware callers.
+
+        ``render()`` stays byte-for-byte unchanged; this method is opt-in.
+        The marker is plain text so a caller that does not split on it still
+        sees a readable prompt.
+        """
+        prefix = self.cache_prefix
+        tail = self.cache_tail
+        if not prefix:
+            return tail
+        if not tail:
+            return prefix
+        return f"{prefix}\n\n{CACHE_BREAKPOINT}\n\n{tail}"

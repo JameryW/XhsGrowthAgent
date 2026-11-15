@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from playwright.async_api import Browser, Page
 
     from backend.db.engagement_effects import EffectRow
+    from backend.services.dm_qualification import QualificationFSM
     from backend.services.xhs_effect_ledger import EngagementApproval
 
 logger = logging.getLogger("xhs_growth.engagement")
@@ -785,6 +786,8 @@ class XHSEngagement:
         message: str,
         *,
         approval: EngagementApproval | None = None,
+        qualification: QualificationFSM | None = None,
+        known_prices: tuple[float, ...] = (),
     ) -> dict[str, Any]:
         """发送私信；遇到登录/风控页面后立即停止且不重试。
 
@@ -827,6 +830,15 @@ class XHSEngagement:
             return await dispatched()
 
         correlation_id = self._correlation_id("dm")
+        if qualification is not None:
+            from backend.services.dm_qualification import gate_outbound
+
+            gate = gate_outbound(qualification, message, known_prices=known_prices)
+            if not gate["allowed"]:
+                detail = "；".join(gate["reasons"]) or "私信未通过资格/授权校验"
+                return self._blocked_result(
+                    "qualification_gate", detail, correlation_id=correlation_id
+                )
         blocked = self._precheck_engagement(kind="dm", correlation_id=correlation_id)
         if blocked is not None:
             return blocked

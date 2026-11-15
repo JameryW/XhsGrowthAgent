@@ -292,6 +292,9 @@ class AnalysisResult:
     avg_engagement_rate: float = 0.0
     top_note_ids: list[str] = field(default_factory=list)
     cold_start: bool = False
+    # Age-gated collect-first report (see services/outcome_learning.py).  Kept
+    # as a plain dict so this DTO does not import the analysis service.
+    outcome_learning: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -304,6 +307,7 @@ class AnalysisResult:
             "avg_engagement_rate": self.avg_engagement_rate,
             "top_note_ids": self.top_note_ids,
             "cold_start": self.cold_start,
+            "outcome_learning": self.outcome_learning,
         }
 
 

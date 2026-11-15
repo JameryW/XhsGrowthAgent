@@ -420,6 +420,7 @@ def _register(
     pass_style: PassStyle = PassStyle.KWARGS,
     timeout_s: float | None = None,
     max_concurrency: int | None = None,
+    external_content: bool = False,
 ) -> None:
     """Declare a capability and bind it, from one statement.
 
@@ -449,6 +450,7 @@ def _register(
             pass_style=pass_style,
             timeout_s=timeout_s,
             max_concurrency=max_concurrency,
+            external_content=external_content,
             input_schema=describe_params(target),
         ),
         bind(ref, pass_style=pass_style),
@@ -481,6 +483,8 @@ def build_registry() -> ToolRegistry:
         cost=CostClass.CHEAP,
         retry=RetryPolicy(max_attempts=2, backoff_s=3.0),
         auth_scope=("xhs:read",),
+        # Returns titles/captions/counts written by third parties.
+        external_content=True,
     )
 
     # ── content ─────────────────────────────────────────────────────────────
@@ -605,6 +609,7 @@ def build_registry() -> ToolRegistry:
         cost=CostClass.CHEAP,
         retry=RetryPolicy(),
         timeout_s=60.0,
+        external_content=True,
     )
     _register(
         registry,
@@ -617,6 +622,7 @@ def build_registry() -> ToolRegistry:
         cost=CostClass.CHEAP,
         retry=RetryPolicy(),
         timeout_s=60.0,
+        external_content=True,
     )
 
     # ── xhs platform (read) ─────────────────────────────────────────────────
@@ -640,6 +646,7 @@ def build_registry() -> ToolRegistry:
         cost=CostClass.CHEAP,
         retry=RetryPolicy(),
         auth_scope=("xhs:read",),
+        external_content=True,
     )
     _register(
         registry,
@@ -652,6 +659,7 @@ def build_registry() -> ToolRegistry:
         cost=CostClass.CHEAP,
         retry=RetryPolicy(),
         auth_scope=("xhs:read",),
+        external_content=True,
     )
     _register(
         registry,
@@ -664,6 +672,7 @@ def build_registry() -> ToolRegistry:
         cost=CostClass.CHEAP,
         retry=RetryPolicy(),
         auth_scope=("xhs:read",),
+        external_content=True,
     )
 
     # ── xhs platform (write) ────────────────────────────────────────────────

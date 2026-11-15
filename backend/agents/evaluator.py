@@ -492,6 +492,21 @@ class EvaluatorAgent(BaseAgent):
             "is_blocking": is_blocking,
         }
 
+    def judge_model_id(self) -> str:
+        """Return the concrete model identity recorded with each score.
+
+        RQGM results are only comparable across runs when the judge that
+        produced them is known; ``/evaluation`` buckets scores by this value
+        before applying :mod:`backend.services.judge_calibration`.
+        """
+        model = self.model
+        return str(
+            getattr(model, "model_name", None)
+            or getattr(model, "model", None)
+            or getattr(model, "model_id", None)
+            or type(model).__name__
+        )
+
     def evaluator_fingerprint(self, ctx: EvaluationContext | None = None) -> str:
         """Return a stable evaluator/model/prompt/weights fingerprint.
 
@@ -503,13 +518,7 @@ class EvaluatorAgent(BaseAgent):
         context) instead of being read off the shared instance.
         """
         ctx = ctx or EvaluationContext()
-        model = self.model
-        model_name = str(
-            getattr(model, "model_name", None)
-            or getattr(model, "model", None)
-            or getattr(model, "model_id", None)
-            or type(model).__name__
-        )
+        model_name = self.judge_model_id()
         payload = {
             "model": model_name,
             "prompt_sha256": hashlib.sha256(
@@ -684,6 +693,7 @@ class EvaluatorAgent(BaseAgent):
             "revision_hints": revision_hints,
             "bias_warning": bias_warning,
             "summary": str(raw.get("summary", "")),
+            "judge_model_id": self.judge_model_id(),
         }
         if gate is not None:
             result["quality_gate"] = gate
@@ -820,6 +830,7 @@ class EvaluatorAgent(BaseAgent):
             "assessment_type": "rqgm_content_review",
             "degraded": False,
             "evaluator_fingerprint": self.evaluator_fingerprint(ctx),
+            "judge_model_id": self.judge_model_id(),
         }
         if decision == ContentStatus.REJECTED:
             # P0-W5 structured marker (see _build_evaluation_result).

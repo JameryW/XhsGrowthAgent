@@ -371,6 +371,19 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 | 视觉时间衰减 | `backend/services/visual_analysis.py` | 14 天半衰期指数衰减权重（`2 ** (-Δt/14)`），近期封面/版面优先 |
 | Dry-run 状态仿真 | `backend/services/context_tree_sim.py` | MCP-Persona 式 `User → Account → Draft/Post → Comment/DM` 有状态仿真，覆盖标题/正文长度、违禁词、会话、签名、频控与私信配额；已发布笔记可追加 `AnalyticsSnapshot` 互动快照 |
 
+### 第 2 期：深水区契约
+
+| 模块 | 位置 | 能力 |
+| --- | --- | --- |
+| 外部内容护栏 | `backend/tools/runtime/untrusted.py`、`gateway.py` | 趋势/关键词/竞品/搜索/选题工具标记 `external_content=True`；结果清洗零宽字符与“忽略指令/自动批准/改价”等提示注入，`ToolResult.untrusted` 透传给 Agent |
+| 结果学习门禁 | `backend/services/outcome_learning.py`、`creator_stats/analyze.py` | 少于 48 小时的笔记不计入；按最近 10 篇成熟笔记的收藏中位数计算年龄校准优势，成熟笔记≥3 且平均优势>0 才可生成晋升信号，并附 Spearman 秩相关工具 |
+| Judge 身份与校准 | `backend/agents/evaluator.py`、`backend/services/judge_calibration.py` | 每条 RQGM 结果记录 `judge_model_id`；按模型最近 50 次评分做均值/标准差标准化，避免限流切换造成趋势跳变 |
+| 前缀缓存断点 | `backend/context/models.py` | `cache_prefix`/`cache_tail`/`cache_prefix_token_cost` 与可选的 `render_with_cache_breakpoint()`；L0–L2 保持稳定，`render()` 字节不变 |
+| 私信资格门 | `backend/services/dm_qualification.py`、`xhs_engagement.py` | 五槽位 FSM（日期/租期/车型/预算/区域）+ 外链/联系方式/未核实报价/越权承诺拦截；`dm_handler` 可选 `qualification_state` 与 `known_prices`，不通过时不写效果账本 |
+| 周复盘 Bandit | `backend/services/experiment_bandit.py`、`tools/xhs/publisher.py` | 滑动窗口 UCB + Wilson 下界、Canary 变体；`ab_test_manager` 返回 `bandit`/`canary` 决策，仍由人工确认晋升 |
+
+这些模块是工程近似：结果学习使用确定性中位数门槛而非完整因果模型；Bandit 只做离线排序，不自动改线上流量；私信 FSM 的槽位抽取基于正则，不替代人工确认。
+
 ## 测试与开发
 
 ```bash

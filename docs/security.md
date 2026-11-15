@@ -8,10 +8,12 @@
 
 | 变量 | 用途 | 风险等级 |
 |------|------|----------|
-| `ANTHROPIC_API_KEY` | Claude 模型 | HIGH |
-| `OPENAI_API_KEY` | GPT 模型 | HIGH |
-| `DEEPSEEK_API_KEY` | DeepSeek 模型 | HIGH |
-| `DASHSCOPE_API_KEY` | Qwen 模型 | HIGH |
+| `MAGPIE_API_KEY` | magpie 网关（默认全部 LLM 出口） | HIGH |
+| `XIAOMIMIMO_API_KEY` | 小米 MiMo（显式覆盖路由时） | HIGH |
+| `ANTHROPIC_API_KEY` | Claude 模型（可选/旧路由） | HIGH |
+| `OPENAI_API_KEY` | GPT 模型（可选/旧路由） | HIGH |
+| `DEEPSEEK_API_KEY` | DeepSeek（直连已禁用，仅历史配置） | HIGH |
+| `DASHSCOPE_API_KEY` | Qwen 模型（可选/旧路由） | HIGH |
 
 ### 安全实践
 
@@ -50,6 +52,8 @@
 - **发布回执**：`publish_confirmation` 记录 `confirmer` / `source`（`human` / `auto_*`）/ `confirmed_at`，以及 P1-4 `ai_content_declared`（含 AI 生成内容声明，Review 默认勾选）。
 - **私信策略**：默认仅回复未读/入站白名单用户；日配额默认私信 20、评论回复 50；冷启动「新建私信」需 `XHS_ALLOW_OUTBOUND_DM=1` + 逐条 `human_confirmed`。风控标记命中后互动暂停默认 6 小时，Settings `/api/system/risk-gates` 可见原因与剩余时间。
 - **确定性词库**：LLM 评估前扫描违禁词（含 niche 扩展库）；商单 brief 模式置 `is_commercial=true`，发布前须勾选披露确认且文案保留合作/广告标注。
+- **外部内容不可信边界**：`xhs.trending`、`xhs.keyword_monitor`、`xhs.competitor_analyzer`、`search.web`、`search.fetch` 与 `analysis.topic_scorer` 在 Tool Gateway 标记为 `external_content=True`；成功结果先经 `backend/tools/runtime/untrusted.py` 清洗零宽字符与提示注入短语，再由工具返回。`ToolResult.untrusted` 透传给调用方，Agent 不得把其中的“自动批准/修改价格/跳过审核”等文本当作指令。
+- **私信资格门**：`dm_handler` 可传入 `qualification_state` 与 `known_prices`；`send_dm` 在写效果账本前调用 `gate_outbound`，拒绝外链、联系方式、未经核实报价、越权承诺，以及未填满日期/车型/取货区域槽位的消息。
 
 ## API 安全
 
@@ -138,7 +142,7 @@ logger.info("XHS client initialized")  # ✅
 - 不传输敏感内容数据
 
 ```bash
-RIPPLE_BASE_URL=http://ripple-server:8081
+RIPPLE_BASE_URL=http://ripple-server:8080
 RIPPLE_API_TOKEN=your-token  # 与 XHS Cookie 分离
 ```
 

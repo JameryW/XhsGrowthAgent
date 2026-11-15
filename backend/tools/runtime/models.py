@@ -166,6 +166,14 @@ class ToolSpec:
     """
     input_schema: Mapping[str, Any] = field(default_factory=dict)
     output_schema: Mapping[str, Any] = field(default_factory=dict)
+    external_content: bool = False
+    """True when the return value contains third-party platform text.
+
+    The Gateway sanitises such values and marks the result ``untrusted``; a
+    caller must never treat the payload as instructions.  Read-only trending /
+    keyword / competitor / topic-search capabilities set this; a platform
+    receipt or an internal computation does not.
+    """
 
     def __post_init__(self) -> None:
         if not self.capability or "." not in self.capability:
@@ -219,6 +227,7 @@ class ToolSpec:
             },
             "input_schema": dict(self.input_schema),
             "output_schema": dict(self.output_schema),
+            "external_content": self.external_content,
         }
 
 
@@ -305,6 +314,8 @@ class ToolResult(BaseModel):
     # budget). The floor is 0 rather than 1 so that result does not have to
     # claim a try that never happened.
     degraded: bool = False
+    untrusted: bool = False
+    """The value crossed the external-content boundary and was sanitised."""
 
     def __init__(self, **data: Any) -> None:
         super().__init__(**data)
@@ -348,6 +359,7 @@ class ToolResult(BaseModel):
             "elapsed_ms": round(self.elapsed_ms, 3),
             "attempts": self.attempts,
             "degraded": self.degraded,
+            "untrusted": self.untrusted,
         }
 
 
