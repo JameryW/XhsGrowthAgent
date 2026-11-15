@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "代码质量与测试要求"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "新模块放置位置与分层约束"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "状态与图节点变更约束"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "执行租约与数据库访问约定"}
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "预测引擎与 Ripple 集成边界"}

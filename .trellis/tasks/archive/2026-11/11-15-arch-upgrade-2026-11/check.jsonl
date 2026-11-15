@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验收测试与质量门"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "验证 evaluator / publisher 状态契约"}
+{"file": ".trellis/spec/backend/compliance-p1.md", "reason": "发布合规与确定性门禁不得回退"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "验证租约释放与幂等账本"}
