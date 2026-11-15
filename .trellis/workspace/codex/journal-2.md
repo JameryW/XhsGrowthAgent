@@ -959,3 +959,78 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 ### Next Steps
 
 - None - task complete
+
+
+## Session 85: 第 2 期深水区：外部内容护栏、结果学习、Judge 校准、缓存断点、私信 FSM 与 Bandit
+
+**Date**: 2026-11-16
+**Task**: 第 2 期深水区：外部内容护栏、结果学习、Judge 校准、缓存断点、私信 FSM 与 Bandit
+**Branch**: `main`
+
+### Summary
+
+完成第 2 期方案 7–12 的核心接线、测试与验证；全仓 5224 passed，CI run 43734935072 全绿。
+
+### Main Changes
+
+### Summary
+
+完成第 2 期深水区六项契约：外部内容不可信信封、年龄校准的收藏优势学习、Judge 身份与按模型校准、Context 前缀缓存断点、私信资格 FSM、滑动窗口 Bandit/Canary。全仓 5224 passed，GitHub Actions run 43734935072 全绿。
+
+### Main Changes
+
+- 安全与工具网关：新增 `backend/tools/runtime/untrusted.py`，对零宽字符与“忽略指令/自动批准/改价”等注入短语做清洗；`ToolSpec.external_content`、`ToolResult.untrusted` 与 Gateway 成功路径接入；`analysis.topic_scorer`、`search.web`、`search.fetch`、`xhs.trending`、`xhs.keyword_monitor`、`xhs.competitor_analyzer` 标记为外部内容。
+- 结果学习：新增 `backend/services/outcome_learning.py`，只把发布满 48 小时的笔记纳入，按最近 10 篇成熟笔记的收藏中位数计算年龄校准优势；成熟笔记≥3 且平均优势>0 才可生成晋升信号；`creator_stats.analyze_notes` 输出 `outcome_learning`，并带 Spearman 秩相关工具。
+- Judge 校准：评估器结果新增 `judge_model_id`（普通与历史分支），新增 `backend/services/judge_calibration.py`，按模型最近 50 次评分做均值/标准差标准化；无样本时不伪造校准值。
+- Context：`CompiledPrompt` 增加 `cache_prefix`/`cache_tail`/`cache_prefix_token_cost`/`render_with_cache_breakpoint()`，L0–L2 作为稳定前缀，`render()` 字节不变。
+- 私信：新增 `backend/services/dm_qualification.py` 五槽位 FSM 与 `gate_outbound`；`XHSEngagement.send_dm` 在效果账本前拒绝外链/联系方式/未核实报价/越权承诺及未填满关键槽位的消息；`dm_handler` 支持可选 `qualification_state`、`known_prices`。
+- 周复盘：新增 `backend/services/experiment_bandit.py`（滑动窗口 UCB、Wilson 下界、Canary）；`ab_test_manager` 返回 `bandit`/`canary` 决策，仍由人工确认晋升，不自动改线上流量。
+- 文档：README 增加「第 2 期：深水区契约」表；`docs/security.md` 同步 MAGPIE/XIAOMIMIMO key、外部内容边界、私信资格门与 Ripple 端口 8080。
+
+### Fixes During Verification
+
+- `outcome_learning` 基线原先取最老笔记，改为按年龄降序取最近 10 篇。
+- DM 正则修正：保留“经济型 SUV”“北京机场”“300 元”等槽位值。
+- `judge_calibration` 无样本时返回 `None`，避免 mean=0 的伪校准。
+
+### Verification
+
+- 全仓 `pytest -q --disable-warnings`：5224 passed, 14 skipped, 2 warnings（141.77s）
+- `tests/unit/services tests/unit/context tests/unit/tools tests/unit/agents`：2171 passed, 11 skipped
+- `mypy --python-version 3.12 backend`：278 source no issues
+- `scripts/ci_local.py --only lint,format,mypy,gates`：全部 PASS
+- GitHub Actions run `43734935072`：全部 jobs success（Test py3.11 / py3.12、Mypy、Lint、Tool Runtime Gate、Context Compiler、Harness、Frontend、OMP）
+
+### Boundaries
+
+- 模型路由仍由 magpie 统一出口；未把 copywriter/evaluator 强行拆到不同厂商，Judge 校准先以记录的 `judge_model_id` 为基础。
+- Bandit 只做离线排序与 Canary 建议，不自动切流量；私信槽位抽取是正则工程近似，不替代人工确认。
+- 未做真实小红书 DM/发布端到端验证；测试覆盖到工具签名、门禁与状态机。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3bb3a571` | (see git log) |
+| `127f8ab0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
