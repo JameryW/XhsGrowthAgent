@@ -58,7 +58,7 @@
    | --- | --- | --- | --- |
    | `acquire` / `acquire_outcome` | 接管扫描 `backend/api/routes/_takeover.py:139`：拒绝 or 照跑 | 同一个 checkpoint 两个写者 | **4** |
    | `renew_outcome` | 心跳 `backend/db/execution_leases.py:665`：停 or 继续 | 红线 4 | **3** |
-   | `release` | **无** —— 唯一的调用点 `backend/db/execution_leases.py:785` 把答案丢掉 | 退化成 `kill -9` 那条已有路径：行留着 `held`，别的实例最多多等 1 个 TTL | **1** |
+   | `release` | **无** —— 唯一的调用点 `backend/db/execution_leases.py:828` 把答案丢掉 | 退化成 `kill -9` 那条已有路径：行留着 `held`，别的实例最多多等 1 个 TTL | **1** |
 
    ★ 塌陷的是**值**，不是**理由**：`release` 的 `except` 自己 `logger.warning`（`backend/db/execution_leases.py:586`），所以「问不到」在日志里仍是一个可识别的名字。这是它允许塌成 `bool` 的全部依据。
 2. **租约默认不是持久的。** 见 §4。
@@ -344,7 +344,7 @@ S1–S3 的全部承诺都落在这 12 条路径上。仓里另有两个**修复
 | `backend/db/execution_leases.py:521` | `_renew_in_memory` | 内存后端的答案集合：没有 `UNKNOWN` |
 | `backend/db/execution_leases.py:665` | `_heartbeat_until_cancelled` | 两档都停的那一处，也是原因出仓的那一处 |
 | `backend/db/execution_leases.py:552` | `async def release(` | 家族表的负例：答案塌成一个 `bool` 的那一处（§2 不保证 1） |
-| `backend/db/execution_leases.py:785` | `release(thread_id)` | 全仓唯一的调用点，**丢掉**答案 —— 「零决定者」这条裁定的落点 |
+| `backend/db/execution_leases.py:828` | `release(thread_id)` | 全仓唯一的调用点，**丢掉**答案 —— 「零决定者」这条裁定的落点 |
 | `backend/db/execution_leases.py:83` | `HEARTBEAT_MISSES_BEFORE_EXPIRY = 3` | §2 那条 TTL 脚注引的常量 —— 这行是**锚点行**，不是「解得到就行」：`:78` 也解得到，而它上面是注释 |
 | `backend/db/execution_leases.py:96` | `HEARTBEAT_TRANSIENT_FAILURES_TOLERATED` | 拥有者的容忍预算 —— 从上面那个常量**推导**（`M - 2`），所以两个数不会各自漂移 |
 | `backend/api/routes/_runner.py:559` | `start_lease` | 全仓唯一的 `start_lease(` 调用点（在 `_execution_lease` 里） |

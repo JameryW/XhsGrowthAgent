@@ -760,29 +760,72 @@ async def start_lease(
     return LeaseHold(outcome=outcome, heartbeat=heartbeat)
 
 
+def _runs_on_current_loop(heartbeat: object) -> bool:
+    """Whether a heartbeat can still be awaited from the running loop.
+
+    ``_active_heartbeats`` is process-global so the drain can find every lease
+    without walking the graph.  Tests, however, create a fresh event loop per
+    test: a heartbeat left behind by an earlier test belongs to a loop that is
+    already closed.  Awaiting it would raise ``RuntimeError: Event loop is
+    closed`` and, worse, leave the registration in place for the next drain.
+    Treat such an entry as *not owned* by this loop: it can still be released,
+    but it must not be awaited or counted as one of our live leases.
+    """
+    if not isinstance(heartbeat, asyncio.Future):
+        return False
+    try:
+        loop = heartbeat.get_loop()
+        running = asyncio.get_running_loop()
+    except (AttributeError, RuntimeError):
+        return False
+    return loop is running and not loop.is_closed()
+
+
+def _cancel_quietly(heartbeat: object) -> None:
+    """Cancel a heartbeat without letting a dead loop mask the release."""
+    cancel = getattr(heartbeat, "cancel", None)
+    if not callable(cancel):
+        return
+    try:
+        cancel()
+    except RuntimeError:
+        # The owning loop is already closed; there is nothing left to cancel.
+        logger.debug("execution_leases heartbeat belonged to a closed loop", exc_info=True)
+
+
 async def end_lease(thread_id: str, heartbeat: asyncio.Task[RenewOutcome] | None) -> None:
     """Stop the heartbeat and release the lease.
 
     ``gather(return_exceptions=True)`` waits the heartbeat out without either
     swallowing our own cancellation or resurrecting the CancelledError it was
-    cancelled with. If this call never runs — a ``kill -9`` — the lease simply
-    goes silent and expires, which is the property being built rather than a
-    gap in it.
+    cancelled with. A heartbeat whose event loop has already closed is not
+    awaited: the task can never run again, and gathering it would raise
+    ``RuntimeError: Event loop is closed``. The release and the registry cleanup
+    live in ``finally`` so shutdown cannot strand either one on that error.
     """
-    if heartbeat is not None:
-        if isinstance(heartbeat, asyncio.Future):
-            heartbeat.cancel()
-            await asyncio.gather(heartbeat, return_exceptions=True)
-        else:
-            # The slot is typed as a Task, but a test double may hand us a
-            # sentinel.  Cancelling what we can and still releasing the row is
-            # the property that matters: shutdown must not strand a lease.
-            cancel = getattr(heartbeat, "cancel", None)
-            if callable(cancel):
-                cancel()
+    try:
+        if heartbeat is not None:
+            if isinstance(heartbeat, asyncio.Future):
+                _cancel_quietly(heartbeat)
+                if _runs_on_current_loop(heartbeat):
+                    try:
+                        await asyncio.gather(heartbeat, return_exceptions=True)
+                    except RuntimeError:
+                        # Lost the loop between the check and the gather; the
+                        # release below must still happen.
+                        logger.debug(
+                            "execution_leases heartbeat loop closed during drain",
+                            exc_info=True,
+                        )
+            else:
+                # The slot is typed as a Task, but a test double may hand us a
+                # sentinel. Cancelling what we can and still releasing the row
+                # is the property that matters: shutdown must not strand a lease.
+                _cancel_quietly(heartbeat)
+    finally:
         if _active_heartbeats.get(thread_id) is heartbeat:
             _active_heartbeats.pop(thread_id, None)
-    await release(thread_id)
+        await release(thread_id)
 
 
 async def release_all_owned_leases() -> int:
@@ -790,15 +833,20 @@ async def release_all_owned_leases() -> int:
 
     Called from the FastAPI lifespan shutdown path *before* background tasks are
     cancelled, so in-flight steps get the chance to reach their next checkpoint.
-    Returns the number of leases released; idempotent.
+    Returns the number of leases owned by the *currently running* loop; stale
+    registrations from a closed test loop are released but not counted.
     """
     threads = list(_active_heartbeats.items())
+    released = 0
     for thread_id, heartbeat in threads:
+        owned = _runs_on_current_loop(heartbeat)
         try:
             await end_lease(thread_id, heartbeat)
         except Exception:  # pragma: no cover - shutdown must never fail hard
             logger.warning("execution_leases drain release failed for %s", thread_id, exc_info=True)
-    return len(threads)
+        if owned:
+            released += 1
+    return released
 
 
 def start_drain() -> None:

@@ -332,7 +332,13 @@ class TestHeartbeatTask:
         # Which non-answer ended it travels out on the task, because that is
         # where the fence reads it from to say whether a takeover or an
         # unaskable store stopped the run.
-        assert await asyncio.wait_for(heartbeat, timeout=5.0) is leases.RenewOutcome.LOST
+        try:
+            assert await asyncio.wait_for(heartbeat, timeout=5.0) is leases.RenewOutcome.LOST
+        finally:
+            # The task is finished, but it is still registered as this
+            # process's heartbeat. Drop it here so a later drain does not have
+            # to discover a task whose test loop has already closed.
+            await leases.end_lease("t1", heartbeat)
 
     async def test_end_stops_the_heartbeat_and_releases(self) -> None:
         hold = await leases.start_lease("t1")
