@@ -902,4 +902,17 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 - 顺带修正 `docs/adaptive-harness-eval-plan.md` 顶部状态段的历史残留「E2/E3 未接线生产默认」：E2 已接线（默认策略逐字节等价，`XHS_HARNESS_POLICY` 注入），E3 L1/L2/阈值离线门禁已落地，E4 live 仍 external-only。
 - 验证：`test_deploy_env.py` 4 passed；ruff check / format 通过；全量回归 **5117 passed / 14 skipped / 0 failed**（5131 collected，262s）；`ci_local.py --skip-tests` 全 PASS。提交 `0b9c6ab2`，CI run **43609063592** 10 个作业 success。
 
+### 2026-11-15 补充（四）：E4 live 准备包（离线预检 + 回滚/留存规则）
+
+[OK] **Completed**
+
+- 背景：E4 的 live 端到端始终 external-only（部署凭据/测试账号窗口/真实费用），但"开跑前能验证的事"可以在仓库内做全，避免操作员在准备不足时启动一次会花钱、可能泄露内容的 live 实验。
+- 新增 `scripts/eval/live_preflight.py`（离线、不启动工作流、不调用模型、不打印 env 值）：七项检查 `plan`（复用 `plan_l3.validate`，单一事实源）、`judge_budget`（199 上限 + 预算必须新建）、`redaction_key`（`XHS_EVAL_REDACTION_KEY` 为空即 BLOCK）、`model_egress`（magpie 凭据）、`corpus`（`.eval-fixtures` 至少 1 个 fixture，缺失即 BLOCK）、`tool_corpus`（缺失仅 WARN，E3 的 L2 会 SKIP）、`out_dir`（默认 `.eval-live/`，用 `git check-ignore` 确认不可提交；git 不可用降级 WARN）。`--armed` 时任一 BLOCK 即 exit 1。
+- `.gitignore` 增 `.eval-live/`；预检对目录模式用 `git check-ignore <path>/`（尾部斜杠才能匹配未创建目录的 `.eval-live/` 规则）。
+- 文档：runbook 新增 §3.2 预检（七项表 + 命令）、§6.2 回滚预案（取消工作流/关会话/不触发发布/记账/复盘）、§6.3 数据留存与脱敏（产物不提交、正文与 rationale 默认不落库、原始上下文 ≤30 天、汇总指标可留）；eval-plan §4/§6.10/§7 同步；agent-os §9.4 记录。
+- 测试 `tests/unit/scripts/test_eval_live_preflight.py` **21 passed**：未武装/缺账号/judge=none/人审提示、缺脱敏键/缺 magpie、语料缺失/空/损坏、工具语料降级、目录未忽略/仓库外/等于仓库根、git 不可用降级、预算固定 199、armed 退出码、JSON 不含凭据、真实 git 目录模式。
+- 实测：默认环境（未武装、无凭据）输出 4 个 BLOCK 且 `--armed` exit 1；配齐 `XHS_EVAL_LIVE/REDACTION_KEY/MAGPIE_*` 后 ready=yes exit 0。
+- 验证：新模块 ruff/format 通过；全量回归 **5138 passed / 14 skipped / 0 failed**（5152 collected，206s）。
+
+
 

@@ -78,5 +78,6 @@ verify_*.py
 .eval-fixtures/
 .eval-tool-corpus/
 .eval-tmp/
+.eval-live/
 .workbuddy/
 data-gym-cache/

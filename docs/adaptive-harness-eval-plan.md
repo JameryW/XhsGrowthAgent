@@ -106,7 +106,9 @@
 > 才能填），坏 metrics 文件 → 红。E3 现有 corpus / policy / l1 / l2 / thresholds /
 > variant / benchmarks **七项门禁**；阈值与 L2 需要的真实数据分别来自 E4 live 实验
 > （外部执行）与工具序列录制（`record_tool_results.py`）。**仍未做**：E4 live 端到端
-> （external-only，需部署侧凭据/测试账号窗口/真实费用）。
+> 执行本身（external-only，需部署侧凭据/测试账号窗口/真实费用）；但 live 的**准备包与
+> 离线预检**已落地（`scripts/eval/live_preflight.py` + runbook §3.2，21 条预检测试），
+> 开跑前即可判定「是否具备条件、产物会不会被误提交、花费是否在 199 次内」。
 
 ## 5. 分阶段落地（每阶段独立票）
 
@@ -304,6 +306,17 @@ python scripts/eval/run_gate.py --skip-benchmarks \
   裁判打分 → 记录/停止条件）；
 - 测试：`tests/unit/scripts/test_eval_plan_l3.py` 15 passed（含总量估算、缺失调用估算、
   human 裁判也需武装、estimate_basis 不是上限、armed/json 两个 CLI 姿态）。
+
+**live 预检（票 5ci 补强）**：`scripts/eval/live_preflight.py` 是 plan 门闸之后的第二道离线
+门，七项检查——`plan`（复用 `plan_l3.validate`，单一事实源）、`judge_budget`（199 上限、
+`used==0`，阻止复用预算）、`redaction_key`（`XHS_EVAL_REDACTION_KEY`，否则 live 产物假名
+可被字典攻击）、`model_egress`（magpie 凭据）、`corpus`（`.eval-fixtures` 基线，缺失即
+BLOCK）、`tool_corpus`（缺失仅 WARN，E3 的 L2 会 SKIP）、`out_dir`（默认 `.eval-live/`，
+用 `git check-ignore` 确认不可提交；git 不可用降级 WARN）。`--armed` 时任一 BLOCK 即 exit 1，
+**不启动任何工作流、不调用模型、不打印 env 值**。测试
+`tests/unit/scripts/test_eval_live_preflight.py` **21 passed**（含未武装/缺账号/缺脱敏键/
+缺凭据/语料缺失/损坏/未忽略目录/仓库外目录/git 降级/JSON 不含凭据/真实 git 目录模式）。
+回滚与留存的执行细则写在 `docs/adaptive-harness-runbook.md` §6.2/§6.3。
 
 ## 7. 明确不做
 

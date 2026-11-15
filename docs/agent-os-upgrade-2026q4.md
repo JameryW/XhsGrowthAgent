@@ -379,7 +379,7 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 
 > 目的：让「所有剩余任务」可审计——哪些能本地跑、哪些是决策/外部/环境依赖。
 > 本轮已在本地逐项核对 CI（**下表计数为 2026-11-01 时点**）；
-> 2026-11-14 复核：**5117 passed / 14 skipped / 0 failed**，见 §9.3 / §9.4。
+> 2026-11-14 复核：**5138 passed / 14 skipped / 0 failed**，见 §9.3 / §9.4。
 
 ### 9.1 CI 作业本地核对矩阵
 
@@ -387,7 +387,7 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 |---|---|---|
 | Lint & Format | `ruff check` + 改动文件 `ruff format --check` | ✅ 绿（2026-11-14 复核：`ruff check backend tests scripts` 全绿；LF 归一 format 709 个 tracked `.py` 全绿，早期记录的 CRLF 假阳性未复现） |
 | Mypy | `mypy --python-version 3.12 backend`（本地 numpy 2.5.1 stub 与 `python_version=3.11` 冲突） | ✅ 267 source files，0 issues（2026-11-14 复核：E2 接线新增 `backend/harness/runtime.py` 后 266→267） |
-| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped（2026-11-01 时点）；**2026-11-14 复核 5117 passed / 14 skipped / 0 failed**；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
+| Test（py3.11/3.12 + PG parity） | `pytest -q` | ✅ 4800 passed / 14 skipped（2026-11-01 时点）；**2026-11-14 复核 5138 passed / 14 skipped / 0 failed**；PG parity 需 CI 的 postgres service，本地无凭据可用端口 |
 | Context Compiler Baseline | `python scripts/benchmarks/context_compiler_baseline.py --compare --drift-pct 5` | ✅ drift within threshold |
 | Harness Benchmarks | `python scripts/benchmarks/harness_benchmarks.py` | ✅ pass=3 fail=0 skip=3（F5/F7/F8 是文档化缺口） |
 | Tool Runtime Gate | `python scripts/gates/tool_runtime_gate.py` | ✅ P1c-S5 OK |
@@ -401,7 +401,7 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 |---|---|---|
 | P4 分支 B：入口直落 `execute_action` 回执路径 | 已完成 | 2026-11-01 拍板并落地 B1–B4（票 5bn/5bo/5br/5bq/5bs）及加固（5bu/5by）：receipt attempt 级、intent 先于持久效果、executor 接受 caller-supplied request、有 intent 的发布经 `execute_action` 执行且只保留主链一个账本 claim；claim 表新增两条并带阳性对照。**已推送 origin/main 并经 CI 验证**：run 41306901460 / 41307361407 的 10 个作业全部 success（含 mypy、py3.11/3.12 的 Postgres parity、frontend、OMP） |
 | 路线图 8：多 Agent 并行 / workspace 冲突（F5） | 裁定 | 本文档裁定「先不建」，F5 保持 SKIP |
-| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 已交付（live 除外） | 评测集先行：E1 真实 checkpoint 抽取+脱敏+指纹/加盐（5cd/5cj/5ck/5cm/5cp）、E2 HarnessPolicy（5ce，**2026-11-14 已接线**：`backend/harness/runtime.py` + router/compiler/gateway 四个决策点，默认策略逐字节等价）、E3 离线 A/B 门禁 report/block（5cf/5cj/5cn，现为 **corpus/l1/l2/thresholds/variant/benchmarks 七项检查**）、变体示例（5cg/5cn）、E4 质量裁判 + 199 预算护栏 + live 计划门闸 + runbook（5ch/5ci/5cj/5co）；多轮独立审查（含 5cm 第二轮两处高危）发现的高/中/低危均已修复；**L1 决策回放（同日）、L2 工具/网关回放与成本/时延/质量阈值判定均已实现（2026-11-14 后续轮，§9.3）**，仅 live 端到端仍 external-only |
+| 路线图 10：Adaptive Harness + A/B 门禁（F7/F8） | 已交付（live 除外） | 评测集先行：E1 真实 checkpoint 抽取+脱敏+指纹/加盐（5cd/5cj/5ck/5cm/5cp）、E2 HarnessPolicy（5ce，**2026-11-14 已接线**：`backend/harness/runtime.py` + router/compiler/gateway 四个决策点，默认策略逐字节等价）、E3 离线 A/B 门禁 report/block（5cf/5cj/5cn，现为 **corpus/l1/l2/thresholds/variant/benchmarks 七项检查**）、变体示例（5cg/5cn）、E4 质量裁判 + 199 预算护栏 + live 计划门闸 + runbook（5ch/5ci/5cj/5co）、**live 离线预检（§9.4）**；多轮独立审查（含 5cm 第二轮两处高危）发现的高/中/低危均已修复；**L1 决策回放（同日）、L2 工具/网关回放与成本/时延/质量阈值判定均已实现（2026-11-14 后续轮，§9.3）**，仅 live 端到端仍 external-only |
 | 私信 DOM 真机读法、笔记详情页深查/CDP | external-only | 需真实账号与平台环境，沙箱内不可验证 |
 | frontend vitest、OMP typecheck、PG parity | 环境 | CI 正常执行；本地：2026-11-14 补齐 node_modules 后 frontend type-check + vitest(788) 与 OMP typecheck 均已跑通，PG parity 仍需凭据/服务——非仓库缺陷 |
 
@@ -410,7 +410,9 @@ SKIP 是**记录在案的缺口，不是通过**——脚本单独打印 skip �
 E1–E3（含 L1 决策回放、**L2 工具/网关回放、成本/时延/质量阈值判定**）、E2 生产接线、
 变体示例与 E4 的裁判/预算护栏/计划门闸全部落地（票 5cd–5cp，含 5cm 第二轮两处高危修复、
 5cp 的 artifact 写缝/`--store-uri`/扫描上限），多轮独立审查发现的高危/中危/低危均已修复；
-E4 的 live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真实费用）。其余为已裁定
+E4 的 live 端到端仍 external-only（需部署侧凭据、测试账号窗口与真实费用），但其
+**离线预检（`scripts/eval/live_preflight.py`）、回滚预案与数据留存/脱敏规则**已落地
+（§9.4/runbook §6.2–6.3），具备窗口时无需再补仓库工作。其余为已裁定
 延后项（路线图 8：多 Agent 并行，裁定先不建）与外部/环境依赖项。
 
 ### 9.3 2026-11-14 复核与修复（文档同步）
@@ -421,7 +423,7 @@ E4 的 live 端到端仍 external-only（需部署侧凭据、测试账号窗口
 
 | 项 | 2026-11-14 实测 | 说明 |
 |---|---|---|
-| 全量 pytest | **5117 passed / 14 skipped / 0 failed**（5131 collected，262s） | §9.1 的 4800/14 与 journal 的 4979/11 均为历史快照（后者带 PG parity）；3 项 PG parity、11 项 Windows symlink 为环境 skip；较 2026-11-14 早先的 5006 增加 111 条：E2 接线 36 + L2 23 + 阈值 40 + gate 集成 8 + 部署/前端 env 守卫 4 |
+| 全量 pytest | **5138 passed / 14 skipped / 0 failed**（5152 collected，206s） | §9.1 的 4800/14 与 journal 的 4979/11 均为历史快照（后者带 PG parity）；3 项 PG parity、11 项 Windows symlink 为环境 skip；较 2026-11-14 早先的 5006 增加 132 条：E2 接线 36 + L2 23 + 阈值 40 + gate 集成 8 + 部署/前端 env 守卫 4 + live 预检 21 |
 | Lint / Format | `ruff check backend tests scripts` 全绿；LF 归一 `ruff format --check`（709 个 tracked `.py`）全绿 | 早期记录的 CRLF 假阳性未复现 |
 | Mypy | `mypy --python-version 3.12 backend` → 266 source files，0 issues | 直接 `mypy backend` 仍只被本地 numpy 2.5.1 stub 的 PEP-695 语法卡住（环境） |
 | Gates | context baseline `drift within threshold`；harness `pass=3 fail=0 skip=3`；tool runtime / compliance OK | F5/F7/F8 仍为记录在案缺口，不当通过 |
@@ -445,7 +447,9 @@ strict 反序列化把决策字段降级成裸字符串；`tests/unit/scripts/te
 26 passed）。
 
 仍未完成（裁定/外部项）：路线图 8（多 Agent 并行）保持「先不建」；E4 live 端到端
-external-only（需部署侧凭据、测试账号窗口与真实费用）。本段此前记录的三项缺口已在
+external-only（需部署侧凭据、测试账号窗口与真实费用）——其**离线预检、回滚预案与
+留存/脱敏细则**已于 2026-11-15 落地（§9.4），开跑前无需再补仓库侧准备。本段此前记录的
+三项缺口已在
 **2026-11-14 后续轮消除**：E2 接线（`XHS_HARNESS_POLICY` + `backend/harness/runtime.py`，
 默认策略行为等价）、L2 工具/网关回放（`tool_replay.py` + `record_tool_results.py`，真实
 `ToolGateway` 分类/回执/`EffectLedger` 状态校验）、成本/时延/质量阈值（`thresholds.py`）；
@@ -556,3 +560,17 @@ L1 切片 `3bc05c4c` 推送后，CI run **43596029485** 同样 10 个作业全�
   4 tests 守卫「Vite 读取的构建期变量必须可在模板中发现」。同时修正
   `docs/adaptive-harness-eval-plan.md` 顶部状态段的历史残留「E2/E3 未接线」。
   提交 `0b9c6ab2`，推送后 CI run **43609063592** 10 个作业 success。
+
+- **E4 live 准备包：离线预检 + 回滚/留存规则（2026-11-15）**：新增
+  `scripts/eval/live_preflight.py`（离线、不启动工作流、不调用模型、不打印 env 值）——
+  七项检查：`plan`（复用 `plan_l3.validate`，单一事实源）、`judge_budget`（199 上限 +
+  预算必须新建）、`redaction_key`（`XHS_EVAL_REDACTION_KEY`，否则 live 产物假名可被
+  字典攻击）、`model_egress`（magpie 凭据）、`corpus`（`.eval-fixtures` 基线，缺失即 BLOCK）、
+  `tool_corpus`（缺失仅 WARN，E3 的 L2 会 SKIP）、`out_dir`（默认 `.eval-live/`，用
+  `git check-ignore` 确认不可提交；git 不可用时降级 WARN 而非假装通过）。`--armed` 时任一
+  BLOCK 即 exit 1。`tests/unit/scripts/test_eval_live_preflight.py` **21 passed**（含未武装/
+  缺账号/缺脱敏键/缺凭据/语料缺失/损坏/未忽略目录/仓库外目录/真实 git 目录模式/JSON 不含
+  凭据）。配套：`.gitignore` 增 `.eval-live/`；runbook 增 §3.2 预检与 §6.2 回滚预案 /
+  §6.3 live 数据留存与脱敏规则（产物不提交、正文与 rationale 默认不落库、原始上下文 ≤30 天）；
+  eval-plan §6.10 记录预检。本轮全量回归 **5138 passed / 14 skipped / 0 failed**
+  （5152 collected，206s，+21 = 预检用例）。
