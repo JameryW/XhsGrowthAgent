@@ -8,7 +8,8 @@ aggregated visual data from Xiaohongshu posts.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import math
+from datetime import UTC, datetime
 from typing import Any
 
 from backend.memory.scene_database import SceneDatabase
@@ -22,6 +23,68 @@ from backend.services.visual_extractor import VisualDataExtractor
 from backend.services.xhs_client import XHSClient
 
 logger = logging.getLogger("xhs_growth.visual_analysis")
+
+VISUAL_DECAY_HALF_LIFE_DAYS = 14.0
+
+
+def _parse_observed_at(value: Any) -> datetime | None:
+    """Best-effort parse of a platform timestamp (epoch seconds/ms or ISO)."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, (int, float)):
+        seconds = float(value)
+        if seconds > 1e12:  # milliseconds
+            seconds /= 1000.0
+        try:
+            return datetime.fromtimestamp(seconds, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    text = str(value).strip()
+    if text.isdigit():
+        return _parse_observed_at(int(text))
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def decay_weight(
+    observed_at: Any,
+    *,
+    now: datetime | None = None,
+    half_life_days: float = VISUAL_DECAY_HALF_LIFE_DAYS,
+) -> float:
+    """Exponential time-decay weight ``2 ** (-Δt / half_life)``.
+
+    A missing/unparseable timestamp returns ``1.0`` (neutral): we never
+    invent freshness.  Future timestamps are clamped to zero age.
+    """
+    observed = _parse_observed_at(observed_at)
+    if observed is None:
+        return 1.0
+    reference = now or datetime.now(UTC)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=UTC)
+    age_days = max(0.0, (reference - observed).total_seconds() / 86400.0)
+    return math.pow(2.0, -age_days / max(0.1, half_life_days))
+
+
+def weighted_distribution(
+    weights_by_key: dict[str, float],
+) -> dict[str, float]:
+    """Normalise positive weights into a percentage distribution.
+
+    Zero/negative entries carry no evidence and are omitted instead of
+    surfacing as ``0.0`` buckets in the recommendation payload.
+    """
+    positive = {key: value for key, value in weights_by_key.items() if value > 0}
+    total = sum(positive.values())
+    if total <= 0:
+        return {}
+    return {key: value / total for key, value in positive.items()}
 
 
 class VisualAnalysisService:
@@ -96,12 +159,16 @@ class VisualAnalysisService:
             return SceneAnalysisResult(
                 scene=scene,
                 sample_size=0,
-                analyzed_at=datetime.now(),
+                analyzed_at=datetime.now(UTC),
+                as_of=datetime.now(UTC),
             )
 
-        # Extract features from each post
-        style_counts: dict[str, int] = {}
-        layout_counts: dict[str, int] = {}
+        # Extract features from each post.  Counts carry an exponential
+        # 14-day half-life weight so a layout/style that suddenly spikes is
+        # not drowned out by older posts still inside the sample window.
+        analysis_now = datetime.now(UTC)
+        style_weights: dict[str, float] = {}
+        layout_weights: dict[str, float] = {}
         color_palettes: list[ColorPalette] = []
         visual_elements: dict[str, int] = {}
 
@@ -109,6 +176,7 @@ class VisualAnalysisService:
             # Build image dict from post data
             # Note: Posts from search have cover_url, not full image list
             images = [{"url": post.cover_url}] if post.cover_url else []
+            weight = decay_weight(getattr(post, "created_at", ""), now=analysis_now)
 
             # Extract features
             style = self._extractor.classify_visual_style(images)
@@ -116,9 +184,9 @@ class VisualAnalysisService:
             palette = self._extractor.extract_color_palette(images)
             elements = self._extractor.identify_visual_elements(images)
 
-            # Aggregate
-            style_counts[style] = style_counts.get(style, 0) + 1
-            layout_counts[layout] = layout_counts.get(layout, 0) + 1
+            # Aggregate with time-decay weights
+            style_weights[style] = style_weights.get(style, 0.0) + weight
+            layout_weights[layout] = layout_weights.get(layout, 0.0) + weight
             color_palettes.append(palette)
 
             # Merge visual elements
@@ -126,22 +194,20 @@ class VisualAnalysisService:
                 increment = value if isinstance(value, int) else 1
                 visual_elements[key] = visual_elements.get(key, 0) + increment
 
-        # Calculate distributions (normalize to percentages)
+        # Calculate weighted distributions (normalize to percentages)
         total_posts = len(posts)
-        style_distribution = {style: count / total_posts for style, count in style_counts.items()}
-        layout_distribution = {
-            layout: count / total_posts for layout, count in layout_counts.items()
-        }
+        style_distribution = weighted_distribution(style_weights)
+        layout_distribution = weighted_distribution(layout_weights)
 
-        # Identify trending items (top 3 by count)
+        # Identify trending items (top 3 by decayed weight)
         trending_styles = sorted(
-            style_counts.keys(),
-            key=lambda s: style_counts[s],
+            style_weights.keys(),
+            key=lambda s: style_weights[s],
             reverse=True,
         )[:3]
         trending_layouts = sorted(
-            layout_counts.keys(),
-            key=lambda x: layout_counts[x],
+            layout_weights.keys(),
+            key=lambda x: layout_weights[x],
             reverse=True,
         )[:3]
 
@@ -155,7 +221,8 @@ class VisualAnalysisService:
             visual_elements=visual_elements,
             trending_styles=trending_styles,
             trending_layouts=trending_layouts,
-            analyzed_at=datetime.now(),
+            analyzed_at=datetime.now(UTC),
+            as_of=analysis_now,
         )
 
         # Save to database

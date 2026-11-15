@@ -25,6 +25,9 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from backend.tools.analysis.collect_first import PostFeatures, forecast_payload
+from backend.tools.content.novelty import novelty_penalty
+
 logger = logging.getLogger("xhs_growth.tools.topic_scorer")
 
 
@@ -35,6 +38,8 @@ async def topic_scorer(
     niche: str = "",
     time_window: str = "7d",
     account_id: str = "",
+    history_titles: list[str] | None = None,
+    snapshots: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """评估小红书话题的热度得分与传播潜力.
 
@@ -44,9 +49,12 @@ async def topic_scorer(
         niche: 所属垂直领域
         time_window: 数据时间窗口
         account_id: 用谁的凭据去读平台。空 = 部署级凭据（单账号部署）
+        history_titles: 该账号最近已发布笔记标题（用于 Novelty Penalty）
+        snapshots: 最近互动快照序列（用于账号级 Hawkes 拟合）
 
     Returns:
-        话题评分结果，包含热度得分、增长趋势、竞争度、推荐等级
+        话题评分结果，包含热度得分、增长趋势、竞争度、推荐等级，
+        以及 Collect-First 四头预测 / 14 天扩散曲线 / 新颖度惩罚
 
     Raises:
         XHSAuthError: 无可用 Cookie（见
@@ -171,6 +179,19 @@ async def topic_scorer(
         potential_score = round(final_score * max(growth_rate, 0) * 1.25, 1)
         potential_score = min(potential_score, 100.0)
 
+        # OranSim-style Collect-First forecast (deterministic, no extra API).
+        sample_title = str(getattr(top_posts[0], "title", "") if top_posts else topic) or topic
+        sample_body = str(getattr(top_posts[0], "content", "") if top_posts else "") or sample_title
+        collect_forecast = forecast_payload(
+            PostFeatures(title=sample_title, body=sample_body, tags=tuple(keywords or ())),
+            snapshots=snapshots,
+        )
+
+        # AutoViralAI-style novelty penalty against the account's recent notes.
+        novelty = novelty_penalty(f"{topic} {sample_title}", history_titles or [])
+        if novelty.is_duplicate_risk:
+            potential_score = max(0.0, round(potential_score - novelty.penalty, 1))
+
         return {
             "topic": topic,
             "heat_score": round(final_score, 1),
@@ -196,6 +217,17 @@ async def topic_scorer(
             "related_keywords": keywords[:5] if keywords else [f"#{topic}"],
             "best_posting_window": best_posting_window,
             "reference_posts": reference_posts,
+            "predicted_collect": collect_forecast.get("predicted_collect"),
+            "collect_first_rank": 1,
+            "collect_first": collect_forecast,
+            "novelty": novelty.as_dict()
+            if hasattr(novelty, "as_dict")
+            else {
+                "max_similarity": novelty.max_similarity,
+                "threshold": novelty.threshold,
+                "penalty": novelty.penalty,
+                "is_duplicate_risk": novelty.is_duplicate_risk,
+            },
         }
 
     finally:

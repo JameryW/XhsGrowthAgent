@@ -349,6 +349,10 @@ class EvaluationResult(TypedDict, total=False):
     # Deterministic publish eligibility (per-failure-mode judgers + audit).
     # Publish routing must consult this — not the LLM panel's overall self-score.
     publish_eligibility: dict[str, Any]
+    # SearchLLM-style Layer I soft-AND gate recomputation (base vs gated score).
+    quality_gate: dict[str, Any]
+    # Deterministic Xiaohongshu search-GEO readiness audit (advisory, 0-100).
+    search_geo: dict[str, Any]
 
 
 class BriefContent(TypedDict, total=False):

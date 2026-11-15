@@ -234,6 +234,35 @@ class EffectLedger:
             return None
         return EffectRecord.from_store_dict(effect_id, value)
 
+    async def list_records(
+        self,
+        *,
+        limit: int = 200,
+        statuses: frozenset[EffectStatus] | None = None,
+    ) -> list[EffectRecord]:
+        """List recent records, optionally filtered by status.
+
+        ``BaseStore.asearch`` without a query returns namespace recency; no
+        semantic index is required. Used by startup readback of UNKNOWN
+        publishes — a read failure propagates so the caller can report it.
+        """
+        if self._store is None:
+            return []
+        items = await self._store.asearch(self._ns, limit=max(1, int(limit)))
+        records: list[EffectRecord] = []
+        for item in items:
+            value = getattr(item, "value", None)
+            if not isinstance(value, dict):
+                continue
+            key = str(getattr(item, "key", "") or value.get("effect_id") or "")
+            if not key:
+                continue
+            record = EffectRecord.from_store_dict(key, value)
+            if statuses is not None and record.status not in statuses:
+                continue
+            records.append(record)
+        return records
+
     async def begin(
         self,
         effect_id: str,

@@ -134,6 +134,7 @@ class XHSSearchResult:
     collects: int
     cover_url: str = ""
     note_url: str = ""
+    created_at: str = ""
 
 
 # ── HTTP API Client ─────────────────────────────────────────────────────────
@@ -368,6 +369,7 @@ class XHSClient:
                     if isinstance(note.get("cover"), dict)
                     else "",
                     note_url=f"https://www.xiaohongshu.com/explore/{note_id}",
+                    created_at=str(note.get("create_time", note.get("time", "")) or ""),
                 )
             )
 

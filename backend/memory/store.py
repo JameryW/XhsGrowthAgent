@@ -74,6 +74,11 @@ class MemoryManager:
     def strategy_ns(self) -> tuple[str, str, str]:
         return ("accounts", self.account_id, "strategy_notes")
 
+    @property
+    def negative_pitfalls_ns(self) -> tuple[str, str, str]:
+        """Low-outcome lessons: what *not* to repeat (Outcome-Verified gate)."""
+        return ("accounts", self.account_id, "negative_pitfalls")
+
     # ── Write ──
 
     async def store_content_record(
@@ -102,6 +107,16 @@ class MemoryManager:
             self.strategy_ns,
             key=memory_record_key("strategy_note", note),
             value={"note": note, **data},
+        )
+
+    async def store_negative_pitfall(
+        self, store: BaseStore, pitfall: str, data: dict[str, Any]
+    ) -> None:
+        """Record a low-outcome lesson in the negative pitfalls pool."""
+        await store.aput(
+            self.negative_pitfalls_ns,
+            key=memory_record_key("negative_pitfall", pitfall),
+            value={"pitfall": pitfall, **data},
         )
 
     # ── Read (semantic search + keyword filter) ──

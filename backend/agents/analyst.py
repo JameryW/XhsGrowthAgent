@@ -25,6 +25,7 @@ from backend.config.models import TaskType
 from backend.context.compiler import ContextCompiler
 from backend.context.models import RetrievalMode, RetrievalResult, RunContext, require_niche
 from backend.context.retrieval import RecallRequest, recall_namespaces
+from backend.memory.hy.promotion import evaluate_outcome_gate, memory_metadata
 from backend.memory.hy.recall import format_hy_section, recall_hy_memory
 from backend.models.outputs import AnalyticsOutput, normalize_analytics
 from backend.models.structured import StructuredOutputError
@@ -146,6 +147,41 @@ async def _safe_remember_hy(account_id: str, text: str, *, metadata: dict[str, A
         logger.warning("hy-memory remember failed", exc_info=True)
 
 
+async def _safe_store_pitfall(
+    mm: MemoryManager, store: BaseStore, pitfall: str, data: dict[str, Any]
+) -> None:
+    """Per-row write wrapper for the negative pitfalls pool; swallow errors."""
+    try:
+        await mm.store_negative_pitfall(store, pitfall, data)
+    except Exception:
+        logger.warning("store_negative_pitfall failed", exc_info=True)
+
+
+def _learning_signal_approved(state: XHSGrowthState) -> bool:
+    """A reviewer can explicitly bless a lesson even when metrics are weak.
+
+    Kept deliberately narrow: only an explicit boolean on ``human_feedback``
+    counts. A low-risk auto-approval of the *content* is not a learning signal.
+    """
+    feedback = state.get("human_feedback") or {}
+    return bool(
+        feedback.get("approve_learning")
+        or feedback.get("learning_signal_approved")
+        or feedback.get("promote_learning")
+    )
+
+
+def _hy_learning_allowed(outcome_gate: Any) -> bool:
+    """Whether the lesson may enter the positive working-memory pool.
+
+    New accounts have no baseline yet; blocking every write would defeat the
+    cold start. Those writes are tagged ``unverified_cold_start`` so they stay
+    auditable, while a measured below-baseline note never becomes a positive
+    working experience.
+    """
+    return bool(outcome_gate.allowed or outcome_gate.reason == "insufficient_history")
+
+
 class AnalystAgent(BaseAgent):
     task_type = TaskType.ANALYSIS
     agent_name = "analyst"
@@ -182,6 +218,26 @@ class AnalystAgent(BaseAgent):
         )
         hy_chat, hy_working = await hy_recall_task
         history = _format_history(history_result)
+
+        # Outcome-Verified Epistemic Gate: only a note that beat the account's
+        # recent median (or a human-approved learning signal) may promote its
+        # lesson to a verified pattern. Everything else still gets recorded,
+        # but in the negative pitfalls pool.
+        history_records = [
+            item for item in (history_result.raw_items or ()) if isinstance(item, dict)
+        ]
+        outcome_gate = evaluate_outcome_gate(
+            publish_result,
+            history_records,
+            human_approved=_learning_signal_approved(state),
+        )
+        gate_metadata = memory_metadata(outcome_gate)
+        if outcome_gate.reason == "insufficient_history":
+            gate_metadata = {
+                **gate_metadata,
+                "verification": "unverified_cold_start",
+                "memory_pool": "working_unverified",
+            }
 
         hy_context = format_hy_section([hy_chat, hy_working])
 
@@ -269,6 +325,23 @@ class AnalystAgent(BaseAgent):
         await asyncio.gather(
             *(_safe_store_insight(mm, store, insight, post_id) for insight in insights),
             *(_safe_store_strategy_note(mm, store, rec) for rec in recommendations),
+            # 低表现笔记的复盘不进正向记忆：同一批洞察/建议改存负向避坑池，
+            # 避免把一次偶然低表现（或高表现）固化成长期规则。
+            *(
+                _safe_store_pitfall(
+                    mm,
+                    store,
+                    f"[{niche}] 低表现避坑（帖子 {post_id or 'unknown'}）：{insight}",
+                    {
+                        "source": "analyst",
+                        "post_id": post_id,
+                        "niche": niche,
+                        "outcome_gate": outcome_gate.as_dict(),
+                    },
+                )
+                for insight in insights
+                if not outcome_gate.allowed
+            ),
             # hy-memory 双写（best-effort）：洞察/策略建议进 working 场景，
             # 让 SDK 的 facts/experiences 两层在后续会话可复用。功能关闭时
             # remember 立即返回 None，与既有写入完全并发不互相阻塞。
@@ -276,17 +349,24 @@ class AnalystAgent(BaseAgent):
                 _safe_remember_hy(
                     account_id,
                     f"[{niche}] 复盘洞察（帖子 {post_id or 'unknown'}）：{insight}",
-                    metadata={"kind": "insight", "post_id": post_id, "niche": niche},
+                    metadata={
+                        "kind": "insight",
+                        "post_id": post_id,
+                        "niche": niche,
+                        **gate_metadata,
+                    },
                 )
                 for insight in insights
+                if _hy_learning_allowed(outcome_gate)
             ),
             *(
                 _safe_remember_hy(
                     account_id,
                     f"[{niche}] 运营策略建议：{rec}",
-                    metadata={"kind": "strategy_note", "niche": niche},
+                    metadata={"kind": "strategy_note", "niche": niche, **gate_metadata},
                 )
                 for rec in recommendations
+                if _hy_learning_allowed(outcome_gate)
             ),
         )
 

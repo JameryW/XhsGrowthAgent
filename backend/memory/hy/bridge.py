@@ -223,6 +223,7 @@ class HyMemoryBridge:
                 user_ids=[account_id] if account_id else None,
                 include_sources=[s.source],
                 limit=limit or s.default_limit,
+                workspace_id=self.workspace_for(account_id),
             )
         except Exception as exc:
             message = f"{type(exc).__name__}: {exc}"
@@ -279,13 +280,22 @@ class HyMemoryBridge:
         account_id: str,
         limit: int = 50,
         offset: int = 0,
+        include_working: bool = True,
     ) -> list[dict[str, Any]]:
-        """列出一个账号的记忆（管理/调试面）。禁用/失败返回 []。"""
+        """列出一个账号的记忆，聚合 chat 向量库与 working 运营经验双库。
+
+        SDK 2.0.1 的 ``async_list_memories`` 只覆盖 vdb（chat 事实/画像），
+        working/coding 场景写入的经验在同一用户下却是独立的 coding store，
+        因此管理面一直看不见。这里补一次 working 场景读取并打 ``store``
+        标记，两个来源合并返回；任一来源失败不影响另一来源。
+        """
         if not self.enabled:
             return []
         client = await self._get_client()
         if client is None:
             return []
+
+        chat_items: list[dict[str, Any]] = []
         try:
             result = await client.async_list_memories(
                 user_id=account_id,
@@ -294,13 +304,53 @@ class HyMemoryBridge:
             )
         except Exception as exc:
             logger.warning("hy-memory list failed: %s", exc)
-            return []
+            result = {}
         # SDK 2.0.1 实测（探针）：vdb 是 dict（{"memories": [...], "total": N, ...}）
         # 而非 list；list 形状仅在异常/降级路径出现，两种都兼容。
         vdb = result.get("vdb") if isinstance(result, dict) else None
         if isinstance(vdb, dict):
             vdb = vdb.get("memories")
-        return list(vdb) if isinstance(vdb, list) else []
+        if isinstance(vdb, list):
+            # Preserve the legacy list_memories shape for chat entries: existing
+            # callers and tests compare records verbatim. Only working entries
+            # carry the explicit ``store`` marker (they were previously invisible).
+            chat_items = [dict(item) for item in vdb if isinstance(item, dict)]
+
+        working_items: list[dict[str, Any]] = []
+        if include_working and account_id:
+            workspace_id = self.workspace_for(account_id)
+            try:
+                working_raw = await client.async_search(
+                    "",
+                    scene="working",
+                    user_ids=[account_id],
+                    include_sources=[self._settings.source],
+                    limit=limit,
+                    workspace_id=workspace_id,
+                )
+            except TypeError:
+                # Older/newer SDKs may not accept an empty query for list-style
+                # reads; fall back to the scene-aware list entry point.
+                try:
+                    working_raw = await client.async_list_memories(
+                        user_id=account_id,
+                        limit=limit,
+                        offset=offset,
+                        scene="working",
+                        workspace_id=workspace_id,
+                    )
+                except Exception as exc:
+                    logger.debug("hy-memory working list unavailable: %s", exc)
+                    working_raw = {}
+            except Exception as exc:
+                logger.debug("hy-memory working list unavailable: %s", exc)
+                working_raw = {}
+            working_items = [
+                {**item, "store": "working"}
+                for item in _normalize_search_result(working_raw, scene="working")
+            ]
+
+        return chat_items + working_items
 
     async def forget(self, memory_id: str) -> bool:
         """删除一条记忆。成功 True；禁用/失败 False。"""

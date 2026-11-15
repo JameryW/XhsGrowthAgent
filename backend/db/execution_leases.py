@@ -133,6 +133,8 @@ class AcquireOutcome(StrEnum):
     #: The store could not be asked, or the question was empty. Nothing is
     #: known about the row -- which is not the same as knowing it is free.
     UNKNOWN = "unknown"
+    #: This process is draining for shutdown; it must not take new leases.
+    DRAINING = "draining"
 
 
 class RenewOutcome(StrEnum):
@@ -229,6 +231,29 @@ _instance_started_at = _utcnow()
 # db/workflow_events.py).
 _mem_leases: dict[str, LeaseRecord] = {}
 _mem_lock = asyncio.Lock()
+
+# Drain state shared by the HTTP lifespan hook and this module.  During a
+# graceful shutdown the process stops taking new work and releases every lease
+# it still owns, so a rolling replace can take over without waiting a full TTL.
+_draining = False
+_active_heartbeats: dict[str, asyncio.Task[RenewOutcome]] = {}
+
+
+def begin_drain() -> None:
+    """Mark this process as draining (idempotent, callable from lifespan)."""
+    global _draining
+    _draining = True
+
+
+def is_draining() -> bool:
+    """Whether this process has begun graceful shutdown."""
+    return _draining
+
+
+def end_drain() -> None:
+    """Clear the drain flag (test helper / failed shutdown rollback)."""
+    global _draining
+    _draining = False
 
 
 def _reset_memory_store() -> None:
@@ -714,17 +739,25 @@ async def start_lease(
     so the caller decides. The repair paths stand down; the takeover scan
     refuses. ``_runner._execution_lease`` carries the accounting for all three.
     """
+    if _draining:
+        # Graceful shutdown: never take a new lease, so the next instance can
+        # take over immediately instead of waiting for our TTL to expire.
+        return LeaseHold(outcome=AcquireOutcome.DRAINING, heartbeat=None)
     outcome = await acquire_outcome(thread_id, ttl_seconds=ttl_seconds)
     if outcome is not AcquireOutcome.GRANTED:
         return LeaseHold(outcome=outcome, heartbeat=None)
-    return LeaseHold(
-        outcome=outcome,
-        heartbeat=asyncio.create_task(
-            _heartbeat_until_cancelled(
-                thread_id, interval_seconds=interval_seconds, ttl_seconds=ttl_seconds
-            )
-        ),
+    heartbeat = asyncio.create_task(
+        _heartbeat_until_cancelled(
+            thread_id, interval_seconds=interval_seconds, ttl_seconds=ttl_seconds
+        )
     )
+    # Only a real Task can be cancelled and awaited by the drain path.  Tests
+    # that stand in for ``asyncio.create_task`` return a sentinel; registering
+    # that sentinel would make a later ``gather`` fail and, worse, leave the
+    # lease behind during shutdown.
+    if isinstance(heartbeat, asyncio.Task):
+        _active_heartbeats[thread_id] = heartbeat
+    return LeaseHold(outcome=outcome, heartbeat=heartbeat)
 
 
 async def end_lease(thread_id: str, heartbeat: asyncio.Task[RenewOutcome] | None) -> None:
@@ -737,9 +770,45 @@ async def end_lease(thread_id: str, heartbeat: asyncio.Task[RenewOutcome] | None
     gap in it.
     """
     if heartbeat is not None:
-        heartbeat.cancel()
-        await asyncio.gather(heartbeat, return_exceptions=True)
+        if isinstance(heartbeat, asyncio.Future):
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
+        else:
+            # The slot is typed as a Task, but a test double may hand us a
+            # sentinel.  Cancelling what we can and still releasing the row is
+            # the property that matters: shutdown must not strand a lease.
+            cancel = getattr(heartbeat, "cancel", None)
+            if callable(cancel):
+                cancel()
+        if _active_heartbeats.get(thread_id) is heartbeat:
+            _active_heartbeats.pop(thread_id, None)
     await release(thread_id)
+
+
+async def release_all_owned_leases() -> int:
+    """Stop every heartbeat this process owns and release its leases.
+
+    Called from the FastAPI lifespan shutdown path *before* background tasks are
+    cancelled, so in-flight steps get the chance to reach their next checkpoint.
+    Returns the number of leases released; idempotent.
+    """
+    threads = list(_active_heartbeats.items())
+    for thread_id, heartbeat in threads:
+        try:
+            await end_lease(thread_id, heartbeat)
+        except Exception:  # pragma: no cover - shutdown must never fail hard
+            logger.warning("execution_leases drain release failed for %s", thread_id, exc_info=True)
+    return len(threads)
+
+
+def start_drain() -> None:
+    """Public alias for ``begin_drain`` (operational-contract vocabulary)."""
+    begin_drain()
+
+
+async def drain_release_all() -> int:
+    """Public alias for ``release_all_owned_leases``."""
+    return await release_all_owned_leases()
 
 
 async def thread_is_held(thread_id: str) -> bool:
@@ -774,8 +843,14 @@ __all__ = [
     "LeaseState",
     "RenewOutcome",
     "acquire",
+    "begin_drain",
+    "drain_release_all",
     "durability",
+    "end_drain",
     "end_lease",
+    "is_draining",
+    "release_all_owned_leases",
+    "start_drain",
     "ensure_tables",
     "expire_scan",
     "get_lease",

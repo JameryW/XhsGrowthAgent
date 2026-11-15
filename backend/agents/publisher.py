@@ -643,6 +643,80 @@ async def reconcile_unknown_publish(
     return {"status": "uncertain"}
 
 
+async def readback_unknown_publishes(
+    store: BaseStore | None,
+    *,
+    platform_note_fetcher: Callable[[str], Awaitable[list[dict[str, Any]]]] | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Startup/takeover readback of publish records left UNKNOWN.
+
+    A process killed between "submit clicked" and "verdict recorded" leaves an
+    UNKNOWN effect that blocks re-publishing the same content forever unless a
+    human forces it. This pass re-checks the platform's recent-note list for
+    each UNKNOWN/RECONCILING publish record and upgrades a real match to
+    CONFIRMED; anything it cannot prove stays UNKNOWN and keeps blocking.
+    It never re-posts anything.
+
+    Returns a small audit summary; storage failures are reported, not raised,
+    because this runs during startup and must not stop the service.
+    """
+    result: dict[str, Any] = {
+        "checked": 0,
+        "confirmed": 0,
+        "uncertain": 0,
+        "records": [],
+    }
+    if store is None:
+        return result
+    ledger = EffectLedger(store, PUBLISH_IDEMPOTENCY_NS)
+    try:
+        records = await ledger.list_records(
+            limit=limit,
+            statuses=frozenset({EffectStatus.UNKNOWN, EffectStatus.RECONCILING}),
+        )
+    except Exception as e:
+        logger.warning("publish readback: cannot list effect records: %s", e)
+        result["error"] = f"{type(e).__name__}: {e}"
+        return result
+
+    result["checked"] = len(records)
+    for record in records:
+        title = str(record.extra.get("title") or record.extra.get("selected_title") or "").strip()
+        account_id = str(
+            record.extra.get("account_id") or record.extra.get("principal_account_id") or ""
+        ).strip()
+        entry: dict[str, Any] = {
+            "effect_id": record.effect_id,
+            "status": record.status.value,
+            "title": title,
+            "account_id": account_id,
+        }
+        if not title:
+            entry["result"] = "uncertain_no_title"
+            result["uncertain"] += 1
+            result["records"].append(entry)
+            continue
+        hit = await reconcile_platform_note_list(
+            account_id,
+            title,
+            platform_note_fetcher=platform_note_fetcher,
+        )
+        if hit is None:
+            entry["result"] = "uncertain"
+            result["uncertain"] += 1
+            result["records"].append(entry)
+            continue
+        await _confirm_ledger_after_reconcile(
+            store, record.effect_id, {**hit, "readback": "startup"}
+        )
+        entry["result"] = "confirmed"
+        entry["evidence"] = hit
+        result["confirmed"] += 1
+        result["records"].append(entry)
+    return result
+
+
 def evaluate_unknown_publish_retry(
     pr_status: Any, force: bool, reconciled: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -843,9 +917,38 @@ class PublisherAgent(BaseAgent):
                 logger.info("dry_run=True，执行试运行发布")
             else:
                 logger.warning("use_browser=False，跳过真实发布")
-            # 返回模拟结果
+            # 返回模拟结果。dry-run 通过 MCP-Persona 式 Context-Tree 有状态
+            # 仿真器校验平台硬边界（标题 20 字/正文 1000 字/违禁词/图片/
+            # 会话/日限额/签名），把结构化边界故障提前暴露给 CI。
             import datetime
 
+            from backend.services.context_tree_sim import simulate_publish
+
+            copy = state.get("copy_content") or {}
+            visual = state.get("visual_plan") or {}
+            images = (
+                visual.get("images")
+                or visual.get("image_paths")
+                or copy.get("images")
+                or copy.get("image_paths")
+                or []
+            )
+            if isinstance(copy, dict):
+                title = str(copy.get("selected_title") or copy.get("title") or "")
+                body = str(copy.get("body_text") or copy.get("body") or "")
+                hashtags = copy.get("hashtags") or copy.get("tags") or []
+            else:
+                title, body, hashtags = "", "", []
+            simulation = simulate_publish(
+                {
+                    "account_id": publish_options.get("account_id") or state.get("account_id", ""),
+                    "title": title,
+                    "body": body,
+                    "hashtags": hashtags,
+                    "image_count": len(images) if isinstance(images, list) else 0,
+                    "injected_faults": publish_options.get("injected_faults") or [],
+                }
+            )
             publish_result = _with_publish_link_metadata(
                 {
                     "post_id": f"mock_{state.get('session_id', '0')}",
@@ -854,6 +957,7 @@ class PublisherAgent(BaseAgent):
                     "ab_variant": None,
                     "status": "mock_published",
                     "account_id": publish_options.get("account_id") or state.get("account_id", ""),
+                    "simulation": simulation,
                 },
                 state,
             )
@@ -1388,6 +1492,8 @@ async def _run_publish_attempt(
                     "status": "unknown",
                     "publish_id": publish_id,
                     "thread_id": str(state.get("session_id") or ""),
+                    "account_id": _publish_account_id(state),
+                    "title": str((state.get("copy_content") or {}).get("selected_title") or ""),
                 },
             )
             logger.error(
@@ -1443,6 +1549,8 @@ async def _run_publish_attempt(
                     "publish_id": publish_id,
                     "thread_id": str(state.get("session_id") or ""),
                     "error": str(e),
+                    "account_id": _publish_account_id(state),
+                    "title": str((state.get("copy_content") or {}).get("selected_title") or ""),
                 },
             )
         else:

@@ -142,7 +142,30 @@ async def predict_spread(
             ripple_reason=exc.reason,
             ripple_message=exc.message,
         ) from exc
-    return _reject_degraded(result, body_key="ripple_prediction")
+    prediction = _reject_degraded(result, body_key="ripple_prediction")
+    # OranSim-style Collect-First forecast rides with the prediction body so the
+    # strategist prompt and the candidate selector read one canonical ranking
+    # signal.  This belongs in the tool layer: agents must not import tools
+    # directly (see tests/unit/tools/runtime/test_audit.py), and a forecast
+    # failure must never lose Ripple's own answer.
+    try:
+        from backend.tools.analysis.collect_first import PostFeatures, forecast_payload
+
+        prediction = {
+            **prediction,
+            "collect_first": forecast_payload(
+                PostFeatures.from_mapping(
+                    {
+                        "title": topic,
+                        "body": description,
+                        "tags": tags,
+                    }
+                )
+            ),
+        }
+    except Exception:
+        logger.debug("collect-first forecast skipped", exc_info=True)
+    return prediction
 
 
 async def validate_pmf(

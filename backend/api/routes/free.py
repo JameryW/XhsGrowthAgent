@@ -1030,6 +1030,15 @@ async def get_analytics(
     snapshots = _valid_snapshots(draft)
     snapshots.append(snapshot)
     draft["analytics_snapshots"] = snapshots[-_SNAPSHOT_SERIES_CAP:]
+    # OranSim-style account calibration: the ten cumulative captures are the
+    # event series the Hawkes fit needs.  The fit is pure and best-effort — a
+    # malformed historical snapshot must never fail the analytics response.
+    try:
+        from backend.tools.analysis.collect_first import fit_hawkes
+
+        snapshot["hawkes"] = fit_hawkes(draft["analytics_snapshots"]).as_dict()
+    except Exception:
+        logger.debug("free analytics hawkes fit skipped", exc_info=True)
     draft["updated_at"] = fetched_at
     try:
         await store.aput(_draft_ns(account_id), key=draft_id, value=draft)

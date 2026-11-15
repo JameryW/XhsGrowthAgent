@@ -228,8 +228,12 @@ class ContentStrategistAgent(BaseAgent):
         # 的假分数）。这里逐条跳过并记日志，绝不把"没读到"写成"分数是 50"。
         # account_id 传原始值：空 = 用部署级凭据，不要拿本地那个 "default"
         # 兜底值去冒充账号（它只是 CreativeMemory 的键）。
+        history_titles = await self._recent_published_titles(store, account_id)
         topic_scores_ctx = await self._score_trend_topics(
-            trend_data, niche, account_id=str(state.get("account_id") or "")
+            trend_data,
+            niche,
+            account_id=str(state.get("account_id") or ""),
+            history_titles=history_titles,
         )
         if topic_scores_ctx:
             memory_context += f"\n{topic_scores_ctx}"
@@ -660,12 +664,46 @@ class ContentStrategistAgent(BaseAgent):
                 topics.append(str(topic))
         return topics
 
+    @staticmethod
+    async def _recent_published_titles(
+        store: BaseStore, account_id: str, limit: int = 30
+    ) -> list[str]:
+        """Return recent published titles for novelty scoring.
+
+        The strategist must not repeat the account's recent angles, so the
+        scoring call receives up to ``limit`` titles from ``content_history``.
+        A store failure degrades to no history (the score keeps working without
+        the novelty penalty) instead of blocking topic selection.
+        """
+        if store is None:
+            return []
+        from backend.memory.store import MemoryManager
+
+        try:
+            items = await store.asearch(
+                MemoryManager(account_id or "default").content_history_ns,
+                limit=limit,
+            )
+        except Exception as e:
+            logger.debug("content_history recall for novelty skipped: %s", e)
+            return []
+        titles: list[str] = []
+        for item in items or []:
+            value = getattr(item, "value", None)
+            if not isinstance(value, dict):
+                continue
+            title = value.get("title") or value.get("selected_title")
+            if title:
+                titles.append(str(title))
+        return titles
+
     async def _score_trend_topics(
         self,
         trend_data: dict[str, Any],
         niche: str,
         limit: int = 5,
         account_id: str = "",
+        history_titles: list[str] | None = None,
     ) -> str:
         """对候选话题调用 topic_scorer 打分，返回可注入 prompt 的上下文字符串。
 
@@ -707,7 +745,12 @@ class ContentStrategistAgent(BaseAgent):
             try:
                 scored = await self.tools.invoke(
                     "analysis.topic_scorer",
-                    {"topic": topic, "niche": niche, "account_id": account_id},
+                    {
+                        "topic": topic,
+                        "niche": niche,
+                        "account_id": account_id,
+                        "history_titles": history_titles or [],
+                    },
                     granted_scopes=granted,
                 )
                 if not scored.ok:
@@ -716,11 +759,17 @@ class ContentStrategistAgent(BaseAgent):
                 result = scored.value
                 if not isinstance(result, dict):
                     continue
+                predicted_collect = result.get("predicted_collect")
+                novelty = result.get("novelty")
+                novelty_note = ""
+                if isinstance(novelty, dict) and novelty.get("is_duplicate_risk"):
+                    novelty_note = "，历史相似度高（建议换角度）"
                 lines.append(
                     f"- {topic}: 热度 {result.get('heat_score', 'N/A')}，"
                     f"趋势 {result.get('growth_trend', 'N/A')}，"
                     f"竞争 {result.get('competition_level', 'N/A')}，"
-                    f"推荐 {result.get('recommendation', 'N/A')}"
+                    f"收藏预测 {predicted_collect if predicted_collect is not None else 'N/A'}，"
+                    f"推荐 {result.get('recommendation', 'N/A')}{novelty_note}"
                 )
             except Exception as e:
                 logger.warning(f"topic_scorer 失败 ({topic}): {e}")
@@ -854,6 +903,19 @@ class ContentStrategistAgent(BaseAgent):
         lines.append(f"- 预计互动: {prediction.get('estimated_engagement', 'N/A')}")
         lines.append(f"- 爆发概率: {prediction.get('viral_probability', 'N/A')}")
         lines.append(f"- 置信度: {prediction.get('confidence', 'N/A')}")
+        collect_first = prediction.get("collect_first")
+        if isinstance(collect_first, dict):
+            lines.append(
+                f"- 收藏优先预测: 收藏 {collect_first.get('predicted_collect', 'N/A')} / "
+                f"阅读 {collect_first.get('predicted_read', 'N/A')} / "
+                f"点赞 {collect_first.get('predicted_like', 'N/A')}"
+            )
+            hawkes = collect_first.get("hawkes")
+            if isinstance(hawkes, dict):
+                lines.append(
+                    f"- Hawkes 扩散参数: μ={hawkes.get('mu', 'N/A')} "
+                    f"α={hawkes.get('alpha', 'N/A')} β={hawkes.get('beta', 'N/A')}"
+                )
 
         if pmf:
             lines.append("\nPMF 验证结果：")

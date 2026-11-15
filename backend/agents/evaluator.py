@@ -55,6 +55,7 @@ from backend.db.evaluator_config import (
 )
 from backend.models.outputs import EvaluationPanelOutput, normalize_evaluation_panel
 from backend.models.structured import StructuredOutputError
+from backend.services.quality_gate import apply_quality_gate, geo_readiness
 from backend.state.enums import ContentStatus
 
 logger = logging.getLogger("xhs_growth.agents.evaluator")
@@ -632,13 +633,17 @@ class EvaluatorAgent(BaseAgent):
                 name in weighted_available for name in ("copywriting", "compliance")
             ),
         }
+        gate: dict[str, Any] | None = None
+        search_geo: dict[str, Any] | None = None
         if not coverage["required_available"] or weighted_ratio < MIN_EVALUATION_COVERAGE:
             overall: float | None = None
             decision: ContentStatus | None = None
             status = "partial"
             revision_hints = [str(h) for h in (raw.get("revision_hints") or []) if h]
         else:
-            overall = round(self._compute_overall(dimensions, ctx), 1)
+            base_overall = round(self._compute_overall(dimensions, ctx), 1)
+            gate = apply_quality_gate(dimensions, base_overall=base_overall)
+            overall = float(gate["overall"])
             decision, revision_hints = self._compute_decision(
                 overall, dimensions, raw.get("revision_hints") or [], ctx=ctx
             )
@@ -655,6 +660,20 @@ class EvaluatorAgent(BaseAgent):
         ):
             bias_warning = "检测到面板对 AI 生成内容可能过度宽容，已对综合分下调校准"
 
+        if state:
+            copy = state.get("copy_content") or {}
+            if isinstance(copy, dict):
+                title = str(copy.get("selected_title") or copy.get("title") or "")
+                body = str(copy.get("body_text") or copy.get("body") or "")
+                raw_tags = copy.get("hashtags") or copy.get("tags") or []
+                if isinstance(raw_tags, str):
+                    tags: str | list[str] = raw_tags
+                elif isinstance(raw_tags, (list, tuple)):
+                    tags = [str(tag) for tag in raw_tags]
+                else:
+                    tags = []
+                search_geo = geo_readiness(title, body, tags)
+
         result: dict[str, Any] = {
             "overall_score": overall,
             "dimensions": dimensions,
@@ -666,6 +685,10 @@ class EvaluatorAgent(BaseAgent):
             "bias_warning": bias_warning,
             "summary": str(raw.get("summary", "")),
         }
+        if gate is not None:
+            result["quality_gate"] = gate
+        if search_geo is not None:
+            result["search_geo"] = search_geo
         # P0-W5 structured marker: which dimensions drove the hard rejection.
         # Missing/empty on legacy results ⇒ the router treats the rejection as
         # quality-only (backward-compatible default).

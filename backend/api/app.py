@@ -1206,8 +1206,13 @@ async def _creator_stats_scheduler(
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Lazy imports — keeps ``import backend.api.app`` off the graph-builder +
     # ripple_service chains (httpx, model router). Loaded once at startup.
+    # A fresh lifespan owns a fresh process life: clear any drain flag left by
+    # an in-interpreter restart (tests / reload) before accepting work.
+    from backend.db.execution_leases import end_drain
     from backend.graph.builder import compile_graph_dev
     from backend.services.ripple_service import RippleService
+
+    end_drain()
 
     # Warm the LLM provider imports in a background daemon thread.  Awaited, the
     # import costs ~20s of boot on Windows (openai → transformers → torch); left
@@ -1381,6 +1386,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # A thread lost in the restart itself is only picked up on a later
             # sweep, because its lease is still within TTL.
             await startup_takeover_scan(app)
+            # Startup readback of publish effects left UNKNOWN by a killed
+            # process: confirm what actually exists on the platform so a
+            # later retry can never duplicate it. Best-effort — never blocks boot.
+            with contextlib.suppress(Exception):
+                from backend.agents.publisher import readback_unknown_publishes
+
+                store = getattr(app.state.graph, "store", None)
+                app.state.publish_readback_status = await readback_unknown_publishes(store)
             takeover_task = asyncio.create_task(
                 takeover_scheduler(app, interval_seconds=takeover_interval),
                 name="execution-takeover-scan",
@@ -1497,6 +1510,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
     # ── Cleanup ──
+    # Graceful drain first (arXiv:2610.34620 mid-drain contract): stop taking
+    # new leases, let in-flight graph steps reach their next checkpoint for up
+    # to 10s, then hand our leases back so a rolling replacement can take over
+    # immediately instead of waiting out the 90s TTL.
+    from backend.db.execution_leases import begin_drain, release_all_owned_leases
+
+    begin_drain()
+    with contextlib.suppress(Exception):
+        from backend.api.routes._runner import _background_tasks
+
+        pending = [task for task in _background_tasks.values() if not task.done()]
+        if pending:
+            await asyncio.wait(pending, timeout=10.0)
+    with contextlib.suppress(Exception):
+        await release_all_owned_leases()
+
     if creator_stats_scheduler is not None:
         creator_stats_scheduler.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -1533,6 +1562,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from backend.db.pool import close_pool
 
         await close_pool()
+
+    # The drain flag is process-wide, while shutdown is per-app (tests boot the
+    # same process many times, and a reloaded worker re-enters the lifespan).
+    # Leaving it set would make every later lease acquisition answer DRAINING
+    # forever. Startup clears it too; clearing it here keeps a test process and
+    # an in-process restart from carrying a finished shutdown into new work.
+    with contextlib.suppress(Exception):
+        from backend.db.execution_leases import end_drain
+
+        end_drain()
 
 
 async def _close_dev_sqlite_checkpointer(graph: CompiledStateGraph[Any] | None) -> None:

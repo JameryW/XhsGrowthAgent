@@ -194,7 +194,7 @@ Vue 3 前端围绕创作、审核、增长和账号运营组织：
 - **持久化：** 开发环境使用 SQLite/内存检查点，生产环境使用 PostgreSQL 和 Redis。工作流遥测写入 `workflow_events` 表，持久调度走执行租约，都不在检查点里。
 - **浏览器自动化：** Playwright，支持按账号隔离浏览器/CDP 会话
 - **可选预测引擎：** Ripple CAS，通过 HTTP 集成
-- **可选长期记忆：** [hy-memory](./docs/hy-memory.md)，默认关闭；跨会话召回账号画像与运营经验，引擎故障时降级为空结果、绝不中断运行。chat 场景事实落向量库，working 场景轨迹落 SDK 独立的 coding store —— `list_memories` 仅覆盖向量库。
+- **可选长期记忆：** [hy-memory](./docs/hy-memory.md)，默认关闭；跨会话召回账号画像与运营经验，引擎故障时降级为空结果、绝不中断运行。chat 场景事实落向量库，working 场景轨迹落 SDK 独立的 coding store —— `list_memories` 会聚合两个存储的读面（working 条目带 `store: "working"` 标记）。
 
 ### 内核分层
 
@@ -356,6 +356,21 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 支持美食、旅行、穿搭、美妆、生活方式、健身和家居等场景，推荐模型位于 `backend/services/visual_analysis.py`，由视觉设计工作流经 `backend/tools/content/` 调用。
 
+## 2026-11 架构升级
+
+本轮升级把 2026 年小红书算法与社媒智能体论文的公开结论落成可复用、可测试的确定性内核模块；新能力随对应节点或参数默认生效，但保留既有契约（dry-run 仍返回 `mock_published`、评估结果新增字段而非替换、上下文惩罚设 0 可恢复旧的尾部裁剪）。
+
+| 模块 | 位置 | 能力 |
+| --- | --- | --- |
+| Collect-First 预测 | `backend/tools/analysis/collect_first.py` | 四头 `log(1+y)` 预测（阅读/点赞/收藏/评论）+ 64 维文本表示 + 指数核 Hawkes 拟合与 14 天扩散曲线 + 固定种子配对特征替换；按收藏优先排序 |
+| 搜索质量门 | `backend/services/quality_gate.py` | SearchLLM 式 Layer I Soft-AND 底线门（合规/文案/商单语气）+ `geo_readiness` 搜索 GEO 就绪度；评估器输出 `quality_gate` 与 `search_geo` |
+| 去 AI 味 | `backend/tools/content/plad.py`、`backend/tools/content/novelty.py` | 31 项 PLAD 心理语言学特征与结构化约束；0.82 余弦阈值的账号历史新颖度惩罚 |
+| 记忆效用门 | `backend/memory/hy/promotion.py` | Outcome-Verified Epistemic Gate：收藏率或阅读量达到近 10 篇中位数 1.2×、或人工批准，才晋升 `verified_pattern`；否则记入 `negative_pitfalls` |
+| 上下文预算 | `backend/context/compiler.py` | Token 重叠率与边际效用惩罚（`XHS_CONTEXT_OVERLAP_PENALTY`，默认 0.15，设 0 恢复旧的尾部裁剪） |
+| 优雅排水 | `backend/db/execution_leases.py`、`backend/api/app.py` | `SIGTERM` 时停止获取新租约、限时等待在途任务、释放本实例全部租约；启动时对 UNKNOWN 发布做读回核实，避免重复发布 |
+| 视觉时间衰减 | `backend/services/visual_analysis.py` | 14 天半衰期指数衰减权重（`2 ** (-Δt/14)`），近期封面/版面优先 |
+| Dry-run 状态仿真 | `backend/services/context_tree_sim.py` | MCP-Persona 式 `User → Account → Draft/Post → Comment/DM` 有状态仿真，覆盖标题/正文长度、违禁词、会话、签名、频控与私信配额 |
+
 ## 测试与开发
 
 ```bash
@@ -373,7 +388,7 @@ npm run i18n:check
 npm run build
 ```
 
-hy-memory 集成附带 40 个单测（bridge + agent 接线，默认关闭——无需引擎即可跑），并有一套 63 项断言的端到端功能测试，已在真实 hy-memory 2.0.1 SDK 上验证全绿；接入方式与引擎已知行为见[集成说明](./docs/hy-memory.md)。
+hy-memory 集成附带 40 个单测（bridge + agent 接线，默认关闭——无需引擎即可跑），并有一套 63 项断言的端到端功能测试；依赖已升级到 hy-memory 2.0.16，接入方式与引擎已知行为见[集成说明](./docs/hy-memory.md)。
 
 更多文档：
 

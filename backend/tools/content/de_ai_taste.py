@@ -17,6 +17,7 @@ from langchain_core.tools import tool
 
 from backend.config.models import TaskType
 from backend.services.llm_enrichment import get_llm_service
+from backend.tools.content.plad import inspect_text, plad_constraints
 
 logger = logging.getLogger("xhs_growth.tools.de_ai_taste")
 
@@ -175,6 +176,22 @@ def _normalize_result(raw: dict[str, Any] | list[Any], fallback: dict[str, Any])
     }
 
 
+def _with_plad(payload: dict[str, Any], source_text: str) -> dict[str, Any]:
+    """Attach deterministic PLAD before/after evidence to a polish result."""
+    if not source_text.strip():
+        return payload
+    before = inspect_text(source_text)
+    after = inspect_text(
+        f"{payload.get('selected_title', '')}\n{payload.get('body_text', '')}".strip()
+    )
+    return {
+        **payload,
+        "plad_before": before.as_dict(),
+        "plad_after": after.as_dict(),
+        "plad_ai_likelihood_delta": round(before.ai_likelihood - after.ai_likelihood, 4),
+    }
+
+
 async def polish_copy(
     *,
     selected_title: str = "",
@@ -190,22 +207,25 @@ async def polish_copy(
     Always falls back to algorithmic scrubbing when the LLM path fails or
     ``use_llm=False`` (e.g. style-variant batch to control cost).
     """
+    source_text = f"{selected_title or ''}\n{body_text or ''}".strip()
+    plad_hint = plad_constraints(inspect_text(source_text)) if source_text else ""
+    hints = [str(h) for h in (revision_hints or []) if h]
+    if plad_hint:
+        hints.append(plad_hint)
     input_data = {
         "selected_title": selected_title or "",
         "body_text": body_text or "",
         "cta": cta or "",
         "tone": tone or "",
         "niche": niche or "通用",
-        "revision_hints": (
-            "；".join(str(h) for h in (revision_hints or []) if h) or "无额外修订要求"
-        ),
+        "revision_hints": "；".join(hints) or "无额外修订要求",
     }
     fallback = algorithmic_de_ai(input_data)
     if not (input_data["body_text"].strip() or input_data["selected_title"].strip()):
         return {**fallback, "polished": False, "changes": [], "method": "skip"}
 
     if not use_llm:
-        return fallback
+        return _with_plad(fallback, source_text)
 
     try:
         prompt_template = _load_prompt()
@@ -217,11 +237,11 @@ async def polish_copy(
             fallback_fn=algorithmic_de_ai,
         )
         if isinstance(result, dict) and result.get("method") == "algorithmic":
-            return result
-        return _normalize_result(result, fallback)
+            return _with_plad(result, source_text)
+        return _with_plad(_normalize_result(result, fallback), source_text)
     except Exception as e:
         logger.warning("polish_copy LLM path failed, using algorithmic fallback: %s", e)
-        return fallback
+        return _with_plad(fallback, source_text)
 
 
 @tool

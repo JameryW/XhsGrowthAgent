@@ -66,6 +66,43 @@ class TestContentStrategistTopicScorer:
         assert any("82" in p for p in captured_prompts)
 
     @pytest.mark.asyncio
+    async def test_recent_titles_are_passed_for_novelty(self, agent, mock_store, xhs_read_grant):
+        """content_history 的最近标题随 topic_scorer 调用下发，供 0.82 新颖度惩罚使用。"""
+        mock_state = {
+            "account_id": "test_account",
+            "niche": "美食",
+            "trend_data": {"hot_topics": [{"topic": "探店"}]},
+        }
+
+        async def _search(namespace, **_kwargs):
+            if namespace[-1] == "content_history":
+                return [MagicMock(value={"title": "上周写过的探店"})]
+            return []
+
+        mock_store.asearch = AsyncMock(side_effect=_search)
+
+        mock_response = MagicMock()
+        mock_response.content = '{"selected_topic": "探店"}'
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
+
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 82})
+
+        with (
+            patch("backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock) as mp,
+            patch("backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock) as mpmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+        ):
+            mp.return_value = {"ripple_prediction": None}
+            mpmf.return_value = {"ripple_pmf": None}
+            await agent.execute(mock_state, store=mock_store)
+
+        payload = scorer.ainvoke.call_args.args[0]
+        assert payload["history_titles"] == ["上周写过的探店"]
+
+    @pytest.mark.asyncio
     async def test_scorer_failure_does_not_block(self, agent, mock_store):
         """topic_scorer 抛异常时不阻断主流程。"""
         mock_state = {

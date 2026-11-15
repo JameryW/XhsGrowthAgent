@@ -8,6 +8,8 @@ prompt YAML and delegates the dedup / rerank / budget / ordering work below.
 
 from __future__ import annotations
 
+import os
+import re
 from collections.abc import Mapping
 
 from backend.context.estimator import estimate_tokens
@@ -93,21 +95,73 @@ def rerank_items(
     return tuple(sorted(items, key=key))
 
 
+_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]|[A-Za-z0-9]+")
+_DEFAULT_OVERLAP_PENALTY = 0.15
+
+
+def _overlap_penalty() -> float:
+    """Resolve the marginal-utility overlap penalty from the environment.
+
+    ``XHS_CONTEXT_OVERLAP_PENALTY`` is a bounded knob: 0 restores the legacy
+    "drop the tail" budget exactly; values above 0.9 would starve every item
+    that shares a topic with a higher layer, so the resolver clamps.
+    """
+    raw = os.environ.get("XHS_CONTEXT_OVERLAP_PENALTY", "")
+    if not raw:
+        return _DEFAULT_OVERLAP_PENALTY
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_OVERLAP_PENALTY
+    return max(0.0, min(0.9, value))
+
+
+def _token_set(body: str) -> set[str]:
+    return set(_TOKEN_RE.findall((body or "").lower()))
+
+
+def token_overlap_ratio(body: str, selected: set[str]) -> float:
+    """Fraction of ``body`` tokens already present in the selected context."""
+    tokens = _token_set(body)
+    if not tokens:
+        return 0.0
+    return len(tokens & selected) / len(tokens)
+
+
+def marginal_utility(
+    item: ContextItem,
+    selected_tokens: set[str],
+    *,
+    overlap_penalty: float = _DEFAULT_OVERLAP_PENALTY,
+) -> float:
+    """``cost_i × (1 − penalty × overlap_i)`` — the budget's utility proxy.
+
+    This is the practical form of MemCredit's ``Δ̂_i / d_i(S)``: an item that
+    only restates tokens already selected contributes almost nothing to the
+    prompt and should be dropped before a genuinely new item.
+    """
+    cost = max(1, estimate_tokens(item.body))
+    overlap = token_overlap_ratio(item.body, selected_tokens)
+    return cost * max(0.05, 1.0 - max(0.0, min(0.9, overlap_penalty)) * overlap)
+
+
 def apply_item_budget(
     items_by_layer: Mapping[PromptLayer, tuple[ContextItem, ...]],
     budget: int,
     *,
     reserved: int = 0,
+    overlap_penalty: float | None = None,
 ) -> dict[PromptLayer, tuple[ContextItem, ...]]:
-    """Drop items from the tail of :data:`_TRIM_ORDER` until under budget.
+    """Trim item layers under ``budget`` with a marginal-utility penalty.
 
-    ``reserved`` is the estimated cost of the static layers (L0-L3) — the
-    budget applies to the whole prompt, so items may only spend what is left
-    after it.  Reranked layers are ordered best-first, so "drop from the
-    tail" drops the lowest-priority / least-confident / stalest item first.
-    Static layers themselves are never trimmed.  Stops early once the
-    estimated total fits (or nothing droppable remains).
+    The legacy contract is preserved: L5 is trimmed before L4 and static
+    layers are never touched.  With ``overlap_penalty=0`` the victim is
+    always the tail item (lowest priority/confidence/recency).  With the
+    default penalty, the victim is the item with the lowest marginal utility
+    against everything else already selected — a near-duplicate gets dropped
+    before a novel, longer item even if it sits earlier in the rerank order.
     """
+    penalty = _overlap_penalty() if overlap_penalty is None else max(0.0, min(0.9, overlap_penalty))
 
     def total(mapping: Mapping[PromptLayer, tuple[ContextItem, ...]]) -> int:
         return sum(estimate_tokens(item.body) for items in mapping.values() for item in items)
@@ -115,8 +169,43 @@ def apply_item_budget(
     trimmed = {layer: items for layer, items in items_by_layer.items()}
     for layer in _TRIM_ORDER:
         while total(trimmed) + reserved > budget and trimmed.get(layer):
-            trimmed[layer] = trimmed[layer][:-1]
+            current = trimmed[layer]
+            if penalty <= 0 or len(current) == 1:
+                trimmed[layer] = current[:-1]
+                continue
+            # Selected tokens from every *other* kept item: non-trim layers,
+            # earlier trim layers, and the rest of this layer.
+            other_bodies = [item.body for other_layer, items in trimmed.items() for item in items]
+            selected_tokens: set[str] = set()
+            for body in other_bodies:
+                selected_tokens |= _token_set(body)
+            # Score each candidate against all *other* items.  Ties break
+            # toward the tail so legacy ordering remains the default.
+            victim = min(
+                range(len(current)),
+                key=lambda idx: (
+                    marginal_utility(
+                        current[idx],
+                        _tokens_without(other_bodies, current[idx].body),
+                        overlap_penalty=penalty,
+                    ),
+                    -idx,
+                ),
+            )
+            trimmed[layer] = current[:victim] + current[victim + 1 :]
     return trimmed
+
+
+def _tokens_without(bodies: list[str], exclude_body: str) -> set[str]:
+    """Token union of ``bodies`` minus one occurrence of ``exclude_body``."""
+    selected: set[str] = set()
+    skipped = False
+    for body in bodies:
+        if not skipped and body == exclude_body:
+            skipped = True
+            continue
+        selected |= _token_set(body)
+    return selected
 
 
 class ContextCompiler:

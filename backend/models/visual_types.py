@@ -150,6 +150,7 @@ class SceneAnalysisResult:
         trending_styles: List of trending style names
         trending_layouts: List of trending layout names
         analyzed_at: Timestamp when this analysis was performed
+        as_of: Timestamp the recency weights were evaluated at (14-day half-life)
     """
 
     scene: str
@@ -161,6 +162,7 @@ class SceneAnalysisResult:
     trending_styles: list[str] = field(default_factory=list)
     trending_layouts: list[str] = field(default_factory=list)
     analyzed_at: datetime | None = None
+    as_of: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the result to a dictionary for serialization.
@@ -178,6 +180,7 @@ class SceneAnalysisResult:
             "trending_styles": self.trending_styles,
             "trending_layouts": self.trending_layouts,
             "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
+            "as_of": self.as_of.isoformat() if self.as_of else None,
         }
 
 
