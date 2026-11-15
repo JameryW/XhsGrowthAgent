@@ -226,7 +226,6 @@ async def topic_scorer(
             "best_posting_window": best_posting_window,
             "reference_posts": reference_posts,
             "predicted_collect": collect_forecast.get("predicted_collect"),
-            "collect_first_rank": 1,
             "collect_first": collect_forecast,
             "novelty": novelty.as_dict()
             if hasattr(novelty, "as_dict")
