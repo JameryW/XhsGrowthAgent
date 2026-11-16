@@ -395,6 +395,8 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 上述模块已完成低风险生产接线（表中标注“已接”）；`compile_jit_subgraph` 仍是带图节点校验的模式计划，不是独立子图执行；PTGS 已由 copywriter 在提示词约束路径上绑定，但 native structured 路由仍使用模型默认温度；APMD 已由 creator_stats 持久化 anchor 并输出重置决定，SAIM 场景权重由 evaluator 输出，但都不改变默认发布决策；模型路由与发布资格契约未被本批次改动。
 
+两项边界是刻意保留的，而不是未完成项：其一，运行期“按模式只走必要节点”已经由 LangGraph 的条件边完成，再编译一套独立子图会产生第二份拓扑，和 `wiring.py` 的单一事实源冲突，因此 JIT 契约只保留“可校验的模式计划”；其二，仓库策略是所有 LLM 出网统一经 magpie（见 `CLAUDE.md`），把默认路由切到 DeepSeek/MiMo 会绕过该策略，所以能力路由只作为 `route_model_capability` 的显式 opt-in 建议，默认仍由 magpie 承担。等网关提供对应上游模型、或引入独立 provider 时，再启用默认切换才有意义。
+
 ## 测试与开发
 
 ```bash
