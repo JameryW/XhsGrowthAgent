@@ -384,6 +384,17 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 这些模块是工程近似：结果学习使用确定性中位数门槛而非完整因果模型；Bandit 只做离线排序，不自动改线上流量；私信 FSM 的槽位抽取基于正则，不替代人工确认。
 
+### 第 3–6 期：前沿契约
+
+| 模块 | 位置 | 能力 |
+| --- | --- | --- |
+| 发布前多模态门（13–18） | `backend/services/content_launch.py` | 图文互补/缩略图可读性/垂类美学协同评分；TagLLM 三层 5–8 标签；review 风险信号条；Playwright/CDP 会话三态熔断；根因分类与单篇 Token 成本；durable event 的 SSE 帧格式 |
+| 时间与执行（19–24） | `backend/services/temporal_contracts.py` | 草稿 CAS 版本与 `DraftAnalyticsSnapshot` 追加；24h/7d 正余弦编码与 48 槽位；自抑制 Hawkes 核；`compile_jit_subgraph` 模式计划；A/B/C 叙事锚点；Ripple 超时分阶段抢救 |
+| 评估与生成（25–30） | `backend/services/evaluation_contracts.py` | 能力路由建议（默认仍走 magpie）；GRS/GAR 组内相对评审；PTGS 温度；APMD 锚点重置与香农熵；封面安全区/对比度/缩略图检查；SWA 冻结前缀 + ≤160 token 尾部锚点 |
+| 分发与回放（31–36） | `backend/services/distribution_contracts.py` | EGMF 曝光/限流诊断与可信度；trend/brief/free 场景权重；多图滑动留存弧与 AVTP Token 分配；粉赞比 BreakoutLift；FanRelationStore 与置顶破冰；`/replay` 确定性脱敏 bundle |
+
+上述模块均为纯函数/确定性数据契约，默认不改变既有工作流；模型路由、SSE 与回放脱敏已有生产路径仍保持原契约，新策略需显式 opt-in。
+
 ## 测试与开发
 
 ```bash

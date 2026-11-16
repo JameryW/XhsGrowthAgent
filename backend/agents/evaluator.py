@@ -87,6 +87,12 @@ def _with_publish_eligibility(
         merged["is_commercial"] = is_commercial
     report = decide_publish_eligibility(merged)
     evaluation["publish_eligibility"] = report.to_audit_dict()
+    from backend.services.content_launch import build_risk_signal_strip
+
+    evaluation["risk_signals"] = build_risk_signal_strip(
+        publish_eligibility=evaluation["publish_eligibility"],
+        evaluation=evaluation,
+    ).as_dict()
     return evaluation
 
 
