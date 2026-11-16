@@ -124,6 +124,48 @@ def _with_publish_eligibility(
         from backend.services.evaluation_contracts import evaluate_groupwise
 
         evaluation["groupwise"] = evaluate_groupwise(candidates).as_dict()
+    from backend.services.distribution_contracts import score_scenario
+
+    dimensions = evaluation.get("dimensions") or {}
+    if isinstance(dimensions, list):
+        dimension_scores = {
+            str(row.get("dimension")): float(row.get("score") or 0.0)
+            for row in dimensions
+            if isinstance(row, dict)
+        }
+    elif isinstance(dimensions, dict):
+        dimension_scores = {
+            str(name): float(value.get("score") or 0.0)
+            if isinstance(value, dict)
+            else float(value or 0)
+            for name, value in dimensions.items()
+        }
+    else:
+        dimension_scores = {}
+    max_similarity = 0.0
+    if isinstance(novelty, dict):
+        try:
+            max_similarity = float(novelty.get("max_similarity", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            max_similarity = 0.0
+    metrics = {
+        "engagement": dimension_scores.get("reach", 0.0) / 100.0,
+        "freshness": 1.0,
+        "novelty": max(0.0, 1.0 - max_similarity),
+        "contract": dimension_scores.get("compliance", 0.0) / 100.0,
+        "visual": dimension_scores.get("visual", 0.0) / 100.0,
+        "execution": dimension_scores.get("copywriting", 0.0) / 100.0,
+    }
+    from backend.state.modes import mode_spec
+
+    mode = mode_spec(merged).mode.value
+    if mode not in {"trend", "brief", "free"}:
+        mode = "trend"
+    evaluation["scenario_mode"] = mode
+    evaluation["scenario_scores"] = {
+        candidate_mode: score_scenario(metrics, candidate_mode)
+        for candidate_mode in ("trend", "brief", "free")
+    }
     return evaluation
 
 

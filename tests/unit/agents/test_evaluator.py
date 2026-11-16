@@ -340,6 +340,25 @@ class TestEvaluatorAgent:
         assert result["groupwise"]["leader"] == "a"
         assert [row["candidate_id"] for row in result["groupwise"]["ranking"]] == ["a", "b"]
 
+    def test_scenario_scores_follow_workflow_mode(self, agent):
+        state = {
+            "workflow_mode": "brief",
+            "novelty": {"max_similarity": 0.2},
+        }
+        evaluation = {
+            "overall_score": 80.0,
+            "dimensions": [
+                {"dimension": "reach", "score": 70.0},
+                {"dimension": "visual", "score": 90.0},
+                {"dimension": "compliance", "score": 100.0},
+                {"dimension": "copywriting", "score": 80.0},
+            ],
+        }
+        result = evaluator_module._with_publish_eligibility(state, evaluation)
+        assert result["scenario_mode"] == "brief"
+        assert set(result["scenario_scores"]) == {"trend", "brief", "free"}
+        assert result["scenario_scores"]["brief"] > result["scenario_scores"]["trend"]
+
     def test_compute_overall_weighted(self, agent):
         from backend.agents.evaluator import _REQUIRED_DIMENSIONS
 

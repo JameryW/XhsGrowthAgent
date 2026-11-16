@@ -297,6 +297,8 @@ class AnalysisResult:
     outcome_learning: dict[str, Any] = field(default_factory=dict)
     # EGMF exposure credibility + follower-normalized breakout ranking.
     distribution: dict[str, Any] = field(default_factory=dict)
+    # APMD policy-anchor reset decision (age / note count / track entropy).
+    policy_reset: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -311,6 +313,7 @@ class AnalysisResult:
             "cold_start": self.cold_start,
             "outcome_learning": self.outcome_learning,
             "distribution": self.distribution,
+            "policy_reset": self.policy_reset,
         }
 
 

@@ -9,7 +9,7 @@ import asyncio
 import logging
 import re
 from collections import Counter
-from datetime import datetime
+from datetime import UTC, datetime
 
 from langgraph.store.base import BaseStore
 
@@ -21,6 +21,10 @@ from backend.services.creator_stats.types import (
     StyleFinding,
 )
 from backend.services.distribution_contracts import audit_note_distribution
+from backend.services.evaluation_contracts import (
+    PolicyAnchor,
+    policy_reset_decision,
+)
 from backend.services.outcome_learning import evaluate_outcome_learning
 
 logger = logging.getLogger("xhs_growth.creator_stats.analyze")
@@ -469,6 +473,71 @@ async def deposit_from_analysis(
     return analysis
 
 
+def _policy_anchor_namespace(account_id: str) -> tuple[str, ...]:
+    return ("accounts", account_id or "default", "apmd_policy_anchor")
+
+
+async def _apply_policy_reset(
+    analysis: AnalysisResult,
+    notes: list[NoteStats],
+    account_id: str,
+    store: BaseStore | None,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Attach APMD's reset decision and persist the anchor when it moves.
+
+    Entropy alone is reported but does not rewrite the anchor: a genuinely
+    low-diversity track would otherwise trigger a reset on every analysis run.
+    Age and note-count resets are one-shot because the new anchor records the
+    state that justified them.
+    """
+    if store is None:
+        return
+    namespace = _policy_anchor_namespace(account_id)
+    anchor: PolicyAnchor | None = None
+    try:
+        item = await store.aget(namespace, "current")
+        raw = getattr(item, "value", None)
+    except Exception:
+        raw = None
+    if isinstance(raw, dict):
+        try:
+            created_at = datetime.fromisoformat(str(raw.get("created_at", "")))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=UTC)
+            anchor = PolicyAnchor(
+                created_at=created_at,
+                note_count=int(raw.get("note_count", 0) or 0),
+                reference_version=str(raw.get("reference_version", "v1")),
+            )
+        except (TypeError, ValueError, OverflowError):
+            anchor = None
+
+    categories = Counter(note.content_type or "unknown" for note in notes)
+    decision = policy_reset_decision(
+        anchor,
+        now=now,
+        note_count=len(notes),
+        category_counts=list(categories.values()) or None,
+    )
+    analysis.policy_reset = decision.as_dict()
+    if decision.should_reset and decision.reason != "low_track_entropy":
+        try:
+            created = now or datetime.now(UTC)
+            await store.aput(
+                namespace,
+                "current",
+                {
+                    "created_at": created.isoformat(),
+                    "note_count": len(notes),
+                    "reference_version": "v1",
+                },
+            )
+        except Exception:
+            logger.debug("APMD policy anchor write failed", exc_info=True)
+
+
 async def run_analysis(
     notes: list[NoteStats],
     account_id: str,
@@ -476,9 +545,11 @@ async def run_analysis(
     *,
     account_niche: str = "",
     followers: int = 0,
+    now: datetime | None = None,
 ) -> AnalysisResult:
     """Analyze notes and deposit durable creative memory."""
-    analysis = analyze_notes(notes, account_id, followers=followers)
+    analysis = analyze_notes(notes, account_id, followers=followers, now=now)
+    await _apply_policy_reset(analysis, notes, account_id, store, now=now)
     # Prefer explicit niche; else best-effort from account row (manual/inferred bind)
     niche = (account_niche or "").strip()
     if not niche:
