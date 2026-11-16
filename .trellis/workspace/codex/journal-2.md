@@ -1034,3 +1034,42 @@ gate 链路打通；auth Redis 探测与 CLI login loop 修复；4979 passed
 ### Next Steps
 
 - None - task complete
+
+
+## Session 86: 第 3–6 期前沿契约：多模态门、时间/执行、评估生成与分发回放
+
+**Date**: 2026-11-16
+**Task**: 第 3–6 期架构契约升级（方案 13–36）
+**Branch**: `main`
+
+### Summary
+
+把第 3–6 期台账的 24 个方案落成 4 个确定性契约模块，并在 evaluator 接入 `risk_signals`。全仓 pytest 5259 passed，GitHub Actions run 43871540366 全绿。
+
+### Main Changes
+
+- 新增 `backend/services/content_launch.py`（13–18）：多模态协同评分、TagLLM 三层标签、review 风险信号条、会话三态熔断、根因分类/Token 成本、SSE 帧。
+- 新增 `backend/services/temporal_contracts.py`（19–24）：草稿 CAS 与互动快照、TimePop、自抑制 Hawkes、JIT 子图计划、A/B/C 叙事锚点、Ripple 超时抢救。
+- 新增 `backend/services/evaluation_contracts.py`（25–30）：能力路由建议、GRS/GAR、PTGS、APMD、封面布局检查、SWA 三明治。
+- 新增 `backend/services/distribution_contracts.py`（31–36）：EGMF 曝光诊断、SAIM 场景权重、滑动留存弧、BreakoutLift、FanRelationStore、公开 replay 脱敏。
+- `backend/agents/evaluator.py` 追加 `risk_signals`；README 增加第 3–6 期契约表；Trellis 任务 `11-16-phase3-6-architecture-2026-11` 已归档。
+
+### Verification
+
+- 全仓 `pytest -q --disable-warnings`：5259 passed, 14 skipped, 2 warnings（286.51s）
+- `mypy --python-version 3.12 backend`：282 source no issues
+- `scripts/ci_local.py --only lint,format,mypy,gates`：全部 PASS（ruff 750 tracked、mypy 282 source）
+- GitHub Actions run `43871540366`：全部 jobs success
+
+### Boundaries
+
+- 24 个方案以纯函数/确定性数据契约落地，默认 opt-in；未重造模型路由、SSE 与公开回放已有生产路径。
+- 未做真实小红书发布/私信/封面渲染端到端验证；模型路由仍统一走 magpie。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
