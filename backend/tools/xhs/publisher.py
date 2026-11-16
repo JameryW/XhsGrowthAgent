@@ -87,6 +87,21 @@ async def xhs_publisher(
         image_paths = []
     logger.info(f"Publishing note: {title}")
 
+    if account_id:
+        from backend.services.session_circuit import (
+            SessionCircuitOpenError,
+            check_session_allowed,
+        )
+
+        try:
+            check_session_allowed(account_id)
+        except SessionCircuitOpenError as exc:
+            raise DomainOutcome(
+                f"session circuit open: {exc}",
+                status="session_circuit_open",
+                account_id=account_id,
+            ) from exc
+
     publisher = _get_publisher(cdp_endpoint)
     try:
         result = await publisher.publish_note(
@@ -104,6 +119,18 @@ async def xhs_publisher(
         await publisher.close()
 
     status = str(result.get("status") or "")
+    if account_id:
+        from backend.services.session_circuit import record_failure, record_success
+
+        if status == "published":
+            record_success(account_id)
+        elif status in {"auth_failed", "session_expired", "signature_unavailable"}:
+            record_failure(
+                account_id,
+                error_code=status,
+                message=str(result.get("error") or result.get("reason") or ""),
+            )
+
     if status == "published":
         return {
             "post_id": str(result.get("post_id") or ""),

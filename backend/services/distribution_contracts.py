@@ -425,8 +425,13 @@ def compile_public_replay_bundle(
     events: Iterable[Mapping[str, Any]],
     *,
     generated_at: datetime | None = None,
+    subject_id: str | None = None,
 ) -> dict[str, Any]:
-    """Compile a deterministic, redacted public replay bundle."""
+    """Compile a deterministic, redacted public replay bundle.
+
+    ``subject_id`` lets a caller replace the internal thread id with the public
+    replay id, so a published bundle never carries the private execution key.
+    """
 
     frames = []
     for event in events:
@@ -438,7 +443,7 @@ def compile_public_replay_bundle(
         }
         frames.append(frame)
     body = {
-        "thread_id": thread_id,
+        "thread_id": subject_id or thread_id,
         "generated_at": (generated_at or datetime.now(UTC)).isoformat(),
         "frames": frames,
     }

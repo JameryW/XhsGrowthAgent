@@ -1307,6 +1307,28 @@ async def get_public_replay_manifest(
     return not_modified or success(data=data)
 
 
+@router.get("/replays/{public_id}/bundle", response_model=None)
+async def get_public_replay_bundle(
+    public_id: str,
+    request: Request,
+    response: Response,
+) -> ApiResponse[Any] | Response:
+    """Return the complete redacted replay as one deterministic bundle."""
+
+    from backend.db.workflow_events import list_events
+    from backend.services.distribution_contracts import compile_public_replay_bundle
+
+    row = await _resolve_case(public_id)
+    events = await list_events(row.thread_id)
+    bundle = compile_public_replay_bundle(
+        row.thread_id,
+        events,
+        subject_id=public_id,
+    )
+    not_modified = _cache_headers(bundle, request, response, last_modified=row.updated_at)
+    return not_modified or success(data=bundle)
+
+
 async def _resolve_checkpoint(
     public_id: str,
     checkpoint_public_id: str,

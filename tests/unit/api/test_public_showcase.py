@@ -16,6 +16,7 @@ from backend.api.routes.public_showcase import (
     _public_result,
     _safe_colors,
     get_public_checkpoint_detail,
+    get_public_replay_bundle,
     get_public_replay_manifest,
     list_public_cases,
     revoke_showcase_visibility,
@@ -327,6 +328,45 @@ async def test_public_manifest_returns_key_steps_without_internal_identifiers():
     # Manifest embeds result for first-paint without N detail round-trips.
     assert all("result" in step for step in response.data["steps"])
     assert response.data["workflow"]["replay_available"] is True
+
+
+@pytest.mark.asyncio
+async def test_public_replay_bundle_redacts_secrets_and_hides_thread_id():
+    row = _row("private-thread-id", visibility="public")
+    events = [
+        {
+            "seq": 1,
+            "kind": "llm",
+            "ts": "2026-07-16T10:00:00Z",
+            "payload": {
+                "api_key": "sk-private",
+                "phone": "13800138000",
+                "nested": {"access_token": "bearer-private", "note": "工具调用"},
+            },
+        }
+    ]
+
+    with (
+        patch(
+            "backend.api.routes.public_showcase._resolve_case",
+            new_callable=AsyncMock,
+            return_value=row,
+        ),
+        patch(
+            "backend.db.workflow_events.list_events",
+            new_callable=AsyncMock,
+            return_value=events,
+        ),
+    ):
+        response = await get_public_replay_bundle("case-public", MagicMock(), Response())
+
+    bundle = response.data
+    assert bundle["thread_id"] == "case-public"
+    assert "private-thread-id" not in json.dumps(bundle, ensure_ascii=False)
+    assert "sk-private" not in json.dumps(bundle, ensure_ascii=False)
+    assert "bearer-private" not in json.dumps(bundle, ensure_ascii=False)
+    assert "13800138000" not in json.dumps(bundle, ensure_ascii=False)
+    assert bundle["bundle_hash"]
 
 
 @pytest.mark.asyncio

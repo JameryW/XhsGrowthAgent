@@ -145,6 +145,30 @@ class TestXhsPublisherTool:
 
         assert publisher.publish_note.await_args.kwargs["account_id"] == "acc-1"
 
+    async def test_an_open_session_circuit_blocks_before_the_browser_is_touched(self):
+        from backend.services import session_circuit
+        from backend.tools.xhs.publisher import xhs_publisher
+
+        session_circuit.reset_session_circuits()
+        session_circuit.record_failure(
+            "acc-trip",
+            error_code="login_required",
+            message="browser login expired",
+        )
+        try:
+            with (
+                patch("backend.tools.xhs.publisher._get_publisher") as get_publisher,
+                pytest.raises(DomainOutcome) as excinfo,
+            ):
+                await xhs_publisher.ainvoke(
+                    {"title": "title", "body": "body", "account_id": "acc-trip"}
+                )
+        finally:
+            session_circuit.reset_session_circuits()
+
+        get_publisher.assert_not_called()
+        assert excinfo.value.payload["status"] == "session_circuit_open"
+
 
 class TestGetPublisherEndpointSelection:
     """Which browser profile the factory picks -- the one thing it decides.
