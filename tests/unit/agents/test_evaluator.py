@@ -327,6 +327,19 @@ class TestEvaluatorAgent:
 
         mock_store.asearch.assert_called()
 
+    def test_groupwise_ranks_content_versions(self, agent):
+        state = {
+            "content_versions": [
+                {"version_id": "a", "predicted_score": 80.0},
+                {"version_id": "b", "predicted_score": 72.0},
+            ]
+        }
+        result = evaluator_module._with_publish_eligibility(
+            state, {"overall_score": 75.0, "dimensions": {}}
+        )
+        assert result["groupwise"]["leader"] == "a"
+        assert [row["candidate_id"] for row in result["groupwise"]["ranking"]] == ["a", "b"]
+
     def test_compute_overall_weighted(self, agent):
         from backend.agents.evaluator import _REQUIRED_DIMENSIONS
 

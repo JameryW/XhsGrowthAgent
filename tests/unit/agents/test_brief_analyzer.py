@@ -91,6 +91,9 @@ class TestBriefModeNoText:
             assert result["phase"] == WorkflowPhase.BRIEFING
             assert "error" not in result
             assert result["brief_content"]["brand_name"] == "TestBrand"
+            report = result["brief_content"]["contract_report"]
+            assert report["ready"] is False
+            assert "product_name" in report["missing_fields"]
 
         asyncio.run(_test())
 

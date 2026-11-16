@@ -19,6 +19,7 @@ from backend.services.temporal_contracts import (
     inhibit_factor,
     narrative_anchors,
     salvage_timed_out_payload,
+    validate_commercial_brief_contract,
 )
 
 
@@ -80,6 +81,34 @@ def test_jit_subgraph_for_brief_adds_contract_nodes() -> None:
     plan = compile_jit_subgraph("brief", {})
     assert "brief_analyzer" in plan.nodes
     assert "shooting_planner" in plan.nodes
+    assert set(plan.nodes) <= set(plan.graph_nodes)
+    assert "brief_analyzer" in plan.graph_nodes
+
+
+def test_commercial_brief_contract_reports_missing_fields() -> None:
+    report = validate_commercial_brief_contract(
+        {"brand_name": "Brand", "selling_points": ["point"]}
+    )
+    assert report.ready is False
+    assert report.missing_fields == (
+        "product_name",
+        "content_direction",
+        "target_audience",
+    )
+
+
+def test_commercial_brief_contract_accepts_complete_brief() -> None:
+    report = validate_commercial_brief_contract(
+        {
+            "brand_name": "Brand",
+            "product_name": "Product",
+            "selling_points": ["point"],
+            "content_direction": "通勤",
+            "target_audience": "上班族",
+        }
+    )
+    assert report.ready is True
+    assert report.missing_fields == ()
 
 
 def test_narrative_priors_are_three_orthogonal_anchors() -> None:

@@ -105,6 +105,25 @@ def _with_publish_eligibility(
         plad=plad,
         creator_rule_diff=creator_rule_diff,
     ).as_dict()
+    versions = merged.get("content_versions")
+    candidates: list[dict[str, Any]] = []
+    if isinstance(versions, list):
+        for index, version in enumerate(versions):
+            if not isinstance(version, dict):
+                continue
+            predicted = version.get("predicted_score")
+            if not isinstance(predicted, (int, float)):
+                continue
+            candidates.append(
+                {
+                    "candidate_id": str(version.get("version_id") or index),
+                    "scores": {"predicted": float(predicted)},
+                }
+            )
+    if len(candidates) >= 2:
+        from backend.services.evaluation_contracts import evaluate_groupwise
+
+        evaluation["groupwise"] = evaluate_groupwise(candidates).as_dict()
     return evaluation
 
 

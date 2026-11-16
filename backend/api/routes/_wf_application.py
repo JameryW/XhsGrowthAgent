@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import tempfile
 import uuid
@@ -1304,6 +1303,8 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
         last_seq = -1
 
     async def event_generator() -> Any:
+        from backend.services.content_launch import sse_event_frame
+
         bus = EventBusService.get_instance()
 
         # P1a-S4 read seam: the synthetic terminal payload embeds refable
@@ -1320,11 +1321,10 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
             for event in bus.get_events_since(last_seq):
                 if event.thread_id != thread_id:
                     continue
-                event_data = json.dumps(event.payload, ensure_ascii=False)
                 # Include id: so EventSource advances its Last-Event-ID cursor
                 # over replayed events — without it a second reconnect would
                 # re-deliver this whole replay window.
-                yield f"event: {event.event_type.value}\nid: {event.seq}\ndata: {event_data}\n\n"
+                yield sse_event_frame(event.seq, event.event_type.value, event.payload)
                 if event.event_type in (
                     EventType.WORKFLOW_COMPLETED,
                     EventType.WORKFLOW_ERROR,
@@ -1383,12 +1383,7 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
                                 payload[k] = v
                     else:  # WORKFLOW_ERROR
                         payload["error"] = values.get("error", "")
-                    event_data = json.dumps(payload, ensure_ascii=False)
-                    yield (
-                        f"event: {synthetic_type.value}\n"
-                        f"id: {bus.current_seq()}\n"
-                        f"data: {event_data}\n\n"
-                    )
+                    yield sse_event_frame(bus.current_seq(), synthetic_type.value, payload)
                     return
         except Exception:
             logger.debug("SSE terminal-check failed for %s", thread_id, exc_info=True)
@@ -1398,8 +1393,7 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
         try:
             while True:
                 event = await queue.get()
-                event_data = json.dumps(event.payload, ensure_ascii=False)
-                yield f"event: {event.event_type.value}\nid: {event.seq}\ndata: {event_data}\n\n"
+                yield sse_event_frame(event.seq, event.event_type.value, event.payload)
 
                 if event.event_type in (
                     EventType.WORKFLOW_COMPLETED,

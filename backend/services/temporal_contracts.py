@@ -14,6 +14,8 @@ from datetime import UTC, date, datetime, time
 from typing import Any
 
 __all__ = [
+    "COMMERCIAL_BRIEF_REQUIRED_FIELDS",
+    "CommercialBriefContractReport",
     "DraftAnalyticsSnapshot",
     "InhibitoryHawkesParams",
     "JitSubgraph",
@@ -26,6 +28,7 @@ __all__ = [
     "build_analytics_snapshot",
     "build_narrative_brief",
     "compile_jit_subgraph",
+    "validate_commercial_brief_contract",
     "counterfactual_slots",
     "effective_intensity",
     "encode_time_features",
@@ -260,6 +263,69 @@ def effective_intensity(
     return intensity
 
 
+COMMERCIAL_BRIEF_REQUIRED_FIELDS: tuple[str, ...] = (
+    "brand_name",
+    "product_name",
+    "selling_points",
+    "content_direction",
+    "target_audience",
+)
+
+
+@dataclass(frozen=True)
+class CommercialBriefContractReport:
+    """Deterministic readiness check for a parsed commercial brief."""
+
+    ready: bool
+    missing_fields: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "ready": self.ready,
+            "missing_fields": list(self.missing_fields),
+            "warnings": list(self.warnings),
+        }
+
+
+def _has_brief_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    return True
+
+
+def validate_commercial_brief_contract(
+    brief: Mapping[str, Any] | None,
+) -> CommercialBriefContractReport:
+    """Check the fields a commercial brief needs before shooting/publishing.
+
+    This is a validator, not a gate: the caller decides whether to block.  A
+    missing field is reported so the brief gate can ask a specific question
+    instead of silently generating a generic note.
+    """
+
+    data = brief or {}
+    missing = tuple(
+        field_name
+        for field_name in COMMERCIAL_BRIEF_REQUIRED_FIELDS
+        if not _has_brief_value(data.get(field_name))
+    )
+    warnings: list[str] = []
+    if not _has_brief_value(data.get("required_hashtags")):
+        warnings.append("required_hashtags empty")
+    if not _has_brief_value(data.get("shooting_requirements")):
+        warnings.append("shooting_requirements empty")
+    return CommercialBriefContractReport(
+        ready=not missing,
+        missing_fields=missing,
+        warnings=tuple(warnings),
+    )
+
+
 @dataclass(frozen=True)
 class JitSubgraph:
     """A declarative plan for one JIT workflow mode."""
@@ -268,6 +334,7 @@ class JitSubgraph:
     nodes: tuple[str, ...]
     skip_nodes: tuple[str, ...] = field(default_factory=tuple)
     rationale: str = ""
+    graph_nodes: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -275,6 +342,7 @@ class JitSubgraph:
             "nodes": list(self.nodes),
             "skip_nodes": list(self.skip_nodes),
             "rationale": self.rationale,
+            "validated_against_graph": bool(self.graph_nodes),
         }
 
 
@@ -289,6 +357,24 @@ def compile_jit_subgraph(
     """
 
     state = input_state or {}
+    # Validate against the graph builder rather than maintaining a second,
+    # silently drifting node vocabulary.  This still does not compile a
+    # separate StateGraph; it makes an invalid plan fail before dispatch.
+    from backend.graph.builder import build_graph
+
+    graph_nodes = tuple(build_graph().nodes)
+
+    def _plan(
+        plan_mode: str,
+        nodes: tuple[str, ...],
+        skip_nodes: tuple[str, ...],
+        rationale: str,
+    ) -> JitSubgraph:
+        unknown = (set(nodes) | set(skip_nodes)) - set(graph_nodes)
+        if unknown:
+            raise ValueError(f"jit subgraph names unknown graph nodes: {sorted(unknown)}")
+        return JitSubgraph(plan_mode, nodes, skip_nodes, rationale, graph_nodes)
+
     if mode == "free":
         nodes: tuple[str, ...] = (
             "orchestrator",
@@ -300,9 +386,7 @@ def compile_jit_subgraph(
             "publisher",
             "analyst",
         )
-        return JitSubgraph(
-            mode, nodes, ("trend_scout", "content_strategist"), "free skips strategy"
-        )
+        return _plan(mode, nodes, ("trend_scout", "content_strategist"), "free skips strategy")
     if mode == "brief":
         nodes = (
             "orchestrator",
@@ -317,17 +401,15 @@ def compile_jit_subgraph(
             "publisher",
             "analyst",
         )
-        return JitSubgraph(
-            mode, nodes, ("trend_scout", "content_strategist"), "brief uses contract"
-        )
+        return _plan(mode, nodes, ("trend_scout", "content_strategist"), "brief uses contract")
     if state.get("topic") and not state.get("brief"):
-        return JitSubgraph(
+        return _plan(
             mode or "full",
             ("orchestrator", "trend_scout", "content_strategist", "copywriter"),
             (),
             "topic supplied but strategy not yet built",
         )
-    return JitSubgraph(
+    return _plan(
         mode or "full",
         (
             "orchestrator",

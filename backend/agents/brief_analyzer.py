@@ -153,6 +153,14 @@ class BriefAnalyzerAgent(BaseAgent):
         # Merge with existing brief_content (preserves raw_text, source_type)
         # —— 那两个键是"文本从哪来"的事实，模型无从陈述，所以合并依然由这里做。
         brief_result = {**brief_content, **normalize_brief_analysis(output)}
+        from backend.services.temporal_contracts import (
+            validate_commercial_brief_contract,
+        )
+
+        contract = validate_commercial_brief_contract(brief_result)
+        brief_result["contract_report"] = contract.as_dict()
+        if not contract.ready and not brief_result.get("contract_missing_fields"):
+            brief_result["contract_missing_fields"] = list(contract.missing_fields)
 
         result: dict[str, Any] = {
             "brief_content": brief_result,
