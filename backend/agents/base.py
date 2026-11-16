@@ -235,6 +235,7 @@ class BaseAgent(ABC):
         validator: Callable[[T], str | None] | None = None,
         attempts_per_level: int = 2,
         accept_last_valid: bool = False,
+        temperature: float | None = None,
     ) -> T:
         """Ask the model for ``output_model``, degrading rather than failing.
 
@@ -329,7 +330,9 @@ class BaseAgent(ABC):
                 attempt_started = time.perf_counter()
                 attempt_started_at = datetime.now(UTC).isoformat()
                 try:
-                    payload = await self._structured_call(level, conversation, output_model)
+                    payload = await self._structured_call(
+                        level, conversation, output_model, temperature=temperature
+                    )
                 except Exception as exc:
                     # The level itself is unusable; a retry would fail the same
                     # way, so record it and degrade.
@@ -432,6 +435,8 @@ class BaseAgent(ABC):
         level: Any,
         messages: list[Any],
         output_model: type[T],
+        *,
+        temperature: float | None = None,
     ) -> Any:
         """One attempt at one level, returning a payload that is still unchecked.
 
@@ -454,12 +459,12 @@ class BaseAgent(ABC):
             return result.get("parsed")
 
         guided = [*messages, HumanMessage(content=render_schema_instructions(output_model))]
+        model_kwargs: dict[str, Any] = {}
         if level is StructuredMode.JSON_OBJECT:
-            response = await self._llm_ainvoke(
-                guided, model_kwargs={"response_format": {"type": "json_object"}}
-            )
-        else:
-            response = await self._llm_ainvoke(guided)
+            model_kwargs["response_format"] = {"type": "json_object"}
+        if temperature is not None:
+            model_kwargs["temperature"] = temperature
+        response = await self._llm_ainvoke(guided, model_kwargs=model_kwargs or None)
         return self._parse_json_response(_response_text(response))
 
     def _reset_llm_perf(self) -> None:

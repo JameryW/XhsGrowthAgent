@@ -337,6 +337,7 @@ class CopywriterAgent(BaseAgent):
                 ],
                 CopyContentOutput,
                 validator=_copy_has_content,
+                temperature=self._ptgs_generation_temperature(state),
             )
         )
 
@@ -502,6 +503,7 @@ class CopywriterAgent(BaseAgent):
                     StyleVariantsOutput,
                     validator=_variants_present,
                     accept_last_valid=True,
+                    temperature=self._ptgs_generation_temperature(state),
                 )
             )
         except StructuredOutputError as exc:
@@ -516,6 +518,33 @@ class CopywriterAgent(BaseAgent):
             return []
 
         return variants
+
+    @staticmethod
+    def _ptgs_generation_temperature(state: Mapping[str, Any]) -> float | None:
+        """PTGS temperature for the next generation call, when evidence exists.
+
+        The evaluator's overall score is the quality pressure (``s_max``); the
+        current draft's PLAD AI-likelihood is the humanisation pressure
+        (``r_plad``).  Without an evaluation result this is a normal draft, so we
+        return ``None`` and keep the routed model's configured temperature.
+        """
+        evaluation = state.get("evaluation_result") or {}
+        overall = evaluation.get("overall_score") if isinstance(evaluation, dict) else None
+        if not isinstance(overall, (int, float)):
+            return None
+        copy = state.get("copy_content") or {}
+        plad: dict[str, Any] = {}
+        if isinstance(copy, dict):
+            plad = copy.get("plad_after") or copy.get("plad_before") or {}
+        r_plad = 0.0
+        if isinstance(plad, dict):
+            try:
+                r_plad = float(plad.get("ai_likelihood", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                r_plad = 0.0
+        from backend.services.evaluation_contracts import ptgs_temperature
+
+        return ptgs_temperature(max(0.0, min(1.0, float(overall) / 100.0)), r_plad)
 
     @staticmethod
     def _build_ripple_context(plan: dict[str, Any]) -> str:

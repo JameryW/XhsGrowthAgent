@@ -707,3 +707,15 @@ class TestCopywriterContextPipeline:
         assert "Ripple 传播预测数据" in system
         assert "预计触达: 10000" in system
         assert "{ripple_context}" not in system
+
+
+def test_ptgs_generation_temperature_uses_evaluation_and_plad():
+    from backend.agents.copywriter import CopywriterAgent
+    from backend.services.evaluation_contracts import ptgs_temperature
+
+    state = {
+        "evaluation_result": {"overall_score": 90.0},
+        "copy_content": {"plad_after": {"ai_likelihood": 0.8}},
+    }
+    assert CopywriterAgent._ptgs_generation_temperature(state) == ptgs_temperature(0.9, 0.8)
+    assert CopywriterAgent._ptgs_generation_temperature({}) is None

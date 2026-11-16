@@ -557,3 +557,28 @@ class TestAttemptIdentity:
                 assert forbidden not in entry
             assert "内容" not in str(entry)
             assert "系统提示" not in str(entry)
+
+    @pytest.mark.asyncio
+    async def test_temperature_is_bound_for_prompted_levels(self):
+        class _BindingModel:
+            def __init__(self):
+                self.bound = {}
+                self.calls = 0
+
+            def bind(self, **kwargs):
+                self.bound.update(kwargs)
+                return self
+
+            async def ainvoke(self, _messages):
+                self.calls += 1
+                return _text_response('{"topic": "温度"}')
+
+        agent = _Agent()
+        model = _BindingModel()
+        agent._model = model
+
+        with _with_provider(ModelProvider.MAGPIE):
+            plan = await agent._llm_structured(_messages(), _Plan, temperature=0.91)
+
+        assert plan.topic == "温度"
+        assert model.bound["temperature"] == 0.91
