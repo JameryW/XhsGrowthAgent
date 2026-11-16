@@ -14,6 +14,8 @@ and a read failure **escapes** rather than becoming a number.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from backend.services.xhs_client import XHSAuthError
@@ -129,6 +131,24 @@ async def test_history_records_fit_account_calibration(monkeypatch):
     calibration = result["collect_first"]["calibration"]
     assert calibration["sample_size"] == 8
     assert set(calibration["heads"]) == {"read", "like", "collect", "comment"}
+
+
+@pytest.mark.asyncio
+async def test_time_pop_and_refractory_inhibition_are_reported(monkeypatch):
+    """A near-duplicate note posted two hours ago damps the forecast."""
+    _patch_client(monkeypatch, _Client())
+    published = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+    records = [{"title": "露营 标题", "published_at": published}]
+
+    result = await topic_scorer.ainvoke(
+        {"topic": "露营", "niche": "旅行", "history_records": records}
+    )
+
+    assert result["time_pop"]["recommended_slots"]
+    assert result["time_pop"]["features"]["hour_slot"] in range(48)
+    assert result["inhibition"]["active"] is True
+    assert result["inhibition"]["factor"] < 1.0
+    assert result["collect_first"]["inhibition"]["factor"] == result["inhibition"]["factor"]
 
 
 @pytest.mark.asyncio

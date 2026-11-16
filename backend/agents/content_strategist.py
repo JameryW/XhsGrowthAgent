@@ -792,12 +792,23 @@ class ContentStrategistAgent(BaseAgent):
                     calibration = collect_first.get("calibration")
                     if isinstance(calibration, dict) and calibration.get("sample_size"):
                         calibration_note = f"，账号校准 {calibration['sample_size']} 篇"
+                time_pop = result.get("time_pop")
+                time_note = ""
+                if isinstance(time_pop, dict):
+                    slots = time_pop.get("recommended_slots")
+                    if isinstance(slots, list) and slots and isinstance(slots[0], dict):
+                        time_note = f"，建议时段 {slots[0].get('label', 'N/A')}"
+                inhibition = result.get("inhibition")
+                inhibition_note = ""
+                if isinstance(inhibition, dict) and inhibition.get("active"):
+                    inhibition_note = "，近期相似笔记冷却中"
                 entry = (
                     f"{topic}: 热度 {result.get('heat_score', 'N/A')}，"
                     f"趋势 {result.get('growth_trend', 'N/A')}，"
                     f"竞争 {result.get('competition_level', 'N/A')}，"
                     f"收藏预测 {predicted_collect if predicted_collect is not None else 'N/A'}，"
-                    f"推荐 {result.get('recommendation', 'N/A')}{novelty_note}{calibration_note}"
+                    f"推荐 {result.get('recommendation', 'N/A')}"
+                    f"{novelty_note}{calibration_note}{time_note}{inhibition_note}"
                 )
                 collect_value = (
                     float(predicted_collect)

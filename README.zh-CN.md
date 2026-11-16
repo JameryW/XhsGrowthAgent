@@ -389,11 +389,11 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 | 模块 | 位置 | 能力 |
 | --- | --- | --- |
 | 发布前多模态门（13–18） | `backend/services/content_launch.py` | 图文互补/缩略图可读性/垂类美学协同评分（`visual_designer` 已接）；TagLLM 三层 5–8 标签（`copywriter` 已接）；review 风险信号条（evaluator 已接）；Playwright/CDP 会话三态熔断（`xhs.publisher` 已接）；根因分类与单篇 Token 成本（`_runner` 已接）；SSE 统一 `sse_event_frame` |
-| 时间与执行（19–24） | `backend/services/temporal_contracts.py` | 草稿 CAS 版本与 `DraftAnalyticsSnapshot` 追加（free API 已接）；24h/7d 正余弦编码与 48 槽位；自抑制 Hawkes 核；`compile_jit_subgraph` 模式计划并对真实图节点做校验；商单 Brief 契约字段校验；A/B/C 叙事锚点；Ripple 超时分阶段抢救 |
-| 评估与生成（25–30） | `backend/services/evaluation_contracts.py` | 能力路由建议（默认仍走 magpie）；GRS/GAR 组内相对评审（多版本评估已输出 `groupwise`）；PTGS 温度；APMD 锚点重置与香农熵；封面安全区/对比度/缩略图检查；SWA 冻结前缀 + ≤160 token 尾部锚点（copywriter 已接） |
-| 分发与回放（31–36） | `backend/services/distribution_contracts.py` | EGMF 曝光/限流诊断与可信度（creator_stats 已接）；trend/brief/free 场景权重；多图滑动留存弧与 AVTP Token 分配（`visual_designer` 已接）；粉赞比 BreakoutLift；FanRelationStore 与置顶破冰；`/replay` 确定性脱敏 bundle（public API 已接） |
+| 时间与执行（19–24） | `backend/services/temporal_contracts.py`、`backend/db/draft_analytics.py` | 草稿 CAS 版本与独立追加的 `DraftAnalyticsSnapshot`（free API 已接）；24h/7d 正余弦编码与 48 槽位（topic_scorer 已输出 `time_pop`）；自抑制 Hawkes 核（topic_scorer 的 `inhibition` 已接）；`compile_jit_subgraph` 模式计划并对真实图节点做校验；商单 Brief 契约字段校验；A/B/C 叙事锚点；Ripple 超时 partial 抢救 + 可选本地回归兜底 |
+| 评估与生成（25–30） | `backend/services/evaluation_contracts.py` | 能力路由建议（默认仍走 magpie）；GRS/GAR 组内相对评审（多版本评估已输出 `groupwise`）；PTGS 温度；APMD 锚点重置与香农熵；真实渲染封面安全区/对比度/缩略图检查（publisher 已接）；SWA 冻结前缀 + ≤160 token 尾部锚点（copywriter 已接） |
+| 分发与回放（31–36） | `backend/services/distribution_contracts.py` | EGMF 曝光/限流诊断与可信度（creator_stats 已接）；trend/brief/free 场景权重；多图滑动留存弧与 AVTP Token 分配（`visual_designer` 已接）；粉赞比 BreakoutLift；FanRelationStore 原子 JSON 持久化与置顶破冰；`/replay` 确定性脱敏 bundle（public API 已接） |
 
-上述模块是契约层，部分已经接入生产节点（表中标注“已接”），其余仍需显式 opt-in；模型路由与发布资格契约未被本批次改动。
+上述模块已完成低风险生产接线（表中标注“已接”）；`compile_jit_subgraph` 仍是带图节点校验的模式计划，不是独立子图执行；PTGS 温度、APMD 锚点重置与 SAIM 场景权重仍是显式 opt-in 策略；模型路由与发布资格契约未被本批次改动。
 
 ## 测试与开发
 

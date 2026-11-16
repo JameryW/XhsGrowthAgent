@@ -1050,6 +1050,28 @@ async def get_analytics(
         snapshot["hawkes"] = fit_hawkes(draft["analytics_snapshots"]).as_dict()
     except Exception:
         logger.debug("free analytics hawkes fit skipped", exc_info=True)
+    # The embedded series is capped for display; the full sequence lives in its
+    # own append-only namespace so analytics never mutates a draft CAS revision.
+    try:
+        from backend.db.draft_analytics import append_draft_analytics_snapshot
+        from backend.services.temporal_contracts import build_analytics_snapshot
+
+        seq_no = int(draft.get("analytics_seq", 0) or 0) + 1
+        draft["analytics_seq"] = seq_no
+        previous_reads = int(snapshots[-2].get("views", 0) or 0) if len(snapshots) > 1 else 0
+        physical = build_analytics_snapshot(
+            draft_id,
+            seq_no,
+            reads=snapshot["views"],
+            likes=snapshot["likes"],
+            collects=snapshot["collects"],
+            comments=snapshot["comments"],
+            previous_reads=previous_reads,
+            captured_at=datetime.now(UTC),
+        )
+        await append_draft_analytics_snapshot(store, account_id, physical)
+    except Exception:
+        logger.debug("free analytics physical snapshot skipped", exc_info=True)
     draft["updated_at"] = fetched_at
     draft["revision"] = int(draft.get("revision", 0) or 0) + 1
     try:

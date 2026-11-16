@@ -21,6 +21,7 @@ the same defect wearing two coats:
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.tools import tool
@@ -33,6 +34,79 @@ from backend.tools.analysis.collect_first import (
 from backend.tools.content.novelty import novelty_penalty
 
 logger = logging.getLogger("xhs_growth.tools.topic_scorer")
+
+_PREFERRED_HOURS = {
+    "美食": {8, 12, 19},
+    "穿搭": {8, 20},
+    "旅行": {21},
+    "护肤": {20, 21, 22},
+}
+_DEFAULT_HOURS = {20, 21, 22}
+
+
+def _parse_published_at(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _time_pop(now: datetime, niche: str) -> dict[str, Any]:
+    """TimePop features plus the best half-hour slots for this niche."""
+    from backend.services.temporal_contracts import counterfactual_slots, encode_time_features
+
+    preferred = _PREFERRED_HOURS.get(niche, _DEFAULT_HOURS)
+
+    def score(slot: dict[str, Any]) -> float:
+        hour = int(str(slot.get("label", "20:00"))[:2])
+        distance = min(abs(hour - pref) for pref in preferred)
+        return 100.0 if distance == 0 else max(0.0, 90.0 - distance * 10.0)
+
+    slots = counterfactual_slots(now.date())
+    ranked = sorted(slots, key=lambda item: (-score(item), item["slot"]))[:3]
+    return {
+        "features": encode_time_features(now).as_dict(),
+        "recommended_slots": [
+            {"label": item["label"], "slot": item["slot"], "score": score(item)} for item in ranked
+        ],
+    }
+
+
+def _history_inhibition(
+    history_records: list[dict[str, Any]] | None,
+    candidate: str,
+    now: datetime,
+) -> dict[str, Any]:
+    """Apply the refractory-window gate to the nearest recent published note."""
+    from backend.services.temporal_contracts import inhibit_factor
+
+    latest: tuple[datetime, str] | None = None
+    for record in history_records or []:
+        if not isinstance(record, dict):
+            continue
+        published = _parse_published_at(record.get("published_at"))
+        title = str(record.get("title") or record.get("selected_title") or "")
+        if published is None or not title:
+            continue
+        if latest is None or published > latest[0]:
+            latest = (published, title)
+    if latest is None:
+        return {"active": False, "factor": 1.0}
+    age_hours = max(0.0, (now - latest[0]).total_seconds() / 3600.0)
+    similarity = novelty_penalty(candidate, [latest[1]]).max_similarity
+    factor = inhibit_factor(age_hours, similarity)
+    return {
+        "active": factor < 1.0,
+        "factor": round(factor, 6),
+        "delta_hours": round(age_hours, 3),
+        "similarity": round(similarity, 6),
+        "reference_title": latest[1],
+    }
 
 
 @tool
@@ -194,6 +268,25 @@ async def topic_scorer(
             snapshots=snapshots,
             calibration=calibration,
         )
+        now = datetime.now(UTC)
+        inhibition = _history_inhibition(
+            history_records,
+            f"{topic} {sample_title}",
+            now,
+        )
+        if inhibition.get("active"):
+            factor = float(inhibition["factor"])
+            for key in (
+                "predicted_read",
+                "predicted_like",
+                "predicted_collect",
+                "predicted_comment",
+            ):
+                value = collect_forecast.get(key)
+                if isinstance(value, (int, float)):
+                    collect_forecast[key] = round(float(value) * factor, 3)
+        collect_forecast["inhibition"] = inhibition
+        time_pop = _time_pop(now, niche)
 
         # AutoViralAI-style novelty penalty against the account's recent notes.
         novelty = novelty_penalty(f"{topic} {sample_title}", history_titles or [])
@@ -227,6 +320,8 @@ async def topic_scorer(
             "reference_posts": reference_posts,
             "predicted_collect": collect_forecast.get("predicted_collect"),
             "collect_first": collect_forecast,
+            "time_pop": time_pop,
+            "inhibition": inhibition,
             "novelty": novelty.as_dict()
             if hasattr(novelty, "as_dict")
             else {
