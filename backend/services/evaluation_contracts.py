@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import math
 import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from backend.context.estimator import estimate_tokens
@@ -16,6 +18,7 @@ from backend.context.models import CompiledPrompt
 __all__ = [
     "CandidateScore",
     "CoverCritique",
+    "RenderedCoverCritique",
     "GroupwiseReport",
     "ModelRouteDecision",
     "PolicyAnchor",
@@ -341,6 +344,151 @@ def evaluate_cover_layout(
         issues.append("cover_copy_too_long")
     score = 100.0 - 25.0 * len(issues)
     return CoverCritique(score, tuple(issues), safe_area_ok, contrast_ok, thumbnail_ok)
+
+
+@dataclass(frozen=True)
+class RenderedCoverCritique(CoverCritique):
+    """Cover critique backed by actual rendered pixels.
+
+    ``contrast_ratio`` compares the text box's mean relative luminance with the
+    surrounding frame; callers that already have a text mask should pass the
+    measured ratio to :func:`evaluate_cover_layout` instead.
+    """
+
+    width: int = 0
+    height: int = 0
+    contrast_ratio: float = 0.0
+    thumbnail_text_px: float = 0.0
+
+    def as_dict(self) -> dict[str, Any]:
+        data = super().as_dict()
+        data.update(
+            {
+                "width": self.width,
+                "height": self.height,
+                "contrast_ratio": round(self.contrast_ratio, 2),
+                "thumbnail_text_px": round(self.thumbnail_text_px, 2),
+            }
+        )
+        return data
+
+
+def _relative_luminance(rgb: Sequence[float]) -> float:
+    channels = []
+    for value in rgb[:3]:
+        c = max(0.0, min(1.0, float(value) / 255.0))
+        channels.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _percentile_luminance(image: Any, fraction: float) -> float:
+    """Return the luminance at ``fraction`` of the pixel histogram (0-1)."""
+
+    histogram = image.convert("L").histogram()
+    total = max(1, sum(histogram))
+    target = total * max(0.0, min(1.0, fraction))
+    seen = 0
+    for value, count in enumerate(histogram):
+        seen += count
+        if seen >= target:
+            return _relative_luminance((value, value, value))
+    return _relative_luminance((255, 255, 255))
+
+
+def _text_contrast_ratio(image: Any) -> float:
+    """Measure the spread between dark glyph pixels and light background pixels."""
+
+    dark = _percentile_luminance(image, 0.0005)
+    light = _percentile_luminance(image, 0.9995)
+    lighter = max(dark, light)
+    darker = min(dark, light)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def evaluate_rendered_cover(
+    image: str | Path | bytes,
+    *,
+    text_box: Mapping[str, float],
+    text_px_height: float | None = None,
+    canvas: tuple[int, int] = (1242, 1660),
+    thumbnail: tuple[int, int] = (180, 240),
+    safe_margin: float = 0.08,
+    min_contrast_ratio: float = 4.5,
+    min_thumbnail_text_px: float = 10.0,
+) -> RenderedCoverCritique:
+    """Evaluate a rendered cover image (Pillow is an optional runtime dependency).
+
+    Text boxes are expressed in the *canvas* coordinate space so callers can
+    keep using the visual plan's layout numbers; the function scales them to the
+    image's real dimensions.  Raises ``RuntimeError`` when Pillow is unavailable.
+    """
+
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("evaluate_rendered_cover requires Pillow") from exc
+
+    source = io.BytesIO(image) if isinstance(image, bytes) else Path(image)
+    with Image.open(source) as opened:
+        rendered = opened.convert("RGB")
+    width, height = rendered.size
+    scale_x = width / max(1, canvas[0])
+    scale_y = height / max(1, canvas[1])
+    x = float(text_box.get("x", 0)) * scale_x
+    y = float(text_box.get("y", 0)) * scale_y
+    box_width = float(text_box.get("w", text_box.get("width", 0))) * scale_x
+    box_height = float(text_box.get("h", text_box.get("height", 0))) * scale_y
+    left, top = max(0, int(x)), max(0, int(y))
+    right, bottom = min(width, int(x + box_width)), min(height, int(y + box_height))
+    if right <= left or bottom <= top:
+        return RenderedCoverCritique(
+            0.0,
+            ("text_box_empty",),
+            False,
+            False,
+            False,
+            width=width,
+            height=height,
+        )
+
+    margin_x = width * safe_margin
+    margin_y = height * safe_margin
+    safe_area_ok = (
+        x >= margin_x
+        and y >= margin_y
+        and x + box_width <= width - margin_x
+        and y + box_height <= height - margin_y
+    )
+    text_region = rendered.crop((left, top, right, bottom))
+    contrast_ratio = _text_contrast_ratio(text_region)
+    contrast_ok = contrast_ratio >= min_contrast_ratio
+
+    effective_text_px = (
+        float(text_px_height) if text_px_height is not None else max(1.0, box_height * 0.5)
+    )
+    thumbnail_text_px = effective_text_px * min(
+        thumbnail[0] / max(1, width), thumbnail[1] / max(1, height)
+    )
+    thumbnail_ok = thumbnail_text_px >= min_thumbnail_text_px
+    issues: list[str] = []
+    if not safe_area_ok:
+        issues.append("text_outside_safe_area")
+    if not contrast_ok:
+        issues.append("contrast_below_threshold")
+    if not thumbnail_ok:
+        issues.append("text_too_small_in_thumbnail")
+    score = 100.0 - 25.0 * len(issues)
+    return RenderedCoverCritique(
+        score,
+        tuple(issues),
+        safe_area_ok,
+        contrast_ok,
+        thumbnail_ok,
+        width=width,
+        height=height,
+        contrast_ratio=contrast_ratio,
+        thumbnail_text_px=thumbnail_text_px,
+    )
 
 
 def build_swa_sandwich(

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.services.text_cover import generate_text_cover_image
+from backend.services.text_cover import COVER_TEXT_BOX, generate_text_cover_image
 from backend.state.effects import EffectBlockedError, EffectLedger, EffectStatus
 from backend.state.enums import WorkflowPhase
 from backend.state.events import (
@@ -1366,6 +1366,18 @@ async def _run_publish_attempt(
             )
             image_paths = [cover_path]
             logger.info("无素材图，已生成文字封面: %s", cover_path)
+            try:
+                from backend.services.evaluation_contracts import evaluate_rendered_cover
+
+                cover_check = evaluate_rendered_cover(
+                    cover_path,
+                    text_box=COVER_TEXT_BOX,
+                    canvas=(1080, 1440),
+                )
+                visual["cover_check"] = cover_check.as_dict()
+            except Exception:
+                # Pixel QA is advisory: a Pillow-less runtime still publishes.
+                logger.debug("rendered cover check skipped", exc_info=True)
 
         # 构造共享 PublishRequest（P3，票 5be）：发布载荷的定义只有
         # ``creator_agent.execution.build_publish_payload`` 一份 —— 控制面从不可变

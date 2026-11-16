@@ -349,6 +349,7 @@ class ContentStrategistAgent(BaseAgent):
                 max_wait=ripple_timeout,
                 thread_id=thread_id,
                 environment=ripple_env,
+                allow_local_fallback=True,
             )
             if call.reason == "timeout":
                 logger.warning(f"Ripple spread prediction timed out: job_id={call.job_id}")
@@ -371,9 +372,14 @@ class ContentStrategistAgent(BaseAgent):
 
         # Set Ripple data (including fallback when unavailable)
         if ripple_prediction.ok:
-            # 成功获取预测
+            # 成功获取预测（本地兜底也走这里，但仍保留超时遥测与 job_id）
             content_plan["ripple_prediction"] = ripple_prediction.data
             result["ripple_prediction"] = ripple_prediction.data
+            if ripple_prediction.data.get("local_fallback"):
+                result["ripple_reason"] = "timeout"
+                if ripple_prediction.job_id:
+                    result["ripple_job_id"] = ripple_prediction.job_id
+                    await self._ripple_cancel(ripple_prediction.job_id)
         else:
             # 超时或无数据
             fallback_pred: dict[str, Any] = {
@@ -827,6 +833,7 @@ class ContentStrategistAgent(BaseAgent):
         max_wait: float = _DEFAULT_RIPPLE_TIMEOUT,
         thread_id: str | None = None,
         environment: dict[str, Any] | None = None,
+        allow_local_fallback: bool = False,
     ) -> _RippleCall:
         """调用 Ripple 预测内容传播效果（经 Tool Gateway）
 
@@ -835,6 +842,8 @@ class ContentStrategistAgent(BaseAgent):
                 Gateway 自身的超时是它的上一级兜底，见 catalog 的
                 ``_RIPPLE_SAFETY_NET_S`` —— 那不是这个调用等待多久的地方。
             environment: 环境上下文（竞争格局、季节性、平台趋势）
+            allow_local_fallback: 超时且无 partial 时是否使用本地回归兜底；
+                仅完整工作流 opt-in，直接调用默认仍报 timeout
 
         Returns:
             读数；没有可测话题时 ``reason="skipped"``
@@ -857,6 +866,7 @@ class ContentStrategistAgent(BaseAgent):
                 "max_wait": max_wait,
                 "thread_id": thread_id,
                 "environment": environment,
+                "allow_local_fallback": allow_local_fallback,
             },
             thread_id=thread_id or "",
         )

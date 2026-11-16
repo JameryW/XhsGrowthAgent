@@ -13,6 +13,7 @@ from backend.services.evaluation_contracts import (
     build_swa_sandwich,
     evaluate_cover_layout,
     evaluate_groupwise,
+    evaluate_rendered_cover,
     policy_reset_decision,
     ptgs_temperature,
     route_model_capability,
@@ -86,6 +87,30 @@ def test_cover_critique_checks_safe_area_contrast_and_thumbnail() -> None:
     assert "text_outside_safe_area" in bad.issues
     assert "contrast_below_4_5" in bad.issues
     assert "text_too_small_in_thumbnail" in bad.issues
+
+
+def test_rendered_cover_measures_real_pixels() -> None:
+    pytest.importorskip("PIL")
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (1242, 1660), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((200, 200, 900, 500), fill="white")
+    draw.text((240, 240), "COVER TITLE CONTRAST", fill="black")
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+
+    critique = evaluate_rendered_cover(
+        buffer.getvalue(),
+        text_box={"x": 200, "y": 200, "w": 700, "h": 300},
+        text_px_height=100,
+    )
+    assert critique.safe_area_ok is True
+    assert critique.contrast_ok is True
+    assert critique.contrast_ratio > 10
+    assert critique.thumbnail_text_px > 10
 
 
 def test_swa_sandwich_keeps_stable_prefix_and_bounds_anchor() -> None:

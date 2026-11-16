@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import statistics
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 __all__ = [
@@ -352,12 +354,35 @@ class FanProfile:
             "interaction_count": self.interaction_count,
         }
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> FanProfile:
+        raw = data.get("last_interaction")
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00")) if raw else None
+        return cls(
+            user_id=str(data.get("user_id", "")),
+            nickname=str(data.get("nickname", "")),
+            interests=[str(item) for item in data.get("interests", []) if str(item)],
+            stage=str(data.get("stage", "new")),
+            last_interaction=parsed,
+            interaction_count=int(data.get("interaction_count", 0) or 0),
+        )
+
 
 class FanRelationStore:
-    """Small in-process relation memory; durable stores can persist ``as_dict``."""
+    """Relation memory backed by an optional atomic JSON snapshot.
 
-    def __init__(self) -> None:
+    Passing ``path`` turns the process-local map into durable memory: writes are
+    committed through a same-directory temp file + ``os.replace`` so a crash
+    never leaves a half-written fan store behind.  Without a path it keeps the
+    original in-memory semantics used by tests and callers that own their own
+    persistence.
+    """
+
+    def __init__(self, path: str | Path | None = None) -> None:
+        self._path = Path(path) if path is not None else None
         self._fans: dict[str, FanProfile] = {}
+        if self._path is not None:
+            self.load()
 
     def upsert(self, profile: FanProfile) -> FanProfile:
         existing = self._fans.get(profile.user_id)
@@ -367,8 +392,10 @@ class FanRelationStore:
             existing.stage = profile.stage
             existing.last_interaction = profile.last_interaction or existing.last_interaction
             existing.interaction_count += profile.interaction_count
+            self.save()
             return existing
         self._fans[profile.user_id] = profile
+        self.save()
         return profile
 
     def get(self, user_id: str) -> FanProfile | None:
@@ -387,6 +414,38 @@ class FanRelationStore:
         return sorted(values, key=lambda profile: (-profile.interaction_count, profile.user_id))[
             :limit
         ]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"version": 1, "fans": [profile.as_dict() for profile in self._fans.values()]}
+
+    def load(self) -> dict[str, FanProfile]:
+        """Load the snapshot, replacing the current map. Missing/corrupt files are empty."""
+        if self._path is None or not self._path.exists():
+            return self._fans
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return self._fans
+        entries = raw.get("fans", []) if isinstance(raw, Mapping) else []
+        loaded: dict[str, FanProfile] = {}
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            profile = FanProfile.from_dict(entry)
+            if profile.user_id:
+                loaded[profile.user_id] = profile
+        self._fans = loaded
+        return self._fans
+
+    def save(self, path: str | Path | None = None) -> None:
+        """Atomically write a snapshot; no-op for the in-memory store."""
+        target = Path(path) if path is not None else self._path
+        if target is None:
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f".{target.name}.tmp")
+        tmp.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, target)
 
 
 def build_icebreaker(profile: FanProfile, topic: str = "") -> str:

@@ -19,6 +19,8 @@ RgbColor: TypeAlias = tuple[int, int, int]
 
 _IMAGE_SIZE = (1080, 1440)
 _PANEL_BOX = (72, 108, 1008, 1332)
+#: Safe text region for pixel-level cover QA (canvas coordinates).
+COVER_TEXT_BOX = {"x": 72.0, "y": 108.0, "w": 936.0, "h": 1224.0}
 _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",

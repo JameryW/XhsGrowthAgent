@@ -79,6 +79,7 @@ class VisualPlan(TypedDict, total=False):
     font_suggestion: str
     brand_elements: list[str]
     image_paths: list[str]  # ponytail: user-uploaded image file paths for publishing
+    cover_check: dict[str, Any]  # rendered-cover QA written before publish
 
 
 class PublishResult(TypedDict, total=False):

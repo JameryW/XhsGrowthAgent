@@ -999,7 +999,8 @@ class TestVisualPlanOutput:
         prompt does write. That drift predates this migration, which reproduces
         the prompt's shape; reconciling the two here would change what
         ``evaluator``/``public_showcase``/``review`` see, and a migration is not
-        the place for it.
+        the place for it. ``cover_check`` is a publisher-only QA annotation with
+        no prompt counterpart.
 
         Pinned as a two-way difference rather than containment, so either half
         of the drift going away turns this red instead of silently passing.
@@ -1009,7 +1010,11 @@ class TestVisualPlanOutput:
             "visual_style",
             "layout_preference",
         }
-        assert set(VisualPlan.__annotations__) - set(payload) == {"layout_style", "image_paths"}
+        assert set(VisualPlan.__annotations__) - set(payload) == {
+            "layout_style",
+            "image_paths",
+            "cover_check",
+        }
 
     def test_the_palette_is_a_list_not_the_mapping_viral_posts_carry(self):
         """Same word, different shape. ``StyleDNA.color_palette`` and

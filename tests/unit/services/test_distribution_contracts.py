@@ -92,6 +92,29 @@ def test_fan_relation_store_and_icebreaker() -> None:
     assert "小鹿" in build_icebreaker(profile, "通勤穿搭")
 
 
+def test_fan_relation_store_persists_across_instances(tmp_path) -> None:
+    path = tmp_path / "fans.json"
+    first = FanRelationStore(path)
+    first.upsert(
+        FanProfile(
+            "u9",
+            "阿岚",
+            ["露营"],
+            "vip",
+            last_interaction=datetime(2026, 11, 16, 12, 0, tzinfo=UTC),
+            interaction_count=4,
+        )
+    )
+
+    second = FanRelationStore(path)
+    profile = second.get("u9")
+    assert profile is not None
+    assert profile.nickname == "阿岚"
+    assert profile.interests == ["露营"]
+    assert profile.interaction_count == 4
+    assert profile.last_interaction == datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
+
+
 def test_public_replay_redacts_secrets_and_has_stable_hash() -> None:
     events = [
         {

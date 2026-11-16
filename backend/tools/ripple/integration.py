@@ -75,6 +75,68 @@ def _reject_degraded(result: dict[str, Any], *, body_key: str) -> dict[str, Any]
     )
 
 
+def _local_fallback_prediction(
+    *,
+    topic: str,
+    description: str,
+    tags: list[str],
+    content_type: str,
+) -> dict[str, Any]:
+    """Build a deterministic local forecast when Ripple never answered.
+
+    The estimate comes from the same Collect-First prior used elsewhere in the
+    workflow; it is deliberately labelled ``local_fallback`` so no downstream
+    consumer can mistake it for a simulation result.
+    """
+    from backend.tools.analysis.collect_first import PostFeatures, forecast_payload
+
+    features = PostFeatures.from_mapping(
+        {
+            "title": topic,
+            "body": description,
+            "tags": tags,
+            "media_type": "video" if "视频" in content_type else "image",
+        }
+    )
+    payload = forecast_payload(features)
+    reads = float(payload.get("predicted_read", 0.0) or 0.0)
+    likes = float(payload.get("predicted_like", 0.0) or 0.0)
+    collects = float(payload.get("predicted_collect", 0.0) or 0.0)
+    comments = float(payload.get("predicted_comment", 0.0) or 0.0)
+    engagement_share = (likes + collects + comments) / reads if reads > 0 else 0.0
+    return {
+        "estimated_reach": round(reads),
+        "estimated_likes": round(likes),
+        "estimated_collects": round(collects),
+        "estimated_comments": round(comments),
+        "estimated_engagement": round(likes + collects + comments),
+        "viral_probability": round(min(0.95, max(0.0, engagement_share)), 4),
+        "collect_first": payload,
+        "salvage_status": "local_fallback",
+        "local_fallback": True,
+    }
+
+
+def _local_fallback_result(job_id: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    """Shape a timeout fallback as a data result for the Gateway.
+
+    Kept out of the ``except`` block so a failure path never returns a literal:
+    the Gateway must be able to mark this as an explicit degradation, not as a
+    successful simulation.
+    """
+    return {
+        "ripple_job_id": job_id,
+        "ripple_prediction": fallback,
+        "ripple_salvage": {
+            "usable": False,
+            "stage": "local_fallback",
+            "payload": {},
+            "missing_fields": ["estimated_reach", "viral_probability"],
+            "fallback": fallback,
+        },
+    }
+
+
 async def predict_spread(
     topic: str,
     content_type: str = "图文笔记",
@@ -88,7 +150,15 @@ async def predict_spread(
     thread_id: str | None = None,
     environment: dict[str, Any] | None = None,
     require_live: bool = False,
+    allow_local_fallback: bool = False,
 ) -> dict[str, Any]:
+    """Predict spread; optionally return a local forecast after a timeout.
+
+    ``allow_local_fallback`` is opt-in because a local regression is not a
+    simulation: callers that need a real answer keep the ``DomainOutcome``
+    timeout (and its job id), while the strategist accepts a clearly-labelled
+    local estimate instead of stopping the workflow.
+    """
     """预测内容传播效果 — 供 ContentStrategist 和 Copywriter 调用
 
     Args:
@@ -152,6 +222,14 @@ async def predict_spread(
             logger.debug("Ripple timeout salvage failed for %s", exc.job_id, exc_info=True)
         if salvaged is not None:
             return salvaged
+        if allow_local_fallback:
+            fallback = _local_fallback_prediction(
+                topic=topic,
+                description=description,
+                tags=tags,
+                content_type=content_type,
+            )
+            return _local_fallback_result(exc.job_id, fallback)
         # Nothing usable yet: carry the job id so cancel/resume can start from
         # it, and let the caller own the fallback.
         raise DomainOutcome("timeout", ripple_job_id=exc.job_id, max_wait=exc.max_wait) from exc

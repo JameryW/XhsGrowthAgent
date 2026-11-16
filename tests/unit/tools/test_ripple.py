@@ -95,6 +95,26 @@ async def test_predict_spread_salvages_a_partial_timeout_result():
 
 
 @pytest.mark.asyncio
+async def test_predict_spread_can_return_a_labelled_local_timeout_fallback():
+    """Opt-in callers get a local forecast, never an unlabelled zero body."""
+    service = _service(
+        predict_spread=AsyncMock(side_effect=RippleTimeoutError("job-3", 900.0)),
+        get_result=AsyncMock(return_value={}),
+    )
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        result = await predict_spread(topic="测试话题", allow_local_fallback=True)
+
+    assert result["ripple_job_id"] == "job-3"
+    prediction = result["ripple_prediction"]
+    assert prediction["salvage_status"] == "local_fallback"
+    assert prediction["local_fallback"] is True
+    assert prediction["estimated_reach"] >= 0
+    assert result["ripple_salvage"]["usable"] is False
+
+
+@pytest.mark.asyncio
 async def test_predict_spread_reports_degradation_as_a_domain_outcome():
     """服务降级是自我宣告的事实，不能被当成一次成功的预测。
 
