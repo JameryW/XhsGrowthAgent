@@ -35,6 +35,9 @@ def test_analyze_notes_exposes_outcome_learning() -> None:
     assert result.outcome_learning["mature"] is True
     assert result.outcome_learning["promotable"] is True
     assert result.to_dict()["outcome_learning"]["mature_count"] == 13
+    assert result.distribution["note_count"] == 13
+    assert result.distribution["followers"] == 0
+    assert result.to_dict()["distribution"] == result.distribution
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,8 @@ class TestVisualDesignerAgent:
   "layout_type": "grid",
   "style": "minimalist",
   "color_palette": ["#FFE4E1", "#F5F5F5"],
-  "carousel_prompts": ["配图1", "配图2"]
+  "image_count": 2,
+  "image_prompts": ["配图1", "配图2"]
 }
 ```"""
 
@@ -65,6 +66,11 @@ class TestVisualDesignerAgent:
         assert "visual_plan" in result
         assert result["phase"] == WorkflowPhase.CREATING
         assert "cover_prompt" in result["visual_plan"]
+        assert result["visual_plan"]["multimodal_synergy"]["threshold"] == 60.0
+        assert [slide["role"] for slide in result["visual_plan"]["carousel_plan"]] == [
+            "hook",
+            "save_list",
+        ]
 
     @pytest.mark.asyncio
     async def test_execute_truncates_body_text(self, agent, mock_store):

@@ -71,6 +71,30 @@ async def test_predict_spread_reports_a_timeout_as_a_domain_outcome():
 
 
 @pytest.mark.asyncio
+async def test_predict_spread_salvages_a_partial_timeout_result():
+    """A stage-complete partial result is returned instead of a bare timeout."""
+    service = _service(
+        predict_spread=AsyncMock(side_effect=RippleTimeoutError("job-2", 900.0)),
+        get_result=AsyncMock(
+            return_value={
+                "partial_result": {
+                    "estimated_reach": 500,
+                    "viral_probability": 0.4,
+                }
+            }
+        ),
+    )
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = service
+        result = await predict_spread(topic="测试话题")
+
+    assert result["ripple_job_id"] == "job-2"
+    assert result["ripple_prediction"]["salvage_status"] == "partial"
+    assert result["ripple_salvage"]["usable"] is True
+
+
+@pytest.mark.asyncio
 async def test_predict_spread_reports_degradation_as_a_domain_outcome():
     """服务降级是自我宣告的事实，不能被当成一次成功的预测。
 

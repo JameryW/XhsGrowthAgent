@@ -129,9 +129,31 @@ async def predict_spread(
             use_fallback=not require_live,
         )
     except RippleTimeoutError as exc:
-        # The simulation is still running server-side. Carry its id: cancel and
-        # resume both start from it, and it is the reason this is a domain
-        # outcome rather than a plain timeout.
+        # The simulation is still running server-side. Before surfacing a
+        # timeout, try one non-blocking artifact read: a stage-complete partial
+        # result is still useful to the strategist, and the salvage contract
+        # makes missing fields explicit instead of pretending they are zeros.
+        salvaged = None
+        try:
+            partial = await service.get_result(exc.job_id)
+            from backend.services.temporal_contracts import salvage_timed_out_payload
+
+            candidate = salvage_timed_out_payload(partial)
+            if candidate.usable:
+                salvaged = {
+                    "ripple_job_id": exc.job_id,
+                    "ripple_prediction": {
+                        **candidate.payload,
+                        "salvage_status": "partial",
+                    },
+                    "ripple_salvage": candidate.as_dict(),
+                }
+        except Exception:
+            logger.debug("Ripple timeout salvage failed for %s", exc.job_id, exc_info=True)
+        if salvaged is not None:
+            return salvaged
+        # Nothing usable yet: carry the job id so cancel/resume can start from
+        # it, and let the caller own the fallback.
         raise DomainOutcome("timeout", ripple_job_id=exc.job_id, max_wait=exc.max_wait) from exc
     except RippleUnavailableError as exc:
         # ``require_live`` asked for a real simulation and there was none. This

@@ -133,6 +133,41 @@ class VisualDesignerAgent(BaseAgent):
             )
         )
 
+        # ── Multimodal synergy gate (IDProxy-style cold-start check) ──
+        # This is deliberately non-blocking: the report is persisted with the
+        # plan so review_ui can show which dimension failed, while existing
+        # generation and revision paths keep their contracts.
+        from backend.services.content_launch import evaluate_multimodal_synergy
+
+        synergy = evaluate_multimodal_synergy(
+            str(copy.get("selected_title") or copy.get("title") or ""),
+            str(copy.get("body_text") or copy.get("body") or ""),
+            visual_plan,
+            niche=str(niche or ""),
+        )
+        visual_plan["multimodal_synergy"] = synergy.as_dict()
+        if not synergy.passed:
+            visual_plan["revision_hints"] = [
+                *list(visual_plan.get("revision_hints") or []),
+                *synergy.recommendations,
+            ]
+
+        # ── Carousel dwell-time arc (P1 hook → P2 conclusion → PN save list) ──
+        prompts = list(
+            visual_plan.get("carousel_prompts") or visual_plan.get("image_prompts") or []
+        )
+        if prompts:
+            from backend.services.distribution_contracts import plan_carousel
+
+            slides = plan_carousel(len(prompts))
+            visual_plan["carousel_plan"] = [
+                {
+                    **slide.as_dict(),
+                    "prompt": str(prompts[slide.index - 1]) if slide.index <= len(prompts) else "",
+                }
+                for slide in slides
+            ]
+
         # ── Creative Memory: 沉淀风格选择 ──
         from backend.memory.types import StyleDNA
 

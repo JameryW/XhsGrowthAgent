@@ -41,7 +41,7 @@ from backend.api.account_scope import (  # noqa: F401
     resolve_required_account_id,
 )
 from backend.api.deps import get_current_user
-from backend.api.errors import ValidationError
+from backend.api.errors import DraftRevisionConflictError, ValidationError
 from backend.api.responses import ApiResponse, success
 from backend.creator_agent.mainline_publish import execute_mainline_publish
 
@@ -111,6 +111,11 @@ class FreeDraftUpdate(BaseModel):
     style_id: str | None = None
     play_id: str | None = None
     material_ids: list[str] | None = None
+    expected_revision: int | None = Field(
+        default=None,
+        ge=0,
+        description="CAS guard: reject the patch if the draft revision moved on.",
+    )
 
     @field_validator("niche", mode="before")
     @classmethod
@@ -302,6 +307,7 @@ async def create_draft(
     record["updated_at"] = now
     record["last_evaluation"] = None
     record["published"] = False
+    record["revision"] = 0
     await store.aput(_draft_ns(account_id), key=draft_id, value=record)
     logger.info("free draft created: account=%s draft=%s", account_id, draft_id)
 
@@ -667,6 +673,10 @@ async def update_draft(
     # exclude_unset=True: only fields the client explicitly provided in the
     # PATCH body. Omitted niche preserves existing; empty/null niche re-infers.
     provided = update.model_dump(exclude_unset=True)
+    expected_revision = provided.pop("expected_revision", None)
+    current_revision = int(existing.get("revision", 0) or 0)
+    if expected_revision is not None and int(expected_revision) != current_revision:
+        raise DraftRevisionConflictError(int(expected_revision), current_revision)
     for field, val in provided.items():
         merged[field] = val
     if "niche" in provided:
@@ -694,6 +704,7 @@ async def update_draft(
         merged["niche"] = niche_res.niche or "母婴"
         merged["niche_resolution"] = niche_res.to_dict()
     merged["draft_id"] = draft_id
+    merged["revision"] = current_revision + 1
     merged["updated_at"] = _now_iso()
     await store.aput(_draft_ns(account_id), key=draft_id, value=merged)
     logger.info("free draft updated: account=%s draft=%s", account_id, draft_id)
@@ -1040,6 +1051,7 @@ async def get_analytics(
     except Exception:
         logger.debug("free analytics hawkes fit skipped", exc_info=True)
     draft["updated_at"] = fetched_at
+    draft["revision"] = int(draft.get("revision", 0) or 0) + 1
     try:
         await store.aput(_draft_ns(account_id), key=draft_id, value=draft)
     except Exception:

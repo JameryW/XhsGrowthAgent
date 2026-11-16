@@ -20,6 +20,7 @@ from backend.services.creator_stats.types import (
     NoteStats,
     StyleFinding,
 )
+from backend.services.distribution_contracts import audit_note_distribution
 from backend.services.outcome_learning import evaluate_outcome_learning
 
 logger = logging.getLogger("xhs_growth.creator_stats.analyze")
@@ -139,6 +140,7 @@ def analyze_notes(
     account_id: str,
     *,
     now: datetime | None = None,
+    followers: int = 0,
 ) -> AnalysisResult:
     """Produce data-backed style findings from note stats (pure function)."""
     if not notes:
@@ -147,10 +149,16 @@ def analyze_notes(
             cold_start=True,
             note_count=0,
             outcome_learning=evaluate_outcome_learning([], now=now).as_dict(),
+            distribution=audit_note_distribution([], followers=followers, now=now),
         )
 
     notes = _normalize_note_rates(list(notes))
     outcome = evaluate_outcome_learning(notes, now=now).as_dict()
+    distribution = audit_note_distribution(
+        (note.to_dict() for note in notes),
+        followers=followers,
+        now=now,
+    )
     sorted_notes = sorted(notes, key=lambda n: n.engagement_rate, reverse=True)
     rates = [n.engagement_rate for n in notes]
     avg_rate = round(sum(rates) / len(rates), 4) if rates else 0.0
@@ -291,6 +299,7 @@ def analyze_notes(
         top_note_ids=top_ids,
         cold_start=False,
         outcome_learning=outcome,
+        distribution=distribution,
     )
 
 
@@ -466,9 +475,10 @@ async def run_analysis(
     store: BaseStore | None = None,
     *,
     account_niche: str = "",
+    followers: int = 0,
 ) -> AnalysisResult:
     """Analyze notes and deposit durable creative memory."""
-    analysis = analyze_notes(notes, account_id)
+    analysis = analyze_notes(notes, account_id, followers=followers)
     # Prefer explicit niche; else best-effort from account row (manual/inferred bind)
     niche = (account_niche or "").strip()
     if not niche:

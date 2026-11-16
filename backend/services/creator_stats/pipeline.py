@@ -570,7 +570,12 @@ async def import_bundle(
     niche_resolution: dict[str, Any] | None = None
     if run_creative_analysis:
         try:
-            analysis = await run_analysis(bundle.notes, bundle.account.account_id, store=store)
+            analysis = await run_analysis(
+                bundle.notes,
+                bundle.account.account_id,
+                store=store,
+                followers=int(bundle.account.fans or 0),
+            )
             suggestions = suggestions_from_analysis(analysis, bundle.notes)
         except Exception as e:
             logger.exception(

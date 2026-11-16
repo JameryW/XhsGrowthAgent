@@ -43,6 +43,7 @@ from backend.models.outputs import (
     normalize_style_variants,
 )
 from backend.models.structured import StructuredOutputError
+from backend.services.evaluation_contracts import build_swa_sandwich
 from backend.state.modes import mode_spec
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
@@ -113,6 +114,44 @@ def _format_memory_context(history: RetrievalResult, prefs: RetrievalResult) -> 
         for ap in prefs.raw_items:
             memory_context += f"- {ap.get('preference', '')}\n"
     return memory_context
+
+
+def _attach_tag_plan(
+    copy_content: dict[str, Any],
+    plan: Mapping[str, Any],
+    *,
+    niche: str,
+) -> dict[str, Any]:
+    """Attach a TagLLM-style 5–8 tag plan without changing generated copy.
+
+    The LLM still owns the draft. This pass audits the chosen hashtags against
+    the three layers and records gaps; existing hashtags are preserved unless
+    the model returned none, in which case the distilled plan becomes the
+    fallback so downstream publish has a usable tag set.
+    """
+    from backend.services.content_launch import build_tag_plan, tag_plan_errors
+
+    topic = str(plan.get("selected_topic") or "").strip()
+    content_type = str(plan.get("content_type") or "").strip()
+    raw_tags = [
+        str(tag).lstrip("#").strip()
+        for tag in (copy_content.get("hashtags") or [])
+        if str(tag).lstrip("#").strip()
+    ]
+
+    core = raw_tags[:2] or ([topic] if topic else [])
+    entity = raw_tags[2:5] or [value for value in (content_type, niche) if value][:3]
+    long_tail = raw_tags[5:] or ([f"{topic}推荐", f"{topic}攻略"] if topic else [])
+    if not (core or entity or long_tail):
+        return copy_content
+
+    plan_result = build_tag_plan(core, entity, long_tail)
+    out = dict(copy_content)
+    out["tag_plan"] = plan_result.as_dict()
+    out["tag_plan_errors"] = tag_plan_errors(plan_result)
+    if not raw_tags and plan_result.tags:
+        out["hashtags"] = [f"#{tag}" for tag in plan_result.tags]
+    return out
 
 
 def _copy_has_content(output: CopyContentOutput) -> str | None:
@@ -239,22 +278,28 @@ class CopywriterAgent(BaseAgent):
             values=state,
             tool_schema=self.tool_schema_layer(),
         )
-        system_prompt = _compiler.compile_prompt(
+        compiled_prompt = _compiler.compile_prompt(
             run_context,
             self.prompt_template["system"],
             retrievals=(memory,),
-        ).render()
+        )
+
+        # SWA (sandwich) context: the stable L0-L2 prefix stays cacheable while
+        # the active revision constraints live in a bounded L5 tail anchor.
+        feedback = state.get("human_feedback") or {}
+        revisions = feedback.get("revisions") or []
+        active_constraints = "\n".join(f"- {h}" for h in revisions if h)
+        if active_constraints:
+            system_prompt = build_swa_sandwich(
+                compiled_prompt,
+                active_constraints,
+            )["prompt"]
+        else:
+            system_prompt = compiled_prompt.render()
 
         # 构建 Ripple 传播预测上下文
         ripple_context = self._build_ripple_context(dict(plan))
         system_prompt = system_prompt.replace("{ripple_context}", ripple_context)
-
-        # 注入评估器修订建议（RQGM 协同演化：评估器反馈驱动 writer 改进）
-        feedback = state.get("human_feedback") or {}
-        revisions = feedback.get("revisions") or []
-        if revisions:
-            hints = "\n".join(f"- {h}" for h in revisions)
-            system_prompt += f"\n\n【质量评估修订要求 — 请据此重写】\n{hints}"
 
         if writes_from_the_brief:
             # Brief mode: build user message from brief_content + blogger references
@@ -302,6 +347,11 @@ class CopywriterAgent(BaseAgent):
             copy_content,
             niche=str(niche or ""),
             revision_hints=[str(h) for h in revisions if h],
+        )
+        copy_content = _attach_tag_plan(
+            copy_content,
+            dict(plan),
+            niche=str(niche or ""),
         )
 
         # ── Multi-style generation when blogger_notes exist ──

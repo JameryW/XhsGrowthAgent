@@ -89,9 +89,21 @@ def _with_publish_eligibility(
     evaluation["publish_eligibility"] = report.to_audit_dict()
     from backend.services.content_launch import build_risk_signal_strip
 
+    copy = merged.get("copy_content") or {}
+    novelty = merged.get("novelty")
+    if not isinstance(novelty, dict):
+        plan = merged.get("content_plan") or {}
+        novelty = plan.get("novelty")
+    plad = None
+    if isinstance(copy, dict):
+        plad = copy.get("plad_after") or copy.get("plad_before")
+    creator_rule_diff = merged.get("creator_rule_diff") or merged.get("creator_rules_diff")
     evaluation["risk_signals"] = build_risk_signal_strip(
         publish_eligibility=evaluation["publish_eligibility"],
         evaluation=evaluation,
+        novelty=novelty,
+        plad=plad,
+        creator_rule_diff=creator_rule_diff,
     ).as_dict()
     return evaluation
 

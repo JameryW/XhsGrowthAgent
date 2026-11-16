@@ -1097,6 +1097,32 @@ class TestUpdateDraft:
         )
         assert r.status_code == 400
 
+    def test_update_rejects_stale_expected_revision(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        assert create.json()["data"]["draft"]["revision"] == 0
+
+        first = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"title": "第一版", "expected_revision": 0},
+        )
+        assert first.status_code == 200, first.text
+        assert first.json()["data"]["draft"]["revision"] == 1
+
+        stale = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"title": "过期版", "expected_revision": 0},
+        )
+        assert stale.status_code == 409
+        assert stale.json()["error"]["details"]["expected_revision"] == 0
+
+        fresh = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"title": "第二版", "expected_revision": 1},
+        )
+        assert fresh.status_code == 200, fresh.text
+        assert fresh.json()["data"]["draft"]["revision"] == 2
+
 
 class TestDeleteDraft:
     def test_delete_removes_draft(self, client, mock_store):

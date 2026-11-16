@@ -702,6 +702,17 @@ async def _run_graph_and_persist(
 
         except Exception as exc:
             logger.exception("Graph execution failed (source=%s, thread=%s)", source, thread_id)
+            # Best-effort durable diagnostic: root-cause bucket + token cost.
+            # Imported lazily so the runner's cold-start path stays light.
+            with contextlib.suppress(Exception):
+                from backend.services.workflow_diagnostics import record_workflow_failure
+
+                await record_workflow_failure(
+                    thread_id,
+                    exc,
+                    phase="error",
+                    source=source,
+                )
             # Only update DB if this task is still the registered one —
             # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
             if _background_tasks.get(thread_id) is asyncio.current_task():

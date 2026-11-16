@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+import statistics
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ __all__ = [
     "breakout_lift",
     "build_icebreaker",
     "compile_public_replay_bundle",
+    "audit_note_distribution",
     "diagnose_exposure",
     "estimate_credibility",
     "plan_carousel",
@@ -96,6 +98,101 @@ def diagnose_exposure(
         reasons=tuple(reasons),
         engagement_above_baseline=engagement_above_baseline,
     )
+
+
+def _published_at(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def audit_note_distribution(
+    notes: Iterable[Mapping[str, Any]],
+    *,
+    followers: int = 0,
+    now: datetime | None = None,
+    reads_target: int = 1000,
+) -> dict[str, Any]:
+    """Summarize exposure/traction for a batch of notes (schemes 31 + 34)."""
+
+    rows = [dict(note) for note in notes]
+    if not rows:
+        return {"note_count": 0, "followers": followers, "exposure": [], "breakouts": []}
+
+    moment = now or datetime.now(UTC)
+    ctrs: list[float] = []
+    collect_rates: list[float] = []
+    read_counts: list[float] = []
+    parsed: list[tuple[dict[str, Any], float, float, float]] = []
+    for row in rows:
+        reads = max(0, int(row.get("views", row.get("reads", 0)) or 0))
+        likes = max(0, int(row.get("likes", 0) or 0))
+        collects = max(0, int(row.get("collects", 0) or 0))
+        comments = max(0, int(row.get("comments", 0) or 0))
+        shares = max(0, int(row.get("shares", 0) or 0))
+        published = _published_at(row.get("published_at"))
+        age_hours = 0.0
+        if published is not None:
+            age_hours = max(0.0, (moment - published).total_seconds() / 3600.0)
+        ctr = (likes + collects + comments + shares) / reads if reads else 0.0
+        collect_rate = collects / reads if reads else 0.0
+        ctrs.append(ctr)
+        collect_rates.append(collect_rate)
+        read_counts.append(float(reads))
+        parsed.append((row, float(reads), age_hours, ctr))
+
+    baseline_ctr = statistics.median(ctrs) if ctrs else 0.0
+    baseline_collect_rate = statistics.median(collect_rates) if collect_rates else 0.0
+    baseline_reads = statistics.median(read_counts) if read_counts else 0.0
+
+    exposure: list[dict[str, Any]] = []
+    breakout_rows: list[dict[str, Any]] = []
+    for row, read_count, age_h, row_ctr in parsed:
+        collect_rate = (int(row.get("collects", 0) or 0) / read_count) if read_count else 0.0
+        diagnostics = diagnose_exposure(
+            reads=int(read_count),
+            age_hours=age_h,
+            ctr=row_ctr,
+            collect_rate=collect_rate,
+            baseline_ctr=baseline_ctr,
+            baseline_collect_rate=baseline_collect_rate,
+            baseline_reads=baseline_reads,
+            reads_target=reads_target,
+        )
+        exposure.append(
+            {
+                "note_id": str(row.get("note_id", "")),
+                "age_hours": round(age_h, 2),
+                **diagnostics.as_dict(),
+            }
+        )
+        breakout_rows.append(
+            {
+                "note_id": str(row.get("note_id", "")),
+                "collects": int(row.get("collects", 0) or 0),
+                "likes": int(row.get("likes", 0) or 0),
+                "comments": int(row.get("comments", 0) or 0),
+                "followers": followers,
+                "age_days": age_h / 24.0,
+            }
+        )
+
+    return {
+        "note_count": len(rows),
+        "followers": followers,
+        "baseline_ctr": round(baseline_ctr, 4),
+        "baseline_collect_rate": round(baseline_collect_rate, 4),
+        "baseline_reads": round(baseline_reads, 2),
+        "exposure": exposure,
+        "breakouts": [candidate.as_dict() for candidate in rank_breakouts(breakout_rows)],
+    }
 
 
 SCENARIO_WEIGHTS: dict[str, dict[str, float]] = {

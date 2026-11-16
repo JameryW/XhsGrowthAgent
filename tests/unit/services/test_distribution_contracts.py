@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from backend.services.distribution_contracts import (
     FanProfile,
     FanRelationStore,
+    audit_note_distribution,
     breakout_lift,
     build_icebreaker,
     compile_public_replay_bundle,
@@ -107,3 +108,40 @@ def test_public_replay_redacts_secrets_and_has_stable_hash() -> None:
     assert bundle["frames"][0]["payload"]["phone"] == "[phone]"
     assert bundle["frames"][0]["payload"]["text"] == "[email]"
     assert len(bundle["bundle_hash"]) == 16
+
+
+def test_audit_note_distribution_flags_low_exposure_breakout() -> None:
+    now = datetime(2026, 11, 16, tzinfo=UTC)
+    rows = [
+        {
+            "note_id": f"normal-{index}",
+            "views": 1000,
+            "likes": 10,
+            "collects": 5,
+            "comments": 1,
+            "published_at": "2026-11-14T00:00:00+00:00",
+        }
+        for index in range(10)
+    ]
+    rows.append(
+        {
+            "note_id": "breakout",
+            "views": 100,
+            "likes": 20,
+            "collects": 10,
+            "comments": 5,
+            "published_at": "2026-11-14T00:00:00+00:00",
+        }
+    )
+    report = audit_note_distribution(rows, followers=800, now=now)
+    breakout = next(item for item in report["exposure"] if item["note_id"] == "breakout")
+    assert breakout["suspected_throttle"] is True
+    assert report["breakouts"][0]["note_id"] == "breakout"
+    assert report["followers"] == 800
+
+
+def test_audit_note_distribution_empty_is_stable() -> None:
+    report = audit_note_distribution([], followers=0)
+    assert report["note_count"] == 0
+    assert report["exposure"] == []
+    assert report["breakouts"] == []

@@ -474,6 +474,18 @@ class ValidationError(APIError):
         )
 
 
+class DraftRevisionConflictError(APIError):
+    """Optimistic-concurrency conflict when a draft's revision moved on."""
+
+    def __init__(self, expected: int, actual: int):
+        super().__init__(
+            code=ErrorCode.VALIDATION_ERROR,
+            message="Draft was updated by another writer; reload and retry.",
+            details={"expected_revision": expected, "actual_revision": actual},
+            status_code=409,
+        )
+
+
 # Authentication exceptions
 class AuthenticationError(APIError):
     """Base authentication exception."""

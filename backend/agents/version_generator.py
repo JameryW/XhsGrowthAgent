@@ -22,6 +22,7 @@ from backend.context.compiler import ContextCompiler
 from backend.context.models import RunContext
 from backend.models.outputs import ContentVersionsOutput, normalize_content_versions
 from backend.models.structured import StructuredOutputError
+from backend.services.temporal_contracts import NarrativeAnchor, narrative_anchors
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,33 @@ def _versions_present(output: ContentVersionsOutput) -> str | None:
         "上一次回答里 versions 是空的。请严格按 JSON 规范输出 versions 数组，"
         "其中含 A/B/C 三个版本。"
     )
+
+
+def _narrative_anchor_prompt() -> str:
+    """Render the three orthogonal narrative anchors for the A/B/C prompt."""
+    lines = ["叙事锚点（A/B/C 依次对应，不要三个版本用同一种结构）："]
+    for index, anchor in enumerate(narrative_anchors()):
+        letter = "ABC"[index] if index < 3 else str(index + 1)
+        lines.append(
+            f"- {letter}版｜{anchor.label}：标题={anchor.title_pattern}；"
+            f"结构={' → '.join(anchor.structure)}；语气={anchor.tone}"
+        )
+    return "\n".join(lines)
+
+
+def _attach_narrative_anchors(versions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Tag each generated version with the anchor its A/B/C slot represents."""
+    anchors: tuple[NarrativeAnchor, ...] = narrative_anchors()
+    tagged: list[dict[str, Any]] = []
+    for index, version in enumerate(versions):
+        if not isinstance(version, dict):
+            tagged.append(version)
+            continue
+        item = dict(version)
+        anchor = anchors[index % len(anchors)]
+        item["narrative_anchor"] = anchor.as_dict()
+        tagged.append(item)
+    return tagged
 
 
 class VersionGeneratorAgent(BaseAgent):
@@ -163,6 +191,8 @@ class VersionGeneratorAgent(BaseAgent):
 - B版：平衡优化 — 适度强化爆款特征、优化结构、增强CTA
 - C版：激进优化 — 大幅重组开头、最大化互动触发点、强化争议性
 
+{_narrative_anchor_prompt()}
+
 请输出JSON：
 {{
   "versions": [
@@ -242,6 +272,8 @@ class VersionGeneratorAgent(BaseAgent):
 
 爆款模式：
 {patterns_str}
+
+{_narrative_anchor_prompt()}
 """
 
         return await self._write_versions(
@@ -287,6 +319,7 @@ class VersionGeneratorAgent(BaseAgent):
             )
             versions = []
 
+        versions = _attach_narrative_anchors(versions)
         logger.info(f"Generated {len(versions)} content versions ({label})")
 
         updates: dict[str, Any] = {

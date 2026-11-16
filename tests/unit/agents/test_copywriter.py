@@ -5,6 +5,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
+from langchain_core.messages import SystemMessage
 
 from backend.agents.copywriter import CopywriterAgent
 from backend.models.structured import StructuredOutputError
@@ -81,6 +82,50 @@ class TestCopywriterAgent:
         assert "copy_content" in result
         assert result["phase"] == WorkflowPhase.CREATING
         assert len(result["copy_content"]["title_candidates"]) == 2
+        assert result["copy_content"]["tag_plan"]["core"]["tags"] == ["美食", "探店"]
+        assert result["copy_content"]["tag_plan_errors"] == []
+
+    @pytest.mark.asyncio
+    async def test_revision_hints_are_bound_to_the_swa_tail(self, agent, mock_state, mock_store):
+        """RQGM revisions land in the bounded tail anchor, not mid-prompt."""
+        mock_response = MagicMock()
+        mock_response.content = """```json
+{"title_candidates": ["标题"], "body_text": "正文", "hashtags": ["#美食"]}
+```"""
+        state = {
+            **mock_state,
+            "human_feedback": {"revisions": ["标题必须包含搜索意图词"]},
+        }
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch(
+                "backend.tools.content.de_ai_taste.polish_copy",
+                new=AsyncMock(
+                    return_value={
+                        "selected_title": "标题",
+                        "body_text": "正文",
+                        "cta": "",
+                        "tone": "亲切",
+                        "changes": [],
+                        "ai_signals_found": [],
+                        "polished": False,
+                        "method": "llm",
+                    }
+                ),
+            ),
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+            await agent.execute(state, store=mock_store)
+
+        messages = mock_model.ainvoke.call_args.args[0]
+        system_prompt = next(
+            message.content for message in messages if isinstance(message, SystemMessage)
+        )
+        assert "<swa_active_constraints>" in system_prompt
+        assert "标题必须包含搜索意图词" in system_prompt
 
     @pytest.mark.asyncio
     async def test_execute_in_brief_mode_writes_from_the_brief(
