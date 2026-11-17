@@ -22,7 +22,7 @@ and UI copy stay in their existing layers; they can consume
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from statistics import median
@@ -31,6 +31,9 @@ from typing import Any
 MIN_NOTE_AGE_HOURS = 48.0
 DEFAULT_BASELINE_WINDOW = 10
 MIN_MATURE_NOTES_FOR_PROMOTION = 3
+# EGMF: a note with almost no credible exposure must not promote a learning
+# signal, even when it has technically crossed the age gate.
+MIN_CREDIBILITY_FOR_PROMOTION = 0.35
 
 
 def _parse_datetime(value: str | datetime | None) -> datetime | None:
@@ -105,6 +108,8 @@ class NoteOutcome:
     log_collects: float
     collect_rate: float
     collect_advantage: float
+    credibility: float = 1.0
+    suspected_throttle: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -116,6 +121,8 @@ class NoteOutcome:
             "log_collects": round(self.log_collects, 4),
             "collect_rate": round(self.collect_rate, 4),
             "collect_advantage": round(self.collect_advantage, 4),
+            "credibility": round(self.credibility, 4),
+            "suspected_throttle": self.suspected_throttle,
         }
 
 
@@ -133,6 +140,7 @@ class OutcomeLearning:
     min_age_hours: float
     notes: list[NoteOutcome] = field(default_factory=list)
     reason: str = ""
+    suppressed_count: int = 0
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -140,6 +148,7 @@ class OutcomeLearning:
             "promotable": self.promotable,
             "mature_count": self.mature_count,
             "total_count": self.total_count,
+            "suppressed_count": self.suppressed_count,
             "baseline_log_collects": round(self.baseline_log_collects, 4),
             "mean_collect_advantage": round(self.mean_collect_advantage, 4),
             "best_note_id": self.best_note_id,
@@ -155,6 +164,8 @@ def evaluate_outcome_learning(
     now: datetime | None = None,
     min_age_hours: float = MIN_NOTE_AGE_HOURS,
     baseline_window: int = DEFAULT_BASELINE_WINDOW,
+    credibility_by_note: Mapping[str, float] | None = None,
+    suspected_throttle_notes: Iterable[str] = (),
 ) -> OutcomeLearning:
     """Build an age-gated, collect-first outcome report.
 
@@ -166,6 +177,11 @@ def evaluate_outcome_learning(
     """
     rows = list(notes or ())
     current = now or datetime.now(UTC)
+    credibility_map = {
+        str(note_id): max(0.0, min(1.0, float(value)))
+        for note_id, value in (credibility_by_note or {}).items()
+    }
+    throttled_ids = {str(note_id) for note_id in suspected_throttle_notes}
     parsed: list[tuple[str, int, int, float | None]] = []
     for row in rows:
         if isinstance(row, dict):
@@ -233,25 +249,65 @@ def evaluate_outcome_learning(
     # Newest mature notes first; the baseline is the recent window, not the
     # oldest posts in the account's history.
     mature_rows.sort(key=lambda row: row[3] or 0.0)
-    baseline_rows = mature_rows[: max(1, baseline_window)]
+    eligible_rows = [
+        row
+        for row in mature_rows
+        if row[0] not in throttled_ids
+        and credibility_map.get(row[0], 1.0) >= MIN_CREDIBILITY_FOR_PROMOTION
+    ]
+    suppressed_count = len(mature_rows) - len(eligible_rows)
+
+    def _outcome(note_id: str, views: int, collects: int, age: float | None) -> NoteOutcome:
+        return NoteOutcome(
+            note_id=note_id,
+            views=views,
+            collects=collects,
+            age_hours=age,
+            eligible=False,
+            log_collects=math.log1p(max(0, collects)),
+            collect_rate=(collects / views) if views > 0 else 0.0,
+            collect_advantage=0.0,
+            credibility=credibility_map.get(note_id, 1.0),
+            suspected_throttle=note_id in throttled_ids,
+        )
+
+    if not eligible_rows:
+        return OutcomeLearning(
+            mature=False,
+            promotable=False,
+            mature_count=0,
+            total_count=len(parsed),
+            baseline_log_collects=0.0,
+            mean_collect_advantage=0.0,
+            best_note_id="",
+            min_age_hours=min_age_hours,
+            notes=[_outcome(*row) for row in parsed],
+            reason="no_credible_mature_notes",
+            suppressed_count=suppressed_count,
+        )
+
+    baseline_rows = eligible_rows[: max(1, baseline_window)]
     baseline = median([math.log1p(max(0, row[2])) for row in baseline_rows])
-    eligible_ids = {row[0] for row in mature_rows}
+    eligible_ids = {row[0] for row in eligible_rows}
 
     outcomes = []
     for note_id, views, collects, age in parsed:
-        log_collects = math.log1p(max(0, collects))
-        outcomes.append(
-            NoteOutcome(
+        outcome = _outcome(note_id, views, collects, age)
+        if note_id in eligible_ids:
+            log_collects = math.log1p(max(0, collects))
+            outcome = NoteOutcome(
                 note_id=note_id,
                 views=views,
                 collects=collects,
                 age_hours=age,
-                eligible=note_id in eligible_ids,
+                eligible=True,
                 log_collects=log_collects,
                 collect_rate=(collects / views) if views > 0 else 0.0,
-                collect_advantage=log_collects - baseline if note_id in eligible_ids else 0.0,
+                collect_advantage=log_collects - baseline,
+                credibility=credibility_map.get(note_id, 1.0),
+                suspected_throttle=note_id in throttled_ids,
             )
-        )
+        outcomes.append(outcome)
 
     qualified = [o for o in outcomes if o.eligible]
     mean_advantage = sum(o.collect_advantage for o in qualified) / len(qualified)
@@ -275,11 +331,13 @@ def evaluate_outcome_learning(
         min_age_hours=min_age_hours,
         notes=outcomes,
         reason=reason,
+        suppressed_count=suppressed_count,
     )
 
 
 __all__ = [
     "DEFAULT_BASELINE_WINDOW",
+    "MIN_CREDIBILITY_FOR_PROMOTION",
     "MIN_MATURE_NOTES_FOR_PROMOTION",
     "MIN_NOTE_AGE_HOURS",
     "NoteOutcome",

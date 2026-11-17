@@ -46,6 +46,17 @@ export interface EvaluationResult {
   evaluator_fingerprint?: string
   snapshot_id?: string | null
   contract_version?: string | null
+  /** Phase-3 risk strip: deterministic publish/novelty/PLAD/rule signals. */
+  risk_signals?: {
+    overall?: 'red' | 'amber' | 'green' | string
+    blocking?: boolean
+    signals?: Array<{
+      code: string
+      level: 'red' | 'amber' | 'green' | string
+      label: string
+      detail?: string
+    }>
+  }
   /** P0-4 deterministic pre-LLM lexicon scan (highlight terms for Review). */
   lexicon_scan?: {
     is_blocking?: boolean

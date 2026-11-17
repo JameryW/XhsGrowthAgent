@@ -134,19 +134,40 @@ class VisualDesignerAgent(BaseAgent):
         )
 
         # ── Multimodal synergy gate (IDProxy-style cold-start check) ──
-        # This is deliberately non-blocking: the report is persisted with the
-        # plan so review_ui can show which dimension failed, while existing
-        # generation and revision paths keep their contracts.
+        # A failed first pass is sent back to the same visual-designer prompt
+        # once with the concrete recommendations.  This is the production
+        # "打回 visual_designer" path; review_gate also treats a still-failing
+        # plan as high risk so it can never auto-approve.
         from backend.services.content_launch import evaluate_multimodal_synergy
 
-        synergy = evaluate_multimodal_synergy(
-            str(copy.get("selected_title") or copy.get("title") or ""),
-            str(copy.get("body_text") or copy.get("body") or ""),
-            visual_plan,
-            niche=str(niche or ""),
-        )
-        visual_plan["multimodal_synergy"] = synergy.as_dict()
+        title = str(copy.get("selected_title") or copy.get("title") or "")
+        body = str(copy.get("body_text") or copy.get("body") or "")
+        synergy = evaluate_multimodal_synergy(title, body, visual_plan, niche=str(niche or ""))
+        synergy_attempts = 1
         if not synergy.passed:
+            feedback = "\n".join(f"- {item}" for item in synergy.recommendations)
+            retry_msg = (
+                f"{user_msg}\n\n"
+                "上一次视觉方案未通过图文协同检查，请按以下要求修正后重新输出：\n"
+                f"{feedback}"
+            )
+            visual_plan = normalize_visual_plan(
+                await self._llm_structured(
+                    [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=retry_msg),
+                    ],
+                    VisualPlanOutput,
+                    validator=_visual_plan_has_content,
+                )
+            )
+            synergy = evaluate_multimodal_synergy(title, body, visual_plan, niche=str(niche or ""))
+            synergy_attempts = 2
+
+        visual_plan["multimodal_synergy"] = synergy.as_dict()
+        visual_plan["synergy_attempts"] = synergy_attempts
+        if not synergy.passed:
+            visual_plan["synergy_blocked"] = True
             visual_plan["revision_hints"] = [
                 *list(visual_plan.get("revision_hints") or []),
                 *synergy.recommendations,

@@ -111,6 +111,17 @@ class TestClassifyPublishRisk:
         state["copy_content"]["body_text"] = "保证收益高回报理财"
         assert _classify_publish_risk(state) == "high"
 
+    def test_high_when_multimodal_synergy_still_fails(self) -> None:
+        """IDProxy 协同门禁失败 → high，必须人工处理，不能自动放行。"""
+        state = _low_risk_state()
+        state["visual_plan"]["multimodal_synergy"] = {"passed": False, "overall": 42.0}
+        assert _classify_publish_risk(state) == "high"
+
+    def test_high_when_visual_designer_reports_synergy_blocked(self) -> None:
+        state = _low_risk_state()
+        state["visual_plan"]["synergy_blocked"] = True
+        assert _classify_publish_risk(state) == "high"
+
 
 # ── _auto_approve_enabled ──
 

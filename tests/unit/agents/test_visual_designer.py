@@ -73,6 +73,47 @@ class TestVisualDesignerAgent:
         ]
 
     @pytest.mark.asyncio
+    async def test_execute_retries_a_failed_synergy_once(self, agent, mock_state, mock_store):
+        """A failed multimodal check is sent back to the designer exactly once."""
+        mock_response = MagicMock()
+        mock_response.content = """```json
+{
+  "cover_prompt": "美食探店封面，暖色调",
+  "layout_type": "grid",
+  "style": "minimalist",
+  "color_palette": ["#FFE4E1", "#F5F5F5"],
+  "image_count": 2,
+  "image_prompts": ["配图1", "配图2"]
+}
+```"""
+        failed = MagicMock()
+        failed.passed = False
+        failed.recommendations = ["封面需要突出菜品主体"]
+        failed.as_dict.return_value = {"passed": False, "overall": 42.0, "threshold": 60.0}
+        passed = MagicMock()
+        passed.passed = True
+        passed.recommendations = []
+        passed.as_dict.return_value = {"passed": True, "overall": 82.0, "threshold": 60.0}
+
+        with (
+            patch(
+                "backend.services.content_launch.evaluate_multimodal_synergy",
+                side_effect=[failed, passed],
+            ),
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+
+            result = await agent.execute(mock_state, store=mock_store)
+
+        assert mock_model.ainvoke.await_count == 2
+        assert result["visual_plan"]["synergy_attempts"] == 2
+        assert "synergy_blocked" not in result["visual_plan"]
+        assert result["visual_plan"]["multimodal_synergy"]["passed"] is True
+
+    @pytest.mark.asyncio
     async def test_execute_truncates_body_text(self, agent, mock_store):
         """Execute truncates long body text to 200 chars."""
         long_body_state = {

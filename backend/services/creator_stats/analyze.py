@@ -157,12 +157,29 @@ def analyze_notes(
         )
 
     notes = _normalize_note_rates(list(notes))
-    outcome = evaluate_outcome_learning(notes, now=now).as_dict()
+    note_rows = [note.to_dict() for note in notes]
     distribution = audit_note_distribution(
-        (note.to_dict() for note in notes),
+        note_rows,
         followers=followers,
         now=now,
     )
+    exposure = distribution.get("exposure") or []
+    credibility_by_note = {
+        str(item.get("note_id", "")): float(item.get("credibility", 1.0))
+        for item in exposure
+        if isinstance(item, dict)
+    }
+    suspected_throttle_notes = {
+        str(item.get("note_id", ""))
+        for item in exposure
+        if isinstance(item, dict) and item.get("suspected_throttle")
+    }
+    outcome = evaluate_outcome_learning(
+        notes,
+        now=now,
+        credibility_by_note=credibility_by_note,
+        suspected_throttle_notes=suspected_throttle_notes,
+    ).as_dict()
     sorted_notes = sorted(notes, key=lambda n: n.engagement_rate, reverse=True)
     rates = [n.engagement_rate for n in notes]
     avg_rate = round(sum(rates) / len(rates), 4) if rates else 0.0

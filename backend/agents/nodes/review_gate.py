@@ -83,6 +83,14 @@ def _classify_publish_risk(
     visual = state.get("visual_plan") or {}
     niche = state.get("niche") or ""
 
+    # IDProxy-style multimodal gate: a plan that still fails after the
+    # designer's one retry is never auto-approved.
+    synergy = visual.get("multimodal_synergy")
+    if (isinstance(synergy, dict) and synergy.get("passed") is False) or visual.get(
+        "synergy_blocked"
+    ):
+        return "high"
+
     title = copy.get("selected_title") or ""
     body = copy.get("body_text") or ""
     image_paths = visual.get("image_paths") or []
@@ -172,6 +180,7 @@ async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
             "title": (state.get("copy_content") or {}).get("selected_title", ""),
             "has_images": bool((state.get("visual_plan") or {}).get("image_paths")),
             "risk": _classify_publish_risk(state),
+            "multimodal_synergy": (state.get("visual_plan") or {}).get("multimodal_synergy"),
         },
     }
 

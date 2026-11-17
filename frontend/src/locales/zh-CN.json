@@ -827,6 +827,9 @@
       "biasTitle": "对抗偏倚检测",
       "lexiconTitle": "违禁词命中（确定性扫描）",
       "blocking": "硬性失败",
+      "riskTitle": "风险信号条",
+      "riskBlocking": "存在阻断",
+      "riskClear": "无阻断",
       "decision": {
         "approved": "建议通过",
         "needs_revision": "建议修订",

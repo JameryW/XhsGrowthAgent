@@ -74,6 +74,32 @@ def test_unknown_publish_time_is_not_mature() -> None:
     assert report.min_age_hours == MIN_NOTE_AGE_HOURS
 
 
+def test_egmf_credibility_suppresses_throttled_or_tiny_samples() -> None:
+    rows = [
+        _note("healthy", age_hours=24 * 5, views=2_000, collects=100),
+        _note("tiny", age_hours=24 * 5, views=20, collects=20),
+        _note("throttled", age_hours=24 * 5, views=2_000, collects=100),
+    ]
+
+    report = evaluate_outcome_learning(
+        rows,
+        now=NOW,
+        credibility_by_note={"healthy": 0.9, "tiny": 0.1, "throttled": 0.9},
+        suspected_throttle_notes={"throttled"},
+    )
+
+    by_id = {note.note_id: note for note in report.notes}
+    assert report.suppressed_count == 2
+    assert report.mature_count == 1
+    assert report.promotable is False
+    assert report.reason == "insufficient_mature_notes"
+    assert by_id["healthy"].eligible is True
+    assert by_id["tiny"].credibility == 0.1
+    assert by_id["tiny"].eligible is False
+    assert by_id["throttled"].suspected_throttle is True
+    assert by_id["throttled"].eligible is False
+
+
 def test_spearman_handles_ties_and_direction() -> None:
     assert spearman_rank_correlation([1, 2, 3], [10, 20, 30]) == 1.0
     assert spearman_rank_correlation([1, 2, 3], [30, 20, 10]) == -1.0

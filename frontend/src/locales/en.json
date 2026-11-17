@@ -827,6 +827,9 @@
       "biasTitle": "Adversarial Bias Check",
       "lexiconTitle": "Lexicon hits (deterministic scan)",
       "blocking": "BLOCKING",
+      "riskTitle": "Risk signal strip",
+      "riskBlocking": "Blocking signal",
+      "riskClear": "No blocker",
       "decision": {
         "approved": "Suggest approve",
         "needs_revision": "Suggest revise",

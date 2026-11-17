@@ -684,6 +684,12 @@ function decisionClass(d: string | null | undefined): string {
   return 'dark-explicit bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
 }
 
+function riskSignalClass(level: string | undefined): string {
+  if (level === 'green') return 'bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-300'
+  if (level === 'amber') return 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+  return 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
+}
+
 /** P0-W5: RQGM/eligibility fail-closed pause — human decide via /resume. */
 function isEvaluatorFailClosed(tid: string): boolean {
   const detail = workflowDetails.value.get(tid)
@@ -1501,6 +1507,34 @@ const handleCancelConfirm = () => {
                 <!-- Evaluation result display -->
                 <template v-else>
                   <div class="space-y-3">
+                    <!-- Phase-3 risk signal strip -->
+                    <div
+                      v-if="getEvaluation(wf.thread_id)!.risk_signals?.signals?.length"
+                      class="dark-explicit rounded-md p-2.5 bg-slate-50/70 border border-slate-200 dark:bg-slate-900/60 dark:border-slate-700"
+                    >
+                      <div class="flex items-center gap-1.5 mb-1.5">
+                        <AppIcon name="AlertTriangle" size="xs" variant="peach" />
+                        <span class="text-[10px] font-semibold text-slate-700 dark:text-slate-200">{{ t('review.evaluation.riskTitle') }}</span>
+                        <span
+                          class="ml-auto text-[9px] px-1.5 py-0.5 rounded font-semibold"
+                          :class="riskSignalClass(getEvaluation(wf.thread_id)!.risk_signals?.overall)"
+                        >
+                          {{ getEvaluation(wf.thread_id)!.risk_signals?.blocking ? t('review.evaluation.riskBlocking') : t('review.evaluation.riskClear') }}
+                        </span>
+                      </div>
+                      <div class="flex flex-wrap gap-1.5">
+                        <span
+                          v-for="signal in getEvaluation(wf.thread_id)!.risk_signals?.signals || []"
+                          :key="signal.code"
+                          class="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                          :class="riskSignalClass(signal.level)"
+                          :title="signal.detail || signal.label"
+                        >
+                          {{ signal.label }}
+                        </span>
+                      </div>
+                    </div>
+
                     <!-- Overview + radar -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <!-- Overall score + advisory decision -->
