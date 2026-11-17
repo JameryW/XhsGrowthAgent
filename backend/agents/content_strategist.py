@@ -156,6 +156,8 @@ class ContentStrategistAgent(BaseAgent):
         "ripple.predict_spread",
         "ripple.validate_pmf",
     )
+    # Per-execute cache of TimePop recommendations keyed by candidate topic.
+    _topic_time_slots: dict[str, list[dict[str, Any]]] = {}
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         self._reset_llm_perf()
@@ -232,6 +234,7 @@ class ContentStrategistAgent(BaseAgent):
         history_titles = [
             title for record in history_records if (title := self._record_title(record))
         ]
+        self._topic_time_slots = {}
         topic_scores_ctx = await self._score_trend_topics(
             trend_data,
             niche,
@@ -309,6 +312,10 @@ class ContentStrategistAgent(BaseAgent):
         content_plan = normalize_content_plan(output)
         if topic_revised:
             content_plan["topic_revised"] = True
+        selected_slots = self._topic_time_slots.get(str(content_plan.get("selected_topic") or ""))
+        if selected_slots:
+            content_plan["recommended_posting_slot"] = dict(selected_slots[0])
+            content_plan["recommended_posting_slots"] = [dict(slot) for slot in selected_slots[:3]]
 
         # 使用 Ripple 预测传播效果 + PMF 验证（并行调用，带超时保护）
         ripple_timeout = Settings().ripple.workflow_timeout or _DEFAULT_RIPPLE_TIMEOUT
@@ -798,6 +805,7 @@ class ContentStrategistAgent(BaseAgent):
                     slots = time_pop.get("recommended_slots")
                     if isinstance(slots, list) and slots and isinstance(slots[0], dict):
                         time_note = f"，建议时段 {slots[0].get('label', 'N/A')}"
+                        self._topic_time_slots[topic] = slots
                 inhibition = result.get("inhibition")
                 inhibition_note = ""
                 if isinstance(inhibition, dict) and inhibition.get("active"):

@@ -251,7 +251,9 @@ class ContextCompiler:
             sections = seeded
         items_by_layer: dict[PromptLayer, list[ContextItem]] = {}
         for result in retrievals:
-            items_by_layer.setdefault(result.layer, []).extend(result.items)
+            items_by_layer.setdefault(result.layer, []).extend(
+                item for item in result.items if item.is_temporally_active()
+            )
         merged = {
             layer: rerank_items(dedup_items(tuple(items)), source_weights)
             for layer, items in items_by_layer.items()

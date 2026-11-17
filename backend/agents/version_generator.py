@@ -22,6 +22,7 @@ from backend.context.compiler import ContextCompiler
 from backend.context.models import RunContext
 from backend.models.outputs import ContentVersionsOutput, normalize_content_versions
 from backend.models.structured import StructuredOutputError
+from backend.services.evaluation_contracts import CandidateScore, evaluate_groupwise
 from backend.services.temporal_contracts import NarrativeAnchor, narrative_anchors
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
@@ -72,6 +73,55 @@ def _attach_narrative_anchors(versions: list[dict[str, Any]]) -> list[dict[str, 
         item["narrative_anchor"] = anchor.as_dict()
         tagged.append(item)
     return tagged
+
+
+def _attach_groupwise(versions: list[dict[str, Any]]) -> dict[str, Any]:
+    """Rank the A/B/C versions relative to one another (GRS/GAR).
+
+    The three dimensions deliberately mirror the version prompt: judged quality
+    (``predicted_score``), concrete copy depth, and whether the visual plan is
+    specified. Group-relative ranking is advisory — the caller's existing
+    selected version is untouched; only ``version_groupwise`` and per-version
+    ``groupwise_rank`` are added.
+    """
+    candidates: list[CandidateScore] = []
+    for index, version in enumerate(versions):
+        if not isinstance(version, dict):
+            continue
+        candidate_id = str(version.get("version_id") or version.get("id") or f"v{index + 1}")
+        body = str(version.get("body") or "")
+        prompts = version.get("image_prompts") or []
+        candidates.append(
+            CandidateScore(
+                candidate_id=candidate_id,
+                scores={
+                    "quality": _clamp_score(version.get("predicted_score")),
+                    "copy_depth": min(100.0, len(body) / 3.0),
+                    "visual_readiness": min(100.0, len(prompts) * 25.0)
+                    if isinstance(prompts, (list, tuple))
+                    else 0.0,
+                },
+            )
+        )
+    report = evaluate_groupwise(candidates).as_dict()
+    ranks = {
+        str(row["candidate_id"]): index + 1 for index, row in enumerate(report.get("ranking") or [])
+    }
+    for index, version in enumerate(versions):
+        if not isinstance(version, dict):
+            continue
+        candidate_id = str(version.get("version_id") or version.get("id") or f"v{index + 1}")
+        version["groupwise_rank"] = ranks.get(candidate_id)
+    report["leader"] = report.get("leader") or ""
+    return report
+
+
+def _clamp_score(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(100.0, number))
 
 
 class VersionGeneratorAgent(BaseAgent):
@@ -320,10 +370,12 @@ class VersionGeneratorAgent(BaseAgent):
             versions = []
 
         versions = _attach_narrative_anchors(versions)
+        groupwise = _attach_groupwise(versions)
         logger.info(f"Generated {len(versions)} content versions ({label})")
 
         updates: dict[str, Any] = {
             "content_versions": versions,
+            "version_groupwise": groupwise,
             "phase": WorkflowPhase.CREATING,
         }
         # When only 1 version is generated, auto-apply it

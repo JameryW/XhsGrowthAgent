@@ -133,7 +133,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_wf_application.py:289` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:290` |
 | `backend/api/routes/_wf_actions.py:298` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
 | `backend/api/routes/_wf_actions.py:538` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:544` |
-| `backend/agents/content_strategist.py:632` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
+| `backend/agents/content_strategist.py:639` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
 | `backend/api/routes/accounts.py:404` | `background_tasks.add_task(sync_after_login, account_id)` | REAL_TASK | Starlette 后台任务，跟响应生命周期走 |
 | `backend/services/creator_stats/client.py:738` | `task = asyncio.create_task(capture(response))` | REAL_TASK | 采集响应，结果进缓存 |
 | `backend/services/creator_stats/client.py:844` | `data_ready = asyncio.create_task(_wait_initial_data())` | REAL_TASK | 与 `:845` 竞速，先到先算 |
@@ -143,7 +143,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/services/xhs_publisher.py:154` | `pending = {asyncio.create_task(_wait(selector))` | REAL_TASK | 多个选择器并发等待 |
 | `backend/services/chrome_launcher.py:1734` | `chrome_resources_task = asyncio.create_task(` | REAL_TASK | 与 `asyncio.to_thread` 的探测配合 |
 | `backend/agents/analyst.py:203` | `hy_recall_task = asyncio.ensure_future(` | REAL_TASK | hy-memory 召回与主 gather 并发，主 gather 等它；2026-10-17 引入的 `ensure_future` 形态 |
-| `backend/agents/content_strategist.py:178` | `hy_recall_task = asyncio.ensure_future(` | REAL_TASK | 同上：陪跑 4 个并发召回，主 gather 保持 4-awaitable 形状 |
+| `backend/agents/content_strategist.py:180` | `hy_recall_task = asyncio.ensure_future(` | REAL_TASK | 同上：陪跑 4 个并发召回，主 gather 保持 4-awaitable 形状 |
 | `backend/api/routes/agent.py:185` | `sender_task = asyncio.create_task(sender())` | IN_PROCESS_LOOP | 会话内发送循环 |
 | `backend/services/omp_bridge.py:2160` | `asyncio.create_task(self._drain_stderr())` | IN_PROCESS_LOOP | 子进程 stderr 排空 |
 | `backend/services/omp_bridge.py:2163` | `self._reader_task = asyncio.create_task(self._read_stdout())` | IN_PROCESS_LOOP | 子进程 stdout 读取 |

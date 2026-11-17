@@ -198,6 +198,35 @@ def test_compile_dedups_across_retrievals_of_same_layer() -> None:
     assert prompt.layers[PromptLayer.L4_MEMORY].count("重复洞察") == 1
 
 
+def test_compile_filters_inactive_validity_windows() -> None:
+    past = "2020-01-01T00:00:00+00:00"
+    future = "2999-01-01T00:00:00+00:00"
+    items = (
+        ContextItem(body="旧事实", source="memory:facts", valid_until=past),
+        ContextItem(body="未来事实", source="memory:facts", valid_from=future),
+        ContextItem(body="当前事实", source="memory:facts", valid_from=past, valid_until=future),
+        ContextItem(body="无时间窗事实", source="memory:facts"),
+        ContextItem(body="非法时间窗", source="memory:facts", valid_from="not-a-date"),
+    )
+    retrieval = RetrievalResult(
+        namespace="memory:facts",
+        layer=PromptLayer.L4_MEMORY,
+        items=items,
+        raw_items=[],
+        mode=RetrievalMode.HIT,
+        error="",
+    )
+
+    compiled = ContextCompiler().compile(_run_context(), {}, (retrieval,))
+    rendered = compiled.render()
+
+    assert "当前事实" in rendered
+    assert "无时间窗事实" in rendered
+    assert "非法时间窗" in rendered
+    assert "旧事实" not in rendered
+    assert "未来事实" not in rendered
+
+
 def test_budget_trims_l5_before_l4_and_never_static_layers() -> None:
     compiler = ContextCompiler()
     long_l5 = _item("五" * 40, source="tool:xhs", priority=0)  # ≈40 tokens

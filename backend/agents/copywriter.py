@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import Mapping
 from typing import Any, cast
 
@@ -294,6 +295,13 @@ class CopywriterAgent(BaseAgent):
                 compiled_prompt,
                 active_constraints,
             )["prompt"]
+        elif os.getenv("XHS_CONTEXT_CACHE_BREAKPOINT", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            system_prompt = compiled_prompt.render_with_cache_breakpoint()
         else:
             system_prompt = compiled_prompt.render()
 

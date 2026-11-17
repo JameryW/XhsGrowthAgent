@@ -5,6 +5,8 @@ Shared recall surface — modes do not keep separate suggestion silos.
 
 from __future__ import annotations
 
+from collections import Counter
+from datetime import UTC, datetime
 from typing import Any
 
 from langgraph.store.base import BaseStore
@@ -218,6 +220,58 @@ def suggestions_from_analysis(
     return out
 
 
+async def _policy_reset_suggestion(
+    account_id: str,
+    mode: CreativeMode,
+    notes: list[NoteStats],
+    store: BaseStore | None,
+) -> CreativeSuggestion | None:
+    """Consume APMD's persisted anchor so a due reset actually reaches prompts."""
+    if store is None or not notes:
+        return None
+    from backend.services.creator_stats.analyze import _policy_anchor_namespace
+    from backend.services.evaluation_contracts import PolicyAnchor, policy_reset_decision
+
+    try:
+        item = await store.aget(_policy_anchor_namespace(account_id), "current")
+        raw = getattr(item, "value", None)
+    except Exception:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    try:
+        created_at = datetime.fromisoformat(str(raw.get("created_at", "")))
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        anchor = PolicyAnchor(
+            created_at=created_at,
+            note_count=int(raw.get("note_count", 0) or 0),
+            reference_version=str(raw.get("reference_version", "v1")),
+        )
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+    categories = Counter(note.content_type or "unknown" for note in notes)
+    decision = policy_reset_decision(
+        anchor,
+        note_count=len(notes),
+        category_counts=list(categories.values()) or None,
+    )
+    if not decision.should_reset or decision.reason == "low_track_entropy":
+        return None
+    return CreativeSuggestion(
+        mode=mode,
+        category="strategy_reset",
+        title="策略参考锚点已到期",
+        advice=(
+            f"APMD 建议重置策略参考（{decision.reason}）。本轮优先探索新的选题角度与"
+            "内容结构，不要把旧爆款公式当作唯一参考；重置后再重新积累 4 周/约 12 篇样本。"
+        ),
+        priority=0,
+        evidence=f"apmd:{decision.reason}",
+    )
+
+
 async def get_suggestions_for_mode(
     account_id: str,
     mode: CreativeMode,
@@ -270,6 +324,11 @@ async def get_suggestions_for_mode(
                 )
         except Exception:
             pass
+
+    if notes is not None:
+        policy_reset = await _policy_reset_suggestion(account_id, mode, notes, store)
+        if policy_reset is not None:
+            suggestions.insert(0, policy_reset)
     return suggestions
 
 

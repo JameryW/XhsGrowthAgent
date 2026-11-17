@@ -128,6 +128,32 @@ class TestCopywriterAgent:
         assert "标题必须包含搜索意图词" in system_prompt
 
     @pytest.mark.asyncio
+    async def test_cache_breakpoint_is_opt_in(self, agent, mock_state, mock_store, monkeypatch):
+        """When enabled, the frozen L0-L2 prefix carries a cache marker."""
+        monkeypatch.setenv("XHS_CONTEXT_CACHE_BREAKPOINT", "1")
+        mock_response = MagicMock()
+        mock_response.content = """```json
+{
+  "title_candidates": ["标题"],
+  "body_text": "正文",
+  "hashtags": ["#测试"],
+  "hook_type": "情感钩子"
+}
+```"""
+
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+            await agent.execute(mock_state, store=mock_store)
+
+        messages = mock_model.ainvoke.call_args.args[0]
+        system_prompt = next(
+            message.content for message in messages if isinstance(message, SystemMessage)
+        )
+        assert "<<<XHS_CONTEXT_CACHE_BREAKPOINT>>>" in system_prompt
+
+    @pytest.mark.asyncio
     async def test_execute_in_brief_mode_writes_from_the_brief(
         self, agent, mock_state, mock_store, _mock_de_ai
     ):

@@ -135,6 +135,12 @@ async def test_version_generator_generates_abc_versions(
     scores = [v.get("predicted_score") for v in versions]
     assert scores[0] < scores[1] < scores[2]
 
+    # Group-relative ranking is exposed and ranks C first.
+    groupwise = result["version_groupwise"]
+    assert groupwise["leader"] == "C"
+    assert [row["candidate_id"] for row in groupwise["ranking"]] == ["C", "B", "A"]
+    assert [v.get("groupwise_rank") for v in versions] == [3, 2, 1]
+
 
 @pytest.mark.asyncio
 async def test_version_generator_includes_required_fields(

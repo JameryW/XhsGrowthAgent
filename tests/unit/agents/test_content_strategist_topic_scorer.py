@@ -68,6 +68,50 @@ class TestContentStrategistTopicScorer:
         assert any("账号校准 12 篇" in p for p in captured_prompts)
 
     @pytest.mark.asyncio
+    async def test_time_pop_slots_are_attached_to_the_plan(self, agent, mock_store, xhs_read_grant):
+        """TimePop 推荐时段进入 content_plan，供发布排期消费。"""
+        mock_state = {
+            "account_id": "test_account",
+            "niche": "美食",
+            "trend_data": {"hot_topics": [{"topic": "探店"}]},
+        }
+
+        mock_response = MagicMock()
+        mock_response.content = '{"selected_topic": "探店"}'
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
+
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(
+            return_value={
+                "heat_score": 82,
+                "time_pop": {
+                    "recommended_slots": [
+                        {"hour": 12, "minute": 0, "label": "12:00"},
+                        {"hour": 19, "minute": 0, "label": "19:00"},
+                    ]
+                },
+            }
+        )
+
+        with (
+            patch("backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock) as mp,
+            patch("backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock) as mpmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+        ):
+            mp.return_value = {"ripple_prediction": None}
+            mpmf.return_value = {"ripple_pmf": None}
+            result = await agent.execute(mock_state, store=mock_store)
+
+        plan = result["content_plan"]
+        assert plan["recommended_posting_slot"]["label"] == "12:00"
+        assert [slot["label"] for slot in plan["recommended_posting_slots"]] == [
+            "12:00",
+            "19:00",
+        ]
+
+    @pytest.mark.asyncio
     async def test_topics_are_ranked_by_predicted_collect(self, agent, mock_store, xhs_read_grant):
         """收藏预测最高的候选排在第一位并标记为主推。"""
         mock_state = {

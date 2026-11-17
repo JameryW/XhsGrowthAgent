@@ -11,6 +11,7 @@ from backend.services.creator_stats.analyze import (
     _policy_anchor_namespace,
     run_analysis,
 )
+from backend.services.creator_stats.suggestions import get_suggestions_for_mode
 from backend.services.creator_stats.types import NoteStats
 
 NOW = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
@@ -46,3 +47,23 @@ async def test_policy_anchor_is_written_once_and_reused() -> None:
     second = await run_analysis(notes, "acct", store=store, now=NOW + timedelta(days=1))
     assert second.policy_reset["should_reset"] is False
     assert second.policy_reset["reason"] == "anchor_valid"
+
+
+@pytest.mark.asyncio
+async def test_due_policy_reset_reaches_creative_suggestions() -> None:
+    store = InMemoryStore()
+    notes = _notes()
+    await store.aput(
+        _policy_anchor_namespace("acct"),
+        "current",
+        {
+            "created_at": (NOW - timedelta(weeks=5)).isoformat(),
+            "note_count": 1,
+            "reference_version": "v1",
+        },
+    )
+
+    suggestions = await get_suggestions_for_mode("acct", "trend", store=store, notes=notes)
+
+    assert suggestions[0].category == "strategy_reset"
+    assert suggestions[0].evidence == "apmd:age_reset"

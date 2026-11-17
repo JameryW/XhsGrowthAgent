@@ -19,7 +19,7 @@ Decisions frozen in the task ``info.md`` (D1'-D6'):
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -114,6 +114,33 @@ class ContextItem(BaseModel):
     ttl_seconds: int | None = Field(default=None, ge=0)
     source_version: str = ""
     """Version identifier of the source (commit SHA, row version…)."""
+    valid_from: str = ""
+    """ISO-8601 start of the fact's validity window (empty = open)."""
+    valid_until: str = ""
+    """ISO-8601 end of the fact's validity window (empty = open)."""
+
+    def is_temporally_active(self, now: datetime | None = None) -> bool:
+        """Return whether this fact is inside its validity window.
+
+        Invalid or missing bounds are treated as open, so legacy producers keep
+        their byte-identical behaviour.  This is the "valid time" half of the
+        dual-temporal rule; ``source_version`` carries the transaction version.
+        """
+        current = now or datetime.now(UTC)
+        for bound, is_start in ((self.valid_from, True), (self.valid_until, False)):
+            if not bound:
+                continue
+            try:
+                parsed = datetime.fromisoformat(bound.replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                continue
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            if is_start and current < parsed:
+                return False
+            if not is_start and current >= parsed:
+                return False
+        return True
 
     def with_token_cost(self, token_cost: int) -> ContextItem:
         """A copy with ``token_cost`` set (frozen model ⇒ explicit wither)."""
