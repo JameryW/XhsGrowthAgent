@@ -10,10 +10,13 @@
 from __future__ import annotations
 
 import logging
+import os
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
+from backend.services.distribution_contracts import FanProfile, FanRelationStore, build_icebreaker
 from backend.tools.runtime.models import DomainOutcome
 
 if TYPE_CHECKING:
@@ -23,6 +26,31 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.tools.engagement")
 
 _SENT = "sent"
+
+_FAN_RELATION_STORE: FanRelationStore | None = None
+
+
+def _fan_relation_store() -> FanRelationStore:
+    """Return the process-local fan memory, optionally backed by a JSON snapshot."""
+
+    global _FAN_RELATION_STORE
+    if _FAN_RELATION_STORE is None:
+        _FAN_RELATION_STORE = FanRelationStore(os.getenv("XHS_FAN_RELATION_PATH") or None)
+    return _FAN_RELATION_STORE
+
+
+def reset_fan_relation_store() -> None:
+    """Clear the process-local store; tests use this between isolated cases."""
+
+    global _FAN_RELATION_STORE
+    _FAN_RELATION_STORE = None
+
+
+def suggest_icebreaker(user_id: str, topic: str = "") -> str:
+    """Return a deterministic opener for a known fan, or an empty string."""
+
+    profile = _fan_relation_store().get(user_id)
+    return build_icebreaker(profile, topic) if profile is not None else ""
 
 
 def _result_or_outcome(payload: dict[str, Any]) -> dict[str, Any]:
@@ -186,6 +214,10 @@ async def dm_handler(
     thread_id: str = "",
     qualification_state: dict[str, Any] | None = None,
     known_prices: list[float] | None = None,
+    sender_nickname: str = "",
+    fan_interests: list[str] | None = None,
+    fan_stage: str = "returning",
+    fan_topic: str = "",
 ) -> dict[str, Any]:
     """人工确认后发送一条小红书私信（manual-only）。
 
@@ -201,6 +233,12 @@ async def dm_handler(
         approved_by: 审批人标识（冷启动必给；与 approved_at/thread_id 同给或同缺）
         approved_at: 审批时刻（ISO 8601）
         thread_id: 审批所对应的会话/工单 ID
+        qualification_state: 可选的五槽位资格状态（日期/租期/车型/预算/区域）
+        known_prices: 已知报价；用于拦截未经授权的报价
+        sender_nickname: 可选粉丝昵称，用于关系记忆与破冰文案
+        fan_interests: 可选粉丝兴趣标签，用于关系记忆与破冰文案
+        fan_stage: 粉丝阶段（new/returning/vip）
+        fan_topic: 可选话题，用于生成破冰文案
 
     Returns:
         仅 ``status == "sent"``：结果字典（``status``、``success``、
@@ -239,7 +277,7 @@ async def dm_handler(
     finally:
         await engagement.close()
 
-    return _result_or_outcome(
+    result = _result_or_outcome(
         {
             "message_id": message_id,
             "sender_id": sender_id,
@@ -247,6 +285,69 @@ async def dm_handler(
             **verdict,
         }
     )
+    return _remember_fan_for_result(
+        result,
+        sender_id,
+        nickname=sender_nickname,
+        interests=fan_interests,
+        stage=fan_stage,
+        topic=fan_topic,
+    )
+
+
+def _remember_fan(
+    sender_id: str,
+    *,
+    nickname: str = "",
+    interests: list[str] | None = None,
+    stage: str = "returning",
+    topic: str = "",
+) -> tuple[dict[str, Any] | None, str]:
+    """Best-effort fan-memory update after a successful DM.
+
+    Fan memory is an operator aid: a corrupted snapshot must never turn a
+    successfully sent DM into a failed tool call.
+    """
+
+    if not sender_id.strip():
+        return None, ""
+    try:
+        profile = _fan_relation_store().upsert(
+            FanProfile(
+                user_id=sender_id,
+                nickname=nickname,
+                interests=list(interests or []),
+                stage=stage or "returning",
+                last_interaction=datetime.now(UTC),
+                interaction_count=1,
+            )
+        )
+        return profile.as_dict(), build_icebreaker(profile, topic)
+    except Exception as exc:  # noqa: BLE001 - relationship memory is best-effort
+        logger.debug("fan relation update failed for %s: %s", sender_id, exc)
+        return None, ""
+
+
+def _remember_fan_for_result(
+    result: dict[str, Any],
+    sender_id: str,
+    *,
+    nickname: str,
+    interests: list[str] | None,
+    stage: str,
+    topic: str,
+) -> dict[str, Any]:
+    profile, icebreaker = _remember_fan(
+        sender_id,
+        nickname=nickname,
+        interests=interests,
+        stage=stage,
+        topic=topic,
+    )
+    if profile is not None:
+        result["fan_profile"] = profile
+        result["icebreaker"] = icebreaker
+    return result
 
 
 @tool
