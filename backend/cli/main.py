@@ -130,6 +130,11 @@ def run(
     dry_run: bool = typer.Option(False, help="模拟运行（不调用真实 API）"),
     auto_publish: bool = typer.Option(False, help="审核通过后自动发布"),
     dev: bool = typer.Option(True, help="开发模式（内存检查点）"),
+    jit_mode: str = typer.Option(
+        "",
+        "--jit-mode",
+        help="按 trend/brief 编译 mode-specific JIT 子图；留空使用完整图",
+    ),
     verbose: bool = typer.Option(False, help="显示详细日志"),
 ) -> None:
     """启动增长引擎工作流"""
@@ -152,6 +157,7 @@ def run(
     async def _run() -> None:
         from backend.graph.builder import dev_graph
         from backend.models.router import start_model_provider_preload
+        from backend.state.enums import WorkflowMode
         from backend.state.schema import WorkflowPhase
 
         # Warm provider imports in a daemon thread: awaiting the import here added
@@ -159,7 +165,8 @@ def run(
         # the event loop inside the first model call.
         start_model_provider_preload()
 
-        async with dev_graph() as graph:
+        mode = WorkflowMode(jit_mode) if jit_mode else None
+        async with dev_graph(mode) as graph:
             thread_id = f"xhs_{account_id}_{uuid.uuid4().hex[:8]}"
 
             initial_state: dict[str, Any] = {

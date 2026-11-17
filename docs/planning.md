@@ -13,7 +13,7 @@
 | A | **零真实样本。** `.xhs/checkpoints.sqlite` 的 `checkpoints` 与 `writes` 两张表各 **0 行**；`.xhs/history/` 的 173 个文件里 **172 个是 21 字节**的测试残留，唯一一个 115 字节的是 5 键存根（`phase=scouting`、`current_agent=trend_scout`，没有 goal、没有 niche、没有终态）。复现：`find .xhs/history -type f -printf '%s\n' \| sort -n \| uniq -c` | 「计划与实际不符」这件事在样本里**一次都没发生过**，因为没有实际 |
 | B | **两张模板只差两个节点**（§1.3）：trend 22 / brief 24，对称差恰好 `{brief_analyzer, brief_gate}`，且 trend 的计划是 brief 的**真子集** | 「模板」不是两次剪枝，是**同一张图的两个入口**。模板今天的剪枝幅度是 **0–2 个节点**（共 24）⇒「用动态规划省节点」在本仓**没有存量可省** |
 | C | **S1–S4 登记的每一处缺口都是「声明不完整」，不是「声明形状错」**（§4 逐条） | 缺一个键、少一条排除、一个没人调用的 router、一条被票面裁走的正交轴 —— 全部是在模板**上**补，不是在模板**外**另起一套 |
-| D | **计划今天没有任何生产读者**（§1.5）：`backend/**/*.py` 里 import `backend.graph.plan` 的 **0 个** | 就算今天能生成一张非模板图，也没有任何东西会读它 —— **第一个消费者不存在** |
+| D | **计划今天没有任何生产读者**（§1.5）：`backend/**/*.py` 里 import `backend.graph.plan` 的 **1 个**（`backend/graph/builder.py` 的 `build_graph(mode)` JIT 入口） | 就算今天能生成一张非模板图，也没有任何东西会读它 —— **第一个消费者不存在** |
 
 四条合起来是同一句话：**今天缺的不是生成器，是「一次 run 的计划」这条陈述本身**（S1 的定性）。它现在有了一半 —— 按**模式**可陈述；另一半（按 **run** 可陈述）是开闸的前置条件，在 §2.4。
 
@@ -34,7 +34,7 @@
 **`Plan` —— 一个模式下这次 run 可能访问的节点**（`backend/graph/plan.py` 的 `Plan`）：`entry` + `steps`，每个 `PlanStep` 带 `preceded_by` / `followed_by`。`export_plan(mode)` 只读地从 `build_graph()` 导出；模板声明了图里没有的东西时 `raise PlanExportError`，**不产出一份悄悄丢掉解析不了那条边的计划**。
 
 - ★ **`Plan` 不陈述顺序。** `steps` 按节点名排序（claim `plan_steps_are_sorted_by_node_name`）。顺序在**图**里，不在计划里 ⇒「先做 A 后做 B」这种要求今天**无法被计划表达**（§2.2 的 E3）。
-- ★ **`Plan` 是只读投影**：没有任何生产代码 import 它（claim `production_importers_of_the_plan`）。
+- ★ **`Plan` 是只读投影**：生产代码只有 `backend/graph/builder.py` 的 `build_graph(mode)` 延迟 import 它（claim `production_importers_of_the_plan`）。
 - **`Plan` 不是执行指令**：它不含能力、预算、租约与人工闸门 —— 那些分别在 P1c 的 `ToolSpec`、P2b 的租约、P2a 的 `DecisionRequest` 里。本文件只谈「打算做什么」。
 
 ### 1.2 它不是什么（三个容易撞名的东西）
@@ -87,7 +87,7 @@
 
 | 主张 | 发布的值 | 复核方式 |
 | --- | --- | --- |
-| `production_importers_of_the_plan` | `0` | AST：`backend/**/*.py` 里 `import backend.graph.plan` 的文件数 |
+| `production_importers_of_the_plan` | `1` | AST：`backend/**/*.py` 里 `import backend.graph.plan` 的文件数 |
 | `workflow_mode_reads_total` | `2` | AST：state 键的读取点，**两种形状都算**（`state.get("workflow_mode")` 与 `state["workflow_mode"]`） |
 | `workflow_mode_reads_outside_the_registry` | `0` | 上面那 2 处的文件不是 `backend/state/modes.py` 的个数 |
 | `run_graph_and_persist_call_sites` | `12` | AST：`_runner._run_graph_and_persist(...)` 的调用点 |

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
@@ -52,150 +52,134 @@ from backend.graph.error_handling import get_retry_policy
 from backend.graph.wiring import CONDITIONAL_EDGES
 from backend.state.artifacts import artifact_seam as _artifact_seam
 from backend.state.checkpoint_serde import checkpoint_serde
+from backend.state.enums import WorkflowMode
 from backend.state.schema import XHSGrowthState
 
+NodeFunction = Callable[..., Any]
 
-def build_graph() -> StateGraph[XHSGrowthState]:
-    """构建小红书增长引擎的 LangGraph 状态图"""
+# Node name -> (attribute name, retry-policy name or None). The attribute name
+# is resolved through module globals at build time so tests and operators can
+# patch `backend.graph.builder.<node>_node` without rebuilding the module.
+_NODE_DEFINITIONS: tuple[tuple[str, NodeFunction, str | None], ...] = (
+    ("orchestrator", orchestrator_node, "orchestrator"),
+    ("trend_scout", trend_scout_node, "trend_scout"),
+    ("content_strategist", content_strategist_node, "content_strategist"),
+    ("copywriter", copywriter_node, "copywriter"),
+    ("visual_designer", visual_designer_node, "visual_designer"),
+    ("review_gate", review_gate_node, "review_gate"),
+    ("evaluator_gate", evaluator_node, "evaluator_gate"),
+    ("publish_gate", publish_gate_node, None),
+    ("publisher", publisher_node, "publisher"),
+    ("analyst", analyst_node, "analyst"),
+    ("revise_content", revise_content_node, None),
+    ("ripple_gate", ripple_gate_node, None),
+    ("ripple_finalize", ripple_finalize_node, None),
+    ("ripple_late_recheck", ripple_late_recheck_node, None),
+    ("draft_gate", draft_gate_node, None),
+    ("viral_matcher", viral_matcher_node, None),
+    ("blogger_scout", blogger_scout_node, None),
+    ("blogger_gate", blogger_gate_node, None),
+    ("content_analyzer", content_analyzer_node, None),
+    ("version_generator", version_generator_node, None),
+    ("choice_gate", choice_gate_node, None),
+    ("brief_analyzer", brief_analyzer_node, "brief_analyzer"),
+    ("brief_gate", brief_gate_node, None),
+    ("shooting_planner", shooting_planner_node, "shooting_planner"),
+)
+
+_DIRECT_EDGES: tuple[tuple[str, str], ...] = (
+    ("viral_matcher", "blogger_scout"),
+    ("blogger_scout", "blogger_gate"),
+    ("brief_analyzer", "brief_gate"),
+    ("brief_gate", "viral_matcher"),
+    ("revise_content", "copywriter"),
+    ("publisher", END),
+)
+
+
+def _add_nodes(builder: StateGraph[XHSGrowthState], allowed: set[str] | None = None) -> None:
+    for name, function, retry_key in _NODE_DEFINITIONS:
+        if allowed is not None and name not in allowed:
+            continue
+        function_name = getattr(function, "__name__", "")
+        node_function = cast(NodeFunction, globals().get(function_name, function))
+        if retry_key is None:
+            builder.add_node(name, _artifact_seam(node_function))
+        else:
+            builder.add_node(
+                name,
+                _artifact_seam(node_function),
+                retry_policy=get_retry_policy(retry_key),
+            )
+
+
+def build_graph(mode: WorkflowMode | None = None) -> StateGraph[XHSGrowthState]:
+    """构建小红书增长引擎的 LangGraph 状态图。
+
+    ``mode`` 为空时保持完整图（生产默认路径）。传入 ``WorkflowMode`` 时，
+    使用 ``backend.graph.plan.export_plan(mode)`` 的可达节点集裁剪节点与边，
+    生成一个真正可编译的 mode-specific 子图；未声明的节点不会出现在图中。
+    """
     builder = StateGraph(XHSGrowthState)
+    allowed_nodes: set[str] | None = None
+    if mode is not None:
+        # Lazy import: plan.export_plan() inspects the complete graph through
+        # build_graph(), so importing it eagerly would close a cycle.
+        from backend.graph.plan import export_plan
+
+        allowed_nodes = set(export_plan(mode).nodes)
 
     # ── 添加节点 ──
-    # P0-W3: every node passes get_retry_policy(<exact node name>) — the
-    # registry is exhaustive (backend/graph/error_handling.py) and unknown
-    # names raise KeyError, so "framework retry or not" is an explicit,
-    # auditable decision per node.
-    builder.add_node(
-        "orchestrator",
-        _artifact_seam(orchestrator_node),
-        retry_policy=get_retry_policy("orchestrator"),
-    )
-    builder.add_node(
-        "trend_scout",
-        _artifact_seam(trend_scout_node),
-        retry_policy=get_retry_policy("trend_scout"),
-    )
-    builder.add_node(
-        "content_strategist",
-        _artifact_seam(content_strategist_node),
-        retry_policy=get_retry_policy("content_strategist"),
-    )
-    builder.add_node(
-        "copywriter",
-        _artifact_seam(copywriter_node),
-        retry_policy=get_retry_policy("copywriter"),
-    )
-    builder.add_node(
-        "visual_designer",
-        _artifact_seam(visual_designer_node),
-        retry_policy=get_retry_policy("visual_designer"),
-    )
-    builder.add_node(
-        "review_gate",
-        _artifact_seam(review_gate_node),
-        retry_policy=get_retry_policy("review_gate"),
-    )
-    # Evaluator gate — RQGM agent-as-a-judge panel (AI quality gate after human review).
-    # No framework retry by design (explicit None): the node degrades fail-closed.
-    builder.add_node(
-        "evaluator_gate",
-        _artifact_seam(evaluator_node),
-        retry_policy=get_retry_policy("evaluator_gate"),
-    )
-    # Publish confirmation gate — the human authorisation a real publish needs.
-    # Sits between the quality verdict and the irreversible act; registered with
-    # no retry because its body interrupts and re-running cannot change a
-    # person's answer.
-    builder.add_node("publish_gate", _artifact_seam(publish_gate_node))
-    # Publisher — external side-effect node. P0-W3: generic framework auto-retry
-    # is forbidden (a retry would re-post); explicit None + /publish-retry with
-    # idempotency key + unknown reconciliation is the only retry path.
-    builder.add_node(
-        "publisher", _artifact_seam(publisher_node), retry_policy=get_retry_policy("publisher")
-    )
-    builder.add_node(
-        "analyst", _artifact_seam(analyst_node), retry_policy=get_retry_policy("analyst")
-    )
-    builder.add_node("revise_content", _artifact_seam(revise_content_node))
-    # Ripple gate — conditional interrupt when Ripple results are suboptimal
-    builder.add_node("ripple_gate", _artifact_seam(ripple_gate_node))
-    # Ripple finalize — reads background Ripple result from store (background mode only)
-    builder.add_node("ripple_finalize", _artifact_seam(ripple_finalize_node))
-    # Ripple late-recheck — bounded-polls the store after visual_designer for
-    # the late-arriving background Ripple result (background mode only). Inserts
-    # between visual_designer and review_gate so copywriter+visual run concurrent
-    # with Ripple; interrupts for a suboptimal result.
-    builder.add_node("ripple_late_recheck", _artifact_seam(ripple_late_recheck_node))
-    # 发布前优化节点
-    builder.add_node("draft_gate", _artifact_seam(draft_gate_node))
-    builder.add_node("viral_matcher", _artifact_seam(viral_matcher_node))
-    builder.add_node("blogger_scout", _artifact_seam(blogger_scout_node))
-    builder.add_node("blogger_gate", _artifact_seam(blogger_gate_node))
-    builder.add_node("content_analyzer", _artifact_seam(content_analyzer_node))
-    builder.add_node("version_generator", _artifact_seam(version_generator_node))
-    builder.add_node("choice_gate", _artifact_seam(choice_gate_node))
-
-    # 商单 Brief 模式节点
-    builder.add_node(
-        "brief_analyzer",
-        _artifact_seam(brief_analyzer_node),
-        retry_policy=get_retry_policy("brief_analyzer"),
-    )
-    builder.add_node("brief_gate", _artifact_seam(brief_gate_node))
-    builder.add_node(
-        "shooting_planner",
-        _artifact_seam(shooting_planner_node),
-        retry_policy=get_retry_policy("shooting_planner"),
-    )
+    _add_nodes(builder, allowed_nodes)
 
     # ── 入口 ──
-    builder.add_edge(START, "orchestrator")
+    if allowed_nodes is None or "orchestrator" in allowed_nodes:
+        builder.add_edge(START, "orchestrator")
 
     # ── 条件边 ──
-    # Every conditional edge is declared in backend/graph/wiring.py, together
-    # with its router, the answers it may give and the one place where an
-    # answer and its destination differ. Installing them from that table is
-    # what makes the edge set data: a new edge, or a new answer for an existing
-    # router, has to appear there, and the table is compared against the
-    # routers' own Literal annotations in both directions
-    # (tests/unit/graph/test_conditional_edge_wiring.py).
+    # Every conditional edge is declared in backend/graph/wiring.py; filter the
+    # path map so a JIT subgraph never points at a node outside its plan.
     for edge in CONDITIONAL_EDGES:
-        builder.add_conditional_edges(edge.source, edge.router, edge.path_map())
+        if allowed_nodes is not None and edge.source not in allowed_nodes:
+            continue
+        path_map = edge.path_map()
+        if allowed_nodes is not None:
+            path_map = {
+                answer: destination
+                for answer, destination in path_map.items()
+                if destination == END or destination in allowed_nodes
+            }
+        if path_map:
+            builder.add_conditional_edges(edge.source, edge.router, path_map)
 
     # ── 直边 ──
-    # viral_matcher → blogger_scout (discover bloggers from viral notes)
-    builder.add_edge("viral_matcher", "blogger_scout")
-
-    # blogger_scout → blogger_gate (interrupt for user selection)
-    builder.add_edge("blogger_scout", "blogger_gate")
-
-    # ── 商单 Brief 模式流程 ──
-    # brief_analyzer → brief_gate (pause for clarification if needed)
-    builder.add_edge("brief_analyzer", "brief_gate")
-
-    # brief_gate → viral_matcher (search viral posts by brief style)
-    builder.add_edge("brief_gate", "viral_matcher")
-
-    # viral_matcher already routes to blogger_scout above (trend and brief modes
-    # share this path); blogger_gate routes on workflow mode via
-    # blogger_gate_router.
-
-    # ── 修改后回到文案 ──
-    builder.add_edge("revise_content", "copywriter")
-
-    # ── 发布后直接结束（analyst 改为手动触发）──
-    builder.add_edge("publisher", END)
-
-    # analyst is kept as a node but no longer auto-triggered after publish.
-    # It can be reached by resuming the workflow with phase=analyzing.
+    for source, destination in _DIRECT_EDGES:
+        if allowed_nodes is not None and source not in allowed_nodes:
+            continue
+        if allowed_nodes is not None and destination != END and destination not in allowed_nodes:
+            continue
+        builder.add_edge(source, destination)
 
     return builder
+
+
+def build_jit_graph(mode: WorkflowMode) -> StateGraph[XHSGrowthState]:
+    """Build a mode-specific graph with only the nodes/edges in that plan.
+
+    This is the explicit JIT entry point; ``build_graph(mode)`` remains the
+    low-level call used by the compile helpers.
+    """
+
+    return build_graph(mode)
 
 
 _SQLITE_DB = os.environ.get("XHS_SQLITE_PATH", ".xhs/checkpoints.sqlite")
 
 
-async def compile_graph_dev() -> CompiledStateGraph[Any]:
+async def compile_graph_dev(mode: WorkflowMode | None = None) -> CompiledStateGraph[Any]:
     """开发模式编译 — 使用 SQLite 持久化检查点 + 存储（带语义搜索）
+
+    ``mode`` 为空时编译完整图；传入模式时编译该模式的独立子图。
 
     SQLite file location defaults to .xhs/checkpoints.sqlite (configurable
     via XHS_SQLITE_PATH env var).  Falls back to MemorySaver on ImportError.
@@ -204,7 +188,7 @@ async def compile_graph_dev() -> CompiledStateGraph[Any]:
     search index.  Otherwise uses InMemoryStore with index (semantic search
     enabled, but memory resets on restart).
     """
-    builder = build_graph()
+    builder = build_graph(mode) if mode is not None else build_graph()
 
     from backend.memory.index import get_prod_store_index, get_store_index
 
@@ -300,21 +284,25 @@ async def close_dev_graph(graph: CompiledStateGraph[Any]) -> None:
 
 
 @asynccontextmanager
-async def dev_graph() -> AsyncIterator[CompiledStateGraph[Any]]:
+async def dev_graph(mode: WorkflowMode | None = None) -> AsyncIterator[CompiledStateGraph[Any]]:
     """Compile a dev graph and ensure its SQLite checkpointer is closed on exit.
 
     Use `async with dev_graph() as graph:` in CLI/short-lived callers so the
     aiosqlite connection never leaks across asyncio.run boundaries.
     """
-    graph = await compile_graph_dev()
+    graph = await compile_graph_dev(mode)
     try:
         yield graph
     finally:
         await close_dev_graph(graph)
 
 
-async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph[Any], Any]:
+async def compile_graph_prod(
+    db_uri: str, mode: WorkflowMode | None = None
+) -> tuple[CompiledStateGraph[Any], Any]:
     """生产模式编译 — 使用 Postgres 检查点 + Postgres 存储 + 语义搜索 + 连接池
+
+    ``mode`` 为空时编译完整图；传入模式时编译该模式的独立子图。
 
     Creates a separate AsyncConnectionPool for the checkpointer.
     The pool is returned to app.py so it can be closed on shutdown
@@ -324,7 +312,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph[Any], Any]
         Tuple of (compiled graph, (checkpointer, pool, store_context)) or
         (compiled graph, None) when falling back to memory.
     """
-    builder = build_graph()
+    builder = build_graph(mode) if mode is not None else build_graph()
 
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver

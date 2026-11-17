@@ -27,6 +27,7 @@ from typing import Any
 _LAZY_EXPORTS = {
     # Builder symbols
     "build_graph": ("backend.graph.builder", "build_graph"),
+    "build_jit_graph": ("backend.graph.builder", "build_jit_graph"),
     "close_dev_graph": ("backend.graph.builder", "close_dev_graph"),
     "compile_graph_dev": ("backend.graph.builder", "compile_graph_dev"),
     "compile_graph_prod": ("backend.graph.builder", "compile_graph_prod"),
@@ -51,6 +52,7 @@ _LAZY_EXPORTS = {
 
 __all__ = [
     "build_graph",
+    "build_jit_graph",
     "close_dev_graph",
     "compile_graph_dev",
     "compile_graph_prod",

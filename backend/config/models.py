@@ -1,3 +1,4 @@
+import os
 from enum import StrEnum
 
 from pydantic import BaseModel
@@ -123,22 +124,75 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
 # 所有任务的默认模型（全部经 magpie 出网）。
 MAGPIE_MODEL_ID = "magpie-deepseek-v4.1-flash"
 
+# 可选的能力路由（默认关闭，保持现有 magpie 路由不变）。开启后仅把创意生成
+# 任务切到 MiMo；prefill/视觉仍走 magpie（magpie 上游即 DeepSeek，且仓库没有
+# 可直接构造的 deepseek-v4.1 provider id）。
+CAPABILITY_ROUTING_ENV = "XHS_CAPABILITY_ROUTING"
+_CAPABILITY_CREATIVE_MODEL_ID = "mimo-v2.6-flash"
+_CAPABILITY_CREATIVE_TOKENS = (
+    "copy",
+    "write",
+    "writing",
+    "polish",
+    "version",
+    "creative",
+    "brief",
+)
+
 # Primary model → backup model, applied only by ModelRouter after primary retries.
 MODEL_FALLBACKS: dict[str, str] = {
     "mimo-v2.6-flash": "magpie-deepseek-v4.1-flash",
 }
 
 
-def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | None = None) -> str:
+def _capability_routing_enabled() -> bool:
+    return os.getenv(CAPABILITY_ROUTING_ENV, "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _capability_model_id(task_type: TaskType) -> str | None:
+    """Return an opt-in creative route, or None to preserve the default route."""
+
+    kind = task_type.value.casefold()
+    if not any(token in kind for token in _CAPABILITY_CREATIVE_TOKENS):
+        return None
+    # A direct XiaomiMiMo call needs its own credential. Without one, fall back
+    # to the existing magpie route rather than failing at model construction.
+    if not os.getenv("XIAOMIMIMO_API_KEY", "").strip():
+        return None
+    return _CAPABILITY_CREATIVE_MODEL_ID
+
+
+def resolve_model_id(
+    task_type: TaskType,
+    routing_overrides: dict[str, str] | None = None,
+    *,
+    capability_routing: bool | None = None,
+) -> str:
     """根据任务类型解析模型 ID，支持用户覆盖
 
     默认全部任务走 magpie 网关的 DeepSeek V4.1 Flash（上游 fallback 由 magpie 自己管），
     不再按任务分厂商——需要分流时用 routing_overrides 覆盖即可。
+
+    ``capability_routing`` 是显式 opt-in：默认读取 ``XHS_CAPABILITY_ROUTING``。
+    仅在开关开启且存在 ``XIAOMIMIMO_API_KEY`` 时，创意生成任务切到 MiMo；其余
+    任务（含 prefill/vision）继续走 magpie。
     """
     routing = {task: MAGPIE_MODEL_ID for task in TaskType}
+    explicitly_overridden = bool(routing_overrides and task_type.value in routing_overrides)
     if routing_overrides:
         for k, v in routing_overrides.items():
             routing[TaskType(k)] = v
+    if capability_routing is None:
+        capability_routing = _capability_routing_enabled()
+    if capability_routing and not explicitly_overridden:
+        capability_model = _capability_model_id(task_type)
+        if capability_model:
+            return capability_model
     return routing[task_type]
 
 

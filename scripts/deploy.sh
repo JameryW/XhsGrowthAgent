@@ -274,6 +274,7 @@ LLMEOF
         -e XUNFEI_BASE_URL="${XUNFEI_BASE_URL:-}" \
         -e MAGPIE_API_KEY="${MAGPIE_API_KEY:-magpie}" \
         -e MAGPIE_BASE_URL="${MAGPIE_BASE_URL:-http://10.0.0.10:3425/v1}" \
+        -e XHS_CAPABILITY_ROUTING="${XHS_CAPABILITY_ROUTING:-}" \
         -e XHS_HARNESS_POLICY="${XHS_HARNESS_POLICY:-}" \
         -e XHS_COOKIE="${XHS_COOKIE:-}" \
         -e XHS_USER_ID="${XHS_USER_ID:-}" \
