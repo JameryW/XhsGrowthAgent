@@ -30,6 +30,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -61,6 +62,41 @@ from backend.state.enums import ContentStatus
 logger = logging.getLogger("xhs_growth.agents.evaluator")
 
 _compiler = ContextCompiler()
+
+
+def _saim_enforcement_enabled() -> bool:
+    return os.environ.get(SAIM_ENFORCEMENT_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _apply_saim_decision(evaluation: dict[str, Any]) -> None:
+    """Downgrade an approved result when the opt-in SAIM gate is weak."""
+    if not _saim_enforcement_enabled():
+        return
+    mode = str(evaluation.get("scenario_mode") or "")
+    scores = evaluation.get("scenario_scores")
+    if not mode or not isinstance(scores, dict):
+        return
+    score = scores.get(mode)
+    if not isinstance(score, (int, float)) or float(score) >= _SAIM_MIN_SCORE:
+        return
+    decision = evaluation.get("decision")
+    if decision not in (ContentStatus.APPROVED, ContentStatus.APPROVED.value):
+        return
+    evaluation["decision"] = ContentStatus.NEEDS_REVISION
+    evaluation["scenario_decision"] = "hold_for_revision"
+    hints = evaluation.get("revision_hints")
+    if not isinstance(hints, list):
+        hints = []
+        evaluation["revision_hints"] = hints
+    hints.append(
+        f"SAIM {mode} 场景分 {float(score):.2f} 低于 {_SAIM_MIN_SCORE:.2f}，"
+        "请按该场景重写开头与证据链。"
+    )
 
 
 def _with_publish_eligibility(
@@ -166,6 +202,7 @@ def _with_publish_eligibility(
         candidate_mode: score_scenario(metrics, candidate_mode)
         for candidate_mode in ("trend", "brief", "free")
     }
+    _apply_saim_decision(evaluation)
     return evaluation
 
 
@@ -201,6 +238,12 @@ MIN_EVALUATION_COVERAGE = 0.60
 # bias_severity 高于此值视为检测到明显偏倚，对 overall 下调
 _BIAS_PENALTY_THRESHOLD = 60.0
 _BIAS_PENALTY = 5.0  # 偏倚下调分
+
+# SAIM scenario scores are advisory by default.  The opt-in switch lets an
+# operator require a revision when the active workflow mode's scenario score is
+# weak while the legacy decision would have approved the content.
+SAIM_ENFORCEMENT_ENV = "XHS_SAIM_ENFORCEMENT"
+_SAIM_MIN_SCORE = 0.55
 
 _REQUIRED_DIMENSIONS = list(_DIMENSION_WEIGHTS.keys()) + ["bias_check"]
 

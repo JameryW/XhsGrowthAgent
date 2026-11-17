@@ -359,6 +359,32 @@ class TestEvaluatorAgent:
         assert set(result["scenario_scores"]) == {"trend", "brief", "free"}
         assert result["scenario_scores"]["brief"] > result["scenario_scores"]["trend"]
 
+    def test_saim_enforcement_defaults_off(self, agent, monkeypatch):
+        monkeypatch.delenv(evaluator_module.SAIM_ENFORCEMENT_ENV, raising=False)
+        state = {"workflow_mode": "trend", "novelty": {"max_similarity": 0.9}}
+        evaluation = {
+            "overall_score": 80.0,
+            "decision": ContentStatus.APPROVED,
+            "dimensions": [],
+        }
+        result = evaluator_module._with_publish_eligibility(state, evaluation)
+        assert result["scenario_scores"]["trend"] < evaluator_module._SAIM_MIN_SCORE
+        assert result["decision"] == ContentStatus.APPROVED
+
+    def test_saim_enforcement_downgrades_a_weak_approved_result(self, agent, monkeypatch):
+        monkeypatch.setenv(evaluator_module.SAIM_ENFORCEMENT_ENV, "1")
+        state = {"workflow_mode": "trend", "novelty": {"max_similarity": 0.9}}
+        evaluation = {
+            "overall_score": 80.0,
+            "decision": ContentStatus.APPROVED,
+            "revision_hints": ["keep the opening concrete"],
+            "dimensions": [],
+        }
+        result = evaluator_module._with_publish_eligibility(state, evaluation)
+        assert result["decision"] == ContentStatus.NEEDS_REVISION
+        assert result["scenario_decision"] == "hold_for_revision"
+        assert any("SAIM" in hint for hint in result["revision_hints"])
+
     def test_compute_overall_weighted(self, agent):
         from backend.agents.evaluator import _REQUIRED_DIMENSIONS
 
