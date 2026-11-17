@@ -71,6 +71,11 @@ class TestVisualDesignerAgent:
             "hook",
             "save_list",
         ]
+        assert result["visual_plan"]["avtp_token_budget"] == 1000
+        assert result["visual_plan"]["image_prompts"] == [
+            "封面钩子：配图1",
+            "结论 + 收藏清单：配图2",
+        ]
 
     @pytest.mark.asyncio
     async def test_execute_retries_a_failed_synergy_once(self, agent, mock_state, mock_store):

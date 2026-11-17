@@ -188,6 +188,14 @@ class VisualDesignerAgent(BaseAgent):
                 }
                 for slide in slides
             ]
+            # AVTP: the visual budget follows the retention arc, so downstream
+            # image generation consumes the plan rather than the flat prompt list.
+            visual_plan["avtp_token_budget"] = sum(slide.token_budget for slide in slides)
+            visual_plan["image_prompts"] = [
+                f"{slide.purpose}：{prompts[slide.index - 1]}"
+                for slide in slides
+                if slide.index <= len(prompts)
+            ]
 
         # ── Creative Memory: 沉淀风格选择 ──
         from backend.memory.types import StyleDNA
