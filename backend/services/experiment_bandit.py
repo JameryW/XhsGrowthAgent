@@ -92,6 +92,32 @@ class BanditDecision:
         }
 
 
+@dataclass(frozen=True)
+class SequentialStep:
+    """One step of a sequential A/B schedule.
+
+    Exploration is strictly one arm at a time: every variant must reach the
+    minimum impression count before the bandit may exploit a leader.  This
+    avoids the fixed-split failure mode where a promising arm is starved by an
+    early random allocation.
+    """
+
+    action: str
+    variant_id: str
+    reason: str
+    impressions: int
+    min_impressions: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "action": self.action,
+            "variant_id": self.variant_id,
+            "reason": self.reason,
+            "impressions": self.impressions,
+            "min_impressions": self.min_impressions,
+        }
+
+
 def rank_arms(
     observations: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None,
     *,
@@ -165,13 +191,83 @@ def rank_arms(
     )
 
 
+def sequential_plan(
+    variant_ids: list[str] | tuple[str, ...],
+    observations: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
+    *,
+    window: int = DEFAULT_WINDOW,
+    min_impressions: int = DEFAULT_MIN_IMPRESSIONS,
+) -> dict[str, Any]:
+    """Return the next arm a sequential A/B run should expose.
+
+    Every variant is explored until it has ``min_impressions`` observations;
+    only then does the bandit exploit its UCB leader.  The caller still owns
+    allocation and publication -- this function only names the next arm.
+    """
+    variants: list[str] = []
+    for raw in variant_ids:
+        variant = str(raw or "").strip()
+        if variant and variant not in variants:
+            variants.append(variant)
+    if not variants:
+        step = SequentialStep("stop", "", "no_variants", 0, min_impressions)
+        return {**step.as_dict(), "decision": None}
+
+    recent = list(observations or [])[-max(1, window) :]
+    impressions: dict[str, int] = dict.fromkeys(variants, 0)
+    valid_rows: list[dict[str, Any]] = []
+    for row in recent:
+        if not isinstance(row, dict):
+            continue
+        variant = str(row.get("variant_id") or "").strip()
+        if variant not in impressions:
+            continue
+        valid_rows.append(row)
+        impressions[variant] += max(0, int(row.get("impressions") or 0))
+
+    decision = rank_arms(valid_rows, window=window, min_impressions=min_impressions)
+    underexplored = [
+        (impressions[variant], index, variant)
+        for index, variant in enumerate(variants)
+        if impressions[variant] < min_impressions
+    ]
+    if underexplored:
+        count, _, variant = min(underexplored)
+        step = SequentialStep(
+            "explore",
+            variant,
+            "variant_needs_more_impressions",
+            count,
+            min_impressions,
+        )
+    elif decision.status == "ready_for_canary" and decision.leader:
+        step = SequentialStep(
+            "exploit",
+            decision.leader,
+            "ucb_leader_after_exploration",
+            impressions[decision.leader],
+            min_impressions,
+        )
+    else:
+        step = SequentialStep(
+            "stop",
+            "",
+            decision.reason or "insufficient_evidence",
+            0,
+            min_impressions,
+        )
+    return {**step.as_dict(), "decision": decision.as_dict()}
+
+
 __all__ = [
     "DEFAULT_CANARY_FRACTION",
     "DEFAULT_MIN_IMPRESSIONS",
     "DEFAULT_WINDOW",
     "ArmStats",
     "BanditDecision",
+    "SequentialStep",
     "rank_arms",
+    "sequential_plan",
     "ucb_score",
     "wilson_lower_bound",
 ]

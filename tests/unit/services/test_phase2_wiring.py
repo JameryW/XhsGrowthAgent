@@ -72,3 +72,5 @@ async def test_ab_test_manager_returns_bandit_and_canary_decision() -> None:
     assert result["bandit"]["status"] == "ready_for_canary"
     assert result["bandit"]["leader"] == "v1"
     assert result["canary"]["enabled"] is True
+    assert result["sequence"]["action"] == "exploit"
+    assert result["sequence"]["variant_id"] == "v1"

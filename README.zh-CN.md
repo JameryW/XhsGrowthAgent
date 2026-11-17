@@ -380,7 +380,7 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 | Judge 身份与校准 | `backend/agents/evaluator.py`、`backend/services/judge_calibration.py` | 每条 RQGM 结果记录 `judge_model_id`；按模型最近 50 次评分做均值/标准差标准化，避免限流切换造成趋势跳变 |
 | 前缀缓存断点 | `backend/context/models.py` | `cache_prefix`/`cache_tail`/`cache_prefix_token_cost` 与可选的 `render_with_cache_breakpoint()`；L0–L2 保持稳定，`render()` 字节不变 |
 | 私信资格门 | `backend/services/dm_qualification.py`、`xhs_engagement.py` | 五槽位 FSM（日期/租期/车型/预算/区域）+ 外链/联系方式/未核实报价/越权承诺拦截；`dm_handler` 可选 `qualification_state` 与 `known_prices`，不通过时不写效果账本 |
-| 周复盘 Bandit | `backend/services/experiment_bandit.py`、`tools/xhs/publisher.py` | 滑动窗口 UCB + Wilson 下界、Canary 变体；`ab_test_manager` 返回 `bandit`/`canary` 决策，仍由人工确认晋升 |
+| 周复盘 Bandit | `backend/services/experiment_bandit.py`、`tools/xhs/publisher.py` | 滑动窗口 UCB + Wilson 下界、Canary 变体；`ab_test_manager` 返回 `bandit`/`canary` 与序列式 `sequence` 决策（每个变体先探索到最小曝光，再进入 exploit），仍由人工确认晋升 |
 
 这些模块是工程近似：结果学习使用确定性中位数门槛而非完整因果模型；Bandit 只做离线排序，不自动改线上流量；私信 FSM 的槽位抽取基于正则，不替代人工确认。
 

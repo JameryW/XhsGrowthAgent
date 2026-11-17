@@ -180,7 +180,7 @@ async def ab_test_manager(
 
     import time
 
-    from backend.services.experiment_bandit import rank_arms
+    from backend.services.experiment_bandit import rank_arms, sequential_plan
 
     test_id = f"ab_{int(time.time())}"
 
@@ -188,6 +188,7 @@ async def ab_test_manager(
         {"variant_id": f"v{i}", "title": title} for i, title in enumerate(variant_titles[:3])
     ]
     decision = rank_arms(observations or []).as_dict()
+    sequence = sequential_plan([item["variant_id"] for item in variants], observations)
     return {
         "test_id": test_id,
         "base_post_id": base_post_id,
@@ -196,6 +197,7 @@ async def ab_test_manager(
         "start_time": time.strftime("%Y-%m-%d %H:%M:%S"),
         "status": "configured",
         "bandit": decision,
+        "sequence": sequence,
         "canary": {
             "enabled": decision.get("status") == "ready_for_canary",
             "variant": decision.get("canary_variant"),
