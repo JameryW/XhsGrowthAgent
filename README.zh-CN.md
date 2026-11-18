@@ -376,7 +376,7 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 | --- | --- | --- |
 | 外部内容护栏 | `backend/tools/runtime/untrusted.py`、`gateway.py` | 趋势/关键词/竞品/搜索/选题工具标记 `external_content=True`；结果清洗零宽字符与“忽略指令/自动批准/改价”等提示注入，`ToolResult.untrusted` 透传给 Agent |
 | 结果学习门禁 | `backend/services/outcome_learning.py`、`creator_stats/analyze.py` | 少于 48 小时的笔记不计入；按最近 10 篇成熟笔记的收藏中位数计算年龄校准优势，成熟笔记≥3 且平均优势>0 才可生成晋升信号，并附 Spearman 秩相关工具 |
-| Judge 身份与校准 | `backend/agents/evaluator.py`、`backend/services/judge_calibration.py` | 每条 RQGM 结果记录 `judge_model_id`；按模型最近 50 次评分做均值/标准差标准化，避免限流切换造成趋势跳变 |
+| Judge 身份与校准 | `backend/agents/evaluator.py`、`backend/services/judge_panel.py`、`judge_calibration.py` | 每条 RQGM 结果记录 `judge_model_id`；按模型最近 50 次评分做均值/标准差标准化，避免限流切换造成趋势跳变；设置 `XHS_HETEROGENEOUS_JUDGE=1` 后同一 magpie 网关用严格/受众/商业三种评审视角并行评分，按维度加权聚合，并把 `judge_panel`（agreement/dissent/votes）写入结果 |
 | 前缀缓存断点 | `backend/context/models.py` | `cache_prefix`/`cache_tail`/`cache_prefix_token_cost` 与可选的 `render_with_cache_breakpoint()`；L0–L2 保持稳定，`render()` 字节不变 |
 | 私信资格门 | `backend/services/dm_qualification.py`、`xhs_engagement.py` | 五槽位 FSM（日期/租期/车型/预算/区域）+ 外链/联系方式/未核实报价/越权承诺拦截；`dm_handler` 可选 `qualification_state` 与 `known_prices`，不通过时不写效果账本 |
 | 周复盘 Bandit | `backend/services/experiment_bandit.py`、`tools/xhs/publisher.py` | 滑动窗口 UCB + Wilson 下界、Canary 变体；`ab_test_manager` 返回 `bandit`/`canary` 与序列式 `sequence` 决策（每个变体先探索到最小曝光，再进入 exploit），仍由人工确认晋升 |
@@ -392,7 +392,7 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 | 评估与生成（25–30） | `backend/services/evaluation_contracts.py` | 单网关策略（全部任务统一走 `magpie-deepseek-v4.1-flash`，不保留 MiMo/DeepSeek 能力分流）；GRS/GAR 组内相对评审（多版本评估输出 `groupwise`，version_generator 另按质量/文案密度/视觉完备度输出 `version_groupwise` 与 `groupwise_rank`）；PTGS 温度（copywriter 在有评估结果时按 s_max/PLAD 绑定 `temperature`，prompted 路由生效）；APMD 锚点重置与香农熵（creator_stats 持久化 anchor 并输出 `policy_reset`）；真实渲染封面安全区/对比度/缩略图检查（publisher 已接）；SWA 冻结前缀 + ≤160 token 尾部锚点（copywriter 已接） |
 | 分发与回放（31–36） | `backend/services/distribution_contracts.py` | EGMF 曝光/限流诊断与可信度（creator_stats 已接）；trend/brief/free 场景权重（evaluator 输出 `scenario_scores`）；多图滑动留存弧与 AVTP Token 分配（`visual_designer` 已接，`image_prompts` 按留存弧重写并写回 `avtp_token_budget`）；粉赞比 BreakoutLift；FanRelationStore 原子 JSON 持久化（DM 成功后写入画像并返回破冰文案）；`/replay` 确定性脱敏 bundle（public API 已接） |
 
-上述模块已完成低风险生产接线（表中标注“已接”）；`compile_jit_subgraph` 仍是带图节点校验的模式计划，`build_jit_graph(mode)` 则按 `export_plan(mode)` 的节点/边生成真正可编译的独立子图；PTGS 已由 copywriter 在提示词约束路径上绑定，但 native structured 路由仍使用模型默认温度；APMD 已由 creator_stats 持久化 anchor 并输出重置决定，到期后会生成 `strategy_reset` 创意建议；SAIM 场景权重由 evaluator 输出，默认不改变发布决策；设置 `XHS_SAIM_ENFORCEMENT=1` 后，当前模式场景分低于 0.55 且原判定为 approved 时会降级为 needs_revision。模型能力路由仅作为显式 opt-in，默认发布资格契约未被改动。
+上述模块已完成低风险生产接线（表中标注“已接”）；`compile_jit_subgraph` 仍是带图节点校验的模式计划，`build_jit_graph(mode)` 则按 `export_plan(mode)` 的节点/边生成真正可编译的独立子图；PTGS 已由 copywriter 在提示词约束路径上绑定，但 native structured 路由仍使用模型默认温度；APMD 已由 creator_stats 持久化 anchor 并输出重置决定，到期后会生成 `strategy_reset` 创意建议；SAIM 场景权重由 evaluator 输出，默认不改变发布决策；设置 `XHS_SAIM_ENFORCEMENT=1` 后，当前模式场景分低于 0.55 且原判定为 approved 时会降级为 needs_revision。模型路由不保留能力分流：所有任务统一走 magpie，发布资格契约未被改动。
 
 两项边界是刻意保留的，而不是未完成项：其一，生产 API 默认仍编译完整图，运行期模式差异由 LangGraph 条件边处理；`--jit-mode`/`compile_graph_dev(mode)` 是显式选择独立子图的入口，独立子图只保留计划内节点，供批处理/调试按需使用。其二，仓库策略是所有 LLM 出网统一经 magpie（见 `CLAUDE.md`），生产路由不按任务切换厂商，全部使用 `magpie-deepseek-v4.1-flash`。
 

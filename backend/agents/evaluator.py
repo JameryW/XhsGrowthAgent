@@ -56,6 +56,11 @@ from backend.db.evaluator_config import (
 )
 from backend.models.outputs import EvaluationPanelOutput, normalize_evaluation_panel
 from backend.models.structured import StructuredOutputError
+from backend.services.judge_panel import (
+    DEFAULT_JUDGE_LENSES,
+    aggregate_judge_panels,
+    judge_panel_enabled,
+)
 from backend.services.quality_gate import apply_quality_gate, geo_readiness
 from backend.state.enums import ContentStatus
 
@@ -558,38 +563,67 @@ class EvaluatorAgent(BaseAgent):
         # and it escapes ``wait_for`` — the same as the pre-migration
         # ``_llm_ainvoke`` — reaching the stateful retry machinery via
         # ``BaseAgent.__call__``.
-        try:
-            panel = await asyncio.wait_for(
-                self._llm_structured(
-                    [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)],
-                    EvaluationPanelOutput,
-                    validator=_panel_has_dimensions,
-                ),
-                timeout=_EVALUATION_LLM_TIMEOUT_S,
-            )
-        except TimeoutError as e:
-            logger.warning(
-                "Evaluator LLM 调用超时(%.0fs)，结果标记为 degraded: %s",
-                _EVALUATION_LLM_TIMEOUT_S,
-                e,
-            )
-            return {
-                "evaluation_result": _panel_unavailable_result(
-                    ctx, summary=f"评估器 LLM 超时，评估未完成: {e}"
+        judge_panel_meta: dict[str, Any] | None = None
+        if judge_panel_enabled():
+            try:
+                consensus = await asyncio.wait_for(
+                    self._evaluate_lens_panel(system_prompt, user_msg),
+                    timeout=_EVALUATION_LLM_TIMEOUT_S,
                 )
-            }
-        except StructuredOutputError as e:
-            logger.warning("Evaluator panel produced no usable payload: %s", e)
-            return {
-                "evaluation_result": _panel_unavailable_result(
-                    ctx, summary=f"评估器未产出可用的评分面板，评估未完成: {e}"
+            except TimeoutError as e:
+                logger.warning(
+                    "Evaluator 多评审面板调用超时(%.0fs)，结果标记为 degraded: %s",
+                    _EVALUATION_LLM_TIMEOUT_S,
+                    e,
                 )
-            }
-        raw = normalize_evaluation_panel(panel)
+                return {
+                    "evaluation_result": _panel_unavailable_result(
+                        ctx, summary=f"评估器多评审面板超时，评估未完成: {e}"
+                    )
+                }
+            if consensus is None:
+                return {
+                    "evaluation_result": _panel_unavailable_result(
+                        ctx, summary="评估器多评审面板未产出任何可用评分，评估未完成"
+                    )
+                }
+            raw = consensus.payload()
+            judge_panel_meta = consensus.as_dict()
+        else:
+            try:
+                panel = await asyncio.wait_for(
+                    self._llm_structured(
+                        [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)],
+                        EvaluationPanelOutput,
+                        validator=_panel_has_dimensions,
+                    ),
+                    timeout=_EVALUATION_LLM_TIMEOUT_S,
+                )
+            except TimeoutError as e:
+                logger.warning(
+                    "Evaluator LLM 调用超时(%.0fs)，结果标记为 degraded: %s",
+                    _EVALUATION_LLM_TIMEOUT_S,
+                    e,
+                )
+                return {
+                    "evaluation_result": _panel_unavailable_result(
+                        ctx, summary=f"评估器 LLM 超时，评估未完成: {e}"
+                    )
+                }
+            except StructuredOutputError as e:
+                logger.warning("Evaluator panel produced no usable payload: %s", e)
+                return {
+                    "evaluation_result": _panel_unavailable_result(
+                        ctx, summary=f"评估器未产出可用的评分面板，评估未完成: {e}"
+                    )
+                }
+            raw = normalize_evaluation_panel(panel)
 
         result = self._build_evaluation_result(
             raw, historical=historical_note, state=state, ctx=ctx
         )
+        if judge_panel_meta is not None:
+            result["judge_panel"] = judge_panel_meta
         # Always attach the deterministic pre-LLM scan for audit/Review highlight.
         result["lexicon_scan"] = lexicon_payload
         is_blocking = bool(lexicon_payload.get("is_blocking"))
@@ -613,6 +647,47 @@ class EvaluatorAgent(BaseAgent):
             "is_commercial": commercial,
             "is_blocking": is_blocking,
         }
+
+    async def _evaluate_lens_panel(self, system_prompt: str, user_msg: str) -> Any:
+        """Run the opt-in multi-lens RQGM panel and aggregate its votes.
+
+        A failed lens is dropped; the remaining lenses still produce a usable
+        panel. Returning ``None`` means every lens failed, which the caller
+        maps to the existing degraded result instead of inventing a score.
+        """
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        async def _one(lens: Any) -> Any:
+            return await self._llm_structured(
+                [
+                    SystemMessage(
+                        content=f"{system_prompt}\n\n【评审视角：{lens.judge_id}】{lens.instruction}"
+                    ),
+                    HumanMessage(content=user_msg),
+                ],
+                EvaluationPanelOutput,
+                validator=_panel_has_dimensions,
+            )
+
+        results = await asyncio.gather(
+            *(_one(lens) for lens in DEFAULT_JUDGE_LENSES), return_exceptions=True
+        )
+        panels: list[dict[str, Any]] = []
+        used_lenses: list[Any] = []
+        for lens, result in zip(DEFAULT_JUDGE_LENSES, results, strict=True):
+            if isinstance(result, BaseException):
+                logger.warning("Judge lens %s failed: %s", lens.judge_id, result)
+                continue
+            panels.append(normalize_evaluation_panel(result))
+            used_lenses.append(lens)
+        if not panels:
+            return None
+        return aggregate_judge_panels(
+            panels,
+            judge_ids=[lens.judge_id for lens in used_lenses],
+            model_ids=[self.judge_model_id()] * len(used_lenses),
+            weights=[lens.weight for lens in used_lenses],
+        )
 
     def judge_model_id(self) -> str:
         """Return the concrete model identity recorded with each score.

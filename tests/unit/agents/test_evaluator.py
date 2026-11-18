@@ -359,6 +359,25 @@ class TestEvaluatorAgent:
         assert set(result["scenario_scores"]) == {"trend", "brief", "free"}
         assert result["scenario_scores"]["brief"] > result["scenario_scores"]["trend"]
 
+    @pytest.mark.asyncio
+    async def test_opt_in_lens_panel_records_all_judge_votes(
+        self, agent, mock_state, mock_store, monkeypatch
+    ):
+        monkeypatch.setenv("XHS_HETEROGENEOUS_JUDGE", "1")
+        mock_response = MagicMock()
+        mock_response.content = self._full_panel_response({"copywriting": 82, "compliance": 90})
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as m:
+            model = MagicMock()
+            model.model_name = "magpie-deepseek-v4.1-flash"
+            model.ainvoke = AsyncMock(side_effect=[mock_response, mock_response, mock_response])
+            m.return_value = model
+            result = await agent.execute(mock_state, store=mock_store)
+
+        panel = result["evaluation_result"]["judge_panel"]
+        assert panel["panel_size"] == 3
+        assert panel["judge_ids"] == ["strict", "audience", "commercial"]
+        assert panel["model_ids"] == ["magpie-deepseek-v4.1-flash"]
+
     def test_saim_enforcement_defaults_off(self, agent, monkeypatch):
         monkeypatch.delenv(evaluator_module.SAIM_ENFORCEMENT_ENV, raising=False)
         state = {"workflow_mode": "trend", "novelty": {"max_similarity": 0.9}}
