@@ -14,15 +14,16 @@ class ModelSettings(BaseSettings):
     xunfei_api_key: str = ""
 
     # Legacy default model map; runtime routing is defined in backend.config.models.
+    # Every entry stays on the single magpie gateway.
     model_routing: dict[str, str] = Field(
         default_factory=lambda: {
-            "routing": "mimo-v2.6-flash",
-            "scouting": "mimo-v2.6-flash",
-            "strategy": "mimo-v2.6-flash",
-            "writing": "mimo-v2.6-flash",
-            "visual": "mimo-v2.6-flash",
-            "analysis": "mimo-v2.6-flash",
-            "publishing": "mimo-v2.6-flash",
+            "routing": "magpie-deepseek-v4.1-flash",
+            "scouting": "magpie-deepseek-v4.1-flash",
+            "strategy": "magpie-deepseek-v4.1-flash",
+            "writing": "magpie-deepseek-v4.1-flash",
+            "visual": "magpie-deepseek-v4.1-flash",
+            "analysis": "magpie-deepseek-v4.1-flash",
+            "publishing": "magpie-deepseek-v4.1-flash",
         }
     )
 

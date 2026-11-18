@@ -27,11 +27,13 @@ def test_capability_routing_defaults_to_existing_magpie_route() -> None:
     assert decision.capability_routing is False
 
 
-def test_capability_routing_can_recommend_creative_and_prefill() -> None:
+def test_capability_routing_keeps_every_workload_on_magpie() -> None:
     creative = route_model_capability("creative_copywriting", capability_routing=True)
-    assert creative.model_id == "mimo-v2.6-flash"
+    assert creative.model_id == "magpie-deepseek-v4.1-flash"
+    assert creative.capability_routing is False
     visual = route_model_capability("visual_design", has_vision=True, capability_routing=True)
     assert visual.workload == "vision"
+    assert visual.model_id == "magpie-deepseek-v4.1-flash"
 
 
 def test_groupwise_grader_ranks_the_consistently_strong_candidate() -> None:

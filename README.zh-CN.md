@@ -225,14 +225,13 @@ LangGraph 只执行任务图，系统职责由其下方的确定性内核层承�
 
 ### 模型路由
 
-系统按任务类型选择模型，提供商通过环境变量配置。当前默认（见 `backend/config/models.py`）通用任务使用 MiMo V2.6 Flash，窄任务使用 DeepSeek V4 Flash；MiMo 遇到可重试故障且重试耗尽后，会切换到 DeepSeek：
+系统按任务类型选择模型，但所有生产模型调用统一经 magpie 网关。当前默认（见 `backend/config/models.py`）全部任务使用 `magpie-deepseek-v4.1-flash`，由 magpie 负责上游模型与故障切换：
 
 | 任务 | 项目默认路由 |
 | --- | --- |
-| 路由、趋势侦察、策略、文案、视觉规划、分析、发布、用户互动、内容分析、版本生成、简报分析、拍摄计划、质量评估 | `mimo-v2.6-flash` |
-| 润色（`TaskType.POLISH`）、Mock 生成（`TaskType.MOCK_GEN`）、爆款匹配（`TaskType.VIRAL_MATCHING`） | `deepseek-v4-flash` |
+| 路由、趋势侦察、策略、文案、视觉规划、分析、发布、用户互动、内容分析、版本生成、简报分析、拍摄计划、质量评估、润色、Mock 生成、爆款匹配 | `magpie-deepseek-v4.1-flash` |
 
-只有限流、服务端、网络或超时错误在 MiMo 重试耗尽后才会切换；鉴权和无效请求错误会直接返回。启用主模型和备用模型需配置 `XIAOMIMIMO_API_KEY` 与 `DEEPSEEK_API_KEY`。
+不再保留按任务切换 MiMo/DeepSeek 的能力路由；模型访问统一使用 `MAGPIE_API_KEY` 与 `MAGPIE_BASE_URL`。`routing_overrides` 仅供本地测试/基准脚本显式注入，生产调用不传该参数。
 
 ## 安装
 
@@ -390,12 +389,12 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 | --- | --- | --- |
 | 发布前多模态门（13–18） | `backend/services/content_launch.py` | 图文互补/缩略图可读性/垂类美学协同评分（`visual_designer` 已接）；TagLLM 三层 5–8 标签（`copywriter` 已接）；review 风险信号条（evaluator 已接）；Playwright/CDP 会话三态熔断（`xhs.publisher` 已接）；根因分类与单篇 Token 成本（`_runner` 已接）；SSE 统一 `sse_event_frame` |
 | 时间与执行（19–24） | `backend/services/temporal_contracts.py`、`backend/db/draft_analytics.py` | 草稿 CAS 版本与独立追加的 `DraftAnalyticsSnapshot`（free API 已接）；24h/7d 正余弦编码与 48 槽位（topic_scorer 输出 `time_pop`，strategist 将推荐时段写入 `content_plan.recommended_posting_slot(s)`）；自抑制 Hawkes 核（topic_scorer 的 `inhibition` 已接）；`compile_jit_subgraph` 模式计划 + `build_jit_graph(mode)`/`compile_graph_dev(mode)` 真实 mode-specific 子图（CLI `--jit-mode`）；商单 Brief 契约字段校验；A/B/C 叙事锚点；Ripple 超时 partial 抢救 + 可选本地回归兜底 |
-| 评估与生成（25–30） | `backend/services/evaluation_contracts.py` | 能力路由（`XHS_CAPABILITY_ROUTING=1` 且配置 `XIAOMIMIMO_API_KEY` 时创意任务走 MiMo，默认仍走 magpie）；GRS/GAR 组内相对评审（多版本评估输出 `groupwise`，version_generator 另按质量/文案密度/视觉完备度输出 `version_groupwise` 与 `groupwise_rank`）；PTGS 温度（copywriter 在有评估结果时按 s_max/PLAD 绑定 `temperature`，prompted 路由生效）；APMD 锚点重置与香农熵（creator_stats 持久化 anchor 并输出 `policy_reset`）；真实渲染封面安全区/对比度/缩略图检查（publisher 已接）；SWA 冻结前缀 + ≤160 token 尾部锚点（copywriter 已接） |
+| 评估与生成（25–30） | `backend/services/evaluation_contracts.py` | 单网关策略（全部任务统一走 `magpie-deepseek-v4.1-flash`，不保留 MiMo/DeepSeek 能力分流）；GRS/GAR 组内相对评审（多版本评估输出 `groupwise`，version_generator 另按质量/文案密度/视觉完备度输出 `version_groupwise` 与 `groupwise_rank`）；PTGS 温度（copywriter 在有评估结果时按 s_max/PLAD 绑定 `temperature`，prompted 路由生效）；APMD 锚点重置与香农熵（creator_stats 持久化 anchor 并输出 `policy_reset`）；真实渲染封面安全区/对比度/缩略图检查（publisher 已接）；SWA 冻结前缀 + ≤160 token 尾部锚点（copywriter 已接） |
 | 分发与回放（31–36） | `backend/services/distribution_contracts.py` | EGMF 曝光/限流诊断与可信度（creator_stats 已接）；trend/brief/free 场景权重（evaluator 输出 `scenario_scores`）；多图滑动留存弧与 AVTP Token 分配（`visual_designer` 已接，`image_prompts` 按留存弧重写并写回 `avtp_token_budget`）；粉赞比 BreakoutLift；FanRelationStore 原子 JSON 持久化（DM 成功后写入画像并返回破冰文案）；`/replay` 确定性脱敏 bundle（public API 已接） |
 
 上述模块已完成低风险生产接线（表中标注“已接”）；`compile_jit_subgraph` 仍是带图节点校验的模式计划，`build_jit_graph(mode)` 则按 `export_plan(mode)` 的节点/边生成真正可编译的独立子图；PTGS 已由 copywriter 在提示词约束路径上绑定，但 native structured 路由仍使用模型默认温度；APMD 已由 creator_stats 持久化 anchor 并输出重置决定，到期后会生成 `strategy_reset` 创意建议；SAIM 场景权重由 evaluator 输出，默认不改变发布决策；设置 `XHS_SAIM_ENFORCEMENT=1` 后，当前模式场景分低于 0.55 且原判定为 approved 时会降级为 needs_revision。模型能力路由仅作为显式 opt-in，默认发布资格契约未被改动。
 
-两项边界是刻意保留的，而不是未完成项：其一，生产 API 默认仍编译完整图，运行期模式差异由 LangGraph 条件边处理；`--jit-mode`/`compile_graph_dev(mode)` 是显式选择独立子图的入口，独立子图只保留计划内节点，供批处理/调试按需使用。其二，仓库策略是所有 LLM 出网统一经 magpie（见 `CLAUDE.md`），`XHS_CAPABILITY_ROUTING=1` 只会在 `XIAOMIMIMO_API_KEY` 存在时把创意任务切到 MiMo，prefill/视觉仍由 magpie 的 DeepSeek 上游承担；没有对应 provider 凭据时保持原路由。
+两项边界是刻意保留的，而不是未完成项：其一，生产 API 默认仍编译完整图，运行期模式差异由 LangGraph 条件边处理；`--jit-mode`/`compile_graph_dev(mode)` 是显式选择独立子图的入口，独立子图只保留计划内节点，供批处理/调试按需使用。其二，仓库策略是所有 LLM 出网统一经 magpie（见 `CLAUDE.md`），生产路由不按任务切换厂商，全部使用 `magpie-deepseek-v4.1-flash`。
 
 ## 测试与开发
 

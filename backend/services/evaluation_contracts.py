@@ -61,8 +61,6 @@ class ModelRouteDecision:
 
 
 _DEFAULT_MODEL = "magpie-deepseek-v4.1-flash"
-_PREFILL_MODEL = "deepseek-v4.1"
-_CREATIVE_MODEL = "mimo-v2.6-flash"
 
 
 def classify_workload(task_type: str, input_tokens: int = 0, has_vision: bool = False) -> Workload:
@@ -85,28 +83,20 @@ def route_model_capability(
     has_vision: bool = False,
     capability_routing: bool | None = None,
 ) -> ModelRouteDecision:
-    """Recommend a capability-based route while defaulting to the existing route.
+    """Classify workload while keeping every model call on the magpie gateway.
 
-    The project currently routes every task through the magpie gateway.  This
-    function is an opt-in policy layer: with ``capability_routing=False`` (the
-    default unless explicitly enabled) it returns the same magpie model as the
-    production router.
+    The repository policy is single-gateway: all task types resolve to
+    ``MAGPIE_MODEL_ID``.  ``capability_routing`` is retained only as a
+    backwards-compatible argument and never changes the returned model.
     """
 
-    enabled = bool(capability_routing)
     workload = classify_workload(task_type, input_tokens=input_tokens, has_vision=has_vision)
-    if not enabled:
-        return ModelRouteDecision(
-            workload.value,
-            _DEFAULT_MODEL,
-            "capability routing disabled; preserve existing magpie route",
-            False,
-        )
-    if workload is Workload.VISION or workload is Workload.PREFILL_HEAVY:
-        return ModelRouteDecision(workload.value, _PREFILL_MODEL, "prefill/vision workload", True)
-    if workload is Workload.CREATIVE:
-        return ModelRouteDecision(workload.value, _CREATIVE_MODEL, "creative generation", True)
-    return ModelRouteDecision(workload.value, _DEFAULT_MODEL, "balanced workload", True)
+    return ModelRouteDecision(
+        workload.value,
+        _DEFAULT_MODEL,
+        "single magpie gateway policy",
+        False,
+    )
 
 
 @dataclass(frozen=True)

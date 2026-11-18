@@ -146,10 +146,9 @@ class Settings(BaseSettings):
 
 | TaskType | Model | Provider | 用途 |
 |----------|-------|----------|------|
-| `ROUTING`, `SCOUTING`, `STRATEGY`, `WRITING`, `VISUAL`, `ANALYSIS`, `PUBLISHING`, `ENGAGEMENT`, `CONTENT_ANALYSIS`, `VERSION_GEN`, `BRIEF_ANALYSIS`, `SHOOTING_PLAN`, `EVALUATION` | mimo-v2.6-flash | Xiaomi MiMo | 通用工作流；可重试故障耗尽重试后切换到 DeepSeek V4 Flash |
-| `POLISH`, `MOCK_GEN`, `VIRAL_MATCHING` | deepseek-v4-flash | DeepSeek | 窄任务的轻量模型路由 |
+| 全部 `TaskType` | magpie-deepseek-v4.1-flash | Magpie | 统一网关；上游模型与故障切换由 magpie 负责 |
 
-MiMo 的鉴权、无效请求等不可重试错误不会触发备用模型。启用自动故障切换需同时配置 `XIAOMIMIMO_API_KEY` 和 `DEEPSEEK_API_KEY`。Ripple 模拟有独立的 LLM 配置，不受此路由影响。
+所有生产模型调用统一经 `MAGPIE_API_KEY` / `MAGPIE_BASE_URL` 出网，不再按任务切换 MiMo/DeepSeek。`routing_overrides` 仅供本地测试与基准脚本显式注入。Ripple 模拟有独立的 LLM 配置，不受此路由影响。
 
 ### 模型参数默认值
 
@@ -160,9 +159,8 @@ class ModelConfig:
     timeout: int = 60         # API 超时（秒）
 ```
 
-**各模型差异:**
-- MiMo V2.6 Flash: temperature=0.7，通用默认模型
-- DeepSeek V4 Flash: temperature=0.6，轻量任务及 MiMo 可重试故障的备用模型
+**生产路由:**
+- `magpie-deepseek-v4.1-flash`: 全部 TaskType 的统一入口，上游模型与故障切换由 magpie 负责；temperature 使用模型默认值，PTGS 仅在文案生成时按评估结果显式覆盖。
 
 ---
 

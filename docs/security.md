@@ -9,7 +9,7 @@
 | 变量 | 用途 | 风险等级 |
 |------|------|----------|
 | `MAGPIE_API_KEY` | magpie 网关（默认全部 LLM 出口） | HIGH |
-| `XIAOMIMIMO_API_KEY` | 小米 MiMo（显式覆盖路由时） | HIGH |
+| `XIAOMIMIMO_API_KEY` | 小米 MiMo（历史/测试覆盖，生产默认不使用） | LOW |
 | `ANTHROPIC_API_KEY` | Claude 模型（可选/旧路由） | HIGH |
 | `OPENAI_API_KEY` | GPT 模型（可选/旧路由） | HIGH |
 | `DEEPSEEK_API_KEY` | DeepSeek（直连已禁用，仅历史配置） | HIGH |
