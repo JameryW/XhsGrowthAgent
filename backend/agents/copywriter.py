@@ -441,7 +441,8 @@ class CopywriterAgent(BaseAgent):
     ) -> dict[str, Any]:
         """Apply only corrections that humans confirmed at least twice."""
         body = str(copy_content.get("body_text") or "")
-        if not body:
+        title = str(copy_content.get("selected_title") or copy_content.get("title") or "")
+        if not body and not title:
             return copy_content
         try:
             memory = await load_port_memory(store, account_id)
@@ -450,11 +451,20 @@ class CopywriterAgent(BaseAgent):
             return copy_content
         if not memory:
             return copy_content
-        result = apply_port_memory(body, memory)
-        if not result.applied:
+        applied: list[Any] = []
+        if body:
+            result = apply_port_memory(body, memory, field="body")
+            if result.applied:
+                copy_content["body_text"] = result.text
+                applied.extend(result.applied)
+        if title:
+            result = apply_port_memory(title, memory, field="title")
+            if result.applied:
+                copy_content["selected_title"] = result.text
+                applied.extend(result.applied)
+        if not applied:
             return copy_content
-        copy_content["body_text"] = result.text
-        copy_content["port_applied"] = [span.as_dict() for span in result.applied]
+        copy_content["port_applied"] = [span.as_dict() for span in applied]
         return copy_content
 
     async def _generate_style_variants(

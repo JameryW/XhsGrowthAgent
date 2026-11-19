@@ -230,6 +230,33 @@ class TestReviewGateNodeAutoPass:
         assert result["human_feedback"]["decision"] == "approved"
 
     @pytest.mark.asyncio
+    async def test_human_edits_are_applied_and_learned(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Approved human edits replace the draft and feed PORT span learning."""
+        from backend.agents.nodes import review_gate as rg
+
+        monkeypatch.delenv("AUTO_APPROVE_LOW_RISK", raising=False)
+
+        def _fake_interrupt(payload: dict) -> dict:
+            return {
+                "decision": "approved",
+                "edited_title": "夏日清爽穿搭清单",
+                "edited_body": "今天分享一套夏日清爽穿搭，简单又高级，适合日常通勤和约会。" * 2,
+            }
+
+        with patch.object(rg, "interrupt", _fake_interrupt):
+            result = await rg.review_gate_node(_low_risk_state(), store=None)  # type: ignore[arg-type]
+
+        assert result["copy_content"]["selected_title"] == "夏日清爽穿搭清单"
+        assert "简单又高级" in result["copy_content"]["body_text"]
+        assert result["human_feedback"]["edited_title"] == "夏日清爽穿搭清单"
+        assert {span["field"] for span in result["human_feedback"]["port_spans"]} == {
+            "body",
+            "title",
+        }
+
+    @pytest.mark.asyncio
     async def test_no_auto_pass_for_high_even_if_enabled(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

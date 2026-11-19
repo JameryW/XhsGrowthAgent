@@ -200,11 +200,19 @@ async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
         phase = WorkflowPhase.ERROR
 
     human_feedback = decision if isinstance(decision, dict) else {"decision": raw_decision}
+    updates: dict[str, Any] = {"human_feedback": human_feedback, "phase": phase}
 
-    return NodeResult(
-        {
-            "human_feedback": human_feedback,
-            "phase": phase,
-        },
-        "review_gate",
-    ).to_dict()
+    edited_body = str(human_feedback.get("edited_body") or "")
+    edited_title = str(human_feedback.get("edited_title") or "")
+    if edited_body or edited_title:
+        from backend.agents.nodes.revise_content import _learn_port_edits
+
+        await _learn_port_edits(state, human_feedback, store)
+        copy_content = dict(state.get("copy_content") or {})
+        if edited_title:
+            copy_content["selected_title"] = edited_title
+        if edited_body:
+            copy_content["body_text"] = edited_body
+        updates["copy_content"] = copy_content
+
+    return NodeResult(updates, "review_gate").to_dict()

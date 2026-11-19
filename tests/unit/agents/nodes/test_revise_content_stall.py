@@ -87,10 +87,14 @@ class TestRevisionRecordIsWritten:
         store.aget = AsyncMock(return_value=None)
         store.aput = AsyncMock()
         state = _state(
-            copy_content={"body_text": "这个产品首先很好用"},
+            copy_content={
+                "body_text": "这个产品首先很好用",
+                "selected_title": "这个标题首先很好",
+            },
             human_feedback={
                 "comment": "keep me",
                 "edited_body": "这个产品直接很好用",
+                "edited_title": "这个标题直接很好",
             },
             evaluation_result=_evaluation("开头更直接"),
         )
@@ -100,6 +104,7 @@ class TestRevisionRecordIsWritten:
         spans = result["human_feedback"]["port_spans"]
         assert spans and spans[0]["old"] == "首先"
         assert spans[0]["new"] == "直接"
+        assert {span["field"] for span in spans} == {"body", "title"}
         store.aput.assert_awaited_once()
 
     async def test_existing_behaviour_is_unchanged(self):

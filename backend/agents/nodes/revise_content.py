@@ -24,10 +24,8 @@ async def _learn_port_edits(
     store: BaseStore,
 ) -> None:
     """Learn spans only from an explicit human edit at the review gate."""
-    edited_body = str(human_feedback.get("edited_body") or "")
     current = state.get("copy_content") or {}
-    old_body = str(current.get("body_text") or "") if isinstance(current, dict) else ""
-    if not edited_body or not old_body or edited_body == old_body:
+    if not isinstance(current, dict):
         return
     try:
         from backend.services.port import (
@@ -37,15 +35,21 @@ async def _learn_port_edits(
             save_port_memory,
         )
 
-        spans = mine_span_revisions(old_body, edited_body)
-        if not spans:
+        revisions = []
+        edited_body = str(human_feedback.get("edited_body") or "")
+        old_body = str(current.get("body_text") or "")
+        if edited_body and old_body and edited_body != old_body:
+            revisions.extend(mine_span_revisions(old_body, edited_body, field="body"))
+        edited_title = str(human_feedback.get("edited_title") or "")
+        old_title = str(current.get("selected_title") or current.get("title") or "")
+        if edited_title and old_title and edited_title != old_title:
+            revisions.extend(mine_span_revisions(old_title, edited_title, field="title"))
+        if not revisions:
             return
-        learned = merge_port_memory(
-            await load_port_memory(store, str(state.get("account_id") or "")),
-            spans,
-        )
-        await save_port_memory(store, str(state.get("account_id") or ""), learned)
-        human_feedback["port_spans"] = [span.as_dict() for span in spans]
+        account_id = str(state.get("account_id") or "")
+        learned = merge_port_memory(await load_port_memory(store, account_id), revisions)
+        await save_port_memory(store, account_id, learned)
+        human_feedback["port_spans"] = [span.as_dict() for span in revisions]
     except Exception as exc:  # noqa: BLE001 - learning never blocks a revision
         logger.debug("PORT learning skipped: %s", exc)
 

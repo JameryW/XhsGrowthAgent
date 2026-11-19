@@ -29,13 +29,14 @@ PORT_NAMESPACE_SUFFIX = "port_learning"
 
 @dataclass(frozen=True)
 class PortSpan:
-    """One reusable fragment-level correction."""
+    """One reusable fragment-level correction for a named field."""
 
     old: str
     new: str
     reason: str = ""
     support: int = 1
     last_seen: str = ""
+    field: str = "body"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +45,7 @@ class PortSpan:
             "reason": self.reason,
             "support": self.support,
             "last_seen": self.last_seen,
+            "field": self.field,
         }
 
 
@@ -77,6 +79,7 @@ def mine_span_revisions(
     old_text: str,
     new_text: str,
     *,
+    field: str = "body",
     max_spans: int = 8,
     min_chars: int = 2,
 ) -> list[PortSpan]:
@@ -99,7 +102,7 @@ def mine_span_revisions(
         new_span = new[j1:j2].strip()
         if len(old_span) < min_chars or len(new_span) < min_chars:
             continue
-        spans.append(PortSpan(old=_clip(old_span), new=_clip(new_span)))
+        spans.append(PortSpan(old=_clip(old_span), new=_clip(new_span), field=field))
         if len(spans) >= max_spans:
             break
     return spans
@@ -117,37 +120,42 @@ def merge_port_memory(
     merged: dict[str, PortSpan] = {}
     for raw in existing or ():
         if isinstance(raw, PortSpan):
-            key = normalize_fragment(raw.old)
+            key = f"{raw.field or 'body'}:{normalize_fragment(raw.old)}"
             if key:
                 merged[key] = PortSpan(
-                    old=key,
+                    old=normalize_fragment(raw.old),
                     new=normalize_fragment(raw.new),
                     reason=raw.reason,
                     support=max(1, raw.support),
                     last_seen=raw.last_seen,
+                    field=raw.field or "body",
                 )
             continue
-        key = normalize_fragment(str(raw.get("old") or ""))
+        field = str(raw.get("field") or "body")
+        key = f"{field}:{normalize_fragment(str(raw.get('old') or ''))}"
         if not key:
             continue
         merged[key] = PortSpan(
-            old=key,
+            old=normalize_fragment(str(raw.get("old") or "")),
             new=normalize_fragment(str(raw.get("new") or "")),
             reason=str(raw.get("reason") or ""),
             support=max(1, int(raw.get("support") or 1)),
             last_seen=str(raw.get("last_seen") or ""),
+            field=field,
         )
     for revision in revisions:
-        key = normalize_fragment(revision.old)
+        field = revision.field or "body"
+        key = f"{field}:{normalize_fragment(revision.old)}"
         if not key or not revision.new:
             continue
         prior = merged.get(key)
         merged[key] = PortSpan(
-            old=key,
+            old=normalize_fragment(revision.old),
             new=revision.new,
             reason=revision.reason or (prior.reason if prior else ""),
             support=(prior.support if prior else 0) + 1,
             last_seen=stamp,
+            field=field,
         )
     ordered = sorted(
         merged.values(),
@@ -161,6 +169,7 @@ def apply_port_memory(
     text: str,
     memory: Iterable[Mapping[str, Any]],
     *,
+    field: str = "body",
     min_support: int = MIN_SUPPORT_FOR_REUSE,
     max_applications: int = 5,
 ) -> PortLearningResult:
@@ -177,10 +186,11 @@ def apply_port_memory(
                     reason=str(raw.get("reason") or ""),
                     support=max(1, int(raw.get("support") or 1)),
                     last_seen=str(raw.get("last_seen") or ""),
+                    field=str(raw.get("field") or "body"),
                 )
                 for raw in memory
             )
-            if span.old and span.new and span.support >= min_support
+            if span.old and span.new and span.field == field and span.support >= min_support
         ),
         key=lambda span: span.support,
         reverse=True,

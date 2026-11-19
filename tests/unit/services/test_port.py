@@ -36,3 +36,17 @@ def test_apply_skips_single_observation_memory():
 
     assert result.text == "这个首先很好用"
     assert result.applied == ()
+
+
+def test_title_memory_does_not_rewrite_the_body():
+    title_spans = mine_span_revisions("首先看这里", "直接看这里", field="title")
+    merged = merge_port_memory([], title_spans)
+    merged = merge_port_memory(merged, title_spans)
+    memory = [span.as_dict() for span in merged]
+
+    body_result = apply_port_memory("这个首先很好用", memory, field="body")
+    title_result = apply_port_memory("首先看这里", memory, field="title")
+
+    assert body_result.text == "这个首先很好用"
+    assert title_result.text == "直接看这里"
+    assert merged[0].field == "title"
