@@ -45,6 +45,7 @@ from backend.models.outputs import (
 )
 from backend.models.structured import StructuredOutputError
 from backend.services.evaluation_contracts import build_swa_sandwich
+from backend.services.port import apply_port_memory, load_port_memory
 from backend.state.modes import mode_spec
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
@@ -362,6 +363,7 @@ class CopywriterAgent(BaseAgent):
             dict(plan),
             niche=str(niche or ""),
         )
+        copy_content = await self._apply_learned_port(copy_content, store, account_id)
 
         # ── Multi-style generation when blogger_notes exist ──
         blogger_notes = state.get("blogger_notes") or []
@@ -430,6 +432,30 @@ class CopywriterAgent(BaseAgent):
         if content_versions:
             result["content_versions"] = content_versions
         return result
+
+    async def _apply_learned_port(
+        self,
+        copy_content: dict[str, Any],
+        store: BaseStore,
+        account_id: str,
+    ) -> dict[str, Any]:
+        """Apply only corrections that humans confirmed at least twice."""
+        body = str(copy_content.get("body_text") or "")
+        if not body:
+            return copy_content
+        try:
+            memory = await load_port_memory(store, account_id)
+        except Exception as exc:  # noqa: BLE001 - memory is not critical path
+            logger.debug("PORT memory load skipped: %s", exc)
+            return copy_content
+        if not memory:
+            return copy_content
+        result = apply_port_memory(body, memory)
+        if not result.applied:
+            return copy_content
+        copy_content["body_text"] = result.text
+        copy_content["port_applied"] = [span.as_dict() for span in result.applied]
+        return copy_content
 
     async def _generate_style_variants(
         self,

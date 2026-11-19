@@ -82,6 +82,26 @@ class TestRevisionRecordIsWritten:
         assert result["revision_history"][0]["round"] == 2
         assert len(result["revision_history"]) == 1
 
+    async def test_human_edit_is_mined_into_port_spans(self):
+        store = MagicMock()
+        store.aget = AsyncMock(return_value=None)
+        store.aput = AsyncMock()
+        state = _state(
+            copy_content={"body_text": "这个产品首先很好用"},
+            human_feedback={
+                "comment": "keep me",
+                "edited_body": "这个产品直接很好用",
+            },
+            evaluation_result=_evaluation("开头更直接"),
+        )
+
+        result = await revise_content_node(state, store=store)
+
+        spans = result["human_feedback"]["port_spans"]
+        assert spans and spans[0]["old"] == "首先"
+        assert spans[0]["new"] == "直接"
+        store.aput.assert_awaited_once()
+
     async def test_existing_behaviour_is_unchanged(self):
         state = _state(
             revision_count=1,

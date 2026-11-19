@@ -81,6 +81,11 @@ class ReviewDecision(BaseModel):
     decision: ContentStatus
     comments: str = ""
     revisions: list[str] = []
+    # Optional human edit captured at the review gate. PORT learns only from
+    # this explicit text, never from an AI rewrite, so a later draft can reuse
+    # repeatedly confirmed local corrections.
+    edited_title: str = ""
+    edited_body: str = ""
     publish_options: PublishOptions | None = None
 
 
