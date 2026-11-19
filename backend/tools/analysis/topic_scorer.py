@@ -56,24 +56,74 @@ def _parse_published_at(value: object) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _time_pop(now: datetime, niche: str) -> dict[str, Any]:
-    """TimePop features plus the best half-hour slots for this niche."""
-    from backend.services.temporal_contracts import counterfactual_slots, encode_time_features
+def _slot_performance(history_records: list[dict[str, Any]] | None) -> dict[int, list[float]]:
+    """Bucket historical engagement by half-hour publishing slot."""
+    buckets: dict[int, list[float]] = {}
+    for record in history_records or []:
+        if not isinstance(record, dict):
+            continue
+        published = _parse_published_at(record.get("published_at"))
+        if published is None:
+            continue
+        slot = published.hour * 2 + (1 if published.minute >= 30 else 0)
+        engagement_rate = record.get("engagement_rate")
+        if isinstance(engagement_rate, (int, float)):
+            value = max(0.0, float(engagement_rate))
+        else:
+            views = record.get("views")
+            if not isinstance(views, (int, float)) or float(views) <= 0:
+                continue
+            interactions = sum(
+                float(record.get(key) or 0) for key in ("likes", "collects", "comments", "shares")
+            )
+            value = interactions / float(views)
+        buckets.setdefault(slot, []).append(value)
+    return buckets
+
+
+def _time_pop(
+    now: datetime,
+    niche: str,
+    history_records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """TimePop features plus history-aware half-hour slot recommendations."""
+    from backend.services.temporal_contracts import encode_time_features, rank_counterfactual_slots
 
     preferred = _PREFERRED_HOURS.get(niche, _DEFAULT_HOURS)
+    bucket = _slot_performance(history_records)
+    slot_average = {
+        slot: sum(values) / len(values) for slot, values in bucket.items() if len(values) >= 2
+    }
+    best_average = max(slot_average.values(), default=0.0)
 
-    def score(slot: dict[str, Any]) -> float:
+    def prior_score(slot: dict[str, Any]) -> float:
         hour = int(str(slot.get("label", "20:00"))[:2])
         distance = min(abs(hour - pref) for pref in preferred)
         return 100.0 if distance == 0 else max(0.0, 90.0 - distance * 10.0)
 
-    slots = counterfactual_slots(now.date())
-    ranked = sorted(slots, key=lambda item: (-score(item), item["slot"]))[:3]
+    def score(slot: dict[str, Any]) -> float:
+        average = slot_average.get(int(slot["slot"]))
+        if average is None or best_average <= 0:
+            return 0.5 * prior_score(slot)
+        historical = 100.0 * average / best_average
+        return 0.95 * historical + 0.05 * prior_score(slot)
+
+    ranked = rank_counterfactual_slots(now.date(), score)[:3]
+    recommended: list[dict[str, Any]] = []
+    for item in ranked:
+        samples = len(bucket.get(int(item["slot"]), ()))
+        recommended.append(
+            {
+                "label": item["label"],
+                "slot": item["slot"],
+                "score": round(float(item["score"]), 3),
+                "source": "history" if samples >= 2 else "prior",
+                "samples": samples,
+            }
+        )
     return {
         "features": encode_time_features(now).as_dict(),
-        "recommended_slots": [
-            {"label": item["label"], "slot": item["slot"], "score": score(item)} for item in ranked
-        ],
+        "recommended_slots": recommended,
     }
 
 
@@ -286,7 +336,7 @@ async def topic_scorer(
                 if isinstance(value, (int, float)):
                     collect_forecast[key] = round(float(value) * factor, 3)
         collect_forecast["inhibition"] = inhibition
-        time_pop = _time_pop(now, niche)
+        time_pop = _time_pop(now, niche, history_records)
 
         # AutoViralAI-style novelty penalty against the account's recent notes.
         novelty = novelty_penalty(f"{topic} {sample_title}", history_titles or [])

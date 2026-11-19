@@ -152,6 +152,42 @@ async def test_time_pop_and_refractory_inhibition_are_reported(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_time_pop_prefers_a_historically_strong_slot(monkeypatch):
+    """Two mature samples at 08:00 outrank the generic travel evening prior."""
+    _patch_client(monkeypatch, _Client())
+    base = (datetime.now(UTC) - timedelta(days=2)).replace(minute=0, second=0, microsecond=0)
+    records = [
+        {
+            "title": "露营 A",
+            "published_at": base.replace(hour=8).isoformat(),
+            "engagement_rate": 0.20,
+            "views": 1000,
+        },
+        {
+            "title": "露营 B",
+            "published_at": base.replace(hour=8, minute=10).isoformat(),
+            "engagement_rate": 0.18,
+            "views": 800,
+        },
+        {
+            "title": "露营 C",
+            "published_at": base.replace(hour=21).isoformat(),
+            "engagement_rate": 0.01,
+            "views": 1000,
+        },
+    ]
+
+    result = await topic_scorer.ainvoke(
+        {"topic": "露营", "niche": "旅行", "history_records": records}
+    )
+
+    top = result["time_pop"]["recommended_slots"][0]
+    assert top["label"] == "08:00"
+    assert top["source"] == "history"
+    assert top["samples"] == 2
+
+
+@pytest.mark.asyncio
 async def test_a_real_read_still_produces_a_score(monkeypatch):
     """The guard must not turn "works fine" into "never readable"."""
     _patch_client(monkeypatch, _Client())

@@ -104,15 +104,35 @@ def _attach_groupwise(versions: list[dict[str, Any]]) -> dict[str, Any]:
             )
         )
     report = evaluate_groupwise(candidates).as_dict()
-    ranks = {
-        str(row["candidate_id"]): index + 1 for index, row in enumerate(report.get("ranking") or [])
+    ranking = [str(row.get("candidate_id") or "") for row in report.get("ranking") or []]
+    ranks = {candidate_id: index + 1 for index, candidate_id in enumerate(ranking)}
+    leader = str(report.get("leader") or "")
+    supporting = next((candidate_id for candidate_id in ranking if candidate_id != leader), "")
+    by_id = {candidate.candidate_id: candidate for candidate in candidates}
+    merge_hints: list[str] = []
+    if leader in by_id and supporting in by_id:
+        leader_scores = by_id[leader].scores
+        support_scores = by_id[supporting].scores
+        for dimension, value in support_scores.items():
+            if value > leader_scores.get(dimension, 0.0):
+                merge_hints.append(
+                    f"{dimension}: 参考 {supporting}（{value:.1f} > "
+                    f"{leader_scores.get(dimension, 0.0):.1f}）"
+                )
+    report["recommended_version_id"] = leader
+    report["synthesis"] = {
+        "strategy": "leader_with_runner_up_hints",
+        "base_version_id": leader,
+        "supporting_version_id": supporting,
+        "merge_hints": merge_hints,
     }
+    roles = {leader: "base", supporting: "support"}
     for index, version in enumerate(versions):
         if not isinstance(version, dict):
             continue
         candidate_id = str(version.get("version_id") or version.get("id") or f"v{index + 1}")
         version["groupwise_rank"] = ranks.get(candidate_id)
-    report["leader"] = report.get("leader") or ""
+        version["synthesis_role"] = roles.get(candidate_id, "candidate")
     return report
 
 

@@ -140,6 +140,10 @@ async def test_version_generator_generates_abc_versions(
     assert groupwise["leader"] == "C"
     assert [row["candidate_id"] for row in groupwise["ranking"]] == ["C", "B", "A"]
     assert [v.get("groupwise_rank") for v in versions] == [3, 2, 1]
+    assert groupwise["recommended_version_id"] == "C"
+    assert groupwise["synthesis"]["base_version_id"] == "C"
+    assert groupwise["synthesis"]["supporting_version_id"] == "B"
+    assert [v.get("synthesis_role") for v in versions] == ["candidate", "support", "base"]
 
 
 @pytest.mark.asyncio
