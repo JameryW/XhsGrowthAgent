@@ -75,6 +75,13 @@ backend/
 │   ├── xhs_signature.py                 # XHS signature generation
 │   ├── visual_analysis.py               # VisualAnalysisService
 │   ├── visual_extractor.py              # VisualDataExtractor
+│   ├── content_launch.py                # Phase-3 launch contracts (multimodal/tag/session/cost/SSE)
+│   ├── temporal_contracts.py            # Phase-3 time/execution contracts (CAS, TimePop, JIT helpers)
+│   ├── evaluation_contracts.py          # Phase-3 evaluation contracts (GRS/GAR, PTGS, APMD, PORT)
+│   ├── distribution_contracts.py        # Phase-3 distribution contracts (EGMF, SAIM, carousel, replay)
+│   ├── visibility_contracts.py          # Phase-7 visibility contracts (GEO/SID, matrix collision, storage, golden suite)
+│   ├── interaction_contracts.py         # Phase-8 interaction contracts (local guard, DM uplift, visual memory, review ETag)
+│   ├── recovery_contracts.py            # Phase-9 recovery contracts (revision chain, TRAJDEBUG, MemCut, MemComposer)
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)

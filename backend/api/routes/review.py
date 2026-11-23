@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 from backend.agents.evaluator import EvaluatorAgent
 from backend.api.account_scope import assert_thread_owned
 from backend.api.deps import get_current_user
-from backend.api.errors import ReviewNotPendingError
+from backend.api.errors import APIError, ErrorCode, ReviewNotPendingError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 from backend.state.enums import ContentStatus
@@ -87,6 +87,10 @@ class ReviewDecision(BaseModel):
     edited_title: str = ""
     edited_body: str = ""
     publish_options: PublishOptions | None = None
+    # Ledger #39/#48: optional optimistic-lock fields. Old clients that omit
+    # them keep the exact pre-existing behaviour.
+    expected_account_id: str = ""
+    expected_review_etag: str = ""
 
 
 class RippleDecision(BaseModel):
@@ -160,6 +164,16 @@ async def get_pending_review(
 
     # 检查是否在审核门等待（动态 interrupt 或 interrupt_before 兜底）
     if _is_at_review_gate(state):
+        from backend.services.interaction_contracts import compute_review_etag
+        from backend.services.publish_intent import publish_content_body
+        from backend.state.artifacts import content_hash
+
+        configurable = (state.config or {}).get("configurable") or {}
+        review_etag = compute_review_etag(
+            thread_id,
+            str(configurable.get("checkpoint_ns") or ""),
+            content_hash(publish_content_body(values)),
+        )
         return success(
             data={
                 "status": "awaiting_review",
@@ -167,6 +181,8 @@ async def get_pending_review(
                 "copy_content": values.get("copy_content", {}),
                 "visual_plan": values.get("visual_plan", {}),
                 "version_history": values.get("content_versions", []),
+                "review_etag": review_etag,
+                "account_id": str(values.get("account_id") or ""),
             }
         )
 
@@ -201,6 +217,41 @@ async def submit_review(
 
     store = getattr(graph, "store", None)
     values = await resolve_state(store, thread_id, state.values or {})
+
+    # Ledger #39/#48: optional account binding + review ETag optimistic lock.
+    # Empty values keep the pre-existing behaviour for old clients/tests.
+    from backend.services.interaction_contracts import (
+        StaleReviewETagError,
+        assert_review_etag,
+        compute_review_etag,
+    )
+    from backend.services.publish_intent import publish_content_body
+    from backend.services.visibility_contracts import (
+        AccountBindingError,
+        assert_account_binding,
+    )
+    from backend.state.artifacts import content_hash
+
+    target_account_id = str(
+        (decision.publish_options.account_id if decision.publish_options else "")
+        or values.get("account_id")
+        or ""
+    )
+    configurable = (state.config or {}).get("configurable") or {}
+    checkpoint_ns = str(configurable.get("checkpoint_ns") or "")
+    current_review_etag = compute_review_etag(
+        thread_id, checkpoint_ns, content_hash(publish_content_body(values))
+    )
+    try:
+        assert_account_binding(decision.expected_account_id, target_account_id)
+        assert_review_etag(decision.expected_review_etag, current_review_etag)
+    except (AccountBindingError, StaleReviewETagError) as exc:
+        raise APIError(
+            ErrorCode.REVIEW_DECISION_INVALID,
+            "Review decision rejected: account binding or review version mismatch",
+            details=exc.as_dict(),
+            status_code=409,
+        ) from exc
 
     # Side updates written via aupdate_state before resuming. human_feedback is
     # NOT written here — review_gate_node reads the decision from the

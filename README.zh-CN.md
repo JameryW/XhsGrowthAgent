@@ -396,6 +396,16 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 两项边界是刻意保留的，而不是未完成项：其一，生产 API 默认仍编译完整图，运行期模式差异由 LangGraph 条件边处理；`--jit-mode`/`compile_graph_dev(mode)` 是显式选择独立子图的入口，独立子图只保留计划内节点，供批处理/调试按需使用。其二，仓库策略是所有 LLM 出网统一经 magpie（见 `CLAUDE.md`），生产路由不按任务切换厂商，全部使用 `magpie-deepseek-v4.1-flash`。
 
+### 第 7–9 期：前沿契约
+
+| 模块 | 位置 | 能力 |
+| --- | --- | --- |
+| 可见性与分发（37–42） | `backend/services/visibility_contracts.py` | GEO-CiteScore 与 OneSearch 五级语义 ID（`geo_cite_score`/`build_semantic_id_path`/`semantic_id_coverage`）；多账号 72h 矩阵指纹防碰撞（`detect_cross_account_collisions`）；`account_binding_payload`/`assert_account_binding` 账号绑定断言；`build_shooting_plan` 三段式实况 Hook 与 `plan_long_article` 长文发布计划；`plan_storage_tier` 热/温/冷三级存储生命周期；50-Case `DEFAULT_GOLDEN_CASES` 与 `GOLDEN_GATES` 离线回归门禁 |
+| 交互与视觉记忆（43–48） | `backend/services/interaction_contracts.py` | `evaluate_local_request` Host/Origin/boot-token 本地请求守卫（421/403）；`DmStratum` 四象限 `allocate_dm_quota` 与 `build_two_hop_reply` 反导流合规桥；`SceneVisualMemoryBank` 账号视觉 DNA + 场景适配；`RETENTION_CONTRACTS`/`project_tool_output` TRACER 工具输出投影与 `should_escalate` 历史密度门控；`scan_evergreen_notes`/`build_revival_plan` 150 天常青翻新；`compute_review_etag`/`assert_review_etag` 双端审批乐观锁与 `build_terminal_decision_card` 终端决策卡 |
+| 恢复与记忆装配（49–54） | `backend/services/recovery_contracts.py` | `build_revision_chain`/`render_revision_diffs` 零 LLM 版本演化 Diff 链与 `resolve_current_facts` supersedes 折叠；`classify_error_lifecycle`/`locate_critical_error` TRAJDEBUG 关键错误溯源回滚；`select_harness_card` 模型-Harness 适配与 `check_input_integrity` 脏输入校验；`combined_uncertainty`/`rank_outlines` MedMMV 大纲优选；`delete_memory_closure` MemCut 血缘传递闭包擦除；`compose_memories` MemComposer 拓扑排序与 Token 预算装配 |
+
+审核接口已完成低风险接线：`GET /api/review/pending/{thread_id}` 返回当前 `review_etag` 与 `account_id`；`POST /api/review/submit/{thread_id}` 可选接收 `expected_account_id` 与 `expected_review_etag`，不匹配时返回 409 `ERROR_REVIEW_DECISION_INVALID`。不传这两个字段的旧客户端行为完全不变。其余契约为纯确定性函数/内存对象，暂不改变默认工作流、模型路由或发布路径。
+
 ## 测试与开发
 
 ```bash
