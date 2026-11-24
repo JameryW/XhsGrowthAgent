@@ -406,6 +406,16 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 审核接口已完成低风险接线：`GET /api/review/pending/{thread_id}` 返回当前 `review_etag` 与 `account_id`；`POST /api/review/submit/{thread_id}` 可选接收 `expected_account_id` 与 `expected_review_etag`，不匹配时返回 409 `ERROR_REVIEW_DECISION_INVALID`。不传这两个字段的旧客户端行为完全不变。其余契约为纯确定性函数/内存对象，暂不改变默认工作流、模型路由或发布路径。
 
+### 第 10–12 期：决策与验证契约
+
+| 模块 | 位置 | 能力 |
+| --- | --- | --- |
+| 决策门与动作校验（55–60） | `backend/services/decision_contracts.py` | JevAct 单次前向概率门（`evaluate_question_logprobs`/`jev_decision_gate`）与转人工清单 `evaluate_handoff_checklist`；`evaluate_stage0_skip`/`risk_aware_polish_gate` 阻断负向润色；`replay_ui_trace` GUI 轨迹复用/重写/拒绝；`sim_decision_sensitivity_gate` 排序敏感度判定；`filter_unusable_reply` 虚假执行自述拦截；`PHASE10_ROLLOUT` 四周落地矩阵 |
+| 完成图与验证（61–66） | `backend/services/verification_contracts.py` | `audit_variant_claims` 跨变体争议与共识声明核查；`assert_typed_completion` Grounding/Coupling/Realization 类型化完成图；`MosaicSessionScheduler` 会话边际效用与数量惩罚；`scoped_revision` 首轮观点保护锁；`detect_card_rewind` 段落级不确定度回退；`build_bounded_query_batches`/`verify_metric_claims` 有界联合核账 |
+| 优化与获客（67–72） | `backend/services/optimization_contracts.py` | `pareto_frontier`/`select_harness_presets` 通过率-成本-延迟三档 Harness；`CustomerBeliefState`/`detect_belief_trapping`/`recovery_actions` 私信显式信念与陷落恢复；`forecast_surprise`/`co_evolve_forecasts` 行动-预测协同；`plan_multimodal_deep_scout` 三跳图文深搜；`abstention_threshold`/`route_with_abstention` 非对称代价弃权；`recommend_boost` 自然流赛马转付费投流建议 |
+
+本批 #55–#72 仍以纯确定性契约形式提供，尚未接入默认工作流；模型路由继续统一经 magpie `magpie-deepseek-v4.1-flash`，发布、私信配额与人工审核边界不变。
+
 ## 测试与开发
 
 ```bash

@@ -82,6 +82,9 @@ backend/
 │   ├── visibility_contracts.py          # Phase-7 visibility contracts (GEO/SID, matrix collision, storage, golden suite)
 │   ├── interaction_contracts.py         # Phase-8 interaction contracts (local guard, DM uplift, visual memory, review ETag)
 │   ├── recovery_contracts.py            # Phase-9 recovery contracts (revision chain, TRAJDEBUG, MemCut, MemComposer)
+│   ├── decision_contracts.py            # Phase-10 decision contracts (JevAct gate, polish risk, UI trace, abstention)
+│   ├── verification_contracts.py        # Phase-11 verification contracts (claims, completion graph, session scheduler, REWIND)
+│   ├── optimization_contracts.py        # Phase-12 optimization contracts (Pareto harness, belief state, co-evolution, boost)
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)
