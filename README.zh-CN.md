@@ -416,6 +416,16 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 本批 #55–#72 仍以纯确定性契约形式提供，尚未接入默认工作流；模型路由继续统一经 magpie `magpie-deepseek-v4.1-flash`，发布、私信配额与人工审核边界不变。
 
+### 第 13–15 期：演化与韧性契约
+
+| 模块 | 位置 | 能力 |
+| --- | --- | --- |
+| 演化与归因（73–78） | `backend/services/evolution_contracts.py` | `MetaWorkflowEvolver` 产物/Harness/模型路由三路瓶颈诊断与元原则沉淀；`PrerequisiteDAGExperimenter` 前置依赖闭包与循环/未知依赖校验；`assign_horizon_credit` 下游次优截断与反事实信用分配；`QueryFormerPcvrBridge` 四视图点击后收藏/私信转化预测；`TinyEvalCascade` 三阶段级联评测；`SharedConceptBottleneck` 跨模型共享概念字典 |
+| 韧性与因果（79–84） | `backend/services/resilience_contracts.py` | `ControlFunctionCausalEstimator` 工具变量残差去混淆；`BeliefEntropySummaryGate` 摘要信念熵验收；`evaluate_stress_window` 限流高压线性 ReAct 降级；`plan_tool_recovery` ToolMaze 能力替代路由；`WorkspaceState` 文件化有界快照与 `build_bounded_context`；`run_metamorphic_chaos` 动作蜕变关系混沌压测 |
+| 对齐与监督（85–90） | `backend/services/alignment_contracts.py` | `plan_compaction_anchor`/`apply_compaction_anchor` 压缩后合规重锚；`evaluate_harness_patch` 模块化规则补丁与 Token 膨胀门禁；`GainCtrlEarlyStopper` 剩余收益早停；`channel_homophily`/`accept_profile_update` HARP 四通道双画像验收；`build_afftom_thread_state`/`compose_afftom_reply` 多方评论区心智推理；`retrieve_cultural_hints`/`cultural_judge_score`/`quality_framing_score` CUE-MT 文化检索评判与质量差异化叙事 |
+
+本批 #73–#90 同样保持纯确定性契约，不改变默认工作流、模型路由或发布/私信/审核边界。
+
 ## 测试与开发
 
 ```bash

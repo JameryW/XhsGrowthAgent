@@ -85,6 +85,9 @@ backend/
 │   ├── decision_contracts.py            # Phase-10 decision contracts (JevAct gate, polish risk, UI trace, abstention)
 │   ├── verification_contracts.py        # Phase-11 verification contracts (claims, completion graph, session scheduler, REWIND)
 │   ├── optimization_contracts.py        # Phase-12 optimization contracts (Pareto harness, belief state, co-evolution, boost)
+│   ├── evolution_contracts.py           # Phase-13 evolution contracts (bottleneck diagnosis, prerequisite DAG, horizon credit, pCVR)
+│   ├── resilience_contracts.py          # Phase-14 resilience contracts (causal residual, entropy gate, stress breaker, chaos)
+│   ├── alignment_contracts.py           # Phase-15 alignment contracts (compaction anchor, harness patch, early stop, AffToM, CUE-MT)
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)
