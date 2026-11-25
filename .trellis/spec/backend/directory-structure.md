@@ -88,6 +88,8 @@ backend/
 │   ├── evolution_contracts.py           # Phase-13 evolution contracts (bottleneck diagnosis, prerequisite DAG, horizon credit, pCVR)
 │   ├── resilience_contracts.py          # Phase-14 resilience contracts (causal residual, entropy gate, stress breaker, chaos)
 │   ├── alignment_contracts.py           # Phase-15 alignment contracts (compaction anchor, harness patch, early stop, AffToM, CUE-MT)
+│   ├── memory_contracts.py              # Phase-16 memory contracts (PEARL selective forget, streaming sentinel, compound recall, presupposition guard, fork isolation, EPIC index, visual trajectory)
+│   ├── supervision_contracts.py         # Phase-17 supervision contracts (AOI, rehearsal gate, amortized VOI, PreCoMem waiting room, reasoning state, knowledge gaps, maturity scorecard)
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)

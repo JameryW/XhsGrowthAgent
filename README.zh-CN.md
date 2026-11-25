@@ -426,6 +426,15 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 本批 #73–#90 同样保持纯确定性契约，不改变默认工作流、模型路由或发布/私信/审核边界。
 
+### 第 16–17 期：记忆与监督契约
+
+| 模块 | 位置 | 能力 |
+| --- | --- | --- |
+| 记忆与召回（91–96） | `backend/services/memory_contracts.py` | `PearlGramState` 预测误差定向选择性遗忘（仅衰减惊奇维度，检测延迟 1 次交互）；`evaluate_stream_event` 执行期流式记忆哨兵（静默/补充/提交前拦截）；`remind_compound_recall` ReMind 多跳复合线索召回与充分性自终止；`scan_presuppositions`/`build_presupposition_safe_reply` 反预设隐私环阻断；`isolate_fork_context` 抗自条件化失败上下文隔离与负向约束提取；`EpicPreferenceIndex` 亚 MB 偏好索引；`evaluate_visual_trajectory` 视觉锚定四维评测 |
+| 监督与成熟度（97–102） | `backend/services/supervision_contracts.py` | `compute_aoi` 智能体监督指数与人工负担核算；`rehearsal_gate` 影子排练自动化委派门；`amortized_voi`/`select_questions` 跨期摊销主动提问；`PreCoMemConsolidator`/`promote_hypothesis` MAINTAIN/PROFILE/CORRECT 三态候诊室；`compile_reasoning_state` 事实-关系-推理三层记忆应用指令；`detect_knowledge_gaps`/`build_gap_highlights`/`insert_source_card` 混合主动知识缺口高亮；`evaluate_maturity` 五层内核成熟度计分卡（33 项方案 + 9 项门禁） |
+
+本批 #91–#102 仍为纯确定性契约。按红队审查结论，#91 PEARL 属规模门控项（累计 ≥150 篇笔记或 ≥500 组入站私信后启用），#92 流式记忆仅落地契约、不新增常驻记忆 Agent，#100 不引入 RL 训练的状态策略，记忆统一收敛为单一三阶段管线。
+
 ## 测试与开发
 
 ```bash
