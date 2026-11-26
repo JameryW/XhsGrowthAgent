@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, WebSocket
 
 from backend.api.deps import get_current_user
+from backend.api.local_guard import guard_websocket
 from backend.api.responses import ApiResponse, success
 from backend.realtime.event_bus import EventBusService
 from backend.realtime.websocket import WebSocketManager
@@ -33,6 +34,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "timestamp": "2026-05-27T..."
     }
     """
+    if not await guard_websocket(websocket):
+        return
     await WebSocketManager.get_instance().handle_connection(websocket)
 
 

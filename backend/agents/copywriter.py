@@ -54,6 +54,12 @@ logger = logging.getLogger("xhs_growth.agents.copywriter")
 _compiler = ContextCompiler()
 
 
+def _polish_gate_on() -> bool:
+    """Return True when the opt-in risk-aware polish gate (ledger #56) is on."""
+
+    return os.environ.get("XHS_POLISH_GATE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _audience_pref_query(plan: Mapping[str, Any], brief: Mapping[str, Any]) -> str:
     """Build the audience-preference recall query from plan/brief."""
     kind = plan.get("content_type", "note") or brief.get("style_requirements", "note")
@@ -626,6 +632,28 @@ class CopywriterAgent(BaseAgent):
         body = str(copy_content.get("body_text") or copy_content.get("body") or "").strip()
         if not title and not body:
             return copy_content
+
+        # Ledger #56 (opt-in XHS_POLISH_GATE): a deterministic PLAD stage-0
+        # assessment can prove the draft is already human-like and clean, in
+        # which case the billable polish call is pure downside risk
+        # (arXiv:2609.35832v1: up to 19.1% C->W harmful flips).
+        stage0 = None
+        if _polish_gate_on():
+            from backend.services.polish_gate import (
+                assess_stage,
+                decide_after_polish,
+                decide_before_polish,
+            )
+
+            stage0 = assess_stage(title, body)
+            pre_decision = decide_before_polish(stage0)
+            if pre_decision.action == "skip":
+                out = dict(copy_content)
+                out["de_ai_polish_gate"] = pre_decision.as_dict()
+                out["de_ai_polished"] = False
+                out["de_ai_method"] = "skipped_stage0_human_like"
+                return out
+
         try:
             # P1c-S3b: through the Tool Gateway — this is the billable call in
             # this agent (one LLM polish), so its timeout, retry policy and
@@ -674,6 +702,20 @@ class CopywriterAgent(BaseAgent):
             out["de_ai_signals"] = polished["ai_signals_found"]
         out["de_ai_polished"] = bool(polished.get("polished"))
         out["de_ai_method"] = str(polished.get("method") or "")
+
+        if stage0 is not None:
+            polished_stage = assess_stage(
+                str(out.get("selected_title") or title),
+                str(out.get("body_text") or body),
+            )
+            post_decision = decide_after_polish(stage0, polished_stage)
+            if post_decision.action != "accept":
+                kept = dict(copy_content)
+                kept["de_ai_polish_gate"] = post_decision.as_dict()
+                kept["de_ai_polished"] = False
+                kept["de_ai_method"] = f"reverted_{post_decision.reason}"
+                return kept
+            out["de_ai_polish_gate"] = post_decision.as_dict()
         return out
 
     async def _algorithmic_de_ai_variants(

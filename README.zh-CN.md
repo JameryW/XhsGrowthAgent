@@ -435,6 +435,15 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 本批 #91–#102 仍为纯确定性契约。按红队审查结论，#91 PEARL 属规模门控项（累计 ≥150 篇笔记或 ≥500 组入站私信后启用），#92 流式记忆仅落地契约、不新增常驻记忆 Agent，#100 不引入 RL 训练的状态策略，记忆统一收敛为单一三阶段管线。
 
+### 第 18 期：Tier-1 生产接线（本地护栏与润色门）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 本地请求护栏（#43） | `backend/api/local_guard.py`、`backend/api/app.py`、`backend/api/routes/realtime.py` | `XHS_LOCAL_GUARD=1` 时注册 Host/Origin 强校验中间件并守卫 `/ws` 握手：非 loopback Host 返回 421，非白名单 Origin 的状态变更与缺失 Origin 的 WebSocket 握手返回 403（`ERROR_LOCAL_REQUEST_REJECTED`）。`XHS_LOCAL_GUARD_TOKEN_REQUIRED=1` 时额外要求 `x-xhs-boot-token` 头，令牌由 `ensure_boot_token()` 生成到 `~/.xhs_growth_agent/boot.token`（0600） |
+| 风险感知润色门（#56） | `backend/services/polish_gate.py`、`backend/agents/copywriter.py` | `XHS_POLISH_GATE=1` 时 `_apply_de_ai_taste` 先做零 API 的 PLAD 初稿体检：人类语感 ≥ 0.82 直接跳过 `TaskType.POLISH`（`de_ai_method=skipped_stage0_human_like`）；润色后人类语感提升 < 0.03 或丢失语义锚点时回退初稿（`de_ai_method=reverted_*`），仅达标才采纳。决策落 `copy_content.de_ai_polish_gate` |
+
+两个开关默认关闭，关闭时 `submit_review`/发布/私信/模型路由与既有行为逐字节一致；开启后所有拒绝也走统一 `ApiResponse` 错误信封。
+
 ## 测试与开发
 
 ```bash

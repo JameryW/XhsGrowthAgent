@@ -59,6 +59,9 @@ class ErrorCode(StrEnum):
     AUTH_TOKEN_INVALID = "ERROR_AUTH_TOKEN_INVALID"
     AUTH_TOKEN_EXPIRED = "ERROR_AUTH_TOKEN_EXPIRED"
     AUTH_LOGIN_FAILED = "ERROR_AUTH_LOGIN_FAILED"
+    # Local-only guard (ledger scheme #43): non-loopback Host, cross-site
+    # Origin, or a missing/incorrect boot token.
+    LOCAL_REQUEST_REJECTED = "ERROR_LOCAL_REQUEST_REJECTED"
 
 
 class APIError(Exception):
