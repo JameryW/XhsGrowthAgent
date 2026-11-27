@@ -444,6 +444,14 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 两个开关默认关闭，关闭时 `submit_review`/发布/私信/模型路由与既有行为逐字节一致；开启后所有拒绝也走统一 `ApiResponse` 错误信封。
 
+### 第 19 期：发布前耦合校验（Interlock）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 发布前耦合校验（#62） | `backend/services/publish_preflight.py`、`backend/agents/nodes/publish_gate.py` | `XHS_INTERLOCK_PREFLIGHT=1` 时 `publish_gate` 在询问人工之前先跑一次确定性 Interlock 检查：正文的「图 N / 第 N 张图」必须有对应卡面、`左滑` 必须有多图、正文承诺的「置顶评论」必须有已排期的置顶动作、「蒲公英/合作」必须有已确认的披露。不满足时直接拒绝（`error_code=interlock_incomplete`、`phase=CANCELLED`、`is_blocking`），写一条 `publish_refused` 审计事件，并把报告落 `publish_preflight`；检查通过时报告同样落状态，并在人工审批载荷 `publish_summary.interlock` 里展示 |
+
+该检查只读工作流状态，不调用 LLM、不联网、不写库。开关关闭时节点返回值与 interrupt 载荷不出现任何新键，发布路径与既有行为逐字节一致。被阻断后的处置：补齐对应卡面或先排期置顶评论/披露，再重新进入发布门。
+
 ## 测试与开发
 
 ```bash

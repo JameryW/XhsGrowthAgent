@@ -39,6 +39,8 @@ PUBLISH_CANCELLED = "cancelled"
 SOURCE_HUMAN = "human"
 SOURCE_AUTO_PUBLISH = "auto_publish"
 SOURCE_DRY_RUN = "dry_run"
+#: Ledger #62: the pre-publish interlock check refused before anyone was asked.
+SOURCE_PREFLIGHT = "interlock_preflight"
 
 #: Why a publish was refused, as recorded in the audit event.  Two distinct
 #: facts, because someone diagnosing "why is nothing being posted?" needs to
@@ -46,6 +48,9 @@ SOURCE_DRY_RUN = "dry_run"
 #: dialect this gate does not know (a bug to chase).
 REFUSAL_HUMAN = "human_refusal"
 REFUSAL_UNRECOGNISED = "unrecognised_decision"
+#: The interlock preflight (ledger #62) found an unsatisfied coupling or
+#: realization edge, so the publish never reached a human at all.
+REFUSAL_INTERLOCK = "interlock_incomplete"
 
 
 def publish_needs_confirmation(state: XHSGrowthState | dict[str, Any]) -> bool:
@@ -137,7 +142,12 @@ def _commercial_requires_disclosure(state: XHSGrowthState | dict[str, Any]) -> b
     return state_is_commercial(dict(state))
 
 
-async def _record_refusal(state: XHSGrowthState, raw: Any) -> None:
+async def _record_refusal(
+    state: XHSGrowthState,
+    raw: Any,
+    *,
+    reason: str | None = None,
+) -> None:
     """Store one ``kind:"action"`` event for a publish this gate refused.
 
     The refusal used to be durable only as workflow state — ``phase=CANCELLED``
@@ -151,11 +161,16 @@ async def _record_refusal(state: XHSGrowthState, raw: Any) -> None:
     happened, the bodies belong behind an explicit, sanitised export.  Nothing
     is lost — the comment still rides ``publish_confirmation`` in state.
 
+    ``reason`` overrides the decision-derived default for refusals that never
+    were a decision (the interlock preflight), so an operator can tell "the
+    human said no" from "the run was incomplete".
+
     Best-effort by contract: ``emit_events`` swallows storage failures, so a
     refusal still refuses when telemetry is down.
     """
     from backend.state.events import action_perf_entry, emit_events, resolve_thread_id
 
+    resolved = reason or (REFUSAL_HUMAN if raw == PUBLISH_CANCELLED else REFUSAL_UNRECOGNISED)
     await emit_events(
         resolve_thread_id(state),
         [
@@ -163,7 +178,7 @@ async def _record_refusal(state: XHSGrowthState, raw: Any) -> None:
                 ACTION_PUBLISH_REFUSED,
                 account_id=_account_id(state),
                 gate="publish",
-                reason=REFUSAL_HUMAN if raw == PUBLISH_CANCELLED else REFUSAL_UNRECOGNISED,
+                reason=resolved,
             )
         ],
     )
@@ -193,6 +208,38 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
     note that was never posted.
     """
     _check_cancelled(state)
+
+    # Ledger #62 (opt-in): refuse *before* asking anyone.  A note whose body
+    # promises a card that was never drawn is incomplete, and making a human
+    # spot that by eye is exactly the failure the typed completion graph
+    # exists to remove.  Switched off = no state reads, no new keys.
+    from backend.services.publish_preflight import issue_summary, run_preflight
+
+    preflight = run_preflight(state)
+    preflight_fields: dict[str, Any] = (
+        {"publish_preflight": preflight.as_dict()} if preflight.checked else {}
+    )
+    if preflight.blocked:
+        logger.warning(
+            "publish gate: interlock preflight refused the publish (%d issue(s))",
+            len(preflight.issues),
+        )
+        await _record_refusal(state, PUBLISH_CANCELLED, reason=REFUSAL_INTERLOCK)
+        return NodeResult(
+            {
+                "publish_confirmation": {
+                    "decision": PUBLISH_CANCELLED,
+                    "source": SOURCE_PREFLIGHT,
+                    **_receipt_fields(state, source=SOURCE_PREFLIGHT),
+                    "error_code": REFUSAL_INTERLOCK,
+                    "comments": issue_summary(preflight.issues),
+                },
+                **preflight_fields,
+                "phase": WorkflowPhase.CANCELLED,
+                "is_blocking": True,
+            },
+            "publish_gate",
+        ).to_dict()
 
     if not publish_needs_confirmation(state):
         reason = _skip_reason(state)
@@ -236,6 +283,7 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
                     "decision": PUBLISH_CONFIRMED,
                     **_receipt_fields(state, source=reason),
                 },
+                **preflight_fields,
                 "phase": WorkflowPhase.PUBLISHING,
             },
             "publish_gate",
@@ -247,18 +295,16 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
     # ``gate="publish"`` is the contract with derive_status: an interrupt whose
     # payload carries it derives AWAITING_PUBLISH rather than falling through to
     # a generic awaiting state.
-    decision = interrupt(
-        {
-            "gate": "publish",
-            "publish_summary": {
-                "title": (copy.get("selected_title") or ""),
-                "has_images": bool((state.get("visual_plan") or {}).get("image_paths")),
-                "account_id": _account_id(state),
-                "is_commercial": needs_disclosure,
-                "requires_disclosure": needs_disclosure,
-            },
-        }
-    )
+    publish_summary: dict[str, Any] = {
+        "title": (copy.get("selected_title") or ""),
+        "has_images": bool((state.get("visual_plan") or {}).get("image_paths")),
+        "account_id": _account_id(state),
+        "is_commercial": needs_disclosure,
+        "requires_disclosure": needs_disclosure,
+    }
+    if preflight.checked:
+        publish_summary["interlock"] = preflight.as_dict()
+    decision = interrupt({"gate": "publish", "publish_summary": publish_summary})
 
     raw: Any = PUBLISH_CANCELLED
     comments = ""
@@ -308,6 +354,7 @@ async def publish_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
                     else {}
                 ),
             },
+            **preflight_fields,
             "phase": WorkflowPhase.PUBLISHING if confirmed else WorkflowPhase.CANCELLED,
         },
         "publish_gate",
