@@ -452,6 +452,15 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 该检查只读工作流状态，不调用 LLM、不联网、不写库。开关关闭时节点返回值与 interrupt 载荷不出现任何新键，发布路径与既有行为逐字节一致。被阻断后的处置：补齐对应卡面或先排期置顶评论/披露，再重新进入发布门。
 
+### 第 20 期：出站话术护栏（状态自述与隐私预设）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 未可用回复过滤（#59） | `backend/services/reply_guard.py`、`backend/tools/xhs/engagement.py` | `XHS_REPLY_GUARD=1` 时，`comment_replier` / `dm_handler` 在调用平台**之前**先跑 `filter_unusable_reply`：回复声称「已查好/已锁定/已登记」等动作完成态、但本轮没有任何成功工具回执（`succeeded` + 实体 ID/明细）时拒绝；「亲亲稍等」这类零信息量套话同样拒绝 |
+| 隐私预设护栏（#94） | 同上 | 把客户本轮没提过的敏感属性当既定前提复述（带老人/带孩子、预算紧、高反晕车、学生党宝妈等）会按分句删除，只发保留部分；删空（`presupposition_scrub_emptied_reply`）或删成套话（`hollow_reply_after_scrub`）则整体拒绝 |
+
+拒绝走既有「判决作为答案」通道：抛 `DomainOutcome`（`status=blocked`、`error_code=reply_guard`、永不自动重试），payload 带完整 `reply_guard` 报告与目标回显，**不会**降级成 `{"success": False}` 字典（避免第二个归一化站点）。命中隐私改写时发送改写后文本，返回字典追加 `reply_guard`，其中 `reply` 是实际发出的文本。开关关闭时两个工具的入参、返回值与异常路径逐字节一致，也不新增任何键。护栏全程零 LLM、零网络、零状态。
+
 ## 测试与开发
 
 ```bash

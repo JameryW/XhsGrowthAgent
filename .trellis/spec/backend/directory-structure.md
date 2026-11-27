@@ -92,6 +92,7 @@ backend/
 │   ├── supervision_contracts.py         # Phase-17 supervision contracts (AOI, rehearsal gate, amortized VOI, PreCoMem waiting room, reasoning state, knowledge gaps, maturity scorecard)
 │   ├── polish_gate.py                   # Phase-18 risk-aware POLISH gate (PLAD stage-0 skip + non-degradation acceptance, #56)
 │   ├── publish_preflight.py             # Phase-19 publish interlock preflight (coupling/realization edges before the publish gate, #62)
+│   ├── reply_guard.py                   # Phase-20 outgoing reply guard (unusable-reply filter + presupposition scrub before sending, #59/#94)
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)
