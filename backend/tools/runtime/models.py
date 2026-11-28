@@ -316,6 +316,20 @@ class ToolResult(BaseModel):
     degraded: bool = False
     untrusted: bool = False
     """The value crossed the external-content boundary and was sanitised."""
+    projection: Mapping[str, Any] = Field(default_factory=dict)
+    """Payload accounting from the ledger #46 budget, when the switch is on.
+
+    Empty on every deployment that leaves ``XHS_TOOL_BUDGET`` unset: the field
+    exists so a reader can tell "not measured" from "measured and already
+    compact", not to change any call site's behaviour.
+    """
+    full_value: Any | None = None
+    """The pre-projection payload, kept only when the budget trimmed it.
+
+    ``trim`` mode is the one mode that changes what ``value`` holds, so the
+    original travels alongside instead of being lost — recovery is a field
+    read, not a re-invocation with its side effects.
+    """
 
     def __init__(self, **data: Any) -> None:
         super().__init__(**data)

@@ -36,6 +36,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from backend.harness.runtime import get_policy, is_default_policy
+from backend.services.tool_budget import budget_enabled, project_capability
 from backend.tools.runtime.account_gate import (
     AccountSlot,
     AccountSlotTimeoutError,
@@ -284,6 +285,20 @@ class ToolGateway:
                 else:
                     if spec.external_content:
                         value = sanitize_external_payload(value)
+                    # Degraded is a property of what the *tool* said, not of how
+                    # much of it we later kept — measure it before any trim.
+                    degraded = attempts > 1 or _value_degraded(value)
+                    projection: Mapping[str, Any] = {}
+                    full_value: Any | None = None
+                    if budget_enabled():
+                        original_value = value
+                        report, value = project_capability(spec.capability, value)
+                        projection = report.as_dict()
+                        if report.trimmed:
+                            # ``report`` describes the projection, so the trim
+                            # never happens without the audit trail: the full
+                            # payload rides along for a caller that needs it.
+                            full_value = original_value
                     return await self._finish(
                         spec,
                         ToolResult(
@@ -292,8 +307,10 @@ class ToolGateway:
                             value=value,
                             elapsed_ms=(time.perf_counter() - started) * 1000.0,
                             attempts=attempts,
-                            degraded=attempts > 1 or _value_degraded(value),
+                            degraded=degraded,
                             untrusted=spec.external_content,
+                            projection=projection,
+                            full_value=full_value,
                         ),
                         thread_id,
                         scope_state,
@@ -414,22 +431,31 @@ class ToolGateway:
         self, spec: ToolSpec, result: ToolResult, thread_id: str, scope_state: str
     ) -> ToolResult:
         """Emit the trace event (best-effort) and hand the result back."""
-        await self._emit(
-            {
-                "kind": "tool",
-                "event": "invoke",
-                "capability": spec.capability,
-                "side_effect": spec.side_effect.value,
-                "thread_id": thread_id,
-                "ok": result.ok,
-                "attempts": result.attempts,
-                "elapsed_ms": round(result.elapsed_ms, 3),
-                "error": result.error,
-                "error_kind": result.error_kind.value if result.error_kind is not None else "",
-                "domain_reason": str(result.domain.get("reason", "")),
-                "degraded": result.degraded,
-                "untrusted": result.untrusted,
-                "scopes": scope_state,
-            }
-        )
+        event: dict[str, Any] = {
+            "kind": "tool",
+            "event": "invoke",
+            "capability": spec.capability,
+            "side_effect": spec.side_effect.value,
+            "thread_id": thread_id,
+            "ok": result.ok,
+            "attempts": result.attempts,
+            "elapsed_ms": round(result.elapsed_ms, 3),
+            "error": result.error,
+            "error_kind": result.error_kind.value if result.error_kind is not None else "",
+            "domain_reason": str(result.domain.get("reason", "")),
+            "degraded": result.degraded,
+            "untrusted": result.untrusted,
+            "scopes": scope_state,
+        }
+        if result.projection:
+            # Only present when the payload budget ran (ledger #46), so a
+            # deployment that leaves the switch off keeps today's key set
+            # exactly — the promise is about the event, not just the result.
+            event["projection"] = str(result.projection.get("mode", ""))
+            event["payload_chars"] = int(result.projection.get("original_chars", 0))
+            event["projected_chars"] = int(result.projection.get("projected_chars", 0))
+            event["retention_ratio"] = float(result.projection.get("retention_ratio", 0.0))
+            event["projection_applied"] = bool(result.projection.get("trimmed", False))
+            event["projection_dropped"] = list(result.projection.get("dropped_keys", []))
+        await self._emit(event)
         return result
