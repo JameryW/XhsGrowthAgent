@@ -435,6 +435,64 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 本批 #91–#102 仍为纯确定性契约。按红队审查结论，#91 PEARL 属规模门控项（累计 ≥150 篇笔记或 ≥500 组入站私信后启用），#92 流式记忆仅落地契约、不新增常驻记忆 Agent，#100 不引入 RL 训练的状态策略，记忆统一收敛为单一三阶段管线。
 
+### 第 18 期：Tier-1 生产接线（本地护栏与润色门）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 本地请求护栏（#43） | `backend/api/local_guard.py`、`backend/api/app.py`、`backend/api/routes/realtime.py` | `XHS_LOCAL_GUARD=1` 时注册 Host/Origin 强校验中间件并守卫 `/ws` 握手：非 loopback Host 返回 421，非白名单 Origin 的状态变更与缺失 Origin 的 WebSocket 握手返回 403（`ERROR_LOCAL_REQUEST_REJECTED`）。`XHS_LOCAL_GUARD_TOKEN_REQUIRED=1` 时额外要求 `x-xhs-boot-token` 头，令牌由 `ensure_boot_token()` 生成到 `~/.xhs_growth_agent/boot.token`（0600） |
+| 风险感知润色门（#56） | `backend/services/polish_gate.py`、`backend/agents/copywriter.py` | `XHS_POLISH_GATE=1` 时 `_apply_de_ai_taste` 先做零 API 的 PLAD 初稿体检：人类语感 ≥ 0.82 直接跳过 `TaskType.POLISH`（`de_ai_method=skipped_stage0_human_like`）；润色后人类语感提升 < 0.03 或丢失语义锚点时回退初稿（`de_ai_method=reverted_*`），仅达标才采纳。决策落 `copy_content.de_ai_polish_gate` |
+
+两个开关默认关闭，关闭时 `submit_review`/发布/私信/模型路由与既有行为逐字节一致；开启后所有拒绝也走统一 `ApiResponse` 错误信封。
+
+### 第 19 期：发布前耦合校验（Interlock）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 发布前耦合校验（#62） | `backend/services/publish_preflight.py`、`backend/agents/nodes/publish_gate.py` | `XHS_INTERLOCK_PREFLIGHT=1` 时 `publish_gate` 在询问人工之前先跑一次确定性 Interlock 检查：正文的「图 N / 第 N 张图」必须有对应卡面、`左滑` 必须有多图、正文承诺的「置顶评论」必须有已排期的置顶动作、「蒲公英/合作」必须有已确认的披露。不满足时直接拒绝（`error_code=interlock_incomplete`、`phase=CANCELLED`、`is_blocking`），写一条 `publish_refused` 审计事件，并把报告落 `publish_preflight`；检查通过时报告同样落状态，并在人工审批载荷 `publish_summary.interlock` 里展示 |
+
+该检查只读工作流状态，不调用 LLM、不联网、不写库。开关关闭时节点返回值与 interrupt 载荷不出现任何新键，发布路径与既有行为逐字节一致。被阻断后的处置：补齐对应卡面或先排期置顶评论/披露，再重新进入发布门。
+
+### 第 20 期：出站话术护栏（状态自述与隐私预设）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 未可用回复过滤（#59） | `backend/services/reply_guard.py`、`backend/tools/xhs/engagement.py` | `XHS_REPLY_GUARD=1` 时，`comment_replier` / `dm_handler` 在调用平台**之前**先跑 `filter_unusable_reply`：回复声称「已查好/已锁定/已登记」等动作完成态、但本轮没有任何成功工具回执（`succeeded` + 实体 ID/明细）时拒绝；「亲亲稍等」这类零信息量套话同样拒绝 |
+| 隐私预设护栏（#94） | 同上 | 把客户本轮没提过的敏感属性当既定前提复述（带老人/带孩子、预算紧、高反晕车、学生党宝妈等）会按分句删除，只发保留部分；删空（`presupposition_scrub_emptied_reply`）或删成套话（`hollow_reply_after_scrub`）则整体拒绝 |
+
+拒绝走既有「判决作为答案」通道：抛 `DomainOutcome`（`status=blocked`、`error_code=reply_guard`、永不自动重试），payload 带完整 `reply_guard` 报告与目标回显，**不会**降级成 `{"success": False}` 字典（避免第二个归一化站点）。命中隐私改写时发送改写后文本，返回字典追加 `reply_guard`，其中 `reply` 是实际发出的文本。开关关闭时两个工具的入参、返回值与异常路径逐字节一致，也不新增任何键。护栏全程零 LLM、零网络、零状态。
+
+### 第 21 期：选题 GEO 空白度打分（GEO-CiteScore）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 空白度打分（#37） | `backend/services/geo_signals.py`、`backend/tools/analysis/topic_scorer.py`、`backend/agents/content_strategist.py` | `XHS_GEO_SCORING=1` 时 `topic_scorer` 复用**已经抓取**的 50 条搜索命中与关键词热度行，为候选关键词算四个信号——`intent_specificity`（长尾/问句度）、`search_demand`（命中数 + 赞/20）、`supply_density`（赞数同时达到本批中位数与 1k 门槛的占比）、`evidence_dispersion`（`1 - 前三/总量`）——再交给 `visibility_contracts.geo_cite_score` / `rank_geo_keywords` 排序，产出 `geo` 块（`best_keyword`、`best_score`、`signals`、`candidates`、`recommendation`） |
+| 排序与提示 | `backend/agents/content_strategist.py` | 收藏优先排序保持不变：`GEO` 只在收藏预测与热度都相同的条件下破平（开关关闭时第 3 键恒为 -1，顺序与线路前完全一致），并在候选行追加「GEO空白 0.81（长尾词）」 |
+
+该打分是确定性的：同输入必得同输出，不采样、不重试、不调模型；平台读不到时 `topic_scorer` 仍按既有逻辑拒绝打分，本模块绝不编造度量（无命中即报零供给/零碎片度，而不是给一个好看的中间值）。开关关闭时返回字典不出现 `geo` 键，`content_strategist` 的 prompt 也逐字节不变。
+
+### 第 22 期：私信配额因果增益分配（DM Uplift）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 四象限分层（#44） | `backend/services/dm_uplift.py`、`backend/tools/xhs/engagement.py` | `XHS_DM_UPLIFT=1` 时，`dm_handler` 在开浏览器之前把这条入站私信分到四层：`persuadables`（值得用五槽位跟进）/`sure_things`（一条汇总卡即可）/`lost_causes`（公开评论回复即可）/`sleeping_dogs`（有敌意，静默）。分层与动作直接复用 `interaction_contracts.classify_dm_candidate` / `allocate_dm_quota`，每日配额仍由 `XHS_DM_DAILY_LIMIT` 与 `check_dm_quota` 结算 |
+| 拒绝与报告 | 同上 | `lost_causes` 不发私信（`error_code=dm_quota_preserved`、`hint=public_reply_only`），`sleeping_dogs` 不发（`error_code=dm_uplift_blocked`、`hint=silent_block`）：两者都走 `DomainOutcome` 判决通道，不开浏览器、不消耗配额。放行时返回字典追加 `dm_uplift`（`priors=fixed`、分层、动作、`quota_cost`、`may_send`、信号） |
+
+这里的先验是**固定表**，不是拟合出来的转化率：手头十几篇笔记、百来个联系人没有可训练的样本，拟合出来的数字每周都在动。它只用于判断「这条私信现在值不值得占用一个稀缺配额」，报告里显式标 `priors: fixed` 就是为了不让它被当成预测。
+
+证据不足时绝不拦截：只有入站原文、已填槽位或粉丝兴趣至少提供了一项独立信号（`evidence_sufficient`），才会按分层拒绝；否则照常发送，只在报告里记下分层。为此工具新增可选入参 `inbound_message`（默认空，旧的调用方式不变）。开关关闭时两个工具的入参、返回值与异常路径逐字节一致，也不新增任何键；分层全程零 LLM、零网络、零状态。
+
+### 第 23 期：记忆写入链路（改稿差异链与候诊室）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 事实链与状态跃迁（#49） | `backend/services/memory_chain.py`、`backend/agents/analyst.py` | `XHS_MEMORY_CHAIN=1` 时，`analyst` 的每条新观察先与已有事实做字符/词重叠匹配：重叠不足 `0.5` 视为**新事实**；与旧信念矛盾且矛盾置信 `>=0.8` 才替换（新记录 `supersedes` 指向被替换版本），`0.4~0.8` 之间只进候诊室。写入报告走 `ObservationRoute`（action/surprisal/belief_id/fact_id/hypothesis_id/reason/stored/corroborated） |
+| 候诊室（#99） | 同上 | `PROFILE` 只写候诊室、**不写长期记忆**——一次数据抖动不该变成下周的可执行结论。假设需累计 `>=2` 次印证且横跨 `>=2` 个不同 ISO 周才晋升（同周多篇笔记只算一周证据），晋升后才生成 `supersedes` 新事实 |
+| 改稿差异链（#49） | `backend/memory/hy/recall.py`、`backend/agents/content_strategist.py` | 召回命中的 hy-memory 事实若与已学习的改稿 span（`port_learning` 命名空间）匹配（包含原文或重叠 `>=0.6`），在事实后附 `旧「…」→ 新「…」`（含人工给的改稿理由），零 LLM 调用；不匹配则原样返回 |
+
+纠正由**显式矛盾证据**驱动，而不是文本差异：价格/档期改动（«旺季提前 7 天» → «提前 14 天»）几乎完全重叠，任何基于困惑度的判定都到不了替换阈值。所以调用方给出矛盾置信，本模块按档位升级；没有矛盾证据时的 `surprisal` 仍由 `supervision_contracts` 计算并原样上报。
+
+全部确定性：匹配用字符/词重叠，不用 embedding，不调模型、不发网络请求。开关关闭时 `analyst` 的写入、`content_strategist` 的召回文本与返回字典逐字节不变；`analyst` 未拿到 `account_id` 时也不走链路。
+
 ## 测试与开发
 
 ```bash

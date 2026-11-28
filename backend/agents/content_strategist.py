@@ -40,7 +40,7 @@ from backend.context.models import (
     require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
-from backend.memory.hy.recall import format_hy_section, recall_hy_memory
+from backend.memory.hy.recall import decorate_hy_recall, format_hy_section, recall_hy_memory
 from backend.models.outputs import ContentPlanOutput, normalize_content_plan
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
@@ -192,6 +192,8 @@ class ContentStrategistAgent(BaseAgent):
             _recall_insights(store, account_id, str(thread_id or "")),
         )
         hy_chat = await hy_recall_task
+        # 台账 #49：把学到的逐字改稿挂到画像事实下（开关默认关，关时返回原对象）。
+        hy_chat = await decorate_hy_recall(hy_chat, account_id=account_id, store=store)
         memory_context = _format_memory_context(insights_result)
         hy_section = format_hy_section([hy_chat])
         if hy_section:
@@ -768,7 +770,7 @@ class ContentStrategistAgent(BaseAgent):
             )
             return ""
 
-        entries: list[tuple[float, float, int, str]] = []
+        entries: list[tuple[float, float, float, int, str]] = []
         for index, topic in enumerate(topics):
             try:
                 scored = await self.tools.invoke(
@@ -810,13 +812,25 @@ class ContentStrategistAgent(BaseAgent):
                 inhibition_note = ""
                 if isinstance(inhibition, dict) and inhibition.get("active"):
                     inhibition_note = "，近期相似笔记冷却中"
+                # GEO-CiteScore (ledger #37): present only when the scorer's
+                # switch is on, so a default deployment appends nothing.
+                geo_note = ""
+                geo_value = -1.0
+                geo = result.get("geo")
+                if isinstance(geo, dict):
+                    best_score = geo.get("best_score")
+                    best_keyword = geo.get("best_keyword")
+                    if isinstance(best_score, (int, float)):
+                        geo_value = float(best_score)
+                        if isinstance(best_keyword, str) and best_keyword:
+                            geo_note = f"，GEO空白 {geo_value:.2f}（{best_keyword}）"
                 entry = (
                     f"{topic}: 热度 {result.get('heat_score', 'N/A')}，"
                     f"趋势 {result.get('growth_trend', 'N/A')}，"
                     f"竞争 {result.get('competition_level', 'N/A')}，"
                     f"收藏预测 {predicted_collect if predicted_collect is not None else 'N/A'}，"
                     f"推荐 {result.get('recommendation', 'N/A')}"
-                    f"{novelty_note}{calibration_note}{time_note}{inhibition_note}"
+                    f"{novelty_note}{calibration_note}{time_note}{inhibition_note}{geo_note}"
                 )
                 collect_value = (
                     float(predicted_collect)
@@ -828,6 +842,7 @@ class ContentStrategistAgent(BaseAgent):
                     (
                         collect_value,
                         float(heat_value) if isinstance(heat_value, (int, float)) else -1.0,
+                        geo_value,
                         index,
                         entry,
                     )
@@ -839,9 +854,11 @@ class ContentStrategistAgent(BaseAgent):
             return ""
         # Collect-First objective: the LLM sees the highest predicted-collect
         # candidate first, not merely the order trend_scout happened to return.
-        entries.sort(key=lambda item: (-item[0], -item[1], item[2]))
+        # GEO blank-ness only breaks ties (all -1.0 unless the switch is on), so
+        # the default order is exactly the pre-#37 order.
+        entries.sort(key=lambda item: (-item[0], -item[1], -item[2], item[3]))
         lines = []
-        for rank, (_collect, _heat, _index, entry) in enumerate(entries, start=1):
+        for rank, (_collect, _heat, _geo, _index, entry) in enumerate(entries, start=1):
             marker = "【主推】" if rank == 1 else f"{rank}. "
             lines.append(f"- {marker}{entry}")
         return "## 话题热度评分（topic_scorer，收藏优先排序）\n" + "\n".join(lines)

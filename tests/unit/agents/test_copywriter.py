@@ -9,6 +9,7 @@ from langchain_core.messages import SystemMessage
 
 from backend.agents.copywriter import CopywriterAgent
 from backend.models.structured import StructuredOutputError
+from backend.services.polish_gate import StageAssessment
 from backend.state.schema import WorkflowPhase
 
 
@@ -745,3 +746,116 @@ def test_ptgs_generation_temperature_uses_evaluation_and_plad():
     }
     assert CopywriterAgent._ptgs_generation_temperature(state) == ptgs_temperature(0.9, 0.8)
     assert CopywriterAgent._ptgs_generation_temperature({}) is None
+
+
+class TestCopywriterPolishGate:
+    """The opt-in risk-aware polish gate (ledger scheme #56)."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create copywriter instance."""
+        return CopywriterAgent()
+
+    @staticmethod
+    def _gateway(value: dict) -> MagicMock:
+        """Build a tool gateway whose polish call returns ``value``."""
+        result = MagicMock()
+        result.ok = True
+        result.value = value
+        result.error = None
+        gateway = MagicMock()
+        gateway.invoke = AsyncMock(return_value=result)
+        return gateway
+
+    @pytest.mark.asyncio
+    async def test_gate_off_keeps_unconditional_polish(self, agent, monkeypatch):
+        """Without the flag the polish call behaves exactly as before."""
+        monkeypatch.delenv("XHS_POLISH_GATE", raising=False)
+        polished = {"selected_title": "润色标题", "body_text": "润色正文", "polished": True}
+        gateway = self._gateway(polished)
+
+        with patch.object(type(agent), "tools", new_callable=PropertyMock) as tools_prop:
+            tools_prop.return_value = gateway
+            out = await agent._apply_de_ai_taste(
+                {"selected_title": "原始标题", "body_text": "原始正文"}
+            )
+
+        assert out["selected_title"] == "润色标题"
+        assert out["de_ai_polished"] is True
+        assert "de_ai_polish_gate" not in out
+        gateway.invoke.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_gate_skips_polish_when_draft_is_human_like(self, agent, monkeypatch):
+        """A human-like stage-0 draft skips the billable polish call entirely."""
+        monkeypatch.setenv("XHS_POLISH_GATE", "1")
+        stage0 = StageAssessment("原始标题", "原始正文", human_prob=0.9, ai_likelihood=0.1)
+        gateway = self._gateway({})
+
+        with (
+            patch.object(type(agent), "tools", new_callable=PropertyMock) as tools_prop,
+            patch("backend.services.polish_gate.assess_stage", return_value=stage0),
+        ):
+            tools_prop.return_value = gateway
+            out = await agent._apply_de_ai_taste(
+                {"selected_title": "原始标题", "body_text": "原始正文"}
+            )
+
+        assert out["selected_title"] == "原始标题"
+        assert out["de_ai_method"] == "skipped_stage0_human_like"
+        assert out["de_ai_polished"] is False
+        assert out["de_ai_polish_gate"]["action"] == "skip"
+        gateway.invoke.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_gate_reverts_polish_that_degrades_the_draft(self, agent, monkeypatch):
+        """A polish that does not raise human-likeness is discarded."""
+        monkeypatch.setenv("XHS_POLISH_GATE", "1")
+        stage0 = StageAssessment("原始标题", "原始正文", human_prob=0.5, ai_likelihood=0.5)
+        stage1 = StageAssessment("润色标题", "润色正文", human_prob=0.52, ai_likelihood=0.48)
+        polished = {"selected_title": "润色标题", "body_text": "润色正文", "polished": True}
+        gateway = self._gateway(polished)
+
+        with (
+            patch.object(type(agent), "tools", new_callable=PropertyMock) as tools_prop,
+            patch(
+                "backend.services.polish_gate.assess_stage",
+                side_effect=[stage0, stage1],
+            ),
+        ):
+            tools_prop.return_value = gateway
+            out = await agent._apply_de_ai_taste(
+                {"selected_title": "原始标题", "body_text": "原始正文"}
+            )
+
+        assert out["selected_title"] == "原始标题"
+        assert out["body_text"] == "原始正文"
+        assert out["de_ai_polished"] is False
+        assert out["de_ai_method"].startswith("reverted_")
+        gateway.invoke.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_gate_accepts_polish_that_improves_the_draft(self, agent, monkeypatch):
+        """A polish that clears the gain threshold is kept."""
+        monkeypatch.setenv("XHS_POLISH_GATE", "1")
+        stage0 = StageAssessment("原始标题", "原始正文", human_prob=0.5, ai_likelihood=0.5)
+        stage1 = StageAssessment("润色标题", "润色正文", human_prob=0.7, ai_likelihood=0.3)
+        polished = {"selected_title": "润色标题", "body_text": "润色正文", "polished": True}
+        gateway = self._gateway(polished)
+
+        with (
+            patch.object(type(agent), "tools", new_callable=PropertyMock) as tools_prop,
+            patch(
+                "backend.services.polish_gate.assess_stage",
+                side_effect=[stage0, stage1],
+            ),
+        ):
+            tools_prop.return_value = gateway
+            out = await agent._apply_de_ai_taste(
+                {"selected_title": "原始标题", "body_text": "原始正文"}
+            )
+
+        assert out["selected_title"] == "润色标题"
+        assert out["de_ai_polished"] is True
+        assert out["de_ai_polish_gate"]["action"] == "accept"
+        gateway.invoke.assert_awaited_once()

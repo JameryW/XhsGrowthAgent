@@ -90,6 +90,12 @@ backend/
 │   ├── alignment_contracts.py           # Phase-15 alignment contracts (compaction anchor, harness patch, early stop, AffToM, CUE-MT)
 │   ├── memory_contracts.py              # Phase-16 memory contracts (PEARL selective forget, streaming sentinel, compound recall, presupposition guard, fork isolation, EPIC index, visual trajectory)
 │   ├── supervision_contracts.py         # Phase-17 supervision contracts (AOI, rehearsal gate, amortized VOI, PreCoMem waiting room, reasoning state, knowledge gaps, maturity scorecard)
+│   ├── polish_gate.py                   # Phase-18 risk-aware POLISH gate (PLAD stage-0 skip + non-degradation acceptance, #56)
+│   ├── publish_preflight.py             # Phase-19 publish interlock preflight (coupling/realization edges before the publish gate, #62)
+│   ├── reply_guard.py                   # Phase-20 outgoing reply guard (unusable-reply filter + presupposition scrub before sending, #59/#94)
+│   ├── geo_signals.py                   # Phase-21 GEO-CiteScore adapter (intent/supply/dispersion from already-fetched hits, #37)
+│   ├── dm_uplift.py                     # Phase-22 DM quota uplift allocator (prior tables + observed signals -> persuasion stratum before spending quota, #44)
+│   ├── memory_chain.py                  # Phase-23 memory write path (supersedes fact chain + waiting room + zero-LLM revision decoration, #49/#99)
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)
@@ -138,6 +144,7 @@ backend/
 │   ├── app.py                           # FastAPI app factory
 │   ├── responses.py                     # ApiResponse, ErrorDetail, success(), error()
 │   ├── middleware.py                    # error_handler_middleware
+│   ├── local_guard.py                   # Phase-18 opt-in loopback Host/Origin guard + boot token (#43)
 │   ├── deps.py                          # FastAPI dependencies
 │   ├── auth.py                          # Auth helpers
 │   ├── errors.py                        # APIError, WorkflowNotFoundError, ReviewNotPendingError, ValidationError

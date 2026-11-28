@@ -17,15 +17,24 @@ from typing import TYPE_CHECKING, Any
 from langchain_core.tools import tool
 
 from backend.services.distribution_contracts import FanProfile, FanRelationStore, build_icebreaker
+from backend.services.reply_guard import guard_reply_if_enabled
 from backend.tools.runtime.models import DomainOutcome
 
 if TYPE_CHECKING:
+    from backend.services.dm_uplift import DmAssessment
+    from backend.services.reply_guard import ReplyGuardReport
     from backend.services.xhs_effect_ledger import EngagementApproval
     from backend.services.xhs_engagement import XHSEngagement
 
 logger = logging.getLogger("xhs_growth.tools.engagement")
 
 _SENT = "sent"
+#: Verdict for a reply the outgoing guard refused to send (ledger #59/#94).
+_BLOCKED = "blocked"
+_REPLY_GUARD_ERROR_CODE = "reply_guard"
+#: Verdicts for a DM the quota allocator refused to send (ledger #44).
+_DM_UPLIFT_ERROR_CODE = "dm_uplift_blocked"
+_DM_QUOTA_ERROR_CODE = "dm_quota_preserved"
 
 _FAN_RELATION_STORE: FanRelationStore | None = None
 
@@ -135,6 +144,48 @@ def _build_approval(
     return EngagementApproval(thread_id=parts[2], approved_by=parts[0], approved_at=parts[1])
 
 
+def _reply_guard_blocked(guard: ReplyGuardReport, **target: Any) -> dict[str, Any]:
+    """Report a refused outbound reply as a domain verdict, never a plain dict.
+
+    与 ``_result_or_outcome`` 同一条规则：拒绝是**答案**，不是平台抖动，
+    因此作为 ``DomainOutcome`` 上报（``error_kind=domain``、永不自动重试），
+    把护栏报告原样带给调用方。
+    """
+    return _result_or_outcome(
+        {
+            **target,
+            "reply": guard.original_text,
+            "status": _BLOCKED,
+            "success": False,
+            "error_code": _REPLY_GUARD_ERROR_CODE,
+            "error": f"出站话术护栏拦截: {'; '.join(guard.reasons) or 'unknown'}",
+            "reply_guard": guard.as_dict(),
+        }
+    )
+
+
+def _dm_uplift_blocked(assessment: DmAssessment, **target: Any) -> dict[str, Any]:
+    """Report a DM held back by the quota allocator as a domain verdict.
+
+    与 ``_reply_guard_blocked`` 同一条规则：拒绝是**答案**，不是平台抖动。
+    配额与因果分层的报告随判决一起回传，便于操作员改走私信以外的路径
+    （公开评论回复），而不是重试同一条被拒的私信。
+    """
+    hostile = bool(assessment.hostility)
+    return _result_or_outcome(
+        {
+            **target,
+            "reply": "",
+            "status": _BLOCKED,
+            "success": False,
+            "error_code": _DM_UPLIFT_ERROR_CODE if hostile else _DM_QUOTA_ERROR_CODE,
+            "error": (f"私信配额按因果增益保留: {assessment.stratum.value}（{assessment.action}）"),
+            "hint": "silent_block" if hostile else "public_reply_only",
+            "dm_uplift": assessment.as_dict(),
+        }
+    )
+
+
 @tool
 async def comment_replier(
     comment_id: str,
@@ -178,6 +229,10 @@ async def comment_replier(
     logger.info(f"Replying to comment: {comment_id}")
 
     approval = _build_approval(approved_by, approved_at, thread_id)
+    guard = guard_reply_if_enabled(reply_content)
+    if guard.blocked:
+        return _reply_guard_blocked(guard, comment_id=comment_id, post_id=post_id)
+    outbound = guard.text if guard.checked else reply_content
     engagement = _get_engagement(
         cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
         account_id=account_id,
@@ -187,20 +242,21 @@ async def comment_replier(
         verdict = await engagement.reply_to_comment(
             note_id=post_id,
             comment_id=comment_id,
-            reply_content=reply_content,
+            reply_content=outbound,
             approval=approval,
         )
     finally:
         await engagement.close()
 
-    return _result_or_outcome(
-        {
-            "comment_id": comment_id,
-            "post_id": post_id,
-            "reply": reply_content,
-            **verdict,
-        }
-    )
+    result = {
+        "comment_id": comment_id,
+        "post_id": post_id,
+        "reply": outbound,
+        **verdict,
+    }
+    if guard.checked:
+        result["reply_guard"] = guard.as_dict()
+    return _result_or_outcome(result)
 
 
 @tool
@@ -218,6 +274,7 @@ async def dm_handler(
     fan_interests: list[str] | None = None,
     fan_stage: str = "returning",
     fan_topic: str = "",
+    inbound_message: str = "",
 ) -> dict[str, Any]:
     """人工确认后发送一条小红书私信（manual-only）。
 
@@ -239,6 +296,8 @@ async def dm_handler(
         fan_interests: 可选粉丝兴趣标签，用于关系记忆与破冰文案
         fan_stage: 粉丝阶段（new/returning/vip）
         fan_topic: 可选话题，用于生成破冰文案
+        inbound_message: 可选入站原文；开启私信配额分配时用于判断意图与敌意
+            （不给也能工作，只是证据更薄、不做拦截）
 
     Returns:
         仅 ``status == "sent"``：结果字典（``status``、``success``、
@@ -256,11 +315,25 @@ async def dm_handler(
     logger.info(f"Handling DM from: {sender_id}")
 
     from backend.services.dm_qualification import QualificationFSM
+    from backend.services.dm_uplift import assess_dm_if_enabled
 
     approval = _build_approval(approved_by, approved_at, thread_id)
     qualification = (
         QualificationFSM.from_dict(qualification_state) if qualification_state is not None else None
     )
+    guard = guard_reply_if_enabled(reply_content)
+    if guard.blocked:
+        return _reply_guard_blocked(guard, message_id=message_id, sender_id=sender_id)
+    outbound = guard.text if guard.checked else reply_content
+    assessment = assess_dm_if_enabled(
+        inbound_message=inbound_message,
+        qualification=qualification,
+        fan_stage=fan_stage,
+        fan_interests=fan_interests,
+        known_prices=known_prices,
+    )
+    if assessment is not None and assessment.evidence_sufficient and not assessment.may_send:
+        return _dm_uplift_blocked(assessment, message_id=message_id, sender_id=sender_id)
     engagement = _get_engagement(
         cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
         account_id=account_id,
@@ -269,7 +342,7 @@ async def dm_handler(
     try:
         verdict = await engagement.send_dm(
             target_user_id=sender_id,
-            message=reply_content,
+            message=outbound,
             approval=approval,
             qualification=qualification,
             known_prices=tuple(known_prices or ()),
@@ -277,14 +350,17 @@ async def dm_handler(
     finally:
         await engagement.close()
 
-    result = _result_or_outcome(
-        {
-            "message_id": message_id,
-            "sender_id": sender_id,
-            "reply": reply_content,
-            **verdict,
-        }
-    )
+    payload = {
+        "message_id": message_id,
+        "sender_id": sender_id,
+        "reply": outbound,
+        **verdict,
+    }
+    if guard.checked:
+        payload["reply_guard"] = guard.as_dict()
+    if assessment is not None:
+        payload["dm_uplift"] = assessment.as_dict()
+    result = _result_or_outcome(payload)
     return _remember_fan_for_result(
         result,
         sender_id,

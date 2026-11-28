@@ -26,6 +26,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import FileResponse, Response
 
 from backend.api.errors import ErrorCode
+from backend.api.local_guard import install_local_guard
 from backend.api.middleware import error_handler_middleware
 from backend.api.responses import ApiResponse, error, success
 
@@ -1616,6 +1617,13 @@ app.add_middleware(
 # payloads benefit too. minimum_size skips tiny responses where overhead
 # exceeds savings. Added after CORS so it wraps the CORS-decorated response.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# Opt-in anti-CSWSH / anti-DNS-rebinding guard (ledger scheme #43). Disabled by
+# default: with XHS_LOCAL_GUARD unset nothing is registered and behaviour is
+# unchanged. Enabled, it rejects non-loopback Host headers (421), cross-site
+# Origins on state-changing requests (403) and, when
+# XHS_LOCAL_GUARD_TOKEN_REQUIRED is on, requests without the boot token.
+install_local_guard(app)
 
 app.middleware("http")(error_handler_middleware)
 

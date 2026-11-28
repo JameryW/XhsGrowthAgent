@@ -109,6 +109,50 @@ def _to_context_item(item: dict[str, Any]) -> ContextItem:
     )
 
 
+async def decorate_hy_recall(
+    result: RetrievalResult,
+    *,
+    account_id: str,
+    store: Any,
+    limit: int = 3,
+) -> RetrievalResult:
+    """把学到的逐字改稿挂到被召回的画像事实下（台账 #49，零 LLM，开关默认关）。
+
+    hy-memory 返回的是压缩后的事实；运营者在 ``/review`` 里的真实改稿由
+    ``backend.services.port`` 学成 old→new 片段。这里只做一件事：当片段
+    明确触达某条事实时，把它以「旧→新」的形式补在事实后面，让人格画像
+    带着「人是怎么改的」一起进 prompt。
+
+    关闭开关、没有 store、没有 PORT 记忆、没有任何片段命中时都返回**原对象**
+    （调用方不必区分「装饰过」与「没装饰」，且关闭时逐字节不变）。
+    """
+    from backend.services.memory_chain import (
+        attach_revision_notes,
+        memory_chain_enabled,
+        revision_pairs_from_port_spans,
+    )
+    from backend.services.port import load_port_memory
+
+    if not memory_chain_enabled() or store is None or not result.items:
+        return result
+    try:
+        spans = await load_port_memory(store, account_id)
+    except Exception as exc:  # pragma: no cover - store boundary is best-effort
+        logger.debug("hy recall decoration skipped: %s", exc)
+        return result
+    revisions = revision_pairs_from_port_spans(spans)
+    if not revisions:
+        return result
+    bodies = attach_revision_notes([item.body for item in result.items], revisions, limit=limit)
+    if bodies == [item.body for item in result.items]:
+        return result
+    items = tuple(
+        item.model_copy(update={"body": body})
+        for item, body in zip(result.items, bodies, strict=True)
+    )
+    return result.model_copy(update={"items": items})
+
+
 def format_hy_section(results: list[RetrievalResult]) -> str:
     """hy 召回结果 → L4 prompt 文本段（无命中返回空串）。
 

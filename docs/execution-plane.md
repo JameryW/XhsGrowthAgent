@@ -96,7 +96,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 - `durable`：租约在 PG 里，跨进程可见，接管有意义。
 - `none`：租约只在进程内。重启即消失 ⇒ 没有过期行 ⇒ 扫描扫不到东西，也不需要扫。
 
-这两种状态不能靠「有没有租约」区分，所以 `/health` 把 `durability` 作为 `execution_takeover` 的一个字段发出来（`backend/api/app.py:1743`）。**它是运维唯一能区分「降级的租约」和「看起来持久的租约」的地方。**
+这两种状态不能靠「有没有租约」区分，所以 `/health` 把 `durability` 作为 `execution_takeover` 的一个字段发出来（`backend/api/app.py:1751`）。**它是运维唯一能区分「降级的租约」和「看起来持久的租约」的地方。**
 
 ## 5. 接管的安全边界
 
@@ -133,7 +133,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_wf_application.py:289` | `task = asyncio.create_task(_run_async())` | REAL_TASK | 走统一执行入口，持租约；注册于 `:290` |
 | `backend/api/routes/_wf_actions.py:298` | `task = asyncio.create_task(_run_retry()` | REAL_TASK | **取租约、不注册** —— 见 §7 |
 | `backend/api/routes/_wf_actions.py:538` | `task = asyncio.create_task(_run_publish_retry()` | REAL_TASK | **取租约**；注册于 `:544` |
-| `backend/agents/content_strategist.py:639` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
+| `backend/agents/content_strategist.py:641` | `task = asyncio.create_task(_run())` | REAL_TASK | 不写工作流 checkpoint |
 | `backend/api/routes/accounts.py:404` | `background_tasks.add_task(sync_after_login, account_id)` | REAL_TASK | Starlette 后台任务，跟响应生命周期走 |
 | `backend/services/creator_stats/client.py:738` | `task = asyncio.create_task(capture(response))` | REAL_TASK | 采集响应，结果进缓存 |
 | `backend/services/creator_stats/client.py:844` | `data_ready = asyncio.create_task(_wait_initial_data())` | REAL_TASK | 与 `:845` 竞速，先到先算 |
@@ -142,22 +142,22 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/services/ripple_service.py:818` | `sse_task = asyncio.create_task(` | REAL_TASK | 消费 SSE，上界 3600s |
 | `backend/services/xhs_publisher.py:154` | `pending = {asyncio.create_task(_wait(selector))` | REAL_TASK | 多个选择器并发等待 |
 | `backend/services/chrome_launcher.py:1734` | `chrome_resources_task = asyncio.create_task(` | REAL_TASK | 与 `asyncio.to_thread` 的探测配合 |
-| `backend/agents/analyst.py:203` | `hy_recall_task = asyncio.ensure_future(` | REAL_TASK | hy-memory 召回与主 gather 并发，主 gather 等它；2026-10-17 引入的 `ensure_future` 形态 |
+| `backend/agents/analyst.py:225` | `hy_recall_task = asyncio.ensure_future(` | REAL_TASK | hy-memory 召回与主 gather 并发，主 gather 等它；2026-10-17 引入的 `ensure_future` 形态 |
 | `backend/agents/content_strategist.py:180` | `hy_recall_task = asyncio.ensure_future(` | REAL_TASK | 同上：陪跑 4 个并发召回，主 gather 保持 4-awaitable 形状 |
 | `backend/api/routes/agent.py:185` | `sender_task = asyncio.create_task(sender())` | IN_PROCESS_LOOP | 会话内发送循环 |
 | `backend/services/omp_bridge.py:2160` | `asyncio.create_task(self._drain_stderr())` | IN_PROCESS_LOOP | 子进程 stderr 排空 |
 | `backend/services/omp_bridge.py:2163` | `self._reader_task = asyncio.create_task(self._read_stdout())` | IN_PROCESS_LOOP | 子进程 stdout 读取 |
 | `backend/services/omp_bridge.py:2867` | `self._idle_timers[session_id] = asyncio.create_task(_idle_timeout())` | IN_PROCESS_LOOP | 空闲超时器 |
 | `backend/services/ripple_service.py:281` | `self._bg_task = asyncio.create_task(self._health_check_loop` | IN_PROCESS_LOOP | 服务级健康循环 |
-| `backend/api/app.py:1397` | `takeover_task = asyncio.create_task(` | IN_PROCESS_LOOP | 接管扫描；开关在 `:1373`，关停在 `:1535` |
-| `backend/api/app.py:1478` | `creator_stats_scheduler = asyncio.create_task(` | IN_PROCESS_LOOP | 采集调度器 |
+| `backend/api/app.py:1398` | `takeover_task = asyncio.create_task(` | IN_PROCESS_LOOP | 接管扫描；开关在 `:1374`，关停在 `:1536` |
+| `backend/api/app.py:1479` | `creator_stats_scheduler = asyncio.create_task(` | IN_PROCESS_LOOP | 采集调度器 |
 | `backend/api/routes/agent.py:89` | `_prewarm_tasks[session_mode] = asyncio.create_task(_warm())` | CACHE_WARMUP | 按会话模式预热 |
 | `backend/api/routes/public_showcase.py:756` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
 | `backend/api/routes/public_showcase.py:842` | `task = asyncio.create_task(_run())` | CACHE_WARMUP | 公开页预热 |
 | `backend/api/routes/system.py:238` | `_ripple_probe_task = loop.create_task(_run())` | CACHE_WARMUP | 用的是 `loop.create_task` |
 | `backend/api/routes/system.py:355` | `ripple_task = asyncio.create_task(_check_ripple())` | CACHE_WARMUP | 健康检查里的预热 |
 | `backend/api/routes/system.py:356` | `memory_task = asyncio.create_task(_check_memory_store())` | CACHE_WARMUP | 健康检查里的预热 |
-| `backend/agents/analyst.py:427` | `asyncio.create_task(_safe_evolve` | POST_RESPONSE | 演化写回不回流 |
+| `backend/agents/analyst.py:449` | `asyncio.create_task(_safe_evolve` | POST_RESPONSE | 演化写回不回流 |
 | `backend/api/routes/free.py:932` | `asyncio.create_task(` | POST_RESPONSE | 响应后收尾 |
 | `backend/memory/calibrator.py:73` | `return asyncio.create_task(` | POST_RESPONSE | 校准写回不回流 |
 | `backend/api/routes/_wf_runtime.py:103` | `asyncio.ensure_future(_do_update())` | POST_RESPONSE | 用的是 `ensure_future` 而非 `create_task` |
@@ -183,7 +183,7 @@ TTL 与心跳：`backend/db/execution_leases.py:83` `HEARTBEAT_MISSES_BEFORE_EXP
 | `backend/api/routes/_runner.py:667` | `if lease.lost.is_set():` | PLANE | 被栅栏的 run 不写状态 |
 | `backend/db/execution_leases.py:274` | `def durability()` | LEASE | 无 PG ⇒ `none` |
 | `backend/db/execution_leases.py:281` | `is_pool_ready()` | LEASE | 唯一判据 |
-| `backend/api/app.py:1743` | `execution_takeover = {key: takeover_state.get(key)` | HEALTH | 白名单出口 |
+| `backend/api/app.py:1751` | `execution_takeover = {key: takeover_state.get(key)` | HEALTH | 白名单出口 |
 | `backend/graph/takeover_safety.py:56` | `TAKEOVER_HAZARDS: dict[str, TakeoverHazard] = {` | SAFETY | 穷举注册表 |
 | `backend/api/routes/_takeover.py:136` | `# The gate.` | SAFETY | 两种拒绝都继续当终局 —— 它们现在分得开，这里刻意不分流（§5 第 2 条） |
 
