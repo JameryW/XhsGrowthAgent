@@ -503,6 +503,16 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 场景解析只有 `scene_for(niche, content_type)` 一处，读写两侧落到同一场景；记忆只落 BaseStore（命名空间 `accounts/{id}/visual_memory`，键 `dna` 与 `scenes`），不新增数据表。全程确定性：不调模型、不调视觉模型、不做 embedding。开关关闭时设计提示与 `visual_plan` 不新增任何键，`analyst` 不读写视觉记忆。
 
+### 第 25 期：工具负载预算（TRACER 投影与保留率账本）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 契约对齐（缺口修复） | `backend/services/tool_budget.py` | `RETENTION_CONTRACTS` 的键是迁移前的工具名（`xhs_trending`），网关用的是能力 id（`xhs.trending`），按能力名查表**永远查不到**，契约自落地起就是死代码。`CAPABILITY_CONTRACTS` 是唯一别名表，`contract_for()` 是唯一翻译点；测试同时钉住"别名 → 真契约键"与"别名 → 真能力"，任一侧改名都会红。`analytics_reader` 今天没有对应能力，登记在 `UNMATCHED_CONTRACTS` 里而不是删掉 |
+| `report` 档（只测不裁） | `backend/tools/runtime/gateway.py` | 成功调用后计算投影报告（原始/投影字符、保留率、**本来会丢弃的键**），写进 `ToolResult.projection` 与 trace 事件的 `payload_chars`/`projected_chars`/`retention_ratio`/`projection_dropped`。`value` 原样返回——这一档只回答台账 #46 的"27% 保留率"在本部署是否成立，不动任何调用方 |
+| `trim` 档（可选裁剪） | 同上 | 仅对**有契约且形状为 mapping** 的结果把 `value` 换成投影负载，完整负载放进 `ToolResult.full_value` 供调用方取回。list / 标量形状只测不裁：`xhs.trending`、`xhs.competitor_analyzer` 返回 `list[dict]`，逐行裁字段会改变行语义，属于丢数据 |
+
+开关 `XHS_TOOL_BUDGET`：不设或 `off` 为默认（不计算、结果不多字段、trace 事件键集合与今天完全一致）；`report`（`1`/`true`/`yes`/`on` 同义）；`trim`。`degraded` 在裁剪**之前**判定，否则裁掉 `degraded` 键会把"部分数据"伪装成完整结果。全程零模型、零网络、零新依赖，不调用任何工具实现、不改任何 call site。
+
 ## 测试与开发
 
 ```bash
