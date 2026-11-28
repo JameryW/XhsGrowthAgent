@@ -40,7 +40,7 @@ from backend.context.models import (
     require_niche,
 )
 from backend.context.retrieval import RecallRequest, recall_namespaces
-from backend.memory.hy.recall import format_hy_section, recall_hy_memory
+from backend.memory.hy.recall import decorate_hy_recall, format_hy_section, recall_hy_memory
 from backend.models.outputs import ContentPlanOutput, normalize_content_plan
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
@@ -192,6 +192,8 @@ class ContentStrategistAgent(BaseAgent):
             _recall_insights(store, account_id, str(thread_id or "")),
         )
         hy_chat = await hy_recall_task
+        # 台账 #49：把学到的逐字改稿挂到画像事实下（开关默认关，关时返回原对象）。
+        hy_chat = await decorate_hy_recall(hy_chat, account_id=account_id, store=store)
         memory_context = _format_memory_context(insights_result)
         hy_section = format_hy_section([hy_chat])
         if hy_section:

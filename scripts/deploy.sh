@@ -288,6 +288,7 @@ LLMEOF
         -e XHS_REPLY_GUARD="${XHS_REPLY_GUARD:-}" \
         -e XHS_GEO_SCORING="${XHS_GEO_SCORING:-}" \
         -e XHS_DM_UPLIFT="${XHS_DM_UPLIFT:-}" \
+        -e XHS_MEMORY_CHAIN="${XHS_MEMORY_CHAIN:-}" \
         -e XHS_COOKIE="${XHS_COOKIE:-}" \
         -e XHS_USER_ID="${XHS_USER_ID:-}" \
         -e XHS_EMBED_MODEL="${XHS_EMBED_MODEL:-}" \

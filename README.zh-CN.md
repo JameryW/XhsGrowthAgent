@@ -481,6 +481,18 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 证据不足时绝不拦截：只有入站原文、已填槽位或粉丝兴趣至少提供了一项独立信号（`evidence_sufficient`），才会按分层拒绝；否则照常发送，只在报告里记下分层。为此工具新增可选入参 `inbound_message`（默认空，旧的调用方式不变）。开关关闭时两个工具的入参、返回值与异常路径逐字节一致，也不新增任何键；分层全程零 LLM、零网络、零状态。
 
+### 第 23 期：记忆写入链路（改稿差异链与候诊室）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 事实链与状态跃迁（#49） | `backend/services/memory_chain.py`、`backend/agents/analyst.py` | `XHS_MEMORY_CHAIN=1` 时，`analyst` 的每条新观察先与已有事实做字符/词重叠匹配：重叠不足 `0.5` 视为**新事实**；与旧信念矛盾且矛盾置信 `>=0.8` 才替换（新记录 `supersedes` 指向被替换版本），`0.4~0.8` 之间只进候诊室。写入报告走 `ObservationRoute`（action/surprisal/belief_id/fact_id/hypothesis_id/reason/stored/corroborated） |
+| 候诊室（#99） | 同上 | `PROFILE` 只写候诊室、**不写长期记忆**——一次数据抖动不该变成下周的可执行结论。假设需累计 `>=2` 次印证且横跨 `>=2` 个不同 ISO 周才晋升（同周多篇笔记只算一周证据），晋升后才生成 `supersedes` 新事实 |
+| 改稿差异链（#49） | `backend/memory/hy/recall.py`、`backend/agents/content_strategist.py` | 召回命中的 hy-memory 事实若与已学习的改稿 span（`port_learning` 命名空间）匹配（包含原文或重叠 `>=0.6`），在事实后附 `旧「…」→ 新「…」`（含人工给的改稿理由），零 LLM 调用；不匹配则原样返回 |
+
+纠正由**显式矛盾证据**驱动，而不是文本差异：价格/档期改动（«旺季提前 7 天» → «提前 14 天»）几乎完全重叠，任何基于困惑度的判定都到不了替换阈值。所以调用方给出矛盾置信，本模块按档位升级；没有矛盾证据时的 `surprisal` 仍由 `supervision_contracts` 计算并原样上报。
+
+全部确定性：匹配用字符/词重叠，不用 embedding，不调模型、不发网络请求。开关关闭时 `analyst` 的写入、`content_strategist` 的召回文本与返回字典逐字节不变；`analyst` 未拿到 `account_id` 时也不走链路。
+
 ## 测试与开发
 
 ```bash

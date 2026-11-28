@@ -29,6 +29,7 @@ from backend.memory.hy.promotion import evaluate_outcome_gate, memory_metadata
 from backend.memory.hy.recall import format_hy_section, recall_hy_memory
 from backend.models.outputs import AnalyticsOutput, normalize_analytics
 from backend.models.structured import StructuredOutputError
+from backend.services.memory_chain import memory_chain_enabled
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 from backend.tools.runtime.models import ErrorKind
 
@@ -99,7 +100,7 @@ async def _safe_evolve(account_id: object) -> None:
 
 
 async def _safe_store_insight(
-    mm: MemoryManager, store: BaseStore, insight: str, post_id: str
+    mm: MemoryManager, store: BaseStore, insight: str, post_id: str, account_id: str = ""
 ) -> None:
     """Per-row write wrapper: store one insight, swallow errors.
 
@@ -107,7 +108,28 @@ async def _safe_store_insight(
     no internal try/except, so without this wrapper the first failing write
     would abort the rest of the gather. Best-effort post-publish telemetry —
     losing one insight shouldn't skip the others.
+
+    台账 #99：开关打开且给了账号时，先过记忆写入链路。``PROFILE``（不确定信号）
+    只进候诊室、不进长期记忆 —— 一次数据抖动不该变成下周的可执行结论；
+    路由本身失败时退回既有的「照常写」，不让新链路成为新的故障点。
     """
+    if account_id and memory_chain_enabled():
+        try:
+            from backend.services.memory_chain import record_observation
+
+            route = await record_observation(
+                store, account_id, observation=insight, kind="insight", source="analyst"
+            )
+        except Exception:
+            logger.warning("memory chain routing failed; storing insight directly", exc_info=True)
+        else:
+            if not route.stored:
+                logger.debug(
+                    "insight parked in waiting room (surprisal=%.2f, hypothesis=%s)",
+                    route.surprisal,
+                    route.hypothesis_id,
+                )
+                return
     try:
         await mm.store_insight(store, insight, {"source": "analyst", "post_id": post_id})
     except Exception:
@@ -323,7 +345,7 @@ class AnalystAgent(BaseAgent):
         insights = analytics.get("insights", [])
         recommendations = analytics.get("recommendations", [])
         await asyncio.gather(
-            *(_safe_store_insight(mm, store, insight, post_id) for insight in insights),
+            *(_safe_store_insight(mm, store, insight, post_id, account_id) for insight in insights),
             *(_safe_store_strategy_note(mm, store, rec) for rec in recommendations),
             # 低表现笔记的复盘不进正向记忆：同一批洞察/建议改存负向避坑池，
             # 避免把一次偶然低表现（或高表现）固化成长期规则。

@@ -18,6 +18,7 @@ from typing import Any
 _LAZY_EXPORTS = {
     "HyMemoryBridge": ("backend.memory.hy.bridge", "HyMemoryBridge"),
     "HyMemorySettings": ("backend.memory.hy.settings", "HyMemorySettings"),
+    "decorate_hy_recall": ("backend.memory.hy.recall", "decorate_hy_recall"),
     "get_hy_memory_bridge": ("backend.memory.hy.bridge", "get_hy_memory_bridge"),
     "hy_namespace": ("backend.memory.hy.recall", "hy_namespace"),
     "recall_hy_memory": ("backend.memory.hy.recall", "recall_hy_memory"),
@@ -27,6 +28,7 @@ _LAZY_EXPORTS = {
 __all__ = [
     "HyMemoryBridge",
     "HyMemorySettings",
+    "decorate_hy_recall",
     "get_hy_memory_bridge",
     "hy_namespace",
     "recall_hy_memory",
