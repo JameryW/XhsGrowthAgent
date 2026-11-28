@@ -96,6 +96,7 @@ backend/
 │   ├── geo_signals.py                   # Phase-21 GEO-CiteScore adapter (intent/supply/dispersion from already-fetched hits, #37)
 │   ├── dm_uplift.py                     # Phase-22 DM quota uplift allocator (prior tables + observed signals -> persuasion stratum before spending quota, #44)
 │   ├── memory_chain.py                  # Phase-23 memory write path (supersedes fact chain + waiting room + zero-LLM revision decoration, #49/#99)
+│   ├── visual_memory.py                 # Phase-24 account visual memory (frozen brand DNA + scene feedback weights on BaseStore, #45)
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)

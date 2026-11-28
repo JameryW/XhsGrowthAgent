@@ -493,6 +493,16 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 全部确定性：匹配用字符/词重叠，不用 embedding，不调模型、不发网络请求。开关关闭时 `analyst` 的写入、`content_strategist` 的召回文本与返回字典逐字节不变；`analyst` 未拿到 `account_id` 时也不走链路。
 
+### 第 24 期：账号视觉记忆（品牌 DNA 与场景反馈）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 品牌视觉 DNA（#45） | `backend/services/visual_memory.py`、`backend/agents/visual_designer.py` | `XHS_VISUAL_MEMORY=1` 时，设计前先读账号锚点（主色/辅色/强调色、主标题字重比、固定主视觉主体、禁用元素）与场景偏好版式并注入提示；**首篇运行**把设计者实际产出的方案冻结为 DNA（`ensure_dna`），之后任何调用都原样返回、永不覆盖 |
+| 锚点落地与漂移 | 同上 | 方案缺色板/缺字重比/缺版式时才用锚点补齐（记 `filled`）；与锚点冲突只记 `drift`（`palette_off_anchor` / `palette_partial` / `title_weight_off_anchor`）并追加 `revision_hints`，不静默改写设计者选择；报告写入 `visual_plan["visual_memory"]` |
+| 场景反馈（#45 写侧） | `backend/agents/analyst.py` | 复用已有 outcome gate 的 `collect_ratio`/`view_ratio`：样本 `<3` 或无基线时**不动权重**；否则按 `0.7*收藏差 + 0.3*浏览差`（各自裁剪到 ±1）让 `SceneVisualMemoryBank.adapt_scene` 移动该场景权重（`0.5~2.0` 有界）并持久化。写失败只 warning，绝不影响复盘节点 |
+
+场景解析只有 `scene_for(niche, content_type)` 一处，读写两侧落到同一场景；记忆只落 BaseStore（命名空间 `accounts/{id}/visual_memory`，键 `dna` 与 `scenes`），不新增数据表。全程确定性：不调模型、不调视觉模型、不做 embedding。开关关闭时设计提示与 `visual_plan` 不新增任何键，`analyst` 不读写视觉记忆。
+
 ## 测试与开发
 
 ```bash

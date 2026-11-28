@@ -27,6 +27,14 @@ from backend.context.models import (
     require_niche,
 )
 from backend.models.outputs import VisualPlanOutput, normalize_visual_plan
+from backend.services.visual_memory import (
+    apply_directive,
+    build_directive,
+    directive_prompt,
+    ensure_dna,
+    scene_for,
+    visual_memory_enabled,
+)
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 _compiler = ContextCompiler()
@@ -109,6 +117,21 @@ class VisualDesignerAgent(BaseAgent):
         system_prompt = self._compile_system_prompt(state, creative_ctx)
 
         niche = require_niche(state)
+        # ── Visual memory (#45): account anchors must survive across weeks ──
+        # Off by default: with the switch off nothing is read, nothing is added
+        # to the prompt and the plan keeps exactly its previous shape.
+        visual_directive: dict[str, Any] | None = None
+        memory_ctx = ""
+        if visual_memory_enabled():
+            visual_directive = await build_directive(
+                store,
+                account_id,
+                scene_for(
+                    niche=str(niche or ""),
+                    content_type=str(plan.get("content_type", "")),
+                ),
+            )
+            memory_ctx = f"\n{directive_prompt(visual_directive)}"
         body_summary = copy.get("body_text", "")[:200] if copy else ""
         brief_brand = brief.get("brand_name", "") if brief else ""
         brief_requirements = brief.get("style_requirements", "") if brief else ""
@@ -120,7 +143,7 @@ class VisualDesignerAgent(BaseAgent):
 正文摘要：{body_summary}
 品牌：{brief_brand}
 视觉要求：{brief_requirements}
-拍摄要求：{shooting_notes}{shooting_ctx}"""
+拍摄要求：{shooting_notes}{shooting_ctx}{memory_ctx}"""
 
         visual_plan = normalize_visual_plan(
             await self._llm_structured(
@@ -172,6 +195,23 @@ class VisualDesignerAgent(BaseAgent):
                 *list(visual_plan.get("revision_hints") or []),
                 *synergy.recommendations,
             ]
+
+        # ── Visual memory (#45): fill gaps, report drift, freeze DNA on run 1 ──
+        if visual_directive is not None:
+            report = apply_directive(visual_plan, visual_directive)
+            if report["drift"]:
+                visual_plan["revision_hints"] = [
+                    *list(visual_plan.get("revision_hints") or []),
+                    f"视觉记忆漂移：{'、'.join(report['drift'])}（与账号品牌 DNA 不一致）",
+                ]
+            # First run establishes the anchors from what the designer actually
+            # produced; later runs return the frozen DNA untouched.
+            await ensure_dna(
+                store,
+                account_id,
+                palette=[str(item) for item in visual_plan.get("color_palette") or []],
+                title_weight_ratio=visual_plan.get("title_weight_ratio"),
+            )
 
         # ── Carousel dwell-time arc (P1 hook → P2 conclusion → PN save list) ──
         prompts = list(
