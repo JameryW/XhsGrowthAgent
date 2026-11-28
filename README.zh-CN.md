@@ -461,6 +461,15 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 拒绝走既有「判决作为答案」通道：抛 `DomainOutcome`（`status=blocked`、`error_code=reply_guard`、永不自动重试），payload 带完整 `reply_guard` 报告与目标回显，**不会**降级成 `{"success": False}` 字典（避免第二个归一化站点）。命中隐私改写时发送改写后文本，返回字典追加 `reply_guard`，其中 `reply` 是实际发出的文本。开关关闭时两个工具的入参、返回值与异常路径逐字节一致，也不新增任何键。护栏全程零 LLM、零网络、零状态。
 
+### 第 21 期：选题 GEO 空白度打分（GEO-CiteScore）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 空白度打分（#37） | `backend/services/geo_signals.py`、`backend/tools/analysis/topic_scorer.py`、`backend/agents/content_strategist.py` | `XHS_GEO_SCORING=1` 时 `topic_scorer` 复用**已经抓取**的 50 条搜索命中与关键词热度行，为候选关键词算四个信号——`intent_specificity`（长尾/问句度）、`search_demand`（命中数 + 赞/20）、`supply_density`（赞数同时达到本批中位数与 1k 门槛的占比）、`evidence_dispersion`（`1 - 前三/总量`）——再交给 `visibility_contracts.geo_cite_score` / `rank_geo_keywords` 排序，产出 `geo` 块（`best_keyword`、`best_score`、`signals`、`candidates`、`recommendation`） |
+| 排序与提示 | `backend/agents/content_strategist.py` | 收藏优先排序保持不变：`GEO` 只在收藏预测与热度都相同的条件下破平（开关关闭时第 3 键恒为 -1，顺序与线路前完全一致），并在候选行追加「GEO空白 0.81（长尾词）」 |
+
+该打分是确定性的：同输入必得同输出，不采样、不重试、不调模型；平台读不到时 `topic_scorer` 仍按既有逻辑拒绝打分，本模块绝不编造度量（无命中即报零供给/零碎片度，而不是给一个好看的中间值）。开关关闭时返回字典不出现 `geo` 键，`content_strategist` 的 prompt 也逐字节不变。
+
 ## 测试与开发
 
 ```bash

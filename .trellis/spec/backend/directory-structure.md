@@ -93,6 +93,7 @@ backend/
 │   ├── polish_gate.py                   # Phase-18 risk-aware POLISH gate (PLAD stage-0 skip + non-degradation acceptance, #56)
 │   ├── publish_preflight.py             # Phase-19 publish interlock preflight (coupling/realization edges before the publish gate, #62)
 │   ├── reply_guard.py                   # Phase-20 outgoing reply guard (unusable-reply filter + presupposition scrub before sending, #59/#94)
+│   ├── geo_signals.py                   # Phase-21 GEO-CiteScore adapter (intent/supply/dispersion from already-fetched hits, #37)
 │   └── llm_enrichment.py                # LLM enrichment service
 │
 ├── tools/                               # Atomic operations (LangChain @tool)

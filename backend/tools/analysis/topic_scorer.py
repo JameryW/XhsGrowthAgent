@@ -343,7 +343,23 @@ async def topic_scorer(
         if novelty.is_duplicate_risk:
             potential_score = max(0.0, round(potential_score - novelty.penalty, 1))
 
-        return {
+        # GEO-CiteScore (ledger #37): does this topic still have a blank in AI
+        # search?  Derived from the hits/keywords already fetched above — no
+        # extra read, no model call, and absent entirely when the switch is off.
+        from backend.services.geo_signals import maybe_geo_report
+
+        geo = maybe_geo_report(
+            topic=topic,
+            keywords=keywords[:5],
+            likes=[float(getattr(post, "likes", 0) or 0) for post in search_posts],
+            keyword_likes={
+                str(row.get("keyword")): float(row.get("avg_likes") or 0)
+                for row in keyword_data
+                if isinstance(row, dict) and row.get("keyword")
+            },
+        )
+
+        result: dict[str, Any] = {
             "topic": topic,
             "heat_score": round(final_score, 1),
             "heat_percentage": round(final_score, 1),
@@ -381,6 +397,9 @@ async def topic_scorer(
                 "is_duplicate_risk": novelty.is_duplicate_risk,
             },
         }
+        if geo is not None:
+            result["geo"] = geo
+        return result
 
     finally:
         await client.close()
