@@ -470,6 +470,17 @@ export XHS_AGENT_API_BASE=http://localhost:8000
 
 该打分是确定性的：同输入必得同输出，不采样、不重试、不调模型；平台读不到时 `topic_scorer` 仍按既有逻辑拒绝打分，本模块绝不编造度量（无命中即报零供给/零碎片度，而不是给一个好看的中间值）。开关关闭时返回字典不出现 `geo` 键，`content_strategist` 的 prompt 也逐字节不变。
 
+### 第 22 期：私信配额因果增益分配（DM Uplift）
+
+| 接线项 | 位置 | 行为 |
+| --- | --- | --- |
+| 四象限分层（#44） | `backend/services/dm_uplift.py`、`backend/tools/xhs/engagement.py` | `XHS_DM_UPLIFT=1` 时，`dm_handler` 在开浏览器之前把这条入站私信分到四层：`persuadables`（值得用五槽位跟进）/`sure_things`（一条汇总卡即可）/`lost_causes`（公开评论回复即可）/`sleeping_dogs`（有敌意，静默）。分层与动作直接复用 `interaction_contracts.classify_dm_candidate` / `allocate_dm_quota`，每日配额仍由 `XHS_DM_DAILY_LIMIT` 与 `check_dm_quota` 结算 |
+| 拒绝与报告 | 同上 | `lost_causes` 不发私信（`error_code=dm_quota_preserved`、`hint=public_reply_only`），`sleeping_dogs` 不发（`error_code=dm_uplift_blocked`、`hint=silent_block`）：两者都走 `DomainOutcome` 判决通道，不开浏览器、不消耗配额。放行时返回字典追加 `dm_uplift`（`priors=fixed`、分层、动作、`quota_cost`、`may_send`、信号） |
+
+这里的先验是**固定表**，不是拟合出来的转化率：手头十几篇笔记、百来个联系人没有可训练的样本，拟合出来的数字每周都在动。它只用于判断「这条私信现在值不值得占用一个稀缺配额」，报告里显式标 `priors: fixed` 就是为了不让它被当成预测。
+
+证据不足时绝不拦截：只有入站原文、已填槽位或粉丝兴趣至少提供了一项独立信号（`evidence_sufficient`），才会按分层拒绝；否则照常发送，只在报告里记下分层。为此工具新增可选入参 `inbound_message`（默认空，旧的调用方式不变）。开关关闭时两个工具的入参、返回值与异常路径逐字节一致，也不新增任何键；分层全程零 LLM、零网络、零状态。
+
 ## 测试与开发
 
 ```bash
