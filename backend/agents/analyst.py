@@ -136,6 +136,37 @@ async def _safe_store_insight(
         logger.warning("store_insight failed", exc_info=True)
 
 
+async def _safe_record_visual_feedback(
+    store: BaseStore,
+    account_id: str,
+    niche: str,
+    *,
+    collect_ratio: float | None,
+    view_ratio: float | None,
+    sample_size: int,
+) -> None:
+    """#45 write side: move one scene weight with a baseline-relative outcome.
+
+    Best-effort: the visual-memory write must never break the analytics node.
+    ``record_scene_feedback_if_enabled`` itself refuses to move a weight when
+    there is no baseline or too few samples, so this wrapper only owns the
+    error boundary.
+    """
+    from backend.services.visual_memory import record_scene_feedback_if_enabled, scene_for
+
+    try:
+        await record_scene_feedback_if_enabled(
+            store,
+            account_id,
+            scene_for(niche=niche),
+            collect_ratio=collect_ratio,
+            view_ratio=view_ratio,
+            sample_size=sample_size,
+        )
+    except Exception:  # pragma: no cover - defensive store boundary
+        logger.warning("visual memory feedback skipped", exc_info=True)
+
+
 async def _safe_store_strategy_note(mm: MemoryManager, store: BaseStore, rec: str) -> None:
     """Per-row write wrapper: store one strategy note, swallow errors.
 
@@ -260,6 +291,17 @@ class AnalystAgent(BaseAgent):
                 "verification": "unverified_cold_start",
                 "memory_pool": "working_unverified",
             }
+
+        # 台账 #45：视觉记忆的场景权重只在真实数据与账号基线可比时移动；
+        # 无基线/样本不足时 record_scene_feedback 直接跳过，写失败也不影响分析。
+        await _safe_record_visual_feedback(
+            store,
+            account_id,
+            niche,
+            collect_ratio=outcome_gate.collect_ratio,
+            view_ratio=outcome_gate.view_ratio,
+            sample_size=outcome_gate.sample_size,
+        )
 
         hy_context = format_hy_section([hy_chat, hy_working])
 
